@@ -551,7 +551,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                               key: const ValueKey(
                                                 'strategy-canvas-drawing-editor',
                                               ),
-                                              ignoring: !canEditPages,
+                                              ignoring: !canEditPages ||
+                                                  transitionPresentation
+                                                      .preparing,
                                               child: Opacity(
                                                 opacity: transitionOpacity *
                                                     lineUpOpacity,

@@ -350,6 +350,22 @@ void main() {
     await tester.pump();
 
     expect(container.read(transitionProvider).owner, same(second));
+
+    transitions
+      ..targetRead(second, fadeInDrawings: false)
+      ..start(
+        second,
+        entries: const [],
+        agentPaths: const {},
+        endAgentSize: 40,
+        endAbilitySize: 40,
+      );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(kPageTransitionDuration);
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(container.read(transitionProvider), isA<NoPageTransition>());
   });
 
   testWidgets('ability vision-cone previews use animated geometry',

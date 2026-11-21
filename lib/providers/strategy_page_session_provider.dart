@@ -173,6 +173,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _disposed = false;
   int _pageSessionGeneration = 0;
   Future<void>? _pageBeingInstalled;
+  int _openSession = 0;
 
   /// Pages whose delete from this device the server applied, with the
   /// strategy revision the delete made. See [_deletedHere].
@@ -325,6 +326,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // gave way (see [OpenAttempt]).
     final opening = attempt ?? OpenAttempt.unchallenged;
     _pageSessionGeneration++;
+    _openSession++;
     ref.read(transitionProvider.notifier).clear();
     final pageSource = _resolvePageSource(strategyId, source);
     final pageIds = await opening.wait(pageSource.listPageIds());
@@ -373,6 +375,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   Future<void> setActivePage(String pageId) async {
+    await _pageInstalled();
     if (pageId == state.activePageId || _deletedPageHoldsWork()) {
       return;
     }
@@ -380,6 +383,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final outcome = await _switchToPage(_beginSwitch(pageId), animated: false);
     if (outcome == _PageSwitch.stayed) _resumePendingRemoteReapplyIfPossible();
   }
+
+  Future<void> _pageInstalled() async {
+    if (_pageBeingInstalled case final installing?) await installing;
+  }
+
+  PreparingPageTransition? _preparedFor(PageSwitch pageSwitch) =>
+      switch (ref.read(transitionProvider)) {
+        final PreparingPageTransition preparing
+            when identical(preparing.owner, pageSwitch) =>
+          preparing,
+        _ => null,
+      };
 
   PageSwitch _beginSwitch(String pageId) {
     final generation = ++_pageSessionGeneration;
@@ -400,6 +415,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required PageTransitionDirection direction,
     Duration duration = kPageTransitionDuration,
   }) async {
+    await _pageInstalled();
     if (pageId == state.activePageId || _deletedPageHoldsWork()) {
       return;
     }
@@ -417,22 +433,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       fromDoors: previousDoors,
     );
 
-    var fadeInDrawings = false;
     final _PageSwitch outcome;
     try {
       outcome = await _switchToPage(
         pageSwitch,
         animated: true,
-        onTargetRead: (target) {
-          fadeInDrawings = TransitionPlanner.drawingsChanged(
+        onTargetRead: (target) => transitionNotifier.targetRead(
+          pageSwitch,
+          fadeInDrawings: TransitionPlanner.drawingsChanged(
             ref.read(drawingProvider).elements,
             target.drawings,
-          );
-          transitionNotifier.targetRead(
-            pageSwitch,
-            fadeInDrawings: fadeInDrawings,
-          );
-        },
+          ),
+        ),
       );
     } catch (error, stackTrace) {
       if (!pageSwitch.isCurrent) return;
@@ -449,6 +461,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         break;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final prepared = _preparedFor(pageSwitch);
+      if (prepared == null) return;
+      final fadeInDrawings = prepared.drawings == TargetDrawings.fadeIn;
       final preliminaryNext = _snapshotAllPlaced();
       final preliminaryEntries = _diffToTransitions(previous, preliminaryNext);
       final doorsMove = !setEquals(previousDoors, _changedDoors());
@@ -472,6 +487,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           transitionNavigation = null;
         }
       }
+      if (_preparedFor(pageSwitch) == null) return;
 
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(previous, next);
@@ -503,7 +519,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
   }
 
-  Future<void> _restoreLeftPage(PageSwitch pageSwitch) async {
+  void _restoreLeftPage(PageSwitch pageSwitch) {
     final previousPageId = pageSwitch.sourcePageId;
     final strategyState = ref.read(strategyProvider);
     state = state.copyWith(
@@ -514,30 +530,32 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           strategyPublicId: strategyState.strategyId,
           activePageId: previousPageId,
         );
-    if (strategyState.source == StrategySource.cloud) {
-      try {
-        await ref
-            .read(remoteEditorSnapshotProvider.notifier)
-            .setActivePage(previousPageId);
-        final strategyId = strategyState.strategyId;
-        if (strategyId != null && previousPageId != null) {
-          final snapshot = _lastAppliedRemoteSnapshot;
-          if (snapshot != null &&
-              snapshot.header.publicId == strategyId &&
-              snapshot.activePage?.page.publicId == previousPageId) {
-            ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
-                  strategyPublicId: strategyId,
-                  pageId: previousPageId,
-                  snapshot: snapshot,
-                );
-          }
-        }
-      } catch (_) {
-        // Preserve the original switch failure; the live read can recover
-        // independently without leaving the transition state stuck.
-      }
+    final strategyId = strategyState.strategyId;
+    if (strategyState.source == StrategySource.cloud && strategyId != null) {
+      unawaited(_readLeftPageAgain(strategyId, previousPageId));
     }
     _resumePendingRemoteReapplyIfPossible();
+  }
+
+  Future<void> _readLeftPageAgain(String strategyId, String? pageId) async {
+    try {
+      await ref
+          .read(remoteEditorSnapshotProvider.notifier)
+          .setActivePage(pageId);
+    } catch (_) {
+      return;
+    }
+    final snapshot = _lastAppliedRemoteSnapshot;
+    if (pageId != null &&
+        snapshot != null &&
+        snapshot.header.publicId == strategyId &&
+        snapshot.activePage?.page.publicId == pageId) {
+      ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+            strategyPublicId: strategyId,
+            pageId: pageId,
+            snapshot: snapshot,
+          );
+    }
   }
 
   /// The pages in order, as the pages bar lists them: a cloud strategy's
@@ -1059,6 +1077,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   void reset() {
     _remoteChangeWaitsForEditor = false;
     _pageSessionGeneration++;
+    _openSession++;
     ref.read(transitionProvider.notifier).clear();
     state = const StrategyPageSessionState(
       activePageId: null,
@@ -1094,11 +1113,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (source == StrategySource.cloud) {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
     }
+    final saveState = ref.read(strategySaveStateProvider.notifier);
+    final editsBefore = saveState.dirtyMarks;
     final RemotePageSnapshot? target;
     try {
-      if (_pageBeingInstalled case final installing?) {
-        await attempt.wait(installing);
-      }
       if (await _handOverLeftPage(pageSource, source, attempt) == false) {
         return _PageSwitch.stayed;
       }
@@ -1132,13 +1150,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       } else {
         target = null;
       }
-      if (ref.read(strategySaveStateProvider).isDirty &&
+      if (saveState.dirtyMarks != editsBefore &&
           await _handOverLeftPage(pageSource, source, attempt) == false) {
         return _PageSwitch.stayed;
       }
     } on OpenGaveWay {
       return _PageSwitch.superseded;
     }
+    final opened = _openSession;
+    final session = OpenAttempt(() => opened == _openSession);
     final installed = Completer<void>();
     final installing = installed.future;
     _pageBeingInstalled = installing;
@@ -1149,27 +1169,33 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
               strategyPublicId: strategyId,
               activePageId: pageId,
             );
-        await ref
-            .read(remoteEditorSnapshotProvider.notifier)
-            .setActivePage(pageId, fetched: target);
+        await session.wait(
+          ref
+              .read(remoteEditorSnapshotProvider.notifier)
+              .setActivePage(pageId, fetched: target),
+        );
       }
-      final pageData = await pageSource.loadPage(pageId);
+      final pageData = await session.wait(pageSource.loadPage(pageId));
       onTargetRead?.call(pageData);
       await _applyLoadedPageData(
         pageData,
         strategyId: strategyId,
         source: source,
         loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+        attempt: session,
       );
       if (animated) _updateHydrationBookkeeping(pageData.pageId);
       return _PageSwitch.switched;
+    } on OpenGaveWay {
+      return _PageSwitch.superseded;
     } catch (_) {
-      await _restoreLeftPage(pageSwitch);
+      _restoreLeftPage(pageSwitch);
       rethrow;
     } finally {
       installed.complete();
-      if (identical(_pageBeingInstalled, installing))
+      if (identical(_pageBeingInstalled, installing)) {
         _pageBeingInstalled = null;
+      }
     }
   }
 

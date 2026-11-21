@@ -2783,6 +2783,14 @@ void main() {
     final one = _page('page-1', 0);
     final two = _page('page-2', 1);
     final three = _page('page-3', 2);
+    const onOne = Offset(100, 100);
+    const onTwo = Offset(400, 300);
+    const onThree = Offset(700, 500);
+
+    RemotePageSnapshot withAgentAt(RemotePage page, Offset position) =>
+        _pageSnapshot(page, elements: [
+          _agentElement(page.publicId, 'jett', position),
+        ]);
 
     Future<(ProviderContainer, _FakeRemoteEditorNotifier)> open({
       Map<String, RemotePageSnapshot>? pages,
@@ -2790,9 +2798,9 @@ void main() {
     }) async {
       final catalog = pages ??
           {
-            one.publicId: _pageSnapshot(one, text: 'one'),
-            two.publicId: _pageSnapshot(two, text: 'two'),
-            three.publicId: _pageSnapshot(three, text: 'three'),
+            one.publicId: withAgentAt(one, onOne),
+            two.publicId: withAgentAt(two, onTwo),
+            three.publicId: withAgentAt(three, onThree),
           };
       final remote = _FakeRemoteEditorNotifier(
         _editorSnapshot(
@@ -2804,7 +2812,10 @@ void main() {
       final container = await _cloudContainer(
         remote: remote,
         queue: _FakeStrategyOpQueueNotifier(),
-        overrides: overrides,
+        overrides: [
+          navigationGeometryProvider.overrideWith((ref, map) async => null),
+          ...overrides,
+        ],
       );
       await container
           .read(strategyPageSessionProvider.notifier)
@@ -2816,12 +2827,27 @@ void main() {
       return (container, remote);
     }
 
-    test('a page asked for while another is put on screen is the one shown',
+    Offset agentAt(ProviderContainer container) =>
+        container.read(agentProvider).single.position;
+
+    Completer<void> holdInstallOf(
+      _FakeRemoteEditorNotifier remote,
+      RemotePage page,
+    ) {
+      final installing = Completer<void>();
+      final before = remote.whileActivating;
+      remote.whileActivating = (pageId) => pageId == page.publicId
+          ? installing.future
+          : before?.call(pageId) ?? Future.value();
+      return installing;
+    }
+
+    test('a page asked for while another is put on screen leaves from it',
         () async {
       final (container, remote) = await open();
-      final installing = Completer<void>();
-      remote.whileActivating = (pageId) =>
-          pageId == two.publicId ? installing.future : Future.value();
+      final read = <String>[];
+      remote.onFetchPage = (pageId) async => read.add(pageId);
+      final installing = holdInstallOf(remote, two);
       final session = container.read(strategyPageSessionProvider.notifier);
 
       final toTwo = session.setActivePageAnimated(
@@ -2829,30 +2855,37 @@ void main() {
         direction: PageTransitionDirection.forward,
       );
       await _settle();
-      expect(remote.selectedPageIds, [two.publicId]);
       final toThree = session.setActivePageAnimated(
         three.publicId,
         direction: PageTransitionDirection.forward,
       );
       await _settle();
+      expect(read, [two.publicId]);
+      expect(
+        container.read(transitionProvider).owner?.targetPageId,
+        two.publicId,
+      );
+
       installing.complete();
       await toTwo;
       await toThree;
       await _drawFrame();
 
+      final transition =
+          container.read(transitionProvider) as AnimatingPageTransition;
+      expect(transition.owner.targetPageId, three.publicId);
+      expect(transition.entries.single.startPos, onTwo);
       expect(
         container.read(strategyPageSessionProvider).activePageId,
         three.publicId,
       );
-      expect(container.read(textProvider).single.text, 'three');
+      expect(agentAt(container), onThree);
     });
 
-    test('a switch that fails after a newer one began leaves that one alone',
-        () async {
+    test('a page asked for while another fails to go on screen leaves from '
+        'the page still shown', () async {
       final (container, remote) = await open();
-      final installing = Completer<void>();
-      remote.whileActivating = (pageId) =>
-          pageId == two.publicId ? installing.future : Future.value();
+      final installing = holdInstallOf(remote, two);
       final session = container.read(strategyPageSessionProvider.notifier);
 
       final toTwo = session.setActivePageAnimated(
@@ -2864,35 +2897,88 @@ void main() {
         three.publicId,
         direction: PageTransitionDirection.forward,
       );
-      final threeSwitch = container.read(transitionProvider).owner;
       await _settle();
       installing.completeError(StateError('page 2 went away'));
-      await expectLater(toTwo, completes);
+      await expectLater(toTwo, throwsStateError);
       await toThree;
+      await _drawFrame();
 
+      final transition =
+          container.read(transitionProvider) as AnimatingPageTransition;
+      expect(transition.entries.single.startPos, onOne);
       expect(
         container.read(strategyPageSessionProvider).activePageId,
         three.publicId,
       );
-      expect(container.read(transitionProvider).owner, same(threeSwitch));
+      expect(agentAt(container), onThree);
+    });
+
+    test('when both pages fail to go on screen the first page stays',
+        () async {
+      final (container, remote) = await open();
+      final installingTwo = holdInstallOf(remote, two);
+      final installingThree = holdInstallOf(remote, three);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      final toThree = session.setActivePageAnimated(
+        three.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      installingTwo.completeError(StateError('page 2 went away'));
+      await expectLater(toTwo, throwsStateError);
+      await _settle();
+      installingThree.completeError(StateError('page 3 went away'));
+      await expectLater(toThree, throwsStateError);
       await _drawFrame();
-      expect(container.read(textProvider).single.text, 'three');
+
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        one.publicId,
+      );
+      expect(agentAt(container), onOne);
+      expect(container.read(transitionProvider), isA<NoPageTransition>());
+    });
+
+    test('a page still going on screen when the strategy is reopened stays '
+        'off it', () async {
+      final (container, remote) = await open();
+      final installing = holdInstallOf(remote, two);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      session.reset();
+      remote.whileActivating = null;
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+        preferredPageId: one.publicId,
+      );
+      installing.complete();
+      await toTwo;
+      await _drawFrame();
+
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        one.publicId,
+      );
+      expect(agentAt(container), onOne);
     });
 
     test('an earlier switch to the same page does not start a later one',
         () async {
       final mesh = Completer<NavigationGeometryMap?>();
-      RemotePageSnapshot withAgentAt(RemotePage page, Offset position) =>
-          _pageSnapshot(page, elements: [
-            _agentElement(page.publicId, 'jett', position),
-          ]);
-      final pages = {
-        one.publicId: withAgentAt(one, const Offset(100, 100)),
-        two.publicId: withAgentAt(two, const Offset(400, 300)),
-        three.publicId: withAgentAt(three, const Offset(100, 100)),
-      };
       final (container, remote) = await open(
-        pages: pages,
         overrides: [
           navigationGeometryProvider.overrideWith((ref, map) => mesh.future),
         ],
@@ -2977,12 +3063,16 @@ void main() {
       await _settle();
 
       expect(
-        container.read(strategyOpQueueProvider).pending.where(
-              (item) =>
-                  item.op.entityPublicId == stroke &&
-                  item.op.pagePublicId == one.publicId,
-            ),
-        isNotEmpty,
+        container.read(strategyPageSessionProvider).activePageId,
+        two.publicId,
+      );
+      expect(container.read(drawingProvider).elements, isEmpty);
+      expect(
+        {
+          for (final item in container.read(strategyOpQueueProvider).pending)
+            if (item.op.entityPublicId == stroke) item.op.pagePublicId,
+        },
+        {one.publicId},
       );
     });
   });
