@@ -1,3 +1,6 @@
+@Tags(['timing'])
+library;
+
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';

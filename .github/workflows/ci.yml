@@ -310,7 +310,8 @@ jobs:
         run: |
           fvm dart pub get
           fvm dart analyze --fatal-infos
-          fvm dart test
+          fvm dart test --exclude-tags timing
+          fvm dart test --tags timing --concurrency 1
           fvm dart test -p chrome test/indexed_db
 
       - name: Read Damaged Rows Compiled To JavaScript
