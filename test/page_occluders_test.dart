@@ -28,9 +28,11 @@ import 'package:icarus/view_cone/sightline_report.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/view_cone/vision_world_gzip.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/simple_image_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
@@ -109,6 +111,19 @@ class _Ascent extends MapProvider {
 class _Split extends MapProvider {
   @override
   MapState build() => MapState(currentMap: MapValue.split, isAttack: true);
+}
+
+class _PaintsBlockers extends CustomPainter {
+  _PaintsBlockers(this.blockers, this.painted) : super(repaint: blockers);
+
+  final SightBlockers blockers;
+  final List<int> painted;
+
+  @override
+  void paint(Canvas canvas, Size size) => painted.add(blockers.all.length);
+
+  @override
+  bool shouldRepaint(_PaintsBlockers oldDelegate) => false;
 }
 
 SightBlockers _declared(
@@ -255,6 +270,9 @@ void main() {
       WidgetTester tester,
       List<PlacedAbility> abilities,
     ) async {
+      tester.view.physicalSize = const Size(1920, 1080);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       container.read(abilityProvider.notifier).fromHive(abilities);
       await tester.pumpWidget(UncontrolledProviderScope(
         container: container,
@@ -392,6 +410,116 @@ void main() {
     });
 
     testWidgets(
+        'switching sides mid-drag keeps a wall on the line its '
+        'preview draws', (tester) async {
+      final toxicScreen = _placed(AgentType.viper, 2, rotation: 0.4);
+      await showPage(tester, [toxicScreen]);
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.descendant(
+        of: find.byKey(ValueKey(toxicScreen.id)),
+        matching: find.byType(AbilityWidget),
+      )));
+      await gesture.moveBy(const Offset(30, 10));
+      await tester.pump();
+      final onAttack = drawn().single.shape as LineOccluder;
+      (container.read(mapProvider.notifier) as _Ascent).flip();
+      await tester.pump();
+      final onDefense = drawn().single.shape as LineOccluder;
+      for (var i = 0; i < onAttack.points.length; i++) {
+        expectNear(
+          onDefense.points[i],
+          CoordinateSystem.instance.positionForSide(
+            canonicalPosition: onAttack.points[i],
+            reflectionOffset: Offset.zero,
+            isAttack: false,
+          ),
+        );
+      }
+      await gesture.up();
+      await tester.pump();
+      expect(drawn(), saved());
+      await closePage(tester);
+    });
+
+    testWidgets(
+        'a held smoke whose page loses it stops drawing and blocking '
+        'together', (tester) async {
+      final smoke = _placed(AgentType.omen, 2);
+      await showPage(tester, [smoke]);
+      final gesture = await tester
+          .startGesture(tester.getCenter(find.byKey(ValueKey(smoke.id))));
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump();
+      expect(find.byType(SimpleImageAbilityWidget), findsOneWidget,
+          reason: 'the preview under the pointer');
+      container.read(abilityProvider.notifier).fromHive(const []);
+      await tester.pump();
+      expect(find.byType(SimpleImageAbilityWidget), findsNothing);
+      expect(drawn(), isEmpty);
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump();
+      expect(find.byType(SimpleImageAbilityWidget), findsNothing);
+      await gesture.up();
+      await tester.pump();
+      await closePage(tester);
+    });
+
+    testWidgets(
+        'a second finger on a held smoke does not start a second '
+        'preview', (tester) async {
+      final smoke = _placed(AgentType.omen, 2);
+      await showPage(tester, [smoke]);
+      final centre = tester.getCenter(find.byKey(ValueKey(smoke.id)));
+      final one = await tester.startGesture(centre);
+      final two = await tester.startGesture(centre, pointer: 7);
+      await one.moveBy(const Offset(40, 0));
+      await two.moveBy(const Offset(-40, 0));
+      await tester.pump();
+      expect(find.byType(SimpleImageAbilityWidget), findsOneWidget);
+      final held = centreOf(smoke);
+      await two.moveBy(const Offset(-40, 0));
+      await tester.pump();
+      expect(centreOf(smoke), held);
+      await one.up();
+      await tester.pump();
+      expect(drawn(), saved());
+      await two.up();
+      await tester.pump();
+      await closePage(tester);
+    });
+
+    testWidgets(
+        'two High Tides dragged at once each keep their wall with '
+        'their preview', (tester) async {
+      final one =
+          _placed(AgentType.harbor, 1, wallPath: const [Offset(0, -40)]);
+      final two = PlacedAbility(
+        data: one.data,
+        position: const Offset(700, 500),
+        id: 'second-tide',
+        wallPath: const [Offset(40, 0)],
+      );
+      await showPage(tester, [one, two]);
+      final first = await tester
+          .startGesture(tester.getCenter(find.byKey(ValueKey(one.id))));
+      final second = await tester.startGesture(
+          tester.getCenter(find.byKey(ValueKey(two.id))),
+          pointer: 9);
+      await first.moveBy(const Offset(30, 0));
+      await second.moveBy(const Offset(0, 30));
+      await tester.pump();
+      expect(container.read(wallCarriedProvider), {one.id, two.id});
+      await first.up();
+      await tester.pump();
+      expect(container.read(wallCarriedProvider), {two.id});
+      await second.up();
+      await tester.pump();
+      expect(container.read(wallCarriedProvider), isEmpty);
+      expect(drawn(), saved());
+      await closePage(tester);
+    });
+
+    testWidgets(
         'undoing in the middle of turning a wall leaves the wall as '
         'the page has it', (tester) async {
       final toxicScreen = _placed(AgentType.viper, 2);
@@ -454,6 +582,32 @@ void main() {
       expect(drawn(), saved());
       await closePage(tester);
     });
+  });
+
+  testWidgets('a smoke taken off the page stops blocking on the same paint',
+      (tester) async {
+    final blockers = SightBlockers();
+    addTearDown(blockers.dispose);
+    final painted = <int>[];
+    const smoke = SightBlock(
+      name: 'Omen Dark Cover',
+      shape: CircleOccluder(Offset(400, 300), 20),
+    );
+    Widget page({required bool withSmoke}) => Directionality(
+          textDirection: TextDirection.ltr,
+          child: SightBlockersScope(
+            blockers: blockers,
+            child: Stack(children: [
+              if (withSmoke)
+                const SightBlocker(block: smoke, child: SizedBox.shrink()),
+              CustomPaint(painter: _PaintsBlockers(blockers, painted)),
+            ]),
+          ),
+        );
+    await tester.pumpWidget(page(withSmoke: true));
+    expect(painted.last, 1);
+    await tester.pumpWidget(page(withSmoke: false));
+    expect(painted.last, 0);
   });
 
   testWidgets(
@@ -845,8 +999,32 @@ void main() {
           'radiusSvg': 10.0,
         },
       ]);
-      expect(clear.json.keys.toSet().difference(cut.json.keys.toSet()),
-          isEmpty);
+      expect(
+          clear.json.keys.toSet().difference(cut.json.keys.toSet()), isEmpty);
+    });
+
+    test('off the painted floor still names the smoke the agent stands in', () {
+      final report = buildSightlineReport(
+        map: 'split',
+        isAttack: true,
+        appVersion: 'test',
+        canonicalOrigin: Offset.zero,
+        facingRadians: 0,
+        apertureRadians: math.pi / 2,
+        rangeSvg: 100,
+        savedElevationCm: null,
+        svgOrigin: const Offset(-100.4, 200),
+        model: model,
+        blockersSvg: const [
+          SightBlock(
+            name: 'Brimstone Sky Smoke',
+            shape: CircleOccluder(Offset(-105, 200), 10),
+          ),
+        ],
+      );
+      expect(report.json['offModel'], isTrue);
+      expect(report.json['insideSmoke'], 'Brimstone Sky Smoke');
+      expect(report.json['blockers'], hasLength(1));
     });
 
     test('from inside a smoke draws no cone and says which smoke', () {

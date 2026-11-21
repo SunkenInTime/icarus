@@ -110,6 +110,19 @@ SightlineReport buildSightlineReport({
     return SightlineReport._(report, null, null);
   }
 
+  final near = [
+    for (final block in blockersSvg)
+      if (block.shape.reaches(origin, rangeSvg)) block,
+  ];
+  final standsIn = near
+      .where((block) => standsInsideSmoke(origin, [block.shape]))
+      .map((block) => block.name)
+      .firstOrNull;
+  report['blockers'] = [
+    for (final block in near) _block(block),
+  ];
+  if (standsIn != null) report['insideSmoke'] = standsIn;
+
   final groundMeters = model.ground?.heightAt(origin);
   // The cone widget draws nothing from here, so there is no cone to describe.
   // Saying so is the finding.
@@ -153,18 +166,6 @@ SightlineReport buildSightlineReport({
     changedDoors: changedDoors,
     eyeElevationMeters: eye,
   );
-  final near = [
-    for (final block in blockersSvg)
-      if (block.shape.reaches(origin, rangeSvg)) block,
-  ];
-  final standsIn = near
-      .where((block) => standsInsideSmoke(origin, [block.shape]))
-      .map((block) => block.name)
-      .firstOrNull;
-  report['blockers'] = [
-    for (final block in near) _block(block),
-  ];
-  if (standsIn != null) report['insideSmoke'] = standsIn;
   report['note'] = '';
   final shadows = standsIn == null
       ? occluderShadows(
