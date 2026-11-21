@@ -1,3 +1,5 @@
+import 'package:collection/collection.dart';
+
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
@@ -5,6 +7,10 @@ import '../outcome.dart';
 const retriesBeforePause = 8;
 
 const serverRemembersAnswersFor = Duration(days: 30);
+
+const _setEquality = SetEquality<Object?>();
+const _mapEquality = MapEquality<Object?, Object?>();
+const _listEquality = ListEquality<Object?>();
 
 sealed class QueueEntry {
   const QueueEntry({required this.place});
@@ -19,18 +25,18 @@ final class PendingOp extends QueueEntry {
     required super.place,
     required this.work,
     required this.scope,
-    required this.against,
+    required this.authored,
     required this.policy,
-    required this.wait,
-    required this.state,
+    required this.answer,
+    required this.retriedAfter,
   });
 
   final Work work;
   final Scope scope;
-  final Against against;
+  final Authored authored;
   final SendPolicy policy;
-  final BaseWait wait;
-  final PendingState state;
+  final ServerAnswer answer;
+  final int retriedAfter;
 
   StrategyOp get op => work.op;
 
@@ -41,18 +47,18 @@ final class PendingOp extends QueueEntry {
 
   PendingOp copyWith({
     Work? work,
-    Against? against,
+    Authored? authored,
     SendPolicy? policy,
-    BaseWait? wait,
-    PendingState? state,
+    ServerAnswer? answer,
+    int? retriedAfter,
   }) => PendingOp(
     place: place,
     work: work ?? this.work,
     scope: scope,
-    against: against ?? this.against,
+    authored: authored ?? this.authored,
     policy: policy ?? this.policy,
-    wait: wait ?? this.wait,
-    state: state ?? this.state,
+    answer: answer ?? this.answer,
+    retriedAfter: retriedAfter ?? this.retriedAfter,
   );
 
   @override
@@ -61,17 +67,17 @@ final class PendingOp extends QueueEntry {
       other.place == place &&
       other.work == work &&
       other.scope == scope &&
-      other.against == against &&
+      other.authored == authored &&
       other.policy == policy &&
-      other.wait == wait &&
-      other.state == state;
+      other.answer == answer &&
+      other.retriedAfter == retriedAfter;
 
   @override
   int get hashCode =>
-      Object.hash(place, work, scope, against, policy, wait, state);
+      Object.hash(place, work, scope, authored, policy, answer, retriedAfter);
 
   @override
-  String toString() => 'PendingOp($opId, $state)';
+  String toString() => 'PendingOp($opId, $answer)';
 }
 
 final class RetiredOp extends QueueEntry {
@@ -153,67 +159,133 @@ final class OpWork extends Work {
 
   @override
   int get hashCode => Object.hash(OpWork, op);
-
-  @override
-  String toString() => 'OpWork(${op.opId})';
 }
 
 final class CheckedDelete extends Work {
-  const CheckedDelete(this.op, this.seen, this.verdict);
+  const CheckedDelete(this.op, this.seen);
 
   @override
   final PageDeleteOp op;
   final SeenPage seen;
-  final DeleteVerdict verdict;
 
   @override
   bool operator ==(Object other) =>
-      other is CheckedDelete &&
-      other.op == op &&
-      other.seen == seen &&
-      other.verdict == verdict;
+      other is CheckedDelete && other.op == op && other.seen == seen;
 
   @override
-  int get hashCode => Object.hash(CheckedDelete, op, seen, verdict);
-
-  @override
-  String toString() => 'CheckedDelete(${op.opId}, $verdict)';
+  int get hashCode => Object.hash(CheckedDelete, op, seen);
 }
 
-sealed class DeleteVerdict {
-  const DeleteVerdict();
-}
-
-final class AwaitingCheck extends DeleteVerdict {
-  const AwaitingCheck();
+final class ImportedIncompleteCopy extends Work {
+  const ImportedIncompleteCopy(this.op);
 
   @override
-  bool operator ==(Object other) => other is AwaitingCheck;
-
-  @override
-  int get hashCode => (AwaitingCheck).hashCode;
-
-  @override
-  String toString() => 'AwaitingCheck';
-}
-
-final class HeldForUser extends DeleteVerdict {
-  const HeldForUser(this.cause);
-
-  final HeldDeleteCause cause;
+  final PageAddOp op;
 
   @override
   bool operator ==(Object other) =>
-      other is HeldForUser && other.cause == cause;
+      other is ImportedIncompleteCopy && other.op == op;
 
   @override
-  int get hashCode => Object.hash(HeldForUser, cause);
-
-  @override
-  String toString() => 'HeldForUser(${cause.name})';
+  int get hashCode => Object.hash(ImportedIncompleteCopy, op);
 }
 
-enum HeldDeleteCause { pageChanged, contentNeverRead, pageUnreadable }
+final class SeenPage {
+  SeenPage({
+    required this.pageDigest,
+    required this.pageRevision,
+    required this.content,
+  });
+
+  final String pageDigest;
+  final int pageRevision;
+  final SeenContent content;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SeenPage &&
+      other.pageDigest == pageDigest &&
+      other.pageRevision == pageRevision &&
+      other.content == content;
+
+  @override
+  int get hashCode => Object.hash(pageDigest, pageRevision, content);
+}
+
+sealed class SeenContent {
+  const SeenContent();
+}
+
+final class ContentSeen extends SeenContent {
+  ContentSeen(Map<SeenPart, String> digests)
+    : digests = Map.unmodifiable(digests);
+
+  final Map<SeenPart, String> digests;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ContentSeen && _mapEquality.equals(other.digests, digests);
+
+  @override
+  int get hashCode => _mapEquality.hash(digests);
+}
+
+final class ContentNeverRead extends SeenContent {
+  const ContentNeverRead();
+
+  @override
+  bool operator ==(Object other) => other is ContentNeverRead;
+
+  @override
+  int get hashCode => (ContentNeverRead).hashCode;
+}
+
+sealed class SeenPart {
+  const SeenPart();
+}
+
+final class SeenSettings extends SeenPart {
+  const SeenSettings();
+
+  @override
+  bool operator ==(Object other) => other is SeenSettings;
+
+  @override
+  int get hashCode => (SeenSettings).hashCode;
+
+  @override
+  String toString() => 'settings';
+}
+
+final class SeenElement extends SeenPart {
+  const SeenElement(this.id);
+
+  final String id;
+
+  @override
+  bool operator ==(Object other) => other is SeenElement && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(SeenElement, id);
+
+  @override
+  String toString() => 'element:$id';
+}
+
+final class SeenLineupGroup extends SeenPart {
+  const SeenLineupGroup(this.id);
+
+  final String id;
+
+  @override
+  bool operator ==(Object other) => other is SeenLineupGroup && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(SeenLineupGroup, id);
+
+  @override
+  String toString() => 'lineup:$id';
+}
 
 sealed class Scope {
   const Scope();
@@ -227,9 +299,6 @@ final class StrategyWide extends Scope {
 
   @override
   int get hashCode => (StrategyWide).hashCode;
-
-  @override
-  String toString() => 'StrategyWide';
 }
 
 final class OnPage extends Scope {
@@ -243,458 +312,123 @@ final class OnPage extends Scope {
 
   @override
   int get hashCode => Object.hash(OnPage, pagePublicId);
-
-  @override
-  String toString() => 'OnPage($pagePublicId)';
 }
 
-sealed class Against {
-  const Against();
-}
+final class Moving extends Scope {
+  const Moving({required this.from, required this.to});
 
-final class OnBase extends Against {
-  const OnBase(this.revision);
-
-  final int? revision;
+  final String from;
+  final String to;
 
   @override
   bool operator ==(Object other) =>
-      other is OnBase && other.revision == revision;
+      other is Moving && other.from == from && other.to == to;
 
   @override
-  int get hashCode => Object.hash(OnBase, revision);
-
-  @override
-  String toString() => 'OnBase($revision)';
+  int get hashCode => Object.hash(Moving, from, to);
 }
 
-final class StackedOn extends Against {
-  const StackedOn(this.opId, this.revision);
+sealed class Authored {
+  const Authored();
+}
 
-  final String opId;
-  final int? revision;
+final class AuthoredRow extends Authored {
+  const AuthoredRow({required this.revision, required this.digest});
+
+  final int revision;
+  final String digest;
 
   @override
   bool operator ==(Object other) =>
-      other is StackedOn && other.opId == opId && other.revision == revision;
+      other is AuthoredRow &&
+      other.revision == revision &&
+      other.digest == digest;
 
   @override
-  int get hashCode => Object.hash(StackedOn, opId, revision);
+  int get hashCode => Object.hash(AuthoredRow, revision, digest);
 
   @override
-  String toString() => 'StackedOn($opId, $revision)';
+  String toString() => 'AuthoredRow($revision, $digest)';
+}
+
+final class AuthoredNoRow extends Authored {
+  const AuthoredNoRow();
+
+  @override
+  bool operator ==(Object other) => other is AuthoredNoRow;
+
+  @override
+  int get hashCode => (AuthoredNoRow).hashCode;
+
+  @override
+  String toString() => 'AuthoredNoRow';
 }
 
 enum SendPolicy { live, checked }
 
-sealed class BaseWait {
-  const BaseWait();
+sealed class ServerAnswer {
+  const ServerAnswer();
 }
 
-final class NoWait extends BaseWait {
-  const NoWait();
+final class NoAnswer extends ServerAnswer {
+  const NoAnswer();
 
   @override
-  bool operator ==(Object other) => other is NoWait;
+  bool operator ==(Object other) => other is NoAnswer;
 
   @override
-  int get hashCode => (NoWait).hashCode;
+  int get hashCode => (NoAnswer).hashCode;
 
   @override
-  String toString() => 'NoWait';
+  String toString() => 'NoAnswer';
 }
 
-final class UntilBaseShows extends BaseWait {
-  const UntilBaseShows(this.revision);
+final class AnsweredApplied extends ServerAnswer {
+  const AnsweredApplied(this.revision, this.by);
 
   final int revision;
+  final AppliedBy by;
 
   @override
   bool operator ==(Object other) =>
-      other is UntilBaseShows && other.revision == revision;
+      other is AnsweredApplied && other.revision == revision && other.by == by;
 
   @override
-  int get hashCode => Object.hash(UntilBaseShows, revision);
+  int get hashCode => Object.hash(AnsweredApplied, revision, by);
 
   @override
-  String toString() => 'UntilBaseShows($revision)';
+  String toString() => 'AnsweredApplied($revision, ${by.name})';
 }
 
-sealed class PendingState {
-  const PendingState();
+enum AppliedBy { thisClient, alreadyThere }
+
+final class AnsweredNothingToDo extends ServerAnswer {
+  const AnsweredNothingToDo();
+
+  @override
+  bool operator ==(Object other) => other is AnsweredNothingToDo;
+
+  @override
+  int get hashCode => (AnsweredNothingToDo).hashCode;
+
+  @override
+  String toString() => 'AnsweredNothingToDo';
 }
 
-final class Unsent extends PendingState {
-  const Unsent(this.delivery, this.go);
-
-  final Unclaimed delivery;
-  final Go go;
-
-  @override
-  bool operator ==(Object other) =>
-      other is Unsent && other.delivery == delivery && other.go == go;
-
-  @override
-  int get hashCode => Object.hash(Unsent, delivery, go);
-
-  @override
-  String toString() => 'Unsent($delivery, $go)';
-}
-
-final class Claimed extends PendingState {
-  const Claimed(this.attempt, this.before);
-
-  final Attempt attempt;
-  final Unclaimed before;
-
-  @override
-  bool operator ==(Object other) =>
-      other is Claimed && other.attempt == attempt && other.before == before;
-
-  @override
-  int get hashCode => Object.hash(Claimed, attempt, before);
-
-  @override
-  String toString() => 'Claimed(${attempt.id}, $before)';
-}
-
-final class Accepted extends PendingState {
-  const Accepted(this.revision, {this.awaiting = const AwaitingRow()});
-
-  final int revision;
-  final AwaitingBase awaiting;
-
-  @override
-  bool operator ==(Object other) =>
-      other is Accepted &&
-      other.revision == revision &&
-      other.awaiting == awaiting;
-
-  @override
-  int get hashCode => Object.hash(Accepted, revision, awaiting);
-
-  @override
-  String toString() => 'Accepted($revision, $awaiting)';
-}
-
-sealed class AwaitingBase {
-  const AwaitingBase();
-}
-
-final class AwaitingRow extends AwaitingBase {
-  const AwaitingRow();
-
-  @override
-  bool operator ==(Object other) => other is AwaitingRow;
-
-  @override
-  int get hashCode => (AwaitingRow).hashCode;
-
-  @override
-  String toString() => 'AwaitingRow';
-}
-
-final class AwaitingCopy extends AwaitingBase {
-  const AwaitingCopy(this.seen);
-
-  final CopySeen seen;
-
-  @override
-  bool operator ==(Object other) => other is AwaitingCopy && other.seen == seen;
-
-  @override
-  int get hashCode => Object.hash(AwaitingCopy, seen);
-
-  @override
-  String toString() => 'AwaitingCopy(${seen.name})';
-}
-
-enum CopySeen { neither, strategyOnly }
-
-final class ServerRefused extends PendingState {
-  const ServerRefused(this.refusal);
+final class AnsweredRefused extends ServerAnswer {
+  const AnsweredRefused(this.refusal);
 
   final ServerRefusal refusal;
 
   @override
   bool operator ==(Object other) =>
-      other is ServerRefused && other.refusal == refusal;
+      other is AnsweredRefused && other.refusal == refusal;
 
   @override
-  int get hashCode => Object.hash(ServerRefused, refusal);
+  int get hashCode => Object.hash(AnsweredRefused, refusal);
 
   @override
-  String toString() => 'ServerRefused($refusal)';
-}
-
-final class Attempt {
-  const Attempt(this.id, {required this.clientId, required this.at});
-
-  final String id;
-  final String clientId;
-  final DateTime at;
-
-  @override
-  bool operator ==(Object other) =>
-      other is Attempt &&
-      other.id == id &&
-      other.clientId == clientId &&
-      other.at == at;
-
-  @override
-  int get hashCode => Object.hash(id, clientId, at);
-
-  @override
-  String toString() => 'Attempt($id, $clientId)';
-}
-
-sealed class Unclaimed {
-  const Unclaimed();
-}
-
-final class NeverSent extends Unclaimed {
-  const NeverSent();
-
-  @override
-  bool operator ==(Object other) => other is NeverSent;
-
-  @override
-  int get hashCode => (NeverSent).hashCode;
-
-  @override
-  String toString() => 'NeverSent';
-}
-
-final class AnswerUnknown extends Unclaimed {
-  const AnswerUnknown({
-    required this.clientId,
-    required this.firstSentAt,
-    required this.failures,
-    required this.retry,
-    required this.cause,
-  });
-
-  final String clientId;
-  final DateTime firstSentAt;
-  final int failures;
-  final Backoff retry;
-  final SendCut cause;
-
-  AnswerUnknown copyWith({int? failures, Backoff? retry, SendCut? cause}) =>
-      AnswerUnknown(
-        clientId: clientId,
-        firstSentAt: firstSentAt,
-        failures: failures ?? this.failures,
-        retry: retry ?? this.retry,
-        cause: cause ?? this.cause,
-      );
-
-  @override
-  bool operator ==(Object other) =>
-      other is AnswerUnknown &&
-      other.clientId == clientId &&
-      other.firstSentAt == firstSentAt &&
-      other.failures == failures &&
-      other.retry == retry &&
-      other.cause == cause;
-
-  @override
-  int get hashCode =>
-      Object.hash(AnswerUnknown, clientId, firstSentAt, failures, retry, cause);
-
-  @override
-  String toString() => 'AnswerUnknown($clientId, $failures, $retry, $cause)';
-}
-
-sealed class Backoff {
-  const Backoff();
-}
-
-final class RetryNow extends Backoff {
-  const RetryNow();
-
-  @override
-  bool operator ==(Object other) => other is RetryNow;
-
-  @override
-  int get hashCode => (RetryNow).hashCode;
-
-  @override
-  String toString() => 'RetryNow';
-}
-
-final class RetryAfter extends Backoff {
-  const RetryAfter(this.at);
-
-  final DateTime at;
-
-  @override
-  bool operator ==(Object other) => other is RetryAfter && other.at == at;
-
-  @override
-  int get hashCode => Object.hash(RetryAfter, at);
-
-  @override
-  String toString() => 'RetryAfter(${at.toIso8601String()})';
-}
-
-final class RetriesExhausted extends Backoff {
-  const RetriesExhausted();
-
-  @override
-  bool operator ==(Object other) => other is RetriesExhausted;
-
-  @override
-  int get hashCode => (RetriesExhausted).hashCode;
-
-  @override
-  String toString() => 'RetriesExhausted';
-}
-
-final class ServerForgotAnswer extends Backoff {
-  const ServerForgotAnswer();
-
-  @override
-  bool operator ==(Object other) => other is ServerForgotAnswer;
-
-  @override
-  int get hashCode => (ServerForgotAnswer).hashCode;
-
-  @override
-  String toString() => 'ServerForgotAnswer';
-}
-
-sealed class SendCut {
-  const SendCut();
-}
-
-final class TransportCut extends SendCut {
-  const TransportCut(this.failure);
-
-  final TransportFailure failure;
-
-  @override
-  bool operator ==(Object other) =>
-      other is TransportCut && other.failure == failure;
-
-  @override
-  int get hashCode => Object.hash(TransportCut, failure);
-
-  @override
-  String toString() => 'TransportCut(${failure.name})';
-}
-
-final class AppClosedWhileSending extends SendCut {
-  const AppClosedWhileSending();
-
-  @override
-  bool operator ==(Object other) => other is AppClosedWhileSending;
-
-  @override
-  int get hashCode => (AppClosedWhileSending).hashCode;
-
-  @override
-  String toString() => 'AppClosedWhileSending';
-}
-
-enum TransportFailure { network, timeout, malformedAnswer, missingAnswer }
-
-sealed class Go {
-  const Go();
-}
-
-final class Free extends Go {
-  const Free();
-
-  @override
-  bool operator ==(Object other) => other is Free;
-
-  @override
-  int get hashCode => (Free).hashCode;
-
-  @override
-  String toString() => 'Free';
-}
-
-final class NeedsUser extends Go {
-  const NeedsUser(this.reason);
-
-  final UserReason reason;
-
-  @override
-  bool operator ==(Object other) =>
-      other is NeedsUser && other.reason == reason;
-
-  @override
-  int get hashCode => Object.hash(NeedsUser, reason);
-
-  @override
-  String toString() => 'NeedsUser($reason)';
-}
-
-sealed class UserReason {
-  const UserReason();
-}
-
-final class Oversized extends UserReason {
-  const Oversized();
-
-  @override
-  bool operator ==(Object other) => other is Oversized;
-
-  @override
-  int get hashCode => (Oversized).hashCode;
-
-  @override
-  String toString() => 'Oversized';
-}
-
-final class NoLongerFits extends UserReason {
-  const NoLongerFits(this.serverRevision);
-
-  final int serverRevision;
-
-  @override
-  bool operator ==(Object other) =>
-      other is NoLongerFits && other.serverRevision == serverRevision;
-
-  @override
-  int get hashCode => Object.hash(NoLongerFits, serverRevision);
-
-  @override
-  String toString() => 'NoLongerFits($serverRevision)';
-}
-
-final class IncompletePageCopy extends UserReason {
-  const IncompletePageCopy.imported(this.pagePublicId);
-
-  final String pagePublicId;
-
-  @override
-  bool operator ==(Object other) =>
-      other is IncompletePageCopy && other.pagePublicId == pagePublicId;
-
-  @override
-  int get hashCode => Object.hash(IncompletePageCopy, pagePublicId);
-
-  @override
-  String toString() => 'IncompletePageCopy($pagePublicId)';
-}
-
-final class OnDeletedPage extends UserReason {
-  const OnDeletedPage(this.pagePublicId);
-
-  final String pagePublicId;
-
-  @override
-  bool operator ==(Object other) =>
-      other is OnDeletedPage && other.pagePublicId == pagePublicId;
-
-  @override
-  int get hashCode => Object.hash(OnDeletedPage, pagePublicId);
-
-  @override
-  String toString() => 'OnDeletedPage($pagePublicId)';
+  String toString() => 'AnsweredRefused($refusal)';
 }
 
 sealed class ServerRefusal {
@@ -717,7 +451,7 @@ final class RejectedByServer extends ServerRefusal {
   int get hashCode => Object.hash(RejectedByServer, reason, current);
 
   @override
-  String toString() => 'RejectedByServer(${reason.wireName}, $current)';
+  String toString() => 'RejectedByServer(${reason.wireName})';
 }
 
 final class FailedOnServer extends ServerRefusal {
@@ -783,9 +517,6 @@ final class NoServerCopy extends ServerCopy {
 
   @override
   int get hashCode => (NoServerCopy).hashCode;
-
-  @override
-  String toString() => 'NoServerCopy';
 }
 
 final class ServerSnapshot extends ServerCopy {
@@ -808,124 +539,272 @@ final class ServerSnapshot extends ServerCopy {
 
   @override
   int get hashCode => Object.hash(ServerSnapshot, target, revision);
-
-  @override
-  String toString() => 'ServerSnapshot(${target.name}, $revision)';
 }
 
 enum SnapshotTarget { strategy, page, pageContent, element, lineup }
 
-final class SeenPage {
-  const SeenPage({
-    required this.name,
-    required this.isAttack,
-    required this.content,
-  });
+final class AttemptFact {
+  AttemptFact({
+    required this.number,
+    required this.clientId,
+    required this.build,
+    required this.at,
+    required List<StrategyOp> ops,
+    required this.outcome,
+  }) : ops = List.unmodifiable(ops);
 
-  final String name;
-  final bool isAttack;
-  final SeenContent content;
+  final int number;
+  final String clientId;
+  final String build;
+  final DateTime at;
+  final List<StrategyOp> ops;
+  final AttemptOutcome outcome;
 
-  @override
-  bool operator ==(Object other) =>
-      other is SeenPage &&
-      other.name == name &&
-      other.isAttack == isAttack &&
-      other.content == content;
+  List<String> get opIds => [for (final op in ops) op.opId];
 
-  @override
-  int get hashCode => Object.hash(name, isAttack, content);
-
-  @override
-  String toString() => 'SeenPage($name, $isAttack, $content)';
-}
-
-sealed class SeenContent {
-  const SeenContent();
-}
-
-final class ContentSeen extends SeenContent {
-  ContentSeen(Map<SeenPart, int> revisions)
-    : revisions = Map.unmodifiable(revisions);
-
-  final Map<SeenPart, int> revisions;
-
-  @override
-  bool operator ==(Object other) =>
-      other is ContentSeen &&
-      other.revisions.length == revisions.length &&
-      revisions.entries.every(
-        (entry) => other.revisions[entry.key] == entry.value,
-      );
-
-  @override
-  int get hashCode => Object.hashAllUnordered(
-    revisions.entries.map((entry) => Object.hash(entry.key, entry.value)),
+  AttemptFact withOutcome(AttemptOutcome outcome) => AttemptFact(
+    number: number,
+    clientId: clientId,
+    build: build,
+    at: at,
+    ops: ops,
+    outcome: outcome,
   );
 
   @override
-  String toString() => 'ContentSeen($revisions)';
+  bool operator ==(Object other) =>
+      other is AttemptFact &&
+      other.number == number &&
+      other.clientId == clientId &&
+      other.build == build &&
+      other.at == at &&
+      _listEquality.equals(other.ops, ops) &&
+      other.outcome == outcome;
+
+  @override
+  int get hashCode => Object.hash(number, clientId, build, at, outcome);
+
+  @override
+  String toString() => 'Attempt($number, $opIds, $outcome)';
 }
 
-final class ContentNeverRead extends SeenContent {
-  const ContentNeverRead();
-
-  @override
-  bool operator ==(Object other) => other is ContentNeverRead;
-
-  @override
-  int get hashCode => (ContentNeverRead).hashCode;
-
-  @override
-  String toString() => 'ContentNeverRead';
+sealed class AttemptOutcome {
+  const AttemptOutcome();
 }
 
-sealed class SeenPart {
-  const SeenPart();
+final class AttemptOpen extends AttemptOutcome {
+  const AttemptOpen();
+
+  @override
+  bool operator ==(Object other) => other is AttemptOpen;
+
+  @override
+  int get hashCode => (AttemptOpen).hashCode;
+
+  @override
+  String toString() => 'open';
 }
 
-final class SeenSettings extends SeenPart {
-  const SeenSettings();
+final class AttemptReleased extends AttemptOutcome {
+  const AttemptReleased();
 
   @override
-  bool operator ==(Object other) => other is SeenSettings;
+  bool operator ==(Object other) => other is AttemptReleased;
 
   @override
-  int get hashCode => (SeenSettings).hashCode;
+  int get hashCode => (AttemptReleased).hashCode;
 
   @override
-  String toString() => 'settings';
+  String toString() => 'released';
 }
 
-final class SeenElement extends SeenPart {
-  const SeenElement(this.id);
+final class AttemptFailed extends AttemptOutcome {
+  const AttemptFailed(this.cause, this.at);
 
-  final String id;
-
-  @override
-  bool operator ==(Object other) => other is SeenElement && other.id == id;
+  final SendCut cause;
+  final DateTime at;
 
   @override
-  int get hashCode => Object.hash(SeenElement, id);
+  bool operator ==(Object other) =>
+      other is AttemptFailed && other.cause == cause && other.at == at;
 
   @override
-  String toString() => 'element:$id';
+  int get hashCode => Object.hash(AttemptFailed, cause, at);
+
+  @override
+  String toString() => 'failed($cause)';
 }
 
-final class SeenLineupGroup extends SeenPart {
-  const SeenLineupGroup(this.id);
+final class AttemptRefusedWhole extends AttemptOutcome {
+  const AttemptRefusedWhole(this.refusal);
 
-  final String id;
-
-  @override
-  bool operator ==(Object other) => other is SeenLineupGroup && other.id == id;
+  final BatchRefusal refusal;
 
   @override
-  int get hashCode => Object.hash(SeenLineupGroup, id);
+  bool operator ==(Object other) =>
+      other is AttemptRefusedWhole && other.refusal == refusal;
 
   @override
-  String toString() => 'lineup:$id';
+  int get hashCode => Object.hash(AttemptRefusedWhole, refusal);
+
+  @override
+  String toString() => 'refused(${refusal.name})';
 }
+
+enum BatchRefusal {
+  upgradeRequired,
+  unauthenticated,
+  editAccessRemoved,
+  strategyDeleted,
+}
+
+sealed class SendCut {
+  const SendCut();
+}
+
+final class TransportCut extends SendCut {
+  const TransportCut(this.failure);
+
+  final TransportFailure failure;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TransportCut && other.failure == failure;
+
+  @override
+  int get hashCode => Object.hash(TransportCut, failure);
+
+  @override
+  String toString() => failure.name;
+}
+
+final class AppClosedWhileSending extends SendCut {
+  const AppClosedWhileSending();
+
+  @override
+  bool operator ==(Object other) => other is AppClosedWhileSending;
+
+  @override
+  int get hashCode => (AppClosedWhileSending).hashCode;
+
+  @override
+  String toString() => 'app closed';
+}
+
+enum TransportFailure { network, timeout, malformedAnswer, missingAnswer }
+
+final class RowFact {
+  const RowFact({
+    required this.revision,
+    required this.digest,
+    required this.page,
+    required this.life,
+  });
+
+  final int revision;
+  final String digest;
+  final String? page;
+  final Life life;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RowFact &&
+      other.revision == revision &&
+      other.digest == digest &&
+      other.page == page &&
+      other.life == life;
+
+  @override
+  int get hashCode => Object.hash(RowFact, revision, digest, page, life);
+
+  @override
+  String toString() => 'RowFact($revision, $page, ${life.name})';
+}
+
+enum Life { live, gone }
+
+final class StrategyFacts {
+  const StrategyFacts({
+    required this.presence,
+    required this.accessLostAt,
+    required this.accessConfirmedAt,
+    required this.upgradeTold,
+  });
+
+  static const fresh = StrategyFacts(
+    presence: Presence.present,
+    accessLostAt: 0,
+    accessConfirmedAt: 0,
+    upgradeTold: NoUpgradeTold(),
+  );
+
+  final Presence presence;
+  final int accessLostAt;
+  final int accessConfirmedAt;
+  final UpgradeTold upgradeTold;
+
+  StrategyFacts copyWith({
+    Presence? presence,
+    int? accessLostAt,
+    int? accessConfirmedAt,
+    UpgradeTold? upgradeTold,
+  }) => StrategyFacts(
+    presence: presence ?? this.presence,
+    accessLostAt: accessLostAt ?? this.accessLostAt,
+    accessConfirmedAt: accessConfirmedAt ?? this.accessConfirmedAt,
+    upgradeTold: upgradeTold ?? this.upgradeTold,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is StrategyFacts &&
+      other.presence == presence &&
+      other.accessLostAt == accessLostAt &&
+      other.accessConfirmedAt == accessConfirmedAt &&
+      other.upgradeTold == upgradeTold;
+
+  @override
+  int get hashCode =>
+      Object.hash(presence, accessLostAt, accessConfirmedAt, upgradeTold);
+}
+
+enum Presence { present, gone }
+
+sealed class UpgradeTold {
+  const UpgradeTold();
+}
+
+final class NoUpgradeTold extends UpgradeTold {
+  const NoUpgradeTold();
+
+  @override
+  bool operator ==(Object other) => other is NoUpgradeTold;
+
+  @override
+  int get hashCode => (NoUpgradeTold).hashCode;
+}
+
+final class UpgradeToldTo extends UpgradeTold {
+  const UpgradeToldTo(this.build);
+
+  final String build;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UpgradeToldTo && other.build == build;
+
+  @override
+  int get hashCode => Object.hash(UpgradeToldTo, build);
+}
+
+bool sameSet(Set<Object?> a, Set<Object?> b) => _setEquality.equals(a, b);
+
+bool sameMap(Map<Object?, Object?> a, Map<Object?, Object?> b) =>
+    _mapEquality.equals(a, b);
+
+int hashMap(Map<Object?, Object?> map) => _mapEquality.hash(map);
+
+int hashSet(Set<Object?> set) => _setEquality.hash(set);
 
 DateTime retryTimeAfter(DateTime failedAt, int failures) {
   final wait = 300 * (1 << failures.clamp(0, 6));

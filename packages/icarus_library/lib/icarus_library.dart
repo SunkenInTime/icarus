@@ -68,7 +68,17 @@ export 'src/cloud/op_facts.dart'
         sendForm,
         expectedOf,
         pagesNeeded,
-        serverChecks;
+        checkKindOf,
+        CheckKind,
+        entityOf,
+        Entity,
+        TheStrategy,
+        ThePage,
+        TheRow,
+        authoredFor,
+        seenPageIn,
+        rowDigest,
+        strategyDigest;
 export 'src/cloud/pending.dart';
 export 'src/cloud/queue.dart';
 export 'src/cloud/sync.dart';

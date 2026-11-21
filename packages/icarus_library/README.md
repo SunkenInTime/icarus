@@ -1069,6 +1069,72 @@ gone; and one engine commit already writes any set of names across areas
 at once, so advancing the base and removing the acknowledged ops is one more
 commit.
 
+### Cloud strategies: the queue
+
+`lib/src/cloud/` holds a cloud strategy's pending ops as a list of entries and
+`transition(queue, event, now:)`, a pure function from an event to the next
+queue and its effects. Storage comes separately.
+
+**Facts are stored; everything else is derived.** An entry stores:
+- its op;
+- its scope: the page it was made on, both pages of a move, or the whole strategy;
+- what it was authored against: the revision and a digest of the row the user saw;
+- its send policy;
+- the server's answer once known.
+
+The queue stores:
+- numbered attempts, each with the ops it sent and its outcome;
+- the newest base evidence per row, where a higher revision wins;
+- facts about the strategy: deleted, edit access lost or confirmed after attempt N, upgrade asked of build X;
+- facts about pages: content read, not found.
+
+`viewsOf(queue, now)` derives each entry's state, holds and reason to need the
+user, and `standingOf` the strategy's standing, from those facts on every
+event. Evidence from an older attempt never overrides newer evidence, so the
+same facts give the same queue in any order. `test/cloud_permutation_test.dart`
+delivers every causal order of a run's answers, reads, page and strategy
+removals and access and upgrade evidence and requires one final queue. Reads
+of one page, and strategy reads, keep their order, as a subscription delivers
+them.
+
+**A check compares what the user saw.** A revision-checked op is sent only
+when the base holds its row with the content it was authored against, and
+then carries the base's revision. If the content differs, someone else changed
+something the user did not see, and the entry needs the user. While an earlier
+own op on the row is accepted but not yet in the base, the entry waits for the
+base. A field-checked op (a merge with a base) and a last-writer-wins op go
+without the content check. An op whose answer is unknown is sent again exactly
+as it was first sent, so the server replays its first answer, until the server's
+30-day memory (`serverRemembersAnswersFor`, beside `DAYS_30_MS` in
+`convex/maintenance.ts`) passes. After that it goes only if the base holds the
+row at the revision and content it was authored against; otherwise it needs the
+user.
+
+**A dependency is satisfied by an applied answer.** An entry waits for an
+earlier entry it depends on (the same row, its page's add or delete, a copy's
+source page, a delete's page, page changes against renumbering) until that one
+is answered applied, never because both are in one batch. A refused prerequisite
+keeps its dependants waiting, and the sync state says so.
+
+**Attempts are numbered by the queue.** A claim is attempt N, increasing and
+stored; an answer counts only from an attempt that held the op. Op ids are
+minted by the caller and must never repeat: the app uses UUID v4
+(`package:uuid`). The queue refuses an id it holds, but it cannot remember ids
+it has removed.
+
+**Folding.** A new edit folds into the last entry for its row only when that
+entry has never been sent, is free and unheld, and nothing later touches its
+pages or the page list. `test/cloud_fold_test.dart` checks that, for every pair
+`fold` accepts, the folded op gives the rows the two ops give in sequence.
+What survives: a patch into a patch and a patch into an add on one element,
+and an add then a delete cancelling when nothing else in the queue targets
+that row.
+
+**The sync state** (`Tally`, `syncStateOf`, `accountSyncState`) is derived
+from the entries and the standing. An empty queue reads as all saved only in
+good standing. The app combines it with what only it knows: media uploads,
+text drafts, whether the session is ready.
+
 ### Measuring it
 
 `dart build cli -t bin/engine_costs.dart -o build/engine_costs` builds the

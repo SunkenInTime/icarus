@@ -19,23 +19,29 @@ sealed class Edit {
   StrategyOp get op;
 
   Scope get scope;
+
+  Authored get authored;
 }
 
 final class PlainEdit extends Edit {
-  const PlainEdit._(this.op, this.scope);
+  const PlainEdit._(this.op, this.scope, this.authored);
 
   @override
   final StrategyOp op;
   @override
   final Scope scope;
+  @override
+  final Authored authored;
 }
 
 final class PageDeleteEdit extends Edit {
-  const PageDeleteEdit(this.op, this.seen);
+  const PageDeleteEdit(this.op, this.seen, this.authored);
 
   @override
   final PageDeleteOp op;
   final SeenPage seen;
+  @override
+  final Authored authored;
 
   @override
   Scope get scope => OnPage(op.pagePublicId);
@@ -57,12 +63,24 @@ final class NeedsRowPage extends EditMaking {
   final StrategyOp op;
 }
 
-EditMaking editOf(StrategyOp op, {String? rowPage}) => switch ((op, rowPage)) {
-  (StrategyPatchOp(), _) => EditMade(PlainEdit._(op, const StrategyWide())),
+final class NeedsPageDeleteEdit extends EditMaking {
+  const NeedsPageDeleteEdit(this.op);
+
+  final PageDeleteOp op;
+}
+
+EditMaking editOf(
+  StrategyOp op, {
+  required Authored authored,
+  String? rowPage,
+}) => switch ((op, rowPage)) {
+  (StrategyPatchOp(), _) => EditMade(
+    PlainEdit._(op, const StrategyWide(), authored),
+  ),
+  (final PageDeleteOp delete, _) => NeedsPageDeleteEdit(delete),
   (
     PageAddOp(:final pagePublicId) ||
         PagePatchOp(:final pagePublicId) ||
-        PageDeleteOp(:final pagePublicId) ||
         PageReorderOp(:final pagePublicId) ||
         PageSettingsPatchOp(:final pagePublicId) ||
         ElementAddOp(:final pagePublicId) ||
@@ -73,73 +91,66 @@ EditMaking editOf(StrategyOp op, {String? rowPage}) => switch ((op, rowPage)) {
         LineupGroupReorderOp(:final pagePublicId),
     _,
   ) =>
-    EditMade(PlainEdit._(op, OnPage(pagePublicId))),
-  (ElementPatchOp() || LineupGroupPatchOp(), final page?) => EditMade(
-    PlainEdit._(op, OnPage(page)),
-  ),
+    EditMade(PlainEdit._(op, OnPage(pagePublicId), authored)),
+  (
+    ElementPatchOp(pagePublicId: final to) ||
+        LineupGroupPatchOp(pagePublicId: final to),
+    final from?,
+  ) =>
+    EditMade(
+      PlainEdit._(
+        op,
+        to == null || to == from ? OnPage(from) : Moving(from: from, to: to),
+        authored,
+      ),
+    ),
   (ElementPatchOp() || LineupGroupPatchOp(), null) => NeedsRowPage(op),
 };
 
 final class BatchClaimed extends QueueEvent {
-  BatchClaimed(this.attempt, List<String> opIds)
-    : opIds = List.unmodifiable(opIds);
+  BatchClaimed({
+    required this.clientId,
+    required List<String> opIds,
+    required this.at,
+  }) : opIds = List.unmodifiable(opIds);
 
-  final Attempt attempt;
+  final String clientId;
   final List<String> opIds;
+  final DateTime at;
 }
 
 final class ClaimReleased extends QueueEvent {
-  const ClaimReleased(this.attemptId);
+  const ClaimReleased(this.attempt);
 
-  final String attemptId;
+  final int attempt;
 }
 
 final class OpAnswered extends QueueEvent {
-  const OpAnswered(this.attempt, this.answer, {required this.base});
+  const OpAnswered(this.attempt, this.answer);
 
-  final Attempt attempt;
+  final int attempt;
   final OpAnswer answer;
-  final BaseRow base;
-}
-
-sealed class BaseRow {
-  const BaseRow();
-}
-
-final class BaseHolds extends BaseRow {
-  const BaseHolds(this.revision);
-
-  final int revision;
-}
-
-final class BaseLacks extends BaseRow {
-  const BaseLacks();
 }
 
 final class TransportFailed extends QueueEvent {
-  const TransportFailed(this.attemptId, this.failure, {required this.at});
+  const TransportFailed(this.attempt, this.failure, {required this.at});
 
-  final String attemptId;
+  final int attempt;
   final TransportFailure failure;
   final DateTime at;
 }
 
 final class BatchRefused extends QueueEvent {
-  const BatchRefused(this.attemptId, this.refusal);
+  const BatchRefused(this.attempt, this.refusal);
 
-  final String attemptId;
+  final int attempt;
   final BatchRefusal refusal;
 }
 
-enum BatchRefusal {
-  upgradeRequired,
-  unauthenticated,
-  editAccessRemoved,
-  strategyDeleted,
-}
-
 final class AppRestarted extends QueueEvent {
-  const AppRestarted();
+  const AppRestarted({required this.build});
+
+  final String build;
 }
 
 final class ConnectionLost extends QueueEvent {
@@ -155,7 +166,9 @@ final class AccountChanged extends QueueEvent {
 }
 
 final class EditAccessConfirmed extends QueueEvent {
-  const EditAccessConfirmed();
+  const EditAccessConfirmed({required this.afterAttempt});
+
+  final int afterAttempt;
 }
 
 sealed class UserAction extends QueueEvent {
@@ -169,9 +182,10 @@ final class UserRetried extends UserAction {
 }
 
 final class UserKeptMine extends UserAction {
-  const UserKeptMine(super.opId, this.replacement);
+  const UserKeptMine(super.opId, this.replacement, {required this.authored});
 
   final StrategyOp replacement;
+  final Authored authored;
 }
 
 final class UserUsedCloud extends UserAction {
@@ -198,13 +212,6 @@ final class BaseArrived extends QueueEvent {
   const BaseArrived(this.base);
 
   final ArrivedBase base;
-}
-
-final class WorkNoLongerFits extends QueueEvent {
-  const WorkNoLongerFits(this.opId, {required this.serverRevision});
-
-  final String opId;
-  final int serverRevision;
 }
 
 sealed class OpAnswer {

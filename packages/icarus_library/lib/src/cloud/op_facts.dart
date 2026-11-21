@@ -1,4 +1,11 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
+import '../json.dart';
 import '../ops.dart';
+import '../rows.dart';
+import '../strategy_rows.dart';
 import 'pending.dart';
 
 sealed class Target {
@@ -26,6 +33,9 @@ final class PageTarget extends Target {
 
   @override
   int get hashCode => Object.hash(PageTarget, pagePublicId);
+
+  @override
+  String toString() => 'PageTarget($pagePublicId)';
 }
 
 final class SettingsTarget extends Target {
@@ -39,6 +49,9 @@ final class SettingsTarget extends Target {
 
   @override
   int get hashCode => Object.hash(SettingsTarget, pagePublicId);
+
+  @override
+  String toString() => 'SettingsTarget($pagePublicId)';
 }
 
 final class ElementTarget extends Target {
@@ -68,6 +81,9 @@ final class LineupTarget extends Target {
 
   @override
   int get hashCode => Object.hash(LineupTarget, lineupPublicId);
+
+  @override
+  String toString() => 'LineupTarget($lineupPublicId)';
 }
 
 Target targetOf(StrategyOp op) => switch (op) {
@@ -243,24 +259,6 @@ int? expectedOf(StrategyOp op) => switch (op) {
   LineupGroupReorderOp(:final expectedLineupRevision) => expectedLineupRevision,
 };
 
-bool writesWhole(StrategyOp op) => switch (op) {
-  ElementAddOp() ||
-  LineupGroupAddOp() ||
-  ElementDeleteOp() ||
-  LineupGroupDeleteOp() ||
-  PageSettingsPatchOp() => true,
-  ElementPatchOp(merge: null, payload: _?) ||
-  LineupGroupPatchOp(merge: null, payload: _?) => true,
-  ElementPatchOp() || LineupGroupPatchOp() => false,
-  StrategyPatchOp() ||
-  PageAddOp() ||
-  PagePatchOp() ||
-  PageDeleteOp() ||
-  PageReorderOp() ||
-  ElementReorderOp() ||
-  LineupGroupReorderOp() => false,
-};
-
 StrategyOp sendForm(StrategyOp op, SendPolicy policy) {
   final live = policy == SendPolicy.live;
   return switch (op) {
@@ -304,10 +302,173 @@ StrategyOp sendForm(StrategyOp op, SendPolicy policy) {
   };
 }
 
-bool serverChecks(StrategyOp sent) => switch (sent) {
-  ElementPatchOp(merge: FieldMerge(base: null)) ||
-  LineupGroupPatchOp(merge: FieldMerge(base: null)) => false,
+enum CheckKind { revision, fields, none }
+
+CheckKind checkKindOf(StrategyOp sent) => switch (sent) {
+  ElementPatchOp(merge: FieldMerge(base: _?)) ||
+  LineupGroupPatchOp(merge: FieldMerge(base: _?)) => CheckKind.fields,
+  ElementPatchOp(merge: FieldMerge()) ||
+  LineupGroupPatchOp(merge: FieldMerge()) => CheckKind.none,
   ElementDeleteOp(lastWriterWins: true) ||
-  LineupGroupDeleteOp(lastWriterWins: true) => false,
-  _ => true,
+  LineupGroupDeleteOp(lastWriterWins: true) => CheckKind.none,
+  ElementAddOp(expectedElementRevision: null) ||
+  LineupGroupAddOp(expectedLineupRevision: null) => CheckKind.none,
+  _ => CheckKind.revision,
 };
+
+sealed class Entity {
+  const Entity();
+}
+
+final class TheStrategy extends Entity {
+  const TheStrategy();
+
+  @override
+  bool operator ==(Object other) => other is TheStrategy;
+
+  @override
+  int get hashCode => (TheStrategy).hashCode;
+}
+
+final class ThePage extends Entity {
+  const ThePage(this.pagePublicId);
+
+  final String pagePublicId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ThePage && other.pagePublicId == pagePublicId;
+
+  @override
+  int get hashCode => Object.hash(ThePage, pagePublicId);
+}
+
+final class TheRow extends Entity {
+  const TheRow(this.target);
+
+  final Target target;
+
+  @override
+  bool operator ==(Object other) => other is TheRow && other.target == target;
+
+  @override
+  int get hashCode => Object.hash(TheRow, target);
+}
+
+Entity entityOf(StrategyOp op) => switch (op) {
+  StrategyPatchOp() => const TheStrategy(),
+  PageAddOp(:final pagePublicId) ||
+  PageDeleteOp(:final pagePublicId) ||
+  PageReorderOp(:final pagePublicId) ||
+  PagePatchOp(:final pagePublicId) => ThePage(pagePublicId),
+  _ => TheRow(targetOf(op)),
+};
+
+String _digest(Object? json) => sha256
+    .convert(utf8.encode(canonicalJson(json)))
+    .toString()
+    .substring(0, 32);
+
+Object? _without(Object? json, Set<String> keys) => switch (json) {
+  final Map<String, Object?> map => {
+    for (final MapEntry(:key, :value) in map.entries)
+      if (!keys.contains(key)) key: value,
+  },
+  _ => json,
+};
+
+String rowDigest(Row row) => _digest(switch (row) {
+  PageRow() => _without(row.toJson(), const {'revision', 'sortIndex'}),
+  _ => _without(row.toJson(), const {'revision'}),
+});
+
+String strategyDigest(StrategyRow strategy, Iterable<PageRow> pages) =>
+    _digest({
+      'strategy': _without(strategy.toJson(), const {
+        'revision',
+        'updatedAt',
+        'createdAt',
+      }),
+      'pages': [
+        for (final page in [
+          ...pages,
+        ]..sort((a, b) => a.publicId.compareTo(b.publicId)))
+          _without(page.toJson(), const {'revision'}),
+      ],
+    });
+
+int? revisionOfRow(Row row) => switch (row) {
+  ReadableStrategy(:final revision) ||
+  ReadablePageRow(:final revision) ||
+  ReadablePageSettings(:final revision) ||
+  ReadableElementRow(:final revision) ||
+  ReadableLineupGroupRow(:final revision) => revision,
+  UnreadableStrategy(:final stored) ||
+  UnreadablePage(:final stored) ||
+  UnreadablePageSettings(:final stored) ||
+  UnreadableElement(:final stored) ||
+  UnreadableLineupGroup(:final stored) => switch (stored) {
+    {'revision': final int revision} => revision,
+    _ => null,
+  },
+  FolderRow() => null,
+};
+
+Life lifeOfRow(Row row) => switch (row) {
+  DeletedElement() || DeletedLineupGroup() || TrashedPage() => Life.gone,
+  UnreadableElement(deleted: true) => Life.gone,
+  UnreadablePage(trashed: true) => Life.gone,
+  _ => Life.live,
+};
+
+Authored authoredFor(StrategyRows rows, StrategyOp op) {
+  final row = switch (targetOf(op)) {
+    StrategyTarget() => null,
+    PageTarget(:final pagePublicId) => rows.page(pagePublicId),
+    SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
+    ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+    LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+  };
+  if (targetOf(op) is StrategyTarget) {
+    return AuthoredRow(
+      revision: rows.strategy.revision,
+      digest: strategyDigest(rows.strategy, rows.pages),
+    );
+  }
+  return switch ((row, row == null ? null : revisionOfRow(row))) {
+    (final row?, final revision?) => AuthoredRow(
+      revision: revision,
+      digest: rowDigest(row),
+    ),
+    _ => const AuthoredNoRow(),
+  };
+}
+
+Map<SeenPart, String> liveContentOn(Iterable<Row> rows, String pagePublicId) =>
+    {
+      for (final row in rows)
+        if (lifeOfRow(row) == Life.live)
+          switch (row) {
+            PageSettingsRow() => const SeenSettings(),
+            ElementRow(:final publicId) => SeenElement(publicId),
+            LineupGroupRow(:final publicId) => SeenLineupGroup(publicId),
+            _ => const SeenSettings(),
+          }: rowDigest(
+            row,
+          ),
+    };
+
+SeenPage seenPageIn(StrategyRows rows, String pagePublicId) {
+  final page = rows.page(pagePublicId);
+  return SeenPage(
+    pageDigest: page == null ? '' : rowDigest(page),
+    pageRevision: page == null ? 0 : (revisionOfRow(page) ?? 0),
+    content: ContentSeen(
+      liveContentOn([
+        ?rows.settingsOf(pagePublicId),
+        ...rows.elementsOn(pagePublicId),
+        ...rows.lineupGroupsOn(pagePublicId),
+      ], pagePublicId),
+    ),
+  );
+}
