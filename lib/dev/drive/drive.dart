@@ -159,6 +159,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/maps.dart';
@@ -1314,6 +1315,14 @@ Future<void> _run(Map<String, dynamic> step) async {
             ? from + _point(step, 'by')
             : _canvasPointOnScreen(_point(step, 'toWorld')),
       ], shotWhileHeld: step['held'] as String?);
+    case 'dragKey':
+      final from = _centerOf((w) => _hasKey(w, value as String));
+      await _drag([from, from + _point(step, 'by')]);
+    case 'tapItem':
+      await _tap(
+        _itemCenter(_itemId(value as String)),
+        secondary: step['button'] == 'secondary',
+      );
     case 'hoverAgent':
       final id = value as String;
       await _hover(
@@ -1571,6 +1580,34 @@ Future<void> _run(Map<String, dynamic> step) async {
               '${utility.position.dy.toStringAsFixed(1)}) '
               'door=${utility.mapDoor}',
       ]}');
+    case 'logItems':
+      final lineUps = c.read(lineUpProvider).graph;
+      List<double> at(Offset p) => [
+            double.parse(p.dx.toStringAsFixed(2)),
+            double.parse(p.dy.toStringAsFixed(2)),
+          ];
+      _log('ITEMS $value ${jsonEncode({
+            'page': c.read(strategyPageSessionProvider).activePageId,
+            'placed': {
+              for (final item in _placedItems()) item.id: at(item.position),
+            },
+            'freehand': {
+              for (final drawing in c.read(drawingProvider).elements)
+                if (drawing is FreeDrawing)
+                  drawing.id: [
+                    drawing.listOfPoints.length,
+                    ...at(drawing.listOfPoints.first),
+                  ],
+            },
+            'lineupOrigins': {
+              for (final origin in lineUps.origins)
+                origin.id: at(origin.agent.position),
+            },
+            'lineupLandings': {
+              for (final landing in lineUps.landings)
+                landing.id: at(landing.ability.position),
+            },
+          })}');
     case 'logPage':
       _log(
         'PAGE $value strategy=${c.read(strategyProvider).strategyName} '
