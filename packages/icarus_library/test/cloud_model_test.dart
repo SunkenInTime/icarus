@@ -265,6 +265,27 @@ final class Model {
 
   void checkStates() {
     final views = entryViews(client.queue, clock);
+    final queue = client.queue;
+    final rebuilt = CloudQueue(
+      entries: queue.entries,
+      attempts: queue.attempts,
+      nextAttempt: queue.nextAttempt,
+      nextRead: queue.nextRead,
+      base: queue.base,
+      strategy: queue.strategy,
+      session: queue.session,
+    );
+    if (!const MapEquality<String, EntryView>().equals(
+          views,
+          entryViews(rebuilt, clock),
+        ) ||
+        Tally.of(queue, clock) != Tally.of(rebuilt, clock)) {
+      throw StateError(
+        'the carried views differ from views derived afresh:\n'
+        '${views.entries.where((e) => entryViews(rebuilt, clock)[e.key] != e.value).map((e) => '${e.key}: ${e.value.state} ${e.value.go} ${e.value.holds} vs ${entryViews(rebuilt, clock)[e.key]?.state} ${entryViews(rebuilt, clock)[e.key]?.go} ${entryViews(rebuilt, clock)[e.key]?.holds}').join('\n')}\n'
+        '${Tally.of(queue, clock).toJson()} vs ${Tally.of(rebuilt, clock).toJson()}',
+      );
+    }
     for (final entry in client.queue.entries) {
       if (entry is! PendingOp) continue;
       final state = views[entry.id]!.state;
