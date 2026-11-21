@@ -25,7 +25,8 @@ This receipt belongs to the release-candidate branch cut from
 Freeze the shippable SHA to the pull-request head after every required check is
 green. On pull requests every CI job explicitly checks out that source SHA,
 instead of GitHub's temporary merge commit, and the Windows job includes it in
-the artifact name.
+the artifact name. Since #663 (2026-11-20), pull request runs check out the
+merge commit instead, and the artifact is still named after the head commit.
 
 Completed against the current candidate:
 
@@ -217,7 +218,7 @@ fvm flutter build macos --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRON
 On the pull request, CI also builds the Windows installer, runs
 `scripts/test_online_beta_windows_upgrade.ps1`, and uploads the installer plus
 its evidence JSON under an artifact name containing the exact source-branch
-commit SHA. Every CI job explicitly checks out that same SHA.
+commit SHA. Every CI job checks out the pull request merged into main.
 
 Expected on 2026-08-29: no analyzer errors, six existing info notices, 387
 Flutter tests green, 30 Convex tests green, TypeScript green, the contract audit
