@@ -5,6 +5,8 @@ import 'dart:js_interop_unsafe';
 import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/indexed_db_storage.dart';
+import 'package:icarus_library/src/indexed_db/indexed_db_engine.dart'
+    show IndexedDbEngineHold;
 import 'package:web/web.dart';
 
 import '../crash_harness.dart';
@@ -31,6 +33,10 @@ const _patch = '''
     closeThrows: false,
     deleteThrows: false,
     errorThrows: false,
+    swallowComplete: false,
+    swallowReads: false,
+    storeCreationThrows: false,
+    deleteOnVersionError: false,
     opened: [],
   };
   globalThis.icarusFaults = faults;
@@ -43,7 +49,24 @@ const _patch = '''
   };
   const transaction = IDBDatabase.prototype.transaction;
   IDBDatabase.prototype.transaction = function (...args) {
-    return transaction.apply(this, faults.dropOptions ? args.slice(0, 2) : args);
+    const made = transaction.apply(this, faults.dropOptions ? args.slice(0, 2) : args);
+    if (faults.swallowComplete && args[1] === 'readwrite') {
+      Object.defineProperty(made, 'oncomplete', { set() {}, get() { return null; } });
+    }
+    return made;
+  };
+  const getAll = IDBObjectStore.prototype.getAll;
+  IDBObjectStore.prototype.getAll = function (...args) {
+    const request = getAll.apply(this, args);
+    if (faults.swallowReads) {
+      Object.defineProperty(request, 'onsuccess', { set() {}, get() { return null; } });
+    }
+    return request;
+  };
+  const createObjectStore = IDBDatabase.prototype.createObjectStore;
+  IDBDatabase.prototype.createObjectStore = function (...args) {
+    if (faults.storeCreationThrows) throw new TypeError('the store cannot be made');
+    return createObjectStore.apply(this, args);
   };
   const abort = IDBTransaction.prototype.abort;
   IDBTransaction.prototype.abort = function (...args) {
@@ -77,6 +100,9 @@ const _patch = '''
     if (faults.estimateFails === 'reject') return Promise.reject(new DOMException('no estimate', 'UnknownError'));
     if (faults.estimateFails === 'throw') throw new TypeError('estimate is broken');
     if (faults.estimateFails === 'hang') return new Promise(() => {});
+    if (faults.estimateFails === 'badShape') {
+      return Promise.resolve({ get quota() { throw new TypeError('no quota'); }, usage: 0 });
+    }
     if (faults.room === null) return estimate.apply(this, args);
     return Promise.resolve({ quota: faults.room + 4096, usage: 4096 });
   };
@@ -103,15 +129,28 @@ const _patch = '''
     opening.onsuccess = () => {
       const db = opening.result;
       const transaction = db.transaction('rows', 'readwrite');
-      const value = { null: null, undefined: undefined, number: 5 }[kind];
+      const value = kind.startsWith('text:') ? kind.slice(5) : { null: null, undefined: undefined, number: 5 }[kind];
       transaction.objectStore('rows').put(value, [area, key]);
       transaction.oncomplete = () => { db.close(); resolve(); };
     };
   });
+  const locks = Object.getOwnPropertyDescriptor(Navigator.prototype, 'locks');
+  faults.hideLocks = (hidden) => {
+    if (hidden) delete Navigator.prototype.locks;
+    else Object.defineProperty(Navigator.prototype, 'locks', locks);
+  };
   const open = IDBFactory.prototype.open;
   IDBFactory.prototype.open = function (...args) {
     if (faults.openThrows) throw new TypeError('open is broken');
     const opening = open.apply(this, args);
+    if (faults.deleteOnVersionError && args.length > 1) {
+      opening.addEventListener('error', () => {
+        if (opening.error && opening.error.name === 'VersionError') {
+          faults.deleteOnVersionError = false;
+          deleteDatabase.call(indexedDB, args[0]);
+        }
+      });
+    }
     opening.addEventListener('success', () => faults.opened.push(opening.result));
     return opening;
   };
@@ -195,6 +234,20 @@ Future<void> putRaw(String name, String area, String key, String kind) =>
     )).toDart;
 
 void estimateFails(String? how) => _faults['estimateFails'] = how?.toJS;
+
+void hideWebLocks(bool hidden) =>
+    _faults.callMethod<JSAny?>('hideLocks'.toJS, hidden.toJS);
+
+void swallowCompletions(bool swallow) =>
+    _faults['swallowComplete'] = swallow.toJS;
+
+void swallowReads(bool swallow) => _faults['swallowReads'] = swallow.toJS;
+
+void storeCreationThrows(bool throws) =>
+    _faults['storeCreationThrows'] = throws.toJS;
+
+void deleteOnVersionError(bool delete) =>
+    _faults['deleteOnVersionError'] = delete.toJS;
 
 void closeThrows(bool throws) => _faults['closeThrows'] = throws.toJS;
 

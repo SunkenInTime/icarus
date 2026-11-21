@@ -226,3 +226,17 @@ The store changes how a local library is saved, which every earlier rule
 treated as fixed. It ships behind a switch that is off by default. Turning it
 on is its own change, reviewed on its own, after the store has opened real
 libraries from past releases and produced the same pages the old code does.
+
+A library records two format numbers: the engine's layout (SQLite's
+`user_version`, IndexedDB's database version), written when the engine
+creates the storage, and the store's row layout (the `format` row in the
+`library` area), written with the first save into a library that lacks it.
+That row is also how the store knows a library is new: a library with no
+`format` row and no row in any area is created, whatever the engine did
+before. Opening never commits: it decides and reports, and the marker rides
+along with the first save. Both numbers start at 1. A build that finds a
+higher number refuses to open the library; it writes no row and makes no
+commit, though SQLite may still recover a journal or fold its log into the
+file. The package README gives the rule for when each number changes, and
+the full set of states a library can be in, with what is certain in each and
+what the app can say.

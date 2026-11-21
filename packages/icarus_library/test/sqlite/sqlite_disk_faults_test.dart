@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -114,6 +115,96 @@ void _closeAfterCrash(RowsDatabase rows) {
   }
 }
 
+final class _RefusingFiles implements LibraryFiles {
+  _RefusingFiles(
+    this._files, {
+    required this.suffix,
+    required this.error,
+    required this.momentary,
+    this.passFirst = 0,
+    this.refusals = 1 << 30,
+  });
+
+  static const sharingViolation = FileSystemException(
+    'The process cannot access the file because it is being used by another '
+        'process',
+    '/library.sqlite-journal',
+    OSError('sharing violation', 32),
+  );
+
+  static const permissionDenied = FileSystemException(
+    'Permission denied',
+    '/library.sqlite-journal',
+    OSError('permission denied', 13),
+  );
+
+  final LibraryFiles _files;
+  final String suffix;
+  final FileSystemException error;
+  final bool momentary;
+  int passFirst;
+  int refusals;
+  int asked = 0;
+
+  @override
+  int? size(String path) {
+    if (path.endsWith(suffix)) {
+      asked++;
+      if (passFirst > 0) {
+        passFirst--;
+      } else if (refusals > 0) {
+        refusals--;
+        throw error;
+      }
+    }
+    return _files.size(path);
+  }
+
+  @override
+  Uint8List head(String path, int length) => _files.head(path, length);
+
+  @override
+  Database open(String path) => _files.open(path);
+
+  @override
+  void pause(Duration duration) => sleep(duration);
+
+  @override
+  bool isMomentary(FileSystemException error) => momentary;
+}
+
+final class _ScriptedFiles implements LibraryFiles {
+  _ScriptedFiles(this._files, this.failing);
+
+  final LibraryFiles _files;
+  final FileSystemException? Function(int call) failing;
+  Duration clock = Duration.zero;
+  final attemptsStartedAt = <Duration>[];
+  int calls = 0;
+
+  @override
+  int? size(String path) {
+    if (path == libraryPath) {
+      calls++;
+      if (failing(calls) case final error?) throw error;
+    }
+    if (path.endsWith('-wal')) attemptsStartedAt.add(clock);
+    return _files.size(path);
+  }
+
+  @override
+  Uint8List head(String path, int length) => _files.head(path, length);
+
+  @override
+  Database open(String path) => _files.open(path);
+
+  @override
+  void pause(Duration duration) => clock += duration;
+
+  @override
+  bool isMomentary(FileSystemException error) => error.osError?.errorCode == 32;
+}
+
 final class _RacedFiles implements LibraryFiles {
   _RacedFiles(this._files, this._meanwhile);
 
@@ -137,6 +228,9 @@ final class _RacedFiles implements LibraryFiles {
 
   @override
   void pause(Duration duration) {}
+
+  @override
+  bool isMomentary(FileSystemException error) => false;
 }
 
 void main() {
@@ -291,7 +385,17 @@ void main() {
       for (final MapEntry(key: path, value: bytes) in files.entries) {
         drive.disk.replace(path, bytes);
       }
-      expect(drive.open(), isA<RowsRefused>(), reason: name);
+      expect(
+        drive.open(),
+        isA<RowsRefused>().having(
+          (refused) => refused.failure,
+          'failure',
+          name.startsWith('a blank first page')
+              ? isA<DamagedLibrary>()
+              : isA<LibraryFileGone>(),
+        ),
+        reason: name,
+      );
       for (final MapEntry(key: path, value: bytes) in files.entries) {
         expect(drive.disk.bytesOf(path), bytes, reason: '$name: $path');
       }
@@ -308,6 +412,147 @@ void main() {
       }
       drive.unregister();
     }
+  });
+
+  test('a companion file that cannot be read for a moment, as Windows '
+      'answers with a sharing violation for a file being deleted, is tried '
+      'again within the time allowed; one that stays unreadable is a '
+      'failure, never an exception out of the worker', () async {
+    final drive = FaultDrive();
+    final briefly = _RefusingFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      suffix: '-journal',
+      error: _RefusingFiles.sharingViolation,
+      momentary: true,
+      refusals: 2,
+    );
+    final opened = openLibraryFile(libraryPath, briefly);
+    expect(opened, isA<RowsOpened>());
+    if (opened case RowsOpened(:final rows)) rows.close();
+    final always = _RefusingFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      suffix: '-journal',
+      error: _RefusingFiles.sharingViolation,
+      momentary: true,
+    );
+    final watch = Stopwatch()..start();
+    expect(
+      openLibraryFile(libraryPath, always),
+      isA<RowsRefused>().having(
+        (refused) => refused.failure,
+        'failure',
+        isA<DeviceFailure>(),
+      ),
+    );
+    expect(watch.elapsedMilliseconds, lessThan(300));
+    drive.unregister();
+  });
+
+  test('a file error that is not momentary is refused at once, after one '
+      'attempt', () async {
+    final drive = FaultDrive();
+    final files = _RefusingFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      suffix: '-journal',
+      error: _RefusingFiles.permissionDenied,
+      momentary: false,
+    );
+    expect(
+      openLibraryFile(libraryPath, files),
+      isA<RowsRefused>().having(
+        (refused) => refused.failure,
+        'failure',
+        isA<DeviceFailure>(),
+      ),
+    );
+    expect(files.asked, 1);
+    drive.unregister();
+  });
+
+  test('once an attempt found the library held, held stays the answer even '
+      'when later attempts meet a momentary file error', () async {
+    final drive = FaultDrive();
+    final holder = opened(drive.open());
+    final files = _RefusingFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      suffix: '-wal',
+      error: _RefusingFiles.sharingViolation,
+      momentary: true,
+      passFirst: 1,
+    );
+    expect(openLibraryFile(libraryPath, files), isA<RowsHeld>());
+    holder.close();
+    drive.unregister();
+  });
+
+  test('a sharing violation on the size check inside the open is retried '
+      'like any other momentary file error', () async {
+    final drive = FaultDrive();
+    final files = _ScriptedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      (call) => call == 2 ? _RefusingFiles.sharingViolation : null,
+    );
+    final opening = openLibraryFile(
+      libraryPath,
+      files,
+      elapsed: () => files.clock,
+    );
+    expect(opening, isA<RowsOpened>());
+    if (opening case RowsOpened(:final rows)) rows.close();
+    drive.unregister();
+  });
+
+  test('a permanent file error on the size check inside the open is refused '
+      'at once', () async {
+    final drive = FaultDrive();
+    final files = _ScriptedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      (call) => call == 2 ? _RefusingFiles.permissionDenied : null,
+    );
+    expect(
+      openLibraryFile(libraryPath, files, elapsed: () => files.clock),
+      isA<RowsRefused>().having(
+        (refused) => refused.failure,
+        'failure',
+        isA<DeviceFailure>(),
+      ),
+    );
+    expect(files.attemptsStartedAt, hasLength(1));
+    drive.unregister();
+  });
+
+  test('no attempt starts once the time allowed has run out', () async {
+    final drive = FaultDrive();
+    final files = _ScriptedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      (_) => _RefusingFiles.sharingViolation,
+    );
+    expect(
+      openLibraryFile(libraryPath, files, elapsed: () => files.clock),
+      isA<RowsRefused>(),
+    );
+    expect(files.attemptsStartedAt, isNotEmpty);
+    expect(
+      files.attemptsStartedAt.last,
+      lessThan(const Duration(milliseconds: 250)),
+    );
+    drive.unregister();
+  });
+
+  test('an attempt that found the library held makes held the answer, even '
+      'when a later attempt settles as a refusal', () async {
+    final drive = FaultDrive();
+    final holder = opened(drive.open());
+    final files = _ScriptedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      (call) => call >= 3 ? _RefusingFiles.permissionDenied : null,
+    );
+    expect(
+      openLibraryFile(libraryPath, files, elapsed: () => files.clock),
+      isA<RowsHeld>(),
+    );
+    holder.close();
+    drive.unregister();
   });
 
   test('an opener that looks while another creates the library sees it held, '
@@ -415,8 +660,12 @@ void main() {
         )) {
           case StoreNotOpened(:final problem):
             expect(
-              '$problem',
-              anyOf(contains('cannot be opened'), contains('SQLite')),
+              problem,
+              isA<OpenStorageFailed>().having(
+                (failed) => failed.failure,
+                'failure',
+                isA<DamagedLibrary>(),
+              ),
               reason: damage,
             );
           case StoreOpened(:final store):

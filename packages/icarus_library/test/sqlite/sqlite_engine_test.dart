@@ -10,6 +10,8 @@ import 'dart:math';
 import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/sqlite_storage.dart';
+import 'package:icarus_library/src/sqlite/sqlite_engine.dart'
+    show SqliteEngineHold;
 import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
@@ -18,14 +20,26 @@ import '../store_support.dart';
 import '../support.dart';
 import 'fault_harness.dart' show blankDatabasePage, journalHoldingPages;
 import 'library_process.dart';
+import 'library_process_launcher.dart';
 
 final class FileHarness implements EngineHarness {
   FileHarness(this.path);
 
   final String path;
+  final _opened = <SqliteEngine>[];
 
   @override
-  Future<StorageEngine> open() async => SqliteEngine(path);
+  Future<StorageEngine> open() async {
+    final engine = SqliteEngine(path);
+    _opened.add(engine);
+    return engine;
+  }
+
+  Future<void> closeAll() async {
+    for (final engine in _opened) {
+      await engine.close();
+    }
+  }
 
   @override
   Future<void> close(StorageEngine engine) => (engine as SqliteEngine).close();
@@ -49,6 +63,16 @@ Future<String> _refusal(String path) async {
   };
 }
 
+Future<StorageFailure?> _failure(String path) async {
+  final engine = SqliteEngine(path);
+  final leasing = await engine.lease();
+  await engine.close();
+  return switch (leasing) {
+    LeaseFailed(:final failure) => failure,
+    Leased() || HeldByAnotherWriter() => null,
+  };
+}
+
 Future<(String, int, int)> _holdBriefly(String path) async {
   final engine = SqliteEngine(path);
   final leasing = await engine.lease();
@@ -63,10 +87,8 @@ Future<(String, int, int)> _holdBriefly(String path) async {
   };
 }
 
-Future<Process> _start(String mode, String path) => Process.start(
-  Platform.resolvedExecutable,
-  ['run', 'test/sqlite/library_process.dart', mode, path],
-);
+Future<Process> _start(String mode, String path) =>
+    startLibraryProcess(mode, path);
 
 Future<int> _probeGeneration(StorageLease lease, String where) async {
   final generations = <String>{};
@@ -105,10 +127,14 @@ void main() {
 
   tearDown(() => directory.delete(recursive: true));
 
+  tearDownAll(removeLibraryProcess);
+
   group('the engine contract on library files', () {
     for (final check in engineContract) {
       test(check.name, () async {
-        final result = await check.run(FileHarness(path));
+        final harness = FileHarness(path);
+        addTearDown(harness.closeAll);
+        final result = await check.run(harness);
         expect(result, isA<Passed>(), reason: '$result');
       });
     }
@@ -260,7 +286,7 @@ void main() {
     'file is a library whose creation was cut short, and is created',
     () async {
       await File(path).writeAsString('notes from a user');
-      expect(await _refusal(path), contains('not an Icarus library'));
+      expect(await _failure(path), isA<DamagedLibrary>());
       await File(path).writeAsBytes(const []);
       expect(await _refusal(path), 'leased');
       await File(path).delete();
@@ -268,14 +294,22 @@ void main() {
       sqlite3.open(path)
         ..execute('CREATE TABLE t (x)')
         ..close();
-      expect(await _refusal(path), contains('not an Icarus library'));
+      expect(await _failure(path), isA<DamagedLibrary>());
       await File(path).delete();
 
       expect(await _refusal(path), 'leased');
       sqlite3.open(path)
         ..execute('PRAGMA user_version = 2')
         ..close();
-      expect(await _refusal(path), contains('newer build'));
+      final before = File(path).readAsBytesSync();
+      expect(
+        await _failure(path),
+        isA<NewerFormat>()
+            .having((newer) => newer.layer, 'layer', FormatLayer.engine)
+            .having((newer) => newer.found, 'found', 2)
+            .having((newer) => newer.known, 'known', 1),
+      );
+      expect(File(path).readAsBytesSync(), before);
     },
   );
 
@@ -294,21 +328,27 @@ void main() {
       if (File(file).existsSync()) File(file).deleteSync();
     }
 
-    final cases = <String, Map<String, List<int>>>{
-      'an empty file beside its log': {path: [], '$path-wal': log},
-      'an empty file beside a journal that holds pages': {
-        path: [],
-        '$path-journal': journalHoldingPages(),
-      },
-      'a blank first page over more pages': {
-        path: [...blankDatabasePage(), ...library.skip(4096)],
-      },
+    final cases = <String, (Map<String, List<int>>, Matcher)>{
+      'an empty file beside its log': (
+        {path: [], '$path-wal': log},
+        isA<LibraryFileGone>(),
+      ),
+      'an empty file beside a journal that holds pages': (
+        {path: [], '$path-journal': journalHoldingPages()},
+        isA<LibraryFileGone>(),
+      ),
+      'a blank first page over more pages': (
+        {
+          path: [...blankDatabasePage(), ...library.skip(4096)],
+        },
+        isA<DamagedLibrary>(),
+      ),
     };
-    for (final MapEntry(key: name, value: files) in cases.entries) {
+    for (final MapEntry(key: name, value: (files, failure)) in cases.entries) {
       for (final MapEntry(key: file, value: bytes) in files.entries) {
         File(file).writeAsBytesSync(bytes);
       }
-      expect(await _refusal(path), contains('cannot be opened'), reason: name);
+      expect(await _failure(path), failure, reason: name);
       for (final MapEntry(key: file, value: bytes) in files.entries) {
         expect(File(file).readAsBytesSync(), bytes, reason: '$name: $file');
       }
@@ -316,6 +356,168 @@ void main() {
         File(file).deleteSync();
       }
     }
+  });
+
+  test('the store says a library was created when it holds nothing, and '
+      'opening writes nothing: after an engine made the file, after an '
+      'unsaved open, after the file was deleted or emptied; a library with '
+      'rows whose marker was lost is existing, and its next save puts the '
+      'marker back', () async {
+    Future<StorageOrigin> originOf() async {
+      final opening = await LibraryStore.open(
+        SqliteEngine(path),
+        canRead: readsKnownKinds,
+        clock: fixedClock,
+      );
+      final opened = opening as StoreOpened;
+      await opened.store.close();
+      return opened.origin;
+    }
+
+    Future<KeyRead> marker() async {
+      final engine = SqliteEngine(path);
+      final read = await (await leaseOf(engine)).read('library', 'format');
+      await engine.close();
+      return read;
+    }
+
+    final engineOnly = SqliteEngine(path);
+    await leaseOf(engineOnly);
+    await engineOnly.close();
+    expect(await originOf(), isA<StorageCreated>());
+    expect(await originOf(), isA<StorageCreated>());
+    expect(await marker(), isA<KeyMissing>());
+
+    final engine = SqliteEngine(path);
+    final lease = await leaseOf(engine);
+    committed(await lease.commit(const [Put('library', 'folder/x', 'kept')]));
+    await engine.close();
+    expect(await originOf(), isA<StorageExisted>());
+    expect(await marker(), isA<KeyMissing>());
+    final store = await openStore(SqliteEngine(path));
+    savedValue(await store.editLibrary([AddStrategy(sampleStrategy())]));
+    await store.close();
+    expect(valueOf(await marker()), '$storeFormat');
+
+    for (final file in [path, '$path-wal', '$path-shm']) {
+      if (File(file).existsSync()) File(file).deleteSync();
+    }
+    expect(await originOf(), isA<StorageCreated>());
+    for (final file in [path, '$path-wal', '$path-shm']) {
+      if (File(file).existsSync()) File(file).deleteSync();
+    }
+    File(path).writeAsBytesSync(const []);
+    expect(await originOf(), isA<StorageCreated>());
+  });
+
+  test('a library file cut short is a damaged library, refused', () async {
+    final engine = SqliteEngine(path);
+    final lease = await leaseOf(engine);
+    committed(
+      await lease.commit([
+        for (var i = 0; i < 400; i++) Put('a', 'k$i', 'value $i ' * 20),
+      ]),
+    );
+    await engine.close();
+    final whole = File(path).readAsBytesSync();
+    expect(whole.length, greaterThan(16 * 4096));
+    File(path).writeAsBytesSync(whole.sublist(0, whole.length ~/ 2));
+    expect(await _failure(path), isA<DamagedLibrary>());
+  });
+
+  test('a library whose store format is newer than this build is refused by '
+      'the store, and nothing in it changes', () async {
+    final store = await openStore(SqliteEngine(path));
+    await store.close();
+    final engine = SqliteEngine(path);
+    final lease = await leaseOf(engine);
+    committed(await lease.commit(const [Put('library', 'format', '2')]));
+    final before = stored(await lease.entries('library', ''));
+    await engine.close();
+    final opening = await LibraryStore.open(
+      SqliteEngine(path),
+      canRead: readsKnownKinds,
+      clock: fixedClock,
+    );
+    expect(
+      opening,
+      isA<StoreNotOpened>().having(
+        (refused) => refused.problem,
+        'problem',
+        isA<OpenStorageFailed>().having(
+          (failed) => failed.failure,
+          'failure',
+          isA<NewerFormat>()
+              .having((newer) => newer.layer, 'layer', FormatLayer.store)
+              .having((newer) => newer.found, 'found', 2),
+        ),
+      ),
+    );
+    final after = SqliteEngine(path);
+    expect(stored(await (await leaseOf(after)).entries('library', '')), before);
+    await after.close();
+  });
+
+  test('a full disk is OutOfRoom: the commit that does not fit is refused or '
+      'in doubt, never applied', () async {
+    if (Process.runSync('sudo', ['-n', 'true']).exitCode != 0) {
+      markTestSkipped('needs sudo to mount a small tmpfs');
+      return;
+    }
+    final disk = await Directory.systemTemp.createTemp('icarus-full-');
+    final uid = Process.runSync('id', ['-u']).stdout.toString().trim();
+    expect(
+      Process.runSync('sudo', [
+        'mount',
+        '-t',
+        'tmpfs',
+        '-o',
+        'size=1m,uid=$uid',
+        'tmpfs',
+        disk.path,
+      ]).exitCode,
+      0,
+    );
+    addTearDown(() async {
+      Process.runSync('sudo', ['umount', disk.path]);
+      await disk.delete();
+    });
+    final engine = SqliteEngine('${disk.path}/library.sqlite');
+    final lease = await leaseOf(engine);
+    final random = Random(9);
+    Committing last = const CommitApplied();
+    var round = 0;
+    while (last is CommitApplied && round < 200) {
+      last = await lease.commit([
+        Put(
+          'fill',
+          'k${round++}',
+          String.fromCharCodes([
+            for (var c = 0; c < 64 * 1024; c++) 97 + random.nextInt(26),
+          ]),
+        ),
+      ]);
+    }
+    expect(
+      last,
+      anyOf(
+        isA<CommitRefused>().having(
+          (refused) => refused.failure,
+          'failure',
+          isA<OutOfRoom>(),
+        ),
+        isA<CommitUnknown>().having(
+          (unknown) => unknown.failure,
+          'failure',
+          isA<OutOfRoom>(),
+        ),
+      ),
+    );
+    expect(
+      await lease.read('fill', 'k${round - 1}'),
+      anyOf(isA<KeyMissing>(), isA<KeyNotRead>()),
+    );
+    await engine.close();
   });
 
   test('a library whose file is gone but whose log is there is refused, not '
@@ -327,12 +529,12 @@ void main() {
   test('a path that is a folder and a missing folder are failures, and the '
       'next open recovers', () async {
     await Directory(path).create();
-    expect(await _refusal(path), contains('SQLite'));
+    expect(await _failure(path), isA<DeviceFailure>());
     await Directory(path).delete();
     expect(await _refusal(path), 'leased');
     expect(
-      await _refusal('${directory.path}/missing/library.sqlite'),
-      contains('SQLite'),
+      await _failure('${directory.path}/missing/library.sqlite'),
+      isA<DeviceFailure>(),
     );
   });
 

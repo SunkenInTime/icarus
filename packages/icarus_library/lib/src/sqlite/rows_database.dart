@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:sqlite3/sqlite3.dart';
 
 import '../engines/names.dart';
@@ -5,15 +7,22 @@ import '../store/engine.dart';
 
 const libraryApplicationId = 0x49434c42;
 
-const librarySchemaVersion = 1;
+const sqliteFormat = 1;
 
 const rowsMaxKeyLength = 1024;
 
-String _undescribed(FormatException error) =>
-    'SQLite reported a problem in text it could not decode: ${error.message}';
+StorageFailure _undescribed(FormatException error) => DamagedLibrary(
+  'SQLite reported a problem in text it could not decode: ${error.message}',
+);
 
-StorageFailure failureOf(SqliteException error) =>
-    DeviceFailure('SQLite ${error.extendedResultCode}: ${error.message}');
+StorageFailure failureOf(SqliteException error) {
+  final said = 'SQLite ${error.extendedResultCode}: ${error.message}';
+  return switch (error.resultCode) {
+    SqlError.SQLITE_FULL => OutOfRoom(said),
+    SqlError.SQLITE_CORRUPT || SqlError.SQLITE_NOTADB => DamagedLibrary(said),
+    _ => DeviceFailure(said),
+  };
+}
 
 sealed class RowsOpening {
   const RowsOpening();
@@ -35,13 +44,8 @@ final class RowsRefused extends RowsOpening {
   final StorageFailure failure;
 }
 
-RowsRefused refusedFor(String why) =>
-    RowsRefused(DeviceFailure('the library cannot be opened: $why'));
-
 RowsOpening openingFailed(SqliteException error) => switch (error.resultCode) {
   SqlError.SQLITE_BUSY || SqlError.SQLITE_LOCKED => const RowsHeld(),
-  SqlError.SQLITE_NOTADB => refusedFor('not an Icarus library'),
-  SqlError.SQLITE_CORRUPT => refusedFor('damaged (${error.message})'),
   _ => RowsRefused(failureOf(error)),
 };
 
@@ -138,18 +142,20 @@ final class RowsDatabase {
           _create(db);
         case _Damaged(:final why):
           db.close();
-          return refusedFor('damaged ($why)');
+          return RowsRefused(DamagedLibrary(why));
         case _Made():
           break;
       }
       if (_identityProblem(db) ?? _damage(db) case final problem?) {
         db.close();
-        return refusedFor(problem);
+        return RowsRefused(problem);
       }
       final mode = db.select('PRAGMA journal_mode = WAL').single.columnAt(0);
       if (mode != 'wal') {
         db.close();
-        return refusedFor('no write-ahead log ($mode)');
+        return RowsRefused(
+          DeviceFailure('the library cannot use a write-ahead log ($mode)'),
+        );
       }
       db
         ..execute('PRAGMA journal_size_limit = 4194304')
@@ -203,7 +209,10 @@ final class RowsDatabase {
       return openingFailed(error);
     } on FormatException catch (error) {
       _discard(db, prepared);
-      return refusedFor('damaged (${_undescribed(error)})');
+      return RowsRefused(_undescribed(error));
+    } on FileSystemException {
+      _discard(db, prepared);
+      rethrow;
     }
   }
 
@@ -241,30 +250,37 @@ final class RowsDatabase {
     )
     ..execute('CREATE TABLE generation (value INTEGER NOT NULL) STRICT')
     ..execute('INSERT INTO generation VALUES (0)')
-    ..execute('PRAGMA user_version = $librarySchemaVersion')
+    ..execute('PRAGMA user_version = $sqliteFormat')
     ..execute('PRAGMA application_id = $libraryApplicationId')
     ..execute('COMMIT');
 
-  static String? _identityProblem(Database db) {
+  static StorageFailure? _identityProblem(Database db) {
     final applicationId = db.select('PRAGMA application_id').single.columnAt(0);
     if (applicationId != libraryApplicationId) {
-      return 'not an Icarus library (application id $applicationId)';
+      return DamagedLibrary(
+        'not an Icarus library (application id $applicationId)',
+      );
     }
     return switch (db.select('PRAGMA user_version').single.columnAt(0)) {
-      librarySchemaVersion => null,
-      final int version when version > librarySchemaVersion =>
-        'written by a newer build (schema version $version)',
-      final version => 'not an Icarus library (schema version $version)',
+      sqliteFormat => null,
+      final int version when version > sqliteFormat => NewerFormat(
+        FormatLayer.engine,
+        found: version,
+        known: sqliteFormat,
+      ),
+      final version => DamagedLibrary(
+        'not an Icarus library (engine format $version)',
+      ),
     };
   }
 
-  static String? _damage(Database db) {
+  static StorageFailure? _damage(Database db) {
     final check = [
       for (final row in db.select('PRAGMA integrity_check'))
         '${row.columnAt(0)}',
     ];
     if (check case ['ok']) return null;
-    return 'damaged (${check.take(5).join('; ')})';
+    return DamagedLibrary(check.take(5).join('; '));
   }
 
   final Database _db;
@@ -290,11 +306,11 @@ final class RowsDatabase {
     } on SqliteException catch (error) {
       return StorageFailed(failureOf(error));
     } on FormatException catch (error) {
-      return StorageFailed(DeviceFailure(_undescribed(error)));
+      return StorageFailed(_undescribed(error));
     }
   }
 
-  static const _notTextFailure = DeviceFailure(
+  static const _notTextFailure = DamagedLibrary(
     'the library holds a value that is not text',
   );
 
@@ -404,7 +420,7 @@ final class RowsDatabase {
     } on SqliteException catch (error) {
       return _failedCommit(failureOf(error), phase);
     } on FormatException catch (error) {
-      return _failedCommit(DeviceFailure(_undescribed(error)), phase);
+      return _failedCommit(_undescribed(error), phase);
     }
   }
 

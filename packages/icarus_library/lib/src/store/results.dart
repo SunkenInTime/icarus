@@ -448,6 +448,18 @@ final class RemoveFolder extends LibraryChange {
   final String folderPublicId;
 }
 
+sealed class StorageOrigin {
+  const StorageOrigin();
+}
+
+final class StorageExisted extends StorageOrigin {
+  const StorageExisted();
+}
+
+final class StorageCreated extends StorageOrigin {
+  const StorageCreated();
+}
+
 sealed class OpenProblem {
   const OpenProblem();
 }

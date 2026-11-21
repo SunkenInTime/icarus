@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -397,6 +398,9 @@ final class FaultLibraryFiles implements LibraryFiles {
 
   @override
   void pause(Duration duration) {}
+
+  @override
+  bool isMomentary(FileSystemException error) => false;
 
   @override
   Database open(String path) =>
