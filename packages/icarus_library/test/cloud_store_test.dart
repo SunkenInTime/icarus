@@ -505,6 +505,29 @@ void main() {
     );
     expect(counts.commits, 0);
   });
+
+  test('a cloud strategy with work outstanding cannot be removed, and none '
+      'can be filed into a folder', () async {
+    final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+    await addCloud(store, initialRows());
+    savedValue(await store.commit(strategyId, movePatch('move')));
+    expect(
+      await store.editLibrary([const RemoveStrategy(strategyId)]),
+      isA<Refused<LibraryEdited, LibraryRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<CloudWorkOutstanding>(),
+      ),
+    );
+    expect(
+      await store.editLibrary([const MoveStrategy(strategyId, null)]),
+      isA<Refused<LibraryEdited, LibraryRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<KeptInTheCloud>(),
+      ),
+    );
+  });
 }
 
 Contents editable(Contents contents) => {
