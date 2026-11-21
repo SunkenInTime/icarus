@@ -2,6 +2,7 @@ import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_record.dart';
+import 'package:icarus/library_store/rows_digest.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -79,6 +80,24 @@ final class StoreCopyUnreadable extends CopyRefusal {
   String toString() => 'the store\'s copy could not be read back: $stored';
 }
 
+final class RowsNotEncodable extends CopyRefusal {
+  const RowsNotEncodable(this.notDigested);
+
+  final RowsNotDigested notDigested;
+
+  @override
+  String toString() => 'a row it converts to is not JSON: $notDigested';
+}
+
+final class StoreCouldNotEncode extends CopyRefusal {
+  const StoreCouldNotEncode(this.failure);
+
+  final WouldNotReadBack failure;
+
+  @override
+  String toString() => 'the store would not write it: $failure';
+}
+
 final class StoreHoldsItWithoutRecord extends CopyRefusal {
   const StoreHoldsItWithoutRecord();
 
@@ -105,9 +124,9 @@ final class FolderRemovedWithHive extends FolderCopy {
 }
 
 final class FolderNotCopied extends FolderCopy {
-  const FolderNotCopied(super.folderId, this.refusal);
+  const FolderNotCopied(super.folderId, this.reason);
 
-  final LibraryRefusal refusal;
+  final CopyRefusal reason;
 }
 
 sealed class CopyStop {
@@ -170,6 +189,12 @@ final class _EditRefused extends _Edit {
   final LibraryRefusal refusal;
 }
 
+final class _EditNotEncoded extends _Edit {
+  const _EditNotEncoded(this.failure);
+
+  final WouldNotReadBack failure;
+}
+
 final class _EditStopped extends _Edit {
   const _EditStopped(this.stop);
 
@@ -180,6 +205,8 @@ Future<_Edit> _edit(LibraryStore store, List<LibraryChange> changes) async =>
     switch (await store.editLibrary(changes)) {
       Saved() || NothingToSave() => const _Edited(),
       Refused(:final reason) => _EditRefused(reason),
+      NotSaved(failure: final WouldNotReadBack failure) =>
+        _EditNotEncoded(failure),
       NotSaved(:final failure) => _EditStopped(StoreDidNotSave(failure)),
       SaveInDoubt(:final failure) => _EditStopped(StoreSaveInDoubt(failure)),
     };
@@ -220,7 +247,7 @@ Future<ShadowCopy> copyHiveIntoStore(
   }
   final storedFolders = {for (final row in list.folders) row.publicId: row};
   for (final folder in _parentsFirst(hive.folders)) {
-    final row = folderToRow(folder);
+    final row = _folderRow(folder, storedFolders[folder.id]);
     if (storedFolders[folder.id] == row) {
       folders.add(FolderUnchanged(folder.id));
       continue;
@@ -229,7 +256,9 @@ Future<ShadowCopy> copyHiveIntoStore(
       case _Edited():
         folders.add(FolderCopied(folder.id));
       case _EditRefused(:final refusal):
-        folders.add(FolderNotCopied(folder.id, refusal));
+        folders.add(FolderNotCopied(folder.id, StoreRefusedIt(refusal)));
+      case _EditNotEncoded(:final failure):
+        folders.add(FolderNotCopied(folder.id, StoreCouldNotEncode(failure)));
       case _EditStopped(:final stop):
         return stopped(stop);
     }
@@ -267,6 +296,8 @@ Future<ShadowCopy> copyHiveIntoStore(
         strategies.add(StrategyRemovedWithHive(id));
       case _EditRefused(:final refusal):
         strategies.add(StrategyNotCopied(id, StoreRefusedIt(refusal)));
+      case _EditNotEncoded(:final failure):
+        strategies.add(StrategyNotCopied(id, StoreCouldNotEncode(failure)));
       case _EditStopped(:final stop):
         return stopped(stop);
     }
@@ -282,7 +313,11 @@ Future<ShadowCopy> copyHiveIntoStore(
       case _Edited():
         folders.add(FolderRemovedWithHive(row.publicId));
       case _EditRefused(:final refusal):
-        folders.add(FolderNotCopied(row.publicId, refusal));
+        folders.add(FolderNotCopied(row.publicId, StoreRefusedIt(refusal)));
+      case _EditNotEncoded(:final failure):
+        folders.add(
+          FolderNotCopied(row.publicId, StoreCouldNotEncode(failure)),
+        );
       case _EditStopped(:final stop):
         return stopped(stop);
     }
@@ -297,94 +332,125 @@ Future<_Step> _copyOne(
   required bool inStore,
 }) async {
   final id = strategy.id;
-  final digest = hiveRecordDigestOf(strategy);
+  final StrategyRowSet hiveRows;
+  switch (strategyToRows(strategy)) {
+    case StrategyRowsRefused(:final problems):
+      return _Done(StrategyNotCopied(id, ConverterRefused(problems)));
+    case StrategyRowsMade(:final rows):
+      hiveRows = rows;
+  }
+  final String digest;
+  switch (rowsDigestOf(hiveRows)) {
+    case final RowsNotDigested notDigested:
+      return _Done(StrategyNotCopied(id, RowsNotEncodable(notDigested)));
+    case RowsDigested(digest: final digested):
+      digest = digested;
+  }
   switch (recorded) {
     case null when inStore:
       return _Done(StrategyNotCopied(id, const StoreHoldsItWithoutRecord()));
     case null:
-      return _add(store, strategy, digest, StrategyCopied(id));
+      return _addRows(
+        store,
+        hiveRows,
+        HiveRecordDigest(strategyPublicId: id, digest: digest),
+        StrategyCopied(id),
+      );
     case HiveRecordDigest(digest: final copied) when copied == digest:
       return _Done(StrategyUnchanged(id));
     case HiveRecordDigest(digest: final copied):
-      switch (await readStoredStrategy(store, id)) {
-        case StoredNotRead(:final failure):
+      final StrategyRowSet storedRows;
+      switch (await readStoredRows(store, id)) {
+        case StoredRowsNot(stored: StoredNotRead(:final failure)):
           return _Stopped(StoreDidNotRead(failure));
-        case final StoredMissing missing:
-          return _Done(StrategyNotCopied(id, StoreCopyUnreadable(missing)));
-        case final StoredUnreadable unreadable:
-          return _Done(StrategyNotCopied(id, StoreCopyUnreadable(unreadable)));
-        case StoredAsData(strategy: final inStoreNow):
-          final storeNow = hiveRecordDigestOf(inStoreNow);
-          if (storeNow != copied) {
-            return _Done(
-              StrategyChangedOnBothSides(
-                id,
-                copiedFrom: copied,
-                hiveNow: digest,
-                storeNow: storeNow,
-              ),
-            );
-          }
-          return _replace(store, strategy, digest);
+        case StoredRowsNot(:final stored):
+          return _Done(StrategyNotCopied(id, StoreCopyUnreadable(stored)));
+        case StoredRowsRead(:final rows):
+          storedRows = rows;
       }
+      final String storeNow;
+      switch (rowsDigestOf(storedRows)) {
+        case final RowsNotDigested notDigested:
+          return _Done(StrategyNotCopied(id, RowsNotEncodable(notDigested)));
+        case RowsDigested(digest: final digested):
+          storeNow = digested;
+      }
+      if (storeNow != copied) {
+        return _Done(
+          StrategyChangedOnBothSides(
+            id,
+            copiedFrom: copied,
+            hiveNow: digest,
+            storeNow: storeNow,
+          ),
+        );
+      }
+      return _takeHiveVersion(
+        store,
+        stored: storedRows,
+        hive: hiveRows,
+        record: recorded.withDigest(digest),
+      );
   }
-}
-
-Future<_Step> _add(
-  LibraryStore store,
-  StrategyData strategy,
-  String digest,
-  StrategyCopy copied,
-) async {
-  final StrategyRowsMade made;
-  switch (strategyToRows(strategy)) {
-    case StrategyRowsRefused(:final problems):
-      return _Done(StrategyNotCopied(strategy.id, ConverterRefused(problems)));
-    case final StrategyRowsMade rows:
-      made = rows;
-  }
-  return _addRows(store, strategy.id, made, digest, copied);
 }
 
 Future<_Step> _addRows(
   LibraryStore store,
-  String id,
-  StrategyRowsMade made,
-  String digest,
+  StrategyRowSet rows,
+  HiveRecordDigest record,
   StrategyCopy copied,
 ) async =>
     switch (await _edit(store, [
-      AddStrategy(made.rows),
-      RememberHiveRecord(
-          HiveRecordDigest(strategyPublicId: id, digest: digest)),
+      AddStrategy(rows),
+      RememberHiveRecord(record),
     ])) {
       _Edited() => _Done(copied),
-      _EditRefused(:final refusal) =>
-        _Done(StrategyNotCopied(id, StoreRefusedIt(refusal))),
+      _EditRefused(:final refusal) => _Done(
+          StrategyNotCopied(record.strategyPublicId, StoreRefusedIt(refusal)),
+        ),
+      _EditNotEncoded(:final failure) => _Done(
+          StrategyNotCopied(
+            record.strategyPublicId,
+            StoreCouldNotEncode(failure),
+          ),
+        ),
       _EditStopped(:final stop) => _Stopped(stop),
     };
 
-Future<_Step> _replace(
-  LibraryStore store,
-  StrategyData strategy,
-  String digest,
-) async {
-  final id = strategy.id;
-  final StrategyRowsMade made;
-  switch (strategyToRows(strategy)) {
-    case StrategyRowsRefused(:final problems):
-      return _Done(StrategyNotCopied(id, ConverterRefused(problems)));
-    case final StrategyRowsMade rows:
-      made = rows;
-  }
+Future<_Step> _takeHiveVersion(
+  LibraryStore store, {
+  required StrategyRowSet stored,
+  required StrategyRowSet hive,
+  required HiveRecordDigest record,
+}) async {
+  final id = record.strategyPublicId;
   switch (await _edit(store, [RemoveStrategy(id)])) {
     case _Edited():
-      return _addRows(store, id, made, digest, StrategyTookHiveVersion(id));
+      return _addRows(store, hive, record, StrategyTookHiveVersion(id));
     case _EditRefused(:final refusal):
       return _Done(StrategyNotCopied(id, StoreRefusedIt(refusal)));
+    case _EditNotEncoded(:final failure):
+      return _Done(StrategyNotCopied(id, StoreCouldNotEncode(failure)));
     case _EditStopped(:final stop):
       return _Stopped(stop);
   }
+}
+
+ReadableFolder _folderRow(Folder folder, FolderRow? stored) {
+  final fromHive = folderToRow(folder);
+  return switch (stored) {
+    ReadableFolder(:final unknownFields) => ReadableFolder(
+        publicId: fromHive.publicId,
+        name: fromHive.name,
+        parentFolderPublicId: fromHive.parentFolderPublicId,
+        iconId: fromHive.iconId,
+        color: fromHive.color,
+        customColorValue: fromHive.customColorValue,
+        createdAt: fromHive.createdAt,
+        unknownFields: unknownFields,
+      ),
+    UnreadableFolder() || null => fromHive,
+  };
 }
 
 List<Folder> _parentsFirst(List<Folder> folders) {

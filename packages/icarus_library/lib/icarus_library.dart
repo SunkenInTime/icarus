@@ -39,10 +39,14 @@ export 'src/json.dart'
     show
         Admission,
         Admitted,
+        Encoded,
+        Encoding,
         JsonList,
         JsonObject,
         NotAdmitted,
+        NotEncoded,
         admit,
+        encodeJson,
         jsonObject,
         jsonValue,
         maxJsonDepth;

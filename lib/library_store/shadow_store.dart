@@ -80,8 +80,30 @@ final class UiStats {
       '${worstRaster.inMilliseconds} ms';
 }
 
+final class _LibraryBoxWrites {
+  _LibraryBoxWrites() {
+    _subscriptions = [
+      for (final events in [
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).watch(),
+        Hive.box<Folder>(HiveBoxNames.foldersBox).watch(),
+      ])
+        events.listen((_) => count++),
+    ];
+  }
+
+  late final List<StreamSubscription<BoxEvent>> _subscriptions;
+  var count = 0;
+
+  Future<void> stop() async {
+    for (final subscription in _subscriptions) {
+      await subscription.cancel();
+    }
+  }
+}
+
 final class _UiWatch {
   var _watching = true;
+  var _started = false;
   var _longestMainBlock = Duration.zero;
   var _frames = 0;
   var _frameGapsOver50ms = 0;
@@ -125,11 +147,14 @@ final class _UiWatch {
     }
   }
 
-  void start() => unawaited(_done);
+  void start() {
+    _started = true;
+    unawaited(_done);
+  }
 
   Future<UiStats> stop() async {
     _watching = false;
-    await _done;
+    if (_started) await _done;
     return UiStats(
       longestMainBlock: _longestMainBlock,
       frames: _frames,
@@ -151,7 +176,10 @@ final class ShadowRun {
     required this.uiDuringCheck,
     required this.hiveFiles,
     required List<String> hiveFilesChanged,
+    required this.libraryBoxWrites,
   }) : hiveFilesChanged = List.unmodifiable(hiveFilesChanged);
+
+  final int libraryBoxWrites;
 
   final ShadowCopy copy;
   final StoreCheck check;
@@ -206,10 +234,23 @@ HiveLibrary _hiveLibrary() => HiveLibrary(
     );
 
 class ShadowNotifier extends Notifier<ShadowState> {
+  Future<void>? running;
+
   @override
   ShadowState build() => const ShadowIdle();
 
-  Future<void> start({
+  void begin({
+    required Future<LibraryStoreOpened> opening,
+    required Future<void> firstFrame,
+    required String hiveDirectory,
+  }) =>
+      running = _run(
+        opening: opening,
+        firstFrame: firstFrame,
+        hiveDirectory: hiveDirectory,
+      );
+
+  Future<void> _run({
     required Future<LibraryStoreOpened> opening,
     required Future<void> firstFrame,
     required String hiveDirectory,
@@ -228,36 +269,45 @@ class ShadowNotifier extends Notifier<ShadowState> {
     await firstFrame;
     final before = await HiveFiles.of(Directory(hiveDirectory));
     final hive = _hiveLibrary();
+    final writes = _LibraryBoxWrites();
     final copyWatch = _UiWatch()..start();
-    final copyClock = Stopwatch()..start();
-    state = ShadowCopying(0, hive.strategies.length);
-    final copy = await copyHiveIntoStore(
-      hive,
-      store,
-      breathe: _breathe,
-      progress: (done, total) => state = ShadowCopying(done, total),
-    );
-    final copyTook = copyClock.elapsed;
-    final uiDuringCopy = await copyWatch.stop();
-    state = const ShadowChecking();
-    final checkWatch = _UiWatch()..start();
-    final checkClock = Stopwatch()..start();
-    final check = await checkStoreAgainstHive(hive, store, breathe: _breathe);
-    final checkTook = checkClock.elapsed;
-    final uiDuringCheck = await checkWatch.stop();
-    final after = await HiveFiles.of(Directory(hiveDirectory));
-    state = ShadowFinished(
-      ShadowRun(
-        copy: copy,
-        check: check,
-        copyTook: copyTook,
-        checkTook: checkTook,
-        uiDuringCopy: uiDuringCopy,
-        uiDuringCheck: uiDuringCheck,
-        hiveFiles: after.count,
-        hiveFilesChanged: after.changedSince(before),
-      ),
-    );
+    final checkWatch = _UiWatch();
+    try {
+      final copyClock = Stopwatch()..start();
+      state = ShadowCopying(0, hive.strategies.length);
+      final copy = await copyHiveIntoStore(
+        hive,
+        store,
+        breathe: _breathe,
+        progress: (done, total) => state = ShadowCopying(done, total),
+      );
+      final copyTook = copyClock.elapsed;
+      final uiDuringCopy = await copyWatch.stop();
+      state = const ShadowChecking();
+      checkWatch.start();
+      final checkClock = Stopwatch()..start();
+      final check = await checkStoreAgainstHive(hive, store, breathe: _breathe);
+      final checkTook = checkClock.elapsed;
+      final uiDuringCheck = await checkWatch.stop();
+      final after = await HiveFiles.of(Directory(hiveDirectory));
+      state = ShadowFinished(
+        ShadowRun(
+          copy: copy,
+          check: check,
+          copyTook: copyTook,
+          checkTook: checkTook,
+          uiDuringCopy: uiDuringCopy,
+          uiDuringCheck: uiDuringCheck,
+          hiveFiles: after.count,
+          hiveFilesChanged: after.changedSince(before),
+          libraryBoxWrites: writes.count,
+        ),
+      );
+    } finally {
+      await copyWatch.stop();
+      await checkWatch.stop();
+      await writes.stop();
+    }
   }
 
   Future<StoreCheck> checkAgain(LibraryStore store) =>

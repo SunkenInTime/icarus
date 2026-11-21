@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
+import 'package:icarus/startup/hive_store_launch.dart';
 
 void main() {
   test('the store is off when nothing asks for it', () {
@@ -46,5 +47,35 @@ void main() {
       ),
       throwsA(isA<LibraryStoreLaunchException>()),
     );
+  });
+
+  test(
+      'every argument the switch does not own reaches the file-open parser unchanged and in order',
+      () {
+    const args = [
+      r'C:\Strats\B site.ica',
+      '--library-store=shadow',
+      '--hive-store-dir=/tmp/store',
+      '--library-storex=1',
+      '--library-store',
+      'shadow',
+      '/home/me/a.ica',
+    ];
+    final launch = LibraryStoreLaunch.parse(args, mayShadow: true);
+    expect(launch.otherArgs, [
+      r'C:\Strats\B site.ica',
+      '--hive-store-dir=/tmp/store',
+      '--library-storex=1',
+      '--library-store',
+      'shadow',
+      '/home/me/a.ica',
+    ]);
+    expect(HiveStoreLaunch.parse(launch.otherArgs).fileOpenArgs, [
+      r'C:\Strats\B site.ica',
+      '--library-storex=1',
+      '--library-store',
+      'shadow',
+      '/home/me/a.ica',
+    ]);
   });
 }

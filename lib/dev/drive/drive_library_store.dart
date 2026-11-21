@@ -36,22 +36,16 @@ Future<String> firstFrameLine(ProviderContainer c) async {
 }
 
 Future<ShadowState> _settled(ProviderContainer c, Duration patience) async {
-  final clock = Stopwatch()..start();
-  while (true) {
-    final state = c.read(shadowProvider);
-    switch (state) {
-      case ShadowFinished() || ShadowNotOpened():
-        return state;
-      case ShadowIdle() || ShadowCopying() || ShadowChecking():
-        if (clock.elapsed > patience) {
-          throw StoreStepFailed([
-            'the shadow copy did not finish in ${patience.inSeconds} s: '
-                '${_describeState(state)}',
-          ]);
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-  }
+  final running = c.read(shadowProvider.notifier).running ??
+      (throw StoreStepFailed(['the shadow copy never started']));
+  await running.timeout(
+    patience,
+    onTimeout: () => throw StoreStepFailed([
+      'the shadow copy did not finish in ${patience.inSeconds} s: '
+          '${_describeState(c.read(shadowProvider))}',
+    ]),
+  );
+  return c.read(shadowProvider);
 }
 
 String _describeState(ShadowState state) => switch (state) {
@@ -111,9 +105,22 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
           for (final problem in checked.strategyProblems)
             ...switch (problem) {
               StrategySame() => const <String>[],
-              StrategyDiffers(:final strategyId, :final differences) => [
-                  for (final difference in differences)
+              StrategyDiffers(:final strategyId, :final rows, :final fields) =>
+                [
+                  for (final difference in [...rows, ...fields])
                     'STORE difference $strategyId $difference',
+                ],
+              StrategyNotConverted(:final strategyId, :final problems) => [
+                  'STORE not converted $strategyId: '
+                      '${problems.map((p) => p.runtimeType).join(', ')}',
+                ],
+              StrategyRowsNotEncodable(:final strategyId, :final notDigested) =>
+                ['STORE not encodable $strategyId: $notDigested'],
+              StrategyNotListed(:final strategyId) => [
+                  'STORE not listed $strategyId',
+                ],
+              RecordWithoutStrategy(:final strategyId) => [
+                  'STORE record without strategy $strategyId',
                 ],
               StrategyMissingFromStore(:final strategyId) => [
                   'STORE missing $strategyId',
@@ -182,8 +189,8 @@ List<String> _describeCopy(ShadowRun run) {
         'STORE changed on both sides $strategyId: copied from $copiedFrom, '
             'Hive now $hiveNow, store now $storeNow',
     for (final folder in folders)
-      if (folder case FolderNotCopied(:final folderId, :final refusal))
-        'STORE folder not copied $folderId: $refusal',
+      if (folder case FolderNotCopied(:final folderId, :final reason))
+        'STORE folder not copied $folderId: $reason',
   ];
 }
 
@@ -221,6 +228,7 @@ Future<List<String>> waitForShadowStore(
     ...describeCheck(run.check, run.checkTook),
     'STORE Hive files ${run.hiveFiles} read before and after; library '
         'boxes ${libraryChanged.isEmpty ? 'unchanged' : 'changed: ${libraryChanged.join(', ')}'}; '
+        'writes to them seen ${run.libraryBoxWrites}; '
         'boxes the copy never opens, written by the rest of the app: '
         '${othersChanged.isEmpty ? 'none' : othersChanged.join(', ')}',
   ];
@@ -246,6 +254,8 @@ Future<List<String>> waitForShadowStore(
     },
     if (libraryChanged.isNotEmpty)
       'library boxes changed: ${libraryChanged.join(', ')}',
+    if (run.libraryBoxWrites > 0)
+      'the library boxes were written ${run.libraryBoxWrites} times',
     for (final MapEntry(:key, :value) in expected.entries)
       if (counts[key] != value) '$key is ${counts[key]}, expected $value',
   ].nonNulls.toList();
