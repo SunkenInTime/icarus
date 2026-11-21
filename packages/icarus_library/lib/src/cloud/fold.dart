@@ -59,8 +59,7 @@ Folding fold(StrategyOp first, StrategyOp then) {
     case (final ElementPatchOp a, final ElementPatchOp b)
         when a.merge != null &&
             b.merge != null &&
-            a.merge!.base == null &&
-            b.merge!.base == null &&
+            (a.merge!.base == null) == (b.merge!.base == null) &&
             b.payload != null &&
             a.pagePublicId == null &&
             b.pagePublicId == null:
@@ -81,6 +80,14 @@ Folding fold(StrategyOp first, StrategyOp then) {
           },
           merge: FieldMerge(
             fields: {...a.merge!.fields, ...b.merge!.fields}.toList(),
+            base: switch ((a.merge!.base, b.merge!.base)) {
+              (final first?, final then?) => {
+                for (final MapEntry(:key, :value) in then.entries)
+                  if (!a.merge!.fields.contains(key)) key: value,
+                ...first.toJson(),
+              },
+              _ => null,
+            },
           ),
         ),
       );
