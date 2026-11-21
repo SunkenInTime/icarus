@@ -12,14 +12,11 @@ class AbilityBarProvider extends Notifier<AgentData?> {
     return null;
   }
 
-  /// Shows [data]'s abilities, or closes the bar for good when it is null.
   void updateData(AgentData? data) {
     _setAside = null;
     state = data;
   }
 
-  /// Hides the bar because the user did something else on the page, keeping
-  /// its agent for [bringBack].
   void setAside() {
     final shown = state;
     if (shown == null) return;
@@ -27,7 +24,6 @@ class AbilityBarProvider extends Notifier<AgentData?> {
     state = null;
   }
 
-  /// Shows the agent [setAside] hid, once the user is back on the select tool.
   void bringBack() {
     final agent = _setAside;
     if (agent == null) return;
