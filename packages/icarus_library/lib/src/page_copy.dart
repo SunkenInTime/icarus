@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'derived_id.dart';
+import 'json.dart';
 import 'payloads.dart';
 import 'rows.dart';
 import 'strategy_rows.dart';
@@ -79,11 +80,9 @@ final class PageCopy {
         return LiveElement(
           publicId: publicId,
           pagePublicId: pagePublicId,
-          payload: ElementPayload(
-            kind: payload.kind,
-            payloadVersion: payload.payloadVersion,
-            data: _copiedData(payload.kind.name, payload.data, publicId),
-            unknownFields: payload.unknownFields,
+          payload: elementPayloadAdopting(
+            payload,
+            _copiedData(payload.kind.name, payload.data.raw, publicId),
           ),
           sortIndex: sortIndex,
           revision: 1,
@@ -92,7 +91,7 @@ final class PageCopy {
       case UnreadableElement(:final stored, :final problem, :final reason):
         final publicId = _elementId(source.publicId);
         final json = switch (stored) {
-          final Map<String, Object?> json => json,
+          final JsonObject json => json.raw,
           _ => throw ArgumentError.value(
             source,
             'source',
@@ -149,7 +148,7 @@ final class PageCopy {
   }
 
   LiveLineupGroup _lineupGroup(LiveLineupGroup source, String pagePublicId) {
-    final data = source.payload.data;
+    final data = source.payload.data.raw;
     final id = _lineupId(data['id']);
     Object? spot(Object? spot, String markerKey) {
       if (spot is! Map<String, Object?>) return spot;
@@ -180,23 +179,18 @@ final class PageCopy {
       publicId: id,
       pagePublicId: pagePublicId,
       unknownFields: source.unknownFields,
-      payload: LineupGroupPayload(
-        payloadVersion: source.payload.payloadVersion,
-        unknownFields: source.payload.unknownFields,
-        data: {
-          ...data,
-          'id': id,
-          'origins': [
-            for (final origin in entries(data['origins']))
-              spot(origin, 'agent'),
-          ],
-          'landings': [
-            for (final landing in entries(data['landings']))
-              spot(landing, 'ability'),
-          ],
-          'links': [for (final item in entries(data['links'])) link(item)],
-        },
-      ),
+      payload: lineupPayloadAdopting(source.payload, {
+        ...data,
+        'id': id,
+        'origins': [
+          for (final origin in entries(data['origins'])) spot(origin, 'agent'),
+        ],
+        'landings': [
+          for (final landing in entries(data['landings']))
+            spot(landing, 'ability'),
+        ],
+        'links': [for (final item in entries(data['links'])) link(item)],
+      }),
       sortIndex: source.sortIndex,
       revision: 1,
     );

@@ -817,10 +817,10 @@ final class LibraryStore {
       PageContent(
         page: page,
         settings: strategy.settingsOf(pagePublicId),
-        elements: loaded.elements.values.toList(),
-        lineupGroups: loaded.lineupGroups.values.toList(),
+        elements: loaded.elements.values,
+        lineupGroups: loaded.lineupGroups.values,
         unknownKinds: loaded.unknownKinds,
-        unplaced: loaded.unplaced.values.toList(),
+        unplaced: loaded.unplaced.values,
         foreignNames: loaded.foreignNames,
       ),
     );

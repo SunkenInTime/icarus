@@ -292,7 +292,7 @@ bool _appReadsLineup(LineupGroupPayload payload) {
   if (id is! String) return false;
   try {
     lineUpGraphFromCloudRows([
-      CloudLineupRow(publicId: id, payload: payload.toJson()),
+      CloudLineupRow(publicId: id, payload: payload.toPlainJson()),
     ]);
     return true;
   } on FormatException {

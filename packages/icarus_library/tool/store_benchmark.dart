@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:async';
+import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
 
@@ -225,28 +226,51 @@ Future<void> main() async {
     await wideNames.time(() async => _digestAll(_items * _widePages, run));
   }
 
-  stdout
-    ..writeln('Memory engine')
-    ..writeln(
-      '  open the store and its library list ($_strategies strategies): '
-      '${listing.summary}',
-    )
-    ..writeln(
-      '  open a page in a strategy not yet read ($_items items, half of '
-      'them $_drawingPoints-point drawings): ${coldPage.summary}',
-    )
-    ..writeln('  open a page in a strategy already read: ${warmPage.summary}')
-    ..writeln('  commit: move one agent on that page: ${move.summary}')
-    ..writeln(
-      '  commit: rewrite one $_drawingPoints-point drawing on that page: '
-      '${redraw.summary}',
-    )
-    ..writeln(
-      '  open a $_widePages-page strategy and every page of it '
-      '(${_items * _widePages} items): ${wide.summary}',
-    )
-    ..writeln('  digest $_items ids: ${pageNames.summary}')
-    ..writeln('  digest ${_items * _widePages} ids: ${wideNames.summary}');
+  final stagesStorage = MemoryStorage(storage.contents);
+  final listed = _Times();
+  final decoded = _Times();
+  final admitted = _Times();
+  for (var run = 0; run < 10; run++) {
+    final engine = MemoryEngine(stagesStorage);
+    final lease = switch (await engine.lease()) {
+      Leased(:final lease) => lease,
+      final other => throw StateError('$other'),
+    };
+    final page = digestOf('big-a');
+    final texts = await listed.time(
+      () async =>
+          switch (await lease.entries(strategyArea('big'), 'content/$page/')) {
+            Done(:final value) => [for (final entry in value) entry.value],
+            StorageFailed(:final failure) => throw StateError('$failure'),
+          },
+    );
+    await decoded.time(
+      () async => [for (final text in texts) jsonDecode(text)],
+    );
+    await admitted.time(() async => [for (final text in texts) admit(text)]);
+    await engine.close();
+  }
+
+  for (final line in [
+    'Memory engine',
+    '  open the store and its library list ($_strategies strategies): '
+        '${listing.summary}',
+    '  open a page in a strategy not yet read ($_items items, half of '
+        'them $_drawingPoints-point drawings): ${coldPage.summary}',
+    '  open a page in a strategy already read: ${warmPage.summary}',
+    '  that page, the engine listing alone: ${listed.summary}',
+    '  that page, jsonDecode of its rows alone: ${decoded.summary}',
+    '  that page, admit of its rows: ${admitted.summary}',
+    '  commit: move one agent on that page: ${move.summary}',
+    '  commit: rewrite one $_drawingPoints-point drawing on that page: '
+        '${redraw.summary}',
+    '  open a $_widePages-page strategy and every page of it '
+        '(${_items * _widePages} items): ${wide.summary}',
+    '  digest $_items ids: ${pageNames.summary}',
+    '  digest ${_items * _widePages} ids: ${wideNames.summary}',
+  ]) {
+    Zone.current.print(line);
+  }
 }
 
 const _widePages = 20;

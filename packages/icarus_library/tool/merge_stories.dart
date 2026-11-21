@@ -232,7 +232,7 @@ ElementPayload _with(LiveElement row, Map<String, Object?> changes) =>
     ElementPayload(
       kind: row.payload.kind,
       payloadVersion: row.payload.payloadVersion,
-      data: {...row.payload.data, ...changes},
+      data: {...row.payload.data.toJson(), ...changes},
     );
 
 ElementPatchOp _olderBuildMove(
@@ -246,7 +246,7 @@ ElementPatchOp _olderBuildMove(
     kind: row.payload.kind,
     payloadVersion: row.payload.payloadVersion,
     data: {
-      for (final MapEntry(:key, :value) in row.payload.data.entries)
+      for (final MapEntry(:key, :value) in row.payload.data.toJson().entries)
         if (key != pictureIdField && laterField(row.payload.kind, key) == null)
           key: value,
       'position': position,
@@ -303,7 +303,7 @@ LineupGroupPayload _groupWith({
   List<Map<String, Object?>> addLandings = const [],
   Map<String, String> notes = const {},
 }) {
-  final data = _group.payload.data;
+  final data = _group.payload.data.toJson();
   final links = [
     for (final link in data['links']! as List<Object?>)
       if (link case final Map<String, Object?> link
@@ -791,7 +791,7 @@ List<MergeStory> mergeStories() {
           payload: ElementPayload(
             kind: ElementKind.agent,
             payloadVersion: 2,
-            data: {..._jett.payload.data, 'isAlly': false},
+            data: {..._jett.payload.data.toJson(), 'isAlly': false},
           ),
           merge: FieldMerge(fields: ['isAlly']),
         ),

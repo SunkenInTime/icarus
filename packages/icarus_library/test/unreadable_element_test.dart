@@ -163,7 +163,7 @@ void main() {
     final copy = session.rows.elementsOn('page-copy').single;
     expect(copy, isA<UnreadableElement>());
     final payload =
-        (copy.toJson()! as Map<String, Object?>)['payload']!
+        (copy.toJson()! as JsonObject).toJson()['payload']!
             as Map<String, Object?>;
     expect(payload['kind'], 'hologram');
     expect((payload['data']! as Map<String, Object?>)['flicker'], [1, 2, 3]);

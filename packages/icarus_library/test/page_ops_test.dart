@@ -167,7 +167,7 @@ void main() {
     extra['glow'] = 2;
     expect(settings.toJson()['glow'], 1);
     expect(palette.toJson()['glow'], 1);
-    expect(() => settings.unknownFields['glow'] = 3, throwsUnsupportedError);
+    expect(settings.unknownFields, isNot(isA<Map<Object?, Object?>>()));
   });
 
   test('a page op made on an old strategy revision is refused', () {
@@ -469,7 +469,7 @@ void main() {
         ),
       ),
     ).rows.whereType<LiveLineupGroup>().single;
-    final data = copied.payload.data;
+    final data = copied.payload.data.toJson();
     final origin = (data['origins']! as List<Object?>).single! as Map;
     final landing = (data['landings']! as List<Object?>).single! as Map;
     final link = (data['links']! as List<Object?>).single! as Map;

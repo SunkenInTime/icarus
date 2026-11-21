@@ -4,8 +4,8 @@ import 'package:test/test.dart';
 import '../tool/merge_stories.dart';
 
 Object? _dataOf(Row row) => switch (row) {
-  ReadableElementRow(:final payload) => payload.data,
-  ReadableLineupGroupRow(:final payload) => payload.data,
+  ReadableElementRow(:final payload) => payload.data.toJson(),
+  ReadableLineupGroupRow(:final payload) => payload.data.toJson(),
   final other => fail('$other holds no payload'),
 };
 

@@ -15,9 +15,10 @@ bool _anyElement(ElementPayload payload) => true;
 
 bool notesAreText(LineupGroupPayload payload) =>
     switch (payload.data['links']) {
-      final List<Object?> links => links.every(
+      final JsonList links => links.every(
         (link) => switch (link) {
-          {'notes': final Object? notes} => notes == null || notes is String,
+          final JsonObject link when link.containsKey('notes') =>
+            link['notes'] == null || link['notes'] is String,
           _ => true,
         },
       ),

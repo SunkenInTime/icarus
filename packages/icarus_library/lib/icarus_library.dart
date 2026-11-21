@@ -30,12 +30,21 @@ export 'src/field_merge.dart'
 export 'src/field_rules.dart';
 export 'src/ops.dart';
 export 'src/outcome.dart';
-export 'src/payloads.dart';
+export 'src/payloads.dart' hide elementPayloadAdopting, lineupPayloadAdopting;
 export 'src/rows.dart';
 export 'src/strategy_rows.dart';
 export 'src/wire.dart' show CouldNotRead, Decoded, Read;
 export 'src/json.dart'
-    show Admission, Admitted, NotAdmitted, admit, maxJsonDepth;
+    show
+        Admission,
+        Admitted,
+        JsonList,
+        JsonObject,
+        NotAdmitted,
+        admit,
+        jsonObject,
+        jsonValue,
+        maxJsonDepth;
 export 'src/store/engine.dart' hide done;
 export 'src/store/layout.dart'
     show ForeignName, digestOf, longestName, strategyArea;

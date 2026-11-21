@@ -31,6 +31,10 @@ bool isSafeWhole(Object? value) =>
 final class JsonFields {
   JsonFields._(this.json);
 
+  JsonFields.over(JsonObject object) : json = object.raw;
+
+  String? get problem => _problem;
+
   final Map<String, Object?> json;
   String? _problem;
 
@@ -39,11 +43,11 @@ final class JsonFields {
     String what,
     T Function() Function(JsonFields fields) read,
   ) {
-    final frozen = frozenJsonObjectOrNull(raw);
-    if (frozen == null) {
+    final object = jsonObjectOrNull(raw);
+    if (object == null) {
       return CouldNotRead(raw, 'Expected $what to be a JSON object');
     }
-    final fields = JsonFields._(frozen);
+    final fields = JsonFields._(object.raw);
     final build = read(fields);
     return switch (fields._problem) {
       final problem? => CouldNotRead(raw, '$what: $problem'),
@@ -98,18 +102,18 @@ final class JsonFields {
 
   DateTime? optionalTime(String key) => has(key) ? time(key) : null;
 
-  Map<String, Object?> rest(Set<String> known) => frozenJsonObject({
+  JsonObject rest(Set<String> known) => adoptJsonObject({
     for (final MapEntry(:key, :value) in json.entries)
       if (!known.contains(key)) key: value,
   });
 
-  Map<String, Object?> object(String key) => switch (json[key]) {
-    final Map<String, Object?> value => value,
-    _ => _expected(key, 'an object', const {}),
+  JsonObject object(String key) => switch (json[key]) {
+    final Map<String, Object?> value => adoptJsonObject(value),
+    _ => _expected(key, 'an object', JsonObject.empty),
   };
 
   T? decoded<T>(String key, Decoded<T> Function(Object? json) decode) =>
-      switch (decode(json[key])) {
+      switch (decode(adoptJson(json[key]))) {
         Read(:final value) => value,
         CouldNotRead(:final problem) => _expected(
           key,

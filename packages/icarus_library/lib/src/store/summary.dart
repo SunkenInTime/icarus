@@ -80,7 +80,7 @@ final class PageTally {
     if (!live) return counted;
     final agent = switch (row) {
       LiveElement(:final payload) when payload.kind == ElementKind.agent =>
-        switch (payload.data['type']) {
+        switch (payload.data.raw['type']) {
           final String type => type,
           _ => null,
         },
@@ -110,7 +110,7 @@ final class PageTally {
         final items = fields.whole('items');
         final damaged = fields.whole('damaged');
         final newer = fields.whole('newer');
-        final agents = fields.object('agents');
+        final agents = fields.object('agents').raw;
         if (!agents.values.every(isSafeWhole)) {
           fields.reject('expected agent counts');
         }
@@ -315,8 +315,9 @@ final class StrategySummary {
         final newer = fields.whole('newerRows');
         final elsewhere = fields.decoded('elsewhere', PageTally.decode);
         final tallies = <String, PageTally>{};
-        for (final MapEntry(:key, :value) in fields.object('tallies').entries) {
-          switch (PageTally.decode(value)) {
+        for (final MapEntry(:key, :value)
+            in fields.object('tallies').raw.entries) {
+          switch (PageTally.decode(adoptJson(value))) {
             case Read(value: final tally):
               tallies[key] = tally;
             case CouldNotRead(:final problem):

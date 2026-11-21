@@ -41,10 +41,26 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   server's failure code, or `UnreadableTarget` with the key of the row this
   build cannot read. Nothing a user, the server or the disk can cause throws.
   An exception means a programmer error.
-- **JSON is read once, at the edge.** Stored text goes through `admit`,
-  which never throws: it returns `Admitted` with frozen JSON, or
-  `NotAdmitted` with the text kept and why (not JSON, a number that is not
-  finite, or nesting deeper than `maxJsonDepth`). Each row kind's `parse`
+- **JSON is read once, at the edge, and never copied on the way in.**
+  Stored text goes through `admit`, which never throws. One scan of the
+  text refuses nesting deeper than `maxJsonDepth`, a number that would not
+  be finite, and a whole number JavaScript cannot hold exactly; then
+  `jsonDecode` runs once and its result is handed on as it is, as
+  `Admitted`, or `NotAdmitted` with the text kept and why.
+- **Rows stay values by type.** Every JSON value a row holds (payload
+  `data`, `unknownFields`, an unreadable row's `stored`) is a `JsonObject`
+  or a `JsonList`. Neither is a `Map` or a `List`: they offer reads only,
+  and a nested object or list read from them is again a `JsonObject` or
+  `JsonList`. The decoded tree under them is reachable only through
+  `JsonObjectInside.raw` and `JsonListInside.raw`, which `src/json.dart`
+  defines and `icarus_library.dart` does not export; the package's own
+  decoders, merges and copies use them, and must not change what they reach.
+  A caller that needs a value it can change asks for a copy: `toMap()` is a
+  shallow copy whose nested values stay read-only, `toJson()` and a
+  payload's `toPlainJson()` are deep plain copies. A row or payload built
+  from a caller's map copies that map once, at construction, and adopts any
+  `JsonObject` or `JsonList` inside it without copying.
+  `test/rows_stay_values_test.dart` tries every way in. Each row kind's `parse`
   takes an `Admission` and the ids the key gives, and always returns a row:
   readable, or its unreadable case holding what was stored. Every `decode`
   returns `Read` or `CouldNotRead`. Whole numbers must fit what JavaScript

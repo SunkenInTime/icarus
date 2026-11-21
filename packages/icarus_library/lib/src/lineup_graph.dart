@@ -1,3 +1,4 @@
+import 'json.dart';
 import 'payloads.dart';
 
 sealed class LineupCheck {
@@ -23,7 +24,7 @@ LineupCheck checkLineupPayload(
   if (payload.payloadVersion != lineupGroupPayloadVersion) {
     return const OtherLineupVersion();
   }
-  final data = payload.data;
+  final data = payload.data.raw;
   if (data['id'] != lineupPublicId || lineupPublicId.isEmpty) {
     return const BrokenLineupGraph();
   }

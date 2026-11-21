@@ -9,7 +9,7 @@ const placeField = '@sortIndex';
 final class FieldMerge {
   FieldMerge({required List<String> fields, Map<String, Object?>? base})
     : fields = List.unmodifiable(fields),
-      base = base == null ? null : frozenJsonObject(base);
+      base = base == null ? null : jsonObject(base).raw;
 
   static Decoded<FieldMerge> decode(
     Object? json,

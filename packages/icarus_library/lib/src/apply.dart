@@ -674,9 +674,9 @@ final class _Apply {
     RowChanged write, {
     required bool whole,
   }) {
-    final restored = <String, Object?>{...before.payload.data};
+    final restored = <String, Object?>{...before.payload.data.raw};
     for (final field in write.dataFields) {
-      if (before.payload.data.containsKey(field)) continue;
+      if (before.payload.data.raw.containsKey(field)) continue;
       if (field == pictureIdField) return const UndoUnavailable();
       switch (laterField(before.payload.kind, field)?.empty) {
         case null:
@@ -698,7 +698,7 @@ final class _Apply {
         ...groupedFields(
           before.payload.kind,
           switch (write.after) {
-            ReadableElementRow(:final payload) => payload.data,
+            ReadableElementRow(:final payload) => payload.data.raw,
             _ => const {},
           },
           restored,
@@ -714,7 +714,9 @@ final class _Apply {
         pagePublicId: fields.contains(RowField.page)
             ? before.pagePublicId
             : null,
-        payload: payloadChanged ? before.payload.withData(restored) : null,
+        payload: payloadChanged
+            ? elementPayloadAdopting(before.payload, restored)
+            : null,
         sortIndex: movedPlace ? before.sortIndex : null,
         merge: whole || mergeFields.isEmpty
             ? null
@@ -978,12 +980,12 @@ final class _Apply {
     String? selfPublicId,
     LineupGroupPayload payload,
   ) {
-    final items = lineupGroupItems(payload.data);
+    final items = lineupGroupItems(payload.data.raw);
     for (final other in rows.lineupGroupsOn(pagePublicId)) {
       if (other is! LiveLineupGroup || other.publicId == selfPublicId) {
         continue;
       }
-      if (lineupGroupItems(other.payload.data).any(items.contains)) {
+      if (lineupGroupItems(other.payload.data.raw).any(items.contains)) {
         return _failed(FailureCode.invalidLineupPayloadData);
       }
     }
@@ -995,7 +997,7 @@ final class _Apply {
       if (element case UnreadableElement(
         :final key,
         :final stored,
-      ) when stored is! Map<String, Object?>) {
+      ) when stored is! JsonObject) {
         return OpRefused(UnreadableTarget(key));
       }
     }
@@ -1093,7 +1095,7 @@ ElementRow _elementRow({
       );
 
 OpRefused? _elementTypeRefusal(ElementPayload payload) {
-  final elementType = payload.data['elementType'];
+  final elementType = payload.data.raw['elementType'];
   if (elementType is String && elementType != payload.kind.name) {
     return _failed(FailureCode.elementTypePayloadKindMismatch);
   }
@@ -1155,7 +1157,7 @@ RowChanged _changed(Row before, Row after) {
         a.payload.payloadVersion,
         b.payload.payloadVersion,
       );
-      dataFields = _changedKeys(a.payload.data, b.payload.data);
+      dataFields = _changedKeys(a.payload.data.raw, b.payload.data.raw);
     case (final ReadableElementRow a, final UnreadableElement b):
       compare(RowField.page, a.pagePublicId, b.pagePublicId);
       fields
@@ -1174,7 +1176,7 @@ RowChanged _changed(Row before, Row after) {
         a.payload.payloadVersion,
         b.payload.payloadVersion,
       );
-      dataFields = _changedLineupFields(a.payload.data, b.payload.data);
+      dataFields = _changedLineupFields(a.payload.data.raw, b.payload.data.raw);
     case _:
       throw ArgumentError('$before cannot change into $after');
   }

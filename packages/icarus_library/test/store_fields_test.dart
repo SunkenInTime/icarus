@@ -76,11 +76,11 @@ const _undoneOtherwise = <String, Undo>{
 final _deletedAgainHolding = {
   'element.add over a deleted element': (
     elementName('page-a', 'ghost'),
-    agent('ghost').payload.toJson(),
+    jsonDecode(jsonEncode(agent('ghost').payload.toJson())),
   ),
   'lineup.add over a deleted group': (
     lineupName('page-b', 'g0'),
-    lineupPayload('g0').toJson(),
+    jsonDecode(jsonEncode(lineupPayload('g0').toJson())),
   ),
 };
 
@@ -176,7 +176,7 @@ StrategyRowSet _fixture() {
         publicId: 'jett',
         pagePublicId: 'page-a',
         payload: jett.payload.withData({
-          ...jett.payload.data,
+          ...jett.payload.data.toMap(),
           'caption': 'entry',
           pictureIdField: 'picture-1',
         }),
@@ -290,7 +290,7 @@ void main() {
     expect(copied.whereType<ElementRow>(), isNotEmpty);
     expect(copied.whereType<LineupGroupRow>(), isNotEmpty);
     for (final row in copied) {
-      final probes = _probesIn(row.toJson());
+      final probes = _probesIn(jsonDecode(jsonEncode(row.toJson())));
       expect(probes, containsAll(['', '/payload', '/payload/data']));
     }
   });

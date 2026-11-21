@@ -92,7 +92,7 @@ Map<String, Object?> _scenario(
   ElementPayload changed(LiveElement row, String field) => ElementPayload(
     kind: row.payload.kind,
     payloadVersion: row.payload.payloadVersion,
-    data: {...row.payload.data, field: valueFor(field)},
+    data: {...row.payload.data.toJson(), field: valueFor(field)},
   );
 
   final ops = <StrategyOp>[];
@@ -125,8 +125,8 @@ Map<String, Object?> _scenario(
           connection: Connection.offline,
         );
         goal =
-            jsonEncode(base.payload.data['position']) ==
-                jsonEncode(current.payload.data['position'])
+            jsonEncode(base.payload.data.toJson()['position']) ==
+                jsonEncode(current.payload.data.toJson()['position'])
             ? null
             : 'offline side edit carrying a stale position applied';
       case 3:
@@ -160,7 +160,7 @@ Map<String, Object?> _scenario(
         final row = pick(liveElements());
         final stored = [
           for (final field in _keptFields)
-            if (row.payload.data.containsKey(field)) field,
+            if (row.payload.data.toJson().containsKey(field)) field,
         ];
         op = ElementPatchOp(
           opId: opId,
@@ -170,7 +170,8 @@ Map<String, Object?> _scenario(
             kind: row.payload.kind,
             payloadVersion: row.payload.payloadVersion,
             data: {
-              for (final MapEntry(:key, :value) in row.payload.data.entries)
+              for (final MapEntry(:key, :value)
+                  in row.payload.data.toJson().entries)
                 if (!_keptFields.contains(key)) key: value,
               'position': valueFor('position'),
             },
@@ -224,6 +225,6 @@ bool _goalHolds(String goal, StrategyOp op, Iterable<Row> written) {
     (row) =>
         row is LiveElement &&
         row.publicId == op.elementPublicId &&
-        row.payload.data.containsKey(field),
+        row.payload.data.toJson().containsKey(field),
   );
 }

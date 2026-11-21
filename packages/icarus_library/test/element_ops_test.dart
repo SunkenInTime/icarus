@@ -22,7 +22,7 @@ ElementPatchOp moveAgent(
     payload: ElementPayload(
       kind: payload.kind,
       payloadVersion: payload.payloadVersion,
-      data: {...payload.data, ...fields},
+      data: {...payload.data.toMap(), ...fields},
     ),
     merge: merged == null ? null : FieldMerge(fields: merged, base: base),
   );
