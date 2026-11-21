@@ -12,6 +12,7 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -157,7 +158,9 @@ class ActionProvider extends Notifier<List<UserAction>> {
     }
     DebugBreadcrumbs.add('canvas', '${action.type.name} ${action.group.name}');
     ref.read(strategyProvider.notifier).setUnsaved();
-    if (action.group != ActionGroup.ability) {
+    final usingAnotherTool =
+        ref.read(interactionStateProvider) != InteractionState.navigation;
+    if (action.group != ActionGroup.ability && usingAnotherTool) {
       ref.read(abilityBarProvider.notifier).setAside();
     }
     poppedItems = [];
