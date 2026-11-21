@@ -64,6 +64,10 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
     was: the strategy row's `updatedAt` stamp, the rows a reorder renumbers,
     a summary rebuild, a page copy.
   - Summaries are disposable and rebuilt from rows, so they keep nothing.
+  - Extra fields in a payload envelope are kept by merges and rewrites, but
+    they are not a reason to save: a whole write that differs only there is
+    `NothingToSave`, because the server's validators allow no extra envelope
+    fields at all.
 
   `test/store_fields_test.dart` checks the rule: for every op type it puts a
   probe field in every map of every stored row, runs the op, and compares
@@ -310,87 +314,80 @@ SQL `LIKE`.
 
 ### Where rows are kept
 
-| Area | Keys |
+| Area | Names |
 | --- | --- |
-| `library` | `summary/<strategy>`, `folder/<folder>` |
-| `journal` | `edit` (the edit being saved), `recovered/<attempt>` |
-| `strategy/<sha1 of the strategy id>` | `strategy`, `page/<page>`, `settings/<page>`, `content/<page>/element/<id>`, `content/<page>/lineup/<id>` |
+| `library` | `summary/<s>`, `folder/<f>`, `last-save` |
+| `s/<s>` | `strategy`, `page/<p>`, `settings/<p>`, `content/<p>/e/<e>`, `content/<p>/l/<l>` |
 
-**Keys.** An id becomes a key segment by `encodeId`: unreserved ASCII
-(`A-Z a-z 0-9 - . _ ~`) stays, everything else is its UTF-8 bytes as
-uppercase `%XX`. An empty id or one holding a lone surrogate is not
-storable. Reading a key back gives a typed meaning (`PageAt`, `ElementAt`,
-`SummaryAt` and so on) only when every segment is canonical: it decodes as
-strict UTF-8 (a leading U+FEFF stays) and encodes back to the same text.
-Anything else is a `ForeignKey`, kept as its raw text. A foreign key is
-never read as any row and never taken as an id. Foreign keys in the library
-and journal areas are reported in `StoreOpened.foreignKeys`; those in a
-strategy's area are reported in `StrategyContent.foreignKeys` and
-`PageContent.foreignKeys`. Removing a strategy deletes everything in its
-area, foreign keys included; foreign keys elsewhere stay where they are.
+**Names.** Each `<x>` is `digestOf(id)`: the SHA-256 of the id's UTF-16
+code units (little-endian), cut to its first 32 hex characters (128 bits).
+Any id can be stored, including an empty one or one holding a lone
+surrogate, and every name has a fixed length. The longest is an element
+name, `longestName` (75) characters; the store checks the lease's
+`maxKeyLength` against it once, at open, and does not open
+(`EngineTooSmall`) on an engine that cannot hold it. The id itself is kept
+in the row's value, and a row counts under a name only when the id in its
+value has that digest; a row under another id's name reads as unreadable.
+A row that cannot be read at all carries its name where its id would be.
 
-**Admission.** Before anything is written, every id an op names and every
-row an edit writes is checked: an id that is not storable, or a key longer
-than the lease's `maxKeyLength`, is refused with `IdNotStorable` and nothing
-is written. The only keys the store writes that do not come from those ids
-are fixed ones (`edit`, `strategy`, `recovered/` plus 32 hex characters), so
-no save and no recovery can write a key the engine cannot hold. A saved
-record whose writes name a key longer than the engine holds is refused at
-open as `SavedEditUnreadable`.
+A name of any other shape is a `ForeignName`, kept as it is and never read
+as a row: those in `library` or in an area the store does not use are
+reported in `StoreOpened.foreignNames`, those in a strategy's area in
+`StrategyContent.foreignNames` and `PageContent.foreignNames`. A name under
+`content/<p>/` of a kind this build does not know is an `UnknownKindRow`.
+Removing a strategy clears its whole area, foreign names included.
 
-**What a read costs.** Opening the store reads the journal area and the
-library area with one `entries` call each, and nothing of any strategy.
-Reading a strategy reads its row, lists every key of its area (so it knows
-which page each element is on, and which keys are foreign), and reads its
+**Row text reads back.** Before a save is sent, every row it writes is
+encoded and parsed back the way the next open will read it; if any row
+would come back different (nested deeper than `maxJsonDepth`, or a number
+JavaScript cannot hold exactly), the save is `NotSaved(WouldNotReadBack)`
+and nothing is written.
+
+**What a read costs.** Opening the store reads `last-save`, then lists the
+library area with one `entries` call, and reads nothing of any strategy.
+Reading a strategy reads its row, lists every name in its area (so it knows
+which page each element is on, and which names are foreign), and reads its
 pages and settings with one `entries` call each. Reading a page is one
-`entries` call under `content/<page>/`. A read page stays in memory until
-the store closes or `unload(strategy)` drops the strategy.
+`entries` call under `content/<p>/`. A read page stays in memory until the
+store closes or `unload(strategy)` drops the strategy.
 
 ### Saving an edit
 
 `commit(strategyPublicId, op)` loads the pages the op can look at, runs
-`applyOp`, sets the strategy row's `updatedAt` to now, and then:
-
-1. saves one record in `journal/edit` holding the op and every key the edit
-   writes: each row it changed, the strategy row, a delete of the old key
-   when an element moves page, and the strategy's new summary;
-2. writes those keys;
-3. clears the record.
-
-When the store opens and finds a record, it writes the record's keys again,
-writes `recovered/<receipt>`, and clears the record before reading anything.
-Writing the same keys twice gives the same rows, so a crash at any step
-leaves the rows from before the edit or the rows after it. Applying the op
-again would not do: a page copy cut short leaves some copied rows behind,
-and the copy applied to those rows gives different ids. Library edits
-(`editLibrary`) and summary rebuilds are saved the same way, and a record is
-never saved while an earlier one is unfinished.
+`applyOp`, sets the strategy row's `updatedAt` to the later of now and its
+current value, and sends one engine commit holding a `Put` for each row it
+changed, a `Delete` of the old name when an element or lineup group moves
+page, a `Put` of the strategy's new summary, and a `Put` of a new attempt
+id under `library/last-save`. The engine applies a commit whole or not at
+all, across areas and across a crash, so the disk holds the strategy from
+before the edit or after it, never part of it. Library edits
+(`editLibrary`) and summary rebuilds are one commit the same way; removing
+a strategy is `ClearArea` of its area and a `Delete` of its summary.
 
 Every save returns a `Saving`, which the caller has to handle:
 
-- `Saved`: the record is on disk, so the edit survives a crash. If writing the
-  rows or clearing the record failed, the store finishes the record before its
-  next read or save, and again when it next opens.
+- `Saved`: the engine applied the commit.
 - `NothingToSave`: the op changes nothing.
-- `Refused`: `OpRefusal` when `applyOp` refused it, `NoSuchStrategy`, or
-  `UnreadableRowInTheWay` when the strategy's own row cannot be read. For
-  library edits: `StrategyAlreadyInStore` (also when any key is already
-  stored for that strategy), `RowOutsideStrategy` (a row of an added strategy
-  names another strategy or a page it does not have), `NoSuchFolder`,
-  `FolderNotEmpty`, `FolderInsideItself`.
-- `NotSaved`: nothing changed. The record could not be saved; or an earlier
-  record could not be finished; or a key is longer than the lease's
-  `maxKeyLength`, which is checked before anything is written; or the store
-  has stopped (`StoreStopped`) or closed (`StoreClosed`).
-- `SaveInDoubt`: the record's write failed and clearing it failed too, so
-  the device may or may not hold it. The store stops. The result carries a
-  `SaveReceipt`: the attempt id the store issued for this one save (128
-  random bits, so it does not repeat on a storage) and when it was issued.
-  The next store to open finishes the record if it landed and writes
-  `recovered/<attempt>`. `recovered(receipt)` on that store, or any later
-  one, answers `EditRecovered`, `EditNotRecovered`, or `RecoveryForgotten`
-  once the receipt is older than `recoveryAnswerLifetime` (30 days); each
-  open deletes markers older than that.
+- `Refused`: `OpRefusal` when `applyOp` refused it, `NoSuchStrategy`,
+  `UnreadableRowInTheWay` when the strategy's own row cannot be read, or
+  `CopyLeavesRowsBehind`. For library edits: `StrategyAlreadyInStore` (also
+  when any name is already stored for that strategy), `RowOutsideStrategy`
+  (a row of an added strategy names another strategy or a page it does not
+  have), `NoSuchFolder`, `FolderNotEmpty`, `FolderInsideItself`,
+  `FolderLoop`.
+- `NotSaved`: nothing changed. The engine refused the commit, a row would
+  not read back, reading the pages the op needs failed, or the store has
+  stopped (`StoreStopped`) or closed (`StoreClosed`).
+- `SaveInDoubt(failure, attempt)`: the engine could not say whether the
+  commit applied. The store stops, so nothing is saved on top of a state it
+  does not know. The next store to open reads `last-save` and reports it as
+  `lastSave` on `StoreOpened`, or on `StoreNotOpened` when the open fails
+  after reading it: `LastSaveWas(attempt)`, `NoSaveRecorded`,
+  `LastSaveUnreadable(text)`, or `LastSaveNotRead`. The save in doubt
+  landed exactly when `LastSaveWas` holds its attempt. Only the latest
+  attempt is kept, and that is enough: a store in doubt saves nothing more,
+  so the next commit comes from a store that has already read the slot.
+  The attempt is 128 random bits, issued for that one save.
 
 Saves and reads run one at a time, in the order they were called. `close`
 releases the lease at once, whatever the `changes` listeners are doing, and
@@ -398,7 +395,9 @@ returns what the release returned; afterwards saves are
 `NotSaved(StoreClosed)` and reads `NotRead(StoreClosed)`. A store whose lease
 ended stops, and every later save and read says so.
 
-**Folders.** Every walk over stored parent folders remembers where it has
+**Folders.** `PutFolder` writes the folder row whole, replacing what was
+stored, so a rename reads the folder first and puts it back with the new
+name. Every walk over stored parent folders remembers where it has
 been, so it ends on any data. A folder that would be filed, or a strategy
 moved, under a stored loop is refused with `FolderLoop` naming the folders
 in it; under a missing folder, `NoSuchFolder`; under a folder this build
@@ -412,20 +411,20 @@ lists its folders.
 still reads: `StrategyContent.strategy` is its `UnreadableStrategy`, and its
 pages read as usual; edits to it are refused. Unreadable pages, settings,
 elements and lineup groups come back in the same lists as readable ones; a
-key under `content/<page>/` of a kind this build does not know comes back as
+name under `content/<p>/` of a kind this build does not know comes back as
 an `UnknownKindRow` with its text as stored. `library` is `LibraryOpen` with
 the list (summaries, strategies whose own row cannot be read, folders), or
 `LibraryShut` once the store has closed, stopped or lost its lease, so a
 closed store never hands out data that looks current.
 
 A page copy whose source page cannot be read, or holds a row of a kind this
-build does not know or under a foreign key, is refused (`UnreadableTarget`,
+build does not know or under a foreign name, is refused (`UnreadableTarget`,
 `CopyLeavesRowsBehind`) rather than copied without them.
 
 ### Deleting
 
-The store writes no key whose row it cannot read, with one exception:
-`RemoveStrategy` deletes every key of the strategy, these rows included,
+The store writes no name whose row it cannot read, with one exception:
+`RemoveStrategy` clears the strategy's whole area, these rows included,
 because the user asked for the whole strategy to go.
 
 ### Summaries
@@ -434,7 +433,7 @@ A `StrategySummary` holds the name, map, folder, created and updated times
 (from the strategy row), live page count, `Sides` (attack, defend or mixed),
 the agents placed on live pages, and how many items they hold. It also keeps
 a tally per page, so trashing a page updates the counts without reading that
-page. Every commit writes the new summary in the same record as its rows.
+page. Every commit writes the new summary in the same commit as its rows.
 `rebuildSummary` recomputes it from the rows alone. When the store opens and
 cannot read a summary, it rebuilds it; when the strategy's own row cannot be
 read either, the strategy is listed in `unreadableStrategies`.
@@ -451,12 +450,12 @@ where the server rejecting a pending op can take a row away.
 
 Nothing for them is built here. What a local strategy reads and saves
 through does not have to change for them: a cloud strategy's base can live
-under the same `strategy/<strategy>` keys and its pending ops under their own
-keys, read through a new call; `commit` keeps its signature and saves the op
-as a pending op instead of clearing it; a change already names its op and
-can name rows that are gone; and the record already saves any set of keys
-across areas at once, so advancing the base and removing the acknowledged
-ops is one more kind of record.
+under the same names in its area and its pending ops under names of their
+own, read through a new call; `commit` keeps its signature and saves the op
+as a pending op; a change already names its op and can name rows that are
+gone; and one engine commit already writes any set of names across areas
+at once, so advancing the base and removing the acknowledged ops is one more
+commit.
 
 ### Measuring it
 

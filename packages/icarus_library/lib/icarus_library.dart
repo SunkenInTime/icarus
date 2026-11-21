@@ -38,15 +38,10 @@ export 'src/json.dart'
     show Admission, Admitted, NotAdmitted, admit, maxJsonDepth;
 export 'src/store/engine.dart' hide done;
 export 'src/store/layout.dart'
-    show
-        EmptyId,
-        ForeignKey,
-        IdProblem,
-        KeyLongerThan,
-        LoneSurrogate,
-        strategyArea;
+    show ForeignName, digestOf, longestName, strategyArea;
 export 'src/store/memory_engine.dart';
 export 'src/store/results.dart';
 export 'src/store/store.dart'
     show CanRead, LibraryStore, StoreNotOpened, StoreOpened, StoreOpening;
-export 'src/store/summary.dart' show Sides, StrategySummary;
+export 'src/store/summary.dart'
+    show AllReadable, Readability, Sides, SomeUnreadable, StrategySummary;

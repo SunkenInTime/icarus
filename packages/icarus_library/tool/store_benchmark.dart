@@ -37,8 +37,10 @@ ElementPayload _drawing(String id, double shift) => ElementPayload(
   },
 );
 
-StrategyRowSet _strategy(String id, {required int items}) {
-  final pages = ['$id-a', '$id-b'];
+StrategyRowSet _strategy(String id, {required int items, int pageCount = 2}) {
+  final pages = [
+    for (var i = 0; i < pageCount; i++) '$id-${'abcdefghijklmnopqrst'[i]}',
+  ];
   return StrategyRowSet(
     strategy: ReadableStrategy(
       publicId: id,
@@ -189,6 +191,38 @@ Future<void> main() async {
   }
   await editing.close();
 
+  final wideStorage = MemoryStorage();
+  final wideSetup = await _open(wideStorage);
+  if (await wideSetup.editLibrary([
+        AddStrategy(_strategy('wide', items: _items, pageCount: _widePages)),
+      ])
+      is! Saved) {
+    throw StateError('wide strategy not added');
+  }
+  await wideSetup.close();
+  final wide = _Times();
+  for (var run = 0; run < 10; run++) {
+    final store = await _open(wideStorage);
+    await wide.time(() async {
+      final content = await store.readStrategy('wide');
+      if (content case Found(value: StrategyContent(:final pages))) {
+        for (final page in pages) {
+          await store.readPage('wide', page.publicId);
+        }
+      } else {
+        throw StateError('wide');
+      }
+    });
+    await store.close();
+  }
+
+  final pageNames = _Times();
+  final wideNames = _Times();
+  for (var run = 0; run < _runs; run++) {
+    await pageNames.time(() async => _digestAll(_items, run));
+    await wideNames.time(() async => _digestAll(_items * _widePages, run));
+  }
+
   stdout
     ..writeln('Memory engine')
     ..writeln(
@@ -204,5 +238,21 @@ Future<void> main() async {
     ..writeln(
       '  commit: rewrite one $_drawingPoints-point drawing on that page: '
       '${redraw.summary}',
-    );
+    )
+    ..writeln(
+      '  open a $_widePages-page strategy and every page of it '
+      '(${_items * _widePages} items): ${wide.summary}',
+    )
+    ..writeln('  digest $_items ids: ${pageNames.summary}')
+    ..writeln('  digest ${_items * _widePages} ids: ${wideNames.summary}');
+}
+
+const _widePages = 20;
+
+int _digestAll(int count, int run) {
+  var length = 0;
+  for (var i = 0; i < count; i++) {
+    length += digestOf('page-$run-element-$i').length;
+  }
+  return length;
 }

@@ -60,6 +60,17 @@ final class StoreStopped extends StorageFailure {
   String toString() => 'StoreStopped($cause)';
 }
 
+final class WouldNotReadBack extends StorageFailure {
+  const WouldNotReadBack(this.area, this.key, this.problem);
+
+  final String area;
+  final String key;
+  final String problem;
+
+  @override
+  String toString() => 'WouldNotReadBack($area, $key, $problem)';
+}
+
 final class StoreClosed extends StorageFailure {
   const StoreClosed();
 

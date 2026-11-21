@@ -48,26 +48,28 @@ decodes a payload into a typed item at the edge of the editor.
   strategy the pending op is the only saved form of the edit: the rows the
   user sees are worked out by applying pending ops to the base, and the base
   changes only when the server confirms. In a local strategy the store
-  applies the op in memory, then saves one record holding the op together
-  with every key the edit writes (the rows in `OpApplied.writes` and the
-  strategy's summary), then writes those keys, then clears the record. A
-  record found at startup has its writes written again before anything is
-  read. Writing the same keys twice gives the same rows, so once the next
-  open has finished any record it found, the rows are those from before the
-  edit or after it, never half; until then the disk may hold part of the
-  edit, and nothing reads it. Applying the op again was the first plan and
-  does not work: a page copy cut short leaves some copied rows behind, and
-  applying the copy to those rows gives different rows than applying it
-  once.
-- A save whose record write failed and could not be cleared is in doubt: the
-  device may or may not hold the record. The caller holds a receipt, the
+  applies the op in memory and sends the engine one commit holding every
+  row in `OpApplied.writes`, the strategy's summary, and a new attempt id in
+  one fixed slot. The engine contract requires a commit to apply whole or
+  not at all, across areas and across a crash, and a conformance suite
+  checks every engine against it, so the disk holds the rows from before
+  the edit or after it, never half.
+- A save the engine cannot answer for is in doubt. The caller holds the
   attempt id the store issued for that one save (random, so it does not
-  repeat on a storage) and when it was issued, and the store that gave it
-  stops. The next open finishes the record if it landed and leaves a marker
-  under the attempt id. From then on any open store answers the receipt:
-  recovered when the marker is there, not recovered when it is not. Markers
-  live 30 days; each open deletes older ones, and a receipt older than that
-  is answered forgotten.
+  repeat on a storage), and the store that gave it stops. The next open
+  reads the slot and reports the attempt it holds: the save landed exactly
+  when that is its attempt. The slot keeps only the latest attempt, which is
+  enough because a store in doubt saves nothing more, so the next commit
+  comes from a store that has already read the slot. There is no clock and
+  no expiry.
+- The first version saved a record of each edit in a journal area, wrote
+  the rows, cleared the record, and replayed any record it found at open,
+  because the storage it was built on wrote one key at a time. Once the
+  engine contract required one commit across areas to apply whole, the
+  record only repeated that promise, at four engine calls per save instead
+  of one, with a replay at open, recovery markers that needed a clock to
+  expire, and an open that failed on a record this build could not read.
+  It was dropped for the single commit.
 - A row this build cannot read is carried untouched. It is never dropped,
   rewritten or inferred as deleted, whether it failed to decode or is a kind
   from a newer build, except when the user deletes the page or strategy that

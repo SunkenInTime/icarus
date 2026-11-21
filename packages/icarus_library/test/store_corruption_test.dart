@@ -36,56 +36,92 @@ String _classify(Object row) => switch (row) {
   _ => fail('not a row: $row'),
 };
 
-Future<View> viewOf(LibraryStore store, List<String> strategies) async {
+String _find<T>(Iterable<T> rows, bool Function(T row) named) {
+  for (final row in rows) {
+    if (named(row)) return _classify(row!);
+  }
+  return 'missing';
+}
+
+Future<View> viewOf(
+  LibraryStore store,
+  Map<String, StrategyRowSet> strategies,
+  List<String> folders,
+) async {
   final view = <String, String>{};
   final list = listOf(store);
-  for (final folder in list.folders) {
-    view['folder ${folder.publicId}'] = _classify(folder);
+  for (final folder in folders) {
+    view['folder $folder'] = _find(
+      list.folders,
+      (row) => row.publicId == folder || row.publicId == folderName(folder),
+    );
   }
   for (final summary in list.strategies) {
     view['summary ${summary.publicId}'] = _canon(summary.toJson());
   }
-  for (final id in strategies) {
+  for (final MapEntry(key: id, value: rows) in strategies.entries) {
     final content = strategyOf(await store.readStrategy(id));
     view['$id strategy'] = _classify(content.strategy);
-    for (final page in content.pages) {
-      view['$id page ${page.publicId}'] = _classify(page);
-    }
-    for (final MapEntry(:key, :value) in content.settings.entries) {
-      view['$id settings $key'] = _classify(value);
-    }
-    for (final page in content.pages) {
-      final rows = pageOf(await store.readPage(id, page.publicId));
-      for (final row in rows.elements) {
-        view['$id element ${row.publicId}'] = _classify(row);
+    for (final page in rows.pages) {
+      final pageId = page.publicId;
+      view['$id page $pageId'] = _find(
+        content.pages,
+        (row) => row.publicId == pageId || row.publicId == pageName(pageId),
+      );
+      view['$id settings $pageId'] = _find(
+        content.settings.values,
+        (row) =>
+            row.pagePublicId == pageId ||
+            row.pagePublicId == settingsName(pageId),
+      );
+      final onPage = pageOf(await store.readPage(id, pageId));
+      for (final element in rows.elements.where(
+        (row) => row.pagePublicId == pageId,
+      )) {
+        view['$id element ${element.publicId}'] = _find(
+          onPage.elements,
+          (row) =>
+              row.publicId == element.publicId ||
+              row.publicId == elementName(pageId, element.publicId),
+        );
       }
-      for (final row in rows.lineupGroups) {
-        view['$id lineup ${row.publicId}'] = _classify(row);
+      for (final group in rows.lineupGroups.where(
+        (row) => row.pagePublicId == pageId,
+      )) {
+        view['$id lineup ${group.publicId}'] = _find(
+          onPage.lineupGroups,
+          (row) =>
+              row.publicId == group.publicId ||
+              row.publicId == lineupName(pageId, group.publicId),
+        );
       }
     }
   }
   return view;
 }
 
-String? _viewKeyOf(String area, String key, Map<String, String> areas) {
-  if (area == 'library') {
-    if (key.startsWith('folder/')) return 'folder ${key.substring(7)}';
-    if (key.startsWith('summary/')) return 'summary ${key.substring(8)}';
-    return null;
-  }
-  final id = areas[area]!;
-  if (key == 'strategy') return '$id strategy';
-  if (key.startsWith('page/')) return '$id page ${key.substring(5)}';
-  if (key.startsWith('settings/')) return '$id settings ${key.substring(9)}';
-  final parts = key.split('/');
-  if (parts.length == 4 && parts[2] == 'element') {
-    return '$id element ${parts[3]}';
-  }
-  if (parts.length == 4 && parts[2] == 'lineup') {
-    return '$id lineup ${parts[3]}';
-  }
-  return null;
-}
+Map<(String, String), String> namesOfRows(
+  Map<String, StrategyRowSet> strategies,
+  List<String> folders,
+) => {
+  for (final folder in folders)
+    ('library', folderName(folder)): 'folder $folder',
+  for (final MapEntry(key: id, value: rows) in strategies.entries) ...{
+    ('library', summaryName(id)): 'summary $id',
+    (strategyArea(id), 'strategy'): '$id strategy',
+    for (final page in rows.pages) ...{
+      (strategyArea(id), pageName(page.publicId)): '$id page ${page.publicId}',
+      (strategyArea(id), settingsName(page.publicId)):
+          '$id settings ${page.publicId}',
+    },
+    for (final row in rows.elements)
+      (strategyArea(id), elementName(row.pagePublicId, row.publicId)):
+          '$id element ${row.publicId}',
+    for (final row in rows.lineupGroups)
+      (strategyArea(id), lineupName(row.pagePublicId, row.publicId)):
+          '$id lineup ${row.publicId}',
+  },
+};
 
 typedef Corruption = ({String name, String text, List<String> allowed});
 
@@ -235,7 +271,9 @@ List<Corruption> corruptionsOf(String text, Random random) {
 void main() {
   late Contents populated;
   late View baseline;
-  late Map<String, String> areas;
+  late Map<(String, String), String> rowAt;
+  late Map<String, StrategyRowSet> fixture;
+  const folderIds = ['f-root', 'f-child'];
 
   setUpAll(() async {
     final storage = MemoryStorage();
@@ -256,11 +294,12 @@ void main() {
     );
     await store.close();
     populated = storage.contents;
-    areas = {
-      strategyArea(strategyId): strategyId,
-      strategyArea(_secondId): _secondId,
+    fixture = {
+      strategyId: sampleStrategy(),
+      _secondId: sampleStrategy(id: _secondId, prefix: 'x-'),
     };
-    baseline = await viewOf(await openOn(populated), [strategyId, _secondId]);
+    rowAt = namesOfRows(fixture, folderIds);
+    baseline = await viewOf(await openOn(populated), fixture, folderIds);
   });
 
   test(
@@ -269,9 +308,8 @@ void main() {
       final random = Random(624);
       var cases = 0;
       for (final MapEntry(key: area, value: values) in populated.entries) {
-        if (area == 'journal') continue;
         for (final MapEntry(:key, :value) in values.entries) {
-          final viewKey = _viewKeyOf(area, key, areas);
+          final viewKey = rowAt[(area, key)];
           if (viewKey == null) continue;
           for (final corruption in corruptionsOf(value, random)) {
             cases++;
@@ -290,7 +328,7 @@ void main() {
               StoreOpened(:final store) => store,
               StoreNotOpened(:final problem) => fail('$where: $problem'),
             };
-            final view = await viewOf(store, [strategyId, _secondId]);
+            final view = await viewOf(store, fixture, folderIds);
             for (final MapEntry(key: row, value: before) in baseline.entries) {
               final now = view[row];
               if (row == viewKey && !row.startsWith('summary')) {
@@ -309,6 +347,20 @@ void main() {
                 reason: where,
               );
             }
+            final damaged = viewKey.split(' ').first;
+            final kind = viewKey.split(' ')[1];
+            if (view[viewKey] == 'unreadable' &&
+                fixture.containsKey(damaged) &&
+                kind != 'strategy') {
+              final summary = listOf(
+                store,
+              ).strategies.firstWhere((summary) => summary.publicId == damaged);
+              expect(
+                summary.readability,
+                isA<SomeUnreadable>(),
+                reason: '$where: the summary does not say a row is unreadable',
+              );
+            }
           }
         }
       }
@@ -316,47 +368,41 @@ void main() {
     },
   );
 
-  test(
-    'every corruption of the saved edit is refused at open, never thrown',
-    () async {
-      final disk = MemoryStorage(populated);
-      final store = await openStore(crashing(MemoryEngine(disk), Cut(1)));
-      await store.commit(strategyId, moveJett);
-      final record = disk.contents['journal']!['edit']!;
-      var refused = 0;
-      for (final corruption in corruptionsOf(record, Random(637))) {
-        final opening = await LibraryStore.open(
-          MemoryEngine(
-            MemoryStorage({
-              ...disk.contents,
-              'journal': {'edit': corruption.text},
-            }),
-          ),
-          canRead: readsKnownKinds,
-          clock: fixedClock,
-        );
-        switch (opening) {
-          case StoreNotOpened(problem: SavedEditUnreadable()):
-            refused++;
-          case StoreOpened():
-            break;
-          case StoreNotOpened(:final problem):
-            fail('${corruption.name}: $problem');
-        }
-      }
-      expect(refused, greaterThan(20));
-    },
-  );
+  test('a last-save slot holding anything still lets the store open', () async {
+    for (final text in ['', 'x', '1e400', '{}', 'a' * 32, '[' * 20000]) {
+      final opening = await LibraryStore.open(
+        MemoryEngine(
+          MemoryStorage({
+            ...populated,
+            'library': {...populated['library']!, 'last-save': text},
+          }),
+        ),
+        canRead: readsKnownKinds,
+      );
+      expect(
+        opening,
+        isA<StoreOpened>().having(
+          (opened) => opened.lastSave,
+          'last save',
+          text == 'a' * 32 ? isA<LastSaveWas>() : isA<LastSaveUnreadable>(),
+        ),
+      );
+    }
+  });
 
-  test(
-    'a recovery marker holding anything still lets the store open',
-    () async {
-      for (final text in ['', 'x', '1e400', '{}', '-9223372036854775809']) {
-        await openOn({
-          ...populated,
-          'journal': {'recovered/${'a' * 32}': text},
-        });
-      }
-    },
-  );
+  test('a folder of 20,000 nested arrays is read as unreadable', () async {
+    final store = await openOn({
+      ...populated,
+      'library': {
+        ...populated['library']!,
+        folderName('f-root'): '${'[' * 20000}${']' * 20000}',
+      },
+    });
+    expect(
+      listOf(
+        store,
+      ).folders.firstWhere((folder) => folder.publicId != 'f-child'),
+      isA<UnreadableFolder>(),
+    );
+  });
 }

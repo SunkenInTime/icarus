@@ -32,48 +32,10 @@ final class NotSaved<S, R> extends Saving<S, R> {
 }
 
 final class SaveInDoubt<S, R> extends Saving<S, R> {
-  const SaveInDoubt(this.failure, this.receipt);
+  const SaveInDoubt(this.failure, this.attempt);
 
   final StorageFailure failure;
-  final SaveReceipt receipt;
-}
-
-final class SaveReceipt {
-  const SaveReceipt(this.attempt, this.issuedAt);
-
   final String attempt;
-  final DateTime issuedAt;
-
-  @override
-  bool operator ==(Object other) =>
-      other is SaveReceipt && other.attempt == attempt;
-
-  @override
-  int get hashCode => attempt.hashCode;
-}
-
-const recoveryAnswerLifetime = Duration(days: 30);
-
-sealed class Recovery {
-  const Recovery();
-}
-
-final class EditRecovered extends Recovery {
-  const EditRecovered();
-}
-
-final class EditNotRecovered extends Recovery {
-  const EditNotRecovered();
-}
-
-final class RecoveryForgotten extends Recovery {
-  const RecoveryForgotten();
-}
-
-final class RecoveryNotRead extends Recovery {
-  const RecoveryNotRead(this.failure);
-
-  final StorageFailure failure;
 }
 
 typedef CommitResult = Saving<Committed, CommitRefusal>;
@@ -122,16 +84,6 @@ final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
 
   @override
   String toString() => 'UnreadableRowInTheWay(${row.key})';
-}
-
-final class IdNotStorable implements CommitRefusal, LibraryRefusal {
-  const IdNotStorable(this.id, this.problem);
-
-  final String id;
-  final IdProblem problem;
-
-  @override
-  String toString() => 'IdNotStorable($id, $problem)';
 }
 
 final class CopyLeavesRowsBehind extends CommitRefusal {
@@ -281,15 +233,15 @@ final class StrategyContent {
     required this.strategy,
     required List<PageRow> pages,
     required Map<String, PageSettingsRow> settings,
-    required List<ForeignKey> foreignKeys,
+    required List<ForeignName> foreignNames,
   }) : pages = List.unmodifiable(pages),
        settings = Map.unmodifiable(settings),
-       foreignKeys = List.unmodifiable(foreignKeys);
+       foreignNames = List.unmodifiable(foreignNames);
 
   final StrategyRow strategy;
   final List<PageRow> pages;
   final Map<String, PageSettingsRow> settings;
-  final List<ForeignKey> foreignKeys;
+  final List<ForeignName> foreignNames;
 }
 
 final class PageContent {
@@ -299,18 +251,18 @@ final class PageContent {
     required List<ElementRow> elements,
     required List<LineupGroupRow> lineupGroups,
     required List<UnknownKindRow> unknownKinds,
-    required List<ForeignKey> foreignKeys,
+    required List<ForeignName> foreignNames,
   }) : elements = List.unmodifiable(elements),
        lineupGroups = List.unmodifiable(lineupGroups),
        unknownKinds = List.unmodifiable(unknownKinds),
-       foreignKeys = List.unmodifiable(foreignKeys);
+       foreignNames = List.unmodifiable(foreignNames);
 
   final PageRow page;
   final PageSettingsRow? settings;
   final List<ElementRow> elements;
   final List<LineupGroupRow> lineupGroups;
   final List<UnknownKindRow> unknownKinds;
-  final List<ForeignKey> foreignKeys;
+  final List<ForeignName> foreignNames;
 }
 
 sealed class LibraryState {
@@ -398,12 +350,37 @@ final class StoreAlreadyOpen extends OpenProblem {
   String toString() => 'StoreAlreadyOpen()';
 }
 
-final class SavedEditUnreadable extends OpenProblem {
-  const SavedEditUnreadable(this.text, this.problem);
+final class EngineTooSmall extends OpenProblem {
+  const EngineTooSmall(this.limit);
 
-  final String text;
-  final String problem;
+  final int limit;
+
+  int get needed => longestName;
 
   @override
-  String toString() => 'SavedEditUnreadable($problem)';
+  String toString() => 'EngineTooSmall($limit < $needed)';
+}
+
+sealed class LastSave {
+  const LastSave();
+}
+
+final class LastSaveWas extends LastSave {
+  const LastSaveWas(this.attempt);
+
+  final String attempt;
+}
+
+final class NoSaveRecorded extends LastSave {
+  const NoSaveRecorded();
+}
+
+final class LastSaveUnreadable extends LastSave {
+  const LastSaveUnreadable(this.text);
+
+  final String text;
+}
+
+final class LastSaveNotRead extends LastSave {
+  const LastSaveNotRead();
 }

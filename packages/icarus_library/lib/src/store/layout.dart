@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
@@ -6,379 +6,213 @@ import '../rows.dart';
 
 const libraryArea = 'library';
 
-const journalArea = 'journal';
+const lastSaveKey = 'last-save';
 
-const journalKey = 'edit';
+const _strategyAreaPrefix = 's/';
 
-const recoveredPrefix = 'recovered/';
+const _digestLength = 32;
 
-const summaryPrefix = 'summary/';
+String digestOf(String text) {
+  final bytes = ByteData(text.length * 2);
+  for (var i = 0; i < text.length; i++) {
+    bytes.setUint16(i * 2, text.codeUnitAt(i), Endian.little);
+  }
+  return sha256
+      .convert(bytes.buffer.asUint8List())
+      .toString()
+      .substring(0, _digestLength);
+}
 
-const folderPrefix = 'folder/';
+final _digest = RegExp(r'^[0-9a-f]{32}$');
 
-const headerKey = 'strategy';
-
-const pagePrefix = 'page/';
-
-const settingsPrefix = 'settings/';
-
-const contentPrefix = 'content/';
-
-const _element = 'element';
-
-const _lineup = 'lineup';
+bool _isDigest(String text) => _digest.hasMatch(text);
 
 String strategyArea(String strategyPublicId) =>
-    'strategy/${sha1.convert(utf8.encode(strategyPublicId))}';
+    '$_strategyAreaPrefix${digestOf(strategyPublicId)}';
 
-sealed class IdProblem {
-  const IdProblem();
+const longestName =
+    'content/'.length + _digestLength + '/e/'.length + _digestLength;
+
+sealed class StoreArea {
+  const StoreArea();
+
+  String get name;
 }
 
-final class EmptyId extends IdProblem {
-  const EmptyId();
+final class LibraryArea extends StoreArea {
+  const LibraryArea();
 
   @override
-  String toString() => 'EmptyId()';
+  String get name => libraryArea;
 }
 
-final class LoneSurrogate extends IdProblem {
-  const LoneSurrogate(this.at);
+final class StrategyArea extends StoreArea {
+  const StrategyArea(this.digest);
 
-  final int at;
+  final String digest;
 
   @override
-  String toString() => 'LoneSurrogate($at)';
+  String get name => '$_strategyAreaPrefix$digest';
 }
 
-final class KeyLongerThan extends IdProblem {
-  const KeyLongerThan(this.limit);
-
-  final int limit;
+final class ForeignArea extends StoreArea {
+  const ForeignArea(this.name);
 
   @override
-  String toString() => 'KeyLongerThan($limit)';
+  final String name;
 }
 
-sealed class IdSegment {
-  const IdSegment();
-}
-
-final class Storable extends IdSegment {
-  const Storable(this.segment);
-
-  final String segment;
-}
-
-final class NotStorable extends IdSegment {
-  const NotStorable(this.problem);
-
-  final IdProblem problem;
-}
-
-bool _unreserved(int unit) =>
-    (unit >= 0x30 && unit <= 0x39) ||
-    (unit >= 0x41 && unit <= 0x5a) ||
-    (unit >= 0x61 && unit <= 0x7a) ||
-    unit == 0x2d ||
-    unit == 0x2e ||
-    unit == 0x5f ||
-    unit == 0x7e;
-
-const _hex = '0123456789ABCDEF';
-
-IdSegment encodeId(String id) {
-  if (id.isEmpty) return const NotStorable(EmptyId());
-  final out = StringBuffer();
-  for (var at = 0; at < id.length; at++) {
-    final unit = id.codeUnitAt(at);
-    final int point;
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      final low = at + 1 < id.length ? id.codeUnitAt(at + 1) : 0;
-      if (low < 0xdc00 || low > 0xdfff) return NotStorable(LoneSurrogate(at));
-      point = 0x10000 + ((unit - 0xd800) << 10) + (low - 0xdc00);
-      at++;
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
-      return NotStorable(LoneSurrogate(at));
-    } else {
-      point = unit;
-    }
-    if (point < 0x80 && _unreserved(point)) {
-      out.writeCharCode(point);
-      continue;
-    }
-    for (final byte in utf8.encode(String.fromCharCode(point))) {
-      out
-        ..write('%')
-        ..write(_hex[byte >> 4])
-        ..write(_hex[byte & 0xf]);
-    }
-  }
-  return Storable(out.toString());
-}
-
-String segment(String id) => switch (encodeId(id)) {
-  Storable(:final segment) => segment,
-  NotStorable(:final problem) => throw StateError(
-    'the id "$id" is not storable ($problem); admit it before keying it',
-  ),
+StoreArea readArea(String area) => switch (area) {
+  libraryArea => const LibraryArea(),
+  _
+      when area.startsWith(_strategyAreaPrefix) &&
+          _isDigest(area.substring(_strategyAreaPrefix.length)) =>
+    StrategyArea(area.substring(_strategyAreaPrefix.length)),
+  _ => ForeignArea(area),
 };
 
-int? _hexValue(int unit) => switch (unit) {
-  >= 0x30 && <= 0x39 => unit - 0x30,
-  >= 0x41 && <= 0x46 => unit - 0x41 + 10,
-  _ => null,
-};
+sealed class StoreName {
+  const StoreName();
 
-String? _strictUtf8(List<int> bytes) {
-  final out = StringBuffer();
-  var at = 0;
-  while (at < bytes.length) {
-    final first = bytes[at];
-    final (int length, int minimum, int bits) = switch (first) {
-      < 0x80 => (1, 0, first),
-      >= 0xc2 && < 0xe0 => (2, 0x80, first & 0x1f),
-      >= 0xe0 && < 0xf0 => (3, 0x800, first & 0x0f),
-      >= 0xf0 && < 0xf5 => (4, 0x10000, first & 0x07),
-      _ => (0, 0, 0),
-    };
-    if (length == 0 || at + length > bytes.length) return null;
-    var point = bits;
-    for (var i = 1; i < length; i++) {
-      final next = bytes[at + i];
-      if (next & 0xc0 != 0x80) return null;
-      point = (point << 6) | (next & 0x3f);
-    }
-    if (point < minimum || point > 0x10ffff) return null;
-    if (point >= 0xd800 && point <= 0xdfff) return null;
-    out.writeCharCode(point);
-    at += length;
-  }
-  return out.toString();
+  String get name;
 }
 
-sealed class SegmentRead {
-  const SegmentRead();
+final class SummaryName extends StoreName {
+  const SummaryName(this.digest);
+
+  final String digest;
+
+  @override
+  String get name => 'summary/$digest';
 }
 
-final class CanonicalId extends SegmentRead {
-  const CanonicalId(this.id);
+final class FolderName extends StoreName {
+  const FolderName(this.digest);
 
-  final String id;
+  final String digest;
+
+  @override
+  String get name => 'folder/$digest';
 }
 
-final class ForeignSegment extends SegmentRead {
-  const ForeignSegment();
+final class HeaderName extends StoreName {
+  const HeaderName();
+
+  @override
+  String get name => 'strategy';
 }
 
-SegmentRead readSegment(String raw) {
-  final bytes = <int>[];
-  for (var at = 0; at < raw.length; at++) {
-    final unit = raw.codeUnitAt(at);
-    if (unit != 0x25) {
-      if (!_unreserved(unit)) return const ForeignSegment();
-      bytes.add(unit);
-      continue;
-    }
-    if (at + 2 >= raw.length) return const ForeignSegment();
-    final high = _hexValue(raw.codeUnitAt(at + 1));
-    final low = _hexValue(raw.codeUnitAt(at + 2));
-    if (high == null || low == null) return const ForeignSegment();
-    bytes.add(high << 4 | low);
-    at += 2;
-  }
-  final id = _strictUtf8(bytes);
-  if (id == null) return const ForeignSegment();
-  return switch (encodeId(id)) {
-    Storable(:final segment) when segment == raw => CanonicalId(id),
-    _ => const ForeignSegment(),
-  };
+final class PageName extends StoreName {
+  const PageName(this.digest);
+
+  final String digest;
+
+  @override
+  String get name => 'page/$digest';
 }
 
-String summaryKey(String strategyPublicId) =>
-    '$summaryPrefix${segment(strategyPublicId)}';
+final class SettingsName extends StoreName {
+  const SettingsName(this.digest);
 
-String folderKey(String folderPublicId) =>
-    '$folderPrefix${segment(folderPublicId)}';
+  final String digest;
 
-String pageKey(String pagePublicId) => '$pagePrefix${segment(pagePublicId)}';
-
-String settingsKey(String pagePublicId) =>
-    '$settingsPrefix${segment(pagePublicId)}';
-
-String pageContentPrefix(String pagePublicId) =>
-    '$contentPrefix${segment(pagePublicId)}/';
-
-String elementKey(String pagePublicId, String elementPublicId) =>
-    '${pageContentPrefix(pagePublicId)}$_element/${segment(elementPublicId)}';
-
-String lineupGroupKey(String pagePublicId, String lineupPublicId) =>
-    '${pageContentPrefix(pagePublicId)}$_lineup/${segment(lineupPublicId)}';
-
-String recoveredKey(String attempt) => '$recoveredPrefix$attempt';
-
-String rowKey(Row row) => switch (row) {
-  StrategyRow() => headerKey,
-  FolderRow(:final publicId) => folderKey(publicId),
-  PageRow(:final publicId) => pageKey(publicId),
-  PageSettingsRow(:final pagePublicId) => settingsKey(pagePublicId),
-  ElementRow(:final pagePublicId, :final publicId) => elementKey(
-    pagePublicId,
-    publicId,
-  ),
-  LineupGroupRow(:final pagePublicId, :final publicId) => lineupGroupKey(
-    pagePublicId,
-    publicId,
-  ),
-};
-
-List<String> rowIds(Row row) => switch (row) {
-  StrategyRow(:final publicId) || FolderRow(:final publicId) => [publicId],
-  PageRow(:final publicId) => [publicId],
-  PageSettingsRow(:final pagePublicId) => [pagePublicId],
-  ElementRow(:final pagePublicId, :final publicId) ||
-  LineupGroupRow(
-    :final pagePublicId,
-    :final publicId,
-  ) => [pagePublicId, publicId],
-};
-
-sealed class StrategyAreaKey {
-  const StrategyAreaKey();
+  @override
+  String get name => 'settings/$digest';
 }
 
-sealed class LibraryAreaKey {
-  const LibraryAreaKey();
+final class ElementName extends StoreName {
+  const ElementName(this.page, this.digest);
+
+  final String page;
+  final String digest;
+
+  @override
+  String get name => 'content/$page/e/$digest';
 }
 
-sealed class JournalAreaKey {
-  const JournalAreaKey();
+final class LineupName extends StoreName {
+  const LineupName(this.page, this.digest);
+
+  final String page;
+  final String digest;
+
+  @override
+  String get name => 'content/$page/l/$digest';
 }
 
-final class ForeignKey
-    implements StrategyAreaKey, LibraryAreaKey, JournalAreaKey {
-  const ForeignKey(this.area, this.key);
+final class UnknownKindName extends StoreName {
+  const UnknownKindName(this.page, this.name);
+
+  final String page;
+
+  @override
+  final String name;
+}
+
+final class LastSaveName extends StoreName {
+  const LastSaveName();
+
+  @override
+  String get name => lastSaveKey;
+}
+
+final class ForeignName extends StoreName {
+  const ForeignName(this.area, this.name);
 
   final String area;
-  final String key;
+
+  @override
+  final String name;
 
   @override
   bool operator ==(Object other) =>
-      other is ForeignKey && other.area == area && other.key == key;
+      other is ForeignName && other.area == area && other.name == name;
 
   @override
-  int get hashCode => Object.hash(area, key);
+  int get hashCode => Object.hash(area, name);
 
   @override
-  String toString() => 'ForeignKey($area, $key)';
+  String toString() => 'ForeignName($area, $name)';
 }
 
-final class HeaderAt extends StrategyAreaKey {
-  const HeaderAt();
-}
+String pageContentPrefix(String pageDigest) => 'content/$pageDigest/';
 
-final class PageAt extends StrategyAreaKey {
-  const PageAt(this.pagePublicId);
+StoreName readName(StoreArea area, String name) =>
+    switch ((area, name.split('/'))) {
+      (LibraryArea(), ['summary', final digest]) when _isDigest(digest) =>
+        SummaryName(digest),
+      (LibraryArea(), ['folder', final digest]) when _isDigest(digest) =>
+        FolderName(digest),
+      (StrategyArea(), ['strategy']) => const HeaderName(),
+      (StrategyArea(), ['page', final digest]) when _isDigest(digest) =>
+        PageName(digest),
+      (StrategyArea(), ['settings', final digest]) when _isDigest(digest) =>
+        SettingsName(digest),
+      (StrategyArea(), ['content', final page, 'e', final digest])
+          when _isDigest(page) && _isDigest(digest) =>
+        ElementName(page, digest),
+      (StrategyArea(), ['content', final page, 'l', final digest])
+          when _isDigest(page) && _isDigest(digest) =>
+        LineupName(page, digest),
+      (StrategyArea(), ['content', final page, _, _]) when _isDigest(page) =>
+        UnknownKindName(page, name),
+      (LibraryArea(), [lastSaveKey]) => const LastSaveName(),
+      _ => ForeignName(area.name, name),
+    };
 
-  final String pagePublicId;
-}
-
-final class SettingsAt extends StrategyAreaKey {
-  const SettingsAt(this.pagePublicId);
-
-  final String pagePublicId;
-}
-
-final class ElementAt extends StrategyAreaKey {
-  const ElementAt(this.pagePublicId, this.publicId);
-
-  final String pagePublicId;
-  final String publicId;
-}
-
-final class LineupAt extends StrategyAreaKey {
-  const LineupAt(this.pagePublicId, this.publicId);
-
-  final String pagePublicId;
-  final String publicId;
-}
-
-final class UnknownKindAt extends StrategyAreaKey {
-  const UnknownKindAt(this.pagePublicId, this.key);
-
-  final String pagePublicId;
-  final String key;
-}
-
-final class SummaryAt extends LibraryAreaKey {
-  const SummaryAt(this.strategyPublicId);
-
-  final String strategyPublicId;
-}
-
-final class FolderAt extends LibraryAreaKey {
-  const FolderAt(this.folderPublicId);
-
-  final String folderPublicId;
-}
-
-final class RecordAt extends JournalAreaKey {
-  const RecordAt();
-}
-
-final class RecoveredAt extends JournalAreaKey {
-  const RecoveredAt(this.attempt);
-
-  final String attempt;
-}
-
-String? _idAfter(String key, String prefix) => switch (key.startsWith(prefix)
-    ? readSegment(key.substring(prefix.length))
-    : const ForeignSegment()) {
-  CanonicalId(:final id) => id,
-  ForeignSegment() => null,
+StoreName nameOf(Row row) => switch (row) {
+  StrategyRow() => const HeaderName(),
+  FolderRow(:final publicId) => FolderName(digestOf(publicId)),
+  PageRow(:final publicId) => PageName(digestOf(publicId)),
+  PageSettingsRow(:final pagePublicId) => SettingsName(digestOf(pagePublicId)),
+  ElementRow(:final pagePublicId, :final publicId) => ElementName(
+    digestOf(pagePublicId),
+    digestOf(publicId),
+  ),
+  LineupGroupRow(:final pagePublicId, :final publicId) => LineupName(
+    digestOf(pagePublicId),
+    digestOf(publicId),
+  ),
 };
 
-StrategyAreaKey readStrategyKey(String area, String key) {
-  if (key == headerKey) return const HeaderAt();
-  if (_idAfter(key, pagePrefix) case final id?) return PageAt(id);
-  if (_idAfter(key, settingsPrefix) case final id?) return SettingsAt(id);
-  if (key.startsWith(contentPrefix)) {
-    final parts = key.substring(contentPrefix.length).split('/');
-    if (parts.length == 3) {
-      final page = readSegment(parts[0]);
-      final kind = readSegment(parts[1]);
-      final id = readSegment(parts[2]);
-      switch ((page, kind, id)) {
-        case (CanonicalId(id: final page), _, CanonicalId(:final id))
-            when parts[1] == _element:
-          return ElementAt(page, id);
-        case (CanonicalId(id: final page), _, CanonicalId(:final id))
-            when parts[1] == _lineup:
-          return LineupAt(page, id);
-        case (CanonicalId(id: final page), CanonicalId(), CanonicalId()):
-          return UnknownKindAt(page, key);
-        case _:
-          break;
-      }
-    }
-  }
-  return ForeignKey(area, key);
-}
-
-LibraryAreaKey readLibraryKey(String key) {
-  if (_idAfter(key, summaryPrefix) case final id?) return SummaryAt(id);
-  if (_idAfter(key, folderPrefix) case final id?) return FolderAt(id);
-  return ForeignKey(libraryArea, key);
-}
-
-final _attempt = RegExp(r'^[0-9a-f]{32}$');
-
-JournalAreaKey readJournalKey(String key) {
-  if (key == journalKey) return const RecordAt();
-  if (key.startsWith(recoveredPrefix)) {
-    final attempt = key.substring(recoveredPrefix.length);
-    if (_attempt.hasMatch(attempt)) return RecoveredAt(attempt);
-  }
-  return ForeignKey(journalArea, key);
-}
+bool namesId(String digest, String id) => digestOf(id) == digest;

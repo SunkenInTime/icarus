@@ -44,30 +44,53 @@ final class Replaced {
       (path == under || path.startsWith('$under/'));
 }
 
-const _jett = 'content/page-a/element/jett';
+final _jett = elementName('page-a', 'jett');
 
-const _table = [
-  Replaced('pageContent.patch', 'settings/page-a', '/settings'),
+final _table = [
+  Replaced('pageContent.patch', settingsName('page-a'), '/settings'),
   Replaced('strategy.patch a palette', 'strategy', '/themeOverridePalette'),
   Replaced('element.patch', _jett, '/payload/data/position'),
   Replaced('element.patch whole', _jett, '/payload'),
   Replaced(
     'element.add over a deleted element',
-    'content/page-a/element/ghost',
+    elementName('page-a', 'ghost'),
     '/payload',
   ),
-  Replaced('lineup.patch', 'content/page-a/lineup/g1', '/payload'),
+  Replaced('lineup.patch', lineupName('page-a', 'g1'), '/payload'),
   Replaced(
     'lineup.patch merging a link',
-    'content/page-a/lineup/g1',
+    lineupName('page-a', 'g1'),
     '/payload/data/links/0',
   ),
   Replaced(
     'lineup.add over a deleted group',
-    'content/page-b/lineup/g0',
+    lineupName('page-b', 'g0'),
     '/payload',
   ),
 ];
+
+const _undoneOtherwise = <String, Undo>{
+  'page.delete': UndoByRestoringPage('page-a'),
+};
+
+final _deletedAgainHolding = {
+  'element.add over a deleted element': (
+    elementName('page-a', 'ghost'),
+    agent('ghost').payload.toJson(),
+  ),
+  'lineup.add over a deleted group': (
+    lineupName('page-b', 'g0'),
+    lineupPayload('g0').toJson(),
+  ),
+};
+
+Map<String, Object?>? _withoutClock(String? stored) => switch (stored) {
+  null => null,
+  final text =>
+    {...jsonDecode(text) as Map<String, Object?>}
+      ..remove('revision')
+      ..remove('updatedAt'),
+};
 
 Fate _fateOf(String op, String key, String path) =>
     _table.any((row) => row.covers(op, key, path)) ? Fate.replaced : Fate.kept;
@@ -132,7 +155,19 @@ StrategyRowSet _fixture() {
         highlight: '#002',
       ),
     ),
-    pages: sample.pages,
+    pages: [
+      ...sample.pages,
+      ConfirmedTrashedPage(
+        publicId: 'page-d',
+        strategyPublicId: strategyId,
+        name: 'Old retake',
+        sortIndex: 3,
+        isAttack: true,
+        revision: 1,
+        deletedAt: strategyCreatedAt,
+        deletedBy: const DeletedByName('coach'),
+      ),
+    ],
     settings: sample.settings,
     elements: [
       for (final row in sample.elements)
@@ -158,6 +193,7 @@ StrategyRowSet _fixture() {
     ],
     lineupGroups: [
       ...sample.lineupGroups,
+      lineupGroup('g3', pageId: 'page-b', strategy: strategyId),
       DeletedLineupGroup(
         strategyPublicId: strategyId,
         publicId: 'g0',
@@ -201,8 +237,10 @@ void main() {
                 when before is ElementRow &&
                     after is ElementRow &&
                     before.pagePublicId != after.pagePublicId)
-              'content/${before.pagePublicId}/element/${before.publicId}':
-                  'content/${after.pagePublicId}/element/${after.publicId}',
+              elementName(before.pagePublicId, before.publicId): elementName(
+                after.pagePublicId,
+                after.publicId,
+              ),
         };
         var checked = 0;
         for (final MapEntry(:key, :value) in probed[sampleArea]!.entries) {
@@ -243,15 +281,46 @@ void main() {
     await store.close();
     final copied = [
       for (final write in committed.change.writes)
-        if (write case RowAdded(
-          after: final ElementRow row,
-        ) when row.pagePublicId == 'page-copy')
-          row,
+        if (write case RowAdded(:final after))
+          if (after
+              case ElementRow(pagePublicId: 'page-copy') ||
+                  LineupGroupRow(pagePublicId: 'page-copy'))
+            after,
     ];
-    expect(copied, isNotEmpty);
+    expect(copied.whereType<ElementRow>(), isNotEmpty);
+    expect(copied.whereType<LineupGroupRow>(), isNotEmpty);
     for (final row in copied) {
       final probes = _probesIn(row.toJson());
       expect(probes, containsAll(['', '/payload', '/payload/data']));
     }
   });
+
+  for (final MapEntry(key: name, value: op) in _ops().entries) {
+    test('undoing $name stores again exactly what was stored', () async {
+      final disk = MemoryStorage(probed);
+      final store = await openStore(MemoryEngine(disk));
+      final committed = savedValue(await store.commit(strategyId, op));
+      switch (committed.undo) {
+        case UndoWithOp(op: final undo):
+          expect(_undoneOtherwise[name], isNull, reason: name);
+          savedValue(await store.commit(strategyId, undo));
+        case final other:
+          expect(other, _undoneOtherwise[name], reason: name);
+          return;
+      }
+      await store.close();
+      final after = disk.contents[sampleArea]!;
+      for (final MapEntry(:key, :value) in probed[sampleArea]!.entries) {
+        final (now, was) = (_withoutClock(after[key]), _withoutClock(value));
+        if (_deletedAgainHolding[name] case (
+          final row,
+          final added,
+        ) when row == key) {
+          expect(now, {...?was, 'payload': added}, reason: '$name, $key');
+        } else {
+          expect(now, was, reason: '$name, $key');
+        }
+      }
+    });
+  }
 }

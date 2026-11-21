@@ -97,7 +97,7 @@ void main() {
         };
         final folders = {
           for (final MapEntry(key: id, value: parent) in parents.entries)
-            'folder/$id': jsonEncode({
+            folderName(id): jsonEncode({
               'publicId': id,
               'name': id,
               'parentFolderPublicId': ?parent,

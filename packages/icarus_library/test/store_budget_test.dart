@@ -72,7 +72,7 @@ void main() {
       });
 
       test(
-        'moving one item writes five keys in four calls, reading nothing',
+        'moving one item is one commit of four keys, reading nothing',
         () async {
           final (store, counts) = await openedOn(disk);
           pageOf(await store.readPage('s1', 's1-page-1'));
@@ -81,17 +81,17 @@ void main() {
           expect(
             counts.written,
             unorderedEquals([
-              ('journal', 'edit'),
               (
                 strategyArea('s1'),
-                'content/s1-page-1/element/s1-page-1-agent-0',
+                elementName('s1-page-1', 's1-page-1-agent-0'),
               ),
               (strategyArea('s1'), 'strategy'),
-              ('library', 'summary/s1'),
+              ('library', summaryName('s1')),
+              ('library', 'last-save'),
             ]),
           );
-          expect(counts.deleted, [('journal', 'edit')]);
-          expect(counts.calls, 4);
+          expect(counts.deleted, isEmpty);
+          expect(counts.calls, 1);
           expect(counts.reads, isEmpty);
           expect(counts.listings, isEmpty);
         },
@@ -104,8 +104,11 @@ void main() {
           strategyOf(await store.readStrategy('s1'));
           counts.reset();
           savedValue(await store.commit('s1', moveOne('s1')));
-          expect(counts.keyWrites, 5);
-          expect(counts.listings, [(strategyArea('s1'), 'content/s1-page-1/')]);
+          expect(counts.keyWrites, 4);
+          expect(counts.calls, 1);
+          expect(counts.listings, [
+            (strategyArea('s1'), 'content/${digestOf('s1-page-1')}/'),
+          ]);
           expect(counts.listed, items);
           expect(counts.reads, hasLength(items));
         },
@@ -117,11 +120,13 @@ void main() {
         counts.reset();
         final page = pageOf(await store.readPage('s2', 's2-page-2'));
         expect(page.elements, hasLength(items));
-        expect(counts.listings, [(strategyArea('s2'), 'content/s2-page-2/')]);
+        expect(counts.listings, [
+          (strategyArea('s2'), 'content/${digestOf('s2-page-2')}/'),
+        ]);
         expect(counts.listed, items);
         expect(
           counts.reads.map((read) => read.$2),
-          everyElement(startsWith('content/s2-page-2/')),
+          everyElement(startsWith('content/${digestOf('s2-page-2')}/')),
         );
       });
 
@@ -138,8 +143,8 @@ void main() {
           ]);
           expect(counts.reads.map((read) => read.$2), [
             'strategy',
-            for (var i = 0; i < 3; i++) 'page/s3-page-$i',
-            for (var i = 0; i < 3; i++) 'settings/s3-page-$i',
+            ...[for (var i = 0; i < 3; i++) pageName('s3-page-$i')]..sort(),
+            ...[for (var i = 0; i < 3; i++) settingsName('s3-page-$i')]..sort(),
           ]);
           expect(counts.listed, (1 + 3 + 3 + 3 * items) + 3 + 3);
         },
@@ -148,9 +153,10 @@ void main() {
       test('opening the library list reads only summaries', () async {
         final (store, counts) = await openedOn(disk);
         expect(listOf(store).strategies, hasLength(strategies));
-        expect(counts.listings, [('journal', ''), ('library', '')]);
+        expect(counts.listings, [('library', '')]);
         expect(counts.reads.toSet(), {
-          for (var i = 0; i < strategies; i++) ('library', 'summary/s$i'),
+          ('library', 'last-save'),
+          for (var i = 0; i < strategies; i++) ('library', summaryName('s$i')),
         });
         expect(counts.calls, 0);
       });
@@ -174,7 +180,11 @@ void main() {
 
     test('a cold open, a cold page read and one warm move', () async {
       final (store, counts) = await openedOn(disk);
-      expect(counts.reads, hasLength(1));
+      expect(counts.reads, [
+        ('library', 'last-save'),
+        ('library', 'last-save'),
+        ('library', summaryName('big')),
+      ]);
       counts.reset();
       final content = strategyOf(await store.readStrategy('big'));
       expect(content.pages, hasLength(20));
@@ -182,7 +192,9 @@ void main() {
       expect(counts.listed, (1 + 20 + 20 + 20 * 300) + 20 + 20);
       counts.reset();
       pageOf(await store.readPage('big', 'big-page-7'));
-      expect(counts.listings, [(strategyArea('big'), 'content/big-page-7/')]);
+      expect(counts.listings, [
+        (strategyArea('big'), 'content/${digestOf('big-page-7')}/'),
+      ]);
       expect(counts.listed, 300);
       expect(counts.reads, hasLength(300));
       counts.reset();
@@ -201,8 +213,8 @@ void main() {
           ),
         ),
       );
-      expect(counts.keyWrites, 5);
-      expect(counts.calls, 4);
+      expect(counts.keyWrites, 4);
+      expect(counts.calls, 1);
       expect(counts.reads, isEmpty);
       expect(counts.listings, isEmpty);
     });

@@ -19,10 +19,29 @@ const _contentsEqual = DeepCollectionEquality();
 bool sameContents(Contents left, Contents right) =>
     _contentsEqual.equals(left, right);
 
-Contents withoutJournal(Contents contents) => {
+Contents withoutSlot(Contents contents) => {
   for (final MapEntry(:key, :value) in contents.entries)
-    if (key != 'journal') key: value,
+    key: key == 'library'
+        ? {
+            for (final MapEntry(:key, :value) in value.entries)
+              if (key != 'last-save') key: value,
+          }
+        : value,
 };
+
+String pageName(String page) => 'page/${digestOf(page)}';
+
+String settingsName(String page) => 'settings/${digestOf(page)}';
+
+String elementName(String page, String id) =>
+    'content/${digestOf(page)}/e/${digestOf(id)}';
+
+String lineupName(String page, String id) =>
+    'content/${digestOf(page)}/l/${digestOf(id)}';
+
+String summaryName(String strategy) => 'summary/${digestOf(strategy)}';
+
+String folderName(String folder) => 'folder/${digestOf(folder)}';
 
 String canonicalRow(Row row) => jsonEncode(sortedJson(row.toJson()));
 
@@ -208,53 +227,7 @@ final class CountingLease extends ForwardingLease {
   );
 }
 
-const crashed = DeviceFailure('the app stopped');
-
-final class Cut {
-  Cut(this.afterCalls);
-
-  final int afterCalls;
-  int landed = 0;
-  bool cut = false;
-
-  bool get allows => !cut && landed < afterCalls;
-}
-
-final class CrashingLease extends ForwardingLease {
-  CrashingLease(super.inner, this.cut);
-
-  final Cut cut;
-
-  @override
-  Future<Committing> commit(List<Change> changes) async {
-    if (!cut.allows) {
-      cut.cut = true;
-      return const CommitRefused(crashed);
-    }
-    cut.landed++;
-    return super.commit(changes);
-  }
-
-  @override
-  Future<KeyRead> read(String area, String key) =>
-      cut.cut ? Future.value(const KeyNotRead(crashed)) : super.read(area, key);
-
-  @override
-  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
-      cut.cut
-      ? Future.value(const StorageFailed(crashed))
-      : super.entries(area, prefix);
-
-  @override
-  Future<Stored<List<String>>> keys(String area, String prefix) => cut.cut
-      ? Future.value(const StorageFailed(crashed))
-      : super.keys(area, prefix);
-}
-
-StorageEngine crashing(StorageEngine inner, Cut cut) =>
-    WrappingEngine(inner, (lease) => CrashingLease(lease, cut));
-
-enum Failing { refused, landed }
+enum Failing { refused, landed, lost }
 
 final class FlakyLease extends ForwardingLease {
   FlakyLease(super.inner, this.failing);
@@ -272,6 +245,8 @@ final class FlakyLease extends ForwardingLease {
       case Failing.landed:
         await super.commit(changes);
         return const CommitUnknown(DeviceFailure('lost the reply'));
+      case Failing.lost:
+        return const CommitUnknown(DeviceFailure('lost the request'));
     }
   }
 }
@@ -421,6 +396,8 @@ StrategyRowSet sampleStrategy({String id = strategyId, String prefix = ''}) =>
 
 final sampleArea = strategyArea(strategyId);
 
+final pinName = 'content/${digestOf('page-a')}/pin/${digestOf('pin-1')}';
+
 Future<Contents> seededContents() async {
   final storage = MemoryStorage();
   final engine = MemoryEngine(storage);
@@ -431,9 +408,9 @@ Future<Contents> seededContents() async {
     ...storage.contents,
     sampleArea: {
       ...storage.contents[sampleArea]!,
-      'content/page-a/element/smoke': unreadableElementJson,
-      'content/page-a/pin/pin-1': unknownRowJson,
-      'content/page-a/element/garbled': garbledJson,
+      elementName('page-a', 'smoke'): unreadableElementJson,
+      pinName: unknownRowJson,
+      elementName('page-a', 'garbled'): garbledJson,
     },
   };
   final rebuilding = MemoryStorage(withRaw);

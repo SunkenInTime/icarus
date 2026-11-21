@@ -659,10 +659,17 @@ final class _Apply {
         return refused;
       }
     }
-    return OpApplied(writes: [write], undo: _undoElementPatch(existing, write));
+    return OpApplied(
+      writes: [write],
+      undo: _undoElementPatch(existing, write, whole: checkRevision),
+    );
   }
 
-  Undo _undoElementPatch(LiveElement before, RowChanged write) {
+  Undo _undoElementPatch(
+    LiveElement before,
+    RowChanged write, {
+    required bool whole,
+  }) {
     final restored = <String, Object?>{...before.payload.data};
     for (final field in write.dataFields) {
       if (before.payload.data.containsKey(field)) continue;
@@ -705,7 +712,9 @@ final class _Apply {
             : null,
         payload: payloadChanged ? before.payload.withData(restored) : null,
         sortIndex: movedPlace ? before.sortIndex : null,
-        merge: mergeFields.isEmpty ? null : FieldMerge(fields: mergeFields),
+        merge: whole || mergeFields.isEmpty
+            ? null
+            : FieldMerge(fields: mergeFields),
       ),
     );
   }
@@ -928,11 +937,15 @@ final class _Apply {
     }
     return OpApplied(
       writes: [write],
-      undo: UndoWithOp(_undoGroupPatch(existing, write)),
+      undo: UndoWithOp(_undoGroupPatch(existing, write, whole: checkRevision)),
     );
   }
 
-  LineupGroupPatchOp _undoGroupPatch(LiveLineupGroup before, RowChanged write) {
+  LineupGroupPatchOp _undoGroupPatch(
+    LiveLineupGroup before,
+    RowChanged write, {
+    required bool whole,
+  }) {
     final movedPlace = write.fields.contains(RowField.sortIndex);
     final payloadChanged =
         write.dataFields.isNotEmpty ||
@@ -950,7 +963,7 @@ final class _Apply {
       expectedLineupRevision: before.revision + 1,
       payload: payloadChanged ? before.payload : null,
       sortIndex: movedPlace ? before.sortIndex : null,
-      merge: mergeFields.isEmpty || !byItem
+      merge: whole || mergeFields.isEmpty || !byItem
           ? null
           : FieldMerge(fields: mergeFields),
     );

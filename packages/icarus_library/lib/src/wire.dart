@@ -21,6 +21,13 @@ final class CouldNotRead<T> extends Decoded<T> {
   final String problem;
 }
 
+bool isSafeWhole(Object? value) =>
+    value is num &&
+    value.isFinite &&
+    value == value.truncate() &&
+    value >= -largestSafeWhole &&
+    value <= largestSafeWhole;
+
 final class JsonFields {
   JsonFields._(this.json);
 
@@ -61,12 +68,7 @@ final class JsonFields {
   String? optionalString(String key) => has(key) ? string(key) : null;
 
   int whole(String key) => switch (json[key]) {
-    final num value
-        when value.isFinite &&
-            value == value.truncate() &&
-            value >= -largestSafeWhole &&
-            value <= largestSafeWhole =>
-      value.toInt(),
+    final num value when isSafeWhole(value) => value.toInt(),
     _ => _expected(key, 'a whole number JavaScript holds exactly', 0),
   };
 

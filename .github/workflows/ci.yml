@@ -311,6 +311,10 @@ jobs:
           fvm dart analyze --fatal-infos
           fvm dart test
 
+      - name: Read Damaged Rows Compiled To JavaScript
+        working-directory: packages/icarus_library
+        run: fvm dart test -p node test/store_corruption_test.dart
+
       - name: Install Convex dependencies
         run: npm ci
 

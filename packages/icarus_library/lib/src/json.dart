@@ -50,7 +50,7 @@ sealed class Admission {
 }
 
 final class Admitted extends Admission {
-  const Admitted(this.json);
+  const Admitted._(this.json);
 
   final Object? json;
 }
@@ -62,7 +62,39 @@ final class NotAdmitted extends Admission {
   final String problem;
 }
 
+bool _nestsWithin(String text, int limit) {
+  var depth = 0;
+  var inString = false;
+  var escaped = false;
+  for (var at = 0; at < text.length; at++) {
+    final unit = text.codeUnitAt(at);
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (unit == 0x5c) {
+        escaped = true;
+      } else if (unit == 0x22) {
+        inString = false;
+      }
+      continue;
+    }
+    switch (unit) {
+      case 0x22:
+        inString = true;
+      case 0x5b || 0x7b:
+        depth++;
+        if (depth > limit) return false;
+      case 0x5d || 0x7d:
+        depth--;
+    }
+  }
+  return true;
+}
+
 Admission admit(String text) {
+  if (!_nestsWithin(text, maxJsonDepth)) {
+    return NotAdmitted(text, 'nests deeper than $maxJsonDepth');
+  }
   final Object? parsed;
   try {
     parsed = jsonDecode(text);
@@ -74,7 +106,7 @@ Admission admit(String text) {
       text,
       'holds a number that is not finite, or nests deeper than $maxJsonDepth',
     ),
-    final json => Admitted(json),
+    final json => Admitted._(json),
   };
 }
 

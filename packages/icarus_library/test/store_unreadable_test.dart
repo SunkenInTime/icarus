@@ -1,13 +1,15 @@
+import 'dart:convert';
+
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
 
 import 'store_support.dart';
 import 'support.dart';
 
-const _unreadable = {
-  'content/page-a/element/smoke': unreadableElementJson,
-  'content/page-a/pin/pin-1': unknownRowJson,
-  'content/page-a/element/garbled': garbledJson,
+final _unreadable = {
+  elementName('page-a', 'smoke'): unreadableElementJson,
+  pinName: unknownRowJson,
+  elementName('page-a', 'garbled'): garbledJson,
 };
 
 void expectUntouched(Contents contents) {
@@ -112,7 +114,7 @@ void main() {
         isA<OpRefusal>().having(
           (reason) => reason.refusal,
           'refusal',
-          const UnreadableTarget(ElementKey('garbled')),
+          UnreadableTarget(ElementKey(elementName('page-a', 'garbled'))),
         ),
       ),
     );
@@ -121,8 +123,8 @@ void main() {
 
   test('a page copy carries an unreadable element as a new row', () async {
     final area = {...seeded[sampleArea]!}
-      ..remove('content/page-a/element/garbled')
-      ..remove('content/page-a/pin/pin-1');
+      ..remove(elementName('page-a', 'garbled'))
+      ..remove(pinName);
     final store = await openOn({...seeded, sampleArea: area});
     savedValue(
       await store.commit(
@@ -143,4 +145,57 @@ void main() {
     expect(stored['newRowField'], 'kept');
     expect(stored['publicId'], carried.publicId);
   });
+
+  test(
+    'a lineup group whose links are not items reads as unreadable, and its page is not copied',
+    () async {
+      final groupName = lineupName('page-a', 'g1');
+      final group = jsonDecode(seeded[sampleArea]![groupName]!) as Map;
+      final payload = group['payload'] as Map;
+      final broken = jsonEncode({
+        ...group,
+        'payload': {
+          ...payload,
+          'data': {
+            ...payload['data'] as Map,
+            'links': ['not an item'],
+          },
+        },
+      });
+      final area = {...seeded[sampleArea]!, groupName: broken}
+        ..remove(elementName('page-a', 'garbled'))
+        ..remove(pinName);
+      final disk = MemoryStorage({...seeded, sampleArea: area});
+      final store = await openStore(MemoryEngine(disk));
+      final page = pageOf(await store.readPage(strategyId, 'page-a'));
+      expect(
+        page.lineupGroups.single,
+        isA<UnreadableLineupGroup>()
+            .having((row) => row.publicId, 'id', 'g1')
+            .having((row) => jsonEncode(row.stored), 'stored', broken),
+      );
+      expect(
+        await store.commit(
+          strategyId,
+          const PageAddOp(
+            opId: 'copy-a',
+            pagePublicId: 'page-copy',
+            sortIndex: 3,
+            expectedStrategyRevision: 1,
+            settings: defaultSettings,
+            copyContentFromPagePublicId: 'page-a',
+          ),
+        ),
+        isA<Refused<Committed, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<OpRefusal>(),
+        ),
+      );
+      expect(
+        sameContents(disk.contents, {...seeded, sampleArea: area}),
+        isTrue,
+      );
+    },
+  );
 }
