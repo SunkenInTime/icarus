@@ -211,8 +211,11 @@ class SightBlock {
 class SightBlockers extends ChangeNotifier {
   final _byOwner = <Object, SightBlock>{};
   var _disposed = false;
+  var _version = 0;
 
   Iterable<SightBlock> get all => _byOwner.values;
+
+  int get version => _version;
 
   void declare(Object owner, SightBlock? block) {
     if (_disposed || _byOwner[owner] == block) return;
@@ -221,6 +224,7 @@ class SightBlockers extends ChangeNotifier {
     } else {
       _byOwner[owner] = block;
     }
+    _version++;
     notifyListeners();
   }
 

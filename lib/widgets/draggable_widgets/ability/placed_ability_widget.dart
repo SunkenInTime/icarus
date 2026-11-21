@@ -98,13 +98,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   void dispose() {
     // Flutter skips onDragEnd once the Draggable has gone, which would leave
     // the wall hidden for good.
-    if (_activeDragId != null) {
+    if (_activeDragId case final id?) {
       final container = _container!;
-      final id = _activeDragId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (container.read(wallCarriedProvider) == id) {
-          container.read(wallCarriedProvider.notifier).set(null);
-        }
+        container.read(wallCarriedProvider.notifier).drop(id);
       });
     }
     _dragOrigin.dispose();
@@ -144,6 +141,20 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         isAttack: isAttack,
       );
 
+  int? _dragLimit(PlacedAbility ability) =>
+      itemDragLimit(context) ?? (blocksSight(ability.data) ? 1 : null);
+
+  Widget _heldWhileOnPage(PlacedAbility held, Widget preview) {
+    if (!blocksSight(held.data)) return preview;
+    return Consumer(
+      child: preview,
+      builder: (context, ref, preview) => ref.watch(abilityProvider.select(
+              (abilities) => abilities.any((ability) => ability.id == held.id)))
+          ? preview!
+          : const SizedBox.shrink(),
+    );
+  }
+
   void _endDrag(DraggableDetails details, String id) {
     _dragOrigin.end();
     widget.onDragEnd(details, id);
@@ -165,6 +176,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       child: child,
       builder: (context, _, child) {
         final dragged = _dragOrigin.anchorSeenFrom(isAttack: isAttack);
+        final turn = dragged == null
+            ? 0.0
+            : _dragOrigin.turnSeenFrom(isAttack: isAttack);
         final position = dragged != null
             ? saved.position + dragged - dot
             : carried != null
@@ -175,7 +189,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           block: sightBlockOf(
             saved.copyWith(
               position: position,
-              rotation: localRotation,
+              rotation: localRotation! + turn,
               wallPath: draft,
             ),
             mapScale: mapScale,
@@ -432,7 +446,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           },
           child: CanvasDraggable<PlacedWidget>(
             dot: dot,
-            maxSimultaneousDrags: itemDragLimit(context),
+            maxSimultaneousDrags: _dragLimit(abilityRef),
             data: widget.data,
             dragAnchorStrategy: (draggable, context, position) {
               _startDrag(dot, isAttack);
@@ -454,7 +468,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                   .read(screenZoomProvider.notifier)
                   .zoomOffset(rotatedPos);
             },
-            feedback: Opacity(
+            feedback: _heldWhileOnPage(
+              abilityRef,
+              Opacity(
               opacity: Settings.feedbackOpacity,
               child: Transform.rotate(
                 angle: displayRotation,
@@ -483,7 +499,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                   ),
                 ),
               ),
-            ),
+            )),
             childWhenDragging: const SizedBox.shrink(),
             onDragUpdate: _dragOrigin.update,
             onDragStarted: () {
@@ -550,7 +566,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       top: screenPosition.dy,
       child: CanvasDraggable<PlacedWidget>(
         dot: dot,
-        maxSimultaneousDrags: itemDragLimit(context),
+        maxSimultaneousDrags: _dragLimit(abilityRef),
         dragAnchorStrategy: (draggable, context, position) {
           _startDrag(dot, isAttack);
           return ref
@@ -558,7 +574,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               .zoomDragAnchorStrategy(draggable, context, position);
         },
         data: widget.data,
-        feedback: Opacity(
+        feedback: _heldWhileOnPage(
+              abilityRef,
+              Opacity(
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(
             child: WallFeedback(
@@ -574,7 +592,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               ),
             ),
           ),
-        ),
+        )),
         childWhenDragging: const SizedBox.shrink(),
         onDragUpdate: _dragOrigin.update,
         onDragStarted: () {
@@ -589,7 +607,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           setState(() {
             _activeDragId = duplicateId ?? abilityRef.id;
           });
-          ref.read(wallCarriedProvider.notifier).set(_activeDragId);
+          ref.read(wallCarriedProvider.notifier).carry(_activeDragId!);
         },
         onDragEnd: (details) {
           final dragId = _activeDragId ?? abilityRef.id;
@@ -597,7 +615,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             _activeDragId = null;
           });
           _endDrag(details, dragId);
-          ref.read(wallCarriedProvider.notifier).set(null);
+          ref.read(wallCarriedProvider.notifier).drop(dragId);
         },
         child: EditorItemOutline(
           child: widget.ability.data.abilityData!.createWidget(

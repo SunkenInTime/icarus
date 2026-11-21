@@ -122,9 +122,16 @@ class _SightBlockerState extends State<SightBlocker> {
   }
 
   @override
-  void dispose() {
+  void activate() {
+    super.activate();
+    _declare();
+  }
+
+  @override
+  void deactivate() {
     _blockers?.declare(this, null);
-    super.dispose();
+    _blockers = null;
+    super.deactivate();
   }
 
   @override

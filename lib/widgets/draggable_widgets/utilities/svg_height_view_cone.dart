@@ -612,10 +612,14 @@ class _Hidden extends _WhatBlocks {
 }
 
 class _Shadows {
+  int? _version;
   List<VisionOccluder>? _near;
   _WhatBlocks _last = const _Clear();
 
   _WhatBlocks of(ConeSight sight, SightBlockers? blockers) {
+    final version = blockers?.version ?? 0;
+    if (version == _version) return _last;
+    _version = version;
     final near = sight.near(blockers?.all ?? const []);
     if (listEquals(near, _near)) return _last;
     _near = near;
