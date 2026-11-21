@@ -182,9 +182,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
       if (undo == null) continue;
       DebugBreadcrumbs.add('canvas', 'redo ${action.group.name}');
       state = [...state, undo];
-      if (action.group == ActionGroup.bulk) {
-        ref.read(abilityBarProvider.notifier).updateData(null);
-      }
       return;
     }
   }
