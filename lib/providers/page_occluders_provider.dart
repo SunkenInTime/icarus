@@ -13,6 +13,9 @@ import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
 
+Offset selectionDragInWorld(Offset by, {required bool isAttack}) =>
+    CoordinateSystem.instance.screenToCoordinate(by) * (isAttack ? 1 : -1);
+
 final heldAbilityProvider =
     NotifierProvider<HeldAbilityNotifier, PlacedAbility?>(
   HeldAbilityNotifier.new,
@@ -44,8 +47,7 @@ class PageOccludersNotifier extends Notifier<List<VisionOccluder>> {
     final group = ref.watch(canvasGroupDragProvider);
     final groupShift = group == null
         ? Offset.zero
-        : CoordinateSystem.instance.screenToCoordinate(group.by) *
-            (isAttack ? 1 : -1);
+        : selectionDragInWorld(group.by, isAttack: isAttack);
 
     PlacedAbility asDrawn(PlacedAbility saved) {
       var ability = held?.id == saved.id ? held! : saved;

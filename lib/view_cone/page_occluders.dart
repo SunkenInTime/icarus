@@ -10,13 +10,17 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/wall_path.dart';
 import 'package:icarus/view_cone/vision_occluders.dart';
 
+Offset placedAbilityMiddle(PlacedAbility placed, {required double mapScale}) =>
+    placed.position +
+    CoordinateSystem.virtualToWorld(
+      storedAbilityAnchor(
+          ability: placed.data.abilityData!, mapScale: mapScale),
+    );
+
 VisionOccluder? occluderOf(PlacedAbility placed, {required double mapScale}) {
   final ability = placed.data.abilityData;
   if (ability == null || !blocksSight(placed.data)) return null;
-  final anchor = placed.position +
-      CoordinateSystem.virtualToWorld(
-        storedAbilityAnchor(ability: ability, mapScale: mapScale),
-      );
+  final anchor = placedAbilityMiddle(placed, mapScale: mapScale);
   double inWorld(double virtual) =>
       CoordinateSystem.virtualLengthInWorld(virtual * mapScale);
   Offset ahead(double virtual) =>
@@ -53,12 +57,27 @@ List<VisionOccluder> pageOccluders(
           occluder,
     ];
 
+List<VisionOccluder> movedOccluders(
+  List<VisionOccluder> occluders,
+  Offset by,
+) =>
+    [
+      for (final occluder in occluders)
+        switch (occluder) {
+          CircleOccluder() => occluder.map((point) => point + by, 1),
+          LineOccluder() => occluder.map((point) => point + by),
+        },
+    ];
+
 class PageOccludersScope extends InheritedWidget {
   const PageOccludersScope({
     super.key,
     required this.occluders,
     required super.child,
   });
+
+  const PageOccludersScope.none({super.key, required super.child})
+      : occluders = const [];
 
   final List<VisionOccluder> occluders;
 

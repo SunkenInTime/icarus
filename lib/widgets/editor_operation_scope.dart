@@ -153,13 +153,16 @@ class EditorEntityLayer extends ConsumerWidget {
         // Always here, so the item keeps its state when a drag starts.
         child: Transform.translate(
           offset: shift ?? Offset.zero,
-          child: _DragsWithSelection(
-            value: ref.watch(dragsWithSelectionProvider(selectionId)),
-            child: ItemOutlineScope(
-              id: id,
-              selectionId: selectionId,
-              kind: kind,
-              child: Stack(clipBehavior: Clip.none, children: [child]),
+          child: _CarriedBySelection(
+            by: shift,
+            child: _DragsWithSelection(
+              value: ref.watch(dragsWithSelectionProvider(selectionId)),
+              child: ItemOutlineScope(
+                id: id,
+                selectionId: selectionId,
+                kind: kind,
+                child: Stack(clipBehavior: Clip.none, children: [child]),
+              ),
             ),
           ),
         ),
@@ -167,6 +170,19 @@ class EditorEntityLayer extends ConsumerWidget {
     );
   }
 }
+
+class _CarriedBySelection extends InheritedWidget {
+  const _CarriedBySelection({required this.by, required super.child});
+
+  final Offset? by;
+
+  @override
+  bool updateShouldNotify(_CarriedBySelection oldWidget) =>
+      by != oldWidget.by;
+}
+
+Offset? carriedBySelection(BuildContext context) =>
+    context.dependOnInheritedWidgetOfExactType<_CarriedBySelection>()?.by;
 
 /// Whether the item below is one of several selected items that move
 /// together (see [itemDragLimit]).

@@ -16,6 +16,7 @@ import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -128,8 +129,11 @@ class ViewConeWidget extends ConsumerWidget {
           isAttack: mapState.isAttack,
         );
         final changedDoors = ref.watch(changedMapDoorsProvider);
-        heightCone = Consumer(
-          builder: (context, ref, _) => SvgHeightViewCone(
+        heightCone = Consumer(builder: (context, ref, _) {
+          final List<VisionOccluder> page = PageOccludersScope.maybeOf(context) ??
+              ref.watch(pageOccludersProvider);
+          final carried = carriedBySelection(context);
+          return SvgHeightViewCone(
             runtime: runtime,
             canonicalOrigin: resolvedWorldOrigin,
             rotation: rotation ??
@@ -141,10 +145,15 @@ class ViewConeWidget extends ConsumerWidget {
             elevation: resolvedElevation,
             opacity: opacity,
             changedDoors: changedDoors,
-            occluders: PageOccludersScope.maybeOf(context) ??
-                ref.watch(pageOccludersProvider),
-          ),
-        );
+            occluders: carried == null
+                ? page
+                : movedOccluders(
+                    page,
+                    -selectionDragInWorld(carried,
+                        isAttack: mapState.isAttack),
+                  ),
+          );
+        });
       }
       // Only a placed cone carries a context menu; a drag preview has none.
       if (placedUtility != null) {
