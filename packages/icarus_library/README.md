@@ -605,8 +605,9 @@ a `hooks` package newer than Flutter 3.44.4 allows.
 
 #### IndexedDB
 
-The library is one database named by the caller, with one object store,
-`rows`, whose keys are `[area, key]`. IndexedDB compares those arrays by code
+The library is one database named by the caller, with two object stores:
+`rows`, whose keys are `[area, key]`, and `last`, which holds the record of
+the last commit (below). IndexedDB compares those arrays by code
 unit, exactly, and a prefix is a key range from `[area, prefix]` up to the
 next string after the prefix. There is no SQLite and no WebAssembly on the
 web.
@@ -621,17 +622,21 @@ web.
      clear (a delete over the area's key range).
 
   The next commit's record overwrites this one, so there is no third
-  transaction and nothing to clean up. The next commit's record waits until
-  this commit's changes have been handed to the browser: both transactions
-  cover both stores, so the browser runs them in the order they were made,
-  and a partly kept step 2 can never lose its record.
+  transaction and nothing to clean up. Commits on a lease take turns, and a
+  turn lasts until the commit's outcome is known, so the next record is only
+  ever written after a commit known to be whole. When a commit's outcome is
+  in doubt, the lease itself is in doubt: it ends, and every later commit on
+  it, queued ones included, is refused with `LeaseEnded` before writing
+  anything. So a record that a partly kept commit still needs is never
+  overwritten; the next lease finds it and completes the commit.
 - **What each outcome means.**
   - The record refused (an abort that is not for room, or a failure to start
     it): `CommitRefused`, nothing changed.
   - The record aborted for room (`AbortedForQuota`) or given no answer
     (`NoAnswer`): `CommitUnknown`. The record may or may not have been kept,
     and the next lease settles it either way, whole.
-  - The record kept and the changes `complete`: `CommitApplied`.
+  - The record kept, every change queued, and the changes `complete`:
+    `CommitApplied`.
   - The record kept and the changes aborted for any reason, failing to start,
     or given no answer: `CommitUnknown`. The next lease completes the
     commit. Once the record has landed, the commit is never reported refused,
@@ -641,7 +646,10 @@ web.
   the engine reads the record and checks the rows against it: every key it
   put holds that value, every key it deleted is gone, and every area it
   cleared holds exactly the keys put after the clear. If they match (the
-  usual case), opening writes nothing. If they do not, the engine applies the
+  usual case), opening writes no row. (Taking a lease still starts and aborts
+  a read-write transaction to probe strict durability, and opening a format
+  1 database runs the browser's upgrade; neither changes a row.) If they do
+  not, the engine applies the
   record's changes again; puts, deletes and area clears give the same rows
   however many times they run, so a commit that landed in part is completed
   and one that landed whole is untouched. This is the one write opening may
@@ -664,15 +672,17 @@ web.
   that finds the commit whole. The engine tells a quota abort from other
   aborts by `transaction.error.name` alone.
 - **Room is checked before a commit.** The engine asks the browser for
-  `navigator.storage.estimate()` when it leases. A commit with puts is
-  charged twice (once for the record, once for the rows) two bytes per
-  character of area, key and value plus 1 KiB per put;
+  `navigator.storage.estimate()` when it leases. Every commit is charged for
+  its record (1 KiB, plus two bytes per character and 1 KiB for each change
+  in it) and for its rows (two bytes per character of area, key and value
+  plus 1 KiB per put);
   its charge is reserved when the commit is admitted and given back if the
   commit is refused, so commits issued together are admitted one after
   another against the room left by those before them. A commit that would
   leave less than 1 MiB is refused as `CommitRefused(NoRoomForCommit)`, with
-  nothing written. A commit with no puts (empty, deletes, area clears) is
-  never refused for room, since it frees space or uses none. The engine asks
+  nothing written. That includes an empty commit and one that only deletes
+  or clears: each writes its record before it frees anything, so with less
+  than the margin left it is refused too. The engine asks
   again in the background when the last answer is over 10 s old, so in
   normal use a save does not wait on the browser; it waits for a fresh answer
   only when the cached figure says a commit will not fit. Measured in Chrome
@@ -788,7 +798,9 @@ The app always knows which step a failure came from, because the store
 answers each step with its own result:
 
 - **opening:** `StoreNotOpened(OpenStorageFailed(failure))`: the store did
-  not open, and opening makes no commit, so it wrote no row;
+  not open, and the store makes no commit at open. On IndexedDB the engine
+  may have written rows while taking the lease, completing its own last
+  commit; what is certain is that no row outside that commit changed;
 - **a refused save:** `NotSaved(failure)`: the edit is not stored. The store
   stays open unless the failure ended its lease; then every later step
   answers `StoreStopped`;
@@ -1117,8 +1129,8 @@ which names are foreign), and reads its pages and settings with one
 current value, and sends one engine commit holding a `Put` for each row it
 changed, a `Delete` of the old name when an element or lineup group moves
 page, and a `Put` of the strategy's new summary. The engine applies a
-commit whole or not at all, across areas and across a crash, so the disk
-holds the strategy from before the edit or after it, never part of it.
+commit whole or not at all, across areas and across a crash, so a granted
+lease shows the strategy from before the edit or after it, never part of it.
 Library edits (`editLibrary`) and summary rebuilds are one commit the same
 way; removing a strategy is `ClearArea` of its area and a `Delete` of its
 summary. Opening and reading never commit: the only calls that write are

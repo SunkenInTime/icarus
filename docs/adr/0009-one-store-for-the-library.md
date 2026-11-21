@@ -52,12 +52,13 @@ decodes a payload into a typed item at the edge of the editor.
   every row in `OpApplied.writes` and the strategy's summary. The engine
   contract requires a commit to apply whole or not at all, across areas and
   across a crash, and a conformance suite checks every engine against it, so
-  the disk holds the rows from before the edit or after it, never half. A
-  commit the engine reports in doubt is whole or absent by the next lease.
-  The IndexedDB engine keeps this even where the browser does not (a quota
-  abort in Firefox, an abort that itself fails), by recording each commit's
-  changes in one put before applying them and finishing that commit, if it
-  landed in part, while taking the next lease.
+  a granted lease shows the rows from before the edit or after it, never
+  half. A commit the engine reports in doubt is whole or absent by the next
+  lease. The IndexedDB engine keeps this even where the browser does not (a
+  quota abort in Firefox, an abort that itself fails), by recording each
+  commit's changes in one put before applying them, ending the lease when a
+  commit is in doubt so no later record replaces that one, and finishing the
+  commit, if it landed in part, while taking the next lease.
 - A save the engine cannot answer for is in doubt, and the store that made it
   is finished: it releases its lease and refuses every later call. The caller
   reopens and reads, and what is stored is what was saved. To keep the edit

@@ -23,6 +23,8 @@ const roomMargin = 1024 * 1024;
 
 const _bytesPerPut = 1024;
 
+const _bytesPerRecord = 1024;
+
 const _refreshRoomEvery = Duration(seconds: 10);
 
 StorageFailure _named(DOMException? error, String what) => switch (error) {
@@ -67,6 +69,9 @@ StorageFailure? _closeDatabase(IDBDatabase db) =>
 
 StorageFailure? _abortOf(IDBTransaction transaction) =>
     _done(() => transaction.abort(), 'aborting');
+
+void _handled(Event event) =>
+    _done(() => event.preventDefault(), 'handling an error event');
 
 void _into<T>(Completer<T> answer, T Function() compute) {
   if (answer.isCompleted) return;
@@ -137,7 +142,7 @@ Future<_Answer> _answer(IDBRequest request, String what, Duration patience) {
       () => _Value(request.result),
     )).toJS
     ..onerror = ((Event event) {
-      event.preventDefault();
+      _handled(event);
       _into(answered, () => _Failed(_named(request.error, what)));
     }).toJS;
   return answered.future.timeout(
@@ -186,11 +191,16 @@ Future<_Opened> _openDatabase(String name, Duration patience) {
   final request = window.indexedDB.open(name, indexedDbFormat);
   request
     ..onupgradeneeded = ((IDBVersionChangeEvent event) {
-      created = event.oldVersion == 0;
+      if (opened.isCompleted) {
+        _done(() => request.transaction?.abort(), 'aborting a late upgrade');
+        return;
+      }
       final made = _done(() {
+        final from = event.oldVersion;
+        created = from == 0;
         final db = request.result! as IDBDatabase;
-        if (event.oldVersion < 1) db.createObjectStore(_rows);
-        if (event.oldVersion < 2) db.createObjectStore(_last);
+        if (from < 1) db.createObjectStore(_rows);
+        if (from < 2) db.createObjectStore(_last);
       }, 'creating the library\'s stores');
       if (made case final failure?) {
         _into(opened, () => _Refused(failure));
@@ -211,7 +221,7 @@ Future<_Opened> _openDatabase(String name, Duration patience) {
       );
     }).toJS
     ..onerror = ((Event event) {
-      event.preventDefault();
+      _handled(event);
       _into(
         opened,
         () => request.error?.name == 'VersionError'
@@ -241,7 +251,7 @@ Future<StorageFailure?> _deleteDatabase(String name, Duration patience) {
   request
     ..onsuccess = ((Event _) => _into(deleted, () => null)).toJS
     ..onerror = ((Event event) {
-      event.preventDefault();
+      _handled(event);
       _into(deleted, () => _named(request.error, what));
     }).toJS;
   return deleted.future.timeout(
@@ -329,7 +339,7 @@ _LastCommit _parsedRecord(String text) {
       return _Unreadable(
         NewerFormat(FormatLayer.engine, found: format, known: indexedDbFormat),
       );
-    case {'format': final int _, 'changes': final List<Object?> listed}:
+    case {'format': indexedDbFormat, 'changes': final List<Object?> listed}:
       final changes = <Change>[];
       for (final entry in listed) {
         switch (entry) {
@@ -344,6 +354,9 @@ _LastCommit _parsedRecord(String text) {
           case _:
             return const _Unreadable(_damagedRecord);
         }
+      }
+      if (refusedName(changes, indexedDbMaxKeyLength) != null) {
+        return const _Unreadable(_damagedRecord);
       }
       return _Recorded(changes);
     case _:
@@ -439,6 +452,10 @@ Future<Stored<bool>> _landedWhole(
           );
         }(),
   };
+  await Future.wait([
+    ...areaKeys.values,
+    for (final span in spans.values) ...[span.keys, span.values],
+  ]);
   for (final MapEntry(key: area, value: listing) in areaKeys.entries) {
     switch (await listing) {
       case _Failed(:final failure):
@@ -499,7 +516,12 @@ Future<StorageFailure?> _replay(
         final error => _named(error, what),
       },
     )).toJS;
-  _queueChanges(transaction.objectStore(_rows), changes);
+  try {
+    _queueChanges(transaction.objectStore(_rows), changes);
+  } on Object catch (error) {
+    final failure = _thrown(error, what);
+    _into(finished, () => _abortOf(transaction) ?? failure);
+  }
   return finished.future.timeout(
     patience,
     onTimeout: () => NoAnswer(what, patience),
@@ -611,13 +633,15 @@ final class _Room {
       _left == null ? RoomNotChecked(_unchecked) : const RoomChecked();
 
   static int charge(List<Change> changes) => changes.fold(
-    0,
+    _bytesPerRecord,
     (total, change) =>
         total +
         switch (change) {
           Put(:final area, :final key, :final value) =>
-            _bytesPerPut + 2 * (area.length + key.length + value.length),
-          Delete() || ClearArea() => 0,
+            2 * _bytesPerPut + 4 * (area.length + key.length + value.length),
+          Delete(:final area, :final key) =>
+            _bytesPerPut + 2 * (area.length + key.length),
+          ClearArea(:final area) => _bytesPerPut + 2 * area.length,
         },
   );
 
@@ -661,7 +685,6 @@ final class _Room {
   };
 
   Future<StorageFailure?> admit(int charge) async {
-    if (charge == 0) return null;
     if (_sinceAsked.elapsed > _refreshRoomEvery) unawaited(ask());
     if (!_fits(charge)) await ask();
     if (!_fits(charge)) {
@@ -808,6 +831,12 @@ final class _Ending extends _LeaseState {
   final Future<Releasing> releasing;
 }
 
+final class _InDoubt extends _LeaseState {
+  const _InDoubt(this.releasing);
+
+  final Future<Releasing> releasing;
+}
+
 final class IndexedDbLease implements StorageLease {
   IndexedDbLease._(this._db, this._lock, this._room, this._patience) {
     _db
@@ -832,7 +861,7 @@ final class IndexedDbLease implements StorageLease {
   @override
   LeaseStatus get status => switch (_state) {
     _Open() => const Holding(),
-    _Ending() => const Ended(),
+    _Ending() || _InDoubt() => const Ended(),
   };
 
   Stored<IDBTransaction> _transaction(IDBTransactionMode mode) {
@@ -943,7 +972,7 @@ final class IndexedDbLease implements StorageLease {
           });
         }).toJS
         ..onerror = ((Event event) {
-          event.preventDefault();
+          _handled(event);
           _into(
             listed,
             () => StorageFailed<List<String>>(
@@ -998,7 +1027,7 @@ final class IndexedDbLease implements StorageLease {
   }
 
   Future<Committing> _committed(List<Change> changes) async {
-    final charge = 2 * _Room.charge(changes);
+    final charge = _Room.charge(changes);
     var admitted = false;
     Committing outcome;
     try {
@@ -1018,14 +1047,19 @@ final class IndexedDbLease implements StorageLease {
     final previous = _turn;
     final turn = Completer<void>();
     _turn = turn.future;
-    final ({Future<Committing> landing}) begun;
     try {
       await previous;
-      begun = await _begin(changes, charge, admitted);
+      Committing outcome;
+      try {
+        outcome = await (await _begin(changes, charge, admitted)).landing;
+      } on Object catch (error) {
+        outcome = CommitUnknown(_thrown(error, 'committing'));
+      }
+      if (outcome is CommitUnknown) _doubted();
+      return outcome;
     } finally {
       turn.complete();
     }
-    return begun.landing;
   }
 
   Future<({Future<Committing> landing})> _begin(
@@ -1033,10 +1067,16 @@ final class IndexedDbLease implements StorageLease {
     int charge,
     void Function() admitted,
   ) async {
+    if (_state case _InDoubt()) {
+      return (landing: Future.value(const CommitRefused(LeaseEnded())));
+    }
     if (_held case final held?) {
       _held = null;
       held._reached.complete();
       await held._letGo.future;
+    }
+    if (_state case _InDoubt()) {
+      return (landing: Future.value(const CommitRefused(LeaseEnded())));
     }
     if (await _room.admit(charge) case final failure?) {
       return (landing: Future.value(CommitRefused(failure)));
@@ -1152,9 +1192,20 @@ final class IndexedDbLease implements StorageLease {
 
   @override
   Future<Releasing> release() => switch (_state) {
-    _Ending(:final releasing) => releasing,
+    _Ending(:final releasing) || _InDoubt(:final releasing) => releasing,
     _Open() => (_state = _Ending(_release())).releasing,
   };
+
+  void _doubted() {
+    switch (_state) {
+      case _Open():
+        _state = _InDoubt(_release());
+      case _Ending(:final releasing):
+        _state = _InDoubt(releasing);
+      case _InDoubt():
+        break;
+    }
+  }
 
   Future<Releasing> _release() async {
     await Future.wait([..._writing]);

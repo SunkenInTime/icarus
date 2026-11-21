@@ -28,6 +28,7 @@ const _patch = '''
     hideDurability: false,
     cursorKeyThrows: false,
     room: null,
+    written: 0,
     estimates: 0,
     estimateFails: null,
     closeThrows: false,
@@ -130,7 +131,7 @@ const _patch = '''
       return Promise.resolve({ get quota() { throw new TypeError('no quota'); }, usage: 0 });
     }
     if (faults.room === null) return estimate.apply(this, args);
-    return Promise.resolve({ quota: faults.room + 4096, usage: 4096 });
+    return Promise.resolve({ quota: faults.room + 4096, usage: 4096 + faults.written });
   };
   const close = IDBDatabase.prototype.close;
   IDBDatabase.prototype.close = function (...args) {
@@ -211,6 +212,9 @@ const _patch = '''
         throw new TypeError('the value is broken');
       }
       const request = original.apply(this, args);
+      if (name === 'put' && typeof args[0] === 'string') {
+        request.addEventListener('success', () => { faults.written += args[0].length; });
+      }
       const cutting = this.transaction.icarusCut;
       if (cutting) {
         const transaction = this.transaction;
@@ -279,7 +283,10 @@ void hideDurability(bool hide) => _faults['hideDurability'] = hide.toJS;
 
 void cursorKeysThrow(bool throws) => _faults['cursorKeyThrows'] = throws.toJS;
 
-void pretendRoomLeft(int? bytes) => _faults['room'] = bytes?.toJS;
+void pretendRoomLeft(int? bytes) {
+  _faults['room'] = bytes?.toJS;
+  _faults['written'] = 0.toJS;
+}
 
 int get estimatesAsked => (_faults['estimates']! as JSNumber).toDartInt;
 
