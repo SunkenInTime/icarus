@@ -127,7 +127,7 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
         final scope = fields.decoded('scope', _scope);
         final authored = fields.decoded('authored', _authored);
         final authoredIn = fields.whole('authoredIn');
-        if (authoredIn < 1) fields.reject('sessions are numbered from 1');
+        if (authoredIn < 0) fields.reject('a negative session number');
         final retriedAfter = fields.whole('retriedAfter');
         if (retriedAfter < 0) fields.reject('a negative attempt number');
         final refused = fields.json['refusal'] == null

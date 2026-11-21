@@ -317,6 +317,7 @@ final class LibraryStore {
   final _queues = <String, _LoadedQueue>{};
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
   var _numbersStored = const Counters(nextAttempt: 1, nextSession: 1);
+  String? _numbersUnreadable;
   final _unsaved = <String>{};
   final _changes = StreamController<StoreChange>.broadcast();
 
@@ -576,8 +577,8 @@ final class LibraryStore {
             case CloudRowRead(value: final numbers):
               _numbers = numbers;
               _numbersStored = numbers;
-            case CloudRowUnreadable():
-              break;
+            case CloudRowUnreadable(:final problem):
+              _numbersUnreadable = problem;
           }
         case _:
           break;
@@ -715,7 +716,6 @@ final class LibraryStore {
           _summaryOf(strategy, header, const {}).withSync(_heldSync(rows)),
         ),
         _QueueNotRead(:final failure) => _RebuildNotRead(failure),
-        _QueueRefused() => _HeaderMissing(StrategyRef(strategy.area)),
       };
     }
     return _RebuiltSummary(_summaryOf(strategy, header, const {}));
@@ -1896,8 +1896,6 @@ final class _LibraryEdit {
                 );
               case _QueueNotRead(:final failure):
                 return _Stop(NotSaved(failure));
-              case _QueueRefused():
-                break;
             }
           case _:
             break;

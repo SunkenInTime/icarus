@@ -145,6 +145,35 @@ final class QueueHeld implements CommitRefusal, LibraryRefusal {
   String toString() => 'QueueHeld($rows)';
 }
 
+final class NumbersUnreadable implements CommitRefusal, LibraryRefusal {
+  const NumbersUnreadable();
+
+  @override
+  bool operator ==(Object other) => other is NumbersUnreadable;
+
+  @override
+  int get hashCode => (NumbersUnreadable).hashCode;
+
+  @override
+  String toString() => 'NumbersUnreadable';
+}
+
+final class CopyNeedsContent implements CommitRefusal {
+  const CopyNeedsContent(this.pagePublicId);
+
+  final String pagePublicId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CopyNeedsContent && other.pagePublicId == pagePublicId;
+
+  @override
+  int get hashCode => Object.hash(CopyNeedsContent, pagePublicId);
+
+  @override
+  String toString() => 'CopyNeedsContent($pagePublicId)';
+}
+
 final class UnsentWorkInArea extends LibraryRefusal {
   const UnsentWorkInArea(this.ref);
 

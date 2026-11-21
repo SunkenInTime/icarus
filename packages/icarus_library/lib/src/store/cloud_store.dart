@@ -11,7 +11,7 @@ final class _OnDisk {
 
   final Map<int, QueueEntry> entries;
   final Map<int, AttemptFact> attempts;
-  StrategyFacts facts;
+  StrategyFacts? facts;
   final Map<(int, int), LandedWork> landed;
   final Map<String?, String> groups;
 }
@@ -82,12 +82,6 @@ final class _QueueNotRead extends _QueueLoad {
   final StorageFailure failure;
 }
 
-final class _QueueRefused extends _QueueLoad {
-  const _QueueRefused(this.refusal);
-
-  final CommitRefusal refusal;
-}
-
 sealed class _CloudOpen {
   const _CloudOpen();
 }
@@ -128,12 +122,22 @@ String _groupName(String? page) => switch (page) {
 int _highest(Iterable<int> numbers) =>
     numbers.fold(0, (highest, number) => number > highest ? number : highest);
 
-bool _queueName(String key) =>
-    key == const CloudName().name ||
-    key.startsWith(pendingPrefix) ||
-    key.startsWith(attemptPrefix) ||
-    key.startsWith(landedPrefix) ||
-    key.startsWith(readPrefix);
+bool _queueName(String key) => isCloudKey(key);
+
+Set<String> queuePagesOf(PendingOp entry) => pagesOf(entry);
+
+Iterable<String> _rowPages(LoadedStrategy strategy, StrategyOp op) => [
+  for (final digest in switch (targetOf(op)) {
+    ElementTarget(:final elementPublicId) => strategy.pagesOfElement(
+      elementPublicId,
+    ),
+    LineupTarget(:final lineupPublicId) => strategy.pagesOfLineupGroup(
+      lineupPublicId,
+    ),
+    _ => const <String>[],
+  })
+    ?strategy.pageIdOf(digest),
+];
 
 Map<String?, String> _groupTexts(Shown shown) => {
   for (final MapEntry(:key, :value) in shownToGroups(shown).entries)
@@ -200,7 +204,11 @@ Counters _numbersOf(CloudQueue queue) =>
 
 typedef _Opened = (LoadedStrategy, ReadableStrategy, CloudQueue?, StrategySync);
 
-typedef _BaseApplied = ({List<_Write> writes, Set<String> pages});
+typedef _BaseApplied = ({
+  List<_Write> writes,
+  Set<String> pages,
+  Set<Target> rows,
+});
 
 extension _CloudStore on LibraryStore {
   DateTime _cloudNow() => _storedPrecision(_clock());
@@ -372,11 +380,17 @@ extension _CloudStore on LibraryStore {
         cannotRead(PendingName(place).name, problem);
         entries = const [];
     }
+    if (_numbersUnreadable case final problem?) {
+      unreadable.add(
+        UnreadableQueueRow(
+          StoredRowRef(libraryArea, const NumbersName().name),
+          problem,
+        ),
+      );
+    }
     if (unreadable.isNotEmpty) {
-      if (await _keepHeld(strategy, unreadable) case StorageFailed(
-        :final failure,
-      )) {
-        return _QueueNotRead(failure);
+      if (_summaries[strategy.digest] case final summary?) {
+        _keepInMemory(strategy.digest, summary.withSync(_heldSync(unreadable)));
       }
       return _QueueHeld(unreadable);
     }
@@ -404,20 +418,9 @@ extension _CloudStore on LibraryStore {
       nextSession: _numbers.nextSession,
       shown: shown,
       strategy: facts,
-      session: QueueSession(
-        connected: false,
-        build: _build,
-        number: _numbers.nextSession - 1,
-      ),
+      session: QueueSession(connected: false, build: _build, number: 0),
     );
-    final current = switch (transition(
-      onDisk,
-      AppRestarted(build: _build),
-      now: _cloudNow(),
-    )) {
-      Stepped(:final queue) => queue,
-      NotApplicable() => onDisk,
-    };
+    final current = onDisk;
     final loaded = _LoadedQueue(
       _OnDisk(
         entries: {for (final entry in entries) entry.place: entry},
@@ -438,28 +441,6 @@ extension _CloudStore on LibraryStore {
       );
     }
     return _QueueLoaded(loaded);
-  }
-
-  Future<Stored<void>> _keepHeld(
-    LoadedStrategy strategy,
-    List<UnreadableQueueRow> rows,
-  ) async {
-    final summary = _summaries[strategy.digest];
-    if (summary == null) return done;
-    final held = summary.withSync(_heldSync(rows));
-    if (held == summary && !_unsaved.contains(strategy.digest)) return done;
-    return switch (await _commit<void, CommitRefusal>(
-      [_PutSummary(strategy.digest, held)],
-      () {
-        _summaries[strategy.digest] = held;
-        _unsaved.remove(strategy.digest);
-      },
-    )) {
-      Saved() || NothingToSave() => done,
-      NotSaved(:final failure) ||
-      SaveInDoubt(:final failure) => StorageFailed(failure),
-      Refused() => done,
-    };
   }
 
   Future<_CloudOpen> _openCloud(String strategyPublicId) async {
@@ -490,7 +471,6 @@ extension _CloudStore on LibraryStore {
       _QueueLoaded(:final queue) => _CloudReady(strategy, header, queue),
       _QueueHeld(:final rows) => _CloudHeld(strategy, header, rows),
       _QueueNotRead(:final failure) => _CloudUnread(failure),
-      _QueueRefused(:final refusal) => _CloudRefused(refusal),
     };
   }
 
@@ -534,8 +514,28 @@ extension _CloudStore on LibraryStore {
       (null, SomePages(:final pages)) => {
         for (final page in pages) digestOf(page),
       },
-      (final queue?, SomePages()) => {
+      (final queue?, SomePages(pages: final asked)) => {
         for (final page in pagesToLoad(queue, pages)) digestOf(page),
+        for (final entry in entriesForPages(queue, asked).$1)
+          ...switch (targetOf(entry.op)) {
+            ElementTarget(:final elementPublicId) => strategy.pagesOfElement(
+              elementPublicId,
+            ),
+            LineupTarget(:final lineupPublicId) => strategy.pagesOfLineupGroup(
+              lineupPublicId,
+            ),
+            _ => const <String>[],
+          },
+        for (final work in queue.landed)
+          ...switch (targetOf(work.op)) {
+            ElementTarget(:final elementPublicId) => strategy.pagesOfElement(
+              elementPublicId,
+            ),
+            LineupTarget(:final lineupPublicId) => strategy.pagesOfLineupGroup(
+              lineupPublicId,
+            ),
+            _ => const <String>[],
+          },
       },
     };
     final digests = [
@@ -552,12 +552,17 @@ extension _CloudStore on LibraryStore {
   }
 
   ({List<_Write> writes, Set<String> pages}) _queueWrites(
-    String area,
+    LoadedStrategy strategy,
     _OnDisk disk,
     CloudQueue next,
   ) {
+    final area = strategy.area;
     final writes = <_Write>[];
     final pages = <String>{};
+    Iterable<String> pagesOf(PendingOp entry) => {
+      ...queuePagesOf(entry),
+      ..._rowPages(strategy, entry.op),
+    };
     final kept = <int>{};
     for (final entry in next.entries) {
       kept.add(entry.place);
@@ -589,12 +594,20 @@ extension _CloudStore on LibraryStore {
     };
     for (final MapEntry(key: at, value: work) in landed.entries) {
       if (disk.landed[at] != work) writes.add(_PutLanded(area, work));
-      if (!disk.landed.containsKey(at)) pages.addAll(pagesNeeded(work.op));
+      if (!disk.landed.containsKey(at)) {
+        pages.addAll([
+          ...pagesNeeded(work.op),
+          ..._rowPages(strategy, work.op),
+        ]);
+      }
     }
     for (final MapEntry(key: at, value: work) in disk.landed.entries) {
       if (!landed.containsKey(at)) {
         writes.add(_DeleteName(area, LandedName(at.$1, at.$2).name));
-        pages.addAll(pagesNeeded(work.op));
+        pages.addAll([
+          ...pagesNeeded(work.op),
+          ..._rowPages(strategy, work.op),
+        ]);
       }
     }
     return (writes: writes, pages: pages);
@@ -693,6 +706,7 @@ extension _CloudStore on LibraryStore {
     final before = <String, (StoreName, Row?)>{};
     final gone = <String>{};
     final pages = <String>{};
+    final rows = <Target>{};
     Row? held(StoreName name) => switch (strategy.heldUnder(name)) {
       HeldRow(:final row) => row,
       HeldNothing() || HeldUnplaced() => null,
@@ -701,7 +715,18 @@ extension _CloudStore on LibraryStore {
         before.putIfAbsent(name.name, () => (name, held(name)));
     void drop(StoreName name) {
       remember(name);
-      if (held(name) case final row?) strategy.forgetRow(row);
+      switch (held(name)) {
+        case final ElementRow row:
+          rows.add(ElementTarget(row.publicId));
+          strategy.forgetRow(row);
+        case final LineupGroupRow row:
+          rows.add(LineupTarget(row.publicId));
+          strategy.forgetRow(row);
+        case final row?:
+          strategy.forgetRow(row);
+        case null:
+          break;
+      }
     }
 
     void dropPage(String page) {
@@ -729,6 +754,14 @@ extension _CloudStore on LibraryStore {
     void put(Row row) {
       final name = nameOf(row);
       remember(name);
+      switch (row) {
+        case ElementRow(:final publicId):
+          rows.add(ElementTarget(publicId));
+        case LineupGroupRow(:final publicId):
+          rows.add(LineupTarget(publicId));
+        case _:
+          break;
+      }
       if (row case PageRow(:final publicId)) {
         final page = digestOf(publicId);
         if (!strategy.hasPageRow(page) && !strategy.isLoaded(page)) {
@@ -747,7 +780,11 @@ extension _CloudStore on LibraryStore {
         _ => const <StoreName>[],
       };
       for (final other in others) {
-        if (other.name != name.name) drop(other);
+        if (other.name == name.name) continue;
+        drop(other);
+        if (other case ElementName(:final page) || LineupName(:final page)) {
+          pages.add(strategy.pageIdOf(page) ?? page);
+        }
       }
       strategy.keepRow(row);
       switch (row) {
@@ -849,7 +886,7 @@ extension _CloudStore on LibraryStore {
           _ => const <_Write>[],
         },
     ];
-    return Done((writes: writes, pages: pages));
+    return Done((writes: writes, pages: pages, rows: rows));
   }
 
   Future<Saving<T, CommitRefusal>> _finishCloud<T>(
@@ -871,7 +908,7 @@ extension _CloudStore on LibraryStore {
       case Done(:final value):
         base = value;
     }
-    final queued = _queueWrites(area, disk, next);
+    final queued = _queueWrites(strategy, disk, next);
     final groups = _groupTexts(next.shown);
     final header = _baseHeader(strategy, cloud.header);
     final previous = _summaries[digest];
@@ -885,7 +922,15 @@ extension _CloudStore on LibraryStore {
           summary = value;
       }
     } else {
-      final touched = {...base.pages, ...queued.pages, ...edited};
+      final touched = {
+        ...base.pages,
+        ...queued.pages,
+        ...edited,
+        for (final entry in entriesOnRows(next, base.rows))
+          ...queuePagesOf(entry),
+        for (final work in next.landed)
+          if (base.rows.contains(targetOf(work.op))) ...pagesNeeded(work.op),
+      };
       final StrategyRowSet rows;
       switch (await _visibleFor(strategy, header, next, SomePages(touched))) {
         case StorageFailed(:final failure):
@@ -1026,6 +1071,9 @@ extension _CloudStore on LibraryStore {
       }
       final List<StrategyOp> ops;
       switch (op) {
+        case PageAddOp(copyContentFromPagePublicId: final source?)
+            when !queue.shown.content.containsKey(source):
+          return Refused(CopyNeedsContent(source));
         case PageAddOp(copyContentFromPagePublicId: _?):
           switch (expandCopy(rows, op)) {
             case CopyExpanded(ops: final expanded):
@@ -1129,12 +1177,23 @@ extension _CloudStore on LibraryStore {
       case final _CloudReady ready:
         cloud = ready;
     }
+    return _recordOn(cloud, events);
+  }
+
+  Future<RecordResult> _recordOn(
+    _CloudReady cloud,
+    List<QueueEvent> events,
+  ) async {
+    final strategyPublicId = cloud.header.publicId;
     final now = _cloudNow();
     final outcomes = <ReportOutcome>[];
     final arrivals = <ArrivedBase>[];
-    var queue = cloud.queue.current.raisedTo(
-      nextAttempt: _numbers.nextAttempt,
-      nextSession: _numbers.nextSession,
+    var queue = recordExpiries(
+      cloud.queue.current.raisedTo(
+        nextAttempt: _numbers.nextAttempt,
+        nextSession: _numbers.nextSession,
+      ),
+      now,
     );
     for (final event in events.map(_atStoredPrecision)) {
       if (event is UserEdited) {
@@ -1191,22 +1250,7 @@ extension _CloudStore on LibraryStore {
     _CloudRefused() || _CloudUnread() => throw StateError('not open'),
   };
 
-  Future<void> _keepExpiries(_CloudOpen cloud) async {
-    if (cloud is! _CloudReady) return;
-    final queue = cloud.queue.current;
-    final recorded = recordExpiries(queue, _cloudNow());
-    if (identical(recorded, queue)) return;
-    await _finishCloud(
-      cloud,
-      recorded,
-      const [],
-      const {},
-      (summary) => summary,
-    );
-  }
-
   Future<Reading<StrategyContent>> _readCloudStrategy(_CloudOpen cloud) async {
-    await _keepExpiries(cloud);
     final (strategy, header, queue, sync) = _opened(cloud);
     final StrategyRowSet rows;
     switch (await _visibleFor(strategy, header, queue, SomePages(const []))) {
@@ -1231,7 +1275,6 @@ extension _CloudStore on LibraryStore {
     _CloudOpen cloud,
     String pagePublicId,
   ) async {
-    await _keepExpiries(cloud);
     final (strategy, header, queue, sync) = _opened(cloud);
     final StrategyRowSet rows;
     switch (await _visibleFor(
@@ -1298,68 +1341,51 @@ extension _CloudStore on LibraryStore {
       case Done():
         break;
     }
-    final now = _cloudNow();
+    if (_numbersUnreadable != null) return const Refused(NumbersUnreadable());
+    final strategy = LoadedStrategy(
+      digest: digest,
+      header: const HeaderAbsent('none of its rows are stored'),
+      strategyId: id,
+      pages: const {},
+      settings: const {},
+      unplaced: const {},
+      names: const [CloudName()],
+    );
     var queue = CloudQueue.start(build: _build).raisedTo(
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
     );
-    for (final base in <ArrivedBase>[header, ...pages]) {
-      queue = transition(
-        queue,
+    final now = _cloudNow();
+    queue = transition(queue, const ConnectionReturned(), now: now).queue;
+    final events = [
+      for (final base in <ArrivedBase>[header, ...pages])
         BaseArrived(base, session: queue.session.number),
-        now: now,
-      ).queue;
-    }
-    final read = {for (final read in pages) read.page.publicId: read.page};
-    final rows = StrategyRowSet(
-      strategy: strategyRow,
-      pages: [for (final page in header.pages) read[page.publicId] ?? page],
-      settings: header.settings,
-      elements: [for (final read in pages) ...read.elements],
-      lineupGroups: [for (final read in pages) ...read.lineupGroups],
+    ];
+    _forgetCloud(digest);
+    _strategies[digest] = strategy;
+    final loaded = _LoadedQueue(
+      _OnDisk(entries: {}, attempts: {}, facts: null, landed: {}, groups: {}),
+      queue,
     );
-    final summary = StrategySummary.of(
-      strategy: strategyRow,
-      pages: rows.pages,
-      settings: rows.settings,
-      tallies: {
-        for (final page in rows.pages)
-          page.publicId: _tallyOn(rows, page.publicId),
-      },
-      elsewhere: PageTally.empty,
-      sync: _syncOf(queue, now),
+    _queues[digest] = loaded;
+    final result = await _recordOn(
+      _CloudReady(strategy, strategyRow, loaded),
+      events,
     );
-    final groups = _groupTexts(queue.shown);
-    final numbers = _higher(_numbers, _numbersOf(queue));
-    _numbers = numbers;
-    return _commit<StrategySummary, LibraryRefusal>(
-      [
-        _PutFacts(area, StrategyFacts.fresh),
-        for (final row in rows.rows) _PutRow(area, row),
-        for (final MapEntry(key: page, value: text) in groups.entries)
-          _PutGroup(area, page, text),
-        _PutNumbers(numbers),
-        _PutSummary(digest, summary),
-      ],
-      () {
-        _summaries[digest] = summary;
-        _unsaved.remove(digest);
+    switch (result) {
+      case Saved():
         _unreadable.remove(digest);
-        _numbersStored = numbers;
+      case _:
         _forgetCloud(digest);
-        _queues[digest] = _LoadedQueue(
-          _OnDisk(
-            entries: {},
-            attempts: {},
-            facts: StrategyFacts.fresh,
-            landed: {},
-            groups: {...groups},
-          ),
-          queue,
-        );
-        return summary;
-      },
-    );
+    }
+    return switch (result) {
+      Saved(:final value) => Saved(value.summary),
+      NothingToSave() => const NothingToSave(),
+      NotSaved(:final failure) => NotSaved(failure),
+      SaveInDoubt(:final failure) => SaveInDoubt(failure),
+      Refused(reason: final LibraryRefusal reason) => Refused(reason),
+      Refused(:final reason) => throw StateError('$reason on import'),
+    };
   }
 
   Future<Saving<StrategySummary, CommitRefusal>> _discardHeld(
@@ -1374,40 +1400,53 @@ extension _CloudStore on LibraryStore {
       case Done(:final value):
         keys = value;
     }
-    if (!keys.contains(const CloudName().name)) {
+    if (!keys.any(isCloudKey)) {
       return Refused(NotACloudStrategy(strategyPublicId));
     }
-    final cleared = await _commit<void, CommitRefusal>([
-      for (final key in keys)
-        if (_queueName(key)) _DeleteName(area, key),
-      _PutFacts(area, StrategyFacts.fresh),
-    ], () {});
-    _forgetCloud(digest);
-    _summaries.remove(digest);
-    switch (cleared) {
-      case Saved() || NothingToSave():
-        break;
-      case NotSaved(:final failure):
+    final LoadedStrategy strategy;
+    switch (await _strategyAt(digest)) {
+      case Found(:final value):
+        strategy = value;
+      case NotFound():
+        return Refused(NoSuchStrategy(strategyPublicId));
+      case NotRead(:final failure):
         return NotSaved(failure);
-      case SaveInDoubt(:final failure):
-        return SaveInDoubt(failure);
-      case Refused(:final reason):
-        return Refused(reason);
+      case InUnreadableStrategy(:final listing):
+        return Refused(StrategyNotReadable(listing.ref));
     }
-    return switch (await _rebuilt(digest)) {
-      _RebuiltSummary(:final summary) =>
-        await _commit<StrategySummary, CommitRefusal>(
-          [_PutSummary(digest, summary)],
-          () {
-            _summaries[digest] = summary;
-            _unsaved.remove(digest);
-            return summary;
-          },
-        ),
-      _RebuildNotRead(:final failure) => NotSaved(failure),
-      _HeaderUnreadable(:final row) => Refused(UnreadableRowInTheWay(row)),
-      _HeaderMissing(:final ref) => Refused(StrategyNotReadable(ref)),
-      _NoStrategyThere() => Refused(NoSuchStrategy(strategyPublicId)),
-    };
+    final ReadableStrategy header;
+    switch (strategy.header) {
+      case HeaderPlaced(row: final ReadableStrategy row):
+        header = row;
+      case HeaderPlaced(row: final UnreadableStrategy row):
+        return Refused(UnreadableRowInTheWay(row));
+      case HeaderUnplaced() || HeaderAbsent():
+        return Refused(StrategyNotReadable(StrategyRef(strategy.area)));
+    }
+    if (await _loadPages(strategy, strategy.pageDigests) case StorageFailed(
+      :final failure,
+    )) {
+      return NotSaved(failure);
+    }
+    final summary = LibraryStore._summaryOf(
+      strategy,
+      header,
+      const {},
+    ).withSync(_syncOf(CloudQueue.start(build: _build), _cloudNow()));
+    final result = await _commit<StrategySummary, CommitRefusal>(
+      [
+        for (final key in keys)
+          if (_queueName(key)) _DeleteName(area, key),
+        _PutFacts(area, StrategyFacts.fresh),
+        _PutSummary(digest, summary),
+      ],
+      () {
+        _summaries[digest] = summary;
+        _unsaved.remove(digest);
+        return summary;
+      },
+    );
+    _forgetCloud(digest);
+    return result;
   }
 }

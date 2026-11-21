@@ -397,7 +397,7 @@ final class StrategySummary {
         final version = fields.whole('rowsVersion');
         if (version > cloudRowVersion) {
           return () =>
-              KeptInCloud(Tally(standing: Standing.good, unreadable: 1));
+              KeptInCloud(Tally(standing: Standing.held, unreadable: 1));
         }
         final tally = fields.decoded('tally', Tally.decode);
         return () => KeptInCloud(tally!);

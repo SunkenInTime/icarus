@@ -1437,22 +1437,38 @@ rows sit beside them, each versioned and each read back before it is written:
 - `read/header` and `read/page/<page digest>`: what the results showed, as
   the queue keeps it (`Shown`): revisions and digests, not rows.
 
-Any of these rows marks the strategy as kept in the cloud. The library area
-holds one more row, `numbers`: the next attempt and session numbers for the
-whole library, never reset, so a result from a session of an earlier copy of
-a strategy can never pass for one of a new copy. A `numbers` row that does
-not read does not stop the library opening; the numbers then come from the
-rows that mention them, and the row is written again on the next cloud call.
+Any of these rows marks the area as a cloud strategy (`isCloudName`, one
+function used by loading, both removals, the discard and the `putStrategy`
+guard). An area with cloud rows but no `cloud` row is a held cloud strategy,
+never a local one. The library area holds one more row, `numbers`: the next
+attempt and session numbers for the whole library, never reset, so a result
+from a session of an earlier copy of a strategy can never pass for one of a
+new copy. A number is written before anyone is given it. When `numbers` does
+not read, the store does not guess: every cloud queue reads as held, importing
+a cloud strategy is refused (`NumbersUnreadable`), and local strategies are
+untouched. Getting out of that state needs a repair that is not built yet.
 
-`readStrategy` and `readPage` return the drawn rows (the cached rows with
-landed work and then the queue applied) and the queue's views and tally. A
-page whose content no stored result covers says `ContentNotRead` instead of
-looking empty. `commit` and `commitAll` add edits, `record` takes a list of
-events, and `addCloudStrategy` stores a strategy as the server sent it, with
-each page row taken from that page's read rather than from the header. The
-library summary carries the sync tally. Loading a strategy's queue is four
-listings (`pending/`, `attempt/`, `landed/`, `read/`) and one read (`cloud`),
-and applies a restart for the store's build, which opens a new session.
+**Reads never commit.** `readStrategy` and `readPage` return the drawn rows
+(the cached rows with landed work and then the queue applied) and the queue's
+views and tally, as recorded. Finding a held queue changes the summary in
+memory, saved with the next commit. Drawing a page loads the pages that hold
+the rows its queued and landed work act on, so a page draws the same in a
+fresh store as in a warm one. A page whose content no stored result covers
+says `ContentNotRead` instead of looking empty, and copying such a page is
+refused (`CopyNeedsContent`). `commit` and `commitAll` add edits. `record`
+takes a list of events and first records any passed resend window, so
+`record(id, [])` is the store's `look`: it writes the expiry, and a view can
+never show one that is not on disk. Loading a queue opens no session: until
+a call records `AppRestarted` or `ConnectionReturned` (which commits the new
+session number and returns it), the queue is in session 0, which is never
+issued, so every result is refused. `addCloudStrategy` creates the strategy
+empty (its `cloud` row and nothing else), opens a session, and runs `record`
+on the results it was given, in one commit, by the same rules as any later
+result. The library summary carries the sync tally; every page whose drawing
+a call can change gets its count rebuilt in that call, including a page a row
+left and the pages of queued and landed work on any row a result touched.
+Loading a strategy's queue is four listings (`pending/`, `attempt/`,
+`landed/`, `read/`) and one read (`cloud`).
 
 **Results reach the cached rows in the order they arrive.** Results come
 from subscriptions, which deliver ordered states, so the latest one wins:
@@ -1473,10 +1489,12 @@ queue rows puts the strategy in one sealed state: held. Its cached rows still
 read and draw, and `readStrategy` returns them with `CloudHeld`, which lists
 each row it could not read. Nothing is recorded, sent or rewritten: `commit`
 and `record` are refused with `QueueHeld`. Held is a standing of its own in
-the summary, written once when the store finds it. A newer build reads it;
-otherwise the only way out is `discardUnreadableQueue(id, const
-DiscardsUnsentWork())`. Removal reads the strategy's queue from disk and
-refuses a held queue or outstanding work.
+the summary, kept in memory when the store finds it and saved with the next
+commit; a summary from a newer build also reads as held. A newer build reads
+the queue; otherwise the only way out is `discardUnreadableQueue(id, const
+DiscardsUnsentWork())`, which deletes the queue rows and writes fresh facts
+and the rebuilt summary in one commit, or changes nothing. Removal reads the
+strategy's queue from disk and refuses a held queue or outstanding work.
 
 **One call, one commit, computed once.** Each `commit`, `commitAll` or
 `record` call runs all its events through the queue first, then computes the
@@ -1484,7 +1502,7 @@ writes once from the state after the last event: the cached rows that differ,
 every queue row that differs, the stored results that differ, the library's
 numbers and the summary. The queue a step hands back is kept even when the
 event did not apply, so a resend window that passed is written down by the
-call that found it. A read call that finds one writes it down too. A commit
+call that found it. A call in which nothing applied writes nothing. A commit
 either lands whole or, when the engine answers unknown, the store forgets its
 cached state of that strategy and reads it back before the next call.
 
@@ -1493,7 +1511,9 @@ call makes. `test/cloud_store_model_test.dart` runs the model through the
 store on the memory engine. After every successful commit it opens a fresh
 store over the same engine and requires the entries, attempts, landed work,
 facts, numbers, stored results, cached rows and summary to equal what the
-first store holds. About one commit in fourteen is answered unknown (landed
+first store holds, compares each page's count in the list with what the page
+draws, and counts engine commits around every read (none may happen). About
+one commit in fourteen is answered unknown (landed
 or not) and one in twenty-eight refused. It reopens between commits, restarts
 with new client ids and builds, delivers results from sessions that ended
 (none may change a row), removes and adds the strategy again with a result

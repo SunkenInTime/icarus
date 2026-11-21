@@ -294,3 +294,20 @@ StoreName nameOf(Row row) => switch (row) {
 };
 
 bool namesId(String digest, String id) => digestOf(id) == digest;
+
+bool isCloudName(StoreName name) => switch (name) {
+  CloudName() ||
+  PendingName() ||
+  AttemptName() ||
+  LandedName() ||
+  HeaderReadName() ||
+  PageReadName() => true,
+  _ => false,
+};
+
+bool isCloudKey(String key) =>
+    key == const CloudName().name ||
+    key.startsWith(pendingPrefix) ||
+    key.startsWith(attemptPrefix) ||
+    key.startsWith(landedPrefix) ||
+    key.startsWith(readPrefix);

@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:collection/collection.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/cloud/codec.dart';
+import 'package:icarus_library/src/store/summary.dart' show PageTally;
 import 'package:icarus_library/src/store/layout.dart'
     show PendingName, strategyArea;
 import 'package:test/test.dart';
@@ -22,6 +23,7 @@ final class FaultyLease extends ForwardingLease {
 
   @override
   Future<Committing> commit(List<Change> changes) async {
+    model.commits++;
     if (!model.faults) return super.commit(changes);
     switch (model.random.nextInt(28)) {
       case 0 || 1:
@@ -117,6 +119,7 @@ final class StoreModel {
   int restarts = 0;
   int nextId = 0;
   bool faults = true;
+  int commits = 0;
   bool userRemoved = false;
   bool teammateEdited = false;
   String openPage = 'page-a';
@@ -165,10 +168,37 @@ final class StoreModel {
     await store.close();
     await open();
     count('reopened');
+    await restartSession();
+  }
+
+  Future<void> restartSession() async {
+    for (var tries = 0; tries < 20; tries++) {
+      final result = await store.record(strategyId, [
+        AppRestarted(build: build),
+      ]);
+      log.add('session after reopen -> ${describeSaving(result)}');
+      switch (result) {
+        case SaveInDoubt():
+          await store.close();
+          await open();
+        case NotSaved():
+          continue;
+        case _:
+          return;
+      }
+    }
+  }
+
+  Future<T> reading<T>(Future<T> Function() read) async {
+    final before = commits;
+    final value = await read();
+    if (commits != before) throw StateError('a read made a commit');
+    count('reads checked for commits');
+    return value;
   }
 
   Future<CloudStrategy> sync() async => cloudOf(
-    switch (await store.readStrategy(strategyId)) {
+    switch (await reading(() => store.readStrategy(strategyId))) {
       Found(:final value) => value,
       final other => throw StateError('the strategy did not read: $other'),
     }.sync,
@@ -248,6 +278,20 @@ final class StoreModel {
     }
     final mine = await visible();
     final summary = listOf(store).strategies.single;
+    for (final page in mine.pages) {
+      if (page is! LivePage) continue;
+      var tally = PageTally.empty;
+      for (final row in mine.elementsOn(page.publicId)) {
+        tally = tally.plus(row, 1);
+      }
+      if (summary.tallies[page.publicId] ?? PageTally.empty case final listed
+          when listed != tally) {
+        throw StateError(
+          'after $label the list counts ${listed.toJson()} on ${page.publicId}, '
+          'the page draws ${tally.toJson()}',
+        );
+      }
+    }
     final reopened = await openCloudStore(
       MemoryEngine(MemoryStorage(storage.contents)),
       build: build,
@@ -301,11 +345,15 @@ final class StoreModel {
   }
 
   Future<StrategyRowSet> visible() async {
-    final content = strategyOf(await store.readStrategy(strategyId));
+    final content = strategyOf(
+      await reading(() => store.readStrategy(strategyId)),
+    );
     final elements = <ElementRow>[];
     for (final page in content.pages) {
       elements.addAll(
-        pageOf(await store.readPage(strategyId, page.publicId)).elements,
+        pageOf(
+          await reading(() => store.readPage(strategyId, page.publicId)),
+        ).elements,
       );
     }
     return StrategyRowSet(
@@ -418,7 +466,24 @@ final class StoreModel {
     }
   }
 
+  Future<void> giveUpLostSends() async {
+    final queue = (await sync()).queue;
+    final carried = {for (final (attempt, _, _) in inFlight) attempt};
+    final lost = [
+      for (final attempt in queue.attempts.values)
+        if (attempt.outcome is AttemptOpen && !carried.contains(attempt.number))
+          attempt.number,
+    ];
+    if (lost.isEmpty) return;
+    await record([
+      for (final attempt in lost)
+        TransportFailed(attempt, TransportFailure.timeout, at: clock),
+    ], 'the sender gives up $lost');
+    count('sends given up');
+  }
+
   Future<void> claim() async {
+    await giveUpLostSends();
     final cloud = await sync();
     if (standingOf(cloud.queue) != Standing.good) return;
     String? owner;
@@ -589,6 +654,34 @@ final class StoreModel {
     count('results from an ended session');
   }
 
+  Future<void> sessionOpenedThenReopened() async {
+    final opened = await record([
+      const ConnectionReturned(),
+    ], 'a session opened and never used');
+    if (opened == null) return;
+    final session = (await sync()).queue.session.number;
+    await reopen('before the session was used');
+    if ((await sync()).queue.session.number == session) {
+      throw StateError('a reopen handed out session $session again');
+    }
+    final before = storage.contents;
+    final result = await store.record(strategyId, [
+      BaseArrived(pageReadOf(server.rows, openPage), session: session),
+    ]);
+    log.add('a result from the unused session -> ${describeSaving(result)}');
+    if (result is SaveInDoubt<Recorded, CommitRefusal>) {
+      await reopen('the unused session result was in doubt');
+      return;
+    }
+    if (!const MapEquality<String, String>().equals(
+      baseRows(before),
+      baseRows(storage.contents),
+    )) {
+      throw StateError('a result from an unused session changed rows');
+    }
+    count('results from an unused session');
+  }
+
   Future<void> addedAgainWithAReadInFlight() async {
     final cloud = await sync();
     if (Tally.of(cloud.queue, clock).total > 0 || inFlight.isNotEmpty) return;
@@ -602,12 +695,22 @@ final class StoreModel {
     }
     if (teammates) teammate();
     final rows = server.rows;
-    final added = await store.addCloudStrategy(headerReadOf(rows), [
+    final reads = [
       for (final page in rows.pages)
         if (page is LivePage) pageReadOf(rows, page.publicId) as PageRead,
-    ]);
+    ]..shuffle(random);
+    final now = reads.take(random.nextInt(reads.length + 1)).toList();
+    final added = await store.addCloudStrategy(headerReadOf(rows), now);
     if (added is! Saved<StrategySummary, LibraryRefusal>) {
       throw StateError('adding the strategy again: $added');
+    }
+    final later = reads.skip(now.length).toList();
+    if (later.isNotEmpty) {
+      final session = (await sync()).queue.session.number;
+      await record([
+        for (final read in later) BaseArrived(read, session: session),
+      ], 'the rest of the import in a later call');
+      count('imports in several calls');
     }
     final before = storage.contents;
     final result = await store.record(strategyId, [
@@ -657,6 +760,7 @@ final class StoreModel {
     contents[area]!.remove(name);
     storage = MemoryStorage(contents);
     await open();
+    await restartSession();
     log.add('a newer build wrote a queue row and took it back');
     faults = true;
     count('held by a newer row');
@@ -697,12 +801,27 @@ final class StoreModel {
     ];
     if (live.isEmpty) return;
     final target = pick(live);
-    final op = movePatch(
-      fresh('t'),
-      elementId: target.publicId,
-      expected: target.revision,
-      rotation: 30,
-    );
+    final elsewhere = [
+      for (final page in server.rows.pages)
+        if (page is LivePage && page.publicId != target.pagePublicId)
+          page.publicId,
+    ];
+    final StrategyOp op = random.nextInt(4) == 0 && elsewhere.isNotEmpty
+        ? ElementPatchOp(
+            opId: fresh('t'),
+            elementPublicId: target.publicId,
+            expectedElementRevision: target.revision,
+            pagePublicId: pick(elsewhere),
+            payload: target.payload,
+            sortIndex: 0,
+          )
+        : movePatch(
+            fresh('t'),
+            elementId: target.publicId,
+            expected: target.revision,
+            rotation: 30,
+          );
+    if (op case ElementPatchOp(pagePublicId: _?)) count('server moves');
     if (applyOp(server.rows, op) case final OpApplied done) {
       server.rows = server.rows.withRows(done.rows);
       teammateEdited = true;
@@ -788,6 +907,8 @@ final class StoreModel {
         }
       case 18 when random.nextInt(4) == 0:
         await addedAgainWithAReadInFlight();
+      case 18 when random.nextInt(3) == 0:
+        await sessionOpenedThenReopened();
       case 18:
         final pages = [
           for (final page in (await visible()).pages) page.publicId,
@@ -818,7 +939,10 @@ final class StoreModel {
     }
     final queue = (await sync()).queue;
     if (queue.entries.isNotEmpty) {
-      throw StateError('did not drain: ${queue.entries}');
+      final views = (await sync()).views;
+      throw StateError(
+        'did not drain: ${[for (final entry in queue.entries) '${entry.id} ${views[entry.id]?.state} ${views[entry.id]?.holds}'].join('; ')}',
+      );
     }
     await readOne(headerReadOf(server.rows), 'final read');
     for (final page in server.rows.pages) {
@@ -927,6 +1051,10 @@ void main() {
       'page copies',
       'copied page deletes',
       'results from an ended session',
+      'results from an unused session',
+      'imports in several calls',
+      'server moves',
+      'reads checked for commits',
       'mixed event lists',
       'page reads in one call',
       'added again with a read in flight',

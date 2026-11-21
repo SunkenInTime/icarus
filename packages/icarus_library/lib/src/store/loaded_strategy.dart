@@ -88,7 +88,7 @@ final class LoadedStrategy {
           _contentPages.add(page);
         case UnknownKindName(:final page):
           _contentPages.add(page);
-        case CloudName() || PendingName() || AttemptName() || LandedName():
+        case final StoreName cloud when isCloudName(cloud):
           keeping = Keeping.cloud;
         case final ForeignName name:
           foreignNames.add(name);
@@ -371,7 +371,16 @@ final class LoadedStrategy {
     }
   }
 
-  void keepRow(Row row) => _keep(row);
+  void keepRow(Row row) {
+    final name = nameOf(row);
+    switch (name) {
+      case ElementName(:final page) || LineupName(:final page):
+        _loaded[page]?.unplaced.remove(name.name);
+      case _:
+        unplaced.remove(name.name);
+    }
+    _keep(row);
+  }
 
   void forgetRow(Row row) {
     switch (row) {
