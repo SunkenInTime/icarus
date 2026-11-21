@@ -1423,16 +1423,83 @@ and once per applied op, in order, after a `commitAll`.
 A local commit never removes a row; `removed` is there for cloud strategies,
 where the server rejecting a pending op can take a row away.
 
-### Room for cloud strategies
+### Cloud strategies: storage
 
-The store keeps nothing for them yet. What a local strategy reads and saves
-through does not have to change for them: a cloud strategy's base can live
-under the same names in its area and its pending ops under names of their
-own, read through a new call; `commit` keeps its signature and saves the op
-as a pending op; a change already names its op and can name rows that are
-gone; and one engine commit already writes any set of names across areas
-at once, so advancing the base and removing the acknowledged ops is one more
-commit.
+A cloud strategy lives in the same area as a local one. Its cached rows (the
+rows the server's results last showed) sit under the usual names, and these
+rows sit beside them, each versioned and each read back before it is written:
+
+- `cloud`: the strategy's facts (deleted on the server, edit access lost or
+  confirmed after attempt N, upgrade asked of build X by attempt N).
+- `pending/<place>`: one row per entry.
+- `attempt/<number>`: one row per attempt.
+- `landed/<attempt>/<position>`: one row per piece of landed work.
+- `read/header` and `read/page/<page digest>`: what the results showed, as
+  the queue keeps it (`Shown`): revisions and digests, not rows.
+
+Any of these rows marks the strategy as kept in the cloud. The library area
+holds one more row, `numbers`: the next attempt and session numbers for the
+whole library, never reset, so a result from a session of an earlier copy of
+a strategy can never pass for one of a new copy. A `numbers` row that does
+not read does not stop the library opening; the numbers then come from the
+rows that mention them, and the row is written again on the next cloud call.
+
+`readStrategy` and `readPage` return the drawn rows (the cached rows with
+landed work and then the queue applied) and the queue's views and tally. A
+page whose content no stored result covers says `ContentNotRead` instead of
+looking empty. `commit` and `commitAll` add edits, `record` takes a list of
+events, and `addCloudStrategy` stores a strategy as the server sent it, with
+each page row taken from that page's read rather than from the header. The
+library summary carries the sync tally. Loading a strategy's queue is four
+listings (`pending/`, `attempt/`, `landed/`, `read/`) and one read (`cloud`),
+and applies a restart for the store's build, which opens a new session.
+
+**Results reach the cached rows in the order they arrive.** Results come
+from subscriptions, which deliver ordered states, so the latest one wins:
+
+- A header replaces the strategy row, the page rows and the settings, and a
+  page it no longer lists is gone, with its settings and content.
+- A page read replaces that page's row and its whole content. A row it
+  holds that the cached rows have on another page at a higher revision stays
+  where it is.
+- A page-gone answer removes the page.
+- A result from a session that has ended changes nothing.
+
+**A queue row this build cannot read holds the whole strategy.** An entry,
+attempt, landed or results row that does not decode or comes from a newer
+version, an entry whose work or scope does not fit its op, a merge without
+its field base, an op id another entry holds, or a missing `cloud` row beside
+queue rows puts the strategy in one sealed state: held. Its cached rows still
+read and draw, and `readStrategy` returns them with `CloudHeld`, which lists
+each row it could not read. Nothing is recorded, sent or rewritten: `commit`
+and `record` are refused with `QueueHeld`. Held is a standing of its own in
+the summary, written once when the store finds it. A newer build reads it;
+otherwise the only way out is `discardUnreadableQueue(id, const
+DiscardsUnsentWork())`. Removal reads the strategy's queue from disk and
+refuses a held queue or outstanding work.
+
+**One call, one commit, computed once.** Each `commit`, `commitAll` or
+`record` call runs all its events through the queue first, then computes the
+writes once from the state after the last event: the cached rows that differ,
+every queue row that differs, the stored results that differ, the library's
+numbers and the summary. The queue a step hands back is kept even when the
+event did not apply, so a resend window that passed is written down by the
+call that found it. A read call that finds one writes it down too. A commit
+either lands whole or, when the engine answers unknown, the store forgets its
+cached state of that strategy and reads it back before the next call.
+
+`test/cloud_store_test.dart` pins these rules and the writes each kind of
+call makes. `test/cloud_store_model_test.dart` runs the model through the
+store on the memory engine. After every successful commit it opens a fresh
+store over the same engine and requires the entries, attempts, landed work,
+facts, numbers, stored results, cached rows and summary to equal what the
+first store holds. About one commit in fourteen is answered unknown (landed
+or not) and one in twenty-eight refused. It reopens between commits, restarts
+with new client ids and builds, delivers results from sessions that ended
+(none may change a row), removes and adds the strategy again with a result
+from the earlier copy in flight, writes rows from a newer version, and
+submits mixed event lists. At the end it drains against a server model with
+teammates and requires the drawn rows to equal the server's.
 
 ### Cloud strategies: the queue
 

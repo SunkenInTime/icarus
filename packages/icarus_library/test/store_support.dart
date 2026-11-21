@@ -29,6 +29,10 @@ DateTime fixedClock() => editedAt;
 
 typedef Contents = Map<String, Map<String, String>>;
 
+Contents editable(Contents contents) => {
+  for (final MapEntry(:key, :value) in contents.entries) key: {...value},
+};
+
 const _contentsEqual = DeepCollectionEquality();
 
 bool sameContents(Contents left, Contents right) =>
