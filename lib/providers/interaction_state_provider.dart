@@ -63,6 +63,9 @@ class InteractionStateProvider extends Notifier<InteractionState> {
     }
 
     state = newState;
+    if (newState == InteractionState.navigation) {
+      ref.read(abilityBarProvider.notifier).bringBack();
+    }
   }
 
   void forceUpdateToNavigation() {

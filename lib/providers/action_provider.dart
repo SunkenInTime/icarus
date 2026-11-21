@@ -158,9 +158,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
     DebugBreadcrumbs.add('canvas', '${action.type.name} ${action.group.name}');
     ref.read(strategyProvider.notifier).setUnsaved();
     if (action.group != ActionGroup.ability) {
-      ref
-          .read(abilityBarProvider.notifier)
-          .updateData(null); // Make the agent tab disappear after an action
+      ref.read(abilityBarProvider.notifier).setAside();
     }
     poppedItems = [];
     final history = [...state, action.copy()];
