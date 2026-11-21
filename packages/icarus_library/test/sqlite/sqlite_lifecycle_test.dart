@@ -6,10 +6,13 @@ import 'dart:io';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/sqlite_storage.dart';
 import 'package:icarus_library/src/sqlite/sqlite_engine.dart'
+    show SqliteEngineHold;
+import 'package:icarus_library/src/sqlite/sqlite_engine.dart'
     show SqliteLeaseWorker;
 import 'package:test/test.dart';
 
 import '../crash_harness.dart';
+import 'library_process_launcher.dart';
 
 void main() {
   late Directory directory;
@@ -21,6 +24,8 @@ void main() {
   });
 
   tearDown(() => directory.delete(recursive: true));
+
+  tearDownAll(removeLibraryProcess);
 
   test('a lease asked for while the engine closes is refused or ended by the '
       'close, and once close returns the next engine can lease', () async {
@@ -95,12 +100,7 @@ void main() {
       expect(await here.lease(), isA<Leased>(), reason: 'round $round, here');
       await here.close();
       final second = await killedHolder(file);
-      final elsewhere = await Process.run(Platform.resolvedExecutable, [
-        'run',
-        'test/sqlite/library_process.dart',
-        'try',
-        file,
-      ]);
+      final elsewhere = await runLibraryProcess('try', file);
       expect(
         '${elsewhere.stdout}'.trim(),
         'leased',

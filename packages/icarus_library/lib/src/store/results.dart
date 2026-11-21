@@ -40,6 +40,8 @@ final class SaveInDoubt<S, R> extends Saving<S, R> {
 
 typedef CommitResult = Saving<Committed, CommitRefusal>;
 
+typedef BatchResult = Saving<List<Committed>, CommitRefusal>;
+
 typedef LibraryEditResult = Saving<LibraryEdited, LibraryRefusal>;
 
 typedef RebuildResult = Saving<StrategySummary, CommitRefusal>;
@@ -165,6 +167,22 @@ final class FolderNotEmpty extends LibraryRefusal {
 
   @override
   String toString() => 'FolderNotEmpty($folderPublicId)';
+}
+
+enum Dropped {
+  trashedPage,
+  tombstone,
+  unknownKind,
+  foreignName,
+  unknownField,
+  duplicateRow,
+}
+
+final class PutWouldDrop extends LibraryRefusal {
+  const PutWouldDrop(this.ref, this.dropped);
+
+  final StoredRowRef ref;
+  final Dropped dropped;
 }
 
 final class FolderInsideItself extends LibraryRefusal {
@@ -446,6 +464,18 @@ final class RemoveFolder extends LibraryChange {
   const RemoveFolder(this.folderPublicId);
 
   final String folderPublicId;
+}
+
+sealed class StorageOrigin {
+  const StorageOrigin();
+}
+
+final class StorageExisted extends StorageOrigin {
+  const StorageExisted();
+}
+
+final class StorageCreated extends StorageOrigin {
+  const StorageCreated();
 }
 
 sealed class OpenProblem {

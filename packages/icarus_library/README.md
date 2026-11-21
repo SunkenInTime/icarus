@@ -559,10 +559,12 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   frames, and they would come back on the next open. So the next transaction
   that succeeds also bumps `generation`; it writes over those frames, and from
   then on the unknown commit can never return.
-- **Failures.** A full disk, an I/O error, a locked or unreadable file is a
-  `DeviceFailure` naming SQLite's error code. SQLite can describe damage with
-  bytes that are not UTF-8; `package:sqlite3` throws a `FormatException` for
-  that, and the engine returns it as a failure too.
+- **Failures.** A full disk is `OutOfRoom`; a damaged file
+  (`SQLITE_CORRUPT`, `SQLITE_NOTADB`, a failed integrity check) is
+  `DamagedLibrary`; any other error SQLite reports is a `DeviceFailure`
+  naming its code. SQLite can describe damage with bytes that are not UTF-8;
+  `package:sqlite3` throws a `FormatException` for that, and the engine
+  returns it as `DamagedLibrary` too.
 - **Listing areas** jumps from area to area through the primary key:
   `min(area)` above the last one found, one index seek per area, so a large
   area costs no more than a small one.
@@ -581,8 +583,8 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   first release's answer.
 - **When storage is gone.** Before SQLite touches anything, the engine looks
   at the files: a library file that is missing or empty while a `-wal` with
-  content, or a `-journal` that holds pages, sits beside it is refused as a
-  `DeviceFailure`, and every byte is left as it was. SQLite would otherwise
+  content, or a `-journal` that holds pages, sits beside it is refused as
+  `LibraryFileGone`, and every byte is left as it was. SQLite would otherwise
   delete that log, and the saved edits in it with it. A journal holds pages
   when its header is valid and records a size above zero; the journal left by
   a creation cut short records zero and holds nothing. The engine looks at the
@@ -732,7 +734,7 @@ web.
   `HeldByAnotherWriter` at once. The lock is released when the lease is, or
   when the tab closes or crashes. A page without Web Locks (a plain `http`
   origin that is not `localhost`) cannot hold the library and gets
-  `LeaseFailed`.
+  `LeaseFailed(BrowserLacks(webLocks))`.
 - **Release waits for commits in flight**, then closes the database and lets
   go of the lock. The browser would order them anyway: a transaction started
   by the next holder waits for every overlapping transaction created before
@@ -751,6 +753,195 @@ web.
   more. Releasing twice returns the first release's answer.
 - `IndexedDbEngine.holdNextCommit()` parks the next commit before its
   transaction starts, counted as a commit in flight.
+
+#### What a library can be in, and what the app can say
+
+This section is the specification the app's wording is written from. Every
+state below has a type the app can switch over; none of them needs a message
+parsed. Each sentence claims only what is certain in every way the state can
+arise, so the app never says more than it knows.
+
+The app always knows which step a failure came from, because the store
+answers each step with its own result:
+
+- **opening:** `StoreNotOpened(OpenStorageFailed(failure))`: the store did
+  not open, and opening makes no commit, so it wrote no row;
+- **a refused save:** `NotSaved(failure)`: the edit is not stored. The store
+  stays open unless the failure ended its lease; then every later step
+  answers `StoreStopped`;
+- **a save in doubt:** `SaveInDoubt(failure)`: the edit may or may not be
+  stored (on IndexedDB, possibly in part), and the store stops;
+- **a read:** `NotRead(failure)`: that read failed. As with a refused save,
+  the store stays open unless the lease ended.
+
+**Was the library just created?** `StoreOpened.origin` is `StorageCreated`
+when the library held no `format` row and no row in any area when it was
+opened, and `StorageExisted` when it held a `format` row or any row. Opening
+decides and reports; it writes nothing. The `format` row, the store's
+marker, goes into the first commit the store makes for any reason, in the
+same engine commit as that save. A library that lost its marker is existing,
+is never refused for it, and gets it back the same way. A new library that
+is opened and closed with nothing saved is still empty, so it is created
+again the next time.
+
+- Certain: there were no rows here when Icarus opened it.
+- Only possible: that a library existed before and was deleted, evicted by
+  the browser, or cleared with the site's data, or that it was opened before
+  with nothing saved. A zero-byte file and a first start look the same.
+- The app knows whether it expected a library; the engine does not.
+
+| When | What the app can say |
+| --- | --- |
+| `StorageCreated` where a library was expected, web | "This browser has no copy of your library, so Icarus is loading it from the server. Changes that had not reached the server are not in it." |
+| `StorageCreated` where a library was expected, desktop | "Icarus found no library where it expected one, so it started a new, empty library." |
+
+**Format numbers.** A library carries two, both checked every time it is
+opened:
+
+- The **engine format** is the engine's own layout: on SQLite the tables,
+  their columns and keys, and the generation row, kept in `user_version`
+  (`sqliteFormat`); on IndexedDB the object store and its keys, kept in the
+  database version (`indexedDbFormat`, which is also the version the engine
+  opens with). Written when the engine creates the storage. It changes when
+  an older engine would misread the layout or write into it wrongly. It does
+  not change for what rows hold.
+- The **store format** is the store's row layout: the area and key names, and
+  the shape of a summary and of every row the store reads back. It is the
+  `format` row in the `library` area (`storeFormat`), written with the first
+  save into a library that lacks it. It changes when
+  an older store would misread the rows or write into them wrongly; a change
+  that older stores read and keep correctly does not change it.
+
+Both are 1, the first format, and nothing earlier shipped. A build that
+raises a number must also say how it moves a library from the lower one. A
+`format` row is read only when it is a plain decimal of one to nine digits
+with no sign, no leading zero and no spaces (`1`, `2`, `17`); anything else,
+including a longer number, is `DamagedLibrary`, never a newer format.
+
+A build that meets a number higher than it knows refuses to open with
+`NewerFormat`, naming the layer, the number found and the number it knows.
+No row is written or changed and no commit is made: the engine checks its
+number before it switches SQLite to its log, and opening never commits.
+SQLite has opened the file read-write by then,
+so it may still roll back an interrupted transaction from a journal, switch
+a file to its log, or fold the log into the file when the connection
+closes; none of that changes what any row holds. On IndexedDB a newer
+database is refused by the browser before it opens. The engine then reads
+the version the browser lists for it in `indexedDB.databases()`, which opens
+nothing; if the database is no longer listed (it was cleared in between),
+the answer is `DeviceFailure`, not a version.
+
+**What can go wrong.** `StorageFailure` is a sealed set; a caller switches
+over it exhaustively.
+
+**`StorageFull`** has three cases.
+
+- `NoRoomForCommit`: Icarus's own room check on IndexedDB refused a save
+  before anything was written: the browser's estimate, less what pending
+  saves have reserved and a 1 MiB margin, was smaller than the save's
+  estimated size. Certain: the save was not stored. Only possible: that the
+  browser would have had room for it. Comes only as a refused save. "Icarus
+  held this change back because storage looked too full to save it
+  safely."
+- `OutOfRoom`: the disk (SQLite) or the browser (`QuotaExceededError`
+  outside a commit's abort) ran out of room. Certain: the device or browser
+  said it had no room. Only possible: whether the step completed, which the
+  step's result says.
+  - opening: "There isn't enough storage space to open your library."
+  - refused save: "There isn't enough storage space, so this change wasn't
+    saved."
+  - save in doubt: "Storage ran out while saving, so this change may not
+    have been saved."
+  - read: "There isn't enough storage space to read part of your library."
+- `AbortedForQuota`: the browser aborted an IndexedDB commit for lack of
+  room (in Firefox, a full disk too). Certain: the browser aborted the save.
+  Only possible: that part of it was kept (Firefox, bug 2080749). Comes only
+  as a save in doubt. "The browser ran out of storage while saving, so this
+  change may be only partly saved."
+
+**`NewerFormat`**: a number above what this build knows. Certain: the
+library holds a format number higher than this build knows, which is the
+number a newer build would write. Comes only while opening. "This library
+uses a newer format than this version of Icarus understands. Update Icarus
+to open it."
+
+**`DamagedLibrary`**: a failed integrity check, a file SQLite cannot read
+(`SQLITE_CORRUPT`, `SQLITE_NOTADB`), a file that is not an Icarus library, a
+value that is not text, a key that is not a name, a `format` row that is not
+a plain decimal, an IndexedDB database without its rows store. Certain at
+opening: the file or database is not one Icarus can read as its library.
+Certain at a read or a save: the engine met something it could not read
+(SQLite said the file is corrupt or not a database, or reported text it
+could not decode, or a stored value or key was not what Icarus writes). Only
+possible: how much is affected; a failure found in one read or save need not
+mean the rest is unreadable.
+
+- opening: "Icarus can't read this library file, so it can't open it."
+- read: "Icarus couldn't read part of your library."
+- refused save: "Icarus met something in your library it couldn't read, so
+  this change wasn't saved."
+- save in doubt: "Icarus met something in your library it couldn't read
+  while saving, so this change may not have been saved."
+
+**`LibraryFileGone`**: the SQLite engine found the library file missing or
+empty while a file with the log's name (`-wal`) and some content, or a file
+with the journal's name (`-journal`) whose header says it holds pages, sits
+beside it. Certain: those files are there by name and size (and, for a
+journal, header). Only possible: that they are SQLite's and hold changes; a
+log can hold only its header. Comes only while opening, and nothing is
+touched. "Your library file is missing or empty, and a file named like
+SQLite's log or journal is beside it, so Icarus won't start a new library in
+its place."
+
+**`BrowserLacks`**: the browser does not report strict durability
+(`strictDurability`), or the page has no Web Locks (`webLocks`). Certain:
+this browser or page lacks something Icarus needs to keep a library. Comes
+only while opening. "This browser can't keep your library safely, so Icarus
+won't store it here."
+
+**`NoAnswer`**: one IndexedDB browser call gave no answer within the
+engine's time limit (`IndexedDbEngine.patience`, 10 s by default). Certain:
+that one call missed its limit. Only possible: that it still completed
+later, and that the browser is otherwise responsive.
+
+- opening: "Opening your library took too long, so Icarus stopped. Reload
+  the page to try again."
+- read: "Reading part of your library took too long."
+- save in doubt: "Saving took too long, so this change may not have been
+  saved."
+- release: a `ReleaseFailed`. Certain: Icarus could not confirm it let go of
+  the library, so it is not known whether another tab can open it now.
+  "Icarus couldn't confirm it closed your library. If another tab can't open
+  it, close this one."
+
+**`HeldByAnotherWriter`** (a `Leasing`, not a failure, answered as
+`StoreAlreadyOpen`): when Icarus tried, another tab, window or process held
+the library (on SQLite, at least one attempt within 250 ms found it locked).
+Certain: it was held during the attempt. Only possible: that it is still
+held now. "Your library is open in another Icarus window or tab."
+
+**`LeaseEnded`, `StoreClosed`**: the lease ended (another tab upgraded or
+deleted the database, the browser closed it, or the app closed the store).
+Certain: this library is no longer open here. "Your library was closed.
+Reopen it to keep working."
+
+**`EngineClosed`**: the engine was closed, possibly before any library was
+opened through it. Certain: this engine will not open or use a library any
+more. "Icarus stopped using this storage. Reopen your library to keep
+working."
+
+**`StoreStopped(cause)`**: every step after the store stopped, carrying what
+stopped it. The sentence is the one for its `cause`.
+
+**`KeyTooLong`, `NameNotAllowed`, `WouldNotReadBack`**: a row the store built
+that the engine, or the store itself, would not keep. Certain: this is a bug
+in Icarus, not a state of the library. Comes as a refused save. "Icarus
+couldn't save this change."
+
+**`DeviceFailure`**: anything not classified above: another I/O error, a
+worker that died, a rollback or abort that failed, a file Icarus could not
+read. Certain: something went wrong in the step. "Something went wrong
+reading or writing your library."
 
 #### What the tests simulate, and what they cannot
 
@@ -912,6 +1103,26 @@ and adding it back in the same edit with `StrategyAlreadyInStore`. `test/store_l
 random edits and checks that each saves what the same steps save one edit
 at a time, or refuses and saves nothing.
 
+**Several ops in one commit.** `commitAll(strategyPublicId, ops)` applies
+the ops in order, each to the rows the ones before it left, and sends one
+engine commit holding every row they changed and the summary after the
+last. It saves what committing the ops one by one at the same instant
+would save, with the same `StrategyEdited` for each op, but all of them or
+none: when any op is refused, or the engine refuses the commit, nothing is
+stored and nothing changes in memory. An op that changes nothing is
+skipped, and a batch where every op changes nothing is `NothingToSave`.
+`commit(strategyPublicId, op)` is `commitAll` with one op. The pages every
+op needs are loaded before the summary is read, so the summary a batch saves
+is the one a rebuild from the same rows gives. A summary keeps no tally for a
+page whose tally is empty.
+`test/store_batch_test.dart` replays the op sequences the parity run's own
+generator makes (`tool/parity_scenarios.dart`), in batches of random size,
+and checks each batch against the same ops committed one at a time and
+against a rebuild of the summary; it also checks the all or none, and that a
+batch of 300 ops is one engine commit that reads nothing it had not
+loaded. A batch costs about 110 µs an op on the memory engine, linearly
+(150, 300 and 600 ops), a third of it in `applyOp`.
+
 Every save returns a `Saving`, which the caller has to handle:
 
 - `Saved`: the engine applied the commit.
@@ -963,6 +1174,86 @@ moved, under a stored loop is refused with `FolderLoop` naming the folders
 in it; under a missing folder, `NoSuchFolder`; under a folder this build
 cannot read, `UnreadableRowInTheWay`. Opening reads a loop as it is and
 lists its folders.
+
+### Saving a local strategy whole
+
+`putStrategy(rows)` saves a strategy kept only on this device as the
+complete set of rows it should hold, in one engine commit. It is how the
+store keeps an exact image of a local strategy while the Hive library
+stays the one the app reads, so that reading from the store can be proven
+equal to reading from Hive. It stores the rows exactly as given, the
+strategy row's `updatedAt` included, never a time of its own, so the
+stored rows equal what `AddStrategy` writes for the same rows. A stored row
+that parses equal to the given one is left as it is, even if it was written
+with different spacing.
+
+- **Only what changed is written.** Each given row is matched to the
+  stored row with the same key and compared with it as JSON, by walking
+  both (`sameJsonTree`); only rows that differ are encoded and parsed back
+  before the commit, as every write is. A stored row the set no longer
+  holds is deleted in the same commit, and so is the old name of an
+  element or lineup group that moved page. The summary is computed from
+  the whole set and saved in the commit too. Putting the same rows again
+  writes nothing and answers `NothingToSave`. Over an empty store it adds
+  the strategy.
+- **What an image cannot carry is refused, changing nothing.** If the
+  stored strategy holds a row this build cannot read
+  (`UnreadableRowInTheWay`), a row with no id (`UnplacedRowInTheWay`), or
+  something a complete set of readable live rows cannot express, it answers
+  `PutWouldDrop` with the stored name and what it is: a page in the trash
+  (`Dropped.trashedPage`), a tombstone (`tombstone`), a row of a kind or a
+  name this build does not know (`unknownKind`, `foreignName`), two rows
+  with one id (`duplicateRow`, which no editor action makes), or a changed
+  row whose stored version holds a field this build does not know that the
+  given row would drop (`unknownField`: unknown fields on the row, its
+  payload envelope, its page settings or its theme palette). Nothing writes
+  those for a local strategy today; the per-edit step and newer builds
+  will, and this call must not flatten them then. The fields inside an
+  element's or lineup group's `data` are the app's to know, so the store
+  cannot tell an unknown one from one the editor removed; those are not
+  checked here. The store has no word yet for a strategy kept in the
+  cloud; one written by a build that keeps cloud strategies in the store
+  holds names this build does not know, so it is refused as
+  `Dropped.foreignName`.
+- **It loads before it compares.** Every page's content is read before the
+  comparison, the way `commitAll` reads each op's pages. Knowing a page's
+  row is not knowing its content: renaming a page whose content has not
+  been read leaves the content to be read later.
+- **It costs** a structural comparison of every row and a commit of the
+  ones that changed. On SQLite, saving one moved agent in a strategy of 40
+  pages and 1,000 items takes about 20 ms in all, half of it the app's
+  conversion of the strategy to rows; the comparison grows with the number
+  of rows and the commit with the rows that changed.
+- **What it is not.** An earlier attempt turned two snapshots of the
+  editor's strategy into the store's ops (#680). Three rounds of review
+  found failures with one cause: a snapshot does not say what the user
+  did. The editor's model and the rows disagree on identity (ids per page
+  against ids per strategy), on order (one list of lineups against lineup
+  groups) and on what exists (the editor has no trash, no tombstones and no
+  fields a newer build wrote), so every round recovered a little more
+  intent and the next found what could not be recovered. Ops will come from
+  the edit itself, in the step that saves edits as they are made, where the
+  intent is known. Do not rebuild the snapshot diff.
+- **When it stops being the save.** An image holds what this build's editor
+  holds and nothing else. That is right while Hive is what the app reads,
+  because Hive loses the same things: a field a newer build wrote inside an
+  element's `data` is dropped by an older build's save in both. It is wrong
+  once the store is what the app reads, since rows then carry what only
+  another build or another device knows. From that step on a strategy is
+  saved by ops and `putStrategy` is no longer called for it. The app's
+  converter also derives a row's id from where its page sits among pages
+  that share an item id, so reordering such pages rewrites those rows under
+  new ids; the image stays exact, and it is one more reason an image is not
+  the save for a store other builds write.
+
+`test/store_put_strategy_test.dart` checks the stored rows against
+`AddStrategy`, what is written and deleted, the second put, each refusal on
+its own with no commit, and, on the memory engine and on SQLite, a page
+renamed before its content is read, read and then saved whole. The app's
+`test/library_rows/strategy_image_test.dart` saves every step of a scripted
+editing session and of 30 generated ones and checks that the stored rows
+equal the image of the editor's strategy and that what is read back is that
+strategy again, and the corpus check saves every corpus strategy whole.
 
 ### Reading
 
@@ -1016,6 +1307,8 @@ A `StrategySummary` holds the name, map, folder, created and updated times
 the agents placed on live pages, and how many items they hold. It also keeps
 a tally per page, so trashing a page updates the counts without reading that
 page. Every commit writes the new summary in the same commit as its rows.
+A page whose tally is empty has no entry, so a summary written after edits
+equals the one a rebuild gives.
 `readability` is `AllReadable` or `SomeUnreadable(damaged, newer)`: `newer`
 counts rows of a kind this build does not know and elements from a newer
 build (the app says "made with a newer version"), `damaged` counts every
@@ -1054,7 +1347,8 @@ and commits nothing.
 
 `changes` is a stream of `StrategyEdited` (the strategy, the op id, the
 `RowWrite`s with their changed fields and data fields, the rows removed, the
-new summary) and `LibraryEdited`. It fires after the save, once per `Saved`.
+new summary) and `LibraryEdited`. It fires after the save, once per `Saved`,
+and once per applied op, in order, after a `commitAll`.
 A local commit never removes a row; `removed` is there for cloud strategies,
 where the server rejecting a pending op can take a row away.
 

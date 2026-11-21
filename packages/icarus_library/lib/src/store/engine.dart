@@ -88,7 +88,11 @@ final class StoreClosed extends StorageFailure {
   String toString() => 'StoreClosed()';
 }
 
-final class NoRoomForCommit extends StorageFailure {
+sealed class StorageFull extends StorageFailure {
+  const StorageFull();
+}
+
+final class NoRoomForCommit extends StorageFull {
   const NoRoomForCommit({required this.needed, required this.left});
 
   final int needed;
@@ -99,13 +103,65 @@ final class NoRoomForCommit extends StorageFailure {
       'NoRoomForCommit(needs about $needed bytes, $left bytes left)';
 }
 
-final class AbortedForQuota extends StorageFailure {
+final class OutOfRoom extends StorageFull {
+  const OutOfRoom(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'OutOfRoom($message)';
+}
+
+final class AbortedForQuota extends StorageFull {
   const AbortedForQuota(this.message);
 
   final String message;
 
   @override
   String toString() => 'AbortedForQuota($message)';
+}
+
+enum FormatLayer { engine, store }
+
+final class NewerFormat extends StorageFailure {
+  const NewerFormat(this.layer, {required this.found, required this.known});
+
+  final FormatLayer layer;
+  final int found;
+  final int known;
+
+  @override
+  String toString() =>
+      'NewerFormat(${layer.name} format $found, this build knows $known)';
+}
+
+final class DamagedLibrary extends StorageFailure {
+  const DamagedLibrary(this.detail);
+
+  final String detail;
+
+  @override
+  String toString() => 'DamagedLibrary($detail)';
+}
+
+final class LibraryFileGone extends StorageFailure {
+  const LibraryFileGone(this.left);
+
+  final String left;
+
+  @override
+  String toString() => 'LibraryFileGone($left is still there)';
+}
+
+enum BrowserFeature { strictDurability, webLocks }
+
+final class BrowserLacks extends StorageFailure {
+  const BrowserLacks(this.feature);
+
+  final BrowserFeature feature;
+
+  @override
+  String toString() => 'BrowserLacks(${feature.name})';
 }
 
 final class NoAnswer extends StorageFailure {

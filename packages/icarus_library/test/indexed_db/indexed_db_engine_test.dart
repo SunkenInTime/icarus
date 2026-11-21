@@ -5,6 +5,8 @@ import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/indexed_db_storage.dart';
 import 'package:icarus_library/src/indexed_db/indexed_db_engine.dart'
+    show IndexedDbEngineHold;
+import 'package:icarus_library/src/indexed_db/indexed_db_engine.dart'
     show roomMargin;
 import 'package:test/test.dart';
 
@@ -220,7 +222,18 @@ void main() {
     dropTransactionOptions(true);
     final leasing = await IndexedDbEngine(name).lease();
     dropTransactionOptions(false);
-    expect(leasing, isA<LeaseFailed>());
+    expect(
+      leasing,
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isA<BrowserLacks>().having(
+          (lacks) => lacks.feature,
+          'feature',
+          BrowserFeature.strictDurability,
+        ),
+      ),
+    );
     await (await openIndexedDb(name)).release();
   });
 
@@ -284,9 +297,13 @@ void main() {
     expect(
       leasing,
       isA<LeaseFailed>().having(
-        (failed) => '${failed.failure}',
+        (failed) => failed.failure,
         'failure',
-        contains('strict durability'),
+        isA<BrowserLacks>().having(
+          (lacks) => lacks.feature,
+          'feature',
+          BrowserFeature.strictDurability,
+        ),
       ),
     );
     expect(await databaseExists(name), isFalse);
@@ -398,10 +415,22 @@ void main() {
         ('b', 'undefined'),
         ('c', 'number'),
       ]) {
-        expect(await lease.read(area, key), isA<KeyNotRead>(), reason: key);
+        expect(
+          await lease.read(area, key),
+          isA<KeyNotRead>().having(
+            (notRead) => notRead.failure,
+            'failure',
+            isA<DamagedLibrary>(),
+          ),
+          reason: key,
+        );
         expect(
           await lease.entries(area, ''),
-          isA<StorageFailed<List<StoredEntry>>>(),
+          isA<StorageFailed<List<StoredEntry>>>().having(
+            (failed) => failed.failure,
+            'failure',
+            isA<DamagedLibrary>(),
+          ),
           reason: key,
         );
       }
@@ -494,26 +523,23 @@ void main() {
     await lease.release();
   });
 
-  test(
-    'an estimate that fails keeps the figure the engine already had',
-    () async {
+  test('an estimate that fails or cannot be read after the engine had a '
+      'figure leaves the room unchecked: the commit applies and the lease '
+      'says so, rather than trusting the old balance', () async {
+    for (final how in ['reject', 'badShape']) {
       pretendRoomLeft(roomMargin + 20000);
-      final lease = await openIndexedDb(name);
-      estimateFails('reject');
-      expect(
-        await lease.commit([Put('a', 'big', 'x' * 20000)]),
-        isA<CommitRefused>().having(
-          (refused) => refused.failure,
-          'failure',
-          isA<NoRoomForCommit>(),
-        ),
-      );
+      final engine = IndexedDbEngine('$name-$how');
+      final lease = await leaseOf(engine) as IndexedDbLease;
+      expect(lease.roomCheck, isA<RoomChecked>(), reason: how);
+      estimateFails(how);
+      final outcome = await lease.commit([Put('a', 'big', 'x' * 20000)]);
       estimateFails(null);
       pretendRoomLeft(null);
-      expect(lease.roomCheck, isA<RoomChecked>());
-      await lease.release();
-    },
-  );
+      expect(outcome, isA<CommitApplied>(), reason: how);
+      expect(lease.roomCheck, isA<RoomNotChecked>(), reason: how);
+      await engine.close();
+    }
+  });
 
   test('a browser that cannot say how much room there is gets a lease that '
       'says the room is not checked, and its commits apply', () async {
@@ -541,7 +567,7 @@ void main() {
         .timeout(const Duration(seconds: 5));
     estimateFails(null);
     pretendRoomLeft(null);
-    expect(outcome, isA<CommitRefused>());
+    expect(outcome, isA<CommitApplied>());
     expect(
       await lease.release().timeout(const Duration(seconds: 5)),
       isA<Released>(),
@@ -585,6 +611,201 @@ void main() {
     transactionErrorThrows(false);
     expect(outcome, isA<CommitUnknown>());
     expect(await lease.release(), isA<Released>());
+  });
+
+  Future<StorageOrigin> originOf(String database) async {
+    final opening = await LibraryStore.open(
+      IndexedDbEngine(database),
+      canRead: readsKnownKinds,
+      clock: fixedClock,
+    );
+    final opened = opening as StoreOpened;
+    await opened.store.close();
+    return opened.origin;
+  }
+
+  test('the store says a library was created when it holds nothing, and '
+      'opening writes nothing: after an engine made the database, after an '
+      'unsaved open, after the database was deleted; a library with rows '
+      'whose marker was lost is existing, and its next save puts the marker '
+      'back', () async {
+    await (await openIndexedDb(name)).release();
+    expect(await originOf(name), isA<StorageCreated>());
+    expect(await originOf(name), isA<StorageCreated>());
+    final lease = await openIndexedDb(name);
+    expect(await lease.read('library', 'format'), isA<KeyMissing>());
+    committed(await lease.commit(const [Put('library', 'folder/x', 'kept')]));
+    await lease.release();
+    expect(await originOf(name), isA<StorageExisted>());
+    final store = await openStore(IndexedDbEngine(name));
+    savedValue(await store.editLibrary([AddStrategy(sampleStrategy())]));
+    await store.close();
+    final reading = await openIndexedDb(name);
+    expect(valueOf(await reading.read('library', 'format')), '$storeFormat');
+    await reading.release();
+    await deleteDatabase(name);
+    expect(await originOf(name), isA<StorageCreated>());
+  });
+
+  test(
+    'a database at a newer engine format is refused and left as it was',
+    () async {
+      await (await openIndexedDb(name)).release();
+      expect(await upgradeFinishes(name, 2), isTrue);
+      expect(
+        await IndexedDbEngine(name).lease(),
+        isA<LeaseFailed>().having(
+          (failed) => failed.failure,
+          'failure',
+          isA<NewerFormat>()
+              .having((newer) => newer.layer, 'layer', FormatLayer.engine)
+              .having((newer) => newer.found, 'found', 2)
+              .having((newer) => newer.known, 'known', 1),
+        ),
+      );
+      final raw = await openRaw(name);
+      expect(raw.version, 2);
+      raw.close();
+    },
+  );
+
+  test('a library whose store format is newer than this build is refused by '
+      'the store, and nothing in it changes', () async {
+    final store = await openStore(IndexedDbEngine(name));
+    await store.close();
+    await putRaw(name, 'library', 'format', 'text:2');
+    final reading = await openIndexedDb(name);
+    final before = stored(await reading.entries('library', ''));
+    await reading.release();
+    expect(
+      await LibraryStore.open(
+        IndexedDbEngine(name),
+        canRead: readsKnownKinds,
+        clock: fixedClock,
+      ),
+      isA<StoreNotOpened>().having(
+        (refused) => refused.problem,
+        'problem',
+        isA<OpenStorageFailed>().having(
+          (failed) => failed.failure,
+          'failure',
+          isA<NewerFormat>().having(
+            (newer) => newer.layer,
+            'layer',
+            FormatLayer.store,
+          ),
+        ),
+      ),
+    );
+    final lease = await openIndexedDb(name);
+    expect(stored(await lease.entries('library', '')), before);
+    await lease.release();
+  });
+
+  test('a database without the rows store is a damaged library', () async {
+    (await openRaw(name)).close();
+    expect(
+      await IndexedDbEngine(name).lease(),
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isA<DamagedLibrary>(),
+      ),
+    );
+  });
+
+  test('a page without Web Locks cannot hold the library', () async {
+    hideWebLocks(true);
+    final leasing = await IndexedDbEngine(name).lease();
+    hideWebLocks(false);
+    expect(
+      leasing,
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isA<BrowserLacks>().having(
+          (lacks) => lacks.feature,
+          'feature',
+          BrowserFeature.webLocks,
+        ),
+      ),
+    );
+  });
+
+  test('a read whose answer never comes is a failure once the engine\'s '
+      'patience runs out', () async {
+    final engine = IndexedDbEngine(
+      name,
+      patience: const Duration(milliseconds: 500),
+    );
+    final lease = await leaseOf(engine);
+    swallowReads(true);
+    final read = await lease.read('a', 'k').timeout(const Duration(seconds: 5));
+    swallowReads(false);
+    expect(
+      read,
+      isA<KeyNotRead>().having(
+        (notRead) => notRead.failure,
+        'failure',
+        isA<NoAnswer>(),
+      ),
+    );
+    await engine.close();
+  });
+
+  test('a commit whose completion never comes is in doubt once the engine\'s '
+      'patience runs out, and release still lets go of the lock', () async {
+    final engine = IndexedDbEngine(
+      name,
+      patience: const Duration(milliseconds: 500),
+    );
+    final lease = await leaseOf(engine);
+    swallowCompletions(true);
+    final outcome = await lease
+        .commit(const [Put('a', 'k', 'v')])
+        .timeout(const Duration(seconds: 5));
+    swallowCompletions(false);
+    expect(
+      outcome,
+      isA<CommitUnknown>().having(
+        (unknown) => unknown.failure,
+        'failure',
+        isA<NoAnswer>(),
+      ),
+    );
+    await lease.release().timeout(const Duration(seconds: 5));
+    expect(await lockIsFree(name), isTrue);
+  });
+
+  test('a rows store that cannot be made is a failed lease that lets go of '
+      'the lock, never a hang', () async {
+    storeCreationThrows(true);
+    final leasing = await IndexedDbEngine(
+      name,
+    ).lease().timeout(const Duration(seconds: 5));
+    storeCreationThrows(false);
+    expect(leasing, isA<LeaseFailed>());
+    expect(await lockIsFree(name), isTrue);
+  });
+
+  test('a newer database cleared between the version error and the version '
+      'lookup is not created again, and is not reported as format 1', () async {
+    await (await openIndexedDb(name)).release();
+    expect(await upgradeFinishes(name, 2), isTrue);
+    deleteOnVersionError(true);
+    final leasing = await IndexedDbEngine(
+      name,
+    ).lease().timeout(const Duration(seconds: 5));
+    deleteOnVersionError(false);
+    expect(
+      leasing,
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isNot(isA<NewerFormat>().having((newer) => newer.found, 'found', 1)),
+      ),
+    );
+    expect(await databaseExists(name), isFalse);
   });
 
   group('the engine contract', () {

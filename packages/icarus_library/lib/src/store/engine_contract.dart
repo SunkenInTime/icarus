@@ -121,9 +121,11 @@ void _effect(
       _broke('$what: CommitApplied, but not every change is there');
     case CommitRefused() when !none:
       _broke('$what: $committing, but it changed storage');
+    case CommitUnknown(failure: AbortedForQuota()):
+      return;
     case CommitUnknown() when !all && !none:
       _broke('$what: $committing left some of its changes and not others');
-    case _:
+    case CommitApplied() || CommitRefused() || CommitUnknown():
       return;
   }
 }
@@ -699,6 +701,12 @@ final List<EngineCheck> engineContract = [
       final granted = asked.whereType<Leased>().toList();
       if (granted.length != 1) {
         _broke('$what: ${granted.length} leases were granted, not one');
+      }
+      for (final failed in asked.whereType<LeaseFailed>()) {
+        _broke(
+          '$what: a caller who lost was told ${failed.failure}, not '
+          'that another writer holds the storage',
+        );
       }
       for (final lease in granted) {
         await lease.lease.release();

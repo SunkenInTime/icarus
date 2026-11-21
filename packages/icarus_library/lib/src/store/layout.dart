@@ -6,6 +6,10 @@ import '../rows.dart';
 
 const libraryArea = 'library';
 
+const formatKey = 'format';
+
+const storeFormat = 1;
+
 const strategyAreaPrefix = 's/';
 
 const _digestLength = 32;
@@ -63,6 +67,13 @@ sealed class StoreName {
   const StoreName();
 
   String get name;
+}
+
+final class FormatName extends StoreName {
+  const FormatName();
+
+  @override
+  String get name => formatKey;
 }
 
 final class SummaryName extends StoreName {
@@ -160,6 +171,7 @@ String pageContentPrefix(String pageDigest) => 'content/$pageDigest/';
 
 StoreName readName(StoreArea area, String name) =>
     switch ((area, name.split('/'))) {
+      (LibraryArea(), [formatKey]) => const FormatName(),
       (LibraryArea(), ['summary', final digest]) when _isDigest(digest) =>
         SummaryName(digest),
       (LibraryArea(), ['folder', final digest]) when _isDigest(digest) =>

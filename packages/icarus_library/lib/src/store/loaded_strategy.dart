@@ -96,6 +96,71 @@ final class LoadedStrategy {
 
   final String digest;
   StrategyHeader header;
+
+  static LoadedStrategy image(String digest, StrategyRowSet rows) {
+    final loaded = LoadedStrategy(
+      digest: digest,
+      header: HeaderPlaced(rows.strategy),
+      strategyId: rows.strategy.publicId,
+      pages: {for (final page in rows.pages) digestOf(page.publicId): page},
+      settings: {
+        for (final row in rows.settings) digestOf(row.pagePublicId): row,
+      },
+      unplaced: const {},
+      names: [
+        for (final row in rows.elements) nameOf(row),
+        for (final row in rows.lineupGroups) nameOf(row),
+      ],
+    );
+    final content = {
+      for (final page in rows.pages) digestOf(page.publicId): LoadedPage(),
+    };
+    for (final row in rows.elements) {
+      content[digestOf(row.pagePublicId)]!.elements[digestOf(row.publicId)] =
+          row;
+    }
+    for (final row in rows.lineupGroups) {
+      content[digestOf(row.pagePublicId)]!.lineupGroups[digestOf(
+            row.publicId,
+          )] =
+          row;
+    }
+    content.forEach(loaded.addLoadedPage);
+    return loaded;
+  }
+
+  Map<RowKey, (String, Row)> get heldRows => {
+    if (header case HeaderPlaced(:final row))
+      row.key: (const HeaderName().name, row),
+    for (final MapEntry(:key, :value) in _pages.entries)
+      value.key: (PageName(key).name, value),
+    for (final MapEntry(:key, :value) in _settings.entries)
+      value.key: (SettingsName(key).name, value),
+    for (final MapEntry(key: page, value: loaded) in _loaded.entries) ...{
+      for (final MapEntry(:key, :value) in loaded.elements.entries)
+        value.key: (ElementName(page, key).name, value),
+      for (final MapEntry(:key, :value) in loaded.lineupGroups.entries)
+        value.key: (LineupName(page, key).name, value),
+    },
+  };
+
+  void drop(Iterable<Row> rows) {
+    for (final row in rows) {
+      switch (row) {
+        case ElementRow() || LineupGroupRow():
+          _forget(row);
+        case PageRow(:final publicId):
+          _pages.remove(digestOf(publicId));
+          _loaded.remove(digestOf(publicId));
+          _contentPages.remove(digestOf(publicId));
+        case PageSettingsRow(:final pagePublicId):
+          _settings.remove(digestOf(pagePublicId));
+        case StrategyRow() || FolderRow():
+          throw StateError('$row is not dropped from a strategy');
+      }
+    }
+  }
+
   final String? strategyId;
   final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
@@ -373,4 +438,75 @@ final class _LoadedRows implements StrategyRows {
   @override
   Iterable<LineupGroupRow> lineupGroupsOn(String pagePublicId) =>
       _loaded.lineupGroupsOnPage(digestOf(pagePublicId));
+}
+
+final class PendingRows implements StrategyRows {
+  PendingRows(this._loaded, this.strategy);
+
+  final LoadedStrategy _loaded;
+  final _pages = <String, PageRow>{};
+  final _settings = <String, PageSettingsRow>{};
+  final _elements = <String, ElementRow>{};
+  final _groups = <String, LineupGroupRow>{};
+
+  @override
+  ReadableStrategy strategy;
+
+  void take(Iterable<RowWrite> writes) {
+    for (final write in writes) {
+      switch (write.after) {
+        case final ReadableStrategy row:
+          strategy = row;
+        case final PageRow row:
+          _pages[row.publicId] = row;
+        case final PageSettingsRow row:
+          _settings[row.pagePublicId] = row;
+        case final ElementRow row:
+          _elements[row.publicId] = row;
+        case final LineupGroupRow row:
+          _groups[row.publicId] = row;
+        case UnreadableStrategy() || FolderRow():
+          throw StateError('${write.after} is not written by an op');
+      }
+    }
+  }
+
+  @override
+  Iterable<PageRow> get pages => [
+    for (final page in _loaded.pages)
+      if (!_pages.containsKey(page.publicId)) page,
+    ..._pages.values,
+  ];
+
+  @override
+  PageRow? page(String pagePublicId) =>
+      _pages[pagePublicId] ?? _loaded.page(pagePublicId);
+
+  @override
+  PageSettingsRow? settingsOf(String pagePublicId) =>
+      _settings[pagePublicId] ?? _loaded.settingsOf(pagePublicId);
+
+  @override
+  ElementRow? element(String elementPublicId) =>
+      _elements[elementPublicId] ?? _loaded.element(elementPublicId);
+
+  @override
+  LineupGroupRow? lineupGroup(String lineupPublicId) =>
+      _groups[lineupPublicId] ?? _loaded.lineupGroup(lineupPublicId);
+
+  @override
+  Iterable<ElementRow> elementsOn(String pagePublicId) => [
+    for (final row in _loaded.elementsOnPage(digestOf(pagePublicId)))
+      if (!_elements.containsKey(row.publicId)) row,
+    for (final row in _elements.values)
+      if (row.pagePublicId == pagePublicId) row,
+  ];
+
+  @override
+  Iterable<LineupGroupRow> lineupGroupsOn(String pagePublicId) => [
+    for (final row in _loaded.lineupGroupsOnPage(digestOf(pagePublicId)))
+      if (!_groups.containsKey(row.publicId)) row,
+    for (final row in _groups.values)
+      if (row.pagePublicId == pagePublicId) row,
+  ];
 }
