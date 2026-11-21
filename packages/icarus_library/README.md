@@ -1533,6 +1533,40 @@ delete waits until a later read shows that page gone (it then needs the user)
 or live again. A refusal because the page was deleted is reissued under a
 fresh id once a read started after the refusal shows the page live.
 
+**A put-back over this device's own delete.** An undo of a delete is an add
+over the tombstone, made against the tombstone as drawn. It waits behind the
+delete while the delete is unsent, claimed, unknown or refused. Once the
+delete is answered applied by this device (or the server reports a resend
+whose first send applied) at exactly the revision the put-back names, the
+put-back waits for a read started after that answer: if it shows the
+tombstone at that revision with the content the put-back was made against,
+the put-back goes as an add over it; anything else needs the user. A delete
+the server reports someone else already made leaves the put-back needing the
+user. The delete stays in the queue until the put-back right after it has been
+sent, so the put-back can still see whose write the delete was.
+
+**What it rules out that today's queue does not.**
+
+- [#631](https://github.com/SunkenInTime/icarus/issues/631): an undo after a
+  lost answer never removes the op that may have landed; the op is resent as
+  it was first sent and the undo waits behind it.
+- [#645](https://github.com/SunkenInTime/icarus/issues/645): an op id the
+  queue holds is refused.
+- [#646](https://github.com/SunkenInTime/icarus/issues/646): Use cloud removes
+  only the refused op, and later edits of that item are checked against the
+  cloud version.
+- [#668](https://github.com/SunkenInTime/icarus/issues/668): a delete and its
+  undo never tell the user a teammate deleted the item when none did, and never
+  silently overwrite one who did. A put-back made against a row the server did
+  not hold (the server merged a teammate's move the canvas had not drawn)
+  needs the user even when the revision matches, because the content differs.
+  A put-back and a later redo never cancel each other: the add is not a plain
+  never-sent add, so the redo is sent, or waits visibly behind a put-back that
+  needs the user. A put-back that outlives the server's 30-day memory does not
+  re-create an item whose id has a new lifetime at a low revision: if the
+  delete's answer was lost, the delete needs the user; if it was known, the
+  read shows another revision and the put-back needs the user.
+
 **A dependency is satisfied by an applied answer.** An entry waits for an
 earlier entry it depends on (the same row, its page's add or delete, a copy's
 source page, a delete's page, page changes against renumbering) until that one

@@ -794,4 +794,232 @@ void main() {
       );
     });
   });
+
+  group('a put-back over this device\'s own delete (#668)', () {
+    ElementAddOp putBack(String opId, StrategyRows rows, String id) {
+      final row = rows.element(id)! as LiveElement;
+      return ElementAddOp(
+        opId: opId,
+        elementPublicId: id,
+        pagePublicId: row.pagePublicId,
+        payload: row.payload,
+        sortIndex: row.sortIndex,
+        expectedElementRevision: row.revision + 1,
+      );
+    }
+
+    (Client, int) deletedAndPutBack({bool online = false}) {
+      final client = Client();
+      if (online) client.must(const ConnectionReturned());
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      client.edit(putBack('back', drawn, 'e1'));
+      return (client, client.claim(['del']));
+    }
+
+    final deleted = withOp(initialRows(), elementDelete('del'));
+
+    final Matcher needsUser = isA<NeedsUser>().having(
+      (go) => go.reason,
+      'reason',
+      isA<ChangedUnseen>(),
+    );
+
+    test('answered applied by this device, it waits for a read and then '
+        'goes as an add over the tombstone', () {
+      for (final answer in const [
+        AppliedAnswer('del', revision: 2),
+        NoopAnswer(
+          'del',
+          revision: 2,
+          replay: NoopReplay.appliedWhenFirstReceived,
+        ),
+      ]) {
+        final (client, attempt) = deletedAndPutBack();
+        client.must(OpAnswered(attempt, answer));
+        expect(client.view('back').holds, [
+          const AwaitingBase(ElementTarget('e1')),
+        ]);
+        client.read(deleted, pages: ['page-a']);
+        expect(client.queue.entry('del'), isNotNull);
+        expect(client.view('back').go, isA<Free>());
+        client.claim(['back']);
+        final sent = client.lastSent().single as ElementAddOp;
+        expect(sent.expectedElementRevision, 2);
+        expect(applyOp(deleted, sent), isA<OpApplied>());
+      }
+    });
+
+    test('answered as a noop someone else made, it needs the user', () {
+      final (client, attempt) = deletedAndPutBack();
+      client.must(
+        OpAnswered(
+          attempt,
+          const NoopAnswer('del', revision: 2, replay: NoopReplay.notApplied),
+        ),
+      );
+      expect(client.view('back').go, needsUser);
+      client.read(deleted, pages: ['page-a']);
+      expect(client.view('back').go, needsUser);
+    });
+
+    test('while the delete is refused it waits behind it, and the sync '
+        'state says so', () {
+      final (client, attempt) = deletedAndPutBack();
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'del',
+            RejectionReason.revisionMismatch,
+            NoServerCopy(),
+          ),
+        ),
+      );
+      expect(client.view('back').holds, [
+        const BehindEntry('del', Dependency.sameRow),
+      ]);
+      expect(
+        Tally.of(client.queue, now).attention[Attention.waitingOnRefused],
+        1,
+      );
+    });
+
+    test('while the delete\'s answer is unknown it waits behind it', () {
+      final (client, attempt) = deletedAndPutBack();
+      client.must(TransportFailed(attempt, TransportFailure.network, at: now));
+      expect(client.view('del').state, isA<AnswerUnknown>());
+      expect(client.view('back').holds, [
+        const BehindEntry('del', Dependency.sameRow),
+      ]);
+    });
+
+    test('a matching revision over different content needs the user', () {
+      final (client, attempt) = deletedAndPutBack(online: true);
+      final back = client.queue.entry('back')! as PendingOp;
+      final tombstone = (back.authored as AuthoredRow).revision;
+      client.must(
+        OpAnswered(attempt, AppliedAnswer('del', revision: tombstone)),
+      );
+      final teammateMoved = withOp(
+        withOp(initialRows(), movePatch('theirs', x: 99)),
+        elementDelete('del', expected: 2),
+      );
+      final shown = teammateMoved.element('e1')!;
+      expect(revisionOfRowForTest(shown), tombstone + 1);
+      client.read(
+        StrategyRowSet(
+          strategy: teammateMoved.strategy,
+          pages: teammateMoved.pages,
+          settings: teammateMoved.settings,
+          elements: [
+            for (final row in teammateMoved.elements)
+              if (row case DeletedElement(publicId: 'e1'))
+                DeletedElement(
+                  publicId: row.publicId,
+                  pagePublicId: row.pagePublicId,
+                  payload: row.payload,
+                  sortIndex: row.sortIndex,
+                  revision: tombstone,
+                )
+              else
+                row,
+          ],
+        ),
+        pages: ['page-a'],
+      );
+      expect(client.view('back').go, needsUser);
+    });
+
+    test(
+      'delete, undo and redo with a teammate restoring in between: the '
+      'put-back and the redo never cancel, and the redo is sent or shown',
+      () {
+        final client = Client();
+        final drawn = client.visible;
+        client.edit(elementDelete('del'));
+        client.edit(putBack('back', drawn, 'e1'));
+        final attempt = client.claim(['del']);
+        client.must(
+          OpAnswered(attempt, const AppliedAnswer('del', revision: 2)),
+        );
+        client.edit(elementDelete('redo', expected: 3));
+        expect(client.queue.entries.map((entry) => entry.id), [
+          'del',
+          'back',
+          'redo',
+        ]);
+        final restored = withOp(
+          deleted,
+          putBack('theirs', initialRows(), 'e1'),
+        );
+        client.read(restored, pages: ['page-a']);
+        expect(client.view('back').go, needsUser);
+        expect(client.view('redo').holds, [
+          const BehindEntry('back', Dependency.sameRow),
+        ]);
+        expect(
+          Tally.of(client.queue, now).attention[Attention.waitingOnRefused],
+          1,
+        );
+        client.must(const UserDiscarded('back'));
+        client.read(restored, pages: ['page-a']);
+        expect(client.queue.entry('del'), isNull);
+        expect(client.view('redo').holds, isEmpty);
+        expect(client.view('redo').go, isA<Free>());
+        client.claim(['redo']);
+        expect(client.lastSent().single.opId, 'redo');
+      },
+    );
+
+    test('a put-back that outlives the server\'s memory does not re-create '
+        'an item whose id has a new lifetime at a low revision', () {
+      final later = now.add(
+        serverRemembersAnswersFor + const Duration(days: 1),
+      );
+      final newLifetime = strategyRows(
+        elements: [
+          deletedElement('e1', revision: 2),
+          element('e2'),
+          element('e3', pageId: 'page-b'),
+        ],
+      );
+
+      final unknown = deletedAndPutBack().$1;
+      unknown.must(
+        TransportFailed(
+          unknown.queue.nextAttempt - 1,
+          TransportFailure.network,
+          at: now,
+        ),
+      );
+      unknown.must(const AppRestarted(build: build));
+      unknown.clock = later;
+      unknown.read(newLifetime, pages: ['page-a']);
+      expect(
+        unknown.view('del').go,
+        isA<NeedsUser>().having(
+          (go) => go.reason,
+          'reason',
+          isA<ServerForgotAnswer>(),
+        ),
+      );
+      expect(unknown.view('back').holds, [
+        const BehindEntry('del', Dependency.sameRow),
+      ]);
+
+      final (answered, attempt) = deletedAndPutBack();
+      answered.queue = stepped(
+        transition(
+          answered.queue,
+          OpAnswered(attempt, const AppliedAnswer('del', revision: 7)),
+          now: now,
+        ),
+      ).queue;
+      answered.must(const AppRestarted(build: build));
+      answered.clock = later;
+      answered.read(newLifetime, pages: ['page-a']);
+      expect(answered.view('back').go, needsUser);
+    });
+  });
 }

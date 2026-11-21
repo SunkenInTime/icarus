@@ -304,8 +304,49 @@ final class Model {
     return null;
   }
 
-  void edit() {
-    final op = editOp();
+  void deleteAndPutBack() {
+    final rows = client.visible;
+    final copying = {
+      for (final entry in client.queue.entries)
+        if (entry case PendingOp(
+          op: PageAddOp(:final pagePublicId, copyContentFromPagePublicId: _?),
+        ))
+          pagePublicId,
+    };
+    final live = [
+      for (final row in rows.elements)
+        if (row case LiveElement(:final pagePublicId)
+            when rows.page(pagePublicId) is LivePage &&
+                !copying.contains(pagePublicId))
+          row,
+    ];
+    if (live.isEmpty) return;
+    final target = pick(live);
+    final delete = elementDelete(
+      fresh('op'),
+      elementId: target.publicId,
+      pageId: target.pagePublicId,
+      expected: target.revision,
+    );
+    final applied = applyOp(rows, delete);
+    if (applied is! OpApplied) return;
+    final putBack = switch (buildUndo(
+      rows.withRows(applied.rows),
+      applied.undo,
+      opId: fresh('op'),
+      defaultSettings: defaultSettings,
+    )) {
+      UndoReady(op: final ElementAddOp op) => op,
+      _ => null,
+    };
+    if (putBack == null) return;
+    count('put-backs');
+    edit(delete);
+    edit(putBack);
+  }
+
+  void edit([StrategyOp? chosen]) {
+    final op = chosen ?? editOp();
     if (op == null) return;
     final visible = client.visible;
     final onTop = onVisible(visible, op);
@@ -601,8 +642,10 @@ final class Model {
           : Duration(milliseconds: random.nextInt(2000)),
     );
     switch (random.nextInt(22)) {
-      case < 7:
+      case < 6:
         edit();
+      case 6:
+        deleteAndPutBack();
       case < 10:
         claim();
       case < 14:
@@ -698,6 +741,7 @@ const minimums = {
   'UserDiscarded': 5,
   'removed SeenInBase': 1500,
   'removed FoldedInto': 100,
+  'put-backs': 100,
   'Reissue': 5,
 };
 

@@ -820,6 +820,46 @@ _Comparison _compare(Authored authored, RowEvidence? evidence) =>
       (AuthoredNoRow(), RowSeen() || RowUnreadable()) => _Comparison.differs,
     };
 
+bool _isPutBack(StrategyOp op) => switch (op) {
+  ElementAddOp(expectedElementRevision: _?) ||
+  LineupGroupAddOp(expectedLineupRevision: _?) => true,
+  _ => false,
+};
+
+Go _overOwnDelete(
+  Authored authored,
+  ServerAnswer answer,
+  RowEvidence? evidence,
+  Target target,
+  List<Hold> holds,
+) {
+  switch ((answer, authored)) {
+    case (
+          AnsweredApplied(
+            by: AppliedBy.thisClient,
+            :final revision,
+            :final afterRead,
+          ),
+          AuthoredRow(revision: final tombstone, :final digest),
+        )
+        when tombstone == revision:
+      switch (evidence) {
+        case RowSeen(revision: final seen, digest: final shown)
+            when seen == revision && shown == digest:
+          return const Free();
+        case RowSeen(revision: final seen) when seen >= revision:
+          return const NeedsUser(ChangedUnseen());
+        case final RowEvidence seen when seen.read > afterRead:
+          return const NeedsUser(ChangedUnseen());
+        case _:
+          holds.add(AwaitingBase(target));
+          return const Free();
+      }
+    case _:
+      return const NeedsUser(ChangedUnseen());
+  }
+}
+
 bool _sameRevision(Authored authored, RowEvidence evidence) =>
     switch ((authored, evidence)) {
       (AuthoredRow(:final revision), RowSeen(revision: final seen)) =>
@@ -857,6 +897,14 @@ Go _checked(
             _sameRevision(entry.authored, evidence)
         ? const NeedsFreshId(ServerForgot())
         : const NeedsUser(ServerForgotAnswer());
+  }
+  if (_isPutBack(entry.op)) {
+    if (queue.entry(acceptedSameRow ?? '') case PendingOp(
+      op: ElementDeleteOp() || LineupGroupDeleteOp(),
+      :final answer,
+    )) {
+      return _overOwnDelete(entry.authored, answer, evidence, target, holds);
+    }
   }
   if (target case ElementTarget() || LineupTarget()) {
     final page = _evidencePage(evidence);
@@ -1359,8 +1407,28 @@ void _settle(_Edit edit) {
     }
   }
   candidates.sort((a, b) => a.place.compareTo(b.place));
+  bool backingAPutBack(PendingOp entry) {
+    if (entry.op is! ElementDeleteOp && entry.op is! LineupGroupDeleteOp) {
+      return false;
+    }
+    final target = targetOf(entry.op);
+    for (final (place, id) in edit.index.underOf(target)) {
+      derivationWork.visits++;
+      if (place <= entry.place) continue;
+      return switch (edit.index.byId[id]) {
+        final PendingOp next =>
+          _isPutBack(next.op) &&
+              next.answer is NotAnswered &&
+              (edit.index.attemptsByOp[id] ?? const []).isEmpty,
+        _ => false,
+      };
+    }
+    return false;
+  }
+
   final settled = <String>{};
   for (final entry in candidates) {
+    if (backingAPutBack(entry)) continue;
     final cause = switch (entry.answer) {
       AnsweredNothingToDo() => const NothingToWaitFor(),
       AnsweredApplied(:final revision, :final afterRead) => _settledAt(
