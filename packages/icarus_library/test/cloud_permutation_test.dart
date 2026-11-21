@@ -356,7 +356,7 @@ void main() {
         }
       }
     }
-    print('$orders orders of $factsSeen facts');
+    printOnFailure('$orders orders of $factsSeen facts');
     expect(orders, greaterThan(seeds * 20));
   });
 }
