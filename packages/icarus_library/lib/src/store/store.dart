@@ -29,11 +29,12 @@ sealed class StoreOpening {
 }
 
 final class StoreOpened extends StoreOpening {
-  StoreOpened(this.store, List<ForeignName> foreignNames)
+  StoreOpened(this.store, List<ForeignName> foreignNames, this.origin)
     : foreignNames = List.unmodifiable(foreignNames);
 
   final LibraryStore store;
   final List<ForeignName> foreignNames;
+  final StorageOrigin origin;
 }
 
 final class StoreNotOpened extends StoreOpening {
@@ -249,8 +250,8 @@ final class LibraryStore {
         final store = LibraryStore._(lease, canRead, clock);
         final foreign = <ForeignName>[];
         switch ((await store._readLibrary(foreign), store._settle())) {
-          case (Done(), Done()):
-            return StoreOpened(store, foreign);
+          case (Done(value: final origin), Done()):
+            return StoreOpened(store, foreign, origin);
           case (StorageFailed(:final failure), _) ||
               (_, StorageFailed(:final failure)):
             await store.close();
@@ -259,7 +260,36 @@ final class LibraryStore {
     }
   }
 
+  static final _plainDecimal = RegExp(r'^[1-9][0-9]{0,8}$');
+
+  static StorageFailure? _formatProblem(String stored) {
+    if (!_plainDecimal.hasMatch(stored)) {
+      return DamagedLibrary('the store format is not a plain number: $stored');
+    }
+    final format = int.parse(stored);
+    if (format > storeFormat) {
+      return NewerFormat(FormatLayer.store, found: format, known: storeFormat);
+    }
+    return null;
+  }
+
+  Future<Stored<StorageOrigin>> _originWithoutMarker(
+    List<StoredEntry> libraryRows,
+  ) async {
+    if (libraryRows.isNotEmpty) return const Done(StorageExisted());
+    return switch (await _lease.areas('')) {
+      StorageFailed(:final failure) => StorageFailed(failure),
+      Done(value: []) => const Done(StorageCreated()),
+      Done() => const Done(StorageExisted()),
+    };
+  }
+
+  List<Change> _withOwedMarker(List<Change> changes) => _markerOwed
+      ? [const Put(libraryArea, formatKey, '$storeFormat'), ...changes]
+      : changes;
+
   late final _WatchedLease _lease;
+  var _markerOwed = false;
   final CanRead _canRead;
   final DateTime Function() _clock;
   _State _state = const _Ready();
@@ -334,6 +364,7 @@ final class LibraryStore {
       null => RowSpot(names: (_) => false),
     };
     return switch (name) {
+      FormatName() ||
       SummaryName() ||
       UnknownKindName() ||
       ForeignName() => Unplaced(null, '${name.name} holds no row'),
@@ -440,8 +471,9 @@ final class LibraryStore {
           return NotSaved(failure);
       }
     }
-    switch (await _lease.commit(_collapsed(changes))) {
+    switch (await _lease.commit(_withOwedMarker(_collapsed(changes)))) {
       case CommitApplied():
+        _markerOwed = false;
         return Saved(take());
       case CommitRefused(:final failure):
         if (failure is LeaseEnded) _shut(const StoreStopped(LeaseEnded()));
@@ -453,13 +485,32 @@ final class LibraryStore {
     }
   }
 
-  Future<Stored<void>> _readLibrary(List<ForeignName> foreign) async {
+  Future<Stored<StorageOrigin>> _readLibrary(List<ForeignName> foreign) async {
     final List<StoredEntry> entries;
     switch (await _lease.entries(libraryArea, '')) {
       case StorageFailed(:final failure):
         return StorageFailed(failure);
       case Done(:final value):
         entries = value;
+    }
+    final format = [
+      for (final (:key, :value) in entries)
+        if (key == formatKey) value,
+    ].firstOrNull;
+    final StorageOrigin origin;
+    if (format != null) {
+      if (_formatProblem(format) case final problem?) {
+        return StorageFailed(problem);
+      }
+      origin = const StorageExisted();
+    } else {
+      switch (await _originWithoutMarker(entries)) {
+        case StorageFailed(:final failure):
+          return StorageFailed(failure);
+        case Done(:final value):
+          origin = value;
+      }
+      _markerOwed = true;
     }
     final toRebuild = <String>[];
     for (final (:key, :value) in entries) {
@@ -497,7 +548,7 @@ final class LibraryStore {
     for (final digest in toRebuild) {
       await _repair(digest);
     }
-    return done;
+    return Done(origin);
   }
 
   Future<void> _repair(String digest) async {

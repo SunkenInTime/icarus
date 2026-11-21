@@ -129,9 +129,14 @@ final class EmptyCommitClearsLease extends ForwardingLease {
 }
 
 final class PartlyUnknownLease extends ForwardingLease {
-  PartlyUnknownLease(super.inner, this.cut);
+  PartlyUnknownLease(
+    super.inner,
+    this.cut, {
+    this.failure = const DeviceFailure('cut short'),
+  });
 
   final void Function() cut;
+  final StorageFailure failure;
 
   @override
   Future<Committing> commit(List<Change> changes) async {
@@ -139,7 +144,7 @@ final class PartlyUnknownLease extends ForwardingLease {
     switch (await inner.commit(changes.take(1).toList())) {
       case CommitApplied():
         cut();
-        return const CommitUnknown(DeviceFailure('cut short'));
+        return CommitUnknown(failure);
       case final other:
         return other;
     }
@@ -250,6 +255,8 @@ void main() {
         'a write pending when its engine closes lands whole before the next grant or not at all',
     Flaw.appliesFirstBeforeHold:
         'a commit across areas cut short by a crash is seen whole or not at all',
+    Flaw.failsTheLoser:
+        'grants one lease among callers who ask at nearly the same moment',
     Flaw.writesAfterRelease:
         'a write pending when its lease ends lands whole before the next grant or not at all',
   };
@@ -259,6 +266,28 @@ void main() {
       expect(results[check], isA<Broke>(), reason: '$results');
     });
   }
+
+  test('a partial commit reported unknown for a quota abort is never called '
+      'partial by the contract, the one case allowed to be', () async {
+    for (final check in engineContract) {
+      final result = await check.run(
+        WrappedHarness(
+          (lease) => PartlyUnknownLease(
+            lease,
+            () {},
+            failure: const AbortedForQuota('the browser aborted for room'),
+          ),
+        ),
+      );
+      if (result case Broke(:final what)) {
+        expect(
+          what,
+          isNot(contains('left some of its changes')),
+          reason: check.name,
+        );
+      }
+    }
+  });
 
   test(
     'a partial commit reported unknown fails every check it reaches',

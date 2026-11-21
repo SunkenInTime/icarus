@@ -48,7 +48,7 @@ export 'src/json.dart'
         maxJsonDepth;
 export 'src/store/engine.dart' hide done;
 export 'src/store/layout.dart'
-    show ForeignName, digestOf, longestName, strategyArea;
+    show ForeignName, digestOf, longestName, storeFormat, strategyArea;
 export 'src/store/memory_engine.dart';
 export 'src/store/results.dart';
 export 'src/store/store.dart'
