@@ -27,6 +27,10 @@ const _patch = '''
     cursorKeyThrows: false,
     room: null,
     estimates: 0,
+    estimateFails: null,
+    closeThrows: false,
+    deleteThrows: false,
+    errorThrows: false,
     opened: [],
   };
   globalThis.icarusFaults = faults;
@@ -70,9 +74,40 @@ const _patch = '''
   const estimate = StorageManager.prototype.estimate;
   StorageManager.prototype.estimate = function (...args) {
     faults.estimates++;
+    if (faults.estimateFails === 'reject') return Promise.reject(new DOMException('no estimate', 'UnknownError'));
+    if (faults.estimateFails === 'throw') throw new TypeError('estimate is broken');
+    if (faults.estimateFails === 'hang') return new Promise(() => {});
     if (faults.room === null) return estimate.apply(this, args);
     return Promise.resolve({ quota: faults.room + 4096, usage: 4096 });
   };
+  const close = IDBDatabase.prototype.close;
+  IDBDatabase.prototype.close = function (...args) {
+    if (faults.closeThrows) throw new TypeError('close is broken');
+    return close.apply(this, args);
+  };
+  const deleteDatabase = IDBFactory.prototype.deleteDatabase;
+  IDBFactory.prototype.deleteDatabase = function (...args) {
+    if (faults.deleteThrows) throw new TypeError('delete is broken');
+    return deleteDatabase.apply(this, args);
+  };
+  const transactionError = Object.getOwnPropertyDescriptor(IDBTransaction.prototype, 'error');
+  Object.defineProperty(IDBTransaction.prototype, 'error', {
+    configurable: true,
+    get() {
+      if (faults.errorThrows) throw new TypeError('the error is broken');
+      return transactionError.get.call(this);
+    },
+  });
+  faults.putRaw = (name, area, key, kind) => new Promise((resolve) => {
+    const opening = indexedDB.open(name);
+    opening.onsuccess = () => {
+      const db = opening.result;
+      const transaction = db.transaction('rows', 'readwrite');
+      const value = { null: null, undefined: undefined, number: 5 }[kind];
+      transaction.objectStore('rows').put(value, [area, key]);
+      transaction.oncomplete = () => { db.close(); resolve(); };
+    };
+  });
   const open = IDBFactory.prototype.open;
   IDBFactory.prototype.open = function (...args) {
     if (faults.openThrows) throw new TypeError('open is broken');
@@ -150,20 +185,23 @@ Future<bool> lockIsFree(String name) async {
   return !state.held.toDart.any((lock) => lock.name == name);
 }
 
-Future<void> putRaw(String name, String area, String key, JSAny? value) {
-  final done = Completer<void>();
-  final opening = window.indexedDB.open(name);
-  opening.onsuccess = ((Event _) {
-    final db = opening.result! as IDBDatabase;
-    final transaction = db.transaction('rows'.toJS, 'readwrite');
-    transaction.objectStore('rows').put(value, [area.toJS, key.toJS].toJS);
-    transaction.oncomplete = ((Event _) {
-      db.close();
-      done.complete();
-    }).toJS;
-  }).toJS;
-  return done.future;
-}
+Future<void> putRaw(String name, String area, String key, String kind) =>
+    (_faults.callMethod<JSPromise<JSAny?>>(
+      'putRaw'.toJS,
+      name.toJS,
+      area.toJS,
+      key.toJS,
+      kind.toJS,
+    )).toDart;
+
+void estimateFails(String? how) => _faults['estimateFails'] = how?.toJS;
+
+void closeThrows(bool throws) => _faults['closeThrows'] = throws.toJS;
+
+void deleteThrows(bool throws) => _faults['deleteThrows'] = throws.toJS;
+
+void transactionErrorThrows(bool throws) =>
+    _faults['errorThrows'] = throws.toJS;
 
 Future<IDBDatabase> openRaw(String name) {
   final opened = Completer<IDBDatabase>();

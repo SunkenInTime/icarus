@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 import 'dart:math';
 
 import 'package:icarus_library/engine_contract.dart';
@@ -12,6 +14,32 @@ import '../store_support.dart';
 import 'fault_disk.dart';
 
 const libraryPath = '/library.sqlite';
+
+Uint8List journalHoldingPages() {
+  final journal = Uint8List(512 + 4096 + 8);
+  journal.setAll(0, const [0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7]);
+  ByteData.sublistView(journal)
+    ..setUint32(8, 1)
+    ..setUint32(12, 7)
+    ..setUint32(16, 5)
+    ..setUint32(20, 512)
+    ..setUint32(24, 4096);
+  return journal;
+}
+
+Uint8List blankDatabasePage() {
+  final folder = Directory.systemTemp.createTempSync('icarus-blank-');
+  final file = '${folder.path}/blank.sqlite';
+  sqlite3.open(file)
+    ..execute('PRAGMA page_size = 4096')
+    ..execute('CREATE TABLE t (x)')
+    ..execute('DROP TABLE t')
+    ..execute('VACUUM')
+    ..close();
+  final bytes = File(file).readAsBytesSync();
+  folder.deleteSync(recursive: true);
+  return bytes;
+}
 
 final _isolateMark = Random.secure().nextInt(1 << 32);
 

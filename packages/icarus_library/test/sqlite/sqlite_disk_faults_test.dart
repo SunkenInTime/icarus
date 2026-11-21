@@ -118,13 +118,16 @@ final class _RacedFiles implements LibraryFiles {
   void Function()? _meanwhile;
 
   @override
-  bool exists(String path) {
-    final found = _files.exists(path);
+  int? size(String path) {
+    final found = _files.size(path);
     final meanwhile = _meanwhile;
     _meanwhile = null;
     meanwhile?.call();
     return found;
   }
+
+  @override
+  Uint8List head(String path, int length) => _files.head(path, length);
 
   @override
   Database open(String path) => _files.open(path);
@@ -247,19 +250,59 @@ void main() {
     },
   );
 
-  test('a library file that is gone while its rollback journal or its log '
-      'remains is refused, not made new', () async {
-    for (final companion in ['-journal', '-wal']) {
+  test('a library file that is gone or empty while a log or a journal that '
+      'holds pages remains, or a library whose first page is blank over more '
+      'pages, is refused and every byte is left as it was', () async {
+    final written = FaultDrive();
+    final rows = opened(written.open());
+    committed(rows.commit(const [Put('a', 'k', 'saved in the log')]));
+    written.disk.crashed = true;
+    _closeAfterCrash(rows);
+    written.disk.powerLoss(const KeepsUnsynced());
+    final log = written.disk.bytesOf('$libraryPath-wal');
+    final library = written.disk.bytesOf(libraryPath);
+    written.unregister();
+    expect(log, isNotEmpty);
+    expect(library.length, greaterThan(4096));
+
+    final cases = <String, Map<String, Uint8List>>{
+      'an empty file beside its log': {
+        libraryPath: Uint8List(0),
+        '$libraryPath-wal': log,
+      },
+      'an empty file beside a journal that holds pages': {
+        libraryPath: Uint8List(0),
+        '$libraryPath-journal': journalHoldingPages(),
+      },
+      'no file beside its log': {'$libraryPath-wal': log},
+      'no file beside a journal that holds pages': {
+        '$libraryPath-journal': journalHoldingPages(),
+      },
+      'a blank first page over more pages': {
+        libraryPath: Uint8List.fromList(library)
+          ..setRange(0, 4096, blankDatabasePage()),
+      },
+    };
+    for (final MapEntry(key: name, value: files) in cases.entries) {
       final drive = FaultDrive();
-      drive.disk.replace('$libraryPath$companion', Uint8List(512));
-      expect(
-        drive.open(),
-        isA<RowsRefused>().having(
-          (refused) => '${refused.failure}',
-          'failure',
-          contains('$libraryPath$companion is still there'),
-        ),
-      );
+      for (final MapEntry(key: path, value: bytes) in files.entries) {
+        drive.disk.replace(path, bytes);
+      }
+      expect(drive.open(), isA<RowsRefused>(), reason: name);
+      for (final MapEntry(key: path, value: bytes) in files.entries) {
+        expect(drive.disk.bytesOf(path), bytes, reason: '$name: $path');
+      }
+      for (final path in [
+        libraryPath,
+        '$libraryPath-wal',
+        '$libraryPath-journal',
+      ]) {
+        expect(
+          drive.disk.exists(path),
+          files.containsKey(path),
+          reason: '$name: $path',
+        );
+      }
       drive.unregister();
     }
   });

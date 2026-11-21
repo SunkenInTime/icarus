@@ -16,7 +16,7 @@ const indexedDbVersion = 1;
 
 const roomMargin = 1024 * 1024;
 
-const _bytesPerChange = 1024;
+const _bytesPerPut = 1024;
 
 const _refreshRoomEvery = Duration(seconds: 10);
 
@@ -27,6 +27,7 @@ StorageFailure _named(DOMException? error, String what) =>
     });
 
 StorageFailure _thrown(Object error, String what) => switch (error) {
+  TimeoutException(:final duration?) => NoAnswer(what, duration),
   final JSAny thrown when thrown.isA<DOMException>() => _named(
     thrown as DOMException,
     what,
@@ -34,8 +35,51 @@ StorageFailure _thrown(Object error, String what) => switch (error) {
   _ => DeviceFailure('$what threw: $error'),
 };
 
+Future<StorageFailure?> _settles(
+  Future<void> Function() call,
+  String what,
+  Duration patience,
+) => Future.sync(call)
+    .timeout(patience)
+    .then<StorageFailure?>(
+      (_) => null,
+      onError: (Object error) => _thrown(error, what),
+    );
+
+StorageFailure? _done(void Function() call, String what) {
+  try {
+    call();
+    return null;
+  } on Object catch (error) {
+    return _thrown(error, what);
+  }
+}
+
+StorageFailure? _closeDatabase(IDBDatabase db) =>
+    _done(() => db.close(), 'closing the database');
+
 void _into<T>(Completer<T> answer, T Function() compute) {
-  if (!answer.isCompleted) answer.complete(Future.sync(compute));
+  if (answer.isCompleted) return;
+  final T value;
+  try {
+    value = compute();
+  } on Object catch (error, stack) {
+    answer.completeError(error, stack);
+    return;
+  }
+  answer.complete(value);
+}
+
+void _step<T extends Object>(Completer<T> answer, T? Function() step) {
+  if (answer.isCompleted) return;
+  final T? finished;
+  try {
+    finished = step();
+  } on Object catch (error, stack) {
+    answer.completeError(error, stack);
+    return;
+  }
+  if (finished != null) answer.complete(finished);
 }
 
 JSArray<JSAny> _key(String area, String key) => [area.toJS, key.toJS].toJS;
@@ -56,6 +100,9 @@ const _notAName = DeviceFailure('the library holds a key that is not a name');
 String? _text(JSAny? value) =>
     value.isA<JSString>() ? (value as JSString).toDart : null;
 
+List<JSAny?>? _list(JSAny? value) =>
+    value.isA<JSArray>() ? (value as JSArray<JSAny?>).toDart : null;
+
 sealed class _Answer {
   const _Answer();
 }
@@ -64,10 +111,6 @@ final class _Value extends _Answer {
   const _Value(this.value);
 
   final JSAny? value;
-}
-
-final class _Nothing extends _Answer {
-  const _Nothing();
 }
 
 final class _Failed extends _Answer {
@@ -81,9 +124,7 @@ Future<_Answer> _answer(IDBRequest request, String what) {
   request
     ..onsuccess = ((Event _) => _into(
       answered,
-      () => request.result.isUndefined
-          ? const _Nothing()
-          : _Value(request.result),
+      () => _Value(request.result),
     )).toJS
     ..onerror = ((Event event) {
       event.preventDefault();
@@ -93,12 +134,12 @@ Future<_Answer> _answer(IDBRequest request, String what) {
 }
 
 List<String>? _namesIn(JSAny? keys, int part) {
-  if (!keys.isA<JSArray>()) return null;
+  final listed = _list(keys);
+  if (listed == null) return null;
   final names = <String>[];
-  for (final key in (keys as JSArray<JSAny?>).toDart) {
-    if (!key.isA<JSArray>()) return null;
-    final parts = (key as JSArray<JSAny?>).toDart;
-    final name = parts.length == 2 ? _text(parts[part]) : null;
+  for (final key in listed) {
+    final parts = _list(key);
+    final name = parts != null && parts.length == 2 ? _text(parts[part]) : null;
     if (name == null) return null;
     names.add(name);
   }
@@ -150,28 +191,27 @@ Future<_Opened> _openDatabase(String name, Duration patience) {
     patience,
     () => _into(
       opened,
-      () => _Refused(
-        _cannotOpen(
-          'the browser did not open it within ${patience.inSeconds} s; '
-          'another tab may be upgrading or deleting it',
-        ),
-      ),
+      () => _Refused(NoAnswer('opening the database', patience)),
     ),
   );
   return opened.future.whenComplete(waiting.cancel);
 }
 
-Future<void> _deleteDatabase(String name, Duration patience) {
-  final deleted = Completer<void>();
-  window.indexedDB.deleteDatabase(name)
-    ..onsuccess = ((Event _) => _into(deleted, () {})).toJS
-    ..onerror = ((Event event) {
-      event.preventDefault();
-      _into(deleted, () {});
-    }).toJS;
-  final waiting = Timer(patience, () => _into(deleted, () {}));
-  return deleted.future.whenComplete(waiting.cancel);
-}
+Future<StorageFailure?> _deleteDatabase(String name, Duration patience) =>
+    _settles(
+      () {
+        final deleted = Completer<void>();
+        window.indexedDB.deleteDatabase(name)
+          ..onsuccess = ((Event _) => _into(deleted, () {})).toJS
+          ..onerror = ((Event event) {
+            event.preventDefault();
+            _into(deleted, () {});
+          }).toJS;
+        return deleted.future;
+      },
+      'deleting the database the lease created',
+      patience,
+    );
 
 StorageFailure? _problemWith(IDBDatabase db) {
   if (db.version != indexedDbVersion) {
@@ -183,7 +223,7 @@ StorageFailure? _problemWith(IDBDatabase db) {
   return null;
 }
 
-Future<bool> _keepsWritesStrict(IDBDatabase db) {
+Future<bool> _keepsWritesStrict(IDBDatabase db, Duration patience) {
   final probe = db.transaction(
     _rows.toJS,
     'readwrite',
@@ -195,7 +235,7 @@ Future<bool> _keepsWritesStrict(IDBDatabase db) {
     ..oncomplete = ((Event _) => _into(ended, () {})).toJS;
   final durability = _text(probe.getProperty<JSAny?>('durability'.toJS));
   probe.abort();
-  return ended.future.then((_) => durability == 'strict');
+  return ended.future.timeout(patience).then((_) => durability == 'strict');
 }
 
 final class _Lock {
@@ -219,70 +259,137 @@ final class _Lock {
   Future<bool> get held =>
       Future.any([_granted.future, _ended.then((_) => _granted.future)]);
 
-  Future<void> letGo() async {
+  Future<StorageFailure?> letGo(Duration patience) async {
     if (!_letGo.isCompleted) _letGo.complete();
-    if (_granted.isCompleted && await _granted.future) await _ended;
+    if (!_granted.isCompleted || !await _granted.future) return null;
+    return _settles(() => _ended, 'letting go of the lock', patience);
   }
 }
 
+sealed class RoomCheck {
+  const RoomCheck();
+}
+
+final class RoomChecked extends RoomCheck {
+  const RoomChecked();
+}
+
+final class RoomNotChecked extends RoomCheck {
+  const RoomNotChecked(this.why);
+
+  final String why;
+}
+
+sealed class _Estimate {
+  const _Estimate();
+}
+
+final class _Estimated extends _Estimate {
+  const _Estimated(this.left);
+
+  final int left;
+}
+
+final class _NoEstimate extends _Estimate {
+  const _NoEstimate(this.why);
+
+  final String why;
+}
+
 final class _Room {
+  _Room(this._patience);
+
+  final Duration _patience;
   int? _left;
+  String _unchecked = 'the browser has not said how much room there is';
+  var _reserved = 0;
   final _sinceAsked = Stopwatch();
   Future<void>? _asking;
-  var _spentWhileAsking = 0;
 
-  static int _needed(List<Change> changes) => changes.fold(
+  RoomCheck get check =>
+      _left == null ? RoomNotChecked(_unchecked) : const RoomChecked();
+
+  static int charge(List<Change> changes) => changes.fold(
     0,
     (total, change) =>
         total +
-        _bytesPerChange +
         switch (change) {
           Put(:final area, :final key, :final value) =>
-            2 * (area.length + key.length + value.length),
+            _bytesPerPut + 2 * (area.length + key.length + value.length),
           Delete() || ClearArea() => 0,
         },
   );
 
+  Future<_Estimate> _estimate() {
+    if (!window.navigator.has('storage')) {
+      return Future.value(
+        const _NoEstimate('this browser cannot estimate its storage'),
+      );
+    }
+    return Future.sync(() => window.navigator.storage.estimate().toDart)
+        .timeout(_patience)
+        .then<_Estimate>(
+          (estimate) => _Estimated(estimate.quota - estimate.usage),
+          onError: (Object error) =>
+              _NoEstimate('${_thrown(error, 'estimating storage')}'),
+        );
+  }
+
   Future<void> ask() => _asking ??= () {
-    _spentWhileAsking = 0;
     _sinceAsked
       ..reset()
       ..start();
-    return window.navigator.storage.estimate().toDart.then(
-      (estimate) {
-        _left = estimate.quota - estimate.usage - _spentWhileAsking;
-        _asking = null;
-      },
-      onError: (Object _) {
-        _left = null;
-        _asking = null;
-      },
-    );
+    return _estimate().then((estimate) {
+      switch (estimate) {
+        case _Estimated(:final left):
+          _left = left;
+        case _NoEstimate(:final why):
+          _unchecked = why;
+      }
+      _asking = null;
+    });
   }();
 
-  bool _fits(int needed) => switch (_left) {
+  bool _fits(int charge) => switch (_left) {
     null => true,
-    final left => needed + roomMargin <= left,
+    final left => charge + _reserved + roomMargin <= left,
   };
 
-  Future<StorageFailure?> refuses(List<Change> changes) async {
-    final needed = _needed(changes);
+  Future<StorageFailure?> admit(int charge) async {
+    if (charge == 0) return null;
     if (_sinceAsked.elapsed > _refreshRoomEvery) unawaited(ask());
-    if (_fits(needed)) return null;
-    await ask();
-    return switch (_left) {
-      final left? when !_fits(needed) => NoRoomForCommit(
-        needed: needed + roomMargin,
-        left: left,
-      ),
-      _ => null,
-    };
+    if (!_fits(charge)) await ask();
+    if (!_fits(charge)) {
+      return NoRoomForCommit(
+        needed: charge + _reserved + roomMargin,
+        left: _left ?? 0,
+      );
+    }
+    _reserved += charge;
+    return null;
   }
 
-  void spent(List<Change> changes) {
-    final needed = _needed(changes);
-    if (_left case final left?) _left = left - needed;
-    _spentWhileAsking += needed;
+  void settle(int charge, Committing outcome) {
+    _reserved -= charge;
+    if (_left case final left? when outcome is! CommitRefused) {
+      _left = left - charge;
+    }
+  }
+}
+
+final class _Acquiring {
+  _Lock? lock;
+  IDBDatabase? db;
+  bool created = false;
+  IndexedDbLease? lease;
+
+  Future<StorageFailure?> giveBack(String name, Duration patience) async {
+    final failures = [
+      if (db case final db?) _closeDatabase(db),
+      if (created) await _deleteDatabase(name, patience),
+      if (lock case final lock?) await lock.letGo(patience),
+    ].nonNulls;
+    return failures.isEmpty ? null : failures.first;
   }
 }
 
@@ -314,43 +421,49 @@ final class IndexedDbEngine implements StorageEngine {
         DeviceFailure('this page cannot hold the library: no Web Locks'),
       );
     }
-    _Lock? lock;
-    IDBDatabase? db;
-    var created = false;
-    IndexedDbLease? granted;
+    final acquiring = _Acquiring();
+    final Leasing leasing;
     try {
-      final asked = lock = _Lock(name);
-      if (!await asked.held) return const HeldByAnotherWriter();
-      final IDBDatabase opened;
-      switch (await _openDatabase(name, patience)) {
-        case _Refused(:final failure):
-          return LeaseFailed(failure);
-        case _Database(db: final database, created: final made):
-          opened = db = database;
-          created = made;
-      }
-      if (_problemWith(opened) case final problem?) return LeaseFailed(problem);
-      if (!await _keepsWritesStrict(opened)) {
-        return LeaseFailed(
-          _cannotOpen(
-            'this browser does not keep writes with strict durability',
-          ),
-        );
-      }
-      final room = _Room();
-      await room.ask();
-      final lease = granted = IndexedDbLease._(opened, asked, room);
-      _granted.add(lease);
-      return _closed ? const LeaseFailed(EngineClosed()) : Leased(lease);
+      leasing = await _acquire(acquiring);
     } on Object catch (error) {
-      return LeaseFailed(_thrown(error, 'leasing the library'));
-    } finally {
-      if (granted == null) {
-        db?.close();
-        if (created) await _deleteDatabase(name, patience);
-        await lock?.letGo();
-      }
+      return _givenBack(
+        acquiring,
+        LeaseFailed(_thrown(error, 'leasing the library')),
+      );
     }
+    return acquiring.lease == null ? _givenBack(acquiring, leasing) : leasing;
+  }
+
+  Future<Leasing> _givenBack(_Acquiring acquiring, Leasing leasing) async =>
+      switch ((leasing, await acquiring.giveBack(name, patience))) {
+        (LeaseFailed(:final failure), final StorageFailure left?) =>
+          LeaseFailed(DeviceFailure('$failure, and then $left')),
+        (_, final StorageFailure left?) => LeaseFailed(left),
+        _ => leasing,
+      };
+
+  Future<Leasing> _acquire(_Acquiring acquiring) async {
+    final lock = acquiring.lock = _Lock(name);
+    if (!await lock.held.timeout(patience)) return const HeldByAnotherWriter();
+    final IDBDatabase db;
+    switch (await _openDatabase(name, patience)) {
+      case _Refused(:final failure):
+        return LeaseFailed(failure);
+      case _Database(db: final opened, :final created):
+        db = acquiring.db = opened;
+        acquiring.created = created;
+    }
+    if (_problemWith(db) case final problem?) return LeaseFailed(problem);
+    if (!await _keepsWritesStrict(db, patience)) {
+      return LeaseFailed(
+        _cannotOpen('this browser does not keep writes with strict durability'),
+      );
+    }
+    final room = _Room(patience);
+    await room.ask();
+    final lease = acquiring.lease = IndexedDbLease._(db, lock, room, patience);
+    _granted.add(lease);
+    return _closed ? const LeaseFailed(EngineClosed()) : Leased(lease);
   }
 
   PendingWrite holdNextCommit() => _granted.last._held = _HeldCommit();
@@ -386,7 +499,7 @@ final class _Ending extends _LeaseState {
 }
 
 final class IndexedDbLease implements StorageLease {
-  IndexedDbLease._(this._db, this._lock, this._room) {
+  IndexedDbLease._(this._db, this._lock, this._room, this._patience) {
     _db
       ..onversionchange = ((Event _) => unawaited(release())).toJS
       ..onclose = ((Event _) => unawaited(release())).toJS;
@@ -395,10 +508,13 @@ final class IndexedDbLease implements StorageLease {
   final IDBDatabase _db;
   final _Lock _lock;
   final _Room _room;
+  final Duration _patience;
   final _writing = <Future<Committing>>{};
   Future<void> _turn = Future.value();
   _HeldCommit? _held;
   _LeaseState _state = const _Open();
+
+  RoomCheck get roomCheck => _room.check;
 
   @override
   int get maxKeyLength => indexedDbMaxKeyLength;
@@ -446,15 +562,19 @@ final class IndexedDbLease implements StorageLease {
     if (pastLimit(area, key, indexedDbMaxKeyLength)) return const KeyMissing();
     final read = await _reading(
       'reading',
-      (rows) async => Done(await _answer(rows.get(_key(area, key)), 'reading')),
+      (rows) async =>
+          Done(await _answer(rows.getAll(_key(area, key)), 'reading')),
     );
     return switch (read) {
       StorageFailed(:final failure) => KeyNotRead(failure),
       Done(value: _Failed(:final failure)) => KeyNotRead(failure),
-      Done(value: _Nothing()) => const KeyMissing(),
-      Done(value: _Value(:final value)) => switch (_text(value)) {
-        final text? => KeyHeld(text),
-        null => const KeyNotRead(_notText),
+      Done(value: _Value(:final value)) => switch (_list(value)) {
+        [] => const KeyMissing(),
+        [final stored] => switch (_text(stored)) {
+          final text? => KeyHeld(text),
+          null => const KeyNotRead(_notText),
+        },
+        _ => const KeyNotRead(_notText),
       },
     };
   }
@@ -462,7 +582,6 @@ final class IndexedDbLease implements StorageLease {
   static Stored<List<String>> _listed(_Answer answer, int part) =>
       switch (answer) {
         _Failed(:final failure) => StorageFailed(failure),
-        _Nothing() => const Done([]),
         _Value(:final value) => switch (_namesIn(value, part)) {
           final names? => Done(names),
           null => const StorageFailed(_notAName),
@@ -502,23 +621,18 @@ final class IndexedDbLease implements StorageLease {
       final request = rows.openKeyCursor(range);
       request
         ..onsuccess = ((Event _) {
-          if (listed.isCompleted) return;
-          unawaited(
-            Future<Stored<List<String>>?>.sync(() {
-              final cursor = request.result as IDBCursor?;
-              if (cursor == null) return Done(found);
-              switch (_namesIn([cursor.key].toJS, 0)) {
-                case [final area]:
-                  found.add(area);
-                  cursor.continue_([area.toJS, JSArray<JSAny>()].toJS);
-                  return null;
-                case _:
-                  return const StorageFailed(_notAName);
-              }
-            }).then((finished) {
-              if (finished != null) _into(listed, () => finished);
-            }, onError: listed.completeError),
-          );
+          _step<Stored<List<String>>>(listed, () {
+            final cursor = request.result as IDBCursor?;
+            if (cursor == null) return Done(found);
+            switch (_namesIn([cursor.key].toJS, 0)) {
+              case [final area]:
+                found.add(area);
+                cursor.continue_([area.toJS, JSArray<JSAny>()].toJS);
+                return null;
+              case _:
+                return const StorageFailed<List<String>>(_notAName);
+            }
+          });
         }).toJS
         ..onerror = ((Event event) {
           event.preventDefault();
@@ -534,33 +648,29 @@ final class IndexedDbLease implements StorageLease {
   );
 
   @override
-  Future<Stored<List<StoredEntry>>> entries(
-    String area,
-    String prefix,
-  ) => _reading('reading', (rows) async {
-    final range = _under(area, prefix);
-    final keys = _answer(rows.getAllKeys(range), 'listing');
-    final values = _answer(rows.getAll(range), 'reading');
-    switch ((_listed(await keys, 1), await values)) {
-      case (StorageFailed(:final failure), _) || (_, _Failed(:final failure)):
-        return StorageFailed(failure);
-      case (Done(value: final names), _Nothing()):
-        return names.isEmpty ? const Done([]) : const StorageFailed(_notText);
-      case (Done(value: final names), _Value(:final value)):
-        if (!value.isA<JSArray>()) return const StorageFailed(_notText);
-        final texts = (value as JSArray<JSAny?>).toDart;
-        if (texts.length != names.length) {
-          return const StorageFailed(_notText);
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
+      _reading('reading', (rows) async {
+        final range = _under(area, prefix);
+        final keys = _answer(rows.getAllKeys(range), 'listing');
+        final values = _answer(rows.getAll(range), 'reading');
+        switch ((_listed(await keys, 1), await values)) {
+          case (StorageFailed(:final failure), _) ||
+              (_, _Failed(:final failure)):
+            return StorageFailed(failure);
+          case (Done(value: final names), _Value(:final value)):
+            final texts = _list(value);
+            if (texts == null || texts.length != names.length) {
+              return const StorageFailed(_notText);
+            }
+            final found = <StoredEntry>[];
+            for (var i = 0; i < names.length; i++) {
+              final text = _text(texts[i]);
+              if (text == null) return const StorageFailed(_notText);
+              found.add((key: names[i], value: text));
+            }
+            return Done(found);
         }
-        final found = <StoredEntry>[];
-        for (var i = 0; i < names.length; i++) {
-          final text = _text(texts[i]);
-          if (text == null) return const StorageFailed(_notText);
-          found.add((key: names[i], value: text));
-        }
-        return Done(found);
-    }
-  });
+      });
 
   @override
   Future<Committing> commit(List<Change> changes) {
@@ -577,28 +687,50 @@ final class IndexedDbLease implements StorageLease {
   }
 
   Future<Committing> _committed(List<Change> changes) async {
+    final charge = _Room.charge(changes);
+    var admitted = false;
+    Committing outcome;
+    try {
+      outcome = await _inTurn(changes, charge, () => admitted = true);
+    } on Object catch (error) {
+      outcome = CommitUnknown(_thrown(error, 'committing'));
+    }
+    if (admitted) _room.settle(charge, outcome);
+    return outcome;
+  }
+
+  Future<Committing> _inTurn(
+    List<Change> changes,
+    int charge,
+    void Function() admitted,
+  ) async {
     final previous = _turn;
     final turn = Completer<void>();
     _turn = turn.future;
-    await previous;
     final ({Future<Committing> landing}) begun;
     try {
-      begun = await _begin(changes);
+      await previous;
+      begun = await _begin(changes, charge, admitted);
     } finally {
       turn.complete();
     }
     return begun.landing;
   }
 
-  Future<({Future<Committing> landing})> _begin(List<Change> changes) async {
+  Future<({Future<Committing> landing})> _begin(
+    List<Change> changes,
+    int charge,
+    void Function() admitted,
+  ) async {
     if (_held case final held?) {
       _held = null;
       held._reached.complete();
       await held._letGo.future;
     }
-    if (await _room.refuses(changes) case final failure?) {
+    if (await _room.admit(charge) case final failure?) {
       return (landing: Future.value(CommitRefused(failure)));
     }
+    admitted();
     return switch (_transaction('readwrite')) {
       StorageFailed(:final failure) => (
         landing: Future.value(CommitRefused(failure)),
@@ -611,11 +743,13 @@ final class IndexedDbLease implements StorageLease {
     final landed = Completer<Committing>();
     StorageFailure? notQueued;
     transaction
-      ..oncomplete = ((Event _) => _into(landed, () {
-        if (notQueued case final failure?) return CommitUnknown(failure);
-        _room.spent(changes);
-        return const CommitApplied();
-      })).toJS
+      ..oncomplete = ((Event _) => _into(
+        landed,
+        () => switch (notQueued) {
+          final failure? => CommitUnknown(failure),
+          null => const CommitApplied(),
+        },
+      )).toJS
       ..onabort = ((Event _) => _into(
         landed,
         () => switch ((notQueued, transaction.error)) {
@@ -639,7 +773,8 @@ final class IndexedDbLease implements StorageLease {
       }
     } on Object catch (error) {
       final failure = notQueued = _thrown(error, 'queuing a change');
-      if (_abort(transaction) case final unconfirmed?) {
+      if (_done(() => transaction.abort(), 'aborting')
+          case final unconfirmed?) {
         _into(
           landed,
           () => CommitUnknown(
@@ -651,15 +786,6 @@ final class IndexedDbLease implements StorageLease {
     return landed.future;
   }
 
-  static StorageFailure? _abort(IDBTransaction transaction) {
-    try {
-      transaction.abort();
-      return null;
-    } on Object catch (error) {
-      return _thrown(error, 'aborting');
-    }
-  }
-
   @override
   Future<Releasing> release() => switch (_state) {
     _Ending(:final releasing) => releasing,
@@ -668,9 +794,11 @@ final class IndexedDbLease implements StorageLease {
 
   Future<Releasing> _release() async {
     await Future.wait([..._writing]);
-    _db.close();
-    await _lock.letGo();
-    return const Released();
+    final failures = [
+      _closeDatabase(_db),
+      await _lock.letGo(_patience),
+    ].nonNulls;
+    return failures.isEmpty ? const Released() : ReleaseFailed(failures.first);
   }
 }
 

@@ -16,6 +16,7 @@ import 'package:test/test.dart';
 import '../crash_harness.dart';
 import '../store_support.dart';
 import '../support.dart';
+import 'fault_harness.dart' show blankDatabasePage, journalHoldingPages;
 import 'library_process.dart';
 
 final class FileHarness implements EngineHarness {
@@ -277,6 +278,45 @@ void main() {
       expect(await _refusal(path), contains('newer build'));
     },
   );
+
+  test('on real files, a library that is empty beside a log or a journal '
+      'that holds pages, or whose first page is blank over more pages, is '
+      'refused and every byte is left as it was', () async {
+    final engine = SqliteEngine(path);
+    final lease = await leaseOf(engine);
+    committed(await lease.commit(const [Put('a', 'k', 'saved in the log')]));
+    final log = File('$path-wal').readAsBytesSync();
+    final library = File(path).readAsBytesSync();
+    expect(log, isNotEmpty);
+    expect(library.length, greaterThan(4096));
+    await engine.close();
+    for (final file in [path, '$path-wal', '$path-journal', '$path-shm']) {
+      if (File(file).existsSync()) File(file).deleteSync();
+    }
+
+    final cases = <String, Map<String, List<int>>>{
+      'an empty file beside its log': {path: [], '$path-wal': log},
+      'an empty file beside a journal that holds pages': {
+        path: [],
+        '$path-journal': journalHoldingPages(),
+      },
+      'a blank first page over more pages': {
+        path: [...blankDatabasePage(), ...library.skip(4096)],
+      },
+    };
+    for (final MapEntry(key: name, value: files) in cases.entries) {
+      for (final MapEntry(key: file, value: bytes) in files.entries) {
+        File(file).writeAsBytesSync(bytes);
+      }
+      expect(await _refusal(path), contains('cannot be opened'), reason: name);
+      for (final MapEntry(key: file, value: bytes) in files.entries) {
+        expect(File(file).readAsBytesSync(), bytes, reason: '$name: $file');
+      }
+      for (final file in files.keys) {
+        File(file).deleteSync();
+      }
+    }
+  });
 
   test('a library whose file is gone but whose log is there is refused, not '
       'made new', () async {

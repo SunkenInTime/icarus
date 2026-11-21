@@ -1,8 +1,6 @@
 @TestOn('browser')
 library;
 
-import 'dart:js_interop';
-
 import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/indexed_db_storage.dart';
@@ -329,9 +327,9 @@ void main() {
     expect(
       leasing,
       isA<LeaseFailed>().having(
-        (failed) => '${failed.failure}',
+        (failed) => failed.failure,
         'failure',
-        contains('did not open it within 1 s'),
+        isA<NoAnswer>(),
       ),
     );
     expect(await lockIsFree(name), isTrue);
@@ -386,22 +384,30 @@ void main() {
     await lease.release();
   });
 
-  test('a stored value that is not text, null included, is a failure to read '
-      'and to list alike', () async {
-    await (await openIndexedDb(name)).release();
-    await putRaw(name, 'a', 'null', null);
-    await putRaw(name, 'b', 'number', 5.toJS);
-    final lease = await openIndexedDb(name);
-    for (final (area, key) in [('a', 'null'), ('b', 'number')]) {
-      expect(await lease.read(area, key), isA<KeyNotRead>(), reason: key);
-      expect(
-        await lease.entries(area, ''),
-        isA<StorageFailed<List<StoredEntry>>>(),
-        reason: key,
-      );
-    }
-    await lease.release();
-  });
+  test(
+    'a stored value that is not text, null and undefined included, is a failure to read '
+    'and to list alike',
+    () async {
+      await (await openIndexedDb(name)).release();
+      await putRaw(name, 'a', 'null', 'null');
+      await putRaw(name, 'b', 'undefined', 'undefined');
+      await putRaw(name, 'c', 'number', 'number');
+      final lease = await openIndexedDb(name);
+      for (final (area, key) in [
+        ('a', 'null'),
+        ('b', 'undefined'),
+        ('c', 'number'),
+      ]) {
+        expect(await lease.read(area, key), isA<KeyNotRead>(), reason: key);
+        expect(
+          await lease.entries(area, ''),
+          isA<StorageFailed<List<StoredEntry>>>(),
+          reason: key,
+        );
+      }
+      await lease.release();
+    },
+  );
 
   test('two closes at once both finish with the same answer', () async {
     final engine = IndexedDbEngine(name);
@@ -451,6 +457,134 @@ void main() {
     expect(estimatesAsked - before, lessThanOrEqualTo(1));
     pretendRoomLeft(null);
     await lease.release();
+  });
+
+  test('commits issued together are admitted against the room one after '
+      'another, not all against the same headroom', () async {
+    pretendRoomLeft(roomMargin + 30000);
+    final lease = await openIndexedDb(name);
+    final big = 'x' * 10000;
+    final outcomes = await Future.wait([
+      for (var i = 0; i < 3; i++) lease.commit([Put('a', 'k$i', big)]),
+    ]);
+    pretendRoomLeft(null);
+    expect(outcomes.whereType<CommitApplied>(), hasLength(1));
+    expect(
+      outcomes.whereType<CommitRefused>().map((refused) => refused.failure),
+      everyElement(isA<NoRoomForCommit>()),
+    );
+    await lease.release();
+  });
+
+  test('with less than the margin left, an empty commit and a commit that '
+      'only deletes or clears still apply, and a put is refused', () async {
+    pretendRoomLeft(1000);
+    final lease = await openIndexedDb(name);
+    committed(await lease.commit(const []));
+    committed(await lease.commit(const [Delete('a', 'k'), ClearArea('b')]));
+    expect(
+      await lease.commit(const [Put('a', 'k', 'v')]),
+      isA<CommitRefused>().having(
+        (refused) => refused.failure,
+        'failure',
+        isA<NoRoomForCommit>(),
+      ),
+    );
+    pretendRoomLeft(null);
+    await lease.release();
+  });
+
+  test(
+    'an estimate that fails keeps the figure the engine already had',
+    () async {
+      pretendRoomLeft(roomMargin + 20000);
+      final lease = await openIndexedDb(name);
+      estimateFails('reject');
+      expect(
+        await lease.commit([Put('a', 'big', 'x' * 20000)]),
+        isA<CommitRefused>().having(
+          (refused) => refused.failure,
+          'failure',
+          isA<NoRoomForCommit>(),
+        ),
+      );
+      estimateFails(null);
+      pretendRoomLeft(null);
+      expect(lease.roomCheck, isA<RoomChecked>());
+      await lease.release();
+    },
+  );
+
+  test('a browser that cannot say how much room there is gets a lease that '
+      'says the room is not checked, and its commits apply', () async {
+    for (final how in ['reject', 'throw', 'hang']) {
+      estimateFails(how);
+      final engine = IndexedDbEngine(
+        '$name-$how',
+        patience: const Duration(milliseconds: 500),
+      );
+      final lease = await leaseOf(engine) as IndexedDbLease;
+      expect(lease.roomCheck, isA<RoomNotChecked>(), reason: how);
+      committed(await lease.commit([Put('a', 'big', 'x' * 20000)]));
+      estimateFails(null);
+      await engine.close();
+    }
+  });
+
+  test('an estimate that throws while a commit waits on it answers the '
+      'commit, and release still closes and lets go of the lock', () async {
+    pretendRoomLeft(roomMargin + 20000);
+    final lease = await openIndexedDb(name);
+    estimateFails('throw');
+    final outcome = await lease
+        .commit([Put('a', 'big', 'x' * 20000)])
+        .timeout(const Duration(seconds: 5));
+    estimateFails(null);
+    pretendRoomLeft(null);
+    expect(outcome, isA<CommitRefused>());
+    expect(
+      await lease.release().timeout(const Duration(seconds: 5)),
+      isA<Released>(),
+    );
+    expect(await lockIsFree(name), isTrue);
+  });
+
+  test('a release whose close throws still lets go of the lock, and says '
+      'the release failed', () async {
+    final lease = await openIndexedDb(name);
+    closeThrows(true);
+    final releasing = await lease.release().timeout(const Duration(seconds: 5));
+    closeThrows(false);
+    expect(releasing, isA<ReleaseFailed>());
+    expect(await lockIsFree(name), isTrue);
+  });
+
+  test(
+    'a refused lease whose clean-up throws still lets go of the lock',
+    () async {
+      hideDurability(true);
+      deleteThrows(true);
+      final leasing = await IndexedDbEngine(
+        name,
+      ).lease().timeout(const Duration(seconds: 5));
+      deleteThrows(false);
+      hideDurability(false);
+      expect(leasing, isA<LeaseFailed>());
+      expect(await lockIsFree(name), isTrue);
+    },
+  );
+
+  test('an abort whose error cannot be read is a commit in doubt, not an '
+      'escaped exception', () async {
+    final lease = await openIndexedDb(name);
+    abortNextAfterItsFirstRequest();
+    transactionErrorThrows(true);
+    final outcome = await lease
+        .commit(const [Put('a', 'k', 'v')])
+        .timeout(const Duration(seconds: 5));
+    transactionErrorThrows(false);
+    expect(outcome, isA<CommitUnknown>());
+    expect(await lease.release(), isA<Released>());
   });
 
   group('the engine contract', () {

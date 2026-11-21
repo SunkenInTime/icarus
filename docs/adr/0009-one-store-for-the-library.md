@@ -52,7 +52,10 @@ decodes a payload into a typed item at the edge of the editor.
   every row in `OpApplied.writes` and the strategy's summary. The engine
   contract requires a commit to apply whole or not at all, across areas and
   across a crash, and a conformance suite checks every engine against it, so
-  the disk holds the rows from before the edit or after it, never half.
+  the disk holds the rows from before the edit or after it, never half. The
+  IndexedDB engine cannot keep that promise in two cases the browser causes
+  (a quota abort in Firefox, and an abort that itself fails); there a commit
+  can be partly applied and is reported as in doubt.
 - A save the engine cannot answer for is in doubt, and the store that made it
   is finished: it releases its lease and refuses every later call. The caller
   reopens and reads, and what is stored is what was saved. To keep the edit
@@ -122,7 +125,8 @@ store shares, so it is sent as before.
 - **SQLite on the desktop and IndexedDB on the web, chosen.** Each keeps all
   of the library in one table or object store keyed by area and key, so one
   database transaction holds every change an edit makes, in any number of
-  areas. That transaction is what makes a save all or nothing, and its
+  areas. That transaction is what makes a save all or nothing (with the two
+  IndexedDB exceptions above), and its
   commit is what a save waits for, usually one sync: SQLite in write-ahead
   log mode with `synchronous = FULL`, IndexedDB with `durability: 'strict'`.
   What strict buys differs by browser and has not been checked by cutting
@@ -159,11 +163,17 @@ What decided it:
   reproduced through the engine in 5 runs out of 5). So the web engine checks
   the room the browser reports before each commit and refuses one that would
   not fit, with nothing written, and a quota abort that still happens is a
-  save in doubt, not a refused one. That is tolerable while the web build is
-  cloud only, because the server holds every row the web store holds; a local
-  library on the web would need the engine to keep before-images first. A
-  stop or a failed sync at any point of creating a desktop library never
-  leaves a library without its tables. The tests found engine bugs, all
+  save in doubt, not a refused one. On this engine a commit can be partly
+  applied in two cases: that quota abort, and an abort that itself fails
+  after the browser has taken part of the commit. That is accepted on two
+  conditions: the web build is cloud only, and the cloud store's commits are
+  required to be safe when any subset of their row changes is applied
+  ([#667](https://github.com/SunkenInTime/icarus/pull/667)). A local library
+  on the web would need the engine to keep before-images first. A stop or a
+  failed sync at any point of creating a desktop library can leave a file
+  without its tables, and the next open creates the library in it. A file
+  that is not provably uncreated, or that has a log or a journal holding
+  pages beside an empty or missing library file, is refused untouched. The tests found engine bugs, all
   fixed: a commit that failed after its log frames were written came back on
   the next open, SQLite's quick check let a damaged file open with strategies
   missing, and two processes creating a library at once could rename an

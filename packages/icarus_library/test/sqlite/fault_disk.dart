@@ -386,7 +386,14 @@ final class FaultLibraryFiles implements LibraryFiles {
   final FaultVfs vfs;
 
   @override
-  bool exists(String path) => disk.exists(path);
+  int? size(String path) =>
+      disk.exists(path) ? disk.bytesOf(path).length : null;
+
+  @override
+  Uint8List head(String path, int length) {
+    final bytes = disk.bytesOf(path);
+    return Uint8List.sublistView(bytes, 0, min(length, bytes.length));
+  }
 
   @override
   void pause(Duration duration) {}

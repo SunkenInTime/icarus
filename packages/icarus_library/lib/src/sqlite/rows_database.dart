@@ -63,6 +63,24 @@ final class _Unusable extends _Connection {
   final StorageFailure failure;
 }
 
+sealed class _Contents {
+  const _Contents();
+}
+
+final class _Unmade extends _Contents {
+  const _Unmade();
+}
+
+final class _Made extends _Contents {
+  const _Made();
+}
+
+final class _Damaged extends _Contents {
+  const _Damaged(this.why);
+
+  final String why;
+}
+
 sealed class _Phase {
   const _Phase();
 }
@@ -101,7 +119,7 @@ final class RowsDatabase {
        _supersede = supersede,
        _clearArea = clearArea;
 
-  static RowsOpening open(Database db) {
+  static RowsOpening open(Database db, {required int Function() fileSize}) {
     final prepared = <PreparedStatement>[];
     PreparedStatement prepare(String sql) {
       final statement = db.prepare(sql, persistent: true);
@@ -115,7 +133,15 @@ final class RowsDatabase {
         ..execute('PRAGMA busy_timeout = 0')
         ..execute('PRAGMA synchronous = FULL')
         ..execute('PRAGMA fullfsync = ON');
-      if (_unmade(db)) _create(db);
+      switch (_contents(db, fileSize)) {
+        case _Unmade():
+          _create(db);
+        case _Damaged(:final why):
+          db.close();
+          return refusedFor('damaged ($why)');
+        case _Made():
+          break;
+      }
       if (_identityProblem(db) ?? _damage(db) case final problem?) {
         db.close();
         return refusedFor(problem);
@@ -188,9 +214,23 @@ final class RowsDatabase {
     db.close();
   }
 
-  static bool _unmade(Database db) =>
-      db.select('PRAGMA application_id').single.columnAt(0) == 0 &&
-      db.select('SELECT count(*) FROM sqlite_schema').single.columnAt(0) == 0;
+  static int _number(Database db, String sql) =>
+      db.select(sql).single.columnAt(0) as int;
+
+  static _Contents _contents(Database db, int Function() fileSize) {
+    final pages = _number(db, 'PRAGMA page_count');
+    final bytes = fileSize();
+    if (bytes == 0) return const _Unmade();
+    final blank =
+        _number(db, 'SELECT count(*) FROM sqlite_schema') == 0 &&
+        _number(db, 'PRAGMA application_id') == 0 &&
+        _number(db, 'PRAGMA user_version') == 0;
+    if (!blank) return const _Made();
+    if (pages == 1 && bytes == _number(db, 'PRAGMA page_size')) {
+      return const _Unmade();
+    }
+    return _Damaged('it has no tables yet holds $bytes bytes');
+  }
 
   static void _create(Database db) => db
     ..execute('PRAGMA journal_mode = DELETE')

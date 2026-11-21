@@ -108,6 +108,17 @@ final class AbortedForQuota extends StorageFailure {
   String toString() => 'AbortedForQuota($message)';
 }
 
+final class NoAnswer extends StorageFailure {
+  const NoAnswer(this.what, this.after);
+
+  final String what;
+  final Duration after;
+
+  @override
+  String toString() =>
+      'NoAnswer(no answer to $what within ${after.inMilliseconds} ms)';
+}
+
 abstract interface class StorageEngine {
   Future<Leasing> lease();
 }
