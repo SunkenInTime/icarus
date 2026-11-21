@@ -387,7 +387,6 @@ final class LoadedStrategy {
         header = HeaderPlaced(row);
       case PageRow(:final publicId):
         _pages[digestOf(publicId)] = row;
-        _loaded.putIfAbsent(digestOf(publicId), LoadedPage.new);
       case PageSettingsRow(:final pagePublicId):
         _settings[digestOf(pagePublicId)] = row;
       case ElementRow(:final pagePublicId, :final publicId):

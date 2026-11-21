@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/sqlite_storage.dart';
 import 'package:test/test.dart';
 
 import 'store_support.dart';
@@ -154,7 +157,9 @@ void main() {
   group('A strategy holding what an image cannot carry is refused', () {
     Future<void> expectRefused(Contents disk, Matcher refusal) async {
       final storage = MemoryStorage(disk);
-      final store = await openStore(MemoryEngine(storage));
+      final (engine, counts) = counting(MemoryEngine(storage));
+      final store = await openStore(engine);
+      counts.reset();
       final result = await store.putStrategy(sampleStrategy());
       expect(
         result,
@@ -164,8 +169,23 @@ void main() {
           refusal,
         ),
       );
+      expect(counts.commits, 0);
       await store.close();
       expect(sameContents(storage.contents, disk), isTrue);
+    }
+
+    Matcher dropping(Dropped dropped) => isA<PutWouldDrop>().having(
+      (refusal) => refusal.dropped,
+      'dropped',
+      dropped,
+    );
+
+    Future<Contents> withRaw(String name, String value) async {
+      final disk = await seededClean();
+      return {
+        ...disk,
+        sampleArea: {...disk[sampleArea]!, name: value},
+      };
     }
 
     test('a tombstone', () async {
@@ -174,11 +194,7 @@ void main() {
         await imageOf(
           withElements(sample, [...sample.elements, deletedElement('gone')]),
         ),
-        isA<PutWouldDrop>().having(
-          (refusal) => refusal.dropped,
-          'dropped',
-          Dropped.tombstone,
-        ),
+        dropping(Dropped.tombstone),
       );
     });
 
@@ -197,41 +213,93 @@ void main() {
             lineupGroups: sample.lineupGroups,
           ),
         ),
-        isA<PutWouldDrop>().having(
-          (refusal) => refusal.dropped,
-          'dropped',
-          Dropped.trashedPage,
-        ),
+        dropping(Dropped.trashedPage),
       );
     });
 
-    test('a row this build cannot read, or a kind it does not know', () async {
+    test('a row this build cannot read', () async {
       await expectRefused(
-        await seededContents(),
-        anyOf(
-          isA<UnreadableRowInTheWay>(),
-          isA<UnplacedRowInTheWay>(),
-          isA<PutWouldDrop>().having(
-            (refusal) => refusal.dropped,
-            'dropped',
-            Dropped.unknownKind,
-          ),
-        ),
+        await withRaw(elementName('page-a', 'smoke'), unreadableElementJson),
+        isA<UnreadableRowInTheWay>(),
+      );
+    });
+
+    test('a row of a kind this build does not know', () async {
+      await expectRefused(
+        await withRaw(pinName, unknownRowJson),
+        dropping(Dropped.unknownKind),
+      );
+    });
+
+    test('a row with no id', () async {
+      await expectRefused(
+        await withRaw(elementName('page-a', 'garbled'), garbledJson),
+        isA<UnplacedRowInTheWay>(),
       );
     });
 
     test('names this build does not know, as a cloud strategy holds', () async {
-      final disk = await seededClean();
       await expectRefused(
-        {
-          ...disk,
-          sampleArea: {...disk[sampleArea]!, 'cloud': '{"base":1}'},
-        },
-        isA<PutWouldDrop>().having(
-          (refusal) => refusal.dropped,
-          'dropped',
-          Dropped.foreignName,
+        await withRaw('cloud', '{"base":1}'),
+        dropping(Dropped.foreignName),
+      );
+    });
+
+    test('a field this build does not know, on a row', () async {
+      final sample = sampleStrategy();
+      await expectRefused(
+        await imageOf(
+          StrategyRowSet(
+            strategy: strategyRow(unknownFields: {'fromALaterBuild': 1}),
+            pages: sample.pages,
+            settings: sample.settings,
+            elements: sample.elements,
+            lineupGroups: sample.lineupGroups,
+          ),
         ),
+        dropping(Dropped.unknownField),
+      );
+    });
+
+    test('a field this build does not know, on a payload', () async {
+      final sample = sampleStrategy();
+      await expectRefused(
+        await imageOf(
+          withElements(sample, [
+            for (final row in sample.elements)
+              if (row case LiveElement(publicId: 'jett', :final payload))
+                LiveElement(
+                  publicId: row.publicId,
+                  pagePublicId: row.pagePublicId,
+                  payload: ElementPayload(
+                    kind: payload.kind,
+                    payloadVersion: payload.payloadVersion,
+                    data: payload.data.toMap(),
+                    unknownFields: {'fromALaterBuild': true},
+                  ),
+                  sortIndex: row.sortIndex,
+                  revision: row.revision,
+                )
+              else
+                row,
+          ]),
+        ),
+        dropping(Dropped.unknownField),
+      );
+    });
+
+    test('two rows with one id on different pages', () async {
+      final disk = await seededClean();
+      final jett = disk[sampleArea]![elementName('page-a', 'jett')]!;
+      await expectRefused(
+        await withRaw(
+          elementName('page-b', 'jett'),
+          jett.replaceFirst(
+            '"pagePublicId":"page-a"',
+            '"pagePublicId":"page-b"',
+          ),
+        ),
+        dropping(Dropped.duplicateRow),
       );
     });
   });
@@ -240,8 +308,11 @@ void main() {
     'a row naming another strategy is refused before anything is read',
     () async {
       final sample = sampleStrategy();
-      final storage = MemoryStorage(await seededClean());
-      final store = await openStore(MemoryEngine(storage));
+      final (engine, counts) = counting(
+        MemoryEngine(MemoryStorage(await seededClean())),
+      );
+      final store = await openStore(engine);
+      counts.reset();
       expect(
         await store.putStrategy(
           StrategyRowSet(
@@ -260,7 +331,103 @@ void main() {
           isA<RowOutsideStrategy>(),
         ),
       );
+      expect(counts.reads, isEmpty);
+      expect(counts.keyListings, isEmpty);
+      expect(counts.entryListings, isEmpty);
+      expect(counts.commits, 0);
       await store.close();
     },
   );
+
+  for (final engine in ['memory', 'SQLite']) {
+    group('On $engine, a page renamed before its content is read', () {
+      late Directory folder;
+
+      setUp(() async {
+        folder = await Directory.systemTemp.createTemp('icarus-put-rename-');
+      });
+
+      tearDown(() => folder.delete(recursive: true));
+
+      Future<LibraryStore> renamedBeforeRead(
+        StorageEngine Function() open,
+      ) async {
+        final adding = await openStore(open());
+        savedValue(await adding.editLibrary([AddStrategy(sampleStrategy())]));
+        await adding.close();
+        final store = await openStore(open());
+        savedValue(
+          await store.commit(
+            strategyId,
+            const PagePatchOp(
+              opId: 'rename',
+              pagePublicId: 'page-a',
+              name: 'Entry',
+              expectedPageRevision: 1,
+            ),
+          ),
+        );
+        return store;
+      }
+
+      test('still has its content', () async {
+        final path = '${folder.path}/library.sqlite';
+        final storage = MemoryStorage();
+        StorageEngine open() =>
+            engine == 'memory' ? MemoryEngine(storage) : SqliteEngine(path);
+        final store = await renamedBeforeRead(open);
+        final page = pageOf(await store.readPage(strategyId, 'page-a'));
+        expect([for (final row in page.elements) row.publicId]..sort(), [
+          'jett',
+          'line',
+          'sova',
+        ]);
+        await store.close();
+      });
+
+      test('then saved whole without an item drops that item', () async {
+        final path = '${folder.path}/library.sqlite';
+        final storage = MemoryStorage();
+        StorageEngine open() =>
+            engine == 'memory' ? MemoryEngine(storage) : SqliteEngine(path);
+        final store = await renamedBeforeRead(open);
+        final sample = sampleStrategy();
+        final without = StrategyRowSet(
+          strategy: sample.strategy,
+          pages: [
+            for (final page in sample.pages)
+              page.publicId == 'page-a'
+                  ? LivePage(
+                      publicId: 'page-a',
+                      strategyPublicId: strategyId,
+                      name: 'Entry',
+                      sortIndex: 0,
+                      isAttack: true,
+                      revision: 2,
+                    )
+                  : page,
+          ],
+          settings: sample.settings,
+          elements: [
+            for (final row in sample.elements)
+              if (row.publicId != 'sova') row,
+          ],
+          lineupGroups: sample.lineupGroups,
+        );
+        savedValue(await store.putStrategy(without));
+        await store.close();
+        final reopened = await openStore(open());
+        final page = pageOf(await reopened.readPage(strategyId, 'page-a'));
+        expect([for (final row in page.elements) row.publicId]..sort(), [
+          'jett',
+          'line',
+        ]);
+        expect(
+          await reopened.rebuildSummary(strategyId),
+          isA<NothingToSave<StrategySummary, CommitRefusal>>(),
+        );
+        await reopened.close();
+      });
+    });
+  }
 }

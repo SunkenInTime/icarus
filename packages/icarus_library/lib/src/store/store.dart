@@ -1329,6 +1329,10 @@ final class LibraryStore {
         case (_, final stored)
             when sameJsonTree(stored.toJsonView(), row.toJsonView()):
           continue;
+        case (final name, final stored) when !_keepsUnknownFields(stored, row):
+          return Refused(
+            PutWouldDrop(StoredRowRef(area, name), Dropped.unknownField),
+          );
         case (final name, final stored):
           changes.add(_PutRow(area, row));
           if (nameOf(row).name != name) {
@@ -1357,6 +1361,11 @@ final class LibraryStore {
       if (loaded == null) {
         _strategies[digest] = LoadedStrategy.image(digest, rows);
       } else {
+        for (final write in written) {
+          if (write case RowAdded(after: PageRow(:final publicId))) {
+            loaded.addLoadedPage(digestOf(publicId), LoadedPage());
+          }
+        }
         loaded
           ..drop(gone)
           ..take(written);
@@ -1548,6 +1557,34 @@ StrategySummary _summaryOfRows(StrategyRowSet rows) {
   );
 }
 
+Set<String> _keys(JsonObject? fields) => {...?fields?.toMap().keys};
+
+bool _keeps(JsonObject? stored, JsonObject? given) =>
+    _keys(given).containsAll(_keys(stored));
+
+bool _keepsUnknownFields(Row stored, Row given) => switch ((stored, given)) {
+  (final ReadableStrategy a, final ReadableStrategy b) =>
+    _keeps(a.unknownFields, b.unknownFields) &&
+        _keeps(
+          a.themeOverridePalette?.unknownFields,
+          b.themeOverridePalette?.unknownFields,
+        ),
+  (final ReadablePageRow a, final ReadablePageRow b) => _keeps(
+    a.unknownFields,
+    b.unknownFields,
+  ),
+  (final ReadablePageSettings a, final ReadablePageSettings b) =>
+    _keeps(a.unknownFields, b.unknownFields) &&
+        _keeps(a.settings?.unknownFields, b.settings?.unknownFields),
+  (final ReadableElementRow a, final ReadableElementRow b) =>
+    _keeps(a.unknownFields, b.unknownFields) &&
+        _keeps(a.payload.unknownFields, b.payload.unknownFields),
+  (final ReadableLineupGroupRow a, final ReadableLineupGroupRow b) =>
+    _keeps(a.unknownFields, b.unknownFields) &&
+        _keeps(a.payload.unknownFields, b.payload.unknownFields),
+  _ => true,
+};
+
 LibraryRefusal? _dropped(LoadedStrategy strategy) {
   final area = strategy.area;
   StoredRowRef at(Row row) => StoredRowRef(area, nameOf(row).name);
@@ -1570,8 +1607,14 @@ LibraryRefusal? _dropped(LoadedStrategy strategy) {
   for (final row in strategy.allSettings) {
     if (row is UnreadablePageSettings) return UnreadableRowInTheWay(row);
   }
+  final seen = <RowKey>{};
   for (final digest in strategy.pageDigests) {
     final page = strategy.loadedPage(digest)!;
+    for (final row in [...page.elements.values, ...page.lineupGroups.values]) {
+      if (!seen.add(row.key)) {
+        return PutWouldDrop(at(row), Dropped.duplicateRow);
+      }
+    }
     for (final name in page.foreignNames) {
       return PutWouldDrop(StoredRowRef(area, name.name), Dropped.foreignName);
     }

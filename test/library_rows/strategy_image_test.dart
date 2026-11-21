@@ -604,6 +604,66 @@ void main() {
     );
   });
 
+  test('converting a strategy with repeated ids and 200 lineups', () {
+    LineUpGraph lineups(int count) => LineUpGraph(
+          origins: [for (var i = 0; i < count; i++) origin('o$i')],
+          landings: [
+            for (var i = 0; i < count; i++) landing('l$i', 300.0 + i),
+          ],
+          links: [
+            for (var i = 0; i < count; i++)
+              LineUpLink(id: 'k$i', originId: 'o$i', landingId: 'l$i'),
+          ],
+        );
+    StrategyData pages({required bool repeated}) => strategyOf([
+          for (var page = 0; page < 10; page++)
+            pageOf(
+              'page-$page',
+              page,
+              agents: [
+                for (var i = 0; i < 30; i++)
+                  agent(repeated ? 'agent-$i' : 'agent-$page-$i', 10.0 + i),
+              ],
+              lineups: repeated
+                  ? lineups(20)
+                  : LineUpGraph(
+                      origins: [
+                        for (var i = 0; i < 20; i++) origin('o$page-$i'),
+                      ],
+                      landings: [
+                        for (var i = 0; i < 20; i++)
+                          landing('l$page-$i', 300.0 + i),
+                      ],
+                      links: [
+                        for (var i = 0; i < 20; i++)
+                          LineUpLink(
+                            id: 'k$page-$i',
+                            originId: 'o$page-$i',
+                            landingId: 'l$page-$i',
+                          ),
+                      ],
+                    ),
+            ),
+        ]);
+    Duration timed(StrategyData model) {
+      final times = <Duration>[];
+      for (var run = 0; run < 25; run++) {
+        final watch = Stopwatch()..start();
+        rowsOf(model);
+        times.add(watch.elapsed);
+      }
+      return median(times);
+    }
+
+    final repeated = timed(pages(repeated: true));
+    final distinct = timed(pages(repeated: false));
+    stdout.writeln(
+      'converting 10 pages of 30 agents and 20 lineups (300 items, 200 '
+      'lineups), medians of 25: ${repeated.inMicroseconds} us when every page '
+      'repeats the same ids, ${distinct.inMicroseconds} us with distinct ids',
+    );
+  });
+
   test('a save on SQLite: convert, compare and commit', () async {
     final folder = await Directory.systemTemp.createTemp('icarus-put-cost-');
     addTearDown(() => folder.delete(recursive: true));

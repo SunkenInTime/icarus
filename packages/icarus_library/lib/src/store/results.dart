@@ -169,7 +169,14 @@ final class FolderNotEmpty extends LibraryRefusal {
   String toString() => 'FolderNotEmpty($folderPublicId)';
 }
 
-enum Dropped { trashedPage, tombstone, unknownKind, foreignName }
+enum Dropped {
+  trashedPage,
+  tombstone,
+  unknownKind,
+  foreignName,
+  unknownField,
+  duplicateRow,
+}
 
 final class PutWouldDrop extends LibraryRefusal {
   const PutWouldDrop(this.ref, this.dropped);
