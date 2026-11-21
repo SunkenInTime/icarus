@@ -124,7 +124,75 @@ final class _Times {
   }
 }
 
-Future<void> main() async {
+const _growthSizes = [100, 350, 700, 1400, 2800];
+
+const _growthWindow = 9;
+
+Future<List<String>> _growth() async {
+  final store = await _open(MemoryStorage());
+  final addAt = <int, _Times>{};
+  final moveAt = <int, _Times>{};
+  final removeAt = <int, _Times>{};
+  final first700 = Stopwatch()..start();
+  var count = 0;
+  final folder = ReadableFolder(publicId: 'growth-folder', name: 'Folder');
+  if (await store.editLibrary([PutFolder(folder)]) is! Saved) {
+    throw StateError('folder');
+  }
+  for (final size in _growthSizes) {
+    while (count < size - _growthWindow) {
+      if (await store.editLibrary([AddStrategy(_strategy('g$count', items: 0))])
+          is! Saved) {
+        throw StateError('add $count');
+      }
+      count++;
+      if (count == 700) first700.stop();
+    }
+    final adds = addAt[size] = _Times();
+    final moves = moveAt[size] = _Times();
+    final removes = removeAt[size] = _Times();
+    for (var i = 0; i < _growthWindow; i++) {
+      final id = 'g$count';
+      final added = await adds.time(
+        () => store.editLibrary([AddStrategy(_strategy(id, items: 0))]),
+      );
+      if (added is! Saved) throw StateError('add $id');
+      count++;
+      if (count == 700) first700.stop();
+      if (await moves.time(
+            () => store.editLibrary([MoveStrategy(id, folder.publicId)]),
+          )
+          is! Saved) {
+        throw StateError('move $id');
+      }
+      if (await removes.time(() => store.editLibrary([RemoveStrategy(id)]))
+          is! Saved) {
+        throw StateError('remove $id');
+      }
+      if (await store.editLibrary([AddStrategy(_strategy(id, items: 6))])
+          is! Saved) {
+        throw StateError('add back $id');
+      }
+    }
+  }
+  await store.close();
+  return [
+    'Library growth, one library edit at a time',
+    for (final size in _growthSizes) ...[
+      '  add a strategy to a library of about $size: ${addAt[size]!.summary}',
+      '  move one into a folder at about $size: ${moveAt[size]!.summary}',
+      '  remove one at about $size: ${removeAt[size]!.summary}',
+    ],
+    '  add the first 700, one edit each, in total: '
+        '${(first700.elapsedMicroseconds / 1000).toStringAsFixed(0)} ms',
+  ];
+}
+
+Future<void> main(List<String> args) async {
+  if (args.contains('growth')) {
+    (await _growth()).forEach(Zone.current.print);
+    return;
+  }
   final storage = MemoryStorage();
   final setup = await _open(storage);
   final added = await setup.editLibrary([
@@ -268,6 +336,7 @@ Future<void> main() async {
         '(${_items * _widePages} items): ${wide.summary}',
     '  digest $_items ids: ${pageNames.summary}',
     '  digest ${_items * _widePages} ids: ${wideNames.summary}',
+    ...await _growth(),
   ]) {
     Zone.current.print(line);
   }
