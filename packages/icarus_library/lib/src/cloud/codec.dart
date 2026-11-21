@@ -56,6 +56,8 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
       RefusedWith(:final refusal) => _refusalToJson(refusal),
     },
     if (entry.window is WindowPassed) 'windowPassed': true,
+    if (entry.ahead case final ahead?)
+      'ahead': {'revision': ?ahead.revision, 'whole': ahead.whole},
   },
   RetiredOp(:final opId, :final clientId, :final landing, :final stored) => {
     'version': cloudRowVersion,
@@ -154,7 +156,19 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
         if (op != null && scope != null && !_scopeFits(op, scope)) {
           fields.reject('a scope or field base that does not fit its op');
         }
+        final AnsweredAhead? ahead = switch (fields.json['ahead']) {
+          null => null,
+          {'whole': final bool whole, 'revision': final num revision}
+              when isSafeWhole(revision) =>
+            AnsweredAhead(revision.toInt(), whole: whole),
+          {'whole': false} => const AnsweredAhead.renumbered(),
+          _ => () {
+            fields.reject('an unreadable answer ahead');
+            return null;
+          }(),
+        };
         return () => PendingOp(
+          ahead: ahead,
           place: place,
           work: work!,
           scope: scope!,
@@ -528,6 +542,8 @@ Map<String, Object?> landedToJson(LandedWork work) => {
   'revision': work.revision,
   'shape': work.shape.name,
   'own': work.own,
+  'at': _millis(work.at),
+  if (work.shownWithout) 'shownWithout': true,
 };
 
 CloudRowReading<LandedWork> landedFromText(
@@ -550,8 +566,19 @@ CloudRowReading<LandedWork> landedFromText(
         return false;
       }(),
     };
+    final at = fields.time('at');
+    final shownWithout = switch (fields.json['shownWithout']) {
+      null => false,
+      true => true,
+      _ => () {
+        fields.reject('an unreadable flag');
+        return false;
+      }(),
+    };
     return () => LandedWork(
       own: own,
+      at: at,
+      shownWithout: shownWithout,
       attempt: attempt,
       position: position,
       op: op!,
