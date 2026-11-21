@@ -178,11 +178,13 @@ final _group = LiveLineupGroup(
 );
 
 final storyRows = StrategyRowSet(
-  strategy: const StrategyRow(
+  strategy: ReadableStrategy(
     publicId: storyStrategyId,
     name: 'Merges',
     mapData: 'ascent',
     revision: 1,
+    createdAt: DateTime.utc(2026),
+    updatedAt: DateTime.utc(2026),
   ),
   pages: [
     for (final (index, id) in ['p0', 'p1'].indexed)
@@ -198,7 +200,7 @@ final storyRows = StrategyRowSet(
   ],
   settings: [
     for (final id in ['p0', 'p1'])
-      PageSettingsRow(
+      ReadablePageSettings(
         pagePublicId: id,
         settings: const PageSettings(
           agentSize: 1,

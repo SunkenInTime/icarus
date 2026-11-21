@@ -3,6 +3,27 @@ import 'package:test/test.dart';
 
 const strategyId = 'strategy-1';
 
+final strategyCreatedAt = DateTime.utc(2026, 1, 2, 3);
+
+ReadableStrategy strategyRow({
+  String publicId = strategyId,
+  String name = 'Retake B',
+  String mapData = 'ascent',
+  String? themeProfileId,
+  int revision = 1,
+  DateTime? createdAt,
+  Map<String, Object?> unknownFields = const {},
+}) => ReadableStrategy(
+  publicId: publicId,
+  name: name,
+  mapData: mapData,
+  themeProfileId: themeProfileId,
+  revision: revision,
+  createdAt: createdAt ?? strategyCreatedAt,
+  updatedAt: createdAt ?? strategyCreatedAt,
+  unknownFields: unknownFields,
+);
+
 PageRow page(
   String id, {
   required int sortIndex,
@@ -36,8 +57,8 @@ const defaultSettings = PageSettings(
   useNeutralTeamColors: false,
 );
 
-PageSettingsRow settings(String pageId, {PageSettings? value}) =>
-    PageSettingsRow(
+ReadablePageSettings settings(String pageId, {PageSettings? value}) =>
+    ReadablePageSettings(
       pagePublicId: pageId,
       settings: value ?? defaultSettings,
       revision: 1,
@@ -85,12 +106,7 @@ StrategyRowSet strategyRows({
   final pageRows =
       pages ?? [page('page-a', sortIndex: 0), page('page-b', sortIndex: 1)];
   return StrategyRowSet(
-    strategy: const StrategyRow(
-      publicId: strategyId,
-      name: 'Retake B',
-      mapData: 'ascent',
-      revision: 1,
-    ),
+    strategy: strategyRow(),
     pages: pageRows,
     settings:
         pageSettings ?? [for (final row in pageRows) settings(row.publicId)],
@@ -126,6 +142,23 @@ final class Session {
   }
 
   ApplyResult attempt(StrategyOp op) => applyOp(rows, op);
+
+  ReadablePageRow pageAt(String pageId) => switch (rows.page(pageId)) {
+    final ReadablePageRow page => page,
+    final other => fail('$pageId is not a readable page: $other'),
+  };
+
+  ReadablePageSettings settingsAt(String pageId) =>
+      switch (rows.settingsOf(pageId)) {
+        final ReadablePageSettings row => row,
+        final other => fail('$pageId has no readable settings: $other'),
+      };
+
+  ReadableLineupGroupRow groupAt(String lineupId) =>
+      switch (rows.lineupGroup(lineupId)) {
+        final ReadableLineupGroupRow row => row,
+        final other => fail('$lineupId is not a readable group: $other'),
+      };
 
   Map<String, Object?> dataOf(String elementId) =>
       switch (rows.element(elementId)) {

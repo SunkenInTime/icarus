@@ -93,15 +93,36 @@ void main() {
     expect(session.dataOf('jett')['isAlly'], false);
   });
 
-  test('undo of a whole write still names only what that write changed', () {
+  test('undo of a whole write puts back the whole payload it replaced', () {
+    final session = Session(strategyRows(elements: [jett]));
+    final before = session.dataOf('jett');
+    final moved = session.apply(
+      ElementPatchOp(
+        opId: 'mine',
+        elementPublicId: 'jett',
+        expectedElementRevision: 1,
+        payload: jett.payload.withData({
+          'id': 'jett',
+          'elementType': 'agent',
+          'position': {'x': 9, 'y': 9},
+          'caption': 'entry',
+        }),
+      ),
+    );
+    expect(session.dataOf('jett').containsKey('isAlly'), isFalse);
+    final undo = undoOp(moved) as ElementPatchOp;
+    expect(undo.merge, isNull);
+    session.apply(undo);
+    expect(session.dataOf('jett'), {...before, 'caption': ''});
+  });
+
+  test('undo of a whole write is refused once a teammate edits after it', () {
     final session = Session(strategyRows(elements: [jett]));
     final moved = session.apply(
       moveAgent('mine', jett, {
         'position': {'x': 9, 'y': 9},
       }),
     );
-    final undo = undoOp(moved) as ElementPatchOp;
-    expect(undo.merge?.fields, ['position']);
     session.apply(
       moveAgent(
         'teammate',
@@ -110,13 +131,8 @@ void main() {
         merged: ['isAlly'],
       ),
     );
-    session.apply(undo);
-    expect(session.dataOf('jett'), {
-      'id': 'jett',
-      'elementType': 'agent',
-      'position': {'x': 1, 'y': 1},
-      'isAlly': false,
-    });
+    expect(session.attempt(undoOp(moved)), isA<OpRefused>());
+    expect(session.dataOf('jett')['isAlly'], false);
   });
 
   test('a whole write made on an old revision is refused', () {

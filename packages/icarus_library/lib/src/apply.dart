@@ -6,6 +6,7 @@ import 'derived_id.dart';
 import 'field_merge.dart';
 import 'field_rules.dart';
 import 'json.dart';
+import 'lineup_graph.dart';
 import 'ops.dart';
 import 'outcome.dart';
 import 'page_copy.dart';
@@ -14,7 +15,8 @@ import 'rows.dart';
 import 'strategy_rows.dart';
 
 ApplyResult applyOp(StrategyRows rows, StrategyOp op) {
-  if (exceedsSizePolicy(op.toJson())) {
+  final json = op.toJson();
+  if (!isJson(json) || exceedsSizePolicy(json)) {
     return _failed(FailureCode.invalidPayload);
   }
   final apply = _Apply(rows, undoOpId(op.opId), op.opId);
@@ -71,45 +73,57 @@ final class _Apply {
   final String undoId;
   final String opId;
 
-  StrategyRow get strategy => rows.strategy;
+  ReadableStrategy get strategy => rows.strategy;
 
-  List<LivePage> get livePages {
-    final live = rows.pages.whereType<LivePage>().toList();
+  _Target<List<_Slot>> get placedPages {
+    final slots = <_Slot>[];
+    for (final page in rows.pages) {
+      switch (page) {
+        case final LivePage live:
+          slots.add(_LiveSlot(live));
+        case TrashedPage() || UnreadablePage(trashed: true):
+          break;
+        case UnreadablePage(sortIndex: final int sortIndex):
+          slots.add(_HeldSlot(page, sortIndex));
+        case UnreadablePage():
+          return _Refused(OpRefused(UnreadableTarget(page.key)));
+      }
+    }
     mergeSort(
-      live,
+      slots,
       compare: (a, b) => switch (a.sortIndex.compareTo(b.sortIndex)) {
         0 => a.publicId.compareTo(b.publicId),
         final order => order,
       },
     );
-    return live;
+    return _Found(slots);
   }
 
-  RowChanged strategyRaised() => _changed(
-    strategy,
-    StrategyRow(
-      publicId: strategy.publicId,
-      folderPublicId: strategy.folderPublicId,
-      name: strategy.name,
-      mapData: strategy.mapData,
-      themeProfileId: strategy.themeProfileId,
-      themeOverridePalette: strategy.themeOverridePalette,
-      revision: strategy.revision + 1,
-    ),
-  );
+  RowChanged strategyRaised() =>
+      _changed(strategy, strategy.rewritten(revision: strategy.revision + 1));
+
+  _Target<List<RowWrite>> placed(List<_Slot> order) {
+    final writes = <RowWrite>[];
+    for (final (index, slot) in order.indexed) {
+      switch (slot) {
+        case _LiveSlot(:final page):
+          if (_placed(page, index) case final write?) writes.add(write);
+        case _HeldSlot(:final page, :final sortIndex) when sortIndex != index:
+          return _Refused(OpRefused(UnreadableTarget(page.key)));
+        case _HeldSlot() || _NewSlot():
+          break;
+      }
+    }
+    return _Found(writes);
+  }
 
   ApplyResult strategyPatch(StrategyPatchOp op) {
     final current = strategy;
-    final after = StrategyRow(
-      publicId: current.publicId,
-      folderPublicId: current.folderPublicId,
-      name: op.name ?? current.name,
-      mapData: op.mapData ?? current.mapData,
-      themeProfileId: _edited(op.themeProfile, current.themeProfileId),
-      themeOverridePalette: _edited(
-        op.themeOverridePalette,
-        current.themeOverridePalette,
-      ),
+    final after = current.rewritten(
+      name: op.name,
+      mapData: op.mapData,
+      themeProfileId: op.themeProfile,
+      themeOverridePalette: op.themeOverridePalette,
       revision: current.revision + 1,
     );
     final write = _changed(current, after);
@@ -139,15 +153,29 @@ final class _Apply {
   }
 
   ApplyResult pageAdd(PageAddOp op) {
+    final List<_Slot> ordered;
+    switch (placedPages) {
+      case _Refused(:final refusal):
+        return refusal;
+      case _Found(:final row):
+        ordered = row;
+    }
     switch (rows.page(op.pagePublicId)) {
       case TrashedPage():
         return _failed(FailureCode.pageDeleted);
+      case UnreadablePage(:final RowKey key):
+        return OpRefused(UnreadableTarget(key));
       case final LivePage existing:
-        final settings = rows.settingsOf(existing.publicId);
-        if (settings == null) {
-          return _failed(FailureCode.invalidPageContentCount);
+        final ReadablePageSettings settings;
+        switch (rows.settingsOf(existing.publicId)) {
+          case null:
+            return _failed(FailureCode.invalidPageContentCount);
+          case UnreadablePageSettings(:final RowKey key):
+            return OpRefused(UnreadableTarget(key));
+          case final ReadablePageSettings readable:
+            settings = readable;
         }
-        final desired = _clamp(op.sortIndex, math.max(0, livePages.length - 1));
+        final desired = _clamp(op.sortIndex, math.max(0, ordered.length - 1));
         final identical =
             existing.name == (op.name ?? 'Page') &&
             existing.isAutoNamed == op.isAutoNamed &&
@@ -164,7 +192,6 @@ final class _Apply {
         case final refused?) {
       return refused;
     }
-    final ordered = livePages;
     final desired = _clamp(op.sortIndex, ordered.length);
     final page = LivePage(
       publicId: op.pagePublicId,
@@ -179,13 +206,31 @@ final class _Apply {
       final id? => rows.page(id),
       null => null,
     };
+    switch (source) {
+      case UnreadablePage(:final RowKey key):
+        return OpRefused(UnreadableTarget(key));
+      case LivePage():
+        if (_uncopyable(source.publicId) case final refused?) return refused;
+      case TrashedPage() || null:
+        break;
+    }
+    final List<RowWrite> moved;
+    switch (placed([
+      ...ordered.take(desired),
+      _NewSlot(),
+      ...ordered.skip(desired),
+    ])) {
+      case _Refused(:final refusal):
+        return refusal;
+      case _Found(:final row):
+        moved = row;
+    }
     return OpApplied(
       writes: [
-        for (final (index, other) in ordered.indexed)
-          ?_placed(other, index >= desired ? index + 1 : index),
+        ...moved,
         RowAdded(page),
         RowAdded(
-          PageSettingsRow(
+          ReadablePageSettings(
             pagePublicId: page.publicId,
             settings: op.settings,
             revision: 1,
@@ -211,19 +256,43 @@ final class _Apply {
   }
 
   ApplyResult pageDelete(PageDeleteOp op) {
-    final existing = rows.page(op.pagePublicId);
-    if (existing is! LivePage) return const OpUnchanged();
+    final LivePage existing;
+    switch (rows.page(op.pagePublicId)) {
+      case UnreadablePage(:final RowKey key):
+        return OpRefused(UnreadableTarget(key));
+      case null || TrashedPage():
+        return const OpUnchanged();
+      case final LivePage page:
+        existing = page;
+    }
     if (_revisionRefusal(op.expectedStrategyRevision, strategy.revision)
         case final refused?) {
       return refused;
     }
-    final live = livePages;
-    if (live.length <= 1) return _failed(FailureCode.invalidOp);
-    final remaining = live.where((page) => page.publicId != existing.publicId);
+    final List<_Slot> live;
+    switch (placedPages) {
+      case _Refused(:final refusal):
+        return refusal;
+      case _Found(:final row):
+        live = row;
+    }
+    if (live.whereType<_LiveSlot>().length <= 1) {
+      return _failed(FailureCode.invalidOp);
+    }
+    final List<RowWrite> moved;
+    switch (placed([
+      for (final slot in live)
+        if (slot.publicId != existing.publicId) slot,
+    ])) {
+      case _Refused(:final refusal):
+        return refusal;
+      case _Found(:final row):
+        moved = row;
+    }
     return OpApplied(
       writes: [
         _changed(existing, existing.trashed()),
-        for (final (index, page) in remaining.indexed) ?_placed(page, index),
+        ...moved,
         strategyRaised(),
       ],
       undo: UndoByRestoringPage(existing.publicId),
@@ -234,6 +303,9 @@ final class _Apply {
       switch (rows.page(pagePublicId)) {
         null => _Refused(_rejected(RejectionReason.notFound)),
         TrashedPage() => _Refused(_failed(FailureCode.pageDeleted)),
+        UnreadablePage(:final RowKey key) => _Refused(
+          OpRefused(UnreadableTarget(key)),
+        ),
         final LivePage page => _Found(page),
       };
 
@@ -245,15 +317,21 @@ final class _Apply {
       case _Found(:final row):
         existing = row;
     }
-    final ordered = livePages;
+    final List<_Slot> ordered;
+    switch (placedPages) {
+      case _Refused(:final refusal):
+        return refusal;
+      case _Found(:final row):
+        ordered = row;
+    }
     final currentIndex = ordered.indexWhere(
-      (page) => page.publicId == existing.publicId,
+      (slot) => slot.publicId == existing.publicId,
     );
     final desired = _clamp(op.sortIndex, math.max(0, ordered.length - 1));
     final reordered = [
-      for (final page in ordered)
-        if (page.publicId != existing.publicId) page,
-    ]..insert(desired, existing);
+      for (final slot in ordered)
+        if (slot.publicId != existing.publicId) slot,
+    ]..insert(desired, _LiveSlot(existing));
     final normalized = reordered.indexed.every(
       (entry) => entry.$2.sortIndex == entry.$1,
     );
@@ -262,11 +340,15 @@ final class _Apply {
         case final refused?) {
       return refused;
     }
+    final List<RowWrite> moved;
+    switch (placed(reordered)) {
+      case _Refused(:final refusal):
+        return refusal;
+      case _Found(:final row):
+        moved = row;
+    }
     return OpApplied(
-      writes: [
-        for (final (index, page) in reordered.indexed) ?_placed(page, index),
-        strategyRaised(),
-      ],
+      writes: [...moved, strategyRaised()],
       undo: UndoWithOp(
         PageReorderOp(
           opId: undoId,
@@ -286,14 +368,10 @@ final class _Apply {
       case _Found(:final row):
         existing = row;
     }
-    final after = LivePage(
-      publicId: existing.publicId,
-      strategyPublicId: existing.strategyPublicId,
-      name: op.name ?? existing.name,
-      isAutoNamed: op.isAutoNamed ?? existing.isAutoNamed,
-      sortIndex: existing.sortIndex,
-      isAttack: op.isAttack ?? existing.isAttack,
-      revision: existing.revision + 1,
+    final after = existing.patched(
+      name: op.name,
+      isAutoNamed: op.isAutoNamed,
+      isAttack: op.isAttack,
     );
     final write = _changed(existing, after);
     if (write.fields.isEmpty) return const OpUnchanged();
@@ -323,18 +401,21 @@ final class _Apply {
 
   ApplyResult pageSettingsPatch(PageSettingsPatchOp op) {
     if (livePage(op.pagePublicId) case _Refused(:final refusal)) return refusal;
-    final existing = rows.settingsOf(op.pagePublicId);
-    if (existing == null) return _failed(FailureCode.invalidPageContentCount);
+    final ReadablePageSettings existing;
+    switch (rows.settingsOf(op.pagePublicId)) {
+      case null:
+        return _failed(FailureCode.invalidPageContentCount);
+      case UnreadablePageSettings(:final RowKey key):
+        return OpRefused(UnreadableTarget(key));
+      case final ReadablePageSettings readable:
+        existing = readable;
+    }
     if (existing.settings == op.settings) return const OpUnchanged();
     if (_revisionRefusal(op.expectedPageSettingsRevision, existing.revision)
         case final refused?) {
       return refused;
     }
-    final after = PageSettingsRow(
-      pagePublicId: existing.pagePublicId,
-      settings: op.settings,
-      revision: existing.revision + 1,
-    );
+    final after = existing.withSettings(op.settings);
     return OpApplied(
       writes: [_changed(existing, after)],
       undo: switch (existing.settings) {
@@ -354,11 +435,17 @@ final class _Apply {
   OpRefused? targetPageRefusal(String pagePublicId) =>
       switch (rows.page(pagePublicId)) {
         null => _failed(FailureCode.pageStrategyMismatch),
-        TrashedPage() => _failed(FailureCode.pageDeleted),
-        LivePage() => null,
+        PageRow() => holdingPageRefusal(pagePublicId),
       };
 
-  bool pageIsLive(String pagePublicId) => rows.page(pagePublicId) is LivePage;
+  OpRefused? holdingPageRefusal(String pagePublicId) =>
+      switch (rows.page(pagePublicId)) {
+        LivePage() || UnreadablePage(trashed: false) => null,
+        null ||
+        TrashedPage() ||
+        UnreadablePage(trashed: true) => _failed(FailureCode.pageDeleted),
+        UnreadablePage(:final RowKey key) => OpRefused(UnreadableTarget(key)),
+      };
 
   ApplyResult elementAdd(ElementAddOp op) {
     if (targetPageRefusal(op.pagePublicId) case final refused?) return refused;
@@ -374,12 +461,12 @@ final class _Apply {
       );
       return OpApplied(writes: [RowAdded(added)], undo: _undoAdd(added, 1));
     }
-    if (!pageIsLive(existing.pagePublicId)) {
-      return _failed(FailureCode.pageDeleted);
+    if (holdingPageRefusal(existing.pagePublicId) case final refused?) {
+      return refused;
     }
     switch (existing) {
-      case UnreadableElement():
-        return OpRefused(UnreadableTarget(existing.publicId));
+      case UnreadableElement(:final RowKey key):
+        return OpRefused(UnreadableTarget(key));
       case DeletedElement(:final payload, :final revision):
         final kept = keepStoredFields(payload, op.payload);
         if (kept != op.payload && exceedsSizePolicy(kept.toJson())) {
@@ -389,12 +476,11 @@ final class _Apply {
             case final refused?) {
           return refused;
         }
-        final restored = _elementRow(
-          publicId: existing.publicId,
+        final restored = existing.rewritten(
+          deleted: false,
           pagePublicId: op.pagePublicId,
           payload: kept,
           sortIndex: op.sortIndex,
-          revision: revision + 1,
         );
         return OpApplied(
           writes: [_changed(existing, restored)],
@@ -425,21 +511,17 @@ final class _Apply {
   );
 
   ApplyResult elementDelete(ElementDeleteOp op) {
-    final existing = rows.element(op.elementPublicId);
-    if (existing == null || existing is DeletedElement) {
-      return const OpUnchanged();
-    }
-    if (!pageIsLive(existing.pagePublicId)) {
-      return _failed(FailureCode.pageDeleted);
-    }
     final LiveElement live;
-    switch (existing) {
-      case DeletedElement():
+    switch (rows.element(op.elementPublicId)) {
+      case null || DeletedElement():
         return const OpUnchanged();
-      case UnreadableElement():
-        return OpRefused(UnreadableTarget(existing.publicId));
+      case UnreadableElement(:final RowKey key):
+        return OpRefused(UnreadableTarget(key));
       case final LiveElement row:
         live = row;
+    }
+    if (holdingPageRefusal(live.pagePublicId) case final refused?) {
+      return refused;
     }
     if (!op.lastWriterWins) {
       if (_revisionRefusal(op.expectedElementRevision, live.revision)
@@ -447,13 +529,7 @@ final class _Apply {
         return refused;
       }
     }
-    final after = DeletedElement(
-      publicId: live.publicId,
-      pagePublicId: live.pagePublicId,
-      payload: live.payload,
-      sortIndex: live.sortIndex,
-      revision: live.revision + 1,
-    );
+    final after = live.rewritten(deleted: true);
     return OpApplied(
       writes: [_changed(live, after)],
       undo: UndoWithOp(
@@ -463,7 +539,7 @@ final class _Apply {
           pagePublicId: live.pagePublicId,
           payload: live.payload,
           sortIndex: live.sortIndex,
-          expectedElementRevision: after.revision,
+          expectedElementRevision: live.revision + 1,
         ),
       ),
     );
@@ -472,13 +548,13 @@ final class _Apply {
   _Target<LiveElement> editableElement(String elementPublicId) {
     final existing = rows.element(elementPublicId);
     if (existing == null) return _Refused(_rejected(RejectionReason.notFound));
-    if (!pageIsLive(existing.pagePublicId)) {
-      return _Refused(_failed(FailureCode.pageDeleted));
+    if (holdingPageRefusal(existing.pagePublicId) case final refused?) {
+      return _Refused(refused);
     }
     return switch (existing) {
       DeletedElement() => _Refused(_rejected(RejectionReason.deleted)),
-      UnreadableElement() => _Refused(
-        OpRefused(UnreadableTarget(existing.publicId)),
+      UnreadableElement(:final RowKey key) => _Refused(
+        OpRefused(UnreadableTarget(key)),
       ),
       final LiveElement live => _Found(live),
     };
@@ -497,13 +573,7 @@ final class _Apply {
         case final refused?) {
       return refused;
     }
-    final after = LiveElement(
-      publicId: existing.publicId,
-      pagePublicId: existing.pagePublicId,
-      payload: existing.payload,
-      sortIndex: op.sortIndex,
-      revision: existing.revision + 1,
-    );
+    final after = existing.rewritten(deleted: false, sortIndex: op.sortIndex);
     return OpApplied(
       writes: [_changed(existing, after)],
       undo: UndoWithOp(
@@ -512,7 +582,7 @@ final class _Apply {
           elementPublicId: existing.publicId,
           pagePublicId: existing.pagePublicId,
           sortIndex: existing.sortIndex,
-          expectedElementRevision: after.revision,
+          expectedElementRevision: existing.revision + 1,
         ),
       ),
     );
@@ -577,12 +647,11 @@ final class _Apply {
     if (targetPage != null && merge == null) {
       if (targetPageRefusal(targetPage) case final refused?) return refused;
     }
-    final after = _elementRow(
-      publicId: existing.publicId,
-      pagePublicId: targetPage ?? existing.pagePublicId,
+    final after = existing.rewritten(
+      deleted: false,
+      pagePublicId: targetPage,
       payload: payload,
-      sortIndex: movesPlace ? sortIndex : existing.sortIndex,
-      revision: existing.revision + 1,
+      sortIndex: movesPlace ? sortIndex : null,
     );
     final write = _changed(existing, after);
     if (write.fields.isEmpty && write.dataFields.isEmpty) {
@@ -594,10 +663,17 @@ final class _Apply {
         return refused;
       }
     }
-    return OpApplied(writes: [write], undo: _undoElementPatch(existing, write));
+    return OpApplied(
+      writes: [write],
+      undo: _undoElementPatch(existing, write, whole: checkRevision),
+    );
   }
 
-  Undo _undoElementPatch(LiveElement before, RowChanged write) {
+  Undo _undoElementPatch(
+    LiveElement before,
+    RowChanged write, {
+    required bool whole,
+  }) {
     final restored = <String, Object?>{...before.payload.data};
     for (final field in write.dataFields) {
       if (before.payload.data.containsKey(field)) continue;
@@ -638,15 +714,11 @@ final class _Apply {
         pagePublicId: fields.contains(RowField.page)
             ? before.pagePublicId
             : null,
-        payload: payloadChanged
-            ? ElementPayload(
-                kind: before.payload.kind,
-                payloadVersion: before.payload.payloadVersion,
-                data: restored,
-              )
-            : null,
+        payload: payloadChanged ? before.payload.withData(restored) : null,
         sortIndex: movedPlace ? before.sortIndex : null,
-        merge: mergeFields.isEmpty ? null : FieldMerge(fields: mergeFields),
+        merge: whole || mergeFields.isEmpty
+            ? null
+            : FieldMerge(fields: mergeFields),
       ),
     );
   }
@@ -673,10 +745,12 @@ final class _Apply {
       );
       return OpApplied(writes: [RowAdded(added)], undo: _undoGroupAdd(added));
     }
-    if (!pageIsLive(existing.pagePublicId)) {
-      return _failed(FailureCode.pageDeleted);
+    if (holdingPageRefusal(existing.pagePublicId) case final refused?) {
+      return refused;
     }
     switch (existing) {
+      case UnreadableLineupGroup(:final RowKey key):
+        return OpRefused(UnreadableTarget(key));
       case DeletedLineupGroup(:final revision):
         if (_revisionRefusal(op.expectedLineupRevision, revision)
             case final refused?) {
@@ -686,13 +760,11 @@ final class _Apply {
             case final refused?) {
           return refused;
         }
-        final restored = LiveLineupGroup(
-          strategyPublicId: strategy.publicId,
-          publicId: existing.publicId,
+        final restored = existing.rewritten(
+          deleted: false,
           pagePublicId: op.pagePublicId,
           payload: op.payload,
           sortIndex: op.sortIndex,
-          revision: revision + 1,
         );
         return OpApplied(
           writes: [_changed(existing, restored)],
@@ -707,7 +779,7 @@ final class _Apply {
     }
   }
 
-  Undo _undoGroupAdd(LiveLineupGroup added) => UndoWithOp(
+  Undo _undoGroupAdd(ReadableLineupGroupRow added) => UndoWithOp(
     LineupGroupDeleteOp(
       opId: undoId,
       lineupPublicId: added.publicId,
@@ -717,10 +789,17 @@ final class _Apply {
   );
 
   ApplyResult lineupGroupDelete(LineupGroupDeleteOp op) {
-    final existing = rows.lineupGroup(op.lineupPublicId);
-    if (existing is! LiveLineupGroup) return const OpUnchanged();
-    if (!pageIsLive(existing.pagePublicId)) {
-      return _failed(FailureCode.pageDeleted);
+    final LiveLineupGroup existing;
+    switch (rows.lineupGroup(op.lineupPublicId)) {
+      case null || DeletedLineupGroup():
+        return const OpUnchanged();
+      case UnreadableLineupGroup(:final RowKey key):
+        return OpRefused(UnreadableTarget(key));
+      case final LiveLineupGroup live:
+        existing = live;
+    }
+    if (holdingPageRefusal(existing.pagePublicId) case final refused?) {
+      return refused;
     }
     if (!op.lastWriterWins) {
       if (_revisionRefusal(op.expectedLineupRevision, existing.revision)
@@ -728,14 +807,7 @@ final class _Apply {
         return refused;
       }
     }
-    final after = DeletedLineupGroup(
-      strategyPublicId: strategy.publicId,
-      publicId: existing.publicId,
-      pagePublicId: existing.pagePublicId,
-      payload: existing.payload,
-      sortIndex: existing.sortIndex,
-      revision: existing.revision + 1,
-    );
+    final after = existing.rewritten(deleted: true);
     return OpApplied(
       writes: [_changed(existing, after)],
       undo: UndoWithOp(
@@ -751,15 +823,20 @@ final class _Apply {
     );
   }
 
-  _Target<LiveLineupGroup> editableGroup(String lineupPublicId) =>
-      switch (rows.lineupGroup(lineupPublicId)) {
-        null => _Refused(_rejected(RejectionReason.notFound)),
-        final group when !pageIsLive(group.pagePublicId) => _Refused(
-          _failed(FailureCode.pageDeleted),
-        ),
-        DeletedLineupGroup() => _Refused(_rejected(RejectionReason.deleted)),
-        final LiveLineupGroup live => _Found(live),
-      };
+  _Target<LiveLineupGroup> editableGroup(String lineupPublicId) {
+    final existing = rows.lineupGroup(lineupPublicId);
+    if (existing == null) return _Refused(_rejected(RejectionReason.notFound));
+    if (holdingPageRefusal(existing.pagePublicId) case final refused?) {
+      return _Refused(refused);
+    }
+    return switch (existing) {
+      UnreadableLineupGroup(:final RowKey key) => _Refused(
+        OpRefused(UnreadableTarget(key)),
+      ),
+      DeletedLineupGroup() => _Refused(_rejected(RejectionReason.deleted)),
+      final LiveLineupGroup live => _Found(live),
+    };
+  }
 
   ApplyResult lineupGroupReorder(LineupGroupReorderOp op) {
     final LiveLineupGroup existing;
@@ -774,14 +851,7 @@ final class _Apply {
         case final refused?) {
       return refused;
     }
-    final after = LiveLineupGroup(
-      strategyPublicId: strategy.publicId,
-      publicId: existing.publicId,
-      pagePublicId: existing.pagePublicId,
-      payload: existing.payload,
-      sortIndex: op.sortIndex,
-      revision: existing.revision + 1,
-    );
+    final after = existing.rewritten(deleted: false, sortIndex: op.sortIndex);
     return OpApplied(
       writes: [_changed(existing, after)],
       undo: UndoWithOp(
@@ -848,13 +918,10 @@ final class _Apply {
         return _failed(FailureCode.lineupPageMismatch);
       }
     }
-    final after = LiveLineupGroup(
-      strategyPublicId: strategy.publicId,
-      publicId: existing.publicId,
-      pagePublicId: existing.pagePublicId,
+    final after = existing.rewritten(
+      deleted: false,
       payload: payload,
-      sortIndex: movesPlace ? sortIndex : existing.sortIndex,
-      revision: existing.revision + 1,
+      sortIndex: movesPlace ? sortIndex : null,
     );
     final write = _changed(existing, after);
     if (write.fields.isEmpty && write.dataFields.isEmpty) {
@@ -874,11 +941,15 @@ final class _Apply {
     }
     return OpApplied(
       writes: [write],
-      undo: UndoWithOp(_undoGroupPatch(existing, write)),
+      undo: UndoWithOp(_undoGroupPatch(existing, write, whole: checkRevision)),
     );
   }
 
-  LineupGroupPatchOp _undoGroupPatch(LiveLineupGroup before, RowChanged write) {
+  LineupGroupPatchOp _undoGroupPatch(
+    LiveLineupGroup before,
+    RowChanged write, {
+    required bool whole,
+  }) {
     final movedPlace = write.fields.contains(RowField.sortIndex);
     final payloadChanged =
         write.dataFields.isNotEmpty ||
@@ -896,7 +967,7 @@ final class _Apply {
       expectedLineupRevision: before.revision + 1,
       payload: payloadChanged ? before.payload : null,
       sortIndex: movedPlace ? before.sortIndex : null,
-      merge: mergeFields.isEmpty || !byItem
+      merge: whole || mergeFields.isEmpty || !byItem
           ? null
           : FieldMerge(fields: mergeFields),
     );
@@ -919,6 +990,23 @@ final class _Apply {
     return null;
   }
 
+  OpRefused? _uncopyable(String pagePublicId) {
+    for (final element in rows.elementsOn(pagePublicId)) {
+      if (element case UnreadableElement(
+        :final key,
+        :final stored,
+      ) when stored is! Map<String, Object?>) {
+        return OpRefused(UnreadableTarget(key));
+      }
+    }
+    for (final group in rows.lineupGroupsOn(pagePublicId)) {
+      if (group case UnreadableLineupGroup(:final RowKey key)) {
+        return OpRefused(UnreadableTarget(key));
+      }
+    }
+    return null;
+  }
+
   RowWrite? _placed(LivePage page, int index) {
     final name = page.isAutoNamed == true ? 'Page ${index + 1}' : page.name;
     if (page.sortIndex == index && page.name == name) return null;
@@ -928,11 +1016,47 @@ final class _Apply {
 
 int _clamp(int index, int maximum) => math.max(0, math.min(index, maximum));
 
-T? _edited<T>(ValueEdit<T> edit, T? current) => switch (edit) {
-  KeepValue() => current,
-  SetValue(:final value) => value,
-  ClearValue() => null,
-};
+sealed class _Slot {
+  const _Slot();
+
+  String get publicId;
+
+  int get sortIndex;
+}
+
+final class _LiveSlot extends _Slot {
+  const _LiveSlot(this.page);
+
+  final LivePage page;
+
+  @override
+  String get publicId => page.publicId;
+
+  @override
+  int get sortIndex => page.sortIndex;
+}
+
+final class _HeldSlot extends _Slot {
+  const _HeldSlot(this.page, this.sortIndex);
+
+  final UnreadablePage page;
+
+  @override
+  final int sortIndex;
+
+  @override
+  String get publicId => page.publicId;
+}
+
+final class _NewSlot extends _Slot {
+  const _NewSlot();
+
+  @override
+  String get publicId => '';
+
+  @override
+  int get sortIndex => -1;
+}
 
 ValueEdit<T> _restoring<T extends Object>(T? value) => switch (value) {
   final T value? => SetValue(value),
@@ -956,7 +1080,7 @@ ElementRow _elementRow({
     : UnreadableElement(
         publicId: publicId,
         pagePublicId: pagePublicId,
-        json: {
+        stored: {
           'publicId': publicId,
           'pagePublicId': pagePublicId,
           'payload': payload.toJson(),
@@ -964,6 +1088,8 @@ ElementRow _elementRow({
           'revision': revision,
           'deleted': false,
         },
+        problem: 'a payload version from a newer build',
+        reason: const FromNewerBuild(),
       );
 
 OpRefused? _elementTypeRefusal(ElementPayload payload) {
@@ -977,45 +1103,11 @@ OpRefused? _elementTypeRefusal(ElementPayload payload) {
 OpRefused? _lineupPayloadRefusal(
   LineupGroupPayload payload,
   String lineupPublicId,
-) {
-  if (payload.payloadVersion != lineupGroupPayloadVersion) {
-    return _failed(FailureCode.invalidLineupPayloadVersion);
-  }
-  final data = payload.data;
-  final id = data['id'];
-  if (id is! String || id.isEmpty || id != lineupPublicId) {
-    return _failed(FailureCode.invalidLineupPayloadData);
-  }
-  final origins = _idsOfEntries(data['origins'], 'agent');
-  final landings = _idsOfEntries(data['landings'], 'ability');
-  final links = _idsOfEntries(data['links'], null);
-  if (origins == null || landings == null || links == null) {
-    return _failed(FailureCode.invalidLineupPayloadData);
-  }
-  final linkList = lineupItems(data, 'links');
-  if (linkList.isEmpty) return _failed(FailureCode.invalidLineupPayloadData);
-  for (final link in linkList) {
-    if (!origins.contains(link['originId']) ||
-        !landings.contains(link['landingId'])) {
-      return _failed(FailureCode.invalidLineupPayloadData);
-    }
-  }
-  return null;
-}
-
-Set<String>? _idsOfEntries(Object? entries, String? markerKey) {
-  if (entries is! List<Object?>) return null;
-  final ids = <String>{};
-  for (final entry in entries) {
-    if (entry is! Map<String, Object?>) return null;
-    final id = entry['id'];
-    if (id is! String || id.isEmpty || !ids.add(id)) return null;
-    if (markerKey != null && entry[markerKey] is! Map<String, Object?>) {
-      return null;
-    }
-  }
-  return ids;
-}
+) => switch (checkLineupPayload(payload, lineupPublicId)) {
+  ValidLineupGroup() => null,
+  OtherLineupVersion() => _failed(FailureCode.invalidLineupPayloadVersion),
+  BrokenLineupGraph() => _failed(FailureCode.invalidLineupPayloadData),
+};
 
 Set<String> lineupGroupItems(Map<String, Object?> data) => {
   for (final (collection, prefix) in const [
@@ -1035,7 +1127,8 @@ RowChanged _changed(Row before, Row after) {
   }
 
   switch ((before, after)) {
-    case (final StrategyRow a, final StrategyRow b):
+    case (final ReadableStrategy a, final ReadableStrategy b):
+      compare(RowField.updatedAt, a.updatedAt, b.updatedAt);
       compare(RowField.name, a.name, b.name);
       compare(RowField.mapData, a.mapData, b.mapData);
       compare(RowField.themeProfileId, a.themeProfileId, b.themeProfileId);
@@ -1044,13 +1137,13 @@ RowChanged _changed(Row before, Row after) {
         a.themeOverridePalette,
         b.themeOverridePalette,
       );
-    case (final PageRow a, final PageRow b):
+    case (final ReadablePageRow a, final ReadablePageRow b):
       compare(RowField.name, a.name, b.name);
       compare(RowField.isAutoNamed, a.isAutoNamed, b.isAutoNamed);
       compare(RowField.isAttack, a.isAttack, b.isAttack);
       compare(RowField.sortIndex, a.sortIndex, b.sortIndex);
       compare(RowField.deleted, a is TrashedPage, b is TrashedPage);
-    case (final PageSettingsRow a, final PageSettingsRow b):
+    case (final ReadablePageSettings a, final ReadablePageSettings b):
       compare(RowField.settings, a.settings, b.settings);
     case (final ReadableElementRow a, final ReadableElementRow b):
       compare(RowField.page, a.pagePublicId, b.pagePublicId);
@@ -1068,7 +1161,7 @@ RowChanged _changed(Row before, Row after) {
       fields
         ..add(RowField.kind)
         ..add(RowField.payloadVersion);
-    case (final LineupGroupRow a, final LineupGroupRow b):
+    case (final ReadableLineupGroupRow a, final ReadableLineupGroupRow b):
       compare(RowField.page, a.pagePublicId, b.pagePublicId);
       compare(RowField.sortIndex, a.sortIndex, b.sortIndex);
       compare(

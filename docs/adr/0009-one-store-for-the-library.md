@@ -44,17 +44,38 @@ decodes a payload into a typed item at the edge of the editor.
 
 ## Rules the store keeps
 
-- An edit is saved as its op before anything else is written. In a cloud
-  strategy the pending op is the only saved form of the edit: the rows the
+- In a cloud strategy an edit is saved as its op before anything else is
+  written: the pending op is the only saved form of the edit, the rows the
   user sees are worked out by applying pending ops to the base, and the base
-  changes only when the server confirms. In a local strategy the op is saved,
-  then applied to the rows, then cleared, and an op found at startup is
-  applied again. Applying an op twice gives the same rows as applying it
-  once. So a crash can never leave a changed row without the op that changed
-  it.
+  changes only when the server confirms. A local strategy has no pending op.
+  The store applies the op in memory and sends the engine one commit holding
+  every row in `OpApplied.writes` and the strategy's summary. The engine
+  contract requires a commit to apply whole or not at all, across areas and
+  across a crash, and a conformance suite checks every engine against it, so
+  the disk holds the rows from before the edit or after it, never half.
+- A save the engine cannot answer for is in doubt, and the store that made it
+  is finished: it releases its lease and refuses every later call. The caller
+  reopens and reads, and what is stored is what was saved. To keep the edit
+  it issues the same op again, and `applyOp`'s own rules decide: an edit that
+  had landed comes back as nothing to save or a typed refusal, and one that
+  had not is applied.
+- The first version saved a record of each edit in a journal area, wrote
+  the rows, cleared the record, and replayed any record it found at open,
+  because the storage it was built on wrote one key at a time. Once the
+  engine contract required one commit across areas to apply whole, the
+  record only repeated that promise, at four engine calls per save instead
+  of one, with a replay at open, recovery markers that needed a clock to
+  expire, and an open that failed on a record this build could not read.
+  It was dropped for the single commit. A slot naming the last save attempt
+  replaced it for a round and was dropped too: a lost attempt's number could
+  be issued again and land, and a second writer between the doubt and the
+  reopen breaks any single slot, so the slot could report a lost edit as
+  applied. Issuing the op again answers the same question exactly.
 - A row this build cannot read is carried untouched. It is never dropped,
   rewritten or inferred as deleted, whether it failed to decode or is a kind
-  from a newer build.
+  from a newer build, except when the user removes the strategy that holds
+  it: that is the user's own action, and it takes every row of the
+  strategy.
 - The library list reads summaries, never page content. Opening a page reads
   that page's rows. Saving an edit writes the rows it changed.
 - Sync status is derived from the store: a cloud strategy is synced when it

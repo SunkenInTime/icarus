@@ -82,9 +82,32 @@ void _assertSafeNumbers(Object? value, String path) {
   }
 }
 
+ReadablePageRow? _page(StrategyRows rows, String id) => switch (rows.page(id)) {
+  final ReadablePageRow page => page,
+  _ => null,
+};
+
+ReadablePageSettings? _settingsOf(StrategyRows rows, String id) =>
+    switch (rows.settingsOf(id)) {
+      final ReadablePageSettings settings => settings,
+      _ => null,
+    };
+
+ReadableLineupGroupRow? _group(StrategyRows rows, String id) =>
+    switch (rows.lineupGroup(id)) {
+      final ReadableLineupGroupRow group => group,
+      _ => null,
+    };
+
+Iterable<ReadableLineupGroupRow> _groups(StrategyRowSet rows) =>
+    rows.lineupGroups.whereType<ReadableLineupGroupRow>();
+
 Map<String, Object?> _rowsJson(StrategyRowSet rows, List<FolderRow> folders) =>
     {
-      'strategy': rows.strategy.toJson(),
+      'strategy': {
+        for (final MapEntry(:key, :value) in rows.strategy.toJson().entries)
+          if (key != 'createdAt' && key != 'updatedAt') key: value,
+      },
       'folders': [for (final row in folders) row.toJson()],
       'pages': [for (final row in rows.pages) row.toJson()],
       'settings': [for (final row in rows.settings) row.toJson()],
@@ -97,9 +120,11 @@ int? _revisionOf(StrategyRows rows, StrategyOp op) => switch (op) {
   PageAddOp() ||
   PageDeleteOp() ||
   PageReorderOp() => rows.strategy.revision,
-  PagePatchOp(:final pagePublicId) => rows.page(pagePublicId)?.revision,
-  PageSettingsPatchOp(:final pagePublicId) =>
-    rows.settingsOf(pagePublicId)?.revision,
+  PagePatchOp(:final pagePublicId) => _page(rows, pagePublicId)?.revision,
+  PageSettingsPatchOp(:final pagePublicId) => _settingsOf(
+    rows,
+    pagePublicId,
+  )?.revision,
   ElementAddOp(:final elementPublicId) ||
   ElementPatchOp(:final elementPublicId) ||
   ElementDeleteOp(:final elementPublicId) ||
@@ -114,7 +139,7 @@ int? _revisionOf(StrategyRows rows, StrategyOp op) => switch (op) {
   LineupGroupDeleteOp(:final lineupPublicId) ||
   LineupGroupReorderOp(
     :final lineupPublicId,
-  ) => rows.lineupGroup(lineupPublicId)?.revision,
+  ) => _group(rows, lineupPublicId)?.revision,
 };
 
 Map<String, Object?> _outcome(
@@ -155,7 +180,13 @@ Map<String, Object?> _replay(Map<String, Object?> recorded) {
     for (final row in _list(initial['folders'])) _read(FolderRow.decode(row)),
   ];
   var rows = StrategyRowSet(
-    strategy: _read(StrategyRow.decode(initial['strategy'])),
+    strategy: _read(
+      StrategyRow.decode({
+        'createdAt': 0,
+        'updatedAt': 0,
+        ...initial['strategy']! as Map<String, Object?>,
+      }),
+    ),
     pages: [
       for (final row in _list(initial['pages'])) _read(PageRow.decode(row)),
     ],
@@ -169,7 +200,7 @@ Map<String, Object?> _replay(Map<String, Object?> recorded) {
     ],
     lineupGroups: [
       for (final row in _list(initial['lineupGroups']))
-        _read(LineupGroupRow.decode(row)),
+        _read(LineupGroupRow.decode(row, canRead: (_) => true)),
     ],
   );
   final raw = _list(recorded['ops']);
@@ -262,8 +293,8 @@ final class _Generator {
 
   Map<String, Object?> scenario(int steps) {
     folders = [
-      const FolderRow(publicId: 'f-root', name: 'Retakes', color: 'red'),
-      const FolderRow(
+      ReadableFolder(publicId: 'f-root', name: 'Retakes', color: 'red'),
+      ReadableFolder(
         publicId: 'f-child',
         name: 'Bind',
         parentFolderPublicId: 'f-root',
@@ -272,11 +303,13 @@ final class _Generator {
     ];
     final pageIds = ['p0', 'p1', 'p2'];
     rows = StrategyRowSet(
-      strategy: StrategyRow(
+      strategy: ReadableStrategy(
         publicId: _strategyId,
         name: 'Retake',
         mapData: 'ascent',
         revision: 1,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
         folderPublicId: switch (seed % 3) {
           0 => null,
           1 => 'f-root',
@@ -297,7 +330,7 @@ final class _Generator {
       ],
       settings: [
         for (final id in pageIds)
-          PageSettingsRow(
+          ReadablePageSettings(
             pagePublicId: id,
             settings: _settingsChoices.first,
             revision: 1,
@@ -329,7 +362,7 @@ final class _Generator {
     for (final element in rows.elements) {
       remember(element);
     }
-    for (final group in rows.lineupGroups) {
+    for (final group in _groups(rows)) {
       groupHistory[group.publicId] = [group.payload.data];
     }
     final ops = <Map<String, Object?>>[];
@@ -343,7 +376,7 @@ final class _Generator {
           switch (row) {
             case final ElementRow element:
               remember(element);
-            case LineupGroupRow(:final publicId, :final payload):
+            case ReadableLineupGroupRow(:final publicId, :final payload):
               (groupHistory[publicId] ??= []).add(payload.data);
             default:
               break;
@@ -594,7 +627,10 @@ final class _Generator {
     };
   }
 
-  LineupGroupPayload editedGroup(LineupGroupRow row, List<String> fields) {
+  LineupGroupPayload editedGroup(
+    ReadableLineupGroupRow row,
+    List<String> fields,
+  ) {
     final data = row.payload.data;
     final origins = items(data, 'origins');
     final landings = items(data, 'landings');
@@ -669,7 +705,7 @@ final class _Generator {
 
   StrategyOp staleLineupMerge(String opId) {
     final id = pick(groupIds());
-    final row = rows.lineupGroup(id);
+    final row = _group(rows, id);
     if (row == null) return elementPatch(opId);
     final versions = groupHistory[id] ?? [row.payload.data];
     final current = {
@@ -757,7 +793,7 @@ final class _Generator {
         return PagePatchOp(
           opId: opId,
           pagePublicId: id,
-          expectedPageRevision: rev(rows.page(id)?.revision ?? 1),
+          expectedPageRevision: rev(_page(rows, id)?.revision ?? 1),
           name: chance(0.5) ? 'Name ${rng.nextInt(3)}' : null,
           isAutoNamed: chance(0.4) ? chance(0.5) : null,
           isAttack: chance(0.4) ? chance(0.5) : null,
@@ -782,7 +818,9 @@ final class _Generator {
           opId: opId,
           pagePublicId: id,
           settings: pick(_settingsChoices),
-          expectedPageSettingsRevision: rev(rows.settingsOf(id)?.revision ?? 1),
+          expectedPageSettingsRevision: rev(
+            _settingsOf(rows, id)?.revision ?? 1,
+          ),
         );
       case 6:
         final id = chance(0.4) ? pick(elementIds()) : 's$seed-${newId()}';
@@ -832,15 +870,15 @@ final class _Generator {
       case 11:
         if (chance(0.5)) {
           final id = chance(0.3) ? pick(groupIds()) : 's$seed-g${newId()}';
-          final row = rows.lineupGroup(id);
-          final overlap = chance(0.15) && rows.lineupGroups.isNotEmpty;
+          final row = _group(rows, id);
+          final overlap = chance(0.15) && _groups(rows).isNotEmpty;
           final payload = row != null && chance(0.5)
               ? row.payload
               : overlap
               ? LineupGroupPayload(
                   payloadVersion: 1,
                   data: {
-                    ...pick(rows.lineupGroups.toList()).payload.data,
+                    ...pick(_groups(rows).toList()).payload.data,
                     'id': id,
                   },
                 )
@@ -857,7 +895,7 @@ final class _Generator {
           );
         }
         final id = pick(groupIds());
-        final row = rows.lineupGroup(id);
+        final row = _group(rows, id);
         return chance(0.5)
             ? LineupGroupDeleteOp(
                 opId: opId,
@@ -876,7 +914,7 @@ final class _Generator {
       case 12:
       case 13:
         final id = pick(groupIds());
-        final row = rows.lineupGroup(id);
+        final row = _group(rows, id);
         if (row == null) {
           return LineupGroupPatchOp(
             opId: opId,

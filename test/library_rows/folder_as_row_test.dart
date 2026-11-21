@@ -51,7 +51,7 @@ void main() {
       'its legacy icon', () {
     final legacy = StoredFolderIcon.fromIconData(Icons.map);
     final folder = switch (folderFromRow(
-      FolderRow(
+      ReadableFolder(
         publicId: 'f',
         name: 'F',
         iconId: 9999,
@@ -73,7 +73,7 @@ void main() {
       'a folder row with a colour or icon this build does not know is '
       'refused', () {
     final problems = switch (folderFromRow(
-      const FolderRow(publicId: 'f', name: 'F', color: 'teal'),
+      ReadableFolder(publicId: 'f', name: 'F', color: 'teal'),
       DateTime.utc(2026),
     )) {
       FolderRefused(:final problems) => problems,

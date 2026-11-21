@@ -7,12 +7,12 @@ import 'package:icarus_library/icarus_library.dart';
 final class FolderAsRow {
   const FolderAsRow({required this.row, required this.dateCreated});
 
-  final FolderRow row;
+  final ReadableFolder row;
   final DateTime dateCreated;
 }
 
 FolderAsRow folderToRow(Folder folder) => FolderAsRow(
-      row: FolderRow(
+      row: ReadableFolder(
         publicId: folder.id,
         name: folder.name,
         parentFolderPublicId: folder.parentID,
@@ -63,19 +63,20 @@ FolderColor? _colorNamed(String? name) {
   return null;
 }
 
-int? _iconIdOf(FolderRow row) => switch (row) {
-      FolderRow(:final iconId?) when FolderIconRegistry.isKnownId(iconId) =>
+int? _iconIdOf(ReadableFolder row) => switch (row) {
+      ReadableFolder(:final iconId?)
+          when FolderIconRegistry.isKnownId(iconId) =>
         iconId,
-      FolderRow(:final iconCodePoint?) => folderIconIdFromCloud(
+      ReadableFolder(:final iconCodePoint?) => folderIconIdFromCloud(
           iconId: null,
           codePoint: iconCodePoint,
           fontFamily: row.iconFontFamily,
           fontPackage: row.iconFontPackage,
         ),
-      FolderRow(:final iconId) => iconId,
+      ReadableFolder(:final iconId) => iconId,
     };
 
-FolderFromRow folderFromRow(FolderRow row, DateTime dateCreated) {
+FolderFromRow folderFromRow(ReadableFolder row, DateTime dateCreated) {
   final color = _colorNamed(row.color);
   final iconId = _iconIdOf(row);
   final problems = [

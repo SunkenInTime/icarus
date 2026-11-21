@@ -1,5 +1,9 @@
 import 'json.dart';
 
+const latestTime = 8640000000000000;
+
+const largestSafeWhole = 9007199254740991;
+
 sealed class Decoded<T> {
   const Decoded();
 }
@@ -17,6 +21,13 @@ final class CouldNotRead<T> extends Decoded<T> {
   final String problem;
 }
 
+bool isSafeWhole(Object? value) =>
+    value is num &&
+    value.isFinite &&
+    value == value.truncate() &&
+    value >= -largestSafeWhole &&
+    value <= largestSafeWhole;
+
 final class JsonFields {
   JsonFields._(this.json);
 
@@ -28,10 +39,11 @@ final class JsonFields {
     String what,
     T Function() Function(JsonFields fields) read,
   ) {
-    if (raw is! Map<Object?, Object?> || !isJson(raw)) {
+    final frozen = frozenJsonObjectOrNull(raw);
+    if (frozen == null) {
       return CouldNotRead(raw, 'Expected $what to be a JSON object');
     }
-    final fields = JsonFields._(frozenJsonObject(raw));
+    final fields = JsonFields._(frozen);
     final build = read(fields);
     return switch (fields._problem) {
       final problem? => CouldNotRead(raw, '$what: $problem'),
@@ -56,9 +68,8 @@ final class JsonFields {
   String? optionalString(String key) => has(key) ? string(key) : null;
 
   int whole(String key) => switch (json[key]) {
-    final num value when value.isFinite && value == value.truncate() =>
-      value.toInt(),
-    _ => _expected(key, 'a whole number', 0),
+    final num value when isSafeWhole(value) => value.toInt(),
+    _ => _expected(key, 'a whole number JavaScript holds exactly', 0),
   };
 
   int? optionalWhole(String key) => has(key) ? whole(key) : null;
@@ -74,6 +85,23 @@ final class JsonFields {
   };
 
   bool? optionalBoolean(String key) => has(key) ? boolean(key) : null;
+
+  DateTime time(String key) => switch (json[key]) {
+    final num value
+        when value.isFinite &&
+            value == value.truncate() &&
+            value >= -latestTime &&
+            value <= latestTime =>
+      DateTime.fromMillisecondsSinceEpoch(value.toInt(), isUtc: true),
+    _ => _expected(key, 'a time in milliseconds', DateTime.utc(1970)),
+  };
+
+  DateTime? optionalTime(String key) => has(key) ? time(key) : null;
+
+  Map<String, Object?> rest(Set<String> known) => frozenJsonObject({
+    for (final MapEntry(:key, :value) in json.entries)
+      if (!known.contains(key)) key: value,
+  });
 
   Map<String, Object?> object(String key) => switch (json[key]) {
     final Map<String, Object?> value => value,

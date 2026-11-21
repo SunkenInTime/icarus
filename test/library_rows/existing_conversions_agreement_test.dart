@@ -153,9 +153,11 @@ Object? lineupInLocalTerms(Object? json, Map<String, String> localPicture) =>
 void expectSameLineupGroups(StrategyRowSet mine, MovedToCloud cloud) {
   final localPicture = localPictureOf(cloud.ids);
   for (final page in mine.pages) {
-    List<LineupGroupRow> ordered(StrategyRowSet rows) =>
-        rows.lineupGroupsOn(page.publicId).toList()
-          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    List<ReadableLineupGroupRow> ordered(StrategyRowSet rows) => rows
+        .lineupGroupsOn(page.publicId)
+        .cast<ReadableLineupGroupRow>()
+        .toList()
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     final ours = ordered(mine);
     final theirs = ordered(cloud.rows);
     expect(theirs.length, ours.length, reason: 'page ${page.publicId}');
@@ -205,7 +207,7 @@ app.RemoteFullStrategySnapshot snapshotOf(StrategyRowSet rows) {
       themeOverridePalette: strategy.themeOverridePalette?.toJson(),
     ),
     pages: [
-      for (final page in rows.pages)
+      for (final page in rows.pages.cast<ReadablePageRow>())
         app.RemoteFullPage(
           page: app.RemotePage(
             publicId: page.publicId,
@@ -222,7 +224,9 @@ app.RemoteFullStrategySnapshot snapshotOf(StrategyRowSet rows) {
             revision: 1,
             createdAt: at,
             updatedAt: at,
-            settings: rows.settingsOf(page.publicId)?.settings?.toJson(),
+            settings: (rows.settingsOf(page.publicId) as ReadablePageSettings?)
+                ?.settings
+                ?.toJson(),
           ),
         ),
     ],
@@ -249,7 +253,7 @@ app.RemoteFullStrategySnapshot snapshotOf(StrategyRowSet rows) {
       for (final page in rows.pages)
         page.publicId: [
           for (final group in ordered(
-            rows.lineupGroupsOn(page.publicId),
+            rows.lineupGroupsOn(page.publicId).cast<ReadableLineupGroupRow>(),
             (group) => group.sortIndex,
           ))
             app.RemoteLineup(

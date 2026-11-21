@@ -5,13 +5,13 @@ import '../tool/merge_stories.dart';
 
 Object? _dataOf(Row row) => switch (row) {
   ReadableElementRow(:final payload) => payload.data,
-  LineupGroupRow(:final payload) => payload.data,
+  ReadableLineupGroupRow(:final payload) => payload.data,
   final other => fail('$other holds no payload'),
 };
 
 int _placeOf(Row row) => switch (row) {
   ReadableElementRow(:final sortIndex) => sortIndex,
-  LineupGroupRow(:final sortIndex) => sortIndex,
+  ReadableLineupGroupRow(:final sortIndex) => sortIndex,
   final other => fail('$other has no place'),
 };
 

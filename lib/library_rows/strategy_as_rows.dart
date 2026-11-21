@@ -276,7 +276,7 @@ StrategyToRows strategyToRows(
       ),
     );
     settings.add(
-      PageSettingsRow(
+      ReadablePageSettings(
         pagePublicId: page.id,
         settings: PageSettings(
           agentSize: page.settings.agentSize,
@@ -359,8 +359,10 @@ StrategyToRows strategyToRows(
   if (problems.isNotEmpty) return StrategyRowsRefused(strategy.id, problems);
   return StrategyRowsMade(
     rows: StrategyRowSet(
-      strategy: StrategyRow(
+      strategy: ReadableStrategy(
         publicId: strategy.id,
+        createdAt: strategy.createdAt,
+        updatedAt: strategy.lastEdited,
         folderPublicId: strategy.folderID,
         name: strategy.name,
         mapData: Maps.mapNames[strategy.mapData]!,
@@ -432,8 +434,14 @@ final class RowOffPage extends DataProblem {
   final Row row;
 }
 
-final class UnreadableLineupGroup extends DataProblem {
-  const UnreadableLineupGroup(this.pageId, this.groupId, this.problem);
+final class UnreadableStoredRow extends DataProblem {
+  const UnreadableStoredRow(this.row);
+
+  final Row row;
+}
+
+final class LineupGroupNotDecoded extends DataProblem {
+  const LineupGroupNotDecoded(this.pageId, this.groupId, this.problem);
 
   final String pageId;
   final String groupId;
@@ -495,7 +503,7 @@ _Lineups _lineupGraphOf(String pageId, List<LiveLineupGroup> groups) {
       rows.add(row);
     } on FormatException catch (error) {
       problems
-          .add(UnreadableLineupGroup(pageId, group.publicId, error.message));
+          .add(LineupGroupNotDecoded(pageId, group.publicId, error.message));
     }
   }
   if (problems.isNotEmpty) return _LineupsRefused(problems);
@@ -543,6 +551,8 @@ StrategyFromRows strategyFromRows(StrategyRowSet rows, StrategyTimes times) {
         livePages.add(page);
       case TrashedPage():
         notInStrategy.add(page);
+      case UnreadablePage():
+        problems.add(UnreadableStoredRow(page));
     }
   }
   livePages.sort(
@@ -555,10 +565,15 @@ StrategyFromRows strategyFromRows(StrategyRowSet rows, StrategyTimes times) {
 
   final itemsByPage = {for (final id in liveIds) id: <LiveElement>[]};
   for (final element in rows.elements) {
-    final page = rows.page(element.pagePublicId);
-    if (page == null) {
-      problems.add(RowOffPage(element));
-      continue;
+    final ReadablePageRow page;
+    switch (rows.page(element.pagePublicId)) {
+      case null:
+        problems.add(RowOffPage(element));
+        continue;
+      case UnreadablePage():
+        continue;
+      case final ReadablePageRow readable:
+        page = readable;
     }
     switch (element) {
       case UnreadableElement():
@@ -574,12 +589,19 @@ StrategyFromRows strategyFromRows(StrategyRowSet rows, StrategyTimes times) {
 
   final groupsByPage = {for (final id in liveIds) id: <LiveLineupGroup>[]};
   for (final group in rows.lineupGroups) {
-    final page = rows.page(group.pagePublicId);
-    if (page == null) {
-      problems.add(RowOffPage(group));
-      continue;
+    final ReadablePageRow page;
+    switch (rows.page(group.pagePublicId)) {
+      case null:
+        problems.add(RowOffPage(group));
+        continue;
+      case UnreadablePage():
+        continue;
+      case final ReadablePageRow readable:
+        page = readable;
     }
     switch (group) {
+      case UnreadableLineupGroup():
+        problems.add(UnreadableStoredRow(group));
       case DeletedLineupGroup():
         notInStrategy.add(group);
       case LiveLineupGroup() when page is TrashedPage:
@@ -613,7 +635,9 @@ StrategyFromRows strategyFromRows(StrategyRowSet rows, StrategyTimes times) {
             UnreadableElement(
               publicId: element.publicId,
               pagePublicId: element.pagePublicId,
-              json: element.toJson(),
+              stored: element.toJson(),
+              problem: 'this build cannot draw it',
+              reason: const FromNewerBuild(),
             ),
           );
         case Read(value: AgentItem(:final agent)):
@@ -640,7 +664,16 @@ StrategyFromRows strategyFromRows(StrategyRowSet rows, StrategyTimes times) {
         graph = read;
     }
 
-    final stored = rows.settingsOf(page.publicId)?.settings;
+    final PageSettings? stored;
+    switch (rows.settingsOf(page.publicId)) {
+      case null:
+        stored = null;
+      case ReadablePageSettings(:final settings):
+        stored = settings;
+      case UnreadablePageSettings() && final row:
+        problems.add(UnreadableStoredRow(row));
+        continue;
+    }
     pages.add(
       StrategyPage(
         id: page.publicId,

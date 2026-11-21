@@ -36,10 +36,10 @@ void main() {
         'Page 3',
         'Retake',
       ]);
-      expect(session.rows.page('page-b')!.revision, 2);
-      expect(session.rows.page('page-a')!.revision, 1);
+      expect(session.pageAt('page-b').revision, 2);
+      expect(session.pageAt('page-a').revision, 1);
       expect(session.rows.strategy.revision, 2);
-      expect(session.rows.settingsOf('page-new')!.revision, 1);
+      expect(session.settingsAt('page-new').revision, 1);
     },
   );
 
@@ -54,7 +54,7 @@ void main() {
         expectedStrategyRevision: 1,
       ),
     );
-    expect(session.rows.page('page-new')!.sortIndex, 3);
+    expect(session.pageAt('page-new').sortIndex, 3);
   });
 
   test('a deleted page goes to the trash with its content kept', () {
@@ -67,7 +67,7 @@ void main() {
         expectedStrategyRevision: 1,
       ),
     );
-    final trashed = session.rows.page('page-b')!;
+    final trashed = session.pageAt('page-b');
     expect(trashed, isA<TrashedPage>());
     expect(trashed.sortIndex, 1);
     expect(trashed.revision, 1);
@@ -120,6 +120,56 @@ void main() {
     );
   });
 
+  test('the last live page cannot be deleted beside an unreadable page', () {
+    final session = Session(
+      strategyRows(
+        pages: [
+          page('page-a', sortIndex: 0),
+          UnreadablePage(
+            publicId: 'page-held',
+            strategyPublicId: 'strategy-1',
+            sortIndex: 1,
+            trashed: false,
+            stored: const {'publicId': 'page-held', 'sortIndex': 1},
+            problem: 'from a newer build',
+          ),
+        ],
+      ),
+    );
+    expect(
+      refused(
+        session.attempt(
+          const PageDeleteOp(
+            opId: 'delete',
+            pagePublicId: 'page-a',
+            expectedStrategyRevision: 1,
+          ),
+        ),
+      ),
+      const Failed(FailureCode.invalidOp),
+    );
+  });
+
+  test('settings and palettes keep a copy of the fields they were given', () {
+    final extra = <String, Object?>{'glow': 1};
+    final settings = PageSettings.keeping(
+      agentSize: 1,
+      abilitySize: 1,
+      useNeutralTeamColors: false,
+      unknownFields: extra,
+    );
+    final palette = ThemePalette.keeping(
+      base: '#000',
+      detail: '#111',
+      highlight: '#222',
+      unknownFields: extra,
+    );
+    extra['glow'] = 2;
+    expect(settings.toJson()['glow'], 1);
+    expect(palette.toJson()['glow'], 1);
+    expect(() => settings.unknownFields['glow'] = 3, throwsUnsupportedError);
+  });
+
   test('a page op made on an old strategy revision is refused', () {
     final session = Session(strategyRows(pages: autoNamed));
     expect(
@@ -152,8 +202,11 @@ void main() {
     session.apply(undoOp(moved));
     expect(namesInOrder(session.rows), namesInOrder(before));
     expect(
-      [for (final page in session.rows.pages) page.sortIndex],
-      [for (final page in before.pages) page.sortIndex],
+      [
+        for (final page in session.rows.pages)
+          (page as ReadablePageRow).sortIndex,
+      ],
+      [for (final page in before.pages) (page as ReadablePageRow).sortIndex],
     );
   });
 
@@ -167,9 +220,9 @@ void main() {
         expectedPageRevision: 1,
       ),
     );
-    expect(session.rows.page('page-c')!.name, 'Execute');
+    expect(session.pageAt('page-c').name, 'Execute');
     session.apply(undoOp(renamed));
-    expect(session.rows.page('page-c')!.name, 'Retake');
+    expect(session.pageAt('page-c').name, 'Retake');
   });
 
   test(
@@ -212,7 +265,7 @@ void main() {
       strategyRows(
         pages: [page('page-a', sortIndex: 0)],
         pageSettings: [
-          const PageSettingsRow(pagePublicId: 'page-a', revision: 1),
+          ReadablePageSettings(pagePublicId: 'page-a', revision: 1),
         ],
       ),
     );
@@ -225,18 +278,12 @@ void main() {
       ),
     );
     expect(result.undo, isA<UndoUnavailable>());
-    expect(session.rows.settingsOf('page-a')!.settings, defaultSettings);
+    expect(session.settingsAt('page-a').settings, defaultSettings);
   });
 
   test('clearing the theme and undoing it brings the theme back', () {
     final themed = StrategyRowSet(
-      strategy: const StrategyRow(
-        publicId: strategyId,
-        name: 'Retake B',
-        mapData: 'ascent',
-        themeProfileId: 'ember',
-        revision: 3,
-      ),
+      strategy: strategyRow(themeProfileId: 'ember', revision: 3),
       pages: [page('page-a', sortIndex: 0)],
     );
     final session = Session(themed);
@@ -273,10 +320,10 @@ void main() {
           expectedStrategyRevision: 1,
         ),
       );
-      expect(session.rows.page('a')!.sortIndex, 0);
-      expect(session.rows.page('a')!.revision, 1);
-      expect(session.rows.page('z')!.sortIndex, 1);
-      expect(session.rows.page('z')!.revision, 2);
+      expect(session.pageAt('a').sortIndex, 0);
+      expect(session.pageAt('a').revision, 1);
+      expect(session.pageAt('z').sortIndex, 1);
+      expect(session.pageAt('z').revision, 2);
     },
   );
 

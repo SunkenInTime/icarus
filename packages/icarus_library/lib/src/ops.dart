@@ -451,6 +451,12 @@ final class SetValue<T> extends ValueEdit<T> {
   int get hashCode => value.hashCode;
 }
 
+T? edited<T>(ValueEdit<T> edit, T? current) => switch (edit) {
+  KeepValue() => current,
+  SetValue(:final value) => value,
+  ClearValue() => null,
+};
+
 final class ClearValue<T> extends ValueEdit<T> {
   const ClearValue();
 

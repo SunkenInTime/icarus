@@ -216,7 +216,10 @@ void main() {
         (element as LiveElement).payload.kind,
     };
     expect(kinds, ElementKind.values.toSet());
-    expect(made.rows.pages.map((page) => page.isAttack).toSet(), {true, false});
+    expect(
+      made.rows.pages.map((page) => (page as ReadablePageRow).isAttack).toSet(),
+      {true, false},
+    );
     expect(made.summary.lineupCount, 12);
     expect(made.rows.lineupGroups, hasLength(6));
     final versions = {
@@ -252,7 +255,7 @@ void main() {
     final made = rowsOf(generatedStrategy(Optionals.set));
     final groupIds = made.rows.lineupGroups.map((row) => row.publicId).toList();
     expect(groupIds.toSet(), hasLength(groupIds.length));
-    for (final row in made.rows.lineupGroups) {
+    for (final row in made.rows.lineupGroups.cast<ReadableLineupGroupRow>()) {
       expect(row.payload.data['id'], row.publicId);
     }
   });
@@ -456,7 +459,9 @@ void main() {
     UnreadableElement unreadableOn(String pageId) => UnreadableElement(
           publicId: 'from-a-newer-build',
           pagePublicId: pageId,
-          json: {
+          problem: 'a kind from a newer build',
+          reason: const FromNewerBuild(),
+          stored: {
             'publicId': 'from-a-newer-build',
             'pagePublicId': pageId,
             'payload': {

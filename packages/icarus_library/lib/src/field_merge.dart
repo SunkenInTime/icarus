@@ -357,11 +357,7 @@ ElementPayload _elementWith(
         data.remove(field);
     }
   }
-  return ElementPayload(
-    kind: payload.kind,
-    payloadVersion: payload.payloadVersion,
-    data: data,
-  );
+  return payload.withData(data);
 }
 
 _Read _mergeBase(FieldMerge merge, String field) {
@@ -518,21 +514,18 @@ LineupGroupPayload _lineupWith(
   final links = lists['links']!;
   final usedOrigins = {for (final link in links) link['originId']};
   final usedLandings = {for (final link in links) link['landingId']};
-  return LineupGroupPayload(
-    payloadVersion: payload.payloadVersion,
-    data: {
-      ...payload.data,
-      'origins': [
-        for (final origin in lists['origins']!)
-          if (usedOrigins.contains(origin['id'])) origin,
-      ],
-      'landings': [
-        for (final landing in lists['landings']!)
-          if (usedLandings.contains(landing['id'])) landing,
-      ],
-      'links': links,
-    },
-  );
+  return payload.withData({
+    ...payload.data,
+    'origins': [
+      for (final origin in lists['origins']!)
+        if (usedOrigins.contains(origin['id'])) origin,
+    ],
+    'landings': [
+      for (final landing in lists['landings']!)
+        if (usedLandings.contains(landing['id'])) landing,
+    ],
+    'links': links,
+  });
 }
 
 String? _conflictingField(
@@ -572,9 +565,5 @@ ElementPayload keepStoredFields(ElementPayload stored, ElementPayload next) {
     }
   }
   if (data.length == next.data.length) return next;
-  return ElementPayload(
-    kind: next.kind,
-    payloadVersion: next.payloadVersion,
-    data: data,
-  );
+  return next.withData(data);
 }
