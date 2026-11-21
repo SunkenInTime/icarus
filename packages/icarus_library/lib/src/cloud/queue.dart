@@ -860,7 +860,8 @@ Go _checked(
   }
   if (target case ElementTarget() || LineupTarget()) {
     final page = _evidencePage(evidence);
-    if (page != null && page != _authoredPage(entry.scope)) {
+    final gone = entry.authored is AuthoredRow && evidence is RowAbsent;
+    if (gone || (page != null && page != _authoredPage(entry.scope))) {
       if (acceptedSameRow != null) {
         holds.add(AwaitingBase(target));
         return const Free();
@@ -1501,15 +1502,8 @@ BaseFacts _withBase(
           settings: {for (final row in settings) row.pagePublicId},
         );
       }
-    case PageRead(
-      :final page,
-      :final settings,
-      :final elements,
-      :final lineupGroups,
-    ):
+    case PageRead(:final page, :final elements, :final lineupGroups):
       final id = page.publicId;
-      seen(PageTarget(id), page);
-      seen(SettingsTarget(id), settings, page: id);
       for (final row in elements) {
         seen(ElementTarget(row.publicId), row, page: id);
       }

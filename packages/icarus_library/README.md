@@ -1058,16 +1058,117 @@ new summary) and `LibraryEdited`. It fires after the save, once per `Saved`.
 A local commit never removes a row; `removed` is there for cloud strategies,
 where the server rejecting a pending op can take a row away.
 
-### Room for cloud strategies
+### Cloud strategies: storage
 
-Nothing for them is built here. What a local strategy reads and saves
-through does not have to change for them: a cloud strategy's base can live
-under the same names in its area and its pending ops under names of their
-own, read through a new call; `commit` keeps its signature and saves the op
-as a pending op; a change already names its op and can name rows that are
-gone; and one engine commit already writes any set of names across areas
-at once, so advancing the base and removing the acknowledged ops is one more
-commit.
+A cloud strategy lives in the same area as a local one. Its base (the rows
+the server last showed) sits under the usual names, and these rows sit
+beside it, each versioned and each read back before it is written:
+
+- `cloud`: the strategy's facts (deleted on the server, edit access lost or
+  confirmed after attempt N, upgrade asked of build X by attempt N). Its
+  presence is what marks the strategy as kept in the cloud.
+- `counters`: the next attempt and read numbers.
+- `pending/<place>`: one row per entry.
+- `attempt/<number>`: one row per attempt.
+- `read/header` and `read/page/<page digest>`: base evidence. The header
+  row holds the latest page list and the sightings of the strategy, its pages
+  and their settings; each page row holds that page's latest complete read,
+  whether it was found missing, and the sightings of items last seen on it.
+  On load every sighting is taken from the row with the latest read, so the
+  evidence is exactly what the core held.
+
+`readStrategy` and `readPage` return the visible rows (the base with the
+queue applied) and the queue's views and tally; `commit` adds an edit to the
+queue; `record` takes every other event (claims, answers, reads, restarts are
+applied on load); `addCloudStrategy` stores a strategy as the server sent it.
+The library summary carries the sync tally.
+
+Loading a strategy's queue is three listings (`pending/`, `attempt/`,
+`read/`) and two reads (`cloud`, `counters`), pinned in
+`test/cloud_store_test.dart`. The next attempt and read numbers are the
+largest of the counters row and every number any stored row mentions, so a
+restart never issues a number twice. The highest attempt row is never
+deleted, and an attempt row is deleted only once every op it sent is answered
+or gone on disk, so an op whose answer is unknown is always resent byte for
+byte under its client id. Loading applies a restart for the store's build.
+
+**What the decoder refuses.** An entry row that does not decode, comes from
+a newer version, holds work or a scope that does not fit its op, a merge
+without its field base, a negative attempt or read number, or an op id
+another entry holds, is kept as an unreadable entry: it is shown, counted in
+the tally, and only the user can discard it. An unreadable `cloud`,
+`counters`, attempt or evidence row stops the strategy (`CloudStateNotReadable`)
+instead of guessing, because guessing could resend an op under a new id.
+
+**What each event writes.** Only the rows that changed: an edit writes its
+entry row and the summary; a claim writes its attempt, the counters and the
+summary; an answer writes the answered entry (and the summary when the sync
+state moved); an unchanged page read writes one evidence row. Nothing
+rewrites the queue. `test/cloud_store_test.dart` pins each of these with a
+counting engine on a 200-entry queue.
+
+**Every commit under any subset of its rows landing.** An engine may answer
+a commit "unknown" after applying any part of it; the store then stops and
+the app reopens it. Each commit is chosen so any part is a state the queue
+can come back from:
+
+- Edits, claims, answers, transport failures, refusals, user actions and
+  read numbers are one commit each. Every row in it is a fact that stands
+  alone: an entry row is old or new, an attempt row is there or not, the
+  counters are taken as a maximum, the facts row is old or new. An attempt
+  row that landed without its claim being acted on is resent byte for byte;
+  one that did not land means nothing was sent, since the app sends only after
+  the claim is saved. These are whole under any subset, with no server read
+  needed.
+- A base arriving is three commits, in order: the base rows, then the
+  evidence, then the queue changes it allows (settled entries leave) with
+  the summary. Evidence is never ahead of the rows the user sees, and an
+  entry never leaves before the evidence that it landed. If the base rows
+  land in part, the visible rows may mix two server states until the next
+  read of that page rewrites them; that commit relies on the next server
+  read. Between the base rows and the queue changes a reader sees the new
+  base with every entry still applied on top; an entry the base already
+  shows applies as unchanged or is skipped, so nothing is drawn twice.
+- Adding a cloud strategy writes the `cloud` row alone first, then the base,
+  evidence, counters and summary. Base rows never exist without the marker,
+  so a strategy can never look local. A second commit that lands in part is
+  finished by adding the strategy again: the area holds the marker and no
+  queue, so the add rewrites the rows and deletes leftovers one by one.
+- The summary may be left behind by a commit that lands in part. It records
+  how many entry rows exist and the sum of their places; when the store opens
+  it lists each cloud strategy's `pending/` names and rebuilds any summary that
+  disagrees. A missing or extra entry row always changes that pair, since a
+  new entry's place is above every old one. A summary of an answer-unknown
+  claim says "sending" until the queue loads; loading refreshes it.
+
+`test/cloud_store_model_test.dart` runs the model through the store on the
+memory engine. About one commit in fourteen is answered unknown after a random
+subset of its rows lands, the store is reopened between any two commits now
+and then, and restarts change the client id and sometimes the build. After an
+edit in doubt the model reads the queue to learn whether it landed. At the end
+it drains without faults and requires the server to hold exactly the edits
+that landed. With no teammate the user is never asked anything but to retry
+exhausted retries. Taking out the rule for deleting attempt rows, or the
+maximum over stored numbers, makes it fail.
+
+**Store rules.**
+
+- A page read supplies content only: its items and lineup groups. The page
+  row and its settings come from the page list, and so does the core's
+  evidence about them.
+- A page missing from the page list is gone: its rows, settings and items
+  are deleted.
+- A page delete is checked against the page as the user saw it, the user's
+  own pending edits included.
+- After a page is copied while online, the server gives the copied items its
+  own ids. Until one read of the new page has arrived, the page draws the copy
+  from the local preview (ids made on this device) and every edit on that page
+  waits. After that read the copy's entry leaves and the page shows the
+  server's items. Edits that add to the page then go; an edit made in the wait
+  to a copied item names a preview id the server does not have, so it needs
+  the user (`ChangedUnseen`).
+
+Each rule has its test in `test/cloud_store_test.dart`.
 
 ### Cloud strategies: the queue
 
@@ -1090,7 +1191,9 @@ The queue stores:
   and hands it back with the result (`BaseArrived`);
 - base evidence, each piece the latest by read number, whatever the revisions
   say: the latest sighting of each row, the latest complete read of each page,
-  the latest page list, and pages not found;
+  the latest page list, and pages not found. Pages and their settings are
+  sighted only in the page list, the same reads that write the rows the user
+  sees;
 - facts about the strategy: deleted, edit access lost or confirmed after
   attempt N, upgrade asked of build X by attempt N.
 
@@ -1113,7 +1216,8 @@ exactly when they would be drawn the same.
 **A check compares what the user saw.** A revision-checked op is sent only
 when the base holds its row with the content it was authored against, and
 then carries the base's revision. An item the base holds on a page other than
-the one the edit was made on needs the user, merges included. If the content
+the one the edit was made on, or shows absent, needs the user, merges and
+last-writer-wins edits included. If the content
 differs, someone else changed something the user did not see, and the entry
 needs the user. With no evidence about the row yet, the entry waits for a
 read rather than assuming the row is absent. While an earlier own op on the

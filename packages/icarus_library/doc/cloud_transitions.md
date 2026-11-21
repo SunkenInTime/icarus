@@ -547,7 +547,7 @@ Starts as: refused: FailedOnServer(PAGE_DELETED), free.
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 4 |
 | base: header read as it is | x: refused: FailedOnServer(PAGE_DELETED), needs a fresh op id: refused on a deleted page that is live again |
-| base: page-a read with the item at revision 2 | x: refused: FailedOnServer(PAGE_DELETED), needs a fresh op id: refused on a deleted page that is live again |
+| base: page-a read with the item at revision 2 | unchanged |
 | base: page-a read from before the last answer | unchanged |
 | base: page-b gone | unchanged |
 | base: strategy gone | standing deletedOnServer |

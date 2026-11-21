@@ -264,7 +264,7 @@ final class Client {
 
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
-    arrive(headerOf(server));
+    arrive(headerReadOf(server));
     for (final page in pages ?? server.pages.map((page) => page.publicId)) {
       arrive(pageReadOf(server, page));
     }
@@ -279,7 +279,7 @@ StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
       final other => fail('expected $op to apply, got $other'),
     };
 
-HeaderRead headerOf(StrategyRowSet rows) => HeaderRead(
+HeaderRead headerReadOf(StrategyRowSet rows) => HeaderRead(
   strategy: rows.strategy,
   pages: rows.pages.toList(),
   settings: rows.settings.toList(),

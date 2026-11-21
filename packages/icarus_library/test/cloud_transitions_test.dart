@@ -329,7 +329,7 @@ final events = <String, QueueEvent Function(Client)>{
   'reissue x under a fresh id': (c) => Reissue(const {'x': 'x3'}),
   'read started': (c) => const ReadStarted(),
   'base: header read as it is': (c) =>
-      BaseArrived(headerOf(c.base), read: c.startRead(), startedAt: c.at),
+      BaseArrived(headerReadOf(c.base), read: c.startRead(), startedAt: c.at),
   'base: page-a read with the item at revision 2': (c) => BaseArrived(
     PageRead(
       page: page('page-a', sortIndex: 0),

@@ -197,7 +197,7 @@ final class Scenario {
   }
 
   ReadFact headerRead({int phase = 0}) => ReadFact(
-    headerOf(server),
+    headerReadOf(server),
     'read strategy at ${server.strategy.revision}',
     phase: phase,
   );
