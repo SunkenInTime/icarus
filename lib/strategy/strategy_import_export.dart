@@ -50,6 +50,7 @@ import 'package:icarus/providers/share_link_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:icarus/services/strategy_folders.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:uuid/uuid.dart';
 
 String sanitizeStrategyFileName(String input) {
@@ -739,7 +740,7 @@ class StrategyImportExportService {
       customColor: customColor,
       color: color,
     );
-    await Hive.box<Folder>(HiveBoxNames.foldersBox).put(folder.id, folder);
+    (await const LocalLibrary().addFolder(folder)).orThrow();
     if (parentFolderId == null) {
       _savedAtTopLevel.add((id: folder.id, isFolder: true));
     }
@@ -991,7 +992,7 @@ class StrategyImportExportService {
             .values
             .any((child) => child.parentID == folder.id);
     if (contents.issues.isNotEmpty && !holdsSomething()) {
-      await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folder.id);
+      (await const LocalLibrary().deleteFolder(folder.id)).orThrow();
       return contents;
     }
     return const ImportBatchResult(
@@ -2234,8 +2235,7 @@ class StrategyImportExportService {
 
       newStrategy = await StrategyMigrator.migrateLegacyData(newStrategy);
 
-      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-          .put(newStrategy.id, newStrategy);
+      (await const LocalLibrary().addStrategy(newStrategy)).orThrow();
       saved = true;
       if (targetFolderId == null) {
         _savedAtTopLevel.add((id: newStrategy.id, isFolder: false));

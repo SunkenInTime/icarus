@@ -34,6 +34,7 @@ import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/services/product_metrics.dart';
 import 'package:icarus/services/image_file_name.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:uuid/uuid.dart';
 
 /// The local strategies and folders waiting to move to the cloud or moving
@@ -377,7 +378,7 @@ class MoveToCloudNotifier extends Notifier<void> {
               folder.id,
               cloudId,
             );
-        await folders.delete(folder.id);
+        (await const LocalLibrary().deleteFolder(folder.id)).orThrow();
       } else if (!cloudHolds.contains(folder.id)) {
         try {
           await repository.deleteFolder(cloudId);
@@ -565,9 +566,7 @@ class MoveToCloudNotifier extends Notifier<void> {
       if (!unchanged() || ref.read(strategyProvider).strategyId == localId) {
         return _Outcome.movedChangedHere;
       }
-      final removal =
-          Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(localId);
-      await removal;
+      (await const LocalLibrary().deleteStrategy(localId)).orThrow();
       await ref.read(pinnedItemsProvider.notifier).replacePin(localId, cloudId);
       try {
         final images = await PlacedImageProvider.getImageFolder(localId);
