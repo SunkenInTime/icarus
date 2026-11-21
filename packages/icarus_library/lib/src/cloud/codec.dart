@@ -42,7 +42,10 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     'authored': switch (entry.authored) {
       final AuthoredRow row => _rowToJson(row),
       KeptOverServer(:final revision) => {'keptOverServer': revision},
-      AuthoredNoRow() => {'noRow': true},
+      AuthoredNoRow(:final produces) => {
+        'noRow': true,
+        if (produces != null) 'produces': _producedToJson(produces),
+      },
       AuthoredUnreadable() => {'unreadable': true},
     },
     'authoredIn': entry.authoredIn,
@@ -56,8 +59,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
       RefusedWith(:final refusal) => _refusalToJson(refusal),
     },
     if (entry.window is WindowPassed) 'windowPassed': true,
-    if (entry.ahead case final ahead?)
-      'ahead': {'revision': ?ahead.revision, 'whole': ahead.whole},
+    if (entry.behindOwn) 'behindOwn': true,
   },
   RetiredOp(:final opId, :final clientId, :final landing, :final stored) => {
     'version': cloudRowVersion,
@@ -84,7 +86,36 @@ Map<String, Object?> _rowToJson(AuthoredRow row) => {
   'revision': row.revision,
   'digest': row.digest,
   'payloadVersion': ?row.payloadVersion,
+  if (row.produces case final produces?) 'produces': _producedToJson(produces),
 };
+
+Map<String, Object?> _producedToJson(ProducedRow row) => {
+  'page': ?row.page,
+  'revision': row.revision,
+  'digest': row.digest,
+};
+
+Decoded<ProducedRow> _producedRow(Object? json) =>
+    JsonFields.read(json, 'produced row', (fields) {
+      final page = switch (fields.json['page']) {
+        null => null,
+        final String page => page,
+        _ => () {
+          fields.reject('an unreadable page');
+          return null;
+        }(),
+      };
+      final revision = fields.whole('revision');
+      if (revision < 1) fields.reject('revisions start at 1');
+      final digest = fields.string('digest');
+      return () => ProducedRow(page: page, revision: revision, digest: digest);
+    });
+
+ProducedRow? Function() _producesOfKey(JsonFields fields, String key) {
+  if (!fields.has(key)) return () => null;
+  final produces = fields.decoded(key, _producedRow);
+  return () => produces;
+}
 
 Map<String, Object?> _refusalToJson(ServerRefusal refusal) => switch (refusal) {
   RejectedByServer(:final reason, :final current) => {
@@ -156,19 +187,16 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
         if (op != null && scope != null && !_scopeFits(op, scope)) {
           fields.reject('a scope or field base that does not fit its op');
         }
-        final AnsweredAhead? ahead = switch (fields.json['ahead']) {
-          null => null,
-          {'whole': final bool whole, 'revision': final num revision}
-              when isSafeWhole(revision) =>
-            AnsweredAhead(revision.toInt(), whole: whole),
-          {'whole': false} => const AnsweredAhead.renumbered(),
+        final behindOwn = switch (fields.json['behindOwn']) {
+          null => false,
+          true => true,
           _ => () {
-            fields.reject('an unreadable answer ahead');
-            return null;
+            fields.reject('an unreadable flag');
+            return false;
           }(),
         };
         return () => PendingOp(
-          ahead: ahead,
+          behindOwn: behindOwn,
           place: place,
           work: work!,
           scope: scope!,
@@ -215,7 +243,10 @@ Decoded<Scope> _scope(Object? json) => JsonFields.read(json, 'scope', (fields) {
 
 Decoded<Authored> _authored(Object? json) =>
     JsonFields.read(json, 'authored', (fields) {
-      if (fields.json['noRow'] == true) return () => const AuthoredNoRow();
+      if (fields.json['noRow'] == true) {
+        final produces = _producesOfKey(fields, 'produces');
+        return () => AuthoredNoRow(produces: produces());
+      }
       if (fields.json['unreadable'] == true) {
         return () => const AuthoredUnreadable();
       }
@@ -233,10 +264,12 @@ AuthoredRow Function() _authoredRowOf(JsonFields fields) {
   final payloadVersion = fields.has('payloadVersion')
       ? fields.whole('payloadVersion')
       : null;
+  final produces = _producesOfKey(fields, 'produces');
   return () => AuthoredRow(
     revision: revision,
     digest: digest,
     payloadVersion: payloadVersion,
+    produces: produces(),
   );
 }
 
@@ -542,7 +575,8 @@ Map<String, Object?> landedToJson(LandedWork work) => {
   'revision': work.revision,
   'shape': work.shape.name,
   'own': work.own,
-  'at': _millis(work.at),
+  'firstSentAt': _millis(work.firstSentAt),
+  if (work.produced case final produced?) 'produced': _producedToJson(produced),
   if (work.shownWithout) 'shownWithout': true,
 };
 
@@ -566,7 +600,8 @@ CloudRowReading<LandedWork> landedFromText(
         return false;
       }(),
     };
-    final at = fields.time('at');
+    final firstSentAt = fields.time('firstSentAt');
+    final produced = _producesOfKey(fields, 'produced');
     final shownWithout = switch (fields.json['shownWithout']) {
       null => false,
       true => true,
@@ -577,7 +612,8 @@ CloudRowReading<LandedWork> landedFromText(
     };
     return () => LandedWork(
       own: own,
-      at: at,
+      firstSentAt: firstSentAt,
+      produced: produced(),
       shownWithout: shownWithout,
       attempt: attempt,
       position: position,
