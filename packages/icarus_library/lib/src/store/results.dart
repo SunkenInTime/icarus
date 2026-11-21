@@ -1,6 +1,8 @@
 import '../outcome.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
+import '../cloud/queue.dart';
+import '../cloud/sync.dart';
 import '../undo.dart';
 import 'engine.dart';
 import 'layout.dart';
@@ -104,6 +106,84 @@ final class StrategyNotReadable implements CommitRefusal, LibraryRefusal {
   String toString() => 'StrategyNotReadable($ref)';
 }
 
+final class QueueRefusal extends CommitRefusal {
+  const QueueRefusal(this.why);
+
+  final Inapplicable why;
+
+  @override
+  String toString() => 'QueueRefusal($why)';
+}
+
+final class UnreadableQueueRow {
+  const UnreadableQueueRow(this.ref, this.problem);
+
+  final StoredRowRef ref;
+  final String problem;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UnreadableQueueRow &&
+      other.ref == ref &&
+      other.problem == problem;
+
+  @override
+  int get hashCode => Object.hash(ref, problem);
+
+  @override
+  String toString() => 'UnreadableQueueRow($ref, $problem)';
+}
+
+final class QueueHeld implements CommitRefusal, LibraryRefusal {
+  QueueHeld(List<UnreadableQueueRow> rows) : rows = List.unmodifiable(rows);
+
+  final List<UnreadableQueueRow> rows;
+
+  @override
+  String toString() => 'QueueHeld($rows)';
+}
+
+final class UnsentWorkInArea extends LibraryRefusal {
+  const UnsentWorkInArea(this.ref);
+
+  final StrategyRef ref;
+
+  @override
+  String toString() => 'UnsentWorkInArea($ref)';
+}
+
+final class DiscardsUnsentWork {
+  const DiscardsUnsentWork();
+}
+
+final class NotACloudStrategy extends CommitRefusal {
+  const NotACloudStrategy(this.strategyPublicId);
+
+  final String strategyPublicId;
+
+  @override
+  String toString() => 'NotACloudStrategy($strategyPublicId)';
+}
+
+final class KeptInTheCloud extends LibraryRefusal {
+  const KeptInTheCloud(this.strategyPublicId);
+
+  final String strategyPublicId;
+
+  @override
+  String toString() => 'KeptInTheCloud($strategyPublicId)';
+}
+
+final class CloudWorkOutstanding extends LibraryRefusal {
+  const CloudWorkOutstanding(this.strategyPublicId, this.tally);
+
+  final String strategyPublicId;
+  final Tally tally;
+
+  @override
+  String toString() => 'CloudWorkOutstanding($strategyPublicId, $tally)';
+}
+
 final class CopyLeavesRowsBehind extends CommitRefusal {
   const CopyLeavesRowsBehind(this.pagePublicId);
 
@@ -194,6 +274,16 @@ final class StrategyEdited extends StoreChange {
   final String opId;
   final List<RowWrite> writes;
   final List<RowKey> removed;
+  final StrategySummary summary;
+}
+
+final class StrategyRefreshed extends StoreChange {
+  const StrategyRefreshed({
+    required this.strategyPublicId,
+    required this.summary,
+  });
+
+  final String strategyPublicId;
   final StrategySummary summary;
 }
 
@@ -324,6 +414,7 @@ final class StrategyContent {
     required Map<String, PageSettingsRow> settings,
     required Iterable<UnplacedRow> unplaced,
     required Iterable<ForeignName> foreignNames,
+    this.sync = const LocalStrategy(),
   }) : pages = List.unmodifiable(pages),
        settings = Map.unmodifiable(settings),
        unplaced = List.unmodifiable(unplaced),
@@ -334,6 +425,33 @@ final class StrategyContent {
   final Map<String, PageSettingsRow> settings;
   final List<UnplacedRow> unplaced;
   final List<ForeignName> foreignNames;
+  final StrategySync sync;
+}
+
+sealed class StrategySync {
+  const StrategySync();
+}
+
+final class LocalStrategy extends StrategySync {
+  const LocalStrategy();
+}
+
+final class CloudHeld extends StrategySync {
+  CloudHeld(List<UnreadableQueueRow> rows) : rows = List.unmodifiable(rows);
+
+  final List<UnreadableQueueRow> rows;
+}
+
+final class CloudStrategy extends StrategySync {
+  CloudStrategy({
+    required this.queue,
+    required Map<String, EntryView> views,
+    required this.tally,
+  }) : views = Map.unmodifiable(views);
+
+  final CloudQueue queue;
+  final Map<String, EntryView> views;
+  final Tally tally;
 }
 
 sealed class SettingsOnPage {
@@ -359,6 +477,7 @@ final class PageContent {
     required Iterable<UnknownKindRow> unknownKinds,
     required Iterable<UnplacedRow> unplaced,
     required Iterable<ForeignName> foreignNames,
+    this.sync = const LocalStrategy(),
   }) : elements = List.unmodifiable(elements),
        lineupGroups = List.unmodifiable(lineupGroups),
        unknownKinds = List.unmodifiable(unknownKinds),
@@ -372,6 +491,7 @@ final class PageContent {
   final List<UnknownKindRow> unknownKinds;
   final List<UnplacedRow> unplaced;
   final List<ForeignName> foreignNames;
+  final StrategySync sync;
 }
 
 sealed class LibraryState {
@@ -424,9 +544,10 @@ final class RemoveStrategy extends LibraryChange {
 }
 
 final class RemoveUnreadableStrategy extends LibraryChange {
-  const RemoveUnreadableStrategy(this.ref);
+  const RemoveUnreadableStrategy(this.ref, {this.discarding});
 
   final StrategyRef ref;
+  final DiscardsUnsentWork? discarding;
 }
 
 final class MoveStrategy extends LibraryChange {
@@ -499,3 +620,34 @@ final class StrategiesNotSearched extends StrategySearch {
 
   final StorageFailure failure;
 }
+
+sealed class ReportOutcome {
+  const ReportOutcome();
+}
+
+final class ReportApplied extends ReportOutcome {
+  ReportApplied(List<QueueEffect> effects)
+    : effects = List.unmodifiable(effects);
+
+  final List<QueueEffect> effects;
+}
+
+final class ReportNotApplicable extends ReportOutcome {
+  const ReportNotApplicable(this.why);
+
+  final Inapplicable why;
+}
+
+final class EditsGoThroughCommit extends ReportOutcome {
+  const EditsGoThroughCommit();
+}
+
+final class Recorded {
+  Recorded({required List<ReportOutcome> outcomes, required this.summary})
+    : outcomes = List.unmodifiable(outcomes);
+
+  final List<ReportOutcome> outcomes;
+  final StrategySummary summary;
+}
+
+typedef RecordResult = Saving<Recorded, CommitRefusal>;

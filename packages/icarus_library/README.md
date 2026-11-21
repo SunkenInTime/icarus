@@ -658,16 +658,15 @@ web.
   `CommitUnknown(AbortedForQuota)` all the same. No other kind of abort was
   staged in Firefox for real; that other aborts roll back whole is the spec's
   promise, checked here only with aborts the test itself starts.
-- **Why partly applied is tolerable today.** The web build is cloud only
-  (`lib/config/platform_policy.dart`: `webBeta` has
+- **Partly applied is not tolerable for cloud strategies.** The web build is
+  cloud only (`lib/config/platform_policy.dart`: `webBeta` has
   `allowsLocalLibrary: false`), so the web store holds a copy of server rows
-  plus edits waiting to be sent. That alone does not make it safe: a partly
-  applied commit can remove or replace an unsent edit, which the server has
-  never seen. So the cloud store's commits are required to be safe when any
-  subset of their row changes is applied, and its tests inject exactly that
-  ([#667](https://github.com/SunkenInTime/icarus/pull/667)). The store
-  reports the commit as `SaveInDoubt` carrying `AbortedForQuota` and shuts.
-  The day the web build allows a local library, this engine needs
+  plus edits waiting to be sent, and a partly applied commit can remove or
+  replace an unsent edit the server has never seen. The cloud store writes
+  each event list as one commit and relies on it landing whole or not at all
+  ([#667](https://github.com/SunkenInTime/icarus/pull/667)); it reports an
+  unknown commit as `SaveInDoubt` and reads the strategy back from disk.
+  Before the web build keeps cloud strategies in this store, this engine needs
   before-images to undo a partly kept commit, or it must not be used on the
   Firefox versions with this bug.
 - **Whatever is thrown is answered, and the lock always comes back.** A
@@ -1058,16 +1057,296 @@ new summary) and `LibraryEdited`. It fires after the save, once per `Saved`.
 A local commit never removes a row; `removed` is there for cloud strategies,
 where the server rejecting a pending op can take a row away.
 
-### Room for cloud strategies
+### Cloud strategies: storage
 
-Nothing for them is built here. What a local strategy reads and saves
-through does not have to change for them: a cloud strategy's base can live
-under the same names in its area and its pending ops under names of their
-own, read through a new call; `commit` keeps its signature and saves the op
-as a pending op; a change already names its op and can name rows that are
-gone; and one engine commit already writes any set of names across areas
-at once, so advancing the base and removing the acknowledged ops is one more
-commit.
+A cloud strategy lives in the same area as a local one. Its base (the rows
+the server last showed) sits under the usual names, and these rows sit
+beside it, each versioned and each read back before it is written:
+
+- `cloud`: the strategy's facts (deleted on the server, edit access lost or
+  confirmed after attempt N, upgrade asked of build X by attempt N). Its
+  presence is what marks the strategy as kept in the cloud.
+- `counters`: the next attempt and read numbers.
+- `pending/<place>`: one row per entry.
+- `attempt/<number>`: one row per attempt.
+- `read/header` and `read/page/<page digest>`: base evidence. The header
+  row holds the latest page list and the sightings of the strategy, its pages
+  and their settings; each page row holds that page's latest complete read,
+  whether it was found missing, and the sightings of items last seen on it.
+  On load every sighting is taken from the row with the latest read, so the
+  evidence is exactly what the core held.
+
+`readStrategy` and `readPage` return the visible rows (the base with the
+queue applied) and the queue's views and tally; `commit` adds an edit to the
+queue; `record` takes every other event (claims, answers, reads, restarts are
+applied on load); `addCloudStrategy` stores a strategy as the server sent it.
+The library summary carries the sync tally.
+
+Loading a strategy's queue is three listings (`pending/`, `attempt/`,
+`read/`) and two reads (`cloud`, `counters`), pinned in
+`test/cloud_store_test.dart`. The next attempt and read numbers are the
+largest of the counters row and every number any stored row mentions, so a
+restart never issues a number twice. An attempt row is deleted only once
+every op it sent is answered or gone, in the same commit that writes the
+counters, so an op whose answer is unknown is always resent byte for byte
+under its client id. Loading a strategy's queue for the first time since the
+store opened applies a restart for the store's build; adding a strategy keeps
+the queue it built, so the reads it was added from still count.
+
+**A queue row this build cannot read holds the whole strategy.** An entry
+row that does not decode, comes from a newer version, holds work or a scope
+that does not fit its op, a merge without its field base, a negative attempt
+or read number, or an op id another entry holds, and any `cloud`, `counters`,
+attempt or evidence row that does not decode, puts the strategy in one sealed
+state: held. Its cached rows still read and draw, and `readStrategy` returns
+them with `CloudHeld`, which lists each row it could not read by name
+(`UnreadableQueueRow`). Nothing is recorded, sent, settled, pruned or
+rewritten: `commit` and `record` are refused with `QueueHeld`, and the
+summary's tally counts the strategy as holding unsent work this version
+cannot read, so the list and the sync face say so. Guessing could resend an
+op under a new id or drop work the user believes is saved. A newer build
+reads it; otherwise the only way out is `discardUnreadableQueue(id,
+const DiscardsUnsentWork())`, which deletes the queue rows and keeps the
+cached base. `RemoveUnreadableStrategy` refuses an area that holds any queue
+row with `UnsentWorkInArea` unless it is given the same acknowledgement, and
+adding a cloud strategy is refused while it is held.
+
+**One event list, one commit.** `commit` writes one edit and `record` takes a
+list of events; each call is one engine commit holding everything the events
+changed: the base rows a read was accepted for, every queue row that differs
+from what is on disk (entries, attempts, facts, counters), every evidence row
+that differs, and the summary. A commit either lands whole or, when the
+engine answers unknown, the store forgets its cached state of that strategy
+and reads it back from disk before the next call. A read writes rows only
+when the queue accepted it as evidence: a response older than one already
+taken writes nothing, and a page read for a page whose row is not stored is
+not applicable and writes nothing, evidence included. A response saying the
+strategy is gone deletes nothing; it records the standing. An edit writes its
+entry row and the summary; a claim its attempt, the counters and the summary;
+an answer the answered entry, the facts row when it is the first answer from
+its attempt (an accepted batch confirms edit access), the attempt's deletion
+once all its ops are answered, and the summary only when the sync state
+moved; an unchanged page read one evidence row. `test/cloud_store_test.dart`
+pins these with a counting engine on a 200-entry queue.
+
+`test/cloud_store_model_test.dart` runs the model through the store on the
+memory engine. After every successful commit it opens a fresh store over the
+same engine and requires the whole state to equal what the first store holds:
+entries, attempts, facts, counters, every evidence group, the base rows and
+the summary. About one commit in fourteen is answered unknown (landed or
+not) and one in twenty-eight refused, the store is reopened
+between commits now and then, restarts change the client id and sometimes the
+build, and it also writes rows from a newer version (the strategy is held and
+the disk does not change), copies a page and then edits and deletes the copy,
+deletes the strategy on the server, delivers reads out of order, and reads
+the list before the strategy. At the end it drains without faults against a
+server model with teammates and requires the server to hold exactly the edits
+that landed, revisions included. Writing evidence only when no entries are
+left makes the disk check fail on the first seed.
+
+**Store rules.**
+
+- A page read supplies content only: its items and lineup groups. The page
+  row and its settings come from the page list, and so does the core's
+  evidence about them.
+- A page missing from the page list is gone: its rows, settings and items
+  are deleted.
+- A page delete is checked against the page as the user saw it, the user's
+  own pending edits included.
+- A page copy reaches the queue as ordinary adds: the page, its settings when
+  they differ from the defaults, its elements and lineup groups, each under the id the copy id scheme derives on
+  this device, roots kept. The queue never sees an id the server chose.
+
+Each rule has its test in `test/cloud_store_test.dart`.
+
+### Cloud strategies: the queue
+
+`lib/src/cloud/` holds a cloud strategy's pending ops as a list of entries and
+`transition(queue, event, now:)`, a pure function from an event to the next
+queue and its effects. Storage comes separately.
+
+**Facts are stored; everything else is derived.** An entry stores:
+- its op, with the field base of a merge always recorded;
+- its scope: the page it was made on, both pages of a move, or the whole strategy;
+- what it was authored against: the revision and digest of the row the user
+  saw, no row, or a row with no readable revision;
+- its send policy, which decides only whether a merge's base goes on the wire;
+- the server's answer once known, with the number of the last read started
+  before it arrived and the time its op was first sent;
+- whether the server's 30-day memory of its op id has passed, recorded by
+  the first event that sees the deadline passed.
+
+The queue stores:
+- numbered attempts, each with the ops it sent, its outcome and the number of
+  the last read started before it was claimed;
+- numbered reads: the app asks for a number (`ReadStarted`) before each read
+  and hands it back with the result (`BaseArrived`);
+- base evidence, each piece the latest by read number, whatever the revisions
+  say: the latest sighting of each row, the latest complete read of each page,
+  the latest page list, and pages not found. Pages and their settings are
+  sighted only in the page list, the same reads that write the rows the user
+  sees;
+- facts about the strategy: deleted, edit access lost or confirmed after
+  attempt N, upgrade asked of build X by attempt N.
+
+A row missing from a complete read of the page it was last seen on, or a page
+missing from the latest page list, is absent as of that read. Only rows of the
+kinds the user can see feed a digest: an item's page, place, whether it is
+live, and its drawn data with field defaults filled in; never the revision,
+timestamps or who deleted it. A strategy's digest covers what strategy ops are
+checked against: its own fields and its live pages in order.
+
+`entryViews(queue, now)` derives each entry's state, holds and reason to need
+the user, and `standingOf` the strategy's standing, from those facts on every
+event. `test/cloud_permutation_test.dart` delivers every order of a run's
+answers, transport failures, reads, page and strategy removals, a page
+deleted and restored, access and upgrade evidence and a clock advance, then a
+restart and reads after it, and requires one final queue and the same
+effects. `test/cloud_digest_test.dart` requires two rows to share a digest
+exactly when they would be drawn the same.
+
+**Which read counts.** One rule, `startedAfter(read, marker)`: a read counts
+for something it waits on only when its number is above the last read number
+issued before that thing (an attempt's answer, a restart, a reconnect).
+Numbers, never the clock. A page read whose page answers gone is a read.
+
+**A check compares what the user saw.** A revision-checked op is sent only
+when the base holds its row with the content it was authored against, and
+then carries the base's revision. After a restart or reconnect it waits until
+a counted read of its page (`AwaitingRead`); `readsNeeded` lists the pages
+and whether the page list is needed, so a reconnect with work on three pages
+asks for those three pages and the page list. A field edit sent as a field
+merge does not wait: that is the drag, and it is what users do first after
+opening. An item the base holds on a page other than the one the edit was
+made on, or shows absent, needs the user, merges and last-writer-wins edits
+included. If the content differs, someone else changed something the user
+did not see, and the entry needs the user. While an earlier own op on the row
+is accepted but not yet in the base, the entry waits for the base. A field
+edit keeps its relaxed check only when the row's payload version equals the
+one it was written against; otherwise it is checked as a whole write (content
+compared, or held), never rebased.
+
+**The server's 30-day memory.** An op whose answer is unknown is sent again
+exactly as it was first sent, so the server replays its first answer, until
+the server's memory (`serverRemembersAnswersFor`, beside `DAYS_30_MS` in
+`convex/maintenance.ts`) passes. One predicate, `pastServerMemory(since,
+now)`, decides it, and equality counts as passed. The deadline is scheduled
+like a retry time; the first event at or after it records `Forgotten` on the
+entry with the last read number issued, so a clock that runs backwards never
+makes the op replayable again. After that it waits for a read started after
+the fact. If that read holds the row at the revision and content the op was
+authored against, and the op has a revision-checked form, it needs a fresh op
+id (`NeedsFreshId`), and `Reissue` sends it in that checked form under the
+new id. Otherwise it needs the user.
+
+**Gone and live again are ordered by read.** An accepted entry settles when a
+counted read started after its answer shows its row, or when the base reaches
+the revision it was accepted at. An applied move to another page settles only
+when counted evidence shows the item on the destination page. A page delete
+whose answer was lost settles when a read started after its latest attempt
+says the page is gone. Work behind an accepted page delete waits until a
+later read shows that page gone (it then needs the user) or live again. A
+refusal because the page was deleted is reissued under a fresh id once a read
+started after the refusal shows the page live.
+
+**A put-back over this device's own delete.** An undo of a delete is an add
+over the tombstone, made against the tombstone as drawn. It waits behind the
+delete while the delete is unsent, claimed, unknown or refused. Once the
+delete is answered applied by this device (or the server reports a resend
+whose first send applied) at exactly the revision the put-back names, the
+put-back waits for a read started after that answer: if it shows the
+tombstone at that revision with the content the put-back was made against,
+the put-back goes as an add over it; anything else needs the user. The same
+30-day predicate runs from the delete's answer. A delete the server reports
+someone else already made leaves the put-back needing the user. The delete
+stays in the queue until the put-back right after it has been sent, so the
+put-back can still see whose write the delete was.
+
+**What it rules out that today's queue does not.**
+
+- [#631](https://github.com/SunkenInTime/icarus/issues/631): an undo after a
+  lost answer never removes the op that may have landed; the op is resent as
+  it was first sent and the undo waits behind it.
+- [#645](https://github.com/SunkenInTime/icarus/issues/645): an op id the
+  queue holds is refused.
+- [#646](https://github.com/SunkenInTime/icarus/issues/646): Use cloud removes
+  only the refused op, and later edits of that item are checked against the
+  cloud version.
+- [#668](https://github.com/SunkenInTime/icarus/issues/668): a delete and its
+  undo never tell the user a teammate deleted the item when none did, and never
+  silently overwrite one who did. A put-back made against a row the server did
+  not hold (the server merged a teammate's move the canvas had not drawn)
+  needs the user even when the revision matches, because the content differs.
+  A put-back and a later redo never cancel each other: the add is not a plain
+  never-sent add, so the redo is sent, or waits visibly behind a put-back that
+  needs the user. A put-back that outlives the server's 30-day memory does not
+  re-create an item whose id has a new lifetime at a low revision: if the
+  delete's answer was lost, the delete needs the user; if it was known, the
+  read shows another revision and the put-back needs the user.
+
+**A dependency is satisfied by an applied answer.** An entry waits for an
+earlier entry it depends on (the same row, its page's add or delete, a delete's page, page changes against renumbering) until that one
+is answered applied, never because both are in one batch. A refused prerequisite
+keeps its dependants waiting, and the sync state says so.
+
+**Attempts are numbered by the queue.** A claim is attempt N, increasing and
+stored; an answer counts only from an attempt that held the op, and an empty
+claim is refused. A `CloudQueue` cannot be built with two entries under one id
+or an attempt number that could be issued again. Op ids are minted by the
+caller and must never repeat: the app uses UUID v4 (`package:uuid`). The queue
+refuses an id it holds, but it cannot remember ids it has removed.
+
+**Folding.** One rule: a field edit folds into an earlier field edit of the
+same row only when the earlier one is unsent and unclaimed, both name exactly
+the same fields (and both carry a field base or neither does), and nothing
+else for that row is queued between them. The folded edit keeps the earlier
+one's place, base and what it was authored against, with the later one's
+values. Nothing else folds: whole writes, adds and deletes stay separate
+entries. The fold is not exact in two corners, both pinned in
+`test/cloud_fold_test.dart` against `applyOp`, including after a teammate's
+change and behind a claimed edit that is applied or refused:
+
+- The server already holds the first edit's value (another device set it).
+  Sending both would be a no-op then an applied edit; the folded edit is a
+  field conflict and is held for the user with the server's value and the
+  user's value both kept.
+- The server already holds the later edit's value where the first would
+  conflict. Sending both would hold the first; the folded edit lands, and the
+  server ends with exactly the user's last value for every named field.
+
+Every other case gives what sending both gives. `test/cloud_burst_test.dart`
+measures bursts of 2 to 20 moves, rotations and resizes of one item, claimed
+part-way.
+
+**Cost.** A queue indexes its attempts by op id and its entries by row, page
+and the dependencies above (`lib/src/cloud/derivation.dart`). Each queue
+carries its views and tally forward from the queue before it: an event
+recomputes the entries it touched, the entries whose base evidence it changed,
+any whose retry time or 30-day window has passed, and the later entries that
+depend on one whose view changed. A page read or a header read touches every
+entry it gives evidence about; a restart or a lost connection touches them
+all. `test/cloud_cost_test.dart` counts the views derived and index entries
+visited for an edit, a claim, an answer and a transport failure, with the
+views and tally the app asks for afterwards, and requires the same count on
+queues of 100, 1,000 and 3,000 entries. It also requires a page read and the
+drawing of that page to do the same work with 10 or 1,000 entries waiting on
+another page, and a reconnect with work on three pages to ask for those three
+pages and the page list. Copying the entry list and maps into the next
+immutable queue still grows with length. The model test derives
+the views and tally afresh after every step and requires them to equal the
+carried ones.
+
+**What the migration must guarantee.** Moving a strategy's work from the
+outbox records shipped builds wrote into this queue is a later phase, not
+part of this package yet. An open requirement on it: a strategy only moves to
+the new queue once its old outbox holds no copy that was sent and not
+answered, because expanding such a copy under new ids could make the page
+twice.
+
+**The sync state** (`Tally`, `syncStateOf`, `accountSyncState`) is derived
+from the entries and the standing. An empty queue reads as all saved only in
+good standing. The app combines it with what only it knows: media uploads,
+text drafts, whether the session is ready.
 
 ### Measuring it
 

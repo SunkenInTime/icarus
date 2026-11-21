@@ -34,8 +34,9 @@ decodes a payload into a typed item at the edge of the editor.
 
 - The wire protocol and the server. The ops are the fourteen the server
   already takes, with the same op IDs, revisions and field merge.
-- The outbox record on disk. Pending ops keep that format, so work queued by
-  a shipped build is still sent after an update.
+- Work a shipped build queued. Its outbox records stay where they are and are
+  still sent after an update, until the migration moves that strategy's work
+  into the store's queue.
 - .ica files and library backups.
 - The Hive boxes shipped builds wrote. A migration copies them into the store
   and leaves them in place. While older desktop builds can still be installed
@@ -97,8 +98,10 @@ each local strategy, the Hive record it last wrote or read. At startup:
 - Both changed: neither is discarded. The store keeps its strategy, the Hive
   record comes in beside it as a copy, and the user is told which is which.
 
-Cloud work an older build queued is in outbox records, whose format the
-store shares, so it is sent as before.
+Cloud work an older build queued is in outbox records. The store's queue
+keeps its own rows in a different format (one row per entry, attempt and
+evidence group), so the migration moves a strategy's outbox into it; until
+then that work is sent as before.
 
 ## Considered options
 

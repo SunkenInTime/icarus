@@ -16,6 +16,15 @@ import 'layout.dart';
 import 'loaded_strategy.dart';
 import 'results.dart';
 import 'summary.dart';
+import '../cloud/codec.dart';
+import '../cloud/events.dart';
+import '../cloud/op_facts.dart';
+import '../cloud/pending.dart';
+import '../cloud/queue.dart';
+import '../cloud/sync.dart';
+import '../cloud/visible.dart';
+
+part 'cloud_store.dart';
 
 final class CanRead {
   const CanRead({required this.element, required this.lineupGroup});
@@ -224,7 +233,7 @@ final class _RebuildNotRead extends _Rebuilt {
 }
 
 final class LibraryStore {
-  LibraryStore._(StorageLease lease, this._canRead, this._clock) {
+  LibraryStore._(StorageLease lease, this._canRead, this._clock, this._build) {
     _lease = _WatchedLease(
       lease,
       () => _shut(const StoreStopped(LeaseEnded())),
@@ -235,6 +244,7 @@ final class LibraryStore {
     StorageEngine engine, {
     required CanRead canRead,
     DateTime Function() clock = _now,
+    String build = '',
   }) async {
     switch (await engine.lease()) {
       case HeldByAnotherWriter():
@@ -246,7 +256,7 @@ final class LibraryStore {
           await lease.release();
           return StoreNotOpened(EngineTooSmall(lease.maxKeyLength));
         }
-        final store = LibraryStore._(lease, canRead, clock);
+        final store = LibraryStore._(lease, canRead, clock, build);
         final foreign = <ForeignName>[];
         switch ((await store._readLibrary(foreign), store._settle())) {
           case (Done(), Done()):
@@ -262,6 +272,7 @@ final class LibraryStore {
   late final _WatchedLease _lease;
   final CanRead _canRead;
   final DateTime Function() _clock;
+  final String _build;
   _State _state = const _Ready();
   Future<void> _tail = Future.value();
   Future<Releasing>? _released;
@@ -271,6 +282,8 @@ final class LibraryStore {
   final _folders = <String, FolderRow>{};
   final _unplaced = <String, UnplacedRow>{};
   final _strategies = <String, LoadedStrategy>{};
+  final _queues = <String, _LoadedQueue>{};
+  final _held = <String, List<UnreadableQueueRow>>{};
   final _unsaved = <String>{};
   final _changes = StreamController<StoreChange>.broadcast();
 
@@ -335,6 +348,12 @@ final class LibraryStore {
     };
     return switch (name) {
       SummaryName() ||
+      CloudName() ||
+      CountersName() ||
+      PendingName() ||
+      AttemptName() ||
+      HeaderReadName() ||
+      PageReadName() ||
       UnknownKindName() ||
       ForeignName() => Unplaced(null, '${name.name} holds no row'),
       FolderName(:final digest) => FolderRow.parse(
@@ -406,6 +425,12 @@ final class LibraryStore {
         return Done(Delete(area, name));
       case _ClearArea(:final area):
         return Done(ClearArea(area));
+      case _PutEntry() ||
+          _PutAttempt() ||
+          _PutFacts() ||
+          _PutCounters() ||
+          _PutGroup():
+        return _cloudChange(write);
     }
   }
 
@@ -577,7 +602,7 @@ final class LibraryStore {
 
   void _refresh(LoadedStrategy strategy) {
     final current = _summaries[strategy.digest];
-    if (current == null) return;
+    if (current == null || strategy.keeping == Keeping.cloud) return;
     if (strategy.header case HeaderPlaced(row: final ReadableStrategy header)) {
       _keepInMemory(
         strategy.digest,
@@ -611,6 +636,23 @@ final class LibraryStore {
       :final failure,
     )) {
       return _RebuildNotRead(failure);
+    }
+    if (strategy.keeping == Keeping.cloud) {
+      return switch (await _queueOf(strategy)) {
+        _QueueLoaded(:final queue) => switch (await _cloudSummaryAll(
+          strategy,
+          header,
+          queue.current,
+        )) {
+          Done(:final value) => _RebuiltSummary(value),
+          StorageFailed(:final failure) => _RebuildNotRead(failure),
+        },
+        _QueueHeld(:final rows) => _RebuiltSummary(
+          _summaryOf(strategy, header, const {}).withSync(_heldSync(rows)),
+        ),
+        _QueueNotRead(:final failure) => _RebuildNotRead(failure),
+        _QueueRefused() => _HeaderMissing(StrategyRef(strategy.area)),
+      };
     }
     return _RebuiltSummary(_summaryOf(strategy, header, const {}));
   }
@@ -810,7 +852,23 @@ final class LibraryStore {
         if (_settle() case StorageFailed(:final failure)) {
           return NotRead(failure);
         }
-        return switch (await _strategy(strategyPublicId)) {
+        final found = await _strategy(strategyPublicId);
+        if (found case Found(
+          value: final loaded,
+        ) when loaded.keeping == Keeping.cloud) {
+          return switch (await _openCloud(strategyPublicId)) {
+            final _CloudReady cloud => await _readCloudStrategy(cloud),
+            final _CloudHeld cloud => await _readCloudStrategy(cloud),
+            _CloudUnread(:final failure) => NotRead(failure),
+            _CloudRefused() => InUnreadableStrategy(
+              UnreadableStrategyListing(
+                ref: StrategyRef(loaded.area),
+                header: loaded.header,
+              ),
+            ),
+          };
+        }
+        return switch (found) {
           Found(value: final strategy) => Found(
             StrategyContent(
               strategy: switch (strategy.header) {
@@ -846,6 +904,19 @@ final class LibraryStore {
         return NotRead(failure);
       case InUnreadableStrategy(:final listing):
         return InUnreadableStrategy(listing);
+    }
+    if (strategy.keeping == Keeping.cloud) {
+      return switch (await _openCloud(strategyPublicId)) {
+        final _CloudReady cloud => await _readCloudPage(cloud, pagePublicId),
+        final _CloudHeld cloud => await _readCloudPage(cloud, pagePublicId),
+        _CloudUnread(:final failure) => NotRead(failure),
+        _CloudRefused() => InUnreadableStrategy(
+          UnreadableStrategyListing(
+            ref: StrategyRef(strategy.area),
+            header: strategy.header,
+          ),
+        ),
+      };
     }
     final page = strategy.page(pagePublicId);
     if (page == null) return const NotFound();
@@ -934,6 +1005,8 @@ final class LibraryStore {
       return NotUnloaded(failure);
     }
     _strategies.remove(digestOf(strategyPublicId));
+    _queues.remove(digestOf(strategyPublicId));
+    _held.remove(digestOf(strategyPublicId));
     return const Unloaded();
   });
 
@@ -1074,6 +1147,14 @@ final class LibraryStore {
           case HeaderUnplaced() || HeaderAbsent():
             return Refused(NoSuchStrategy(strategyPublicId));
         }
+        if (strategy.keeping == Keeping.cloud) {
+          return switch (await _openCloud(strategyPublicId)) {
+            final _CloudReady cloud => await _commitCloud(cloud, op),
+            _CloudHeld(:final rows) => Refused(QueueHeld(rows)),
+            _CloudUnread(:final failure) => NotSaved(failure),
+            _CloudRefused(:final refusal) => Refused(refusal),
+          };
+        }
         if (await _loadPages(strategy, _pagesFor(op, strategy))
             case StorageFailed(:final failure)) {
           return NotSaved(failure);
@@ -1162,6 +1243,52 @@ final class LibraryStore {
         if (result case Saved(:final value)) _emit(value.change);
         return result;
       });
+
+  Future<RecordResult> record(
+    String strategyPublicId,
+    List<QueueEvent> events,
+  ) {
+    final asked = List<QueueEvent>.of(events);
+    return _inTurn(() async {
+      if (_settle() case StorageFailed(:final failure)) {
+        return NotSaved(failure);
+      }
+      return _recordCloud(strategyPublicId, asked);
+    });
+  }
+
+  Future<Saving<StrategySummary, LibraryRefusal>> addCloudStrategy(
+    HeaderRead header,
+    List<PageRead> pages,
+  ) {
+    final asked = List<PageRead>.of(pages);
+    return _inTurn(() async {
+      if (_settle() case StorageFailed(:final failure)) {
+        return NotSaved(failure);
+      }
+      final result = await _addCloud(header, asked);
+      if (result case Saved(:final value)) {
+        _emit(
+          LibraryEdited(
+            summaries: [value],
+            removedStrategies: const [],
+            removedUnreadableStrategies: const [],
+            folders: const [],
+            removedFolders: const [],
+          ),
+        );
+      }
+      return result;
+    });
+  }
+
+  Future<Saving<StrategySummary, CommitRefusal>> discardUnreadableQueue(
+    String strategyPublicId,
+    DiscardsUnsentWork acknowledged,
+  ) => _inTurn(() async {
+    if (_settle() case StorageFailed(:final failure)) return NotSaved(failure);
+    return _discardHeld(strategyPublicId);
+  });
 
   Future<RebuildResult> rebuildSummary(String strategyPublicId) =>
       _inTurn(() async {
@@ -1431,6 +1558,11 @@ final class _LibraryEdit {
             _removedUnreadable.containsKey(digest)) {
           return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
         }
+        if (_summaryWithId(strategyPublicId) case StrategySummary(
+          sync: KeptInCloud(:final tally),
+        ) when tally.total > 0) {
+          return _Stop(Refused(CloudWorkOutstanding(strategyPublicId, tally)));
+        }
         switch (await _header(strategyPublicId)) {
           case NotRead(:final failure):
             return _Stop(NotSaved(failure));
@@ -1443,13 +1575,28 @@ final class _LibraryEdit {
         }
         _removeArea(digest);
         _removed[digest] = strategyPublicId;
-      case RemoveUnreadableStrategy(:final ref):
+      case RemoveUnreadableStrategy(:final ref, :final discarding):
         final digest = switch (strategyAreaNamed(ref.area)) {
           StrategyArea(:final digest) => digest,
           null => null,
         };
         if (digest == null || !_unreadable.containsKey(digest)) {
           return _Stop(Refused(NoSuchUnreadableStrategy(ref)));
+        }
+        if (discarding == null) {
+          switch (await _store._lease.keys(ref.area, '')) {
+            case StorageFailed(:final failure):
+              return _Stop(NotSaved(failure));
+            case Done(:final value)
+                when value.any(
+                  (key) =>
+                      key.startsWith(pendingPrefix) ||
+                      key.startsWith(attemptPrefix),
+                ):
+              return _Stop(Refused(UnsentWorkInArea(ref)));
+            case Done():
+              break;
+          }
         }
         _removeArea(digest);
         _removedUnreadable[digest] = ref;
@@ -1458,6 +1605,11 @@ final class _LibraryEdit {
         if (_removed.containsKey(digest) ||
             _removedUnreadable.containsKey(digest)) {
           return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
+        }
+        if (_summaryWithId(strategyPublicId) case StrategySummary(
+          sync: KeptInCloud(),
+        )) {
+          return _Stop(Refused(KeptInTheCloud(strategyPublicId)));
         }
         if (folderPublicId != null) {
           if (_filingRefusal(folderPublicId, _folders) case final refusal?) {
@@ -1610,6 +1762,8 @@ final class _LibraryEdit {
     for (final digest in {..._removed.keys, ..._removedUnreadable.keys}) {
       _store._summaries.remove(digest);
       _store._strategies.remove(digest);
+      _store._queues.remove(digest);
+      _store._held.remove(digest);
       _store._unreadable.remove(digest);
     }
     _store._summaries.addAll(_putSummaries);
