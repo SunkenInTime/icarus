@@ -251,7 +251,6 @@ void main() {
           const StrategyPageSessionState(
             activePageId: 'page-1',
             availablePageIds: ['page-1'],
-            transitionState: PageTransitionState.idle,
             isApplyingPage: false,
           ),
         );
@@ -336,7 +335,6 @@ void main() {
           const StrategyPageSessionState(
             activePageId: 'page-1',
             availablePageIds: ['page-1', 'page-2'],
-            transitionState: PageTransitionState.idle,
             isApplyingPage: false,
           ),
         );

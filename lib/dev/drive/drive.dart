@@ -42,7 +42,7 @@
 //   {"hoverWords": t}                  {"dragWords": t, "by": [dx, dy]}
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
 //                                      held: a shot before letting go
-//   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
+//   {"scrollAt": [x, y, dy]}           {"key": name, "times": n?, "every": ms?, "settle": ms?}  {"keyCombo": [names]}
 //   {"panScroll": [x, y, dy, ms]}      a trackpad swipe of dy over ms, then
 //                                      lets go so the list flings, as on a Mac
 //   {"holdKey": name}  {"letGoKey": name}  a key held across other steps
@@ -95,7 +95,7 @@
 //                                      next steps
 //   {"watchFrames": true}  {"watchFrames": false, "tag": t}
 //                                      keeps frames coming, then logs the worst
-//                                      gap between two of them
+//                                      gap between two of them; {"watchSwitches": true} logs every page transition phase and active page
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?,
 //                                       "during": step?}  shots while step runs, each logged with the page transition's progress
@@ -195,8 +195,7 @@ import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart'
-    hide PageTransitionState;
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -354,7 +353,7 @@ Future<void> _checkItems() async {
   }
 }
 
-Future<PageTransitionState> _shot(String path) async {
+Future<PageTransition> _shot(String path) async {
   await _frames();
   final transition = appProviderContainer.read(transitionProvider);
   final view = RendererBinding.instance.renderViews.first;
@@ -700,6 +699,7 @@ const _keys = {
   'digit3': (LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3, '3'),
   'keyA': (LogicalKeyboardKey.keyA, PhysicalKeyboardKey.keyA, 'a'),
   'keyC': (LogicalKeyboardKey.keyC, PhysicalKeyboardKey.keyC, 'c'),
+  'keyD': (LogicalKeyboardKey.keyD, PhysicalKeyboardKey.keyD, 'd'),
   'keyE': (LogicalKeyboardKey.keyE, PhysicalKeyboardKey.keyE, 'e'),
   'keyF': (LogicalKeyboardKey.keyF, PhysicalKeyboardKey.keyF, 'f'),
   'keyQ': (LogicalKeyboardKey.keyQ, PhysicalKeyboardKey.keyQ, 'q'),
@@ -1100,10 +1100,19 @@ Future<void> _run(Map<String, dynamic> step) async {
         Duration(milliseconds: v[3].toInt()),
       );
     case 'key':
-      await _expectKeyFocus();
-      _press([value as String]);
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      await _frames();
+      for (var i = 0; i < ((step['times'] ?? 1) as int); i++) {
+        if (i > 0) {
+          await Future<void>.delayed(
+            Duration(milliseconds: (step['every'] ?? 100) as int),
+          );
+        }
+        await _expectKeyFocus();
+        _press([value as String]);
+      }
+      await Future<void>.delayed(
+        Duration(milliseconds: (step['settle'] ?? 300) as int),
+      );
+      if (step['settle'] != 0) await _frames();
     case 'keyCombo':
       await _expectKeyFocus();
       _press((value as List).cast<String>());
@@ -1500,13 +1509,39 @@ Future<void> _run(Map<String, dynamic> step) async {
       for (var i = 0; i < ((step['count'] ?? 10) as int); i++) {
         final file = '$value-${i.toString().padLeft(3, '0')}.png';
         final transition = await _shot(file);
-        _log('BURST $file ${transition.phase.name} '
-            '${transition.progress.toStringAsFixed(3)}');
+        _log('BURST $file ${switch (transition) {
+          NoPageTransition() => 'idle 1.000',
+          PreparingPageTransition() => 'preparing 0.000',
+          AnimatingPageTransition(:final progress) =>
+            'animating ${progress.toStringAsFixed(3)}',
+        }}');
         await Future<void>.delayed(
           Duration(milliseconds: (step['every'] ?? 100) as int),
         );
       }
       if (await during case final Object failure) throw failure;
+    case 'watchSwitches':
+      String phaseOf(PageTransition transition) => switch (transition) {
+            NoPageTransition() => 'idle',
+            PreparingPageTransition(:final owner, :final drawings) =>
+              'preparing switch=${identityHashCode(owner)} '
+                  '${owner.sourcePageId}->${owner.targetPageId} '
+                  'drawings=${drawings.name}',
+            AnimatingPageTransition(:final owner, :final fadeInDrawings) =>
+              'animating switch=${identityHashCode(owner)} '
+                  '${owner.sourcePageId}->${owner.targetPageId} '
+                  'fade=$fadeInDrawings',
+          };
+      c.listen(transitionProvider, (before, now) {
+        final phase = phaseOf(now);
+        if (before == null || phaseOf(before) != phase) {
+          _log('TRANSITION $phase');
+        }
+      });
+      c.listen(
+        strategyPageSessionProvider.select((state) => state.activePageId),
+        (_, page) => _log('ACTIVE PAGE $page'),
+      );
     case 'slowMotion':
       timeDilation = (value as num).toDouble();
     case 'logLineups':

@@ -54,12 +54,6 @@ import 'package:icarus/strategy/lineup_group_changes.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 
-enum PageTransitionState {
-  idle,
-  animatingForward,
-  animatingBackward,
-}
-
 enum PageSwitchDirection { next, previous }
 
 /// The page on screen, which a teammate deleted while it held work the server
@@ -98,14 +92,12 @@ class StrategyPageSessionState {
   const StrategyPageSessionState({
     required this.activePageId,
     required this.availablePageIds,
-    required this.transitionState,
     required this.isApplyingPage,
     this.deletedPage,
   });
 
   final String? activePageId;
   final List<String> availablePageIds;
-  final PageTransitionState transitionState;
   final bool isApplyingPage;
 
   /// Set until the user has read that their unsaved work on the deleted page
@@ -116,7 +108,6 @@ class StrategyPageSessionState {
     String? activePageId,
     bool clearActivePageId = false,
     List<String>? availablePageIds,
-    PageTransitionState? transitionState,
     bool? isApplyingPage,
     DeletedPage? deletedPage,
     bool clearDeletedPage = false,
@@ -125,7 +116,6 @@ class StrategyPageSessionState {
       activePageId:
           clearActivePageId ? null : (activePageId ?? this.activePageId),
       availablePageIds: availablePageIds ?? this.availablePageIds,
-      transitionState: transitionState ?? this.transitionState,
       isApplyingPage: isApplyingPage ?? this.isApplyingPage,
       deletedPage: clearDeletedPage ? null : (deletedPage ?? this.deletedPage),
     );
@@ -182,6 +172,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _remoteChangeWaitsForEditor = false;
   bool _disposed = false;
   int _pageSessionGeneration = 0;
+  Future<void> _pageBeingInstalled = Future.value();
 
   /// Pages whose delete from this device the server applied, with the
   /// strategy revision the delete made. See [_deletedHere].
@@ -293,7 +284,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return const StrategyPageSessionState(
       activePageId: null,
       availablePageIds: [],
-      transitionState: PageTransitionState.idle,
       isApplyingPage: false,
     );
   }
@@ -335,9 +325,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // gave way (see [OpenAttempt]).
     final opening = attempt ?? OpenAttempt.unchallenged;
     _pageSessionGeneration++;
-    // As in reset: a switch this supersedes leaves its transition here.
-    ref.read(transitionProvider.notifier).complete();
-    state = state.copyWith(transitionState: PageTransitionState.idle);
+    ref.read(transitionProvider.notifier).clear();
     final pageSource = _resolvePageSource(strategyId, source);
     final pageIds = await opening.wait(pageSource.listPageIds());
     // Drawn from this computer's copy, the page the copy could show is the
@@ -361,7 +349,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       availablePageIds: pageIds,
       activePageId: selected,
       clearActivePageId: selected == null,
-      transitionState: PageTransitionState.idle,
       isApplyingPage: false,
       clearDeletedPage: true,
     );
@@ -389,14 +376,23 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (pageId == state.activePageId || _deletedPageHoldsWork()) {
       return;
     }
-    // An animated switch still waiting gives way to this one and leaves its
-    // transition (see _PageSwitch.superseded): this switch ends it.
-    if (state.transitionState != PageTransitionState.idle) {
-      ref.read(transitionProvider.notifier).complete();
-      state = state.copyWith(transitionState: PageTransitionState.idle);
-    }
-    final outcome = await _switchToPage(pageId, animated: false);
+    ref.read(transitionProvider.notifier).clear();
+    final outcome = await _switchToPage(_beginSwitch(pageId), animated: false);
     if (outcome == _PageSwitch.stayed) _resumePendingRemoteReapplyIfPossible();
+  }
+
+  PageSwitch _beginSwitch(String pageId) {
+    final generation = ++_pageSessionGeneration;
+    final strategyId = ref.read(strategyProvider).strategyId;
+    return PageSwitch(
+      sourcePageId: state.activePageId,
+      targetPageId: pageId,
+      attempt: OpenAttempt(
+        () =>
+            generation == _pageSessionGeneration &&
+            ref.read(strategyProvider).strategyId == strategyId,
+      ),
+    );
   }
 
   Future<void> setActivePageAnimated(
@@ -407,107 +403,57 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (pageId == state.activePageId || _deletedPageHoldsWork()) {
       return;
     }
-    final previousPageId = state.activePageId;
-
-    final transitionState = ref.read(transitionProvider);
     final transitionNotifier = ref.read(transitionProvider.notifier);
-    if (transitionState.active ||
-        transitionState.phase == PageTransitionPhase.preparing) {
-      transitionNotifier.complete();
-    }
-
-    state = state.copyWith(
-      transitionState: direction == PageTransitionDirection.forward
-          ? PageTransitionState.animatingForward
-          : PageTransitionState.animatingBackward,
-    );
-
     final startSettings = ref.read(strategySettingsProvider);
     final previous = _snapshotAllPlaced();
     final previousDoors = _changedDoors();
-    final sourcePageId = state.activePageId;
+    final pageSwitch = _beginSwitch(pageId);
     transitionNotifier.prepare(
-      previous.values.toList(),
+      pageSwitch,
       direction: direction,
-      startAgentSize: startSettings.agentSize,
-      startAbilitySize: startSettings.abilitySize,
-      sourcePageId: sourcePageId,
-      targetPageId: pageId,
+      leaving: previous.values.toList(),
+      agentSize: startSettings.agentSize,
+      abilitySize: startSettings.abilitySize,
       fromDoors: previousDoors,
     );
 
     var fadeInDrawings = false;
+    final _PageSwitch outcome;
     try {
-      final outcome = await _switchToPage(
-        pageId,
+      outcome = await _switchToPage(
+        pageSwitch,
         animated: true,
-        direction: direction,
         onTargetRead: (target) {
           fadeInDrawings = TransitionPlanner.drawingsChanged(
             ref.read(drawingProvider).elements,
             target.drawings,
           );
           transitionNotifier.targetRead(
-            pageId,
+            pageSwitch,
             fadeInDrawings: fadeInDrawings,
           );
         },
       );
-      // A newer switch took over while this one waited: the transition is
-      // that switch's now.
-      if (outcome == _PageSwitch.superseded) return;
-      if (outcome == _PageSwitch.stayed) {
-        transitionNotifier.complete();
-        state = state.copyWith(transitionState: PageTransitionState.idle);
-        _resumePendingRemoteReapplyIfPossible();
-        return;
-      }
     } catch (error, stackTrace) {
-      transitionNotifier.complete();
-      final strategyState = ref.read(strategyProvider);
-      state = state.copyWith(
-        activePageId: previousPageId,
-        clearActivePageId: previousPageId == null,
-        transitionState: PageTransitionState.idle,
-      );
-      ref.read(activePageLiveSyncProvider.notifier).setContext(
-            strategyPublicId: strategyState.strategyId,
-            activePageId: previousPageId,
-          );
-      if (strategyState.source == StrategySource.cloud) {
-        try {
-          await ref
-              .read(remoteEditorSnapshotProvider.notifier)
-              .setActivePage(previousPageId);
-          final strategyId = strategyState.strategyId;
-          if (strategyId != null && previousPageId != null) {
-            final snapshot = _lastAppliedRemoteSnapshot;
-            if (snapshot != null &&
-                snapshot.header.publicId == strategyId &&
-                snapshot.activePage?.page.publicId == previousPageId) {
-              ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
-                    strategyPublicId: strategyId,
-                    pageId: previousPageId,
-                    snapshot: snapshot,
-                  );
-            }
-          }
-        } catch (_) {
-          // Preserve the original switch failure; the live read can recover
-          // independently without leaving the transition state stuck.
-        }
-      }
-      _resumePendingRemoteReapplyIfPossible();
+      if (!pageSwitch.isCurrent) return;
+      _endTransition(pageSwitch);
       Error.throwWithStackTrace(error, stackTrace);
+    }
+    switch (outcome) {
+      case _PageSwitch.superseded:
+        return;
+      case _PageSwitch.stayed:
+        _endTransition(pageSwitch);
+        return;
+      case _PageSwitch.switched:
+        break;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final preliminaryNext = _snapshotAllPlaced();
       final preliminaryEntries = _diffToTransitions(previous, preliminaryNext);
       final doorsMove = !setEquals(previousDoors, _changedDoors());
       if (preliminaryEntries.isEmpty && !fadeInDrawings && !doorsMove) {
-        transitionNotifier.complete();
-        state = state.copyWith(transitionState: PageTransitionState.idle);
-        _resumePendingRemoteReapplyIfPossible();
+        _endTransition(pageSwitch);
         return;
       }
 
@@ -516,8 +462,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             entry.kind == TransitionKind.move &&
             entry.visualWidget is PlacedAgentNode,
       );
-      // Agent routes load the small movement mesh independently of sightlines.
-      // Unchanged agents, abilities and drawings need no route initialization.
       NavigationGeometryMap? transitionNavigation;
       final map = ref.read(mapProvider).currentMap;
       if (needsAgentRouting) {
@@ -525,48 +469,75 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           transitionNavigation =
               await ref.read(navigationGeometryProvider(map).future);
         } on Object {
-          // The provider reports the failure. Agents then move straight.
+          transitionNavigation = null;
         }
-      }
-
-      final currentTransition = ref.read(transitionProvider);
-      if (currentTransition.phase != PageTransitionPhase.preparing ||
-          currentTransition.sourcePageId != sourcePageId ||
-          currentTransition.targetPageId != pageId) {
-        return;
       }
 
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(previous, next);
       if (entries.isEmpty && !fadeInDrawings && !doorsMove) {
-        transitionNotifier.complete();
-        state = state.copyWith(transitionState: PageTransitionState.idle);
-        _resumePendingRemoteReapplyIfPossible();
+        _endTransition(pageSwitch);
         return;
       }
 
       final endSettings = ref.read(strategySettingsProvider);
-      final agentPaths = AgentTransitionPathPlanner.plan(
+      final started = transitionNotifier.start(
+        pageSwitch,
         entries: entries,
-        navigation: transitionNavigation,
-        coordinateSystem: CoordinateSystem.instance,
-      );
-      transitionNotifier.start(
-        entries,
-        duration: duration,
-        direction: direction,
-        startAgentSize: startSettings.agentSize,
+        agentPaths: AgentTransitionPathPlanner.plan(
+          entries: entries,
+          navigation: transitionNavigation,
+          coordinateSystem: CoordinateSystem.instance,
+        ),
         endAgentSize: endSettings.agentSize,
-        startAbilitySize: startSettings.abilitySize,
         endAbilitySize: endSettings.abilitySize,
-        sourcePageId: sourcePageId,
-        targetPageId: pageId,
-        agentPaths: agentPaths,
-        fadeInDrawings: fadeInDrawings,
+        duration: duration,
       );
-      state = state.copyWith(transitionState: PageTransitionState.idle);
-      _resumePendingRemoteReapplyIfPossible();
+      if (started) _resumePendingRemoteReapplyIfPossible();
     });
+  }
+
+  void _endTransition(PageSwitch pageSwitch) {
+    if (ref.read(transitionProvider.notifier).finish(pageSwitch)) {
+      _resumePendingRemoteReapplyIfPossible();
+    }
+  }
+
+  Future<void> _restoreLeftPage(PageSwitch pageSwitch) async {
+    final previousPageId = pageSwitch.sourcePageId;
+    final strategyState = ref.read(strategyProvider);
+    state = state.copyWith(
+      activePageId: previousPageId,
+      clearActivePageId: previousPageId == null,
+    );
+    ref.read(activePageLiveSyncProvider.notifier).setContext(
+          strategyPublicId: strategyState.strategyId,
+          activePageId: previousPageId,
+        );
+    if (strategyState.source == StrategySource.cloud) {
+      try {
+        await ref
+            .read(remoteEditorSnapshotProvider.notifier)
+            .setActivePage(previousPageId);
+        final strategyId = strategyState.strategyId;
+        if (strategyId != null && previousPageId != null) {
+          final snapshot = _lastAppliedRemoteSnapshot;
+          if (snapshot != null &&
+              snapshot.header.publicId == strategyId &&
+              snapshot.activePage?.page.publicId == previousPageId) {
+            ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+                  strategyPublicId: strategyId,
+                  pageId: previousPageId,
+                  snapshot: snapshot,
+                );
+          }
+        }
+      } catch (_) {
+        // Preserve the original switch failure; the live read can recover
+        // independently without leaving the transition state stuck.
+      }
+    }
+    _resumePendingRemoteReapplyIfPossible();
   }
 
   /// The pages in order, as the pages bar lists them: a cloud strategy's
@@ -1088,13 +1059,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   void reset() {
     _remoteChangeWaitsForEditor = false;
     _pageSessionGeneration++;
-    // A switch still waiting gives way without ending its transition (see
-    // _PageSwitch.superseded): ending the session ends it.
-    ref.read(transitionProvider.notifier).complete();
+    ref.read(transitionProvider.notifier).clear();
     state = const StrategyPageSessionState(
       activePageId: null,
       availablePageIds: [],
-      transitionState: PageTransitionState.idle,
       isApplyingPage: false,
     );
     _lastHydratedRemotePageKey = null;
@@ -1110,38 +1078,111 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   /// not be handed over, if a teammate deleted it while its work was being
   /// flushed, or if the server can't send the cloud page asked for.
   Future<_PageSwitch> _switchToPage(
-    String pageId, {
+    PageSwitch pageSwitch, {
     required bool animated,
-    PageTransitionDirection? direction,
     void Function(StrategyEditorPageData target)? onTargetRead,
   }) async {
-    final generation = ++_pageSessionGeneration;
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
     final source = strategyState.source;
     if (strategyId == null || source == null) {
-      return _PageSwitch.switched;
+      return _PageSwitch.stayed;
     }
-
+    final attempt = pageSwitch.attempt;
+    final pageId = pageSwitch.targetPageId;
     final pageSource = _resolvePageSource(strategyId, source);
     if (source == StrategySource.cloud) {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
     }
-    bool superseded() =>
-        generation != _pageSessionGeneration ||
-        ref.read(strategyProvider).strategyId != strategyId;
+    final RemotePageSnapshot? target;
+    try {
+      await attempt.wait(_pageBeingInstalled);
+      if (await _handOverLeftPage(pageSource, source, attempt) == false) {
+        return _PageSwitch.stayed;
+      }
+      if (source == StrategySource.cloud) {
+        await attempt.wait(ref
+            .read(strategyOpQueueProvider.notifier)
+            .flushNow()
+            .timeout(const Duration(milliseconds: 750), onTimeout: () {}));
+        // The page may have been deleted while its work was flushed.
+        if (_deletedPageHoldsWork()) return _PageSwitch.stayed;
+        // Read the page before leaving this one. Leaving first dropped this
+        // page's server copy, and with it every later edit's way into the
+        // queue, whenever the read then failed (offline, say).
+        try {
+          target = await attempt.wait(
+            ref.read(remoteEditorSnapshotProvider.notifier).fetchPage(pageId),
+          );
+        } on OpenGaveWay {
+          rethrow;
+        } catch (error) {
+          if (!attempt.isCurrent) return _PageSwitch.superseded;
+          AppErrorReporter.reportInfo(
+            'Page $pageId could not be read; staying on this page: $error',
+            source: 'strategy_page_session',
+          );
+          _showPageUnreachable(pageId);
+          return _PageSwitch.stayed;
+        }
+        // Or deleted while the page was read.
+        if (_deletedPageHoldsWork()) return _PageSwitch.stayed;
+      } else {
+        target = null;
+      }
+      if (ref.read(strategySaveStateProvider).isDirty &&
+          await _handOverLeftPage(pageSource, source, attempt) == false) {
+        return _PageSwitch.stayed;
+      }
+    } on OpenGaveWay {
+      return _PageSwitch.superseded;
+    }
+    final installed = Completer<void>();
+    _pageBeingInstalled = installed.future;
+    try {
+      if (target != null) {
+        state = state.copyWith(activePageId: pageId);
+        ref.read(activePageLiveSyncProvider.notifier).setContext(
+              strategyPublicId: strategyId,
+              activePageId: pageId,
+            );
+        await ref
+            .read(remoteEditorSnapshotProvider.notifier)
+            .setActivePage(pageId, fetched: target);
+      }
+      final pageData = await pageSource.loadPage(pageId);
+      onTargetRead?.call(pageData);
+      await _applyLoadedPageData(
+        pageData,
+        strategyId: strategyId,
+        source: source,
+        loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+      );
+      if (animated) _updateHydrationBookkeeping(pageData.pageId);
+      return _PageSwitch.switched;
+    } catch (_) {
+      await _restoreLeftPage(pageSwitch);
+      rethrow;
+    } finally {
+      installed.complete();
+    }
+  }
+
+  Future<bool> _handOverLeftPage(
+    StrategyPageSource pageSource,
+    StrategySource source,
+    OpenAttempt attempt,
+  ) async {
     final leftPageId = state.activePageId;
-    final handover = await pageSource.flushCurrentPage();
-    if (superseded()) return _PageSwitch.superseded;
-    switch (handover) {
+    switch (await attempt.wait(pageSource.flushCurrentPage())) {
       case HeldOnCanvas(reason: HeldReason.pageMissing)
           when source == StrategySource.local:
-        break;
+        return true;
       case HeldOnCanvas()
           when source == StrategySource.cloud &&
               leftPageId != null &&
               _deletedOnThisDevice(leftPageId):
-        break;
+        return true;
       case HeldOnCanvas(:final reason):
         AppErrorReporter.reportInfo(
           'The edits on page $leftPageId could not be saved '
@@ -1149,57 +1190,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           source: 'strategy_page_session',
         );
         _showToast(ref.read(l10nProvider).strategyMsgPageEditsNotSaved);
-        return _PageSwitch.stayed;
+        return false;
       case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
-        break;
+        return true;
     }
-    if (source == StrategySource.cloud) {
-      await ref
-          .read(strategyOpQueueProvider.notifier)
-          .flushNow()
-          .timeout(const Duration(milliseconds: 750), onTimeout: () {});
-      // The page may have been deleted while its work was flushed.
-      if (_deletedPageHoldsWork()) return _PageSwitch.stayed;
-      // Read the page before leaving this one. Leaving first dropped this
-      // page's server copy, and with it every later edit's way into the
-      // queue, whenever the read then failed (offline, say).
-      final remote = ref.read(remoteEditorSnapshotProvider.notifier);
-      final RemotePageSnapshot target;
-      try {
-        target = await remote.fetchPage(pageId);
-      } catch (error) {
-        if (superseded()) return _PageSwitch.superseded;
-        AppErrorReporter.reportInfo(
-          'Page $pageId could not be read; staying on this page: $error',
-          source: 'strategy_page_session',
-        );
-        _showPageUnreachable(pageId);
-        return _PageSwitch.stayed;
-      }
-      if (superseded()) return _PageSwitch.superseded;
-      // Or deleted while the page was read.
-      if (_deletedPageHoldsWork()) return _PageSwitch.stayed;
-      state = state.copyWith(activePageId: pageId);
-      ref.read(activePageLiveSyncProvider.notifier).setContext(
-            strategyPublicId: strategyId,
-            activePageId: pageId,
-          );
-      await remote.setActivePage(pageId, fetched: target);
-    }
-
-    final pageData = await pageSource.loadPage(pageId);
-    onTargetRead?.call(pageData);
-    await _applyLoadedPageData(
-      pageData,
-      strategyId: strategyId,
-      source: source,
-      loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
-    );
-
-    if (animated && direction != null) {
-      _updateHydrationBookkeeping(pageData.pageId);
-    }
-    return _PageSwitch.switched;
   }
 
   /// Says the page the user asked for could not be read, by the name the
@@ -1441,7 +1435,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return !_isResolvingConflicts &&
         state.deletedPage == null &&
         !state.isApplyingPage &&
-        state.transitionState == PageTransitionState.idle &&
+        ref.read(transitionProvider) is! PreparingPageTransition &&
         ref.read(editorHeldEntitiesProvider) != null &&
         !saveState.isDirty &&
         !saveState.isSaving &&
@@ -1463,7 +1457,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   void _checkActivePageOnServer() {
     if (_isResolvingConflicts ||
         state.isApplyingPage ||
-        state.transitionState != PageTransitionState.idle ||
+        ref.read(transitionProvider) is PreparingPageTransition ||
         ref.read(editorBusyProvider)) {
       return;
     }
