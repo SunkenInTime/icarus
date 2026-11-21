@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../field_rules.dart';
 import '../json.dart';
 import '../ops.dart';
 import '../rows.dart';
@@ -369,33 +370,89 @@ String _digest(Object? json) => sha256
     .toString()
     .substring(0, 32);
 
-Object? _without(Object? json, Set<String> keys) => switch (json) {
-  final Map<String, Object?> map => {
-    for (final MapEntry(:key, :value) in map.entries)
-      if (!keys.contains(key)) key: value,
+Object? _drawn(Object? data) => switch (withFieldDefaults(data)) {
+  final Map<String, Object?> object => {
+    for (final MapEntry(:key, :value) in object.entries)
+      if (value != null) key: _drawn(value),
   },
-  _ => json,
+  final List<Object?> list => [for (final item in list) _drawn(item)],
+  final other => other,
 };
 
-String rowDigest(Row row) => _digest(switch (row) {
-  PageRow() => _without(row.toJson(), const {'revision', 'sortIndex'}),
-  _ => _without(row.toJson(), const {'revision'}),
-});
+Object? _visiblePart(Row row) => switch (row) {
+  ReadableElementRow(:final pagePublicId, :final payload, :final sortIndex) => {
+    'page': pagePublicId,
+    'sortIndex': sortIndex,
+    'live': row is LiveElement,
+    'kind': payload.kind.name,
+    'data': _drawn(payload.data),
+  },
+  ReadableLineupGroupRow(
+    :final pagePublicId,
+    :final payload,
+    :final sortIndex,
+  ) =>
+    {
+      'page': pagePublicId,
+      'sortIndex': sortIndex,
+      'live': row is LiveLineupGroup,
+      'data': _drawn(payload.data),
+    },
+  ReadablePageRow(:final name, :final isAutoNamed, :final isAttack) => {
+    'name': name,
+    'isAutoNamed': isAutoNamed ?? false,
+    'isAttack': isAttack,
+    'live': row is LivePage,
+  },
+  ReadablePageSettings(:final settings) => {
+    'agentSize': settings?.agentSize,
+    'abilitySize': settings?.abilitySize,
+    'useNeutralTeamColors': settings?.useNeutralTeamColors,
+  },
+  ReadableStrategy() => _strategyPart(row),
+  UnreadableStrategy(:final stored) ||
+  UnreadablePage(:final stored) ||
+  UnreadablePageSettings(:final stored) ||
+  UnreadableElement(:final stored) ||
+  UnreadableLineupGroup(:final stored) => {'unreadable': plainJson(stored)},
+  FolderRow() => null,
+};
 
-String strategyDigest(StrategyRow strategy, Iterable<PageRow> pages) =>
-    _digest({
-      'strategy': _without(strategy.toJson(), const {
-        'revision',
-        'updatedAt',
-        'createdAt',
-      }),
-      'pages': [
-        for (final page in [
-          ...pages,
-        ]..sort((a, b) => a.publicId.compareTo(b.publicId)))
-          _without(page.toJson(), const {'revision'}),
-      ],
-    });
+Map<String, Object?> _strategyPart(ReadableStrategy strategy) => {
+  'name': strategy.name,
+  'mapData': strategy.mapData,
+  'themeProfileId': strategy.themeProfileId,
+  'themeOverridePalette': strategy.themeOverridePalette?.toJson(),
+};
+
+String rowDigest(Row row) => _digest(_visiblePart(row));
+
+String strategyDigest(StrategyRow strategy, Iterable<PageRow> pages) {
+  final live =
+      [
+        for (final page in pages)
+          if (page is LivePage) page,
+      ]..sort(
+        (a, b) => a.sortIndex != b.sortIndex
+            ? a.sortIndex.compareTo(b.sortIndex)
+            : a.publicId.compareTo(b.publicId),
+      );
+  return _digest({
+    'strategy': switch (strategy) {
+      final ReadableStrategy readable => _strategyPart(readable),
+      UnreadableStrategy(:final stored) => {'unreadable': plainJson(stored)},
+    },
+    'pages': [
+      for (final page in live)
+        {
+          'id': page.publicId,
+          'name': page.name,
+          'isAutoNamed': page.isAutoNamed ?? false,
+          'isAttack': page.isAttack,
+        },
+    ],
+  });
+}
 
 int? revisionOfRow(Row row) => switch (row) {
   ReadableStrategy(:final revision) ||
@@ -440,7 +497,8 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
       revision: revision,
       digest: rowDigest(row),
     ),
-    _ => const AuthoredNoRow(),
+    (_?, null) => const AuthoredUnreadable(),
+    (null, _) => const AuthoredNoRow(),
   };
 }
 
@@ -471,4 +529,54 @@ SeenPage seenPageIn(StrategyRows rows, String pagePublicId) {
       ], pagePublicId),
     ),
   );
+}
+
+StrategyOp withFieldBase(StrategyRows rows, StrategyOp op) {
+  Map<String, Object?> baseOf(
+    List<String> fields,
+    JsonObject data,
+    int sortIndex,
+  ) => {
+    for (final field in fields)
+      if (field == placeField)
+        field: sortIndex
+      else if (data.containsKey(field))
+        field: plainJson(data[field]),
+  };
+  return switch (op) {
+    ElementPatchOp(merge: FieldMerge(base: null, :final fields)) => switch (rows
+        .element(op.elementPublicId)) {
+      ReadableElementRow(:final payload, :final sortIndex) => ElementPatchOp(
+        opId: op.opId,
+        elementPublicId: op.elementPublicId,
+        expectedElementRevision: op.expectedElementRevision,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        sortIndex: op.sortIndex,
+        merge: FieldMerge(
+          fields: fields,
+          base: baseOf(fields, payload.data, sortIndex),
+        ),
+      ),
+      _ => op,
+    },
+    LineupGroupPatchOp(merge: FieldMerge(base: null, :final fields)) =>
+      switch (rows.lineupGroup(op.lineupPublicId)) {
+        ReadableLineupGroupRow(:final payload, :final sortIndex) =>
+          LineupGroupPatchOp(
+            opId: op.opId,
+            lineupPublicId: op.lineupPublicId,
+            expectedLineupRevision: op.expectedLineupRevision,
+            pagePublicId: op.pagePublicId,
+            payload: op.payload,
+            sortIndex: op.sortIndex,
+            merge: FieldMerge(
+              fields: fields,
+              base: baseOf(fields, payload.data, sortIndex),
+            ),
+          ),
+        _ => op,
+      },
+    _ => op,
+  };
 }

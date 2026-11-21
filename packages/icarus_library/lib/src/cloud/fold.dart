@@ -1,4 +1,6 @@
+import '../json.dart';
 import '../ops.dart';
+import '../payloads.dart';
 
 sealed class Folding {
   const Folding();
@@ -21,19 +23,50 @@ final class KeptApart extends Folding {
 int? _placeOf(int? first, int? then, FieldMerge? merge) =>
     merge != null && !merge.fields.contains(placeField) ? first : then ?? first;
 
+Map<String, Object?> _named(
+  JsonObject into,
+  JsonObject from,
+  Iterable<String> fields,
+) {
+  final data = into.toJson();
+  for (final field in fields) {
+    if (field == placeField) continue;
+    if (from.containsKey(field)) {
+      data[field] = plainJson(from[field]);
+    } else {
+      data.remove(field);
+    }
+  }
+  return data;
+}
+
+ElementPayload _elementPayload(
+  ElementPayload into,
+  ElementPayload from,
+  FieldMerge? merge,
+) => merge == null
+    ? from
+    : into.withData(_named(into.data, from.data, merge.fields));
+
+LineupGroupPayload _lineupPayload(
+  LineupGroupPayload into,
+  LineupGroupPayload from,
+  FieldMerge? merge,
+) => merge == null
+    ? from
+    : into.withData(_named(into.data, from.data, merge.fields));
+
 Folding fold(StrategyOp first, StrategyOp then) {
   final opId = then.opId;
   switch ((first, then)) {
     case (final ElementAddOp a, final ElementPatchOp b)
-        when (b.merge == null || b.merge!.base == null) &&
-            b.payload != null &&
-            b.pagePublicId == null:
+        when b.payload != null && b.pagePublicId == null:
       return FoldedOp(
         ElementAddOp(
           opId: opId,
           elementPublicId: a.elementPublicId,
           pagePublicId: a.pagePublicId,
-          payload: b.payload!,
+          payload: _elementPayload(a.payload, b.payload!, b.merge),
           sortIndex: _placeOf(a.sortIndex, b.sortIndex, b.merge)!,
           expectedElementRevision: a.expectedElementRevision,
         ),
@@ -60,6 +93,7 @@ Folding fold(StrategyOp first, StrategyOp then) {
         when a.merge != null &&
             b.merge != null &&
             (a.merge!.base == null) == (b.merge!.base == null) &&
+            a.merge!.fields.toSet().containsAll(b.merge!.fields) &&
             b.payload != null &&
             a.pagePublicId == null &&
             b.pagePublicId == null:
@@ -68,27 +102,13 @@ Folding fold(StrategyOp first, StrategyOp then) {
           opId: opId,
           elementPublicId: a.elementPublicId,
           expectedElementRevision: a.expectedElementRevision,
-          payload: b.payload,
-          sortIndex: switch ((a.merge, b.merge)) {
-            (final first?, final then?)
-                when !first.fields.contains(placeField) &&
-                    !then.fields.contains(placeField) =>
-              b.sortIndex ?? a.sortIndex,
-            (final first?, _) when first.fields.contains(placeField) =>
-              _placeOf(a.sortIndex, b.sortIndex, b.merge),
-            _ => b.sortIndex ?? a.sortIndex,
-          },
-          merge: FieldMerge(
-            fields: {...a.merge!.fields, ...b.merge!.fields}.toList(),
-            base: switch ((a.merge!.base, b.merge!.base)) {
-              (final first?, final then?) => {
-                for (final MapEntry(:key, :value) in then.entries)
-                  if (!a.merge!.fields.contains(key)) key: value,
-                ...first.toJson(),
-              },
-              _ => null,
-            },
-          ),
+          payload: a.payload == null
+              ? b.payload
+              : _elementPayload(a.payload!, b.payload!, b.merge),
+          sortIndex: b.merge!.fields.contains(placeField)
+              ? b.sortIndex ?? a.sortIndex
+              : a.sortIndex,
+          merge: a.merge,
         ),
       );
     case (final LineupGroupAddOp a, final LineupGroupPatchOp b)
@@ -98,7 +118,7 @@ Folding fold(StrategyOp first, StrategyOp then) {
           opId: opId,
           lineupPublicId: a.lineupPublicId,
           pagePublicId: a.pagePublicId,
-          payload: b.payload!,
+          payload: _lineupPayload(a.payload, b.payload!, b.merge),
           sortIndex: b.sortIndex ?? a.sortIndex,
           expectedLineupRevision: a.expectedLineupRevision,
         ),

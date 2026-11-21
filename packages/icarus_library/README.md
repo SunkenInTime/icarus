@@ -1370,39 +1370,64 @@ commit.
 queue and its effects. Storage comes separately.
 
 **Facts are stored; everything else is derived.** An entry stores:
-- its op;
+- its op, with the field base of a merge always recorded;
 - its scope: the page it was made on, both pages of a move, or the whole strategy;
-- what it was authored against: the revision and a digest of the row the user saw;
-- its send policy;
-- the server's answer once known.
+- what it was authored against: the revision and digest of the row the user
+  saw, no row, or a row with no readable revision;
+- its send policy, which decides only whether a merge's base goes on the wire;
+- the server's answer once known, with the number of the last read started
+  before it arrived.
 
 The queue stores:
 - numbered attempts, each with the ops it sent and its outcome;
-- the newest base evidence per row, where a higher revision wins;
-- facts about the strategy: deleted, edit access lost or confirmed after attempt N, upgrade asked of build X;
-- facts about pages: content read, not found.
+- numbered reads: the app asks for a number (`ReadStarted`) before each read
+  and hands it back with the result (`BaseArrived`);
+- base evidence, each piece the latest by read number, whatever the revisions
+  say: the latest sighting of each row, the latest complete read of each page,
+  the latest page list, and pages not found;
+- facts about the strategy: deleted, edit access lost or confirmed after
+  attempt N, upgrade asked of build X by attempt N.
 
-`viewsOf(queue, now)` derives each entry's state, holds and reason to need the
-user, and `standingOf` the strategy's standing, from those facts on every
-event. Evidence from an older attempt never overrides newer evidence, so the
-same facts give the same queue in any order. `test/cloud_permutation_test.dart`
-delivers every causal order of a run's answers, reads, page and strategy
-removals and access and upgrade evidence and requires one final queue. Reads
-of one page, and strategy reads, keep their order, as a subscription delivers
-them.
+A row missing from a complete read of the page it was last seen on, or a page
+missing from the latest page list, is absent as of that read. Only rows of the
+kinds the user can see feed a digest: an item's page, place, whether it is
+live, and its drawn data with field defaults filled in; never the revision,
+timestamps or who deleted it. A strategy's digest covers what strategy ops are
+checked against: its own fields and its live pages in order.
+
+`entryViews(queue, now)` derives each entry's state, holds and reason to need
+the user, and `standingOf` the strategy's standing, from those facts on every
+event. `test/cloud_permutation_test.dart` delivers every order of a run's
+answers, transport failures, reads, page and strategy removals, a page
+deleted and restored, access and upgrade evidence and a clock advance, then a
+restart and reads after it, and requires one final queue and the same
+effects. `test/cloud_digest_test.dart` requires two rows to share a digest
+exactly when they would be drawn the same.
 
 **A check compares what the user saw.** A revision-checked op is sent only
 when the base holds its row with the content it was authored against, and
-then carries the base's revision. If the content differs, someone else changed
-something the user did not see, and the entry needs the user. While an earlier
-own op on the row is accepted but not yet in the base, the entry waits for the
-base. A field-checked op (a merge with a base) and a last-writer-wins op go
-without the content check. An op whose answer is unknown is sent again exactly
-as it was first sent, so the server replays its first answer, until the server's
+then carries the base's revision. An item the base holds on a page other than
+the one the edit was made on needs the user, merges included. If the content
+differs, someone else changed something the user did not see, and the entry
+needs the user. With no evidence about the row yet, the entry waits for a
+read rather than assuming the row is absent. While an earlier own op on the
+row is accepted but not yet in the base, the entry waits for the base. A
+field-checked op (a merge with a base) and a last-writer-wins op go without
+the content check. An op whose answer is unknown is sent again exactly as it
+was first sent, so the server replays its first answer, until the server's
 30-day memory (`serverRemembersAnswersFor`, beside `DAYS_30_MS` in
-`convex/maintenance.ts`) passes. After that it goes only if the base holds the
-row at the revision and content it was authored against; otherwise it needs the
-user.
+`convex/maintenance.ts`) passes. After that it waits for a read started after
+the window passed. If that read holds the row at the revision and content the
+op was authored against, and the op has a revision-checked form, it needs a
+fresh op id (`NeedsFreshId`), and `Reissue` sends it in that checked form under
+the new id. Otherwise it needs the user.
+
+**Gone and live again are ordered by read.** An accepted entry settles when a
+read started after its answer shows its row or finds its page gone, or when
+the base reaches the revision it was accepted at. Work behind an accepted page
+delete waits until a later read shows that page gone (it then needs the user)
+or live again. A refusal because the page was deleted is reissued under a
+fresh id once a read started after the refusal shows the page live.
 
 **A dependency is satisfied by an applied answer.** An entry waits for an
 earlier entry it depends on (the same row, its page's add or delete, a copy's
@@ -1411,10 +1436,14 @@ is answered applied, never because both are in one batch. A refused prerequisite
 keeps its dependants waiting, and the sync state says so.
 
 **Attempts are numbered by the queue.** A claim is attempt N, increasing and
-stored; an answer counts only from an attempt that held the op. Op ids are
-minted by the caller and must never repeat: the app uses UUID v4
-(`package:uuid`). The queue refuses an id it holds, but it cannot remember ids
-it has removed.
+stored; an answer counts only from an attempt that held the op, and an empty
+claim is refused. A `CloudQueue` cannot be built with two entries under one id
+or an attempt number that could be issued again. Op ids are minted by the
+caller and must never repeat: the app uses UUID v4 (`package:uuid`). The queue
+refuses an id it holds, but it cannot remember ids it has removed. The queue never makes
+or compares an id derived from a page copy: work on a page whose copy is
+accepted waits until a read shows the copy, and the copy's entry leaves the
+queue at that read.
 
 **Folding.** A new edit folds into the last entry for its row when that
 entry has never been sent and nothing later touches its pages or the page
@@ -1423,13 +1452,17 @@ edit of the same row, or for its retry time; neither changes what it will be
 sent against. It keeps its place and what it was authored against. It never
 folds into an entry held behind something refused, needing the user, on a
 deleted page, or behind page work, a copy or a strategy change. An add then a
-delete cancel only when nothing else in the queue targets that row.
-`test/cloud_fold_test.dart` checks every pair `fold` accepts against the two
-ops in sequence through `applyOp`, alone and behind a claimed edit of the same
-row that is then applied or refused. What survives: whole and field-merge
-patches (with or without a field base) into a patch, and a patch into an add,
-on one element or lineup group. `test/cloud_burst_test.dart` measures bursts
-of 2 to 20 moves, rotations and resizes of one item, claimed part-way.
+delete cancel only when nothing else in the queue targets that row. A merge
+folds into an earlier merge only when it names no field the earlier one does
+not, and it writes only the fields it names. `test/cloud_fold_test.dart`
+checks every pair `fold` accepts against the two ops in sequence through
+`applyOp`, stopping at the first refusal as the queue does: alone, behind a
+claimed edit of the same row that is then applied or refused, and after a
+teammate's change. What survives: an element patch into an element patch
+(whole into whole, or a merge into a merge with the same fields or more) or
+into an element add, a whole lineup patch into a lineup patch or add, and an
+add then a delete cancelling. `test/cloud_burst_test.dart` measures bursts of
+2 to 20 moves, rotations and resizes of one item, claimed part-way.
 
 **The sync state** (`Tally`, `syncStateOf`, `accountSyncState`) is derived
 from the entries and the standing. An empty queue reads as all saved only in

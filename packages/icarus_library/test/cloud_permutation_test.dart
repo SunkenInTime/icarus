@@ -6,12 +6,30 @@ import 'package:test/test.dart';
 
 import 'cloud_support.dart';
 
-final class Fact {
-  Fact(this.event, this.label, {this.orderKey});
+sealed class Fact {
+  Fact(this.label, {this.phase = 0});
+
+  final String label;
+  final int phase;
+}
+
+final class EventFact extends Fact {
+  EventFact(this.event, super.label, {super.phase});
 
   final QueueEvent event;
-  final String label;
-  final String? orderKey;
+}
+
+final class ReadFact extends Fact {
+  ReadFact(this.base, super.label, {super.phase});
+
+  final ArrivedBase base;
+  late final int read;
+}
+
+final class ClockFact extends Fact {
+  ClockFact(this.by, super.label);
+
+  final Duration by;
 }
 
 OpAnswer answerOn(
@@ -142,9 +160,9 @@ final class Scenario {
     log.add('claim $attempt $ids');
   }
 
-  List<Fact> answersFor((int, List<StrategyOp>) sent) => [
+  List<EventFact> answersFor((int, List<StrategyOp>) sent) => [
     for (final op in sent.$2)
-      Fact(
+      EventFact(
         OpAnswered(sent.$1, answerOn(server, op, (after) => server = after)),
         'answer ${op.opId}',
       ),
@@ -178,33 +196,32 @@ final class Scenario {
     }
   }
 
-  Fact headerRead() => Fact(
-    BaseArrived(
-      HeaderRead(
-        strategy: server.strategy,
-        pages: server.pages.toList(),
-        settings: server.settings.toList(),
-      ),
-    ),
+  ReadFact headerRead({int phase = 0}) => ReadFact(
+    headerOf(server),
     'read strategy at ${server.strategy.revision}',
-    orderKey: 'header',
+    phase: phase,
   );
 
-  Fact? pageRead(String pageId) => switch (server.page(pageId)) {
-    null => null,
-    final page => Fact(
-      BaseArrived(
-        PageRead(
-          page: page,
-          settings: server.settingsOf(pageId)!,
-          elements: server.elementsOn(pageId).toList(),
-          lineupGroups: server.lineupGroupsOn(pageId).toList(),
-        ),
-      ),
-      'read $pageId',
-      orderKey: pageId,
-    ),
-  };
+  ReadFact pageRead(String pageId, {int phase = 0}) =>
+      ReadFact(pageReadOf(server, pageId), 'read $pageId', phase: phase);
+
+  void teammateDeletesAndRestoresAPage() {
+    final pages = [
+      for (final page in server.pages)
+        if (page is LivePage) page.publicId,
+    ];
+    if (pages.length < 2) return;
+    final page = pick(pages);
+    final before = server;
+    server = withOp(
+      server,
+      pageDelete(fresh('t'), page, expected: server.strategy.revision),
+    );
+    facts.add(pageRead(page));
+    if (random.nextBool()) facts.add(headerRead());
+    server = before;
+    facts.add(pageRead(page));
+  }
 
   void prefix(int steps) {
     for (var i = 0; i < steps; i++) {
@@ -227,25 +244,32 @@ final class Scenario {
     claim();
     while (open.isNotEmpty && facts.length < most) {
       final sent = open.removeAt(0);
-      switch (random.nextInt(6)) {
+      switch (random.nextInt(7)) {
         case 0:
           facts.add(
-            Fact(
+            EventFact(
               BatchRefused(sent.$1, BatchRefusal.editAccessRemoved),
               'access refused ${sent.$1}',
             ),
           );
           facts.add(
-            Fact(
+            EventFact(
               EditAccessConfirmed(afterAttempt: sent.$1),
               'access confirmed after ${sent.$1}',
             ),
           );
         case 1:
           facts.add(
-            Fact(
+            EventFact(
               BatchRefused(sent.$1, BatchRefusal.upgradeRequired),
               'upgrade ${sent.$1}',
+            ),
+          );
+        case 2:
+          facts.add(
+            EventFact(
+              TransportFailed(sent.$1, TransportFailure.timeout, at: now),
+              'transport failed ${sent.$1}',
             ),
           );
         case _:
@@ -253,15 +277,44 @@ final class Scenario {
       }
       if (random.nextBool()) facts.add(headerRead());
       for (final page in server.pages) {
-        if (random.nextInt(3) == 0) {
-          if (pageRead(page.publicId) case final read?) facts.add(read);
-        }
+        if (random.nextInt(3) == 0) facts.add(pageRead(page.publicId));
       }
     }
-    if (random.nextInt(8) == 0) {
-      facts.add(Fact(const BaseArrived(StrategyGone()), 'strategy gone'));
+    switch (random.nextInt(6)) {
+      case 0:
+        facts.add(
+          EventFact(
+            BaseArrived(
+              const StrategyGone(),
+              read: client.startRead(),
+              startedAt: now,
+            ),
+            'strategy gone',
+          ),
+        );
+      case 1:
+        teammateDeletesAndRestoresAPage();
+      case 2:
+        facts.add(ReadFact(PageGone(pick(['page-a', 'page-b'])), 'page gone'));
+      case _:
+        break;
+    }
+    if (random.nextBool()) {
+      facts.add(ClockFact(const Duration(hours: 1), '+1h'));
     }
     if (facts.length > most) facts.removeRange(most, facts.length);
+    if (random.nextBool()) {
+      facts.add(
+        EventFact(const AppRestarted(build: build), 'restart', phase: 1),
+      );
+      if (server.pages.isNotEmpty) {
+        facts.add(pageRead(server.pages.first.publicId, phase: 2));
+        facts.add(headerRead(phase: 2));
+      }
+    }
+    for (final fact in facts) {
+      if (fact is ReadFact) fact.read = client.startRead();
+    }
   }
 }
 
@@ -269,10 +322,8 @@ Iterable<List<Fact>> orderings(List<Fact> facts) sync* {
   final used = List.filled(facts.length, false);
   final chosen = <Fact>[];
   bool allowed(int index) {
-    final key = facts[index].orderKey;
-    if (key == null) return true;
-    for (var earlier = 0; earlier < index; earlier++) {
-      if (facts[earlier].orderKey == key && !used[earlier]) return false;
+    for (var other = 0; other < facts.length; other++) {
+      if (!used[other] && facts[other].phase < facts[index].phase) return false;
     }
     return true;
   }
@@ -295,20 +346,43 @@ Iterable<List<Fact>> orderings(List<Fact> facts) sync* {
   yield* go();
 }
 
-CloudQueue deliver(CloudQueue start, List<Fact> order) {
-  var queue = start;
-  for (final fact in order) {
-    if (transition(queue, fact.event, now: now) case Stepped(
-      queue: final next,
-    )) {
-      queue = next;
-    }
-  }
-  return queue;
+final class Delivered {
+  Delivered(this.queue, this.at, this.effects);
+
+  final CloudQueue queue;
+  final DateTime at;
+  final List<String> effects;
 }
 
-String describe(CloudQueue queue) {
-  final views = entryViews(queue, now);
+Delivered deliver(CloudQueue start, List<Fact> order) {
+  var queue = start;
+  var at = now;
+  final effects = <String>[];
+  void step(QueueEvent event) {
+    if (transition(queue, event, now: at) case Stepped(
+      queue: final next,
+      effects: final made,
+    )) {
+      queue = next;
+      effects.addAll(made.map((effect) => '$effect'));
+    }
+  }
+
+  for (final fact in order) {
+    switch (fact) {
+      case EventFact(:final event):
+        step(event);
+      case ReadFact(:final base, :final read):
+        step(BaseArrived(base, read: read, startedAt: now));
+      case ClockFact(:final by):
+        at = at.add(by);
+    }
+  }
+  return Delivered(queue, at, effects..sort());
+}
+
+String describe(CloudQueue queue, DateTime at) {
+  final views = entryViews(queue, at);
   return [
     for (final entry in queue.entries)
       '${entry.id}: ${views[entry.id]?.state} ${views[entry.id]?.go} ${views[entry.id]?.holds}',
@@ -329,34 +403,38 @@ void main() {
     for (final seed
         in one == null ? [for (var s = 1; s <= seeds; s++) s] : [one]) {
       final scenario = Scenario(seed)..prefix(40);
-      scenario.gatherFacts(7);
+      scenario.gatherFacts(6);
       final start = scenario.client.queue;
       final facts = scenario.facts;
       factsSeen += facts.length;
-      CloudQueue? first;
+      Delivered? first;
       List<Fact>? firstOrder;
       for (final order in orderings(facts)) {
         orders++;
         final end = deliver(start, order);
-        final views = describe(end);
         if (first == null) {
           first = end;
           firstOrder = order;
           continue;
         }
-        if (end != first || views != describe(first)) {
+        if (end.queue != first.queue ||
+            describe(end.queue, end.at) != describe(first.queue, first.at) ||
+            end.effects.join('\n') != first.effects.join('\n')) {
           fail(
             'seed $seed: two orders of the same facts disagree\n'
             'prefix:\n${scenario.log.join('\n')}\n'
             'first order: ${firstOrder!.map((f) => f.label).join(' | ')}\n'
-            '${describe(first)}\n'
+            '${describe(first.queue, first.at)}\n${first.effects}\n'
             'other order: ${order.map((f) => f.label).join(' | ')}\n'
-            '$views',
+            '${describe(end.queue, end.at)}\n${end.effects}',
           );
         }
       }
     }
     printOnFailure('$orders orders of $factsSeen facts');
+    if (Platform.environment['CLOUD_PERMUTATION_COUNTS'] == '1') {
+      stdout.writeln('$orders orders of $factsSeen facts');
+    }
     expect(orders, greaterThan(seeds * 20));
   });
 }

@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/cloud/fold.dart';
+import 'package:icarus_library/src/json.dart';
 import 'package:test/test.dart';
 
 import 'cloud_support.dart';
@@ -22,6 +23,32 @@ Map<String, Object?> liveContent(StrategyRowSet rows) => {
       },
 };
 
+int stamp = 0;
+
+const drawnFields = ['position', 'rotation', 'scale'];
+
+FieldMerge mergeOf(Random random, LiveElement target, {required bool base}) {
+  final fields = [
+    for (final field in drawnFields)
+      if (random.nextBool()) field,
+    if (random.nextInt(4) == 0) placeField,
+  ];
+  if (fields.isEmpty) fields.add(drawnFields[random.nextInt(3)]);
+  final data = target.payload.data;
+  return FieldMerge(
+    fields: fields,
+    base: base
+        ? {
+            for (final field in fields)
+              if (field == placeField)
+                field: target.sortIndex
+              else if (data.containsKey(field))
+                field: plainJson(data[field]),
+          }
+        : null,
+  );
+}
+
 StrategyOp? opOver(StrategyRowSet rows, Random random, String opId) {
   final live = [
     for (final row in rows.elements)
@@ -32,53 +59,23 @@ StrategyOp? opOver(StrategyRowSet rows, Random random, String opId) {
   final payload = agentPayload(target.publicId, {
     ...target.payload.data.toJson(),
     'position': {'dx': random.nextInt(50), 'dy': random.nextInt(50)},
+    'rotation': ++stamp,
+    'scale': ++stamp,
   });
+  ElementPatchOp patch({FieldMerge? merge, String? pageId, int? sortIndex}) =>
+      ElementPatchOp(
+        opId: opId,
+        elementPublicId: target.publicId,
+        expectedElementRevision: target.revision,
+        payload: payload,
+        pagePublicId: pageId,
+        sortIndex: sortIndex ?? random.nextInt(3),
+        merge: merge,
+      );
   return switch (random.nextInt(11)) {
-    9 || 10 => ElementPatchOp(
-      opId: opId,
-      elementPublicId: target.publicId,
-      expectedElementRevision: target.revision,
-      payload: payload,
-      sortIndex: target.sortIndex,
-      merge: FieldMerge(
-        fields: ['position'],
-        base: {
-          if (target.payload.data.containsKey('position'))
-            'position': target.payload.data['position'],
-        },
-      ),
-    ),
-    7 => ElementPatchOp(
-      opId: opId,
-      elementPublicId: target.publicId,
-      expectedElementRevision: target.revision,
-      payload: payload,
-      sortIndex: random.nextInt(3),
-      merge: FieldMerge(fields: ['position']),
-    ),
-    8 => ElementPatchOp(
-      opId: opId,
-      elementPublicId: target.publicId,
-      expectedElementRevision: target.revision,
-      payload: payload,
-      sortIndex: random.nextInt(3),
-      merge: FieldMerge(fields: ['position', placeField]),
-    ),
-    0 => ElementPatchOp(
-      opId: opId,
-      elementPublicId: target.publicId,
-      expectedElementRevision: target.revision,
-      payload: payload,
-      sortIndex: random.nextInt(3),
-    ),
-    1 => ElementPatchOp(
-      opId: opId,
-      elementPublicId: target.publicId,
-      expectedElementRevision: target.revision,
-      payload: payload,
-      sortIndex: target.sortIndex,
-      merge: FieldMerge(fields: ['position']),
-    ),
+    7 || 8 || 9 => patch(merge: mergeOf(random, target, base: true)),
+    10 || 1 => patch(merge: mergeOf(random, target, base: false)),
+    0 => patch(),
     2 => ElementReorderOp(
       opId: opId,
       elementPublicId: target.publicId,
@@ -92,19 +89,12 @@ StrategyOp? opOver(StrategyRowSet rows, Random random, String opId) {
       pagePublicId: target.pagePublicId,
       expectedElementRevision: target.revision,
     ),
-    4 => ElementPatchOp(
-      opId: opId,
-      elementPublicId: target.publicId,
-      expectedElementRevision: target.revision,
-      payload: payload,
-      pagePublicId: 'page-b',
-      sortIndex: 0,
-    ),
+    4 => patch(pageId: 'page-b', sortIndex: 0),
     _ => ElementAddOp(
       opId: opId,
       elementPublicId: 'new-$opId',
       pagePublicId: 'page-a',
-      payload: agentPayload('new-$opId', const {}),
+      payload: agentPayload('new-$opId', {'rotation': ++stamp}),
       sortIndex: 0,
     ),
   };
@@ -129,6 +119,29 @@ StrategyOp? followUp(StrategyRowSet rows, Random random, StrategyOp first) {
     ],
   );
   return opOver(focused, random, 'then');
+}
+
+StrategyRowSet teammateChanged(StrategyRowSet rows, Random random) {
+  final live = [
+    for (final row in rows.elements)
+      if (row is LiveElement) row,
+  ];
+  final target = live[random.nextInt(live.length)];
+  final field = drawnFields[random.nextInt(drawnFields.length)];
+  final change = ElementPatchOp(
+    opId: 'teammate',
+    elementPublicId: target.publicId,
+    expectedElementRevision: target.revision,
+    payload: agentPayload(target.publicId, {
+      ...target.payload.data.toJson(),
+      field: field == 'position' ? {'dx': -1, 'dy': -1} : -1,
+    }),
+    sortIndex: target.sortIndex,
+  );
+  return switch (applyOp(rows, change)) {
+    final OpApplied done => rows.withRows(done.rows),
+    _ => rows,
+  };
 }
 
 void main() {
@@ -201,6 +214,21 @@ void main() {
     return at;
   }
 
+  StrategyRowSet chained(StrategyRowSet rows, List<StrategyOp> ops) {
+    var at = rows;
+    for (final op in ops) {
+      switch (applyOp(at, op)) {
+        case final OpApplied done:
+          at = at.withRows(done.rows);
+        case OpUnchanged():
+          break;
+        case OpRefused():
+          return at;
+      }
+    }
+    return at;
+  }
+
   test('a fold behind a claimed edit of the same row equals sending all '
       'three, whether that edit is then applied or refused', () {
     final random = Random(11);
@@ -216,16 +244,18 @@ void main() {
       final then = followUp(afterFirst, random, first);
       if (then == null) continue;
       if (fold(first, then) case FoldedOp(op: final folded)) {
-        expect(
-          liveContent(skipping(start, [before, folded])),
-          liveContent(skipping(start, [before, first, then])),
-          reason: 'applied: ${first.toJson()} then ${then.toJson()}',
-        );
-        expect(
-          liveContent(skipping(start, [folded])),
-          liveContent(skipping(start, [first, then])),
-          reason: 'refused: ${first.toJson()} then ${then.toJson()}',
-        );
+        final moved = teammateChanged(afterBefore, random);
+        for (final (label, server) in [
+          ('applied', afterBefore),
+          ('refused', start),
+          ('teammate', moved),
+        ]) {
+          expect(
+            liveContent(chained(server, [folded])),
+            liveContent(chained(server, [first, then])),
+            reason: '$label: ${first.toJson()} then ${then.toJson()}',
+          );
+        }
         checked++;
       }
     }

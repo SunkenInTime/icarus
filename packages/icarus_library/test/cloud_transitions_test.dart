@@ -22,6 +22,7 @@ enum Kind {
   answerUnknown,
   retriesExhausted,
   serverForgotAnswer,
+  reissue,
   accepted,
   rejected,
   failed,
@@ -36,6 +37,7 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
   (PendingOp(), final EntryView view) => switch ((view.state, view.go)) {
     (Claimed(), _) => Kind.claimed,
     (Accepted(), _) => Kind.accepted,
+    (_, NeedsFreshId()) => Kind.reissue,
     (ServerRefused(refusal: RejectedByServer()), _) => Kind.rejected,
     (ServerRefused(refusal: FailedOnServer()), _) => Kind.failed,
     (_, NeedsUser(:final reason)) => switch (reason) {
@@ -100,7 +102,9 @@ final rows = <Row>[
       ..must(OpAnswered(attempt, const AppliedAnswer('first', revision: 2)));
   }),
   Row('page delete waiting for a read of its page this session', () {
-    return Client()..edit(pageDelete('x', 'page-b'));
+    return Client()
+      ..must(const AppRestarted(build: build))
+      ..edit(pageDelete('x', 'page-b'));
   }),
   Row('needs user: oversized', () {
     return Client()..edit(
@@ -146,6 +150,7 @@ final rows = <Row>[
       ],
       attempts: const {},
       nextAttempt: 1,
+      nextRead: client.queue.nextRead,
       base: client.queue.base,
       strategy: StrategyFacts.fresh,
       session: client.queue.session,
@@ -185,6 +190,19 @@ final rows = <Row>[
     );
     return client..clock = later;
   }),
+  Row('needs a fresh op id: the server forgot, the row is as authored', () {
+    final client = Client()..edit(elementDelete('x'));
+    final attempt = client.claim(['x']);
+    client.must(TransportFailed(attempt, TransportFailure.network, at: now));
+    client.clock = later;
+    return client..read(initialRows(), pages: ['page-a']);
+  }),
+  Row('needs a fresh op id: refused on a deleted page now live again', () {
+    final client = answered(
+      const FailedAnswer('x', KnownFailure(FailureCode.pageDeleted), 'deleted'),
+    );
+    return client..read(initialRows(), pages: ['page-a']);
+  }),
   Row('accepted at 2', () => answered(const AppliedAnswer('x', revision: 2))),
   Row(
     'refused: revision_mismatch',
@@ -216,6 +234,7 @@ final rows = <Row>[
       ],
       attempts: const {},
       nextAttempt: 1,
+      nextRead: client.queue.nextRead,
       base: client.queue.base,
       strategy: StrategyFacts.fresh,
       session: client.queue.session,
@@ -228,6 +247,7 @@ final rows = <Row>[
       entries: [const UnreadableEntry(place: 0, text: '{}', problem: 'newer')],
       attempts: const {},
       nextAttempt: 1,
+      nextRead: client.queue.nextRead,
       base: client.queue.base,
       strategy: StrategyFacts.fresh,
       session: client.queue.session,
@@ -237,7 +257,7 @@ final rows = <Row>[
   Row('never sent, strategy deleted on the server', () {
     return Client()
       ..edit(movePatch('x'))
-      ..must(const BaseArrived(StrategyGone()));
+      ..arrive(const StrategyGone());
   }),
   Row('never sent, edit access lost', () {
     final client = Client()
@@ -306,14 +326,10 @@ final events = <String, QueueEvent Function(Client)>{
   'user: discard': (c) => const UserDiscarded('x'),
   'user: discard the unreadable entry': (c) =>
       const UserDiscarded('unreadable/0'),
-  'page-a restored': (c) => PageRestored('page-a', const {'x': 'x3'}),
-  'base: strategy and every page read as they are': (c) => BaseArrived(
-    HeaderRead(
-      strategy: c.base.strategy,
-      pages: c.base.pages.toList(),
-      settings: c.base.settings.toList(),
-    ),
-  ),
+  'reissue x under a fresh id': (c) => Reissue(const {'x': 'x3'}),
+  'read started': (c) => const ReadStarted(),
+  'base: header read as it is': (c) =>
+      BaseArrived(headerOf(c.base), read: c.startRead(), startedAt: c.at),
   'base: page-a read with the item at revision 2': (c) => BaseArrived(
     PageRead(
       page: page('page-a', sortIndex: 0),
@@ -321,9 +337,18 @@ final events = <String, QueueEvent Function(Client)>{
       elements: [element('e1', revision: 2), element('e2')],
       lineupGroups: const [],
     ),
+    read: c.startRead(),
+    startedAt: c.at,
   ),
-  'base: page-b gone': (c) => const BaseArrived(PageGone('page-b')),
-  'base: strategy gone': (c) => const BaseArrived(StrategyGone()),
+  'base: page-a read from before the last answer': (c) =>
+      BaseArrived(pageReadOf(initialRows(), 'page-a'), read: 1, startedAt: now),
+  'base: page-b gone': (c) => BaseArrived(
+    const PageGone('page-b'),
+    read: c.startRead(),
+    startedAt: c.at,
+  ),
+  'base: strategy gone': (c) =>
+      BaseArrived(const StrategyGone(), read: c.startRead(), startedAt: c.at),
 };
 
 String describe(Client client, String id) {
@@ -362,6 +387,7 @@ String outcome(Client before, Step result) {
             OpRemoved(:final opId, :final cause) => 'removes $opId ($cause)',
             SendBatch(:final attempt, :final ops) =>
               'sends attempt $attempt (${ops.map((op) => op.opId).join(', ')})',
+            ReadNumbered(:final read) => 'numbers read $read',
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
           },
@@ -377,7 +403,7 @@ String renderTable() {
     ..writeln()
     ..writeln(
       'Generated by `test/cloud_transitions_test.dart` from `transition` and '
-      '`viewsOf` in `lib/src/cloud/queue.dart`. Run with '
+      '`entryViews` in `lib/src/cloud/queue.dart`. Run with '
       '`UPDATE_TRANSITIONS=1` to rewrite.',
     )
     ..writeln()
@@ -401,9 +427,10 @@ String renderTable() {
     final ignored = <String>[];
     for (final MapEntry(key: name, value: make) in events.entries) {
       final fresh = row.build();
+      final event = make(fresh);
       final result = outcome(
         fresh,
-        transition(fresh.queue, make(fresh), now: fresh.at),
+        transition(fresh.queue, event, now: fresh.at),
       );
       if (result.isEmpty) {
         ignored.add(name);
@@ -423,10 +450,8 @@ void main() {
     for (final row in rows) {
       for (final make in events.values) {
         final client = row.build();
-        expect(
-          transition(client.queue, make(client), now: client.at),
-          isA<Step>(),
-        );
+        final event = make(client);
+        expect(transition(client.queue, event, now: client.at), isA<Step>());
       }
     }
   });

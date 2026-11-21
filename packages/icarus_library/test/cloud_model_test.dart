@@ -176,7 +176,7 @@ final class Model {
       }
       if (event case OpAnswered(
         answer: RejectedAnswer() || FailedAnswer(),
-      ) when !teammates) {
+      ) when !teammates && !userRemoved) {
         throw StateError(
           'refused with no teammate: ${switch (event.answer) {
             RejectedAnswer(:final opId, :final reason) => '$opId ${reason.wireName} sent ${inFlightLog[opId]}',
@@ -215,6 +215,7 @@ final class Model {
           ],
           attempts: before.attempts,
           nextAttempt: before.nextAttempt,
+          nextRead: before.nextRead,
           base: before.base,
           strategy: before.strategy,
           session: before.session,
@@ -246,7 +247,7 @@ final class Model {
       final cause = removed[entry.id];
       if (cause == null) throw StateError('${entry.id} vanished');
       final fits = switch (cause) {
-        SeenInBase() || SettledByRemoval() =>
+        SeenInBase() =>
           server.landed(entry.id) ||
               server.recorded.containsKey(
                 '${server.firstClient[entry.id]}|${entry.id}',
@@ -254,7 +255,7 @@ final class Model {
         NothingToWaitFor() => event is OpAnswered,
         FoldedInto(:final opId) || CancelledBy(:final opId) =>
           event is UserEdited && event.edit.op.opId == opId,
-        RetriedUnder() => event is PageRestored,
+        RetriedUnder() => event is Reissue,
         RemovedByUser() => event is UserAction && event.opId == entry.id,
       };
       if (!fits) throw StateError('${entry.id} removed for $cause by $event');
@@ -503,19 +504,24 @@ final class Model {
     must(AppRestarted(build: build), 'restart as $clientId on $build');
   }
 
+  int startRead() => must(
+    const ReadStarted(),
+    'read started',
+  ).effects.whereType<ReadNumbered>().single.read;
+
+  void arrive(ArrivedBase base, String label) =>
+      must(BaseArrived(base, read: startRead(), startedAt: clock), label);
+
   void readHeader() {
     if (!server.exists) {
-      must(const BaseArrived(StrategyGone()), 'read: gone');
+      arrive(const StrategyGone(), 'read: gone');
       return;
     }
     final rows = server.rows;
     final kept = {for (final page in rows.pages) page.publicId};
     for (final page in client.base.pages) {
       if (!kept.contains(page.publicId)) {
-        must(
-          BaseArrived(PageGone(page.publicId)),
-          'read ${page.publicId}: gone',
-        );
+        arrive(PageGone(page.publicId), 'read ${page.publicId}: gone');
       }
     }
     client.base = StrategyRowSet(
@@ -529,23 +535,14 @@ final class Model {
         (r) => kept.contains(r.pagePublicId),
       ),
     );
-    must(
-      BaseArrived(
-        HeaderRead(
-          strategy: rows.strategy,
-          pages: rows.pages.toList(),
-          settings: rows.settings.toList(),
-        ),
-      ),
-      'read strategy',
-    );
+    arrive(headerOf(rows), 'read strategy');
   }
 
   void readPage(String pageId) {
     if (!server.exists) return;
     final page = server.rows.page(pageId);
     if (page == null) {
-      must(BaseArrived(PageGone(pageId)), 'read $pageId: gone');
+      arrive(PageGone(pageId), 'read $pageId: gone');
       return;
     }
     if (client.base.page(pageId) != null) {
@@ -565,17 +562,7 @@ final class Model {
         ],
       );
     }
-    must(
-      BaseArrived(
-        PageRead(
-          page: page,
-          settings: server.rows.settingsOf(pageId)!,
-          elements: server.rows.elementsOn(pageId).toList(),
-          lineupGroups: server.rows.lineupGroupsOn(pageId).toList(),
-        ),
-      ),
-      'read $pageId',
-    );
+    arrive(pageReadOf(server.rows, pageId), 'read $pageId');
   }
 
   Set<String> pagesTheLaneReads() {
@@ -609,6 +596,12 @@ final class Model {
     for (final page in pagesTheLaneReads()) {
       readPage(page);
     }
+    final views = entryViews(client.queue, clock);
+    final reissue = {
+      for (final entry in client.queue.entries)
+        if (views[entry.id]?.go is NeedsFreshId) entry.id: fresh('re'),
+    };
+    if (reissue.isNotEmpty) must(Reissue(reissue), 'reissue $reissue');
   }
 
   void teammate() {
@@ -668,8 +661,14 @@ final class Model {
         _ => null,
       };
       if (action == null) continue;
-      if (draining) drainHelps++;
-      if (!teammates && action is! UserRetried) {
+      final forgotten = switch (view?.go) {
+        NeedsUser(reason: ServerForgotAnswer()) => true,
+        _ => false,
+      };
+      if (forgotten) count('forgotten answers handed to the user');
+      final expected = forgotten || userRemoved;
+      if (draining && !expected) drainHelps++;
+      if (!teammates && action is! UserRetried && !expected) {
         throw StateError(
           'the user was asked $action for ${entry.id}: '
           '${view?.state}, ${view?.go}, ${view?.holds}',
@@ -686,7 +685,11 @@ final class Model {
   }
 
   void stepOnce() {
-    clock = clock.add(Duration(milliseconds: random.nextInt(2000)));
+    clock = clock.add(
+      random.nextInt(400) == 0
+          ? serverRemembersAnswersFor + const Duration(hours: 1)
+          : Duration(milliseconds: random.nextInt(2000)),
+    );
     switch (random.nextInt(22)) {
       case < 7:
         edit();
@@ -785,6 +788,7 @@ const minimums = {
   'UserDiscarded': 5,
   'removed SeenInBase': 1500,
   'removed FoldedInto': 100,
+  'Reissue': 5,
 };
 
 void main() {
