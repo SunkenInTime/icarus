@@ -79,7 +79,11 @@ Future<StoredRows> readStoredRows(LibraryStore store, String strategyId) async {
         StoredUnreadable(['the strategy row is unreadable: ${listing.ref}']),
       );
   }
-  final damaged = [for (final row in content.unplaced) 'unplaced ${row.ref}'];
+  final damaged = [
+    for (final row in content.unplaced) 'unplaced ${row.ref}',
+    for (final name in content.foreignNames)
+      'a name this build does not know: $name',
+  ];
   final List<ElementRow> elements;
   final List<LineupGroupRow> groups;
   switch (await _pagesOf(store, strategyId, content, damaged)) {
@@ -155,6 +159,8 @@ Future<_Pages> _pagesOf(
           ..addAll([for (final row in value.unplaced) 'unplaced ${row.ref}'])
           ..addAll([
             for (final row in value.unknownKinds) 'unknown kind ${row.key}',
+            for (final name in value.foreignNames)
+              'a name this build does not know: $name',
           ]);
       case NotFound():
         damaged.add('page ${page.publicId} is listed and not found');

@@ -30,8 +30,6 @@ const syntheticVariable = 'ICARUS_SYNTHETIC_LIBRARY_OUT';
 const costVariable = 'ICARUS_LIBRARY_COPY_COST';
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
-Future<void> _still() async {}
-
 final class CorpusTotals {
   int stores = 0;
   int strategies = 0;
@@ -84,11 +82,7 @@ Future<void> _startAsTheAppDoes(Directory scratch) async {
   );
 }
 
-Future<LibraryStore> _openSqlite(SqliteEngine engine) async =>
-    switch (await LibraryStore.open(engine, canRead: appCanRead)) {
-      StoreOpened(:final store) => store,
-      StoreNotOpened(:final problem) => throw StateError('$problem'),
-    };
+Future<LibraryStore> _openSqlite(SqliteEngine engine) => openStoreOn(engine);
 
 int _bytesOf(Directory directory, bool Function(File file) which) => directory
     .listSync(recursive: true)
@@ -120,20 +114,18 @@ Future<void> _checkOne(
     final engine = SqliteEngine(file.path);
     final first = await _openSqlite(engine);
     final copyClock = Stopwatch()..start();
-    final copy = await copyHiveIntoStore(hive, first, breathe: _still);
+    final copy = await copyFromHive(first);
     totals.copyTime += copyClock.elapsed;
     final checkClock = Stopwatch()..start();
-    final check = await checkStoreAgainstHive(hive, first, breathe: _still);
+    final check = await checkFromHive(first);
     totals.checkTime += checkClock.elapsed;
     await first.close();
     await engine.close();
 
     final again = SqliteEngine(file.path);
     final second = await _openSqlite(again);
-    final secondCopy =
-        await copyHiveIntoStore(hiveLibraryNow(), second, breathe: _still);
-    final secondCheck =
-        await checkStoreAgainstHive(hiveLibraryNow(), second, breathe: _still);
+    final secondCopy = await copyFromHive(second);
+    final secondCheck = await checkFromHive(second);
     await second.close();
     await again.close();
 
@@ -267,26 +259,19 @@ Future<String> _copyCost(
   try {
     await _writeHiveLibrary(scratch, strategies.take(size), folders);
     await openScratchHive(scratch);
-    final hive = hiveLibraryNow();
     final file = libraryStoreFile(scratch.path);
     await file.parent.create(recursive: true);
     final engine = SqliteEngine(file.path);
     final store = await _openSqlite(engine);
     final clock = Stopwatch()..start();
-    final copy = await copyHiveIntoStore(hive, store, breathe: _still);
+    final copy = await copyFromHive(store);
     final took = clock.elapsed;
     await store.close();
     await engine.close();
     expect(copy.strategies.whereType<StrategyCopied>(), hasLength(size));
-    final inMemory = switch (await LibraryStore.open(
-      MemoryEngine(MemoryStorage()),
-      canRead: appCanRead,
-    )) {
-      StoreOpened(:final store) => store,
-      StoreNotOpened(:final problem) => throw StateError('$problem'),
-    };
+    final inMemory = await openStoreOn(MemoryEngine(MemoryStorage()));
     final memoryClock = Stopwatch()..start();
-    await copyHiveIntoStore(hive, inMemory, breathe: _still);
+    await copyFromHive(inMemory);
     final memoryTook = memoryClock.elapsed;
     await inMemory.close();
     String each(Duration total) =>

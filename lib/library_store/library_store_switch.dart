@@ -16,19 +16,11 @@ final class StoreSwitchShadow extends LibraryStoreSwitch {
   const StoreSwitchShadow();
 }
 
-final class LibraryStoreLaunchException implements Exception {
-  const LibraryStoreLaunchException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
 final class LibraryStoreLaunch {
   const LibraryStoreLaunch._(this.choice, this.otherArgs);
 
-  static const optionName = '--library-store';
+  static const shadowFlag = '--library-store=shadow';
+  static const offFlag = '--library-store=off';
 
   final LibraryStoreSwitch choice;
   final List<String> otherArgs;
@@ -38,26 +30,18 @@ final class LibraryStoreLaunch {
     required bool mayShadow,
   }) {
     final others = <String>[];
-    String? asked;
+    LibraryStoreSwitch choice = const StoreSwitchOff();
     for (final argument in args) {
-      if (!argument.startsWith('$optionName=')) {
-        others.add(argument);
-        continue;
+      switch (argument) {
+        case shadowFlag:
+          choice =
+              mayShadow ? const StoreSwitchShadow() : const StoreSwitchOff();
+        case offFlag:
+          choice = const StoreSwitchOff();
+        case _:
+          others.add(argument);
       }
-      if (asked != null && mayShadow) {
-        throw const LibraryStoreLaunchException(
-          '$optionName may only be supplied once.',
-        );
-      }
-      asked = argument.substring(optionName.length + 1);
     }
-    final LibraryStoreSwitch choice = switch ((asked, mayShadow)) {
-      (null, _) || (_, false) || ('off', true) => const StoreSwitchOff(),
-      ('shadow', true) => const StoreSwitchShadow(),
-      (final other?, true) => throw LibraryStoreLaunchException(
-          '$optionName is off or shadow, not "$other".',
-        ),
-    };
     return LibraryStoreLaunch._(choice, List.unmodifiable(others));
   }
 }

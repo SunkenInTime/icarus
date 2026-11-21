@@ -38,23 +38,41 @@ void main() {
   });
   tearDown(() => directory.delete(recursive: true));
 
-  Future<void> refusedUntouched(
-    Matcher failure,
-  ) async {
-    final before = await filesIn(file.parent);
+  Future<void> refused(Matcher failure) async {
     final opened = await openLibraryStore(file);
     expect(
       opened,
       isA<LibraryStoreRefused>().having((r) => r.failure, 'failure', failure),
     );
+  }
+
+  Future<void> refusedUntouched(Matcher failure) async {
+    final before = await filesIn(file.parent);
+    await refused(failure);
     expect(await filesIn(file.parent), before);
   }
 
+  Future<void> refusedWithNoRowWritten(Matcher failure) async {
+    final before = await filesIn(file.parent);
+    await refused(failure);
+    final after = await filesIn(file.parent);
+    final companions = {
+      for (final end in ['-wal', '-shm', '-journal'])
+        '${path.basename(file.path)}$end'
+    };
+    expect(after.keys.toSet().difference({...before.keys, ...companions}),
+        isEmpty);
+    expect(before.keys.toSet().difference({...after.keys, ...companions}),
+        isEmpty);
+    expect(file.lengthSync(), greaterThan(0));
+    await refused(failure);
+  }
+
   test(
-      'a library from a newer store format is refused and every file is left as found',
+      'a library from a newer store format is refused, nothing is created or deleted but SQLite\'s own files, and its marker is still there',
       () async {
     await writeRow(file, 'format', '${storeFormat + 1}');
-    await refusedUntouched(
+    await refusedWithNoRowWritten(
       isA<NewerFormat>()
           .having((f) => f.layer, 'layer', FormatLayer.store)
           .having((f) => f.found, 'found', storeFormat + 1),
@@ -62,10 +80,10 @@ void main() {
   });
 
   test(
-      'a library whose format row is not a number is refused as damaged and left as found',
+      'a library whose format row is not a number is refused as damaged, and its marker is still there',
       () async {
     await writeRow(file, 'format', 'one');
-    await refusedUntouched(isA<DamagedLibrary>());
+    await refusedWithNoRowWritten(isA<DamagedLibrary>());
   });
 
   test('a file that is not a library is refused as damaged and left as found',

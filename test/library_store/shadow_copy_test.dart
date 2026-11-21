@@ -17,7 +17,6 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
-import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -25,8 +24,6 @@ import 'package:icarus_library/icarus_library.dart';
 
 import '../library_rows/generated_strategies.dart';
 import 'hive_scratch.dart';
-
-Future<void> _still() async {}
 
 StrategyData handBuilt(
         {Offset agentAt = const Offset(10, 20), bool agentAlly = true}) =>
@@ -104,17 +101,13 @@ List<StrategyData> get strategies => [
             folder: n == 1 ? 'folder-2' : (n.isEven ? 'folder-1' : null)),
     ];
 
-Future<LibraryStore> openOn(MemoryStorage storage) async => switch (
-        await LibraryStore.open(MemoryEngine(storage), canRead: appCanRead)) {
-      StoreOpened(:final store) => store,
-      StoreNotOpened(:final problem) => throw StateError('$problem'),
-    };
+Future<LibraryStore> openOn(MemoryStorage storage) =>
+    openStoreOn(MemoryEngine(storage));
 
-Future<ShadowCopy> copyNow(LibraryStore store) =>
-    copyHiveIntoStore(hiveLibraryNow(), store, breathe: _still);
+Future<ShadowCopy> copyNow(LibraryStore store) => copyFromHive(store);
 
-Future<StoreChecked> checkNow(LibraryStore store) async => switch (
-        await checkStoreAgainstHive(hiveLibraryNow(), store, breathe: _still)) {
+Future<StoreChecked> checkNow(LibraryStore store) async =>
+    switch (await checkFromHive(store)) {
       final StoreChecked checked => checked,
       StoreNotChecked(:final failure) => throw StateError('$failure'),
     };
@@ -169,11 +162,13 @@ void main() {
     await copyNow(first);
     await first.close();
     final written = storage.contents;
-    final second = await openOn(storage);
+    final counted = _CutEngine(MemoryEngine(storage), after: 1000);
+    final second = await openStoreOn(counted);
     final again = await copyNow(second);
     expect(kinds(again.strategies), {StrategyUnchanged: strategies.length});
     expect(kinds(again.folders), {FolderUnchanged: folders.length});
     await second.close();
+    expect(counted.commits, 0);
     expect(storage.contents, written);
   });
 
@@ -187,13 +182,8 @@ void main() {
     final commits = strategies.length + folders.length;
     for (var cut = 0; cut < commits; cut++) {
       final storage = MemoryStorage();
-      final stopped = switch (await LibraryStore.open(
-        _CutEngine(MemoryEngine(storage), after: cut),
-        canRead: appCanRead,
-      )) {
-        StoreOpened(:final store) => store,
-        StoreNotOpened(:final problem) => throw StateError('$problem'),
-      };
+      final stopped =
+          await openStoreOn(_CutEngine(MemoryEngine(storage), after: cut));
       final partial = await copyNow(stopped);
       expect(partial, isA<ShadowCopyStopped>(), reason: 'cut at $cut');
       await stopped.close();
@@ -239,22 +229,12 @@ void main() {
         .get('strategy-2')!
         .copyWith(name: 'Renamed in an older build');
     await strategyBox.put(edited.id, edited);
-    final cut = switch (await LibraryStore.open(
-      _CutEngine(MemoryEngine(storage), after: 0),
-      canRead: appCanRead,
-    )) {
-      StoreOpened(:final store) => store,
-      StoreNotOpened(:final problem) => throw StateError('$problem'),
-    };
+    final cut = await openStoreOn(_CutEngine(MemoryEngine(storage), after: 0));
     expect(await copyNow(cut), isA<ShadowCopyStopped>());
     await cut.close();
     expect(storage.contents, before);
     final counted = _CutEngine(MemoryEngine(storage), after: 1000);
-    final resumed =
-        switch (await LibraryStore.open(counted, canRead: appCanRead)) {
-      StoreOpened(:final store) => store,
-      StoreNotOpened(:final problem) => throw StateError('$problem'),
-    };
+    final resumed = await openStoreOn(counted);
     final again = await copyNow(resumed);
     expect(kinds(again.strategies),
         {StrategyUnchanged: strategies.length - 1, StrategyTookHiveVersion: 1});

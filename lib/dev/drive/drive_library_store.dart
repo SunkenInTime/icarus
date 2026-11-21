@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -96,7 +97,8 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
               '${_count<StrategyUnreadableInStore>(checked.strategies)}; '
               'not in Hive ${_count<StrategyNotInHive>(checked.strategies)}; '
               'not mirrored ${checked.notMirrored.length}; folder '
-              'problems ${checked.folderProblems.length}; unplaced rows '
+              'problems ${checked.folderProblems.length}; names this build '
+              'does not know ${checked.foreignNames.length}; unplaced rows '
               '${checked.unplaced.length}; ${took.inMilliseconds} ms',
           for (final problem in checked.strategyProblems)
             ...switch (problem) {
@@ -140,6 +142,8 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
             },
           for (final row in checked.unplaced)
             'STORE unplaced ${row.ref}: ${row.problem}',
+          for (final name in checked.foreignNames)
+            'STORE a name this build does not know: $name',
         ],
     };
 
@@ -150,6 +154,8 @@ List<String> _describeCopy(ShadowRun run) {
   return [
     'STORE copy ${switch (copy) {
       ShadowCopyFinished() => 'finished',
+      ShadowCopyRaced(:final hiveWrites) =>
+        'finished while Hive changed ($hiveWrites writes), so it may not reflect Hive',
       ShadowCopyStopped(:final stop) => 'stopped: $stop',
     }}: copied ${_count<StrategyCopied>(strategies)}, unchanged '
         '${_count<StrategyUnchanged>(strategies)}, took the Hive version '
@@ -172,12 +178,31 @@ List<String> _describeCopy(ShadowRun run) {
   ];
 }
 
+Future<ShadowState> _settledHidden(
+  ProviderContainer c,
+  Duration patience,
+) async {
+  final binding = WidgetsBinding.instance;
+  binding
+    ..handleAppLifecycleStateChanged(AppLifecycleState.inactive)
+    ..handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+  try {
+    return await _settled(c, patience);
+  } finally {
+    binding
+      ..handleAppLifecycleStateChanged(AppLifecycleState.inactive)
+      ..handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  }
+}
+
 Future<List<String>> waitForShadowStore(
   ProviderContainer c, {
   required Duration patience,
   required Map<String, Object?> expected,
+  required bool hidden,
 }) async {
-  final state = await _settled(c, patience);
+  final state =
+      hidden ? await _settledHidden(c, patience) : await _settled(c, patience);
   final run = switch (state) {
     ShadowFinished(:final run) => run,
     ShadowNotOpened(:final opened) =>
@@ -218,6 +243,8 @@ Future<List<String>> waitForShadowStore(
   };
   final problems = [
     if (run.copy case ShadowCopyStopped(:final stop)) 'the copy stopped: $stop',
+    if (run.copy case ShadowCopyRaced(:final hiveWrites))
+      'Hive changed while the copy ran ($hiveWrites writes)',
     if (origin is StorageCreated &&
         strategies.any((strategy) =>
             strategy is! StrategyCopied && strategy is! StrategyNotMirrored))
@@ -244,12 +271,12 @@ Future<List<String>> waitForShadowStore(
 }
 
 Future<List<String>> checkStoreAgain(ProviderContainer c) async {
-  final store = switch (c.read(libraryStoreProvider)) {
-    LibraryStoreReady(:final store) => store,
+  final ready = switch (c.read(libraryStoreProvider)) {
+    final LibraryStoreReady ready => ready,
     final other => throw StoreStepFailed(['the store is $other']),
   };
   final clock = Stopwatch()..start();
-  final check = await c.read(shadowProvider.notifier).checkAgain(store);
+  final check = await c.read(shadowProvider.notifier).checkAgain(ready);
   final lines = describeCheck(check, clock.elapsed);
   if (check case StoreChecked(isExact: true)) return lines;
   throw StoreStepFailed(lines);

@@ -2,6 +2,7 @@ import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -139,6 +140,12 @@ final class ShadowCopyFinished extends ShadowCopy {
   ShadowCopyFinished(super.strategies, super.folders);
 }
 
+final class ShadowCopyRaced extends ShadowCopy {
+  ShadowCopyRaced(super.strategies, super.folders, this.hiveWrites);
+
+  final int hiveWrites;
+}
+
 final class ShadowCopyStopped extends ShadowCopy {
   ShadowCopyStopped(super.strategies, super.folders, this.stop);
 
@@ -180,11 +187,13 @@ _Saving _saving(LibraryEditResult result) => switch (result) {
     };
 
 Future<ShadowCopy> copyHiveIntoStore(
-  HiveLibrary hive,
+  HiveLibrary Function() readHive,
   LibraryStore store, {
+  required LibraryBoxWrites writes,
   required Future<void> Function() breathe,
   void Function(int done, int total)? progress,
 }) async {
+  final hive = readHive();
   final strategies = <StrategyCopy>[];
   final folders = <FolderCopy>[];
   ShadowCopy stopped(CopyStop stop) =>
@@ -213,7 +222,6 @@ Future<ShadowCopy> copyHiveIntoStore(
   }
 
   final stored = {for (final summary in list.strategies) summary.publicId};
-  final hiveIds = {for (final strategy in hive.strategies) strategy.id};
   final total = hive.strategies.length;
   for (final (index, strategy) in hive.strategies.indexed) {
     final id = strategy.id;
@@ -240,6 +248,8 @@ Future<ShadowCopy> copyHiveIntoStore(
     await breathe();
   }
 
+  final hiveNow = readHive();
+  final hiveIds = {for (final strategy in hiveNow.strategies) strategy.id};
   for (final id in stored.difference(hiveIds)) {
     switch (_saving(await store.editLibrary([RemoveStrategy(id)]))) {
       case _Wrote() || _NothingToWrite():
@@ -251,7 +261,7 @@ Future<ShadowCopy> copyHiveIntoStore(
     }
   }
 
-  final hiveFolderIds = {for (final folder in hive.folders) folder.id};
+  final hiveFolderIds = {for (final folder in hiveNow.folders) folder.id};
   final leaving = [
     for (final row in list.folders)
       if (!hiveFolderIds.contains(row.publicId)) row,
@@ -266,7 +276,9 @@ Future<ShadowCopy> copyHiveIntoStore(
         return stopped(stop);
     }
   }
-  return ShadowCopyFinished(strategies, folders);
+  return writes.count == 0
+      ? ShadowCopyFinished(strategies, folders)
+      : ShadowCopyRaced(strategies, folders, writes.count);
 }
 
 ReadableFolder _folderRow(Folder folder, FolderRow? stored) {

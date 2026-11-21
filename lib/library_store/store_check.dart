@@ -132,10 +132,12 @@ final class StoreChecked extends StoreCheck {
     required this.hiveStrategies,
     required this.hiveFolders,
     required List<StrategyCheck> notMirrored,
+    required List<ForeignName> foreignNames,
     required List<StrategyCheck> strategies,
     required List<FolderCheck> folders,
     required List<UnplacedRow> unplaced,
   })  : notMirrored = List.unmodifiable(notMirrored),
+        foreignNames = List.unmodifiable(foreignNames),
         strategies = List.unmodifiable(strategies),
         folders = List.unmodifiable(folders),
         unplaced = List.unmodifiable(unplaced);
@@ -143,6 +145,7 @@ final class StoreChecked extends StoreCheck {
   final int hiveStrategies;
   final int hiveFolders;
   final List<StrategyCheck> notMirrored;
+  final List<ForeignName> foreignNames;
   final List<StrategyCheck> strategies;
   final List<FolderCheck> folders;
   final List<UnplacedRow> unplaced;
@@ -163,6 +166,7 @@ final class StoreChecked extends StoreCheck {
 
   bool get isExact =>
       notMirrored.isEmpty &&
+      foreignNames.isEmpty &&
       sameStrategies == hiveStrategies &&
       sameFolders == hiveFolders &&
       strategyProblems.isEmpty &&
@@ -179,6 +183,7 @@ final class StoreNotChecked extends StoreCheck {
 Future<StoreCheck> checkStoreAgainstHive(
   HiveLibrary hive,
   LibraryStore store, {
+  required List<ForeignName> foreignNames,
   required Future<void> Function() breathe,
 }) async {
   final strategies = <StrategyCheck>[];
@@ -229,6 +234,7 @@ Future<StoreCheck> checkStoreAgainstHive(
     hiveStrategies: hive.strategies.length,
     hiveFolders: hive.folders.length,
     notMirrored: notMirrored,
+    foreignNames: foreignNames,
     strategies: strategies,
     folders: _checkFolders(hive.folders, list.folders),
     unplaced: list.unplaced,
@@ -357,10 +363,8 @@ List<FolderCheck> _checkFolders(List<Folder> hive, List<FolderRow> stored) {
                 folder.id,
                 problems.map((problem) => problem.runtimeType).join(', '),
               ),
-            FolderMade(folder: final back) => switch (_folderFields(
-                folder,
-                back,
-              )) {
+            FolderMade() => switch (
+                  _differingFields(folderToRow(folder), row)) {
                 [] => FolderSame(folder.id),
                 final fields => FolderDiffers(folder.id, fields),
               },
@@ -371,12 +375,18 @@ List<FolderCheck> _checkFolders(List<Folder> hive, List<FolderRow> stored) {
   ];
 }
 
-List<String> _folderFields(Folder expected, Folder actual) => [
-      if (actual.name != expected.name) 'name',
-      if (actual.parentID != expected.parentID) 'parentID',
-      if (actual.dateCreated != expected.dateCreated) 'dateCreated',
-      if (actual.iconId != expected.iconId) 'iconId',
-      if (actual.color != expected.color) 'color',
-      if (actual.customColor?.toARGB32() != expected.customColor?.toARGB32())
-        'customColor',
-    ];
+List<String> _differingFields(ReadableFolder expected, ReadableFolder actual) {
+  final left = expected.toJsonView();
+  final right = actual.toJsonView();
+  String? text(Object? value) => switch (encodeJson(value)) {
+        Encoded(:final text) => text,
+        NotEncoded() => null,
+      };
+  return [
+    for (final key in {...left.keys, ...right.keys})
+      if (!left.containsKey(key) ||
+          !right.containsKey(key) ||
+          text(left[key]) != text(right[key]))
+        key,
+  ]..sort();
+}

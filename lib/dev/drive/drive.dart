@@ -1020,6 +1020,7 @@ Future<void> _run(Map<String, dynamic> step) async {
           c,
           patience: Duration(seconds: (step['seconds'] ?? 600) as int),
           expected: {...?(step['expect'] as Map<String, dynamic>?)},
+          hidden: step['hidden'] == true,
         ),
       );
       lines.forEach(_log);

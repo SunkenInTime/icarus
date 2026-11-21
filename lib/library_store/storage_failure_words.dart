@@ -15,9 +15,11 @@ String storageFailureWords(StorageFailure failure, StoreStep step) =>
           StoreStep.saveInDoubt =>
             'Storage ran out while saving, so this change may not have been '
                 'saved.',
-          StoreStep.read ||
-          StoreStep.release =>
+          StoreStep.read =>
             "There isn't enough storage space to read part of your library.",
+          StoreStep.release =>
+            "There isn't enough storage space, so Icarus couldn't confirm it "
+                'closed your library.',
         },
       AbortedForQuota() =>
         'The browser ran out of storage while saving, so this change may be '
@@ -28,9 +30,10 @@ String storageFailureWords(StorageFailure failure, StoreStep step) =>
       DamagedLibrary() => switch (step) {
           StoreStep.opening =>
             "Icarus can't read this library file, so it can't open it.",
-          StoreStep.read ||
+          StoreStep.read => "Icarus couldn't read part of your library.",
           StoreStep.release =>
-            "Icarus couldn't read part of your library.",
+            "Icarus met something in your library it couldn't read while "
+                "closing it, so it couldn't confirm it closed your library.",
           StoreStep.refusedSave =>
             "Icarus met something in your library it couldn't read, so this "
                 "change wasn't saved.",

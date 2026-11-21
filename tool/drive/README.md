@@ -45,6 +45,7 @@ dart tool/drive/linux.dart run --script tool/drive/scripts/library-store-shadow.
 Every run logs `FIRSTFRAME <ms> ms store=<off|shadow>`, the time from the start of `main` to the first frame on screen; `scripts/first-frame.json` does nothing else. The steps:
 
 - `{"libraryStore": "shadow", "seconds": n?, "expect": {...}?}` waits up to n seconds (600 by default) for the copy and the comparison, logs them as `STORE` lines, and fails unless the store opened, the copy finished with nothing left out, every strategy and folder reads back the same as Hive, and neither library box (`strategy_box.hive`, `folder_box.hive`) changed while it ran. Other boxes the app writes on its own in that time are listed, not failed; `test/library_store/shadow_copy_test.dart` hashes every Hive file around the copy alone. `expect` can name counts that must match: `copied`, `unchanged`, `tookHiveVersion`, `removedWithHive`.
+- With `"hidden": true`, the step first tells the app it is hidden, as the system does when its window is minimized, so no frame is drawn while it waits, then shows it again. `scripts/library-store-shadow-hidden.json` uses it: the copy and the check must finish without a frame.
 - `{"checkLibraryStore": 1}` reads every strategy back again and fails on any difference.
 
 At the end of a run the driver closes the store and logs `STORE closed`.

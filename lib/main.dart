@@ -175,7 +175,7 @@ final _cloudOutOfReachProvider = Provider<bool>((ref) {
 Future<void> main(List<String> args) async {
   await runZonedGuarded(
     () async {
-      launchClock.start();
+      if (driveBuild) launchClock.start();
       IcarusBinding();
       watchForDebugBreadcrumbs();
       // Shad's dialogs, menus, popovers and tooltips animate through
@@ -192,7 +192,8 @@ Future<void> main(List<String> args) async {
         guardedSignOutRequestProvider.overrideWith(
           (ref) => ref.watch(cloudSignOutRequestProvider),
         ),
-        libraryStoreSwitchProvider.overrideWithValue(storeLaunch.choice),
+        if (storeLaunch.choice case final StoreSwitchShadow shadow)
+          libraryStoreSwitchProvider.overrideWithValue(shadow),
       ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
@@ -342,15 +343,20 @@ Future<void> main(List<String> args) async {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _watchStrategyForDebugBreadcrumbs(),
       );
-      final firstFrame = WidgetsBinding.instance.waitUntilFirstFrameRasterized
-          .then((_) => appProviderContainer
-              .read(firstFrameProvider.notifier)
-              .state = FirstFrameDrawn(launchClock.elapsed));
+      if (driveBuild) {
+        unawaited(
+          WidgetsBinding.instance.waitUntilFirstFrameRasterized.then(
+            (_) => appProviderContainer
+                .read(firstFrameProvider.notifier)
+                .state = FirstFrameDrawn(launchClock.elapsed),
+          ),
+        );
+      }
       if (shadowStore case (:final opening, :final directory)) {
         closeLibraryStoreOnExit(appProviderContainer);
         appProviderContainer.read(shadowProvider.notifier).begin(
               opening: opening,
-              firstFrame: firstFrame,
+              firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
               hiveDirectory: directory,
             );
       }
