@@ -265,3 +265,85 @@ final class IndexedDbContractHarness implements EngineHarness {
   PendingWrite holdNextWrite(StorageEngine engine) =>
       (engine as IndexedDbEngine).holdNextCommit();
 }
+
+Future<void> _writeBehindTheLease(String name, List<Change> changes) {
+  final written = Completer<void>();
+  final opening = window.indexedDB.open(name);
+  opening.onsuccess = ((Event _) {
+    final db = opening.result! as IDBDatabase;
+    final transaction = db.transaction('rows'.toJS, 'readwrite');
+    final rows = transaction.objectStore('rows');
+    for (final change in changes) {
+      if (change case Put(:final area, :final key, :final value)) {
+        rows.put(value.toJS, [area.toJS, key.toJS].toJS);
+      }
+    }
+    transaction.oncomplete = ((Event _) {
+      db.close();
+      written.complete();
+    }).toJS;
+  }).toJS;
+  return written.future;
+}
+
+final class _StaleWriterLease extends ForwardingLease {
+  _StaleWriterLease(this._engine, super.inner);
+
+  final StaleWriterEngine _engine;
+
+  @override
+  Future<Committing> commit(List<Change> changes) async {
+    if (_engine._hold case final hold?) {
+      _engine._hold = null;
+      hold._reached.complete();
+      await hold._letGo.future;
+      await _writeBehindTheLease(_engine.inner.name, changes);
+      return const CommitApplied();
+    }
+    return inner.commit(changes);
+  }
+}
+
+final class StaleWriterEngine implements StorageEngine {
+  StaleWriterEngine(this.inner);
+
+  final IndexedDbEngine inner;
+  _HeldCommit? _hold;
+
+  @override
+  Future<Leasing> lease() async => switch (await inner.lease()) {
+    Leased(:final lease) => Leased(_StaleWriterLease(this, lease)),
+    final other => other,
+  };
+}
+
+final class StaleWriterHarness extends IndexedDbContractHarness {
+  StaleWriterHarness(super.name);
+
+  @override
+  Future<StorageEngine> open() async =>
+      StaleWriterEngine(IndexedDbEngine(name));
+
+  @override
+  Future<void> close(StorageEngine engine) =>
+      (engine as StaleWriterEngine).inner.close();
+
+  @override
+  Future<void> crash(StorageEngine engine) =>
+      (engine as StaleWriterEngine).inner.close();
+
+  @override
+  PendingWrite holdNextWrite(StorageEngine engine) =>
+      (engine as StaleWriterEngine)._hold = _HeldCommit();
+}
+
+final class _HeldCommit implements PendingWrite {
+  final _reached = Completer<void>();
+  final _letGo = Completer<void>();
+
+  @override
+  Future<void> get reached => _reached.future;
+
+  @override
+  void letGo() => _letGo.complete();
+}

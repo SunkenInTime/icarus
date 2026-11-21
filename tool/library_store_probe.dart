@@ -17,7 +17,11 @@ Future<void> _close(StorageEngine engine) => switch (engine) {
       _ => throw StateError('unknown engine $engine'),
     };
 
-bool _readsAll(ElementPayload payload) => true;
+const _readsAll = CanRead(element: _anyElement, lineupGroup: _anyLineupGroup);
+
+bool _anyElement(ElementPayload payload) => true;
+
+bool _anyLineupGroup(LineupGroupPayload payload) => true;
 
 ElementPayload _agent(double x) => ElementPayload(
       kind: ElementKind.agent,

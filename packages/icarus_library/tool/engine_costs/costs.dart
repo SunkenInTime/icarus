@@ -11,7 +11,11 @@ const coldRuns = 15;
 const saveRuns = 60;
 const burst = 200;
 
-bool _readsAll(ElementPayload payload) => true;
+const _readsAll = CanRead(element: _anyElement, lineupGroup: _anyLineupGroup);
+
+bool _anyElement(ElementPayload payload) => true;
+
+bool _anyLineupGroup(LineupGroupPayload payload) => true;
 
 ElementPayload _agent(String id, double x) => ElementPayload(
   kind: ElementKind.agent,

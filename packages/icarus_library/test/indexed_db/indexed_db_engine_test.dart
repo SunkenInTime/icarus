@@ -167,6 +167,15 @@ void main() {
     }
   });
 
+  test('the contract catches a real IndexedDB engine whose held write lands '
+      'through a fresh connection after the next lease was granted, since a '
+      'Web Lock does not stop a stale tab from writing', () async {
+    final check = engineContract.singleWhere(
+      (check) => check.name.startsWith('a write pending when its lease ends'),
+    );
+    expect(await check.run(StaleWriterHarness(name)), isA<Broke>());
+  });
+
   group(IndexedDbCrashHarness().name, () {
     engineCrashContract(IndexedDbCrashHarness.new);
     storeCrashContract(IndexedDbCrashHarness.new);
