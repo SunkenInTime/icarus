@@ -78,9 +78,68 @@ void main() {
     await next.close();
   });
 
-  test('a library path ending in a name the engine keeps for itself is '
-      'refused when the engine is made', () {
-    for (final suffix in ['.creating', '.lock', '-wal', '-shm', '-journal']) {
+  test('a worker killed while it holds the lease lets go of the file: this '
+      'process and another can lease it at once', () async {
+    Future<SqliteEngine> killedHolder(String file) async {
+      final engine = SqliteEngine(file);
+      final lease = await leaseOf(engine) as SqliteLease;
+      committed(await lease.commit(const [Put('a', 'k', 'v')]));
+      await lease.stopWorker();
+      return engine;
+    }
+
+    for (final round in [1, 2, 3]) {
+      final file = '${directory.path}/killed-$round.sqlite';
+      final first = await killedHolder(file);
+      final here = SqliteEngine(file);
+      expect(await here.lease(), isA<Leased>(), reason: 'round $round, here');
+      await here.close();
+      final second = await killedHolder(file);
+      final elsewhere = await Process.run(Platform.resolvedExecutable, [
+        'run',
+        'test/sqlite/library_process.dart',
+        'try',
+        file,
+      ]);
+      expect(
+        '${elsewhere.stdout}'.trim(),
+        'leased',
+        reason: 'round $round, another process',
+      );
+      await first.close();
+      await second.close();
+    }
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  test('two closes at once both finish with the same answer', () async {
+    final engine = SqliteEngine(path);
+    for (var lease = 0; lease < 3; lease++) {
+      await (await leaseOf(engine)).release();
+    }
+    await leaseOf(engine);
+    final closing = [engine.close(), engine.close()];
+    final [first, second] = await Future.wait(closing);
+    expect(first, isA<Released>());
+    expect(identical(first, second), isTrue);
+  });
+
+  test('a commit held for the contract is let through when its worker stops '
+      'before it is reached, so a test waiting on it cannot hang', () async {
+    final engine = SqliteEngine(path);
+    final lease = await leaseOf(engine) as SqliteLease;
+    final pending = engine.holdNextCommit();
+    await lease.stopWorker();
+    await pending.reached.timeout(const Duration(seconds: 10));
+    expect(
+      await lease.commit(const [Put('a', 'k', 'v')]),
+      isA<CommitRefused>(),
+    );
+    await engine.close();
+  });
+
+  test('a library path ending in the name of one of SQLite\'s own companion '
+      'files, in any case, is refused when the engine is made', () {
+    for (final suffix in ['-wal', '-shm', '-journal', '-WAL', '-Journal']) {
       expect(
         () => SqliteEngine('$path$suffix'),
         throwsArgumentError,

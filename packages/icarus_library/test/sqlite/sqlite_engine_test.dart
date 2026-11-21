@@ -254,39 +254,42 @@ void main() {
     }
   }, timeout: const Timeout(Duration(minutes: 5)));
 
-  test('a file that is not a library is refused, never opened empty', () async {
-    await File(path).writeAsString('notes from a user');
-    expect(await _refusal(path), contains('not an Icarus library'));
-    await File(path).writeAsBytes(const []);
-    expect(await _refusal(path), contains('not an Icarus library'));
-    await File(path).delete();
+  test(
+    'a file that is not a library is refused, never opened empty; an empty '
+    'file is a library whose creation was cut short, and is created',
+    () async {
+      await File(path).writeAsString('notes from a user');
+      expect(await _refusal(path), contains('not an Icarus library'));
+      await File(path).writeAsBytes(const []);
+      expect(await _refusal(path), 'leased');
+      await File(path).delete();
 
-    sqlite3.open(path)
-      ..execute('CREATE TABLE t (x)')
-      ..close();
-    expect(await _refusal(path), contains('not an Icarus library'));
-    await File(path).delete();
+      sqlite3.open(path)
+        ..execute('CREATE TABLE t (x)')
+        ..close();
+      expect(await _refusal(path), contains('not an Icarus library'));
+      await File(path).delete();
 
-    expect(await _refusal(path), 'leased');
-    sqlite3.open(path)
-      ..execute('PRAGMA user_version = 2')
-      ..close();
-    expect(await _refusal(path), contains('newer build'));
-  });
+      expect(await _refusal(path), 'leased');
+      sqlite3.open(path)
+        ..execute('PRAGMA user_version = 2')
+        ..close();
+      expect(await _refusal(path), contains('newer build'));
+    },
+  );
 
   test('a library whose file is gone but whose log is there is refused, not '
       'made new', () async {
     await File('$path-wal').writeAsString('frames');
-    expect(await _refusal(path), contains('log is still there'));
+    expect(await _refusal(path), contains('-wal is still there'));
   });
 
-  test('a rename that fails and a missing folder are failures, and the next '
-      'open recovers', () async {
+  test('a path that is a folder and a missing folder are failures, and the '
+      'next open recovers', () async {
     await Directory(path).create();
-    expect(await _refusal(path), contains('FileSystemException'));
+    expect(await _refusal(path), contains('SQLite'));
     await Directory(path).delete();
     expect(await _refusal(path), 'leased');
-    expect(File('$path.creating').existsSync(), isFalse);
     expect(
       await _refusal('${directory.path}/missing/library.sqlite'),
       contains('SQLite'),

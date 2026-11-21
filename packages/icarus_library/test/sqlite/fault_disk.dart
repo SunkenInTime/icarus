@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -35,10 +34,6 @@ final class FullAfter extends Fault {
   const FullAfter(this.bytes);
 
   final int bytes;
-}
-
-final class FailRename extends Fault {
-  const FailRename();
 }
 
 sealed class PowerLoss {
@@ -91,13 +86,6 @@ final class _Deleted extends _DirectoryChange {
   const _Deleted(this.path);
 
   final String path;
-}
-
-final class _Renamed extends _DirectoryChange {
-  const _Renamed(this.from, this.to);
-
-  final String from;
-  final String to;
 }
 
 final class _DiskFile {
@@ -199,22 +187,6 @@ final class FaultDisk {
     if (syncDirectory) _syncDirectory();
   }
 
-  void _rename(String from, String to) {
-    if (crashed) throw FileSystemException('the app stopped', from);
-    steps++;
-    if (fault case CrashAt(:final step) when steps >= step) {
-      crashed = true;
-      throw FileSystemException('the app stopped', from);
-    }
-    if (fault is FailRename) {
-      throw FileSystemException('the rename failed', from);
-    }
-    final file = _files.remove(from);
-    if (file == null) throw FileSystemException('no such file', from);
-    _files[to] = file;
-    _directoryChanges.add(_Renamed(from, to));
-  }
-
   void powerLoss(PowerLoss loss) {
     final random = switch (loss) {
       TearsUnsynced(:final seed) => Random(seed),
@@ -237,8 +209,6 @@ final class FaultDisk {
           names[path] = file;
         case _Deleted(:final path):
           names.remove(path);
-        case _Renamed(:final from, :final to):
-          if (names.remove(from) case final file?) names[to] = file;
       }
     }
     _files = {
@@ -419,21 +389,9 @@ final class FaultLibraryFiles implements LibraryFiles {
   bool exists(String path) => disk.exists(path);
 
   @override
-  void delete(String path) {
-    if (disk.crashed) throw FileSystemException('the app stopped', path);
-    disk._delete(path, syncDirectory: false);
-  }
-
-  @override
-  void rename(String from, String to) => disk._rename(from, to);
-
-  @override
   void pause(Duration duration) {}
 
   @override
-  Database open(String path, {required bool create}) => sqlite3.open(
-    path,
-    vfs: vfs.name,
-    mode: create ? OpenMode.readWriteCreate : OpenMode.readWrite,
-  );
+  Database open(String path) =>
+      sqlite3.open(path, vfs: vfs.name, mode: OpenMode.readWriteCreate);
 }

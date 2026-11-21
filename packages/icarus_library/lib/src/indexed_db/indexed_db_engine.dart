@@ -14,19 +14,29 @@ const indexedDbMaxKeyLength = 1024;
 
 const indexedDbVersion = 1;
 
-StorageFailure _failure(DOMException? error, String what) =>
+const roomMargin = 1024 * 1024;
+
+const _bytesPerChange = 1024;
+
+const _refreshRoomEvery = Duration(seconds: 10);
+
+StorageFailure _named(DOMException? error, String what) =>
     DeviceFailure(switch (error) {
       null => '$what was aborted',
       _ => '$what failed: ${error.name}: ${error.message}',
     });
 
-StorageFailure? _domFailure(Object error, String what) => switch (error) {
-  final JSAny thrown when thrown.isA<DOMException>() => _failure(
+StorageFailure _thrown(Object error, String what) => switch (error) {
+  final JSAny thrown when thrown.isA<DOMException>() => _named(
     thrown as DOMException,
     what,
   ),
-  _ => null,
+  _ => DeviceFailure('$what threw: $error'),
 };
+
+void _into<T>(Completer<T> answer, T Function() compute) {
+  if (!answer.isCompleted) answer.complete(Future.sync(compute));
+}
 
 JSArray<JSAny> _key(String area, String key) => [area.toJS, key.toJS].toJS;
 
@@ -43,6 +53,9 @@ const _notText = DeviceFailure('the library holds a value that is not text');
 
 const _notAName = DeviceFailure('the library holds a key that is not a name');
 
+String? _text(JSAny? value) =>
+    value.isA<JSString>() ? (value as JSString).toDart : null;
+
 sealed class _Answer {
   const _Answer();
 }
@@ -50,7 +63,7 @@ sealed class _Answer {
 final class _Value extends _Answer {
   const _Value(this.value);
 
-  final JSAny value;
+  final JSAny? value;
 }
 
 final class _Nothing extends _Answer {
@@ -66,26 +79,28 @@ final class _Failed extends _Answer {
 Future<_Answer> _answer(IDBRequest request, String what) {
   final answered = Completer<_Answer>();
   request
-    ..onsuccess = ((Event _) => answered.complete(switch (request.result) {
-      null => const _Nothing(),
-      final JSAny value => _Value(value),
-    })).toJS
+    ..onsuccess = ((Event _) => _into(
+      answered,
+      () => request.result.isUndefined
+          ? const _Nothing()
+          : _Value(request.result),
+    )).toJS
     ..onerror = ((Event event) {
       event.preventDefault();
-      answered.complete(_Failed(_failure(request.error, what)));
+      _into(answered, () => _Failed(_named(request.error, what)));
     }).toJS;
   return answered.future;
 }
 
-List<String>? _namesIn(JSAny keys, int part) {
+List<String>? _namesIn(JSAny? keys, int part) {
   if (!keys.isA<JSArray>()) return null;
   final names = <String>[];
   for (final key in (keys as JSArray<JSAny?>).toDart) {
-    if (key == null || !key.isA<JSArray>()) return null;
+    if (!key.isA<JSArray>()) return null;
     final parts = (key as JSArray<JSAny?>).toDart;
-    final name = parts.length == 2 ? parts[part] : null;
-    if (name == null || !name.isA<JSString>()) return null;
-    names.add((name as JSString).toDart);
+    final name = parts.length == 2 ? _text(parts[part]) : null;
+    if (name == null) return null;
+    names.add(name);
   }
   return names;
 }
@@ -95,9 +110,10 @@ sealed class _Opened {
 }
 
 final class _Database extends _Opened {
-  const _Database(this.db);
+  const _Database(this.db, {required this.created});
 
   final IDBDatabase db;
+  final bool created;
 }
 
 final class _Refused extends _Opened {
@@ -106,145 +122,183 @@ final class _Refused extends _Opened {
   final StorageFailure failure;
 }
 
-_Refused _cannotOpen(String why) =>
-    _Refused(DeviceFailure('the library cannot be opened: $why'));
+StorageFailure _cannotOpen(String why) =>
+    DeviceFailure('the library cannot be opened: $why');
 
-bool _keepsWritesStrict(IDBDatabase db) {
-  try {
-    final probe = db.transaction(
-      _rows.toJS,
-      'readwrite',
-      IDBTransactionOptions(durability: 'strict'),
-    );
-    final strict = probe.durability == 'strict';
-    probe.abort();
-    return strict;
-  } catch (error) {
-    if (_domFailure(error, 'probing durability') == null) rethrow;
-    return false;
-  }
-}
-
-Future<_Opened> _openDatabase(String name) {
+Future<_Opened> _openDatabase(String name, Duration patience) {
   final opened = Completer<_Opened>();
-  final IDBOpenDBRequest request;
-  try {
-    request = window.indexedDB.open(name);
-  } catch (error) {
-    final failure = _domFailure(error, 'opening');
-    if (failure == null) rethrow;
-    return Future.value(_Refused(failure));
-  }
+  var created = false;
+  final request = window.indexedDB.open(name);
   request
     ..onupgradeneeded = ((IDBVersionChangeEvent _) {
+      created = true;
       (request.result! as IDBDatabase).createObjectStore(_rows);
     }).toJS
     ..onsuccess = ((Event _) {
       final db = request.result! as IDBDatabase;
-      if (db.version != indexedDbVersion) {
+      if (opened.isCompleted) {
         db.close();
-        opened.complete(
-          _cannotOpen('written by a newer build (version ${db.version})'),
-        );
-      } else if (!db.objectStoreNames.contains(_rows)) {
-        db.close();
-        opened.complete(_cannotOpen('not an Icarus library (no rows store)'));
-      } else if (!_keepsWritesStrict(db)) {
-        db.close();
-        opened.complete(
-          _cannotOpen(
-            'this browser does not keep writes with strict durability',
-          ),
-        );
-      } else {
-        opened.complete(_Database(db));
+        return;
       }
+      _into(opened, () => _Database(db, created: created));
     }).toJS
     ..onerror = ((Event event) {
       event.preventDefault();
-      opened.complete(_Refused(_failure(request.error, 'opening')));
+      _into(opened, () => _Refused(_named(request.error, 'opening')));
     }).toJS;
-  return opened.future;
+  final waiting = Timer(
+    patience,
+    () => _into(
+      opened,
+      () => _Refused(
+        _cannotOpen(
+          'the browser did not open it within ${patience.inSeconds} s; '
+          'another tab may be upgrading or deleting it',
+        ),
+      ),
+    ),
+  );
+  return opened.future.whenComplete(waiting.cancel);
 }
 
-sealed class _LockAnswer {
-  const _LockAnswer();
+Future<void> _deleteDatabase(String name, Duration patience) {
+  final deleted = Completer<void>();
+  window.indexedDB.deleteDatabase(name)
+    ..onsuccess = ((Event _) => _into(deleted, () {})).toJS
+    ..onerror = ((Event event) {
+      event.preventDefault();
+      _into(deleted, () {});
+    }).toJS;
+  final waiting = Timer(patience, () => _into(deleted, () {}));
+  return deleted.future.whenComplete(waiting.cancel);
 }
 
-final class _LockGranted extends _LockAnswer {
-  const _LockGranted();
+StorageFailure? _problemWith(IDBDatabase db) {
+  if (db.version != indexedDbVersion) {
+    return _cannotOpen('written by a newer build (version ${db.version})');
+  }
+  if (!db.objectStoreNames.contains(_rows)) {
+    return _cannotOpen('not an Icarus library (no rows store)');
+  }
+  return null;
 }
 
-final class _LockBusy extends _LockAnswer {
-  const _LockBusy();
-}
-
-final class _LockRejected extends _LockAnswer {
-  const _LockRejected(this.failure);
-
-  final StorageFailure failure;
+Future<bool> _keepsWritesStrict(IDBDatabase db) {
+  final probe = db.transaction(
+    _rows.toJS,
+    'readwrite',
+    IDBTransactionOptions(durability: 'strict'),
+  );
+  final ended = Completer<void>();
+  probe
+    ..onabort = ((Event _) => _into(ended, () {})).toJS
+    ..oncomplete = ((Event _) => _into(ended, () {})).toJS;
+  final durability = _text(probe.getProperty<JSAny?>('durability'.toJS));
+  probe.abort();
+  return ended.future.then((_) => durability == 'strict');
 }
 
 final class _Lock {
   _Lock(String name) {
-    final JSPromise<JSAny?> promise;
-    try {
-      promise = window.navigator.locks.request(
-        name,
-        LockOptions(ifAvailable: true),
-        ((Lock? lock) {
-          if (lock == null) {
-            answer.complete(const _LockBusy());
-            return null;
-          }
-          answer.complete(const _LockGranted());
-          return _letGo.future.toJS;
-        }).toJS,
-      );
-    } catch (error) {
-      final failure = _domFailure(error, 'asking for the lock');
-      if (failure == null) rethrow;
-      answer.complete(_LockRejected(failure));
-      _settled.complete();
-      return;
-    }
-    unawaited(_watch(promise));
+    _ended = window.navigator.locks
+        .request(
+          name,
+          LockOptions(ifAvailable: true),
+          ((Lock? lock) {
+            _granted.complete(lock != null);
+            return lock == null ? null : _letGo.future.toJS;
+          }).toJS,
+        )
+        .toDart;
   }
 
-  final answer = Completer<_LockAnswer>();
+  final _granted = Completer<bool>();
   final _letGo = Completer<void>();
-  final _settled = Completer<void>();
+  late final Future<JSAny?> _ended;
 
-  Future<void> _watch(JSPromise<JSAny?> promise) async {
-    try {
-      await promise.toDart;
-    } catch (error) {
-      final failure = _domFailure(error, 'asking for the lock');
-      if (failure == null) rethrow;
-      if (!answer.isCompleted) {
-        answer.complete(_LockRejected(failure));
-      }
-    }
-    _settled.complete();
+  Future<bool> get held =>
+      Future.any([_granted.future, _ended.then((_) => _granted.future)]);
+
+  Future<void> letGo() async {
+    if (!_letGo.isCompleted) _letGo.complete();
+    if (_granted.isCompleted && await _granted.future) await _ended;
+  }
+}
+
+final class _Room {
+  int? _left;
+  final _sinceAsked = Stopwatch();
+  Future<void>? _asking;
+  var _spentWhileAsking = 0;
+
+  static int _needed(List<Change> changes) => changes.fold(
+    0,
+    (total, change) =>
+        total +
+        _bytesPerChange +
+        switch (change) {
+          Put(:final area, :final key, :final value) =>
+            2 * (area.length + key.length + value.length),
+          Delete() || ClearArea() => 0,
+        },
+  );
+
+  Future<void> ask() => _asking ??= () {
+    _spentWhileAsking = 0;
+    _sinceAsked
+      ..reset()
+      ..start();
+    return window.navigator.storage.estimate().toDart.then(
+      (estimate) {
+        _left = estimate.quota - estimate.usage - _spentWhileAsking;
+        _asking = null;
+      },
+      onError: (Object _) {
+        _left = null;
+        _asking = null;
+      },
+    );
+  }();
+
+  bool _fits(int needed) => switch (_left) {
+    null => true,
+    final left => needed + roomMargin <= left,
+  };
+
+  Future<StorageFailure?> refuses(List<Change> changes) async {
+    final needed = _needed(changes);
+    if (_sinceAsked.elapsed > _refreshRoomEvery) unawaited(ask());
+    if (_fits(needed)) return null;
+    await ask();
+    return switch (_left) {
+      final left? when !_fits(needed) => NoRoomForCommit(
+        needed: needed + roomMargin,
+        left: left,
+      ),
+      _ => null,
+    };
   }
 
-  Future<void> letGo() {
-    if (!_letGo.isCompleted) _letGo.complete();
-    return _settled.future;
+  void spent(List<Change> changes) {
+    final needed = _needed(changes);
+    if (_left case final left?) _left = left - needed;
+    _spentWhileAsking += needed;
   }
 }
 
 final class IndexedDbEngine implements StorageEngine {
-  IndexedDbEngine(this.name) {
+  IndexedDbEngine(this.name, {this.patience = const Duration(seconds: 10)}) {
     if (name.startsWith('-')) {
       throw ArgumentError.value(name, 'name', 'Web Locks keep names with -');
     }
   }
 
   final String name;
+  final Duration patience;
   final _granted = <IndexedDbLease>[];
   final _opening = <Future<Leasing>>{};
   var _closed = false;
+  Future<Releasing>? _closing;
 
   @override
   Future<Leasing> lease() {
@@ -260,31 +314,50 @@ final class IndexedDbEngine implements StorageEngine {
         DeviceFailure('this page cannot hold the library: no Web Locks'),
       );
     }
-    final lock = _Lock(name);
-    switch (await lock.answer.future) {
-      case _LockBusy():
-        await lock.letGo();
-        return const HeldByAnotherWriter();
-      case _LockRejected(:final failure):
-        await lock.letGo();
-        return LeaseFailed(failure);
-      case _LockGranted():
-        break;
-    }
-    switch (await _openDatabase(name)) {
-      case _Refused(:final failure):
-        await lock.letGo();
-        return LeaseFailed(failure);
-      case _Database(:final db):
-        final lease = IndexedDbLease._(db, lock);
-        _granted.add(lease);
-        return _closed ? const LeaseFailed(EngineClosed()) : Leased(lease);
+    _Lock? lock;
+    IDBDatabase? db;
+    var created = false;
+    IndexedDbLease? granted;
+    try {
+      final asked = lock = _Lock(name);
+      if (!await asked.held) return const HeldByAnotherWriter();
+      final IDBDatabase opened;
+      switch (await _openDatabase(name, patience)) {
+        case _Refused(:final failure):
+          return LeaseFailed(failure);
+        case _Database(db: final database, created: final made):
+          opened = db = database;
+          created = made;
+      }
+      if (_problemWith(opened) case final problem?) return LeaseFailed(problem);
+      if (!await _keepsWritesStrict(opened)) {
+        return LeaseFailed(
+          _cannotOpen(
+            'this browser does not keep writes with strict durability',
+          ),
+        );
+      }
+      final room = _Room();
+      await room.ask();
+      final lease = granted = IndexedDbLease._(opened, asked, room);
+      _granted.add(lease);
+      return _closed ? const LeaseFailed(EngineClosed()) : Leased(lease);
+    } on Object catch (error) {
+      return LeaseFailed(_thrown(error, 'leasing the library'));
+    } finally {
+      if (granted == null) {
+        db?.close();
+        if (created) await _deleteDatabase(name, patience);
+        await lock?.letGo();
+      }
     }
   }
 
   PendingWrite holdNextCommit() => _granted.last._held = _HeldCommit();
 
-  Future<Releasing> close() async {
+  Future<Releasing> close() => _closing ??= _close();
+
+  Future<Releasing> _close() async {
     _closed = true;
     await Future.wait([..._opening]);
     Releasing releasing = const Released();
@@ -313,7 +386,7 @@ final class _Ending extends _LeaseState {
 }
 
 final class IndexedDbLease implements StorageLease {
-  IndexedDbLease._(this._db, this._lock) {
+  IndexedDbLease._(this._db, this._lock, this._room) {
     _db
       ..onversionchange = ((Event _) => unawaited(release())).toJS
       ..onclose = ((Event _) => unawaited(release())).toJS;
@@ -321,7 +394,9 @@ final class IndexedDbLease implements StorageLease {
 
   final IDBDatabase _db;
   final _Lock _lock;
+  final _Room _room;
   final _writing = <Future<Committing>>{};
+  Future<void> _turn = Future.value();
   _HeldCommit? _held;
   _LeaseState _state = const _Open();
 
@@ -335,7 +410,6 @@ final class IndexedDbLease implements StorageLease {
   };
 
   Stored<IDBTransaction> _transaction(IDBTransactionMode mode) {
-    if (_state is! _Open) return const StorageFailed(LeaseEnded());
     try {
       return Done(
         _db.transaction(
@@ -344,10 +418,8 @@ final class IndexedDbLease implements StorageLease {
           IDBTransactionOptions(durability: 'strict'),
         ),
       );
-    } catch (error) {
-      final failure = _domFailure(error, 'starting a transaction');
-      if (failure == null) rethrow;
-      return StorageFailed(failure);
+    } on Object catch (error) {
+      return StorageFailed(_thrown(error, 'starting a transaction'));
     }
   }
 
@@ -355,16 +427,15 @@ final class IndexedDbLease implements StorageLease {
     String what,
     Future<Stored<T>> Function(IDBObjectStore rows) read,
   ) async {
+    if (_state is! _Open) return const StorageFailed(LeaseEnded());
     switch (_transaction('readonly')) {
       case StorageFailed(:final failure):
         return StorageFailed(failure);
       case Done(value: final transaction):
         try {
           return await read(transaction.objectStore(_rows));
-        } catch (error) {
-          final failure = _domFailure(error, what);
-          if (failure == null) rethrow;
-          return StorageFailed(failure);
+        } on Object catch (error) {
+          return StorageFailed(_thrown(error, what));
         }
     }
   }
@@ -381,10 +452,10 @@ final class IndexedDbLease implements StorageLease {
       StorageFailed(:final failure) => KeyNotRead(failure),
       Done(value: _Failed(:final failure)) => KeyNotRead(failure),
       Done(value: _Nothing()) => const KeyMissing(),
-      Done(value: _Value(:final value)) when value.isA<JSString>() => KeyHeld(
-        (value as JSString).toDart,
-      ),
-      Done(value: _Value()) => const KeyNotRead(_notText),
+      Done(value: _Value(:final value)) => switch (_text(value)) {
+        final text? => KeyHeld(text),
+        null => const KeyNotRead(_notText),
+      },
     };
   }
 
@@ -431,29 +502,31 @@ final class IndexedDbLease implements StorageLease {
       final request = rows.openKeyCursor(range);
       request
         ..onsuccess = ((Event _) {
-          final cursor = request.result as IDBCursor?;
-          if (cursor == null) {
-            listed.complete(Done(found));
-            return;
-          }
-          switch (_namesIn([cursor.key].toJS, 0)) {
-            case [final area]:
-              found.add(area);
-              try {
-                cursor.continue_([area.toJS, JSArray<JSAny>()].toJS);
-              } catch (error) {
-                final failure = _domFailure(error, 'listing areas');
-                if (failure == null) rethrow;
-                listed.complete(StorageFailed(failure));
+          if (listed.isCompleted) return;
+          unawaited(
+            Future<Stored<List<String>>?>.sync(() {
+              final cursor = request.result as IDBCursor?;
+              if (cursor == null) return Done(found);
+              switch (_namesIn([cursor.key].toJS, 0)) {
+                case [final area]:
+                  found.add(area);
+                  cursor.continue_([area.toJS, JSArray<JSAny>()].toJS);
+                  return null;
+                case _:
+                  return const StorageFailed(_notAName);
               }
-            case _:
-              listed.complete(const StorageFailed(_notAName));
-          }
+            }).then((finished) {
+              if (finished != null) _into(listed, () => finished);
+            }, onError: listed.completeError),
+          );
         }).toJS
         ..onerror = ((Event event) {
           event.preventDefault();
-          listed.complete(
-            StorageFailed(_failure(request.error, 'listing areas')),
+          _into(
+            listed,
+            () => StorageFailed<List<String>>(
+              _named(request.error, 'listing areas'),
+            ),
           );
         }).toJS;
       return listed.future;
@@ -481,11 +554,9 @@ final class IndexedDbLease implements StorageLease {
         }
         final found = <StoredEntry>[];
         for (var i = 0; i < names.length; i++) {
-          final text = texts[i];
-          if (text == null || !text.isA<JSString>()) {
-            return const StorageFailed(_notText);
-          }
-          found.add((key: names[i], value: (text as JSString).toDart));
+          final text = _text(texts[i]);
+          if (text == null) return const StorageFailed(_notText);
+          found.add((key: names[i], value: text));
         }
         return Done(found);
     }
@@ -506,49 +577,86 @@ final class IndexedDbLease implements StorageLease {
   }
 
   Future<Committing> _committed(List<Change> changes) async {
+    final previous = _turn;
+    final turn = Completer<void>();
+    _turn = turn.future;
+    await previous;
+    final ({Future<Committing> landing}) begun;
+    try {
+      begun = await _begin(changes);
+    } finally {
+      turn.complete();
+    }
+    return begun.landing;
+  }
+
+  Future<({Future<Committing> landing})> _begin(List<Change> changes) async {
     if (_held case final held?) {
       _held = null;
       held._reached.complete();
       await held._letGo.future;
     }
-    switch (_transaction('readwrite')) {
-      case StorageFailed(:final failure):
-        return CommitRefused(failure);
-      case Done(value: final transaction):
-        final finished = Completer<Committing>();
-        StorageFailure? notQueued;
-        transaction
-          ..oncomplete = ((Event _) => finished.complete(
-            const CommitApplied(),
-          )).toJS
-          ..onabort = ((Event _) => finished.complete(switch ((
-            notQueued,
-            transaction.error,
-          )) {
-            (final StorageFailure failure?, _) => CommitRefused(failure),
-            (null, final error?) when error.name == 'QuotaExceededError' =>
-              CommitUnknown(_failure(error, 'committing')),
-            (null, final error) => CommitRefused(_failure(error, 'committing')),
-          })).toJS;
-        try {
-          final rows = transaction.objectStore(_rows);
-          for (final change in changes) {
-            switch (change) {
-              case Put(:final area, :final key, :final value):
-                rows.put(value.toJS, _key(area, key));
-              case Delete(:final area, :final key):
-                rows.delete(_key(area, key));
-              case ClearArea(:final area):
-                rows.delete(_under(area, ''));
-            }
-          }
-        } catch (error) {
-          final failure = _domFailure(error, 'queuing a change');
-          if (failure == null) rethrow;
-          notQueued = failure;
-          transaction.abort();
+    if (await _room.refuses(changes) case final failure?) {
+      return (landing: Future.value(CommitRefused(failure)));
+    }
+    return switch (_transaction('readwrite')) {
+      StorageFailed(:final failure) => (
+        landing: Future.value(CommitRefused(failure)),
+      ),
+      Done(value: final transaction) => (landing: _queue(transaction, changes)),
+    };
+  }
+
+  Future<Committing> _queue(IDBTransaction transaction, List<Change> changes) {
+    final landed = Completer<Committing>();
+    StorageFailure? notQueued;
+    transaction
+      ..oncomplete = ((Event _) => _into(landed, () {
+        if (notQueued case final failure?) return CommitUnknown(failure);
+        _room.spent(changes);
+        return const CommitApplied();
+      })).toJS
+      ..onabort = ((Event _) => _into(
+        landed,
+        () => switch ((notQueued, transaction.error)) {
+          (final StorageFailure failure?, _) => CommitRefused(failure),
+          (null, final error?) when error.name == 'QuotaExceededError' =>
+            CommitUnknown(AbortedForQuota(error.message)),
+          (null, final error) => CommitRefused(_named(error, 'committing')),
+        },
+      )).toJS;
+    try {
+      final rows = transaction.objectStore(_rows);
+      for (final change in changes) {
+        switch (change) {
+          case Put(:final area, :final key, :final value):
+            rows.put(value.toJS, _key(area, key));
+          case Delete(:final area, :final key):
+            rows.delete(_key(area, key));
+          case ClearArea(:final area):
+            rows.delete(_under(area, ''));
         }
-        return finished.future;
+      }
+    } on Object catch (error) {
+      final failure = notQueued = _thrown(error, 'queuing a change');
+      if (_abort(transaction) case final unconfirmed?) {
+        _into(
+          landed,
+          () => CommitUnknown(
+            DeviceFailure('$failure, and the abort failed: $unconfirmed'),
+          ),
+        );
+      }
+    }
+    return landed.future;
+  }
+
+  static StorageFailure? _abort(IDBTransaction transaction) {
+    try {
+      transaction.abort();
+      return null;
+    } on Object catch (error) {
+      return _thrown(error, 'aborting');
     }
   }
 

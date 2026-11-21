@@ -19,6 +19,14 @@ const _patch = '''
     throwValue: null,
     rejectLocks: false,
     dropOptions: false,
+    plainThrowValue: null,
+    abortThrows: false,
+    openThrows: false,
+    storeNamesThrow: false,
+    hideDurability: false,
+    cursorKeyThrows: false,
+    room: null,
+    estimates: 0,
     opened: [],
   };
   globalThis.icarusFaults = faults;
@@ -33,8 +41,41 @@ const _patch = '''
   IDBDatabase.prototype.transaction = function (...args) {
     return transaction.apply(this, faults.dropOptions ? args.slice(0, 2) : args);
   };
+  const abort = IDBTransaction.prototype.abort;
+  IDBTransaction.prototype.abort = function (...args) {
+    if (faults.abortThrows) throw new TypeError('abort is broken');
+    return abort.apply(this, args);
+  };
+  const durability = Object.getOwnPropertyDescriptor(IDBTransaction.prototype, 'durability');
+  Object.defineProperty(IDBTransaction.prototype, 'durability', {
+    configurable: true,
+    get() { return faults.hideDurability ? undefined : durability.get.call(this); },
+  });
+  const storeNames = Object.getOwnPropertyDescriptor(IDBDatabase.prototype, 'objectStoreNames');
+  Object.defineProperty(IDBDatabase.prototype, 'objectStoreNames', {
+    configurable: true,
+    get() {
+      if (faults.storeNamesThrow) throw new TypeError('store names are broken');
+      return storeNames.get.call(this);
+    },
+  });
+  const cursorKey = Object.getOwnPropertyDescriptor(IDBCursor.prototype, 'key');
+  Object.defineProperty(IDBCursor.prototype, 'key', {
+    configurable: true,
+    get() {
+      if (faults.cursorKeyThrows) throw new TypeError('cursor keys are broken');
+      return cursorKey.get.call(this);
+    },
+  });
+  const estimate = StorageManager.prototype.estimate;
+  StorageManager.prototype.estimate = function (...args) {
+    faults.estimates++;
+    if (faults.room === null) return estimate.apply(this, args);
+    return Promise.resolve({ quota: faults.room + 4096, usage: 4096 });
+  };
   const open = IDBFactory.prototype.open;
   IDBFactory.prototype.open = function (...args) {
+    if (faults.openThrows) throw new TypeError('open is broken');
     const opening = open.apply(this, args);
     opening.addEventListener('success', () => faults.opened.push(opening.result));
     return opening;
@@ -44,6 +85,9 @@ const _patch = '''
     IDBObjectStore.prototype[name] = function (...args) {
       if (name === 'put' && faults.throwValue !== null && args[0] === faults.throwValue) {
         throw new DOMException('the value cannot be cloned', 'DataCloneError');
+      }
+      if (name === 'put' && faults.plainThrowValue !== null && args[0] === faults.plainThrowValue) {
+        throw new TypeError('the value is broken');
       }
       const request = original.apply(this, args);
       if (faults.abortNext || faults.quotaNext) {
@@ -78,6 +122,57 @@ void abortNextAfterItsFirstRequest() => _faults['abortNext'] = true.toJS;
 void exceedQuotaNext() => _faults['quotaNext'] = true.toJS;
 
 void throwOnPutOf(String? value) => _faults['throwValue'] = value?.toJS;
+
+void throwPlainlyOnPutOf(String? value) =>
+    _faults['plainThrowValue'] = value?.toJS;
+
+void abortThrows(bool throws) => _faults['abortThrows'] = throws.toJS;
+
+void openThrows(bool throws) => _faults['openThrows'] = throws.toJS;
+
+void storeNamesThrow(bool throws) => _faults['storeNamesThrow'] = throws.toJS;
+
+void hideDurability(bool hide) => _faults['hideDurability'] = hide.toJS;
+
+void cursorKeysThrow(bool throws) => _faults['cursorKeyThrows'] = throws.toJS;
+
+void pretendRoomLeft(int? bytes) => _faults['room'] = bytes?.toJS;
+
+int get estimatesAsked => (_faults['estimates']! as JSNumber).toDartInt;
+
+Future<bool> databaseExists(String name) async {
+  final listed = await window.indexedDB.databases().toDart;
+  return listed.toDart.any((info) => info.name == name);
+}
+
+Future<bool> lockIsFree(String name) async {
+  final state = await window.navigator.locks.query().toDart;
+  return !state.held.toDart.any((lock) => lock.name == name);
+}
+
+Future<void> putRaw(String name, String area, String key, JSAny? value) {
+  final done = Completer<void>();
+  final opening = window.indexedDB.open(name);
+  opening.onsuccess = ((Event _) {
+    final db = opening.result! as IDBDatabase;
+    final transaction = db.transaction('rows'.toJS, 'readwrite');
+    transaction.objectStore('rows').put(value, [area.toJS, key.toJS].toJS);
+    transaction.oncomplete = ((Event _) {
+      db.close();
+      done.complete();
+    }).toJS;
+  }).toJS;
+  return done.future;
+}
+
+Future<IDBDatabase> openRaw(String name) {
+  final opened = Completer<IDBDatabase>();
+  final opening = window.indexedDB.open(name);
+  opening.onsuccess = ((Event _) => opened.complete(
+    opening.result! as IDBDatabase,
+  )).toJS;
+  return opened.future;
+}
 
 void rejectLockRequests(bool reject) => _faults['rejectLocks'] = reject.toJS;
 

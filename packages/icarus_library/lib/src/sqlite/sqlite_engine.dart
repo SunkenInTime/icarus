@@ -132,12 +132,12 @@ Stored<void> _released(RowsDatabase rows, ReceivePort requests) {
   return done;
 }
 
-const _reservedSuffixes = ['.creating', '.lock', '-wal', '-shm', '-journal'];
+const _companionSuffixes = ['-wal', '-shm', '-journal'];
 
 final class SqliteEngine implements StorageEngine {
   SqliteEngine(this.path) {
-    for (final suffix in _reservedSuffixes) {
-      if (path.endsWith(suffix)) {
+    for (final suffix in _companionSuffixes) {
+      if (path.toLowerCase().endsWith(suffix)) {
         throw ArgumentError.value(path, 'path', 'ends in $suffix');
       }
     }
@@ -147,6 +147,7 @@ final class SqliteEngine implements StorageEngine {
   final _granted = <SqliteLease>[];
   final _opening = <Future<Leasing>>{};
   var _closed = false;
+  Future<Releasing>? _closing;
 
   @override
   Future<Leasing> lease() {
@@ -209,7 +210,9 @@ final class SqliteEngine implements StorageEngine {
 
   PendingWrite holdNextCommit() => _granted.last._holdNextCommit();
 
-  Future<Releasing> close() async {
+  Future<Releasing> close() => _closing ??= _close();
+
+  Future<Releasing> _close() async {
     _closed = true;
     await Future.wait([..._opening]);
     Releasing releasing = const Released();
@@ -262,6 +265,9 @@ final class SqliteLease implements StorageLease {
 
   void _workerStopped(StorageFailure failure) {
     _worker = const _Ended();
+    if (_held?._reached case final reached? when !reached.isCompleted) {
+      reached.complete();
+    }
     for (final (waiting, gone) in _pending.values) {
       waiting.complete(gone(failure));
     }

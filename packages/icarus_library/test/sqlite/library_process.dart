@@ -80,6 +80,15 @@ Future<void> main(List<String> arguments) async {
     await engine.close();
     return;
   }
+  if (mode == 'try') {
+    stdout.writeln(switch (await engine.lease()) {
+      Leased() => 'leased',
+      HeldByAnotherWriter() => 'held',
+      LeaseFailed(:final failure) => 'failed: $failure',
+    });
+    await engine.close();
+    return;
+  }
   if (mode == 'hold') {
     if (await engine.lease() case Leased()) stdout.writeln('held');
     await stdin.drain<void>();

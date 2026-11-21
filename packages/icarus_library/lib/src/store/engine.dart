@@ -88,6 +88,26 @@ final class StoreClosed extends StorageFailure {
   String toString() => 'StoreClosed()';
 }
 
+final class NoRoomForCommit extends StorageFailure {
+  const NoRoomForCommit({required this.needed, required this.left});
+
+  final int needed;
+  final int left;
+
+  @override
+  String toString() =>
+      'NoRoomForCommit(needs about $needed bytes, $left bytes left)';
+}
+
+final class AbortedForQuota extends StorageFailure {
+  const AbortedForQuota(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'AbortedForQuota($message)';
+}
+
 abstract interface class StorageEngine {
   Future<Leasing> lease();
 }

@@ -146,22 +146,29 @@ test layer can and cannot show.
 
 What decided it:
 
-- **Faults survived.** On a SQLite file system that loses unsynced writes,
-  tears them in 512-byte pieces and drops directory changes, a crash at every
-  step of every op type leaves the rows from before the edit or after it, and
-  no saved edit is lost. Turning `synchronous` down to `NORMAL` loses 48 saved
+- **Faults survived.** On a SQLite file system written for the tests, which
+  loses unsynced writes, tears them in 512-byte pieces and drops directory
+  changes, a crash at every step of every op type leaves the rows from before
+  the edit or after it, and no saved edit is lost. Power loss on a real drive
+  is not tested. Turning `synchronous` down to `NORMAL` loses 48 saved
   edits in the same tests, which is how we know the tests can see the
   difference. A writer process killed at 24 random points lost nothing.
-  IndexedDB in Chrome and Firefox survives aborted transactions the same way.
-  A stop or a failed sync at any point of creating a library never leaves a
-  library without its tables. The tests found engine bugs, all fixed: a
-  commit that failed after its log frames were written came back on the next
-  open, SQLite's quick check let a damaged file open with strategies missing,
-  and two processes creating a library at once could rename an empty file
-  into place. Firefox can keep part of a transaction that aborted on quota
-  ([bug 2080749](https://bugzilla.mozilla.org/show_bug.cgi?id=2080749),
-  reproduced through the engine), so a quota abort is a save in doubt, not a
-  refused one.
+  IndexedDB in Chrome and Firefox survives the aborts the tests start the
+  same way, with one exception: Firefox can keep part of a transaction that
+  aborted on quota ([bug 2080749](https://bugzilla.mozilla.org/show_bug.cgi?id=2080749),
+  reproduced through the engine in 5 runs out of 5). So the web engine checks
+  the room the browser reports before each commit and refuses one that would
+  not fit, with nothing written, and a quota abort that still happens is a
+  save in doubt, not a refused one. That is tolerable while the web build is
+  cloud only, because the server holds every row the web store holds; a local
+  library on the web would need the engine to keep before-images first. A
+  stop or a failed sync at any point of creating a desktop library never
+  leaves a library without its tables. The tests found engine bugs, all
+  fixed: a commit that failed after its log frames were written came back on
+  the next open, SQLite's quick check let a damaged file open with strategies
+  missing, and two processes creating a library at once could rename an
+  empty file into place (the library is now created in place, inside one
+  SQLite transaction).
 - **Costs**, measured through the store on release builds
   (`bin/engine_costs.dart` ahead of time, and `dart compile js -O4` in
   headless Chrome 157). The library holds 700 strategies (60 MiB on disk),

@@ -63,20 +63,6 @@ final class _Unusable extends _Connection {
   final StorageFailure failure;
 }
 
-sealed class Creation {
-  const Creation();
-}
-
-final class Created extends Creation {
-  const Created();
-}
-
-final class NotCreated extends Creation {
-  const NotCreated(this.failure);
-
-  final StorageFailure failure;
-}
-
 sealed class _Phase {
   const _Phase();
 }
@@ -115,60 +101,6 @@ final class RowsDatabase {
        _supersede = supersede,
        _clearArea = clearArea;
 
-  static Creation create(Database db) {
-    try {
-      db
-        ..execute('PRAGMA locking_mode = EXCLUSIVE')
-        ..execute('PRAGMA journal_mode = DELETE')
-        ..execute('PRAGMA synchronous = FULL')
-        ..execute('PRAGMA fullfsync = ON')
-        ..execute('BEGIN IMMEDIATE')
-        ..execute(
-          'CREATE TABLE rows (area TEXT NOT NULL, key TEXT NOT NULL, '
-          'value TEXT NOT NULL, PRIMARY KEY (area, key)) STRICT',
-        )
-        ..execute('CREATE TABLE generation (value INTEGER NOT NULL) STRICT')
-        ..execute('INSERT INTO generation VALUES (0)')
-        ..execute('PRAGMA user_version = $librarySchemaVersion')
-        ..execute('PRAGMA application_id = $libraryApplicationId')
-        ..execute('COMMIT')
-        ..close();
-      return const Created();
-    } on SqliteException catch (error) {
-      db.close();
-      return NotCreated(failureOf(error));
-    }
-  }
-
-  static Creation verifyCreated(Database db) {
-    try {
-      final problem = switch (_identityProblem(db)) {
-        final String problem => problem,
-        null =>
-          db
-                      .select(
-                        "SELECT count(*) FROM sqlite_schema WHERE type = 'table' "
-                        "AND name IN ('rows', 'generation')",
-                      )
-                      .single
-                      .columnAt(0) ==
-                  2
-              ? null
-              : 'its tables are missing',
-      };
-      db.close();
-      return switch (problem) {
-        null => const Created(),
-        final problem => NotCreated(
-          DeviceFailure('the new library is not whole: $problem'),
-        ),
-      };
-    } on SqliteException catch (error) {
-      db.close();
-      return NotCreated(failureOf(error));
-    }
-  }
-
   static RowsOpening open(Database db) {
     final prepared = <PreparedStatement>[];
     PreparedStatement prepare(String sql) {
@@ -180,7 +112,10 @@ final class RowsDatabase {
     try {
       db
         ..execute('PRAGMA locking_mode = EXCLUSIVE')
-        ..execute('PRAGMA busy_timeout = 0');
+        ..execute('PRAGMA busy_timeout = 0')
+        ..execute('PRAGMA synchronous = FULL')
+        ..execute('PRAGMA fullfsync = ON');
+      if (_unmade(db)) _create(db);
       if (_identityProblem(db) ?? _damage(db) case final problem?) {
         db.close();
         return refusedFor(problem);
@@ -191,8 +126,6 @@ final class RowsDatabase {
         return refusedFor('no write-ahead log ($mode)');
       }
       db
-        ..execute('PRAGMA synchronous = FULL')
-        ..execute('PRAGMA fullfsync = ON')
         ..execute('PRAGMA journal_size_limit = 4194304')
         ..execute('BEGIN IMMEDIATE')
         ..execute('COMMIT');
@@ -254,6 +187,23 @@ final class RowsDatabase {
     }
     db.close();
   }
+
+  static bool _unmade(Database db) =>
+      db.select('PRAGMA application_id').single.columnAt(0) == 0 &&
+      db.select('SELECT count(*) FROM sqlite_schema').single.columnAt(0) == 0;
+
+  static void _create(Database db) => db
+    ..execute('PRAGMA journal_mode = DELETE')
+    ..execute('BEGIN EXCLUSIVE')
+    ..execute(
+      'CREATE TABLE rows (area TEXT NOT NULL, key TEXT NOT NULL, '
+      'value TEXT NOT NULL, PRIMARY KEY (area, key)) STRICT',
+    )
+    ..execute('CREATE TABLE generation (value INTEGER NOT NULL) STRICT')
+    ..execute('INSERT INTO generation VALUES (0)')
+    ..execute('PRAGMA user_version = $librarySchemaVersion')
+    ..execute('PRAGMA application_id = $libraryApplicationId')
+    ..execute('COMMIT');
 
   static String? _identityProblem(Database db) {
     final applicationId = db.select('PRAGMA application_id').single.columnAt(0);

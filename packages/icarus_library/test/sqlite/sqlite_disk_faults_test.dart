@@ -5,7 +5,9 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/sqlite/library_file.dart';
 import 'package:icarus_library/src/sqlite/rows_database.dart';
+import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import '../store_support.dart';
@@ -75,10 +77,61 @@ Set<num> _allowed(List<(int, CommitResult)> outcomes, num start) {
   return {last, ...inDoubt};
 }
 
-bool _opens(RowsOpening opening) => switch (opening) {
-  RowsOpened(:final rows) => (rows..close()) == rows,
-  RowsHeld() || RowsRefused() => false,
-};
+const _losses = [
+  KeepsUnsynced(),
+  DropsUnsynced(),
+  TearsUnsynced(3),
+  TearsUnsynced(4),
+];
+
+void _savesAfterCreation(FaultDrive drive, PowerLoss loss, String reason) {
+  final rows = opened(drive.open());
+  expect(
+    rows.commit(const [Put('a', 'k', 'saved')]),
+    isA<CommitApplied>(),
+    reason: reason,
+  );
+  drive.disk.crashed = true;
+  _closeAfterCrash(rows);
+  drive.disk.powerLoss(loss);
+  final reopened = opened(drive.open());
+  expect(
+    reopened.read('a', 'k'),
+    isA<KeyHeld>().having((held) => held.value, 'value', 'saved'),
+    reason: reason,
+  );
+  reopened.close();
+}
+
+void _closeAfterCrash(RowsDatabase rows) {
+  try {
+    rows.close();
+  } on SqliteException {
+    return;
+  }
+}
+
+final class _RacedFiles implements LibraryFiles {
+  _RacedFiles(this._files, this._meanwhile);
+
+  final LibraryFiles _files;
+  void Function()? _meanwhile;
+
+  @override
+  bool exists(String path) {
+    final found = _files.exists(path);
+    final meanwhile = _meanwhile;
+    _meanwhile = null;
+    meanwhile?.call();
+    return found;
+  }
+
+  @override
+  Database open(String path) => _files.open(path);
+
+  @override
+  void pause(Duration duration) {}
+}
 
 void main() {
   late Contents seeded;
@@ -152,62 +205,76 @@ void main() {
     expect(refusedSeen, greaterThan(5));
   });
 
+  test('creating the library survives a crash or a power cut at any step: '
+      'the next open has the library with its tables, and a save acknowledged '
+      'after it survives a power cut', () async {
+    for (final loss in _losses) {
+      for (var step = 1; ; step++) {
+        final drive = FaultDrive();
+        drive.disk.fault = CrashAt(step);
+        final created = drive.open();
+        final reason = 'creation cut at step $step, ${lossName(loss)}';
+        if (created case RowsOpened(:final rows)) rows.close();
+        drive.disk.powerLoss(loss);
+        _savesAfterCreation(drive, loss, reason);
+        drive.unregister();
+        if (created is RowsOpened) break;
+      }
+    }
+  });
+
   test(
-    'creating the library survives a crash or a power cut at any step, and '
-    'a failed rename is a failure that the next open recovers from',
+    'a sync that fails at any point of creating the library, with or '
+    'without a power cut after it: the next open has the library with its '
+    'tables, and a save acknowledged after it survives a power cut',
     () async {
-      for (final loss in const [
-        KeepsUnsynced(),
-        DropsUnsynced(),
-        TearsUnsynced(3),
-        TearsUnsynced(4),
-      ]) {
-        for (var step = 1; ; step++) {
+      for (final loss in _losses) {
+        var hit = true;
+        for (var sync = 1; hit; sync++) {
           final drive = FaultDrive();
-          drive.disk.fault = CrashAt(step);
-          final first = drive.open();
-          if (first case RowsOpened(:final rows)) {
-            rows.close();
-            drive.unregister();
-            break;
-          }
+          drive.disk.fault = FailSyncAt(sync);
+          if (drive.open() case RowsOpened(:final rows)) rows.close();
+          hit = drive.disk.syncs >= sync;
           drive.disk.powerLoss(loss);
-          expect(
-            _opens(drive.open()),
-            isTrue,
-            reason: 'creation cut at step $step, $loss',
+          _savesAfterCreation(
+            drive,
+            loss,
+            'sync $sync of creating the library failed, then ${lossName(loss)}',
           );
           drive.unregister();
         }
       }
-      final drive = FaultDrive();
-      drive.disk.fault = const FailRename();
-      expect(drive.open(), isA<RowsRefused>());
-      drive.disk.fault = const NoFault();
-      expect(_opens(drive.open()), isTrue);
-      drive.unregister();
     },
   );
 
-  test('a sync that fails at any point of creating the library, with or '
-      'without a power cut after it, never publishes a library without its '
-      'tables: the next open makes the library or opens it', () async {
-    for (final loss in const [KeepsUnsynced(), DropsUnsynced()]) {
-      var hit = true;
-      for (var sync = 1; hit; sync++) {
-        final drive = FaultDrive();
-        drive.disk.fault = FailSyncAt(sync);
-        if (drive.open() case RowsOpened(:final rows)) rows.close();
-        hit = drive.disk.syncs >= sync;
-        drive.disk.powerLoss(loss);
-        expect(
-          _opens(drive.open()),
-          isTrue,
-          reason: 'sync $sync of creating the library failed, then $loss',
-        );
-        drive.unregister();
-      }
+  test('a library file that is gone while its rollback journal or its log '
+      'remains is refused, not made new', () async {
+    for (final companion in ['-journal', '-wal']) {
+      final drive = FaultDrive();
+      drive.disk.replace('$libraryPath$companion', Uint8List(512));
+      expect(
+        drive.open(),
+        isA<RowsRefused>().having(
+          (refused) => '${refused.failure}',
+          'failure',
+          contains('$libraryPath$companion is still there'),
+        ),
+      );
+      drive.unregister();
     }
+  });
+
+  test('an opener that looks while another creates the library sees it held, '
+      'not a file gone with its log left behind', () async {
+    final drive = FaultDrive();
+    late final RowsDatabase winner;
+    final files = _RacedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      () => winner = opened(drive.open()),
+    );
+    expect(openLibraryFile(libraryPath, files), isA<RowsHeld>());
+    winner.close();
+    drive.unregister();
   });
 
   test(
@@ -272,7 +339,6 @@ void main() {
       expect(pristine.length, greaterThan(8 * 4096));
 
       final damages = <String, Uint8List>{
-        'emptied': Uint8List(0),
         'cut in half': Uint8List.sublistView(pristine, 0, pristine.length ~/ 2),
         'header zeroed': Uint8List.fromList(pristine)..fillRange(0, 100, 0),
         for (var page = 1; page < pristine.length ~/ 4096; page++)
