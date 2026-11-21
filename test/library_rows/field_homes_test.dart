@@ -71,7 +71,9 @@ const fieldHomes = <String, Map<String, String>>{
     'iconId': 'folder row iconId',
     'color': 'folder row color, by name',
     'customColor': 'folder row customColorValue, as ARGB',
-    'dateCreated': 'no home in the row: handed out beside it',
+    'dateCreated':
+        'folder row createdAt, in milliseconds; read back as local time, as '
+            'every build writes it',
   },
   'PlacedWidget': {
     'id': '$_element.id; the row id too, unless another page took it',

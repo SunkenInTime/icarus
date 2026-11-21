@@ -189,6 +189,43 @@ void main() {
   });
 
   test(
+      'stopped between removing the old copy and adding Hive\'s version, the next start copies it again as new',
+      () async {
+    final storage = MemoryStorage();
+    final first = await openOn(storage);
+    await copyNow(first);
+    await first.close();
+    final edited = strategyBox
+        .get('strategy-2')!
+        .copyWith(name: 'Renamed in an older build');
+    await strategyBox.put(edited.id, edited);
+    final cut = switch (await LibraryStore.open(
+      _CutEngine(MemoryEngine(storage), after: 1),
+      canRead: appCanRead,
+    )) {
+      StoreOpened(:final store) => store,
+      StoreNotOpened(:final problem) => throw StateError('$problem'),
+    };
+    final stopped = await copyNow(cut);
+    expect(stopped, isA<ShadowCopyStopped>());
+    final list = (cut.library as LibraryOpen).list;
+    expect(
+        list.strategies.map((s) => s.publicId), isNot(contains('strategy-2')));
+    expect(list.hiveRecords.containsKey('strategy-2'), isFalse);
+    await cut.close();
+    final resumed = await openOn(storage);
+    final again = await copyNow(resumed);
+    expect(again, isA<ShadowCopyFinished>());
+    expect(
+        again.strategies.whereType<StrategyCopied>().map((s) => s.strategyId),
+        ['strategy-2']);
+    expect(kinds(again.strategies),
+        {StrategyUnchanged: strategies.length - 1, StrategyCopied: 1});
+    expect((await checkNow(resumed)).isExact, isTrue);
+    await resumed.close();
+  });
+
+  test(
       'a strategy changed in Hive and in the store is kept on both sides and reported',
       () async {
     final store = await openOn(MemoryStorage());
