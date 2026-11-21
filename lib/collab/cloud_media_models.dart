@@ -29,6 +29,54 @@ String mimeTypeForImageExtension(String extension) {
   }
 }
 
+sealed class CloudMediaJobPhase {
+  const CloudMediaJobPhase();
+}
+
+final class MediaWaitingToUpload extends CloudMediaJobPhase {
+  const MediaWaitingToUpload();
+}
+
+final class MediaUploaded extends CloudMediaJobPhase {
+  const MediaUploaded(this.media);
+  final UploadedMedia media;
+}
+
+final class MediaUploadFailed extends CloudMediaJobPhase {
+  const MediaUploadFailed({
+    required this.why,
+    required this.attempts,
+    this.media,
+  });
+
+  final String why;
+  final int attempts;
+  final UploadedMedia? media;
+}
+
+sealed class UploadedMedia {
+  const UploadedMedia();
+}
+
+final class R2UploadedMedia extends UploadedMedia {
+  const R2UploadedMedia({
+    required this.uploadId,
+    required this.objectKey,
+    this.etag,
+    this.byteSize,
+  });
+
+  final String uploadId;
+  final String objectKey;
+  final String? etag;
+  final int? byteSize;
+}
+
+final class ConvexStoredMedia extends UploadedMedia {
+  const ConvexStoredMedia(this.storageId);
+  final String storageId;
+}
+
 class CloudMediaUploadJob {
   CloudMediaUploadJob({
     required this.jobId,
@@ -37,20 +85,11 @@ class CloudMediaUploadJob {
     required this.assetPublicId,
     required this.fileExtension,
     required this.mimeType,
-    required this.state,
-    required this.attempts,
     required this.updatedAt,
+    this.phase = const MediaWaitingToUpload(),
     this.referenceDurable = true,
     this.width,
     this.height,
-    this.byteSize,
-    this.provider,
-    this.uploadId,
-    this.objectKey,
-    this.storageId,
-    this.etag,
-    this.uploadUrlExpiresAt,
-    this.lastError,
   });
 
   final String jobId;
@@ -61,81 +100,39 @@ class CloudMediaUploadJob {
   final String mimeType;
   final int? width;
   final int? height;
-  final int? byteSize;
-  final String? provider;
-  final String? uploadId;
-  final String? objectKey;
-  final String? storageId;
-  final String? etag;
-  final DateTime? uploadUrlExpiresAt;
-  final CloudMediaJobState state;
+  final CloudMediaJobPhase phase;
   final bool referenceDurable;
-  final int attempts;
-  final String? lastError;
   final DateTime updatedAt;
 
-  bool get isFailed => state == CloudMediaJobState.failed;
+  bool get isFailed => phase is MediaUploadFailed;
 
-  bool get hasUploadedRemoteObject {
-    if (provider == 'r2') {
-      return uploadId != null && objectKey != null;
-    }
-    return storageId != null;
-  }
+  int get failedAttempts => switch (phase) {
+        MediaUploadFailed(:final attempts) => attempts,
+        _ => 0,
+      };
 
   CloudMediaUploadJob copyWith({
-    String? jobId,
-    String? accountId,
     String? strategyPublicId,
     String? assetPublicId,
     String? fileExtension,
     String? mimeType,
     int? width,
     int? height,
-    Object? byteSize = _noChange,
-    Object? provider = _noChange,
-    Object? uploadId = _noChange,
-    Object? objectKey = _noChange,
-    Object? storageId = _noChange,
-    Object? etag = _noChange,
-    Object? uploadUrlExpiresAt = _noChange,
-    CloudMediaJobState? state,
+    CloudMediaJobPhase? phase,
     bool? referenceDurable,
-    int? attempts,
-    Object? lastError = _noChange,
     DateTime? updatedAt,
   }) {
     return CloudMediaUploadJob(
-      jobId: jobId ?? this.jobId,
-      accountId: accountId ?? this.accountId,
+      jobId: jobId,
+      accountId: accountId,
       strategyPublicId: strategyPublicId ?? this.strategyPublicId,
       assetPublicId: assetPublicId ?? this.assetPublicId,
       fileExtension: fileExtension ?? this.fileExtension,
       mimeType: mimeType ?? this.mimeType,
       width: width ?? this.width,
       height: height ?? this.height,
-      byteSize:
-          identical(byteSize, _noChange) ? this.byteSize : byteSize as int?,
-      provider:
-          identical(provider, _noChange) ? this.provider : provider as String?,
-      uploadId:
-          identical(uploadId, _noChange) ? this.uploadId : uploadId as String?,
-      objectKey: identical(objectKey, _noChange)
-          ? this.objectKey
-          : objectKey as String?,
-      storageId: identical(storageId, _noChange)
-          ? this.storageId
-          : storageId as String?,
-      etag: identical(etag, _noChange) ? this.etag : etag as String?,
-      uploadUrlExpiresAt: identical(uploadUrlExpiresAt, _noChange)
-          ? this.uploadUrlExpiresAt
-          : uploadUrlExpiresAt as DateTime?,
-      state: state ?? this.state,
+      phase: phase ?? this.phase,
       referenceDurable: referenceDurable ?? this.referenceDurable,
-      attempts: attempts ?? this.attempts,
-      lastError: identical(lastError, _noChange)
-          ? this.lastError
-          : lastError as String?,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -164,5 +161,3 @@ class CloudImageUploadIntent {
 Map<String, dynamic> cloudImagePayloadFromPlacedImage(PlacedImage image) {
   return Map<String, dynamic>.from(image.toJson())..remove('link');
 }
-
-const _noChange = Object();

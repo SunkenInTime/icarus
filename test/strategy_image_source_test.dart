@@ -130,8 +130,6 @@ CloudMediaUploadJob _queuedUpload() => CloudMediaUploadJob(
       assetPublicId: _imageId,
       fileExtension: '.png',
       mimeType: 'image/png',
-      state: CloudMediaJobState.pendingUpload,
-      attempts: 0,
       updatedAt: DateTime.utc(2026),
     );
 

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -793,11 +794,11 @@ class MoveToCloudNotifier extends Notifier<void> {
             cloudId,
           );
       if (jobs.isEmpty) return;
-      final failing = jobs.where(
-        (job) => job.isFailed && job.attempts >= _imageAttemptsBeforeFailing,
-      );
-      if (failing.isNotEmpty) {
-        throw StateError('An image did not upload: ${failing.first.lastError}');
+      for (final job in jobs) {
+        if (job.phase case MediaUploadFailed(:final attempts, :final why)
+            when attempts >= _imageAttemptsBeforeFailing) {
+          throw StateError('An image did not upload: $why');
+        }
       }
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
