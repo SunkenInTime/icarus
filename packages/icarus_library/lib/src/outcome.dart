@@ -1,5 +1,5 @@
-import 'ops.dart';
 import 'rows.dart';
+import 'undo.dart';
 
 sealed class ApplyResult {
   const ApplyResult();
@@ -70,58 +70,6 @@ enum RowField {
   kind,
   payloadVersion,
   updatedAt,
-}
-
-sealed class Undo {
-  const Undo();
-}
-
-final class UndoWithOp extends Undo {
-  const UndoWithOp(this.op);
-
-  final StrategyOp op;
-
-  @override
-  bool operator ==(Object other) => other is UndoWithOp && other.op == op;
-
-  @override
-  int get hashCode => op.hashCode;
-}
-
-final class UndoByRestoringPage extends Undo {
-  const UndoByRestoringPage(this.pagePublicId);
-
-  final String pagePublicId;
-
-  @override
-  bool operator ==(Object other) =>
-      other is UndoByRestoringPage && other.pagePublicId == pagePublicId;
-
-  @override
-  int get hashCode => pagePublicId.hashCode;
-}
-
-final class UndoByWritingDefaultSettings extends Undo {
-  const UndoByWritingDefaultSettings({
-    required this.pagePublicId,
-    required this.expectedPageSettingsRevision,
-  });
-
-  final String pagePublicId;
-  final int expectedPageSettingsRevision;
-
-  @override
-  bool operator ==(Object other) =>
-      other is UndoByWritingDefaultSettings &&
-      other.pagePublicId == pagePublicId &&
-      other.expectedPageSettingsRevision == expectedPageSettingsRevision;
-
-  @override
-  int get hashCode => Object.hash(pagePublicId, expectedPageSettingsRevision);
-}
-
-final class UndoUnavailable extends Undo {
-  const UndoUnavailable();
 }
 
 sealed class Refusal {

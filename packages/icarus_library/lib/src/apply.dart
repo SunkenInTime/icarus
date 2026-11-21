@@ -2,9 +2,7 @@ import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
 
-import 'derived_id.dart';
 import 'field_merge.dart';
-import 'field_rules.dart';
 import 'json.dart';
 import 'lineup_graph.dart';
 import 'ops.dart';
@@ -13,13 +11,14 @@ import 'page_copy.dart';
 import 'payloads.dart';
 import 'rows.dart';
 import 'strategy_rows.dart';
+import 'undo.dart';
 
 ApplyResult applyOp(StrategyRows rows, StrategyOp op) {
   final json = op.toJsonView();
   if (!isJson(json) || exceedsSizePolicy(json)) {
     return _failed(FailureCode.invalidPayload);
   }
-  final apply = _Apply(rows, undoOpId(op.opId), op.opId);
+  final apply = _Apply(rows, op.opId);
   return switch (op) {
     StrategyPatchOp() => apply.strategyPatch(op),
     PageAddOp() => apply.pageAdd(op),
@@ -67,10 +66,9 @@ final class _Refused<T> extends _Target<T> {
 }
 
 final class _Apply {
-  _Apply(this.rows, this.undoId, this.opId);
+  _Apply(this.rows, this.opId);
 
   final StrategyRows rows;
-  final String undoId;
   final String opId;
 
   ReadableStrategy get strategy => rows.strategy;
@@ -132,22 +130,12 @@ final class _Apply {
         case final refused?) {
       return refused;
     }
-    final fields = write.fields;
     return OpApplied(
       writes: [write],
-      undo: UndoWithOp(
-        StrategyPatchOp(
-          opId: undoId,
-          expectedStrategyRevision: after.revision,
-          name: fields.contains(RowField.name) ? current.name : null,
-          mapData: fields.contains(RowField.mapData) ? current.mapData : null,
-          themeProfile: fields.contains(RowField.themeProfileId)
-              ? _restoring(current.themeProfileId)
-              : const KeepValue(),
-          themeOverridePalette: fields.contains(RowField.themeOverridePalette)
-              ? _restoring(current.themeOverridePalette)
-              : const KeepValue(),
-        ),
+      undo: RestoreStrategyFields(
+        before: current,
+        after: after,
+        fields: write.fields,
       ),
     );
   }
@@ -245,13 +233,7 @@ final class _Apply {
             RowAdded(row),
         strategyRaised(),
       ],
-      undo: UndoWithOp(
-        PageDeleteOp(
-          opId: undoId,
-          pagePublicId: page.publicId,
-          expectedStrategyRevision: strategy.revision + 1,
-        ),
-      ),
+      undo: RemoveAddedPage(page.publicId),
     );
   }
 
@@ -295,7 +277,7 @@ final class _Apply {
         ...moved,
         strategyRaised(),
       ],
-      undo: UndoByRestoringPage(existing.publicId),
+      undo: RestoreTrashedPage(existing.publicId),
     );
   }
 
@@ -349,13 +331,10 @@ final class _Apply {
     }
     return OpApplied(
       writes: [...moved, strategyRaised()],
-      undo: UndoWithOp(
-        PageReorderOp(
-          opId: undoId,
-          pagePublicId: existing.publicId,
-          sortIndex: currentIndex,
-          expectedStrategyRevision: strategy.revision + 1,
-        ),
+      undo: RestorePagePlace(
+        pagePublicId: existing.publicId,
+        sortIndex: currentIndex,
+        movedTo: desired,
       ),
     );
   }
@@ -379,22 +358,12 @@ final class _Apply {
         case final refused?) {
       return refused;
     }
-    final fields = write.fields;
     return OpApplied(
       writes: [write],
-      undo: UndoWithOp(
-        PagePatchOp(
-          opId: undoId,
-          pagePublicId: existing.publicId,
-          expectedPageRevision: after.revision,
-          name: fields.contains(RowField.name) ? existing.name : null,
-          isAutoNamed: fields.contains(RowField.isAutoNamed)
-              ? existing.isAutoNamed ?? false
-              : null,
-          isAttack: fields.contains(RowField.isAttack)
-              ? existing.isAttack
-              : null,
-        ),
+      undo: RestorePageFields(
+        before: existing,
+        after: after,
+        fields: write.fields,
       ),
     );
   }
@@ -418,20 +387,11 @@ final class _Apply {
     final after = existing.withSettings(op.settings);
     return OpApplied(
       writes: [_changed(existing, after)],
-      undo: switch (existing.settings) {
-        final settings? => UndoWithOp(
-          PageSettingsPatchOp(
-            opId: undoId,
-            pagePublicId: op.pagePublicId,
-            settings: settings,
-            expectedPageSettingsRevision: after.revision,
-          ),
-        ),
-        null => UndoByWritingDefaultSettings(
-          pagePublicId: op.pagePublicId,
-          expectedPageSettingsRevision: after.revision,
-        ),
-      },
+      undo: RestoreSettings(
+        pagePublicId: op.pagePublicId,
+        before: existing.settings,
+        after: op.settings,
+      ),
     );
   }
 
@@ -462,7 +422,10 @@ final class _Apply {
         sortIndex: op.sortIndex,
         revision: 1,
       );
-      return OpApplied(writes: [RowAdded(added)], undo: _undoAdd(added, 1));
+      return OpApplied(
+        writes: [RowAdded(added)],
+        undo: RemoveAddedElement(added),
+      );
     }
     if (holdingPageRefusal(existing.pagePublicId) case final refused?) {
       return refused;
@@ -487,7 +450,7 @@ final class _Apply {
         );
         return OpApplied(
           writes: [_changed(existing, restored)],
-          undo: _undoAdd(restored, revision + 1),
+          undo: RemoveAddedElement(restored),
         );
       case LiveElement(:final payload, :final sortIndex):
         final kept = keepStoredFields(payload, op.payload);
@@ -503,15 +466,6 @@ final class _Apply {
             : _rejected(RejectionReason.alreadyExists);
     }
   }
-
-  Undo _undoAdd(ElementRow added, int revision) => UndoWithOp(
-    ElementDeleteOp(
-      opId: undoId,
-      elementPublicId: added.publicId,
-      pagePublicId: added.pagePublicId,
-      expectedElementRevision: revision,
-    ),
-  );
 
   ApplyResult elementDelete(ElementDeleteOp op) {
     final LiveElement live;
@@ -535,16 +489,7 @@ final class _Apply {
     final after = live.rewritten(deleted: true);
     return OpApplied(
       writes: [_changed(live, after)],
-      undo: UndoWithOp(
-        ElementAddOp(
-          opId: undoId,
-          elementPublicId: live.publicId,
-          pagePublicId: live.pagePublicId,
-          payload: live.payload,
-          sortIndex: live.sortIndex,
-          expectedElementRevision: live.revision + 1,
-        ),
-      ),
+      undo: RestoreDeletedElement(live),
     );
   }
 
@@ -577,16 +522,14 @@ final class _Apply {
       return refused;
     }
     final after = existing.rewritten(deleted: false, sortIndex: op.sortIndex);
+    final write = _changed(existing, after);
     return OpApplied(
-      writes: [_changed(existing, after)],
-      undo: UndoWithOp(
-        ElementReorderOp(
-          opId: undoId,
-          elementPublicId: existing.publicId,
-          pagePublicId: existing.pagePublicId,
-          sortIndex: existing.sortIndex,
-          expectedElementRevision: existing.revision + 1,
-        ),
+      writes: [write],
+      undo: RestoreElementFields(
+        before: existing,
+        after: after,
+        fields: write.fields,
+        dataFields: write.dataFields,
       ),
     );
   }
@@ -668,62 +611,11 @@ final class _Apply {
     }
     return OpApplied(
       writes: [write],
-      undo: _undoElementPatch(existing, write, whole: checkRevision),
-    );
-  }
-
-  Undo _undoElementPatch(
-    LiveElement before,
-    RowChanged write, {
-    required bool whole,
-  }) {
-    final restored = <String, Object?>{...before.payload.data.raw};
-    for (final field in write.dataFields) {
-      if (before.payload.data.raw.containsKey(field)) continue;
-      if (field == pictureIdField) return const UndoUnavailable();
-      switch (laterField(before.payload.kind, field)?.empty) {
-        case null:
-          break;
-        case NeverCleared():
-          return const UndoUnavailable();
-        case ClearedBy(:final value):
-          restored[field] = value;
-      }
-    }
-    final fields = write.fields;
-    final movedPlace = fields.contains(RowField.sortIndex);
-    final payloadChanged =
-        write.dataFields.isNotEmpty ||
-        fields.contains(RowField.payloadVersion) ||
-        fields.contains(RowField.kind);
-    final mergeFields = [
-      if (payloadChanged)
-        ...groupedFields(
-          before.payload.kind,
-          switch (write.after) {
-            ReadableElementRow(:final payload) => payload.data.raw,
-            _ => const {},
-          },
-          restored,
-          write.dataFields,
-        ),
-      if (movedPlace) placeField,
-    ];
-    return UndoWithOp(
-      ElementPatchOp(
-        opId: undoId,
-        elementPublicId: before.publicId,
-        expectedElementRevision: before.revision + 1,
-        pagePublicId: fields.contains(RowField.page)
-            ? before.pagePublicId
-            : null,
-        payload: payloadChanged
-            ? elementPayloadAdopting(before.payload, restored)
-            : null,
-        sortIndex: movedPlace ? before.sortIndex : null,
-        merge: whole || mergeFields.isEmpty
-            ? null
-            : FieldMerge(fields: mergeFields),
+      undo: RestoreElementFields(
+        before: existing,
+        after: after,
+        fields: write.fields,
+        dataFields: write.dataFields,
       ),
     );
   }
@@ -748,7 +640,10 @@ final class _Apply {
         sortIndex: op.sortIndex,
         revision: 1,
       );
-      return OpApplied(writes: [RowAdded(added)], undo: _undoGroupAdd(added));
+      return OpApplied(
+        writes: [RowAdded(added)],
+        undo: RemoveAddedGroup(added),
+      );
     }
     if (holdingPageRefusal(existing.pagePublicId) case final refused?) {
       return refused;
@@ -773,7 +668,7 @@ final class _Apply {
         );
         return OpApplied(
           writes: [_changed(existing, restored)],
-          undo: _undoGroupAdd(restored),
+          undo: RemoveAddedGroup(restored),
         );
       case LiveLineupGroup(:final pagePublicId, :final payload):
         final identical =
@@ -783,15 +678,6 @@ final class _Apply {
             : _rejected(RejectionReason.alreadyExists);
     }
   }
-
-  Undo _undoGroupAdd(ReadableLineupGroupRow added) => UndoWithOp(
-    LineupGroupDeleteOp(
-      opId: undoId,
-      lineupPublicId: added.publicId,
-      pagePublicId: added.pagePublicId,
-      expectedLineupRevision: added.revision,
-    ),
-  );
 
   ApplyResult lineupGroupDelete(LineupGroupDeleteOp op) {
     final LiveLineupGroup existing;
@@ -815,16 +701,7 @@ final class _Apply {
     final after = existing.rewritten(deleted: true);
     return OpApplied(
       writes: [_changed(existing, after)],
-      undo: UndoWithOp(
-        LineupGroupAddOp(
-          opId: undoId,
-          lineupPublicId: existing.publicId,
-          pagePublicId: existing.pagePublicId,
-          payload: existing.payload,
-          sortIndex: existing.sortIndex,
-          expectedLineupRevision: after.revision,
-        ),
-      ),
+      undo: RestoreDeletedGroup(existing),
     );
   }
 
@@ -857,16 +734,14 @@ final class _Apply {
       return refused;
     }
     final after = existing.rewritten(deleted: false, sortIndex: op.sortIndex);
+    final write = _changed(existing, after);
     return OpApplied(
-      writes: [_changed(existing, after)],
-      undo: UndoWithOp(
-        LineupGroupReorderOp(
-          opId: undoId,
-          lineupPublicId: existing.publicId,
-          pagePublicId: existing.pagePublicId,
-          sortIndex: existing.sortIndex,
-          expectedLineupRevision: after.revision,
-        ),
+      writes: [write],
+      undo: RestoreGroupFields(
+        before: existing,
+        after: after,
+        fields: write.fields,
+        dataFields: write.dataFields,
       ),
     );
   }
@@ -946,35 +821,12 @@ final class _Apply {
     }
     return OpApplied(
       writes: [write],
-      undo: UndoWithOp(_undoGroupPatch(existing, write, whole: checkRevision)),
-    );
-  }
-
-  LineupGroupPatchOp _undoGroupPatch(
-    LiveLineupGroup before,
-    RowChanged write, {
-    required bool whole,
-  }) {
-    final movedPlace = write.fields.contains(RowField.sortIndex);
-    final payloadChanged =
-        write.dataFields.isNotEmpty ||
-        write.fields.contains(RowField.payloadVersion);
-    final byItem = write.dataFields.every(
-      (field) => lineupField(field) != null,
-    );
-    final mergeFields = [
-      if (payloadChanged) ...write.dataFields.toList()..sort(),
-      if (movedPlace) placeField,
-    ];
-    return LineupGroupPatchOp(
-      opId: undoId,
-      lineupPublicId: before.publicId,
-      expectedLineupRevision: before.revision + 1,
-      payload: payloadChanged ? before.payload : null,
-      sortIndex: movedPlace ? before.sortIndex : null,
-      merge: whole || mergeFields.isEmpty || !byItem
-          ? null
-          : FieldMerge(fields: mergeFields),
+      undo: RestoreGroupFields(
+        before: existing,
+        after: after,
+        fields: write.fields,
+        dataFields: write.dataFields,
+      ),
     );
   }
 
@@ -1063,11 +915,6 @@ final class _NewSlot extends _Slot {
   @override
   int get sortIndex => -1;
 }
-
-ValueEdit<T> _restoring<T extends Object>(T? value) => switch (value) {
-  final T value? => SetValue(value),
-  null => ClearValue<T>(),
-};
 
 ElementRow _elementRow({
   required String publicId,

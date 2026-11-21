@@ -79,12 +79,10 @@ final _table = [
   ),
 ];
 
-const _undoneOtherwise = <String, Undo>{
-  'page.delete': UndoByRestoringPage('page-a'),
-  'pageContent.patch on settings never set': UndoByWritingDefaultSettings(
-    pagePublicId: 'page-c',
-    expectedPageSettingsRevision: 2,
-  ),
+const _restoredFromTrash = {'page.delete': 'page-a'};
+
+final _undoneWithDefaults = {
+  'pageContent.patch on settings never set': settingsName('page-c'),
 };
 
 final _undoneLast = {
@@ -201,7 +199,11 @@ Map<String, StrategyOp> _ops() => {
   'pageContent.patch on settings never set': const PageSettingsPatchOp(
     opId: 'op-first-settings',
     pagePublicId: 'page-c',
-    settings: defaultSettings,
+    settings: PageSettings(
+      agentSize: 2,
+      abilitySize: 1,
+      useNeutralTeamColors: true,
+    ),
     expectedPageSettingsRevision: 1,
   ),
   'lineup.patch removing the first of three links': LineupGroupPatchOp(
@@ -398,13 +400,15 @@ void main() {
       final disk = MemoryStorage(probed);
       final store = await openStore(MemoryEngine(disk));
       final committed = savedValue(await store.commit(strategyId, op));
-      switch (committed.undo) {
-        case UndoWithOp(op: final undo):
-          expect(_undoneOtherwise[name], isNull, reason: name);
+      switch (await undoIn(store, committed.undo)) {
+        case UndoReady(op: final undo):
+          expect(_restoredFromTrash[name], isNull, reason: name);
           savedValue(await store.commit(strategyId, undo));
-        case final other:
-          expect(other, _undoneOtherwise[name], reason: name);
+        case RestoreFromTrash(:final pagePublicId):
+          expect(pagePublicId, _restoredFromTrash[name], reason: name);
           return;
+        case final other:
+          fail('$name: $other');
       }
       await store.close();
       final after = disk.contents[sampleArea]!;
@@ -415,6 +419,11 @@ void main() {
           final added,
         ) when row == key) {
           expect(now, {...?was, 'payload': added}, reason: '$name, $key');
+        } else if (_undoneWithDefaults[name] == key) {
+          expect(now, {
+            ...?was,
+            'settings': defaultSettings.toJson(),
+          }, reason: '$name, $key');
         } else if (_undoneLast[name] == key) {
           expect(_itemsById(now), _itemsById(was), reason: '$name, $key');
           expect(_linkIds(now).last, 'g4-k1', reason: '$name, $key');
@@ -436,7 +445,7 @@ void main() {
         () async {
           final disk = MemoryStorage(probed);
           final store = await openStore(MemoryEngine(disk));
-          final undos = <StrategyOp>[];
+          final undos = <Undo>[];
           for (final (step, at) in sequence.indexed) {
             final current =
                 jsonDecode(disk.contents[sampleArea]![key]!)
@@ -445,8 +454,8 @@ void main() {
               strategyId,
               edits[at].$2(current, 'step-$step'),
             )) {
-              case Saved(value: Committed(undo: UndoWithOp(:final op))):
-                undos.add(op);
+              case Saved(value: Committed(:final undo)):
+                undos.add(undo);
               case NothingToSave():
                 break;
               case final other:
@@ -454,11 +463,15 @@ void main() {
             }
           }
           for (final undo in undos.reversed) {
-            final undone = await store.commit(strategyId, undo);
+            final op = switch (await undoIn(store, undo)) {
+              UndoReady(:final op) => op,
+              final other => fail('$other'),
+            };
+            final undone = await store.commit(strategyId, op);
             expect(
               undone,
               isA<Saved<Committed, CommitRefusal>>(),
-              reason: '${undo.opId}: ${describeSaving(undone)}',
+              reason: '${op.opId}: ${describeSaving(undone)}',
             );
           }
           await store.close();

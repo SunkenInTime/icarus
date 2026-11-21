@@ -33,6 +33,7 @@ export 'src/outcome.dart';
 export 'src/payloads.dart' hide elementPayloadAdopting, lineupPayloadAdopting;
 export 'src/rows.dart';
 export 'src/strategy_rows.dart';
+export 'src/undo.dart';
 export 'src/wire.dart' show CouldNotRead, Decoded, Read;
 export 'src/json.dart'
     show

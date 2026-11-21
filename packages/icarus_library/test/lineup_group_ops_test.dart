@@ -205,7 +205,7 @@ void main() {
         expected: 2,
       ),
     );
-    session.apply(undoOp(edited));
+    session.apply(session.undo(edited));
     final data = session.groupAt('g1').payload.data.toJson();
     expect(data['links'], [link('k1', 'o1', 'l1'), link('k2', 'o2', 'l1')]);
   });
@@ -250,7 +250,7 @@ void main() {
       [for (final link in links.cast<Map<String, Object?>>()) link['id']],
       ['b', 'a'],
     );
-    session.apply(undoOp(reordered));
+    session.apply(session.undo(reordered));
     expect(session.groupAt('g1').payload, twoLinks);
   });
 

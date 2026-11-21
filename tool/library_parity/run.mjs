@@ -199,7 +199,9 @@ function main() {
     const problems = corpusProblems(seeds, steps, scenarios);
     dart([rulesPath], "tool/field_rules.dart");
     const withStories = run.replay === undefined;
-    if (withStories) dart(["stories", storiesPath]);
+    if (withStories) {
+      dart(["stories", join(root, "tool/library_parity/samples.json"), storiesPath]);
+    }
     const vitest = spawnSync(
       "npx",
       ["vitest", "run", "--config", "tool/library_parity/vitest.config.ts"],

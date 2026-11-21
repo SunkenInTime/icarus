@@ -88,12 +88,12 @@ void main() {
         merged: ['isAlly'],
       ),
     );
-    session.apply(undoOp(moved));
+    session.apply(session.undo(moved));
     expect(session.dataOf('jett')['position'], {'x': 1, 'y': 1});
     expect(session.dataOf('jett')['isAlly'], false);
   });
 
-  test('undo of a whole write puts back the whole payload it replaced', () {
+  test('undo of a whole write puts back every field it replaced', () {
     final session = Session(strategyRows(elements: [jett]));
     final before = session.dataOf('jett');
     final moved = session.apply(
@@ -110,30 +110,35 @@ void main() {
       ),
     );
     expect(session.dataOf('jett').containsKey('isAlly'), isFalse);
-    final undo = undoOp(moved) as ElementPatchOp;
-    expect(undo.merge, isNull);
-    session.apply(undo);
+    session.apply(session.undo(moved));
     expect(session.dataOf('jett'), {...before, 'caption': ''});
   });
 
-  test('undo of a whole write is refused once a teammate edits after it', () {
-    final session = Session(strategyRows(elements: [jett]));
-    final moved = session.apply(
-      moveAgent('mine', jett, {
-        'position': {'x': 9, 'y': 9},
-      }),
-    );
-    session.apply(
-      moveAgent(
-        'teammate',
-        session.rows.element('jett'),
-        {'isAlly': false},
-        merged: ['isAlly'],
-      ),
-    );
-    expect(session.attempt(undoOp(moved)), isA<OpRefused>());
-    expect(session.dataOf('jett')['isAlly'], false);
-  });
+  test(
+    'undo of a whole write puts back what it wrote and keeps a teammate\'s later edit to another field',
+    () {
+      final session = Session(strategyRows(elements: [jett]));
+      final moved = session.apply(
+        moveAgent('mine', jett, {
+          'position': {'x': 9, 'y': 9},
+        }),
+      );
+      session.apply(
+        moveAgent(
+          'teammate',
+          session.rows.element('jett'),
+          {'isAlly': false},
+          merged: ['isAlly'],
+        ),
+      );
+      session.apply(session.undo(moved));
+      expect(
+        session.dataOf('jett')['position'],
+        jett.payload.data.toJson()['position'],
+      );
+      expect(session.dataOf('jett')['isAlly'], false);
+    },
+  );
 
   test('a whole write made on an old revision is refused', () {
     final session = Session(strategyRows(elements: [jett]));
@@ -220,7 +225,7 @@ void main() {
     expect((tombstone! as DeletedElement).payload, jett.payload);
     expect(session.revisionOf('jett'), 2);
 
-    session.apply(undoOp(deleted));
+    session.apply(session.undo(deleted));
     final restored = session.rows.element('jett');
     expect(restored, isA<LiveElement>());
     expect((restored! as LiveElement).payload, jett.payload);
@@ -397,7 +402,7 @@ void main() {
         merged: ['caption', 'position'],
       ),
     );
-    session.apply(undoOp(captioned));
+    session.apply(session.undo(captioned));
     expect(session.dataOf('jett')['caption'], '');
     expect(session.dataOf('jett')['position'], {'x': 1, 'y': 1});
   });
@@ -431,7 +436,7 @@ void main() {
         merged: ['wallPath'],
       ),
     );
-    session.apply(undoOp(walled));
+    session.apply(session.undo(walled));
     expect(session.dataOf('tide')['wallPath'], isEmpty);
   });
 
@@ -441,7 +446,14 @@ void main() {
     final pictured = session.apply(
       moveAgent('picture', jett, {'assetId': 'asset-1'}, merged: ['assetId']),
     );
-    expect(pictured.undo, isA<UndoUnavailable>());
+    expect(
+      session.buildUndoOf(pictured),
+      isA<UndoBlocked>().having(
+        (blocked) => blocked.block,
+        'block',
+        isA<CannotClear>().having((cannot) => cannot.field, 'field', 'assetId'),
+      ),
+    );
   });
 
   test('undo of a first map door is not offered, since a door is never '
@@ -465,7 +477,14 @@ void main() {
     final doored = session.apply(
       moveAgent('door', shape, {'mapDoor': 'summit-a'}, merged: ['mapDoor']),
     );
-    expect(doored.undo, isA<UndoUnavailable>());
+    expect(
+      session.buildUndoOf(doored),
+      isA<UndoBlocked>().having(
+        (blocked) => blocked.block,
+        'block',
+        isA<CannotClear>().having((cannot) => cannot.field, 'field', 'mapDoor'),
+      ),
+    );
   });
 
   test('undo of a changed caption puts the old caption back', () {
@@ -474,7 +493,7 @@ void main() {
     final edited = session.apply(
       moveAgent('caption', captioned, {'caption': 'lurk'}, merged: ['caption']),
     );
-    session.apply(undoOp(edited));
+    session.apply(session.undo(edited));
     expect(session.dataOf('jett')['caption'], 'entry');
   });
 

@@ -8,6 +8,8 @@ import 'merge_seeds.dart';
 import 'merge_stories.dart';
 
 const _strategyId = 's1';
+const _undoSeeds = 8;
+const _undoSeedBase = 9000;
 const _largestSafeInteger = 9007199254740991;
 const _maxArrayEntries = 8000;
 
@@ -29,12 +31,22 @@ void main(List<String> args) {
         for (var seed = from; seed < from + count; seed++)
           _Generator(seed, corpus).scenario(length),
       ]);
-    case ['stories', final out]:
+    case ['stories', final samples, final out]:
       Map<String, Object?> rowsJson(StrategyRowSet rows) =>
           _rowsJson(rows, const []);
+      final corpus = _Samples.read(samples);
       _write(out, [
         for (final story in mergeStories()) _story(story),
         ...mergeSeedScenarios(rowsJson, _outcome),
+        for (var seed = 0; seed < _undoSeeds; seed++)
+          {
+            ..._Generator(
+              _undoSeedBase + seed,
+              corpus,
+              undoChance: 0.3,
+            ).scenario(150),
+            'name': 'undo seed $seed',
+          },
       ]);
     case ['replay', final input, final out]:
       final recorded = jsonDecode(File(input).readAsStringSync());
@@ -49,7 +61,7 @@ void main(List<String> args) {
         'usage: parity_scenarios generate <samples> <first seed> <seeds> '
         '<steps> <out>\n'
         '       parity_scenarios replay <recorded sequence> <out>\n'
-        '       parity_scenarios stories <out>',
+        '       parity_scenarios stories <samples> <out>',
       );
       exitCode = 64;
   }
@@ -272,11 +284,15 @@ const _settingsChoices = [
 ];
 
 final class _Generator {
-  _Generator(this.seed, this.samples) : rng = Random(seed);
+  _Generator(this.seed, this.samples, {this.undoChance = 0})
+    : rng = Random(seed),
+      undoRng = Random(seed + 1);
 
   final int seed;
   final _Samples samples;
+  final double undoChance;
   final Random rng;
+  final Random undoRng;
   int _fresh = 0;
   late StrategyRowSet rows;
   late List<FolderRow> folders;
@@ -367,10 +383,31 @@ final class _Generator {
     }
     final ops = <Map<String, Object?>>[];
     final predicted = <Map<String, Object?>>[];
+    final undos = <Undo>[];
     for (var step = 0; step < steps; step++) {
-      final op = nextOp('s$seed-op$step');
+      final opId = 's$seed-op$step';
+      final undoing = undos.isNotEmpty && undoRng.nextDouble() < undoChance
+          ? undos.removeAt(
+              undoRng.nextDouble() < 0.8
+                  ? undos.length - 1
+                  : undoRng.nextInt(undos.length),
+            )
+          : null;
+      final op = switch (undoing) {
+        final undo? => switch (buildUndo(
+          rows,
+          undo,
+          opId: '$opId-undo',
+          defaultSettings: _settingsChoices.first,
+        )) {
+          UndoReady(:final op) => op,
+          _ => nextOp(opId),
+        },
+        null => nextOp(opId),
+      };
       final result = applyOp(rows, op);
       if (result is OpApplied) {
+        undos.add(result.undo);
         rows = rows.withRows(result.rows);
         for (final row in result.rows) {
           switch (row) {
