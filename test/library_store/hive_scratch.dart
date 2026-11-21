@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -33,9 +34,42 @@ HiveLibrary hiveLibraryNow() => HiveLibrary(
       folders: Hive.box<Folder>(HiveBoxNames.foldersBox).values,
     );
 
-Future<Map<String, String>> filesUnder(Directory directory) async => {
-      for (final entity in directory.listSync(recursive: true))
-        if (entity is File)
-          path.relative(entity.path, from: directory.path):
-              sha256.convert(await entity.readAsBytes()).toString(),
+final class HiveWrites {
+  HiveWrites._(this._directory, this._before) {
+    _subscriptions = [
+      for (final events in [
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).watch(),
+        Hive.box<Folder>(HiveBoxNames.foldersBox).watch(),
+      ])
+        events.listen((event) => written.add(event.key)),
+    ];
+  }
+
+  static Future<HiveWrites> watch(Directory directory) async =>
+      HiveWrites._(directory, await hiveFiles(directory));
+
+  final Directory _directory;
+  final Map<String, String> _before;
+  late final List<StreamSubscription<BoxEvent>> _subscriptions;
+  final written = <Object?>[];
+
+  Future<List<String>> stop() async {
+    for (final subscription in _subscriptions) {
+      await subscription.cancel();
+    }
+    final after = await hiveFiles(_directory);
+    return [
+      for (final key in written) 'a write to key $key',
+      for (final name in {..._before.keys, ...after.keys})
+        if (_before[name] != after[name]) 'a change to $name',
+    ];
+  }
+}
+
+Future<Map<String, String>> hiveFiles(Directory directory) async => {
+      for (final file in directory.listSync().whereType<File>())
+        if (path.extension(file.path) == '.hive')
+          path.basename(file.path):
+              '${file.lastModifiedSync().microsecondsSinceEpoch} '
+                  '${sha256.convert(await file.readAsBytes())}',
     };

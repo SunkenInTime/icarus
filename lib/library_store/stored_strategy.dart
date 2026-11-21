@@ -49,21 +49,35 @@ final class _PagesNot extends _Pages {
   final StoredStrategy stored;
 }
 
-Future<StoredStrategy> readStoredStrategy(
-  LibraryStore store,
-  String strategyId,
-) async {
+sealed class StoredRows {
+  const StoredRows();
+}
+
+final class StoredRowsRead extends StoredRows {
+  const StoredRowsRead(this.rows);
+
+  final StrategyRowSet rows;
+}
+
+final class StoredRowsNot extends StoredRows {
+  const StoredRowsNot(this.stored);
+
+  final StoredStrategy stored;
+}
+
+Future<StoredRows> readStoredRows(LibraryStore store, String strategyId) async {
   final StrategyContent content;
   switch (await store.readStrategy(strategyId)) {
     case Found(:final value):
       content = value;
     case NotFound():
-      return const StoredMissing();
+      return const StoredRowsNot(StoredMissing());
     case NotRead(:final failure):
-      return StoredNotRead(failure);
+      return StoredRowsNot(StoredNotRead(failure));
     case InUnreadableStrategy(:final listing):
-      return StoredUnreadable(
-          ['the strategy row is unreadable: ${listing.ref}']);
+      return StoredRowsNot(
+        StoredUnreadable(['the strategy row is unreadable: ${listing.ref}']),
+      );
   }
   final damaged = [for (final row in content.unplaced) 'unplaced ${row.ref}'];
   final List<ElementRow> elements;
@@ -71,7 +85,7 @@ Future<StoredStrategy> readStoredStrategy(
   switch (await _pagesOf(store, strategyId, content, damaged)) {
     case _PagesNot(:final stored):
       await store.unload(strategyId);
-      return stored;
+      return StoredRowsNot(stored);
     case _PagesRead(elements: final readElements, groups: final readGroups):
       elements = readElements;
       groups = readGroups;
@@ -93,37 +107,36 @@ Future<StoredStrategy> readStoredStrategy(
         break;
     }
   }
-  final header = content.strategy;
-  switch (header) {
-    case UnreadableStrategy(:final problem):
-      return StoredUnreadable([...damaged, 'strategy row: $problem']);
-    case ReadableStrategy() when damaged.isNotEmpty:
-      return StoredUnreadable(damaged);
-    case ReadableStrategy():
-      break;
-  }
-  final back = strategyFromRows(
-    StrategyRowSet(
-      strategy: header,
-      pages: content.pages,
-      settings: content.settings.values,
-      elements: elements,
-      lineupGroups: groups,
-    ),
-  );
-  return switch (back) {
-    StrategyDataRefused(:final problems) => StoredUnreadable([
-        for (final problem in problems) 'not converted back: $problem',
-      ]),
-    StrategyDataMade(:final unreadable, :final notInStrategy)
-        when unreadable.isNotEmpty || notInStrategy.isNotEmpty =>
-      StoredUnreadable([
-        for (final row in unreadable) 'cannot draw ${row.key}',
-        for (final row in notInStrategy) 'not in the strategy: ${row.key}',
-      ]),
-    StrategyDataMade(:final strategy) => StoredAsData(strategy),
+  return switch (content.strategy) {
+    UnreadableStrategy(:final problem) =>
+      StoredRowsNot(StoredUnreadable([...damaged, 'strategy row: $problem'])),
+    ReadableStrategy() when damaged.isNotEmpty =>
+      StoredRowsNot(StoredUnreadable(damaged)),
+    final ReadableStrategy header => StoredRowsRead(
+        StrategyRowSet(
+          strategy: header,
+          pages: content.pages,
+          settings: content.settings.values,
+          elements: elements,
+          lineupGroups: groups,
+        ),
+      ),
   };
 }
+
+StoredStrategy strategyOfRows(StrategyRowSet rows) =>
+    switch (strategyFromRows(rows)) {
+      StrategyDataRefused(:final problems) => StoredUnreadable([
+          for (final problem in problems) 'not converted back: $problem',
+        ]),
+      StrategyDataMade(:final unreadable, :final notInStrategy)
+          when unreadable.isNotEmpty || notInStrategy.isNotEmpty =>
+        StoredUnreadable([
+          for (final row in unreadable) 'cannot draw ${row.key}',
+          for (final row in notInStrategy) 'not in the strategy: ${row.key}',
+        ]),
+      StrategyDataMade(:final strategy) => StoredAsData(strategy),
+    };
 
 Future<_Pages> _pagesOf(
   LibraryStore store,

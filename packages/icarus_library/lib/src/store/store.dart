@@ -449,7 +449,7 @@ final class LibraryStore {
         }
       case _PutHiveRecord(:final record):
         final name = HiveRecordName(digestOf(record.strategyPublicId)).name;
-        switch (encodeJson(record.toJson())) {
+        switch (encodeJson(record.toJsonView())) {
           case NotEncoded(:final problem):
             return wouldNot(name, problem);
           case Encoded(:final text):

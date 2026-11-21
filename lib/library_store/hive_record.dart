@@ -1,9 +1,4 @@
-import 'dart:collection';
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
 import 'package:icarus/domain/folder.dart';
-import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
 DateTime _asHiveStoresIt(DateTime time) =>
@@ -34,15 +29,3 @@ final class HiveLibrary {
   final List<StrategyData> strategies;
   final List<Folder> folders;
 }
-
-String hiveRecordDigestOf(StrategyData strategy) => sha256
-    .convert(utf8.encode(jsonEncode(_sorted(strategyFingerprint(strategy)))))
-    .toString();
-
-Object? _sorted(Object? json) => switch (json) {
-      final Map<String, Object?> map => SplayTreeMap<String, Object?>.of({
-          for (final MapEntry(:key, :value) in map.entries) key: _sorted(value),
-        }),
-      final List<Object?> list => [for (final item in list) _sorted(item)],
-      _ => json,
-    };

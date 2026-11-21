@@ -1,4 +1,8 @@
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/config/drive_build.dart';
+
+const shadowReachable = !kIsWeb && (driveBuild || kDebugMode);
 
 sealed class LibraryStoreSwitch {
   const LibraryStoreSwitch();

@@ -1,7 +1,9 @@
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
+import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_record.dart';
+import 'package:icarus/library_store/rows_digest.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -32,15 +34,52 @@ final class StrategySame extends StrategyCheck {
   const StrategySame(super.strategyId);
 }
 
-final class StrategyDiffers extends StrategyCheck {
-  StrategyDiffers(super.strategyId, List<FieldDifference> differences)
-      : differences = List.unmodifiable(differences);
+enum RowDifferenceKind { missingFromStore, notFromHive, content }
 
-  final List<FieldDifference> differences;
+final class RowDifference {
+  const RowDifference(this.key, this.kind);
+
+  final String key;
+  final RowDifferenceKind kind;
+
+  @override
+  String toString() => '${kind.name} $key';
+}
+
+final class StrategyDiffers extends StrategyCheck {
+  StrategyDiffers(
+    super.strategyId, {
+    required List<RowDifference> rows,
+    required List<FieldDifference> fields,
+  })  : rows = List.unmodifiable(rows),
+        fields = List.unmodifiable(fields);
+
+  final List<RowDifference> rows;
+  final List<FieldDifference> fields;
 
   @override
   String toString() =>
-      'StrategyDiffers($strategyId: ${differences.join(', ')})';
+      'StrategyDiffers($strategyId: ${[...rows, ...fields].join(', ')})';
+}
+
+final class StrategyNotConverted extends StrategyCheck {
+  const StrategyNotConverted(super.strategyId, this.problems);
+
+  final List<RowsProblem> problems;
+}
+
+final class StrategyRowsNotEncodable extends StrategyCheck {
+  const StrategyRowsNotEncodable(super.strategyId, this.notDigested);
+
+  final RowsNotDigested notDigested;
+}
+
+final class StrategyNotListed extends StrategyCheck {
+  const StrategyNotListed(super.strategyId);
+}
+
+final class RecordWithoutStrategy extends StrategyCheck {
+  const RecordWithoutStrategy(super.strategyId);
 }
 
 final class StrategyMissingFromStore extends StrategyCheck {
@@ -149,6 +188,15 @@ Future<StoreCheck> checkStoreAgainstHive(
   LibraryStore store, {
   required Future<void> Function() breathe,
 }) async {
+  final strategies = <StrategyCheck>[];
+  switch (await store.findStrategies()) {
+    case StrategiesNotSearched(:final failure):
+      return StoreNotChecked(failure);
+    case StrategiesFound(:final rebuilt):
+      for (final summary in rebuilt) {
+        strategies.add(StrategyNotListed(summary.publicId));
+      }
+  }
   final LibraryList list;
   switch (store.library) {
     case LibraryOpen(list: final open):
@@ -156,36 +204,23 @@ Future<StoreCheck> checkStoreAgainstHive(
     case LibraryShut(:final failure):
       return StoreNotChecked(failure);
   }
-  final strategies = <StrategyCheck>[];
   final hiveIds = <String>{};
   for (final expected in hive.strategies) {
     hiveIds.add(expected.id);
-    final digest = hiveRecordDigestOf(expected);
-    final recorded = list.hiveRecords[expected.id]?.digest;
-    if (recorded != digest) {
-      strategies.add(StrategyRecordStale(expected.id, recorded, digest));
-    }
-    switch (await readStoredStrategy(store, expected.id)) {
-      case StoredNotRead(:final failure):
+    switch (await _checkOne(store, expected, list.hiveRecords[expected.id])) {
+      case _Checked(:final checks):
+        strategies.addAll(checks);
+      case _NotRead(:final failure):
         return StoreNotChecked(failure);
-      case StoredMissing():
-        strategies.add(StrategyMissingFromStore(expected.id));
-      case final StoredUnreadable unreadable:
-        strategies.add(StrategyUnreadableInStore(expected.id, unreadable));
-      case StoredAsData(strategy: final actual):
-        final differences = _differences(expected, actual);
-        strategies.add(
-          differences.isEmpty
-              ? StrategySame(expected.id)
-              : StrategyDiffers(expected.id, differences),
-        );
     }
     await breathe();
   }
-  for (final summary in list.strategies) {
-    if (!hiveIds.contains(summary.publicId)) {
-      strategies.add(StrategyNotInHive(summary.publicId));
-    }
+  final listed = {for (final summary in list.strategies) summary.publicId};
+  for (final id in listed.difference(hiveIds)) {
+    strategies.add(StrategyNotInHive(id));
+  }
+  for (final id in list.hiveRecords.keys.toSet().difference(listed)) {
+    strategies.add(RecordWithoutStrategy(id));
   }
   for (final listing in list.unreadableStrategies) {
     strategies.add(
@@ -205,6 +240,106 @@ Future<StoreCheck> checkStoreAgainstHive(
     folders: _checkFolders(hive.folders, list.folders),
     unplaced: list.unplaced,
   );
+}
+
+sealed class _OneCheck {
+  const _OneCheck();
+}
+
+final class _Checked extends _OneCheck {
+  const _Checked(this.checks);
+
+  final List<StrategyCheck> checks;
+}
+
+final class _NotRead extends _OneCheck {
+  const _NotRead(this.failure);
+
+  final StorageFailure failure;
+}
+
+Future<_OneCheck> _checkOne(
+  LibraryStore store,
+  StrategyData expected,
+  HiveRecordDigest? recorded,
+) async {
+  final id = expected.id;
+  final RowsDigested hive;
+  switch (strategyToRows(expected)) {
+    case StrategyRowsRefused(:final problems):
+      return _Checked([StrategyNotConverted(id, problems)]);
+    case StrategyRowsMade(:final rows):
+      switch (rowsDigestOf(rows)) {
+        case final RowsNotDigested notDigested:
+          return _Checked([StrategyRowsNotEncodable(id, notDigested)]);
+        case final RowsDigested digested:
+          hive = digested;
+      }
+  }
+  final stale = [
+    if (recorded?.digest != hive.digest)
+      StrategyRecordStale(id, recorded?.digest, hive.digest),
+  ];
+  return switch (await _compared(store, expected, hive.rows)) {
+    _Checked(:final checks) => _Checked([...stale, ...checks]),
+    final _NotRead notRead => notRead,
+  };
+}
+
+Future<_OneCheck> _compared(
+  LibraryStore store,
+  StrategyData expected,
+  Map<String, String> hiveRows,
+) async {
+  final id = expected.id;
+  final StrategyRowSet storedRows;
+  switch (await readStoredRows(store, id)) {
+    case StoredRowsNot(stored: StoredNotRead(:final failure)):
+      return _NotRead(failure);
+    case StoredRowsNot(stored: StoredMissing()):
+      return _Checked([StrategyMissingFromStore(id)]);
+    case StoredRowsNot(stored: final StoredUnreadable unreadable):
+      return _Checked([StrategyUnreadableInStore(id, unreadable)]);
+    case StoredRowsNot(stored: StoredAsData()):
+      return _Checked([StrategyMissingFromStore(id)]);
+    case StoredRowsRead(:final rows):
+      storedRows = rows;
+  }
+  final Map<String, String> inStore;
+  switch (rowsDigestOf(storedRows)) {
+    case final RowsNotDigested notDigested:
+      return _Checked([StrategyRowsNotEncodable(id, notDigested)]);
+    case RowsDigested(rows: final texts):
+      inStore = texts;
+  }
+  final rows = [
+    for (final key in hiveRows.keys)
+      if (!inStore.containsKey(key))
+        RowDifference(key, RowDifferenceKind.missingFromStore)
+      else if (inStore[key] != hiveRows[key])
+        RowDifference(key, RowDifferenceKind.content),
+    for (final key in inStore.keys)
+      if (!hiveRows.containsKey(key))
+        RowDifference(key, RowDifferenceKind.notFromHive),
+  ];
+  final fields = switch (strategyOfRows(storedRows)) {
+    StoredAsData(strategy: final actual) => _differences(expected, actual),
+    StoredUnreadable(:final problems) => [
+        for (final problem in problems)
+          FieldDifference(
+            pageId: null,
+            path: problem,
+            kind: DifferenceKind.value,
+          ),
+      ],
+    StoredMissing() || StoredNotRead() => const <FieldDifference>[],
+  };
+  return _Checked([
+    if (rows.isEmpty && fields.isEmpty)
+      StrategySame(id)
+    else
+      StrategyDiffers(id, rows: rows, fields: fields),
+  ]);
 }
 
 List<FieldDifference> _differences(StrategyData expected, StrategyData actual) {

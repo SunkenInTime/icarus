@@ -11,12 +11,7 @@ import 'package:icarus/dev/drive/drive.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart'
-    show
-        TargetPlatform,
-        defaultTargetPlatform,
-        kDebugMode,
-        kIsWeb,
-        kReleaseMode;
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/press_scale.dart';
@@ -191,7 +186,7 @@ Future<void> main(List<String> args) async {
 
       final storeLaunch = LibraryStoreLaunch.parse(
         args,
-        mayShadow: !kIsWeb && (driveBuild || kDebugMode),
+        mayShadow: shadowReachable,
       );
       appProviderContainer = ProviderContainer(overrides: [
         guardedSignOutRequestProvider.overrideWith(
@@ -353,13 +348,11 @@ Future<void> main(List<String> args) async {
               .state = FirstFrameDrawn(launchClock.elapsed));
       if (shadowStore case (:final opening, :final directory)) {
         closeLibraryStoreOnExit(appProviderContainer);
-        unawaited(
-          appProviderContainer.read(shadowProvider.notifier).start(
-                opening: opening,
-                firstFrame: firstFrame,
-                hiveDirectory: directory,
-              ),
-        );
+        appProviderContainer.read(shadowProvider.notifier).begin(
+              opening: opening,
+              firstFrame: firstFrame,
+              hiveDirectory: directory,
+            );
       }
       if (driveBuild) startDrive();
     },

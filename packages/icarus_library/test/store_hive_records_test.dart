@@ -6,7 +6,7 @@ import 'package:test/test.dart';
 import 'store_support.dart';
 import 'support.dart';
 
-const record = HiveRecordDigest(strategyPublicId: strategyId, digest: 'd1');
+final record = HiveRecordDigest(strategyPublicId: strategyId, digest: 'd1');
 
 String hiveName(String strategy) => 'hive/${digestOf(strategy)}';
 
@@ -18,7 +18,7 @@ Future<(MemoryStorage, LibraryStore)> withStrategy({
   savedValue(
     await store.editLibrary([
       AddStrategy(strategyRows()),
-      if (remembered) const RememberHiveRecord(record),
+      if (remembered) RememberHiveRecord(record),
     ]),
   );
   return (storage, store);
@@ -41,7 +41,7 @@ void main() {
       savedValue(
         await again.editLibrary([
           AddStrategy(strategyRows()),
-          const RememberHiveRecord(record),
+          RememberHiveRecord(record),
         ]),
       );
       expect(commits, 1);
@@ -62,9 +62,7 @@ void main() {
     () async {
       final storage = MemoryStorage();
       final store = await openStore(MemoryEngine(storage));
-      final result = await store.editLibrary([
-        const RememberHiveRecord(record),
-      ]);
+      final result = await store.editLibrary([RememberHiveRecord(record)]);
       expect(
         result,
         isA<Refused<LibraryEdited, LibraryRefusal>>().having(
@@ -82,11 +80,11 @@ void main() {
     () async {
       final (storage, store) = await withStrategy();
       expect(
-        await store.editLibrary([const RememberHiveRecord(record)]),
+        await store.editLibrary([RememberHiveRecord(record)]),
         isA<NothingToSave<LibraryEdited, LibraryRefusal>>(),
       );
-      const next = HiveRecordDigest(strategyPublicId: strategyId, digest: 'd2');
-      savedValue(await store.editLibrary([const RememberHiveRecord(next)]));
+      final next = HiveRecordDigest(strategyPublicId: strategyId, digest: 'd2');
+      savedValue(await store.editLibrary([RememberHiveRecord(next)]));
       await store.close();
       expect(listOf(await openStore(MemoryEngine(storage))).hiveRecords, {
         strategyId: next,
@@ -120,7 +118,7 @@ void main() {
       savedValue(
         await store.editLibrary([
           AddStrategy(strategyRows()),
-          const RememberHiveRecord(record),
+          RememberHiveRecord(record),
         ]),
       );
       await store.close();
@@ -136,10 +134,7 @@ void main() {
     (
       'the record of another strategy',
       jsonEncode(
-        const HiveRecordDigest(
-          strategyPublicId: 'other',
-          digest: 'd1',
-        ).toJson(),
+        HiveRecordDigest(strategyPublicId: 'other', digest: 'd1').toJsonView(),
       ),
     ),
   ]) {
@@ -161,7 +156,7 @@ void main() {
           StoredRowRef('library', hiveName(strategyId)),
         ]);
         expect(
-          await reopened.editLibrary([const RememberHiveRecord(record)]),
+          await reopened.editLibrary([RememberHiveRecord(record)]),
           isA<Refused<LibraryEdited, LibraryRefusal>>().having(
             (r) => r.reason,
             'reason',
@@ -181,6 +176,32 @@ void main() {
       },
     );
   }
+
+  test(
+    'a stored record keeps a field this build does not know when its digest is replaced from it',
+    () async {
+      final (storage, store) = await withStrategy(remembered: false);
+      await store.close();
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents['library']![hiveName(strategyId)] =
+          '{"copiedBy":"a newer build","digest":"d1","strategyPublicId":"$strategyId"}';
+      final stored = MemoryStorage(contents);
+      final reopened = await openStore(MemoryEngine(stored));
+      final held = listOf(reopened).hiveRecords[strategyId]!;
+      expect(held.unknownFields['copiedBy'], 'a newer build');
+      savedValue(
+        await reopened.editLibrary([RememberHiveRecord(held.withDigest('d2'))]),
+      );
+      await reopened.close();
+      expect(
+        stored.contents['library']![hiveName(strategyId)],
+        '{"copiedBy":"a newer build","digest":"d2","strategyPublicId":"$strategyId"}',
+      );
+    },
+  );
 
   test('a folder keeps the time it was created', () async {
     final storage = MemoryStorage();
