@@ -96,6 +96,71 @@ final class LoadedStrategy {
 
   final String digest;
   StrategyHeader header;
+
+  static LoadedStrategy image(String digest, StrategyRowSet rows) {
+    final loaded = LoadedStrategy(
+      digest: digest,
+      header: HeaderPlaced(rows.strategy),
+      strategyId: rows.strategy.publicId,
+      pages: {for (final page in rows.pages) digestOf(page.publicId): page},
+      settings: {
+        for (final row in rows.settings) digestOf(row.pagePublicId): row,
+      },
+      unplaced: const {},
+      names: [
+        for (final row in rows.elements) nameOf(row),
+        for (final row in rows.lineupGroups) nameOf(row),
+      ],
+    );
+    final content = {
+      for (final page in rows.pages) digestOf(page.publicId): LoadedPage(),
+    };
+    for (final row in rows.elements) {
+      content[digestOf(row.pagePublicId)]!.elements[digestOf(row.publicId)] =
+          row;
+    }
+    for (final row in rows.lineupGroups) {
+      content[digestOf(row.pagePublicId)]!.lineupGroups[digestOf(
+            row.publicId,
+          )] =
+          row;
+    }
+    content.forEach(loaded.addLoadedPage);
+    return loaded;
+  }
+
+  Map<RowKey, (String, Row)> get heldRows => {
+    if (header case HeaderPlaced(:final row))
+      row.key: (const HeaderName().name, row),
+    for (final MapEntry(:key, :value) in _pages.entries)
+      value.key: (PageName(key).name, value),
+    for (final MapEntry(:key, :value) in _settings.entries)
+      value.key: (SettingsName(key).name, value),
+    for (final MapEntry(key: page, value: loaded) in _loaded.entries) ...{
+      for (final MapEntry(:key, :value) in loaded.elements.entries)
+        value.key: (ElementName(page, key).name, value),
+      for (final MapEntry(:key, :value) in loaded.lineupGroups.entries)
+        value.key: (LineupName(page, key).name, value),
+    },
+  };
+
+  void drop(Iterable<Row> rows) {
+    for (final row in rows) {
+      switch (row) {
+        case ElementRow() || LineupGroupRow():
+          _forget(row);
+        case PageRow(:final publicId):
+          _pages.remove(digestOf(publicId));
+          _loaded.remove(digestOf(publicId));
+          _contentPages.remove(digestOf(publicId));
+        case PageSettingsRow(:final pagePublicId):
+          _settings.remove(digestOf(pagePublicId));
+        case StrategyRow() || FolderRow():
+          throw StateError('$row is not dropped from a strategy');
+      }
+    }
+  }
+
   final String? strategyId;
   final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
@@ -322,6 +387,7 @@ final class LoadedStrategy {
         header = HeaderPlaced(row);
       case PageRow(:final publicId):
         _pages[digestOf(publicId)] = row;
+        _loaded.putIfAbsent(digestOf(publicId), LoadedPage.new);
       case PageSettingsRow(:final pagePublicId):
         _settings[digestOf(pagePublicId)] = row;
       case ElementRow(:final pagePublicId, :final publicId):
