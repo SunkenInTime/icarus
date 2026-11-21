@@ -327,6 +327,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final opening = attempt ?? OpenAttempt.unchallenged;
     _pageSessionGeneration++;
     _openSession++;
+    _pageBeingInstalled = null;
     ref.read(transitionProvider.notifier).clear();
     final pageSource = _resolvePageSource(strategyId, source);
     final pageIds = await opening.wait(pageSource.listPageIds());
@@ -375,8 +376,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   Future<void> setActivePage(String pageId) async {
-    await _pageInstalled();
-    if (pageId == state.activePageId || _deletedPageHoldsWork()) {
+    if (!await _stillOpenAfterInstall() ||
+        pageId == state.activePageId ||
+        _deletedPageHoldsWork()) {
       return;
     }
     ref.read(transitionProvider.notifier).clear();
@@ -384,8 +386,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (outcome == _PageSwitch.stayed) _resumePendingRemoteReapplyIfPossible();
   }
 
-  Future<void> _pageInstalled() async {
+  Future<bool> _stillOpenAfterInstall() async {
+    final opened = _openSession;
     if (_pageBeingInstalled case final installing?) await installing;
+    return opened == _openSession;
   }
 
   PreparingPageTransition? _preparedFor(PageSwitch pageSwitch) =>
@@ -415,8 +419,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required PageTransitionDirection direction,
     Duration duration = kPageTransitionDuration,
   }) async {
-    await _pageInstalled();
-    if (pageId == state.activePageId || _deletedPageHoldsWork()) {
+    if (!await _stillOpenAfterInstall() ||
+        pageId == state.activePageId ||
+        _deletedPageHoldsWork()) {
       return;
     }
     final transitionNotifier = ref.read(transitionProvider.notifier);
@@ -1078,6 +1083,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _remoteChangeWaitsForEditor = false;
     _pageSessionGeneration++;
     _openSession++;
+    _pageBeingInstalled = null;
     ref.read(transitionProvider.notifier).clear();
     state = const StrategyPageSessionState(
       activePageId: null,
@@ -1189,7 +1195,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     } on OpenGaveWay {
       return _PageSwitch.superseded;
     } catch (_) {
-      _restoreLeftPage(pageSwitch);
+      if (session.isCurrent) _restoreLeftPage(pageSwitch);
       rethrow;
     } finally {
       installed.complete();

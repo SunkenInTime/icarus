@@ -2975,6 +2975,78 @@ void main() {
       expect(agentAt(container), onOne);
     });
 
+    test('a page that fails to go on screen after a reopen leaves the '
+        'reopened page alone', () async {
+      final (container, remote) = await open();
+      final installing = holdInstallOf(remote, two);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      session.reset();
+      remote.whileActivating = null;
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+        preferredPageId: three.publicId,
+      );
+      installing.completeError(StateError('page 2 went away'));
+      await expectLater(toTwo, completes);
+      await _drawFrame();
+
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        three.publicId,
+      );
+      expect(agentAt(container), onThree);
+    });
+
+    test('a page asked for before a reopen is not opened after it', () async {
+      final (container, remote) = await open();
+      final read = <String>[];
+      remote.onFetchPage = (pageId) async => read.add(pageId);
+      final installing = holdInstallOf(remote, two);
+      final session = container.read(strategyPageSessionProvider.notifier);
+
+      final toTwo = session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      final toThree = session.setActivePageAnimated(
+        three.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      await _settle();
+      session.reset();
+      remote.whileActivating = null;
+      await session.initializeForStrategy(
+        strategyId: 'cloud-strategy',
+        source: StrategySource.cloud,
+        selectFirstPageIfNeeded: true,
+        preferredPageId: one.publicId,
+      );
+      await session.setActivePageAnimated(
+        two.publicId,
+        direction: PageTransitionDirection.forward,
+      );
+      installing.complete();
+      await toTwo;
+      await toThree;
+      await _drawFrame();
+
+      expect(read, [two.publicId, two.publicId]);
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        two.publicId,
+      );
+      expect(agentAt(container), onTwo);
+    });
+
     test('an earlier switch to the same page does not start a later one',
         () async {
       final mesh = Completer<NavigationGeometryMap?>();
