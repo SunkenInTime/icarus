@@ -33,6 +33,10 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## Scripts that need the network cut
+
+`lost-answer-edit` and `delete-undo-lost-answer` lose the answer to a change on purpose. Each signals `ready`, then waits for `armed`: cut the run's incoming traffic and write the run id (from `<out>/run-id`) to `<out>/signals/armed`. Its requests still reach the server, so the change lands and the answer never arrives. `delete-undo-lost-answer` then signals `undone`; restore the traffic and write `restored`. On Linux, start the run in its own scope (`systemd-run --user --scope --unit <name> -- dart tool/drive/linux.dart run ...`) and drop only that scope's incoming packets with an nftables rule, `socket cgroupv2 level 5 "user.slice/user-1000.slice/user@1000.service/app.slice/<name>.scope" drop` in an input chain, so no other run on the box goes offline.
+
 ## Keeping the two in step
 
 `run.ps1` and `linux.dart` are two launchers for the same driver. The driver decides pass or fail and writes the `SUMMARY` line; the launchers only set it up and read the log. `test/drive_linux_runner_test.dart` fails when the driver reads an `ICARUS_DRIVE_*` variable one launcher doesn't set, when Linux refuses a step the driver no longer has, or when either build stops refusing production. A change to what an instance gets goes into both launchers in the same commit.

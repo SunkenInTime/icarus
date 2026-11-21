@@ -320,8 +320,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// landed, by storage key: the op, the revision it landed at, and the
   /// canvas session that drew it. Kept until the canvas makes an op from
   /// that revision or newer, or is drawn fresh (see [_behindOwnLanded]).
-  final Map<String, ({StrategyOp op, int revision, int session})> _ownLanded =
-      {};
+  final Map<String, ({StrategyOp op, int revision, int session, bool own})>
+      _ownLanded = {};
   int _canvasSession = 0;
 
   /// Op IDs of work made while connected, with no disconnect since: it is
@@ -2839,6 +2839,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             op: sent.pending.op,
             revision: revision,
             session: _canvasSession,
+            own: ownRevision == revision,
           );
         } else {
           _ownLanded.remove(sent.storageKey);
@@ -2856,6 +2857,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             successor.op,
             predecessor: sent.pending.op,
             revision: successorRevision,
+            own: ownRevision == successorRevision,
           ),
           clientId: successor.clientId,
         );
@@ -3985,6 +3987,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _asSuccessorOf(op, landed.op, drawn: true),
       predecessor: landed.op,
       revision: landed.revision,
+      own: landed.own,
     );
   }
 
@@ -3999,23 +4002,30 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       record.pending.lastAttemptAt != null;
 
   /// [successor], waiting behind [predecessor], once [predecessor] landed at
-  /// [revision]: rebased onto it (an add behind an add becomes an edit),
-  /// as [_onLandedPredecessor] allows.
+  /// [revision]: rebased onto it (an add behind an add is an edit; an edit
+  /// behind this device's ([own]) delete of its version brings the item back).
   StrategyOp _landedBehind(
     StrategyOp successor, {
     required StrategyOp predecessor,
     required int revision,
-  }) =>
-      _onLandedPredecessor(
-        _rebaseRejectedOp(
-          successor,
-          revision,
-          preserveAdd:
-              predecessor is! ElementAddOp && predecessor is! LineupAddOp,
-        ),
-        original: successor,
-        predecessor: predecessor,
-      );
+    required bool own,
+  }) {
+    if ((predecessor is ElementDeleteOp || predecessor is LineupDeleteOp) &&
+        own &&
+        successor.expectedRevision == revision - 1) {
+      if (_restoreOp(successor, revision) case final restore?) return restore;
+    }
+    return _onLandedPredecessor(
+      _rebaseRejectedOp(
+        successor,
+        revision,
+        preserveAdd:
+            predecessor is! ElementAddOp && predecessor is! LineupAddOp,
+      ),
+      original: successor,
+      predecessor: predecessor,
+    );
+  }
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {
     return left.kind == right.kind &&
