@@ -123,8 +123,10 @@ store shares, so it is sent as before.
   of the library in one table or object store keyed by area and key, so one
   database transaction holds every change an edit makes, in any number of
   areas. That transaction is what makes a save all or nothing, and its
-  commit is the one sync a save waits for: SQLite in write-ahead log mode
-  with `synchronous = FULL`, IndexedDB with `durability: 'strict'`. Single
+  commit is what a save waits for, usually one sync: SQLite in write-ahead
+  log mode with `synchronous = FULL`, IndexedDB with `durability: 'strict'`.
+  What strict buys differs by browser and has not been checked by cutting
+  power; the package README says what each attempts. Single
   ownership comes from the same place: SQLite's exclusive file lock, and a
   Web Lock per origin.
 - **SQLite on the web, through WebAssembly.** It would give one engine
@@ -150,10 +152,16 @@ What decided it:
   no saved edit is lost. Turning `synchronous` down to `NORMAL` loses 48 saved
   edits in the same tests, which is how we know the tests can see the
   difference. A writer process killed at 24 random points lost nothing.
-  IndexedDB in Chrome survives aborted transactions and a quota error the same
-  way. The tests found two engine bugs, both fixed: a commit that failed after
-  its log frames were written came back on the next open, and SQLite's quick
-  check let a damaged file open with strategies missing.
+  IndexedDB in Chrome and Firefox survives aborted transactions the same way.
+  A stop or a failed sync at any point of creating a library never leaves a
+  library without its tables. The tests found engine bugs, all fixed: a
+  commit that failed after its log frames were written came back on the next
+  open, SQLite's quick check let a damaged file open with strategies missing,
+  and two processes creating a library at once could rename an empty file
+  into place. Firefox can keep part of a transaction that aborted on quota
+  ([bug 2080749](https://bugzilla.mozilla.org/show_bug.cgi?id=2080749),
+  reproduced through the engine), so a quota abort is a save in doubt, not a
+  refused one.
 - **Costs**, measured through the store on release builds
   (`bin/engine_costs.dart` ahead of time, and `dart compile js -O4` in
   headless Chrome 157). The library holds 700 strategies (60 MiB on disk),
@@ -174,7 +182,7 @@ What decided it:
   | Remove the 20-page, 6,000-item strategy | 12.5 ms | 43.5 ms | 31.7 ms | 23.1 ms | 142 ms |
   | List the 700 strategy areas (`areas`) | 0.18 ms | 1.05 ms | 1.28 ms | 0.4 ms | 105 ms |
 
-  A save is one commit and one sync, so it costs one synced transaction, and
+  A save is one commit, usually one sync, so it costs one synced transaction, and
   saves issued faster than that queue behind each other, about 170 a second
   on the loaded XFS disk. A page read costs about the same on every engine,
   because the engine's part of it is small: reading the page's 300 rows is

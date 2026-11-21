@@ -386,7 +386,8 @@ and `CommitUnknown` all or none, never part.
 
 Both real engines pass `engineContract`: `test/sqlite/sqlite_engine_test.dart`
 runs it on real files, `test/sqlite/sqlite_fault_test.dart` on a disk that
-loses power, and `test/indexed_db/indexed_db_engine_test.dart` in Chrome.
+loses power, and `test/indexed_db/indexed_db_engine_test.dart` in Chrome and
+Firefox.
 Each engine keeps every area in one table or object store keyed by area and
 key, so one commit can change any number of areas inside a single database
 transaction. That transaction is what makes a save all or nothing.
@@ -429,9 +430,11 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   open. The quicker `quick_check` let a library with flipped bits open with
   8 of 41 strategies missing and no error; `integrity_check` also compares
   each index with its table and refuses that file.
-- **Creating a library** happens under `<path>.creating`, which is renamed to
-  the library path once its tables exist, so a file at the library path is
-  always a whole library. Creators take turns through `<path>.lock`, an empty
+- **Creating a library** happens under `<path>.creating`, in rollback-journal
+  mode so the new file is complete on its own with no log beside it. Its
+  tables and identity are read back before it is renamed to the library path,
+  so a file at the library path is always a whole library; the first open
+  switches it to write-ahead logging. Creators take turns through `<path>.lock`, an empty
   SQLite file held with `BEGIN EXCLUSIVE`: only the holder looks for the
   library, clears a leftover `.creating`, builds it and renames it, and a
   creator that waited finds the library made. Without this, two processes
@@ -456,8 +459,17 @@ a `hooks` package newer than Flutter 3.44.4 allows.
   `CommitRefused(NameNotAllowed)`, and one with a key past 1024 characters is
   `CommitRefused(KeyTooLong)`; none of its changes apply. Reading a name past
   the limit is `KeyMissing`.
-- **Closing** ends every lease the engine granted, and the engine grants no
-  more (`LeaseFailed(EngineClosed)`).
+- **File names.** A path ending in `.creating`, `.lock`, `-wal`, `-shm` or
+  `-journal` is refused with an `ArgumentError`, because those names belong to
+  another library's files.
+- **Closing** waits for leases still opening, ends every lease the engine
+  granted, and returns `ReleaseFailed` if any release failed. The engine grants
+  no more (`LeaseFailed(EngineClosed)`). Releasing a lease twice returns the
+  first release's answer.
+- **When storage is gone.** A missing library file with no log beside it is
+  created as a new, empty library and the lease is granted; the engine cannot
+  tell a first start from a file deleted by the user or a cleaning tool. A
+  missing file whose log remains is refused as a `DeviceFailure`.
 - `SqliteEngine.holdNextCommit()` parks the next commit on the worker isolate
   until it is let go, for the contract's pending-write checks.
 - Switching a checkout between a branch with `sqlite3` and one without can
@@ -476,14 +488,42 @@ web.
 - **A commit is one `readwrite` transaction** holding every put, delete and
   area clear (a delete over the area's key range). It is `CommitApplied` when
   the transaction fires `complete`, never on a request's `success`. An
-  `abort` rolls the whole transaction back, so it is `CommitRefused` naming
-  the browser's error (`QuotaExceededError` for a full quota).
-- **Durability.** Transactions ask for `durability: 'strict'`. The spec lets a
-  browser report a strict transaction complete only after verifying its
-  changes reached persistent storage. Chrome (83+) flushes before `complete`,
-  Firefox (129+) runs its SQLite store with `synchronous = EXTRA` for strict
-  transactions, and Safari (15+) checkpoints its SQLite log after the commit.
-  The default, without `strict`, flushes in none of them.
+  `abort` is `CommitRefused` naming the browser's error, with one exception:
+  an abort for `QuotaExceededError` is `CommitUnknown`. Firefox can keep part
+  of a transaction that aborted on quota: requests queued after the failing
+  put still take effect ([bug 2080749](https://bugzilla.mozilla.org/show_bug.cgi?id=2080749)).
+  `tool/quota_abort_web.dart` reproduced it through this engine in Firefox
+  160, three runs out of three: the refused commit's delete and its last put
+  were in the database afterwards. The store treats `CommitUnknown` as a save
+  in doubt and shuts, so the next open reads what is really there. A put
+  whose value cannot be stored throws while the commit is being queued; the
+  engine aborts the transaction and answers `CommitRefused`.
+- **Durability.** Every transaction asks for `durability: 'strict'`, and the
+  engine refuses to open where the browser does not report it back (a browser
+  older than the option). What strict does differs by browser:
+  - Chrome has had the option since 83 ([chromestatus](https://chromestatus.com/feature/5730701489995776)).
+    Strict flushes to disk before `complete`. Strict was the default until
+    121, which made `relaxed` the default ([Chrome blog](https://developer.chrome.com/blog/indexeddb-durability-mode-now-defaults-to-relaxed)).
+  - Firefox has had the option since 126 ([bug 1878143](https://bugzilla.mozilla.org/show_bug.cgi?id=1878143)).
+    Durability hints set SQLite's `synchronous` mode since 129 ([bug 1883045](https://bugzilla.mozilla.org/show_bug.cgi?id=1883045)):
+    strict runs the transaction with `synchronous = EXTRA`, the default with
+    `NORMAL` ([ActorsParent.cpp](https://searchfox.org/mozilla-central/source/dom/indexedDB/ActorsParent.cpp)).
+  - Safari has had the option since 15 ([WebKit commit](https://github.com/WebKit/WebKit/commit/73adacdf77de005d4ce54729996f6c841e5c9a54)).
+    After a strict transaction commits, WebKit runs a full checkpoint of its
+    SQLite log. It ignores the checkpoint's result, so a checkpoint that
+    fails still reports the transaction complete ([SQLiteIDBBackingStore.cpp](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/indexeddb/server/SQLiteIDBBackingStore.cpp)).
+
+  None of this has been checked by cutting power; it is what each browser's
+  source and notes say it attempts.
+- **What the browser can take away.** In a private window the browser can
+  discard the whole database when the session ends. Under storage pressure it
+  can evict the origin's data, and a user can clear site data. In each case
+  the next open finds no database, creates an empty one and grants the lease:
+  the engine reports nothing, because it cannot tell that from a first visit.
+  The store then sees an empty library. The engine does not ask for
+  persistent storage (`navigator.storage.persist()`).
+- **On a page only.** The engine reaches IndexedDB and Web Locks through
+  `window`, so it runs on a page, not in a worker.
 - **One writer per origin.** A lease holds a Web Lock named after the
   database, taken with `ifAvailable`, so another tab, frame or worker gets
   `HeldByAnotherWriter` at once. The lock is released when the lease is, or
@@ -499,7 +539,13 @@ web.
 - **Listing areas** walks a key cursor and, at each area, continues to
   `[area, []]`, which sorts after every key of that area, so it lands on the
   next area's first row without reading the rest.
-- **Closing** ends every lease and grants no more.
+- **The lease ends with the database.** An upgrade from another tab, a delete
+  of the database, or the browser closing the connection itself ends the
+  lease, and every later call answers `LeaseEnded`. A lock request the
+  browser rejects fails the lease. A database name starting with `-` is
+  refused with an `ArgumentError`, because Web Locks reserve those names.
+- **Closing** waits for leases still opening, ends every lease and grants no
+  more. Releasing twice returns the first release's answer.
 - `IndexedDbEngine.holdNextCommit()` parks the next commit before its
   transaction starts, counted as a commit in flight.
 
@@ -526,12 +572,16 @@ web.
   including an area clear, is wholly there or wholly absent. A killed process
   is not a power cut: the operating system still writes what the process had
   written.
-- `test/indexed_db/indexed_db_engine_test.dart` runs in Chrome. It aborts a
-  transaction after its first request succeeded, including a commit across
-  three areas with an area clear, reports a quota error the way Chrome does
-  (by patching `IDBObjectStore`), refuses a second lease on the origin, and
-  hands the library to a worker while commits are in flight. It cannot crash
-  the browser, cut its power, or test Firefox or Safari.
+- `test/indexed_db/indexed_db_engine_test.dart` runs in Chrome and Firefox
+  (CI runs Chrome). It aborts a transaction after its first request
+  succeeded, including a commit across three areas with an area clear,
+  reports a quota error (by patching `IDBObjectStore`), makes a put throw
+  while it is queued, rejects a lock request, drops the durability option,
+  upgrades, deletes and force-closes the database under a lease, refuses a
+  second lease on the origin, and hands the library to a worker while commits
+  are in flight. The structured-clone failure is staged by patching `put`,
+  not caused by a real value. It cannot crash the browser, cut its power, or
+  run Safari.
 - `test/memory_crash_test.dart` runs the same crash checks on `MemoryEngine`.
 
 The crash checks are in `test/crash_harness.dart`. For the store: after a
