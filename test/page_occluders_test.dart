@@ -19,14 +19,18 @@ import 'package:icarus/const/wall_path.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/page_occluders_provider.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
+import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/view_cone/page_occluders.dart';
+import 'package:icarus/view_cone/sightline_report.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/view_cone/vision_world_gzip.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_wall.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
@@ -97,16 +101,25 @@ Map<String, dynamic> _openFloor() => {
 class _Ascent extends MapProvider {
   @override
   MapState build() => MapState(currentMap: MapValue.ascent, isAttack: true);
-}
 
-class _AscentDefense extends MapProvider {
-  @override
-  MapState build() => MapState(currentMap: MapValue.ascent, isAttack: false);
+  void flip() =>
+      state = MapState(currentMap: MapValue.ascent, isAttack: !state.isAttack);
 }
 
 class _Split extends MapProvider {
   @override
   MapState build() => MapState(currentMap: MapValue.split, isAttack: true);
+}
+
+SightBlockers _declared(
+  Iterable<PlacedAbility> abilities, {
+  required double mapScale,
+}) {
+  final blockers = SightBlockers();
+  for (final ability in abilities) {
+    blockers.declare(ability.id, sightBlockOf(ability, mapScale: mapScale));
+  }
+  return blockers;
 }
 
 void main() {
@@ -227,75 +240,219 @@ void main() {
     });
   });
 
-  group('the page on screen', () {
+  group('what a page draws is what blocks', () {
     late ProviderContainer container;
-    final smoke = _placed(AgentType.omen, 2);
-    final stim =
-        _placed(AgentType.brimstone, 0, position: const Offset(600, 300));
+    late ConeCoverage coverage;
 
     setUp(() {
       CoordinateSystem(playAreaSize: const Size(1920, 1080));
       container =
           ProviderContainer(overrides: [mapProvider.overrideWith(_Ascent.new)]);
-      container.read(abilityProvider.notifier).fromHive([smoke, stim]);
-    });
-    tearDown(() => container.dispose());
-
-    Offset centre() =>
-        (container.read(pageOccludersProvider).single as CircleOccluder).centre;
-
-    test('holds one occluder for the smoke and none for anything else', () {
-      expect(centre(), _drawnMiddle(smoke, 1));
+      coverage = ConeCoverage();
     });
 
-    test('follows a smoke while it is dragged, and lets go after', () {
-      container
-          .read(heldAbilityProvider.notifier)
-          .hold(smoke.copyWith(position: smoke.position + const Offset(30, 0)));
-      expect(centre(), _drawnMiddle(smoke, 1) + const Offset(30, 0));
-      container.read(heldAbilityProvider.notifier).letGo(smoke.id);
-      expect(centre(), _drawnMiddle(smoke, 1));
+    Future<void> showPage(
+      WidgetTester tester,
+      List<PlacedAbility> abilities,
+    ) async {
+      container.read(abilityProvider.notifier).fromHive(abilities);
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          home: Scaffold(
+            body: ConeCoverageScope(
+              coverage: coverage,
+              child: Consumer(
+                builder: (context, ref, _) => Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (final ability in ref.watch(abilityProvider))
+                      EditorEntityLayer(
+                        key: ValueKey('entity-${ability.id}'),
+                        id: ability.id,
+                        kind: SelectableKind.ability,
+                        child: PlacedAbilityWidget(
+                          key: ValueKey(ability.id),
+                          ability: ability,
+                          onDragEnd: (_, __) {},
+                          id: ability.id,
+                          data: ability,
+                          rotation: ability.rotation,
+                          length: ability.length,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump();
+    }
+
+    Future<void> closePage(WidgetTester tester) async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      container.dispose();
+      coverage.dispose();
+    }
+
+    Set<SightBlock> drawn() => {...coverage.blockers.all};
+
+    Set<SightBlock> saved() => {
+          for (final ability in container.read(abilityProvider))
+            if (sightBlockOf(ability, mapScale: 1) case final block?) block,
+        };
+
+    Offset centreOf(PlacedAbility smoke) => (drawn()
+            .singleWhere((block) => block.name == sightBlockName(smoke.data))
+            .shape as CircleOccluder)
+        .centre;
+
+    Offset worldOf(Offset screen) =>
+        CoordinateSystem.instance.screenToCoordinate(screen);
+
+    void expectNear(Offset actual, Offset expected) =>
+        expect((actual - expected).distance, lessThan(1e-6),
+            reason: '$actual, expected $expected');
+
+    testWidgets(
+        'a smoke blocks where it is drawn as it is dragged, then '
+        'where the page has it', (tester) async {
+      final smoke = _placed(AgentType.omen, 2);
+      await showPage(tester, [smoke]);
+      expect(drawn(), saved());
+      expect(drawn(), hasLength(1));
+      final gesture = await tester
+          .startGesture(tester.getCenter(find.byKey(ValueKey(smoke.id))));
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump();
+      final first = centreOf(smoke);
+      expect(first, isNot(_drawnMiddle(smoke, 1)));
+      await gesture.moveBy(const Offset(40, -20));
+      await tester.pump();
+      expectNear(centreOf(smoke), first + worldOf(const Offset(40, -20)));
+      await gesture.up();
+      await tester.pump();
+      expect(drawn(), saved());
+      await closePage(tester);
+    });
+
+    testWidgets('switching sides mid-drag keeps the blocker under the smoke',
+        (tester) async {
+      final smoke = _placed(AgentType.omen, 2);
+      await showPage(tester, [smoke]);
+      final gesture = await tester
+          .startGesture(tester.getCenter(find.byKey(ValueKey(smoke.id))));
+      await gesture.moveBy(const Offset(30, 10));
+      await tester.pump();
+      final onAttack = centreOf(smoke);
+      (container.read(mapProvider.notifier) as _Ascent).flip();
+      await tester.pump();
+      expectNear(
+        centreOf(smoke),
+        CoordinateSystem.instance.positionForSide(
+          canonicalPosition: onAttack,
+          reflectionOffset: Offset.zero,
+          isAttack: false,
+        ),
+      );
+      await gesture.up();
+      await tester.pump();
+      expect(drawn(), saved());
+      await closePage(tester);
+    });
+
+    testWidgets('two smokes dragged at once each block where they are drawn',
+        (tester) async {
+      final darkCover = _placed(AgentType.omen, 2);
+      final skySmoke =
+          _placed(AgentType.brimstone, 2, position: const Offset(700, 500));
+      await showPage(tester, [darkCover, skySmoke]);
+      final one = await tester
+          .startGesture(tester.getCenter(find.byKey(ValueKey(darkCover.id))));
+      final two = await tester.startGesture(
+          tester.getCenter(find.byKey(ValueKey(skySmoke.id))),
+          pointer: 7);
+      await one.moveBy(const Offset(30, 0));
+      await two.moveBy(const Offset(0, 30));
+      await tester.pump();
+      final oneAt = centreOf(darkCover), twoAt = centreOf(skySmoke);
+      await one.moveBy(const Offset(25, 0));
+      await tester.pump();
+      await two.moveBy(const Offset(0, 25));
+      await tester.pump();
+      expectNear(centreOf(darkCover), oneAt + worldOf(const Offset(25, 0)));
+      expectNear(centreOf(skySmoke), twoAt + worldOf(const Offset(0, 25)));
+      await one.up();
+      await two.up();
+      await tester.pump();
+      expect(drawn(), saved());
+      await closePage(tester);
+    });
+
+    testWidgets(
+        'undoing in the middle of turning a wall leaves the wall as '
+        'the page has it', (tester) async {
+      final toxicScreen = _placed(AgentType.viper, 2);
+      await showPage(tester, [toxicScreen]);
+      final abilities = container.read(abilityProvider.notifier);
+      abilities.updateVisualState(
+          0, const AbilityVisualState(showRangeFill: false));
+      abilities.updateVisualState(0, const AbilityVisualState());
+      await tester.pump();
+      final turning =
+          tester.widget<RotatableWidget>(find.byType(RotatableWidget));
+      turning.onPanStart(DragStartDetails(globalPosition: Offset.zero));
+      turning.onPanUpdate(DragUpdateDetails(
+          globalPosition: tester.getBottomRight(find.byType(RotatableWidget)) +
+              const Offset(600, 0)));
+      await tester.pump();
+      expect(drawn(), isNot(saved()), reason: 'the wall turns as it is held');
+      container.read(actionProvider.notifier).undoAction();
+      await tester.pump();
+      expect(find.byType(EditorItemHandle), findsNothing);
+      expect(drawn(), saved());
+      expect(drawn(), isEmpty, reason: 'the undo put the wall down');
+      await closePage(tester);
     });
 
     for (final isAttack in [true, false]) {
-      test('follows a selection dragged together, attack=$isAttack', () {
-        final side = ProviderContainer(overrides: [
-          mapProvider.overrideWith(isAttack ? _Ascent.new : _AscentDefense.new),
-        ]);
-        addTearDown(side.dispose);
-        side.read(abilityProvider.notifier).fromHive([smoke]);
-        side
+      testWidgets(
+          'a selection dragged together carries its smoke, '
+          'attack=$isAttack', (tester) async {
+        final smoke = _placed(AgentType.omen, 2);
+        if (!isAttack) (container.read(mapProvider.notifier) as _Ascent).flip();
+        await showPage(tester, [smoke]);
+        container
             .read(canvasGroupDragProvider.notifier)
             .set((ids: {smoke.id}, by: const Offset(20, 10)));
-        final onScreen =
-            CoordinateSystem.instance.screenToCoordinate(const Offset(20, 10));
-        final moved = isAttack ? onScreen : -onScreen;
-        final circle =
-            side.read(pageOccludersProvider).single as CircleOccluder;
-        expect((circle.centre - (_drawnMiddle(smoke, 1) + moved)).distance,
-            lessThan(1e-9));
+        await tester.pump();
+        final onScreen = worldOf(const Offset(20, 10));
+        expectNear(centreOf(smoke),
+            _drawnMiddle(smoke, 1) + (isAttack ? onScreen : -onScreen));
+        container.read(canvasGroupDragProvider.notifier).set(null);
+        await tester.pump();
+        expect(drawn(), saved());
+        await closePage(tester);
       });
     }
 
-    test('follows a High Tide wall while a dot is dragged', () {
+    testWidgets('a High Tide blocks along the dot being pulled',
+        (tester) async {
       final tide =
           _placed(AgentType.harbor, 1, wallPath: const [Offset(0, -40)]);
-      container.read(abilityProvider.notifier).fromHive([tide]);
+      await showPage(tester, [tide]);
       container
           .read(wallDraftProvider.notifier)
           .set((id: tide.id, path: const [Offset(50, 0)]));
-      final line = container.read(pageOccludersProvider).single as LineOccluder;
-      expect(line.points.last, _drawnMiddle(tide, 1) + const Offset(50, 0));
-    });
-
-    test('tells cones nothing when what moves blocks nothing', () {
-      var heard = 0;
-      container.listen(pageOccludersProvider, (_, __) => heard++);
-      container
-          .read(heldAbilityProvider.notifier)
-          .hold(stim.copyWith(position: stim.position + const Offset(30, 0)));
-      container.read(heldAbilityProvider.notifier).letGo(stim.id);
-      expect(heard, 0);
+      await tester.pump();
+      final line = drawn().single.shape as LineOccluder;
+      expectNear(line.points.last, _drawnMiddle(tide, 1) + const Offset(50, 0));
+      container.read(wallDraftProvider.notifier).set(null);
+      await tester.pump();
+      expect(drawn(), saved());
+      await closePage(tester);
     });
   });
 
@@ -314,34 +471,40 @@ void main() {
     double radiusOf(PlacedAbility smoke) =>
         (occluderOf(smoke, mapScale: 1)! as CircleOccluder).radius;
 
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
+
     Future<List<CircleOccluder>> at(double t) async {
       await tester.pumpWidget(UncontrolledProviderScope(
         container: container,
         child: ShadApp(
           home: Scaffold(
-            body: TransitionEntriesLayer(
-              entries: [
-                PageTransitionEntry.move(
-                  from: moving,
-                  to: moving.copyWith(
-                      position: moving.position + const Offset(100, 0)),
-                ),
-                PageTransitionEntry.appear(to: arriving),
-                PageTransitionEntry.disappear(from: leaving),
-              ],
-              agentPaths: const {},
-              t: t,
-              direction: PageTransitionDirection.forward,
-              agentSize: 40,
-              abilitySize: 40,
+            body: ConeCoverageScope(
+              coverage: coverage,
+              child: TransitionEntriesLayer(
+                entries: [
+                  PageTransitionEntry.move(
+                    from: moving,
+                    to: moving.copyWith(
+                        position: moving.position + const Offset(100, 0)),
+                  ),
+                  PageTransitionEntry.appear(to: arriving),
+                  PageTransitionEntry.disappear(from: leaving),
+                ],
+                agentPaths: const {},
+                t: t,
+                direction: PageTransitionDirection.forward,
+                agentSize: 40,
+                abilitySize: 40,
+              ),
             ),
           ),
         ),
       ));
-      return tester
-          .widget<PageOccludersScope>(find.byType(PageOccludersScope))
-          .occluders
-          .cast<CircleOccluder>();
+      return [
+        for (final block in coverage.blockers.all)
+          block.shape as CircleOccluder,
+      ];
     }
 
     final early = await at(0.25);
@@ -369,17 +532,22 @@ void main() {
       position: from.position + const Offset(60, 0),
       wallPath: const [Offset(40, -30), Offset(90, -30), Offset(120, 10)],
     );
+    final coverage = ConeCoverage();
+    addTearDown(coverage.dispose);
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,
       child: ShadApp(
         home: Scaffold(
-          body: TransitionEntriesLayer(
-            entries: [PageTransitionEntry.move(from: from, to: to)],
-            agentPaths: const {},
-            t: 0.4,
-            direction: PageTransitionDirection.forward,
-            agentSize: 40,
-            abilitySize: 40,
+          body: ConeCoverageScope(
+            coverage: coverage,
+            child: TransitionEntriesLayer(
+              entries: [PageTransitionEntry.move(from: from, to: to)],
+              agentPaths: const {},
+              t: 0.4,
+              direction: PageTransitionDirection.forward,
+              agentSize: 40,
+              abilitySize: 40,
+            ),
           ),
         ),
       ),
@@ -389,10 +557,7 @@ void main() {
         .map((paint) => paint.painter)
         .whereType<WallPainter>()
         .single;
-    final blocker = tester
-        .widget<PageOccludersScope>(find.byType(PageOccludersScope))
-        .occluders
-        .single as LineOccluder;
+    final blocker = coverage.blockers.all.single.shape as LineOccluder;
     final coordinates = CoordinateSystem.instance;
     expect(blocker.points.length, wall.line.length);
     for (var i = 0; i < wall.line.length; i++) {
@@ -433,28 +598,14 @@ void main() {
               )),
         );
 
-    Future<(Uint8List, SvgHeightViewConePainter, double)?> render(
+    Future<(Uint8List, SvgHeightViewConePainter, double)> shotOf(
       WidgetTester tester,
-      List<PlacedAbility> abilities,
     ) async {
-      await tester.pumpWidget(Directionality(
-        textDirection: TextDirection.ltr,
-        child: SvgHeightViewCone(
-          runtime: runtime,
-          canonicalOrigin: world(eye),
-          rotation: 0,
-          range: range,
-          angle: math.pi / 2,
-          isAttack: true,
-          occluders: pageOccluders(abilities, mapScale: mapScale),
-        ),
-      ));
       final shown = tester
           .widgetList<CustomPaint>(find.byType(CustomPaint))
           .map((paint) => paint.painter)
           .whereType<ShadowedConePainter>()
-          .singleOrNull;
-      if (shown == null) return null;
+          .single;
       final size = Size(shown.cone.radius * 2, shown.cone.radius);
       final bytes = (await tester.runAsync(() async {
         final recorder = ui.PictureRecorder();
@@ -473,6 +624,35 @@ void main() {
       final pixelsPerSource =
           CoordinateSystem.instance.worldHeightToScreen(transform.scale);
       return (bytes, shown.cone, pixelsPerSource);
+    }
+
+    Future<(Uint8List, SvgHeightViewConePainter, double)> render(
+      WidgetTester tester,
+      List<PlacedAbility> abilities, {
+      Offset from = eye,
+      double rotation = 0,
+    }) async {
+      await tester.pumpWidget(Directionality(
+        textDirection: TextDirection.ltr,
+        child: SvgHeightViewCone(
+          runtime: runtime,
+          canonicalOrigin: world(from),
+          rotation: rotation,
+          range: range,
+          angle: math.pi / 2,
+          isAttack: true,
+          blockers: _declared(abilities, mapScale: mapScale),
+        ),
+      ));
+      return shotOf(tester);
+    }
+
+    bool blank((Uint8List, SvgHeightViewConePainter, double) shot) {
+      final (bytes, _, _) = shot;
+      for (var i = 3; i < bytes.length; i += 4) {
+        if (bytes[i] != 0) return false;
+      }
+      return true;
     }
 
     bool lit(
@@ -497,7 +677,7 @@ void main() {
       final radius =
           (occluderOf(smoke, mapScale: mapScale)! as CircleOccluder).radius /
               transform.scale;
-      final shot = (await render(tester, [smoke]))!;
+      final shot = await render(tester, [smoke]);
       expect(lit(shot, 0, ahead - radius - 2), isTrue);
       expect(lit(shot, 0, ahead + radius + 2), isFalse);
       expect(lit(shot, 0, reach() * 0.95), isFalse);
@@ -519,7 +699,7 @@ void main() {
       expect(length, greaterThan(reach() * 2));
       final wall =
           placedWithMiddleAt(toxicScreen, eye + Offset(-reach(), -ahead));
-      final shot = (await render(tester, [wall]))!;
+      final shot = await render(tester, [wall]);
       for (final degrees in [-40.0, 0.0, 30.0]) {
         final crossing = ahead / math.cos(degrees * math.pi / 180);
         expect(lit(shot, degrees, crossing - 2), isTrue, reason: '$degrees');
@@ -530,13 +710,12 @@ void main() {
 
     testWidgets('from inside a smoke shows nothing', (tester) async {
       final smoke = placedWithMiddleAt(_placed(AgentType.brimstone, 2), eye);
-      expect(await render(tester, [smoke]), isNull);
+      expect(blank(await render(tester, [smoke])), isTrue);
       final clear = await render(tester, [
         placedWithMiddleAt(
             _placed(AgentType.brimstone, 2), eye + const Offset(0, 80)),
       ]);
-      expect(clear, isNotNull);
-      expect(lit(clear!, 0, reach() * 0.5), isTrue);
+      expect(lit(clear, 0, reach() * 0.5), isTrue);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
@@ -550,27 +729,13 @@ void main() {
               transform.scale;
       expect((standing - onTheEdge).distance, greaterThan(0.3),
           reason: 'the cone is cast from a point the smoke does not cover');
-      await tester.pumpWidget(Directionality(
-        textDirection: TextDirection.ltr,
-        child: SvgHeightViewCone(
-          runtime: runtime,
-          canonicalOrigin: world(onTheEdge),
-          rotation: math.pi / 2,
-          range: range,
-          angle: math.pi / 2,
-          isAttack: true,
-          occluders: pageOccluders([
-            placedWithMiddleAt(smoke, onTheEdge - Offset(radius - 0.2, 0)),
-          ], mapScale: mapScale),
-        ),
-      ));
-      expect(
-        tester
-            .widgetList<CustomPaint>(find.byType(CustomPaint))
-            .map((paint) => paint.painter)
-            .whereType<ShadowedConePainter>(),
-        isEmpty,
+      final shot = await render(
+        tester,
+        [placedWithMiddleAt(smoke, onTheEdge - Offset(radius - 0.2, 0))],
+        from: onTheEdge,
+        rotation: math.pi / 2,
       );
+      expect(blank(shot), isTrue);
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
@@ -582,42 +747,46 @@ void main() {
         svgHeightRuntimeProvider.overrideWith((ref, map) async => runtime),
       ]);
       addTearDown(container.dispose);
-      container.read(abilityProvider.notifier).fromHive([smoke]);
 
       Future<bool> coneShows(Set<String> carried) async {
         container
             .read(canvasGroupDragProvider.notifier)
             .set((ids: carried, by: const Offset(160, 0)));
+        final shift = carried.contains(smoke.id)
+            ? selectionDragInWorld(const Offset(160, 0), isAttack: true)
+            : Offset.zero;
         await tester.pumpWidget(UncontrolledProviderScope(
           container: container,
           child: Directionality(
             textDirection: TextDirection.ltr,
-            child: Stack(children: [
-              EditorEntityLayer(
-                id: 'cone',
-                kind: SelectableKind.utility,
-                child: Positioned(
-                  left: 0,
-                  top: 0,
-                  child: ViewConeWidget(
-                    id: null,
-                    angle: 60,
-                    length: 100,
-                    worldOrigin: world(eye),
-                    showCenterMarker: false,
+            child: SightBlockersScope(
+              blockers: _declared(
+                [smoke.copyWith(position: smoke.position + shift)],
+                mapScale: mapScale,
+              ),
+              child: Stack(children: [
+                EditorEntityLayer(
+                  id: 'cone',
+                  kind: SelectableKind.utility,
+                  child: Positioned(
+                    left: 0,
+                    top: 0,
+                    child: ViewConeWidget(
+                      id: null,
+                      angle: 60,
+                      length: 100,
+                      worldOrigin: world(eye),
+                      showCenterMarker: false,
+                    ),
                   ),
                 ),
-              ),
-            ]),
+              ]),
+            ),
           ),
         ));
         await tester.pump();
         await tester.pump();
-        return tester
-            .widgetList<CustomPaint>(find.byType(CustomPaint))
-            .map((paint) => paint.painter)
-            .whereType<ShadowedConePainter>()
-            .isNotEmpty;
+        return !blank(await shotOf(tester));
       }
 
       expect(await coneShows(const {}), isFalse);
@@ -631,15 +800,65 @@ void main() {
         (tester) async {
       final far = placedWithMiddleAt(
           _placed(AgentType.omen, 2), eye + Offset(reach() * 3, 0));
-      final shot = (await render(tester, [far]))!;
-      final shown = tester
-          .widgetList<CustomPaint>(find.byType(CustomPaint))
-          .map((paint) => paint.painter)
-          .whereType<ShadowedConePainter>()
-          .single;
-      expect(shown.shadows, isNull);
+      final shot = await render(tester, [far]);
+      final (bytes, _, _) = shot;
+      final (alone, _, _) = await render(tester, const []);
+      expect(bytes, alone);
       expect(lit(shot, 0, reach() * 0.9), isTrue);
       await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
+
+  group('the sightline report', () {
+    final model = SvgHeightVisibility.fromJson(_openFloor());
+    const eye = Offset(200, 200);
+    const darkCover = SightBlock(
+      name: 'Omen Dark Cover',
+      shape: CircleOccluder(Offset(200, 150), 10),
+    );
+
+    SightlineReport reportOf(List<SightBlock> blockers) => buildSightlineReport(
+          map: 'split',
+          isAttack: true,
+          appVersion: 'test',
+          canonicalOrigin: Offset.zero,
+          facingRadians: -math.pi / 2,
+          apertureRadians: math.pi / 2,
+          rangeSvg: 100,
+          savedElevationCm: null,
+          svgOrigin: eye,
+          model: model,
+          blockersSvg: blockers,
+        );
+
+    test('names the smoke and draws the cone dark behind it', () {
+      final clear = reportOf(const []);
+      final cut = reportOf(const [darkCover]);
+      expect(clear.visibleArea!.contains(const Offset(200, 120)), isTrue);
+      expect(cut.visibleArea!.contains(const Offset(200, 120)), isFalse);
+      expect(cut.visibleArea!.contains(const Offset(200, 170)), isTrue);
+      expect(cut.json['blockers'], [
+        {
+          'name': 'Omen Dark Cover',
+          'kind': 'smoke',
+          'centreSvg': [200.0, 150.0],
+          'radiusSvg': 10.0,
+        },
+      ]);
+      expect(clear.json.keys.toSet().difference(cut.json.keys.toSet()),
+          isEmpty);
+    });
+
+    test('from inside a smoke draws no cone and says which smoke', () {
+      final inside = reportOf(const [
+        SightBlock(
+          name: 'Brimstone Sky Smoke',
+          shape: CircleOccluder(Offset(203, 200), 10),
+        ),
+      ]);
+      expect(inside.json['insideSmoke'], 'Brimstone Sky Smoke');
+      expect(inside.visibleArea, isNull);
+      expect(inside.json['hits'], isNotEmpty);
     });
   });
 
@@ -715,6 +934,11 @@ void main() {
         Offset eye,
         List<VisionOccluder> occluders,
       ) async {
+        final blockers = SightBlockers();
+        for (final (index, shape) in occluders.indexed) {
+          blockers.declare(
+              index, SightBlock(name: 'smoke $index', shape: shape));
+        }
         final smokeAt =
             transform.sourceFromSideWorld(smoke.centre, isAttack: true);
         final toSmoke = smokeAt - eye;
@@ -727,7 +951,7 @@ void main() {
             range: toSmoke.distance * transform.scale * 2,
             angle: math.pi / 3,
             isAttack: true,
-            occluders: occluders,
+            blockers: blockers,
           ),
         ));
         final shown = tester

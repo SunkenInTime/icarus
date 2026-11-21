@@ -14,6 +14,7 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/view_cone/sightline_report.dart';
 import 'package:icarus/view_cone/sightline_report_image.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -30,6 +31,7 @@ ShadContextMenuItem buildSightlineReportMenuItem({
   required double coneAngleDegrees,
   required double lengthVirtual,
   required double? visionElevationCm,
+  required SightBlockers? blockers,
 }) {
   return ShadContextMenuItem(
     leading: const Icon(Icons.bug_report_outlined),
@@ -42,6 +44,7 @@ ShadContextMenuItem buildSightlineReportMenuItem({
       coneAngleDegrees: coneAngleDegrees,
       lengthVirtual: lengthVirtual,
       visionElevationCm: visionElevationCm,
+      blockers: [...?blockers?.all],
     ),
     child: Text(l10n.sightlineReportCopy),
   );
@@ -57,6 +60,7 @@ void copySightlineReport({
   required double coneAngleDegrees,
   required double lengthVirtual,
   required double? visionElevationCm,
+  List<SightBlock> blockers = const [],
 }) {
   final coordinates = CoordinateSystem.instance;
   final transform = SvgHeightMapTransform.forMap(map);
@@ -85,6 +89,13 @@ void copySightlineReport({
       savedElevationCm: visionElevationCm,
       changedDoors: appProviderContainer.read(changedMapDoorsProvider),
       model: model,
+      blockersSvg: [
+        for (final block in blockers)
+          SightBlock(
+            name: block.name,
+            shape: occluderInSource(block.shape, transform, isAttack: isAttack),
+          ),
+      ],
     );
     // Encoded inside the guard: a value JSON cannot hold is a report problem,
     // and the user must hear it as one, not as a crash mid-gesture.
