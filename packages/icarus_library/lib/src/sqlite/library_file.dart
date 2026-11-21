@@ -15,7 +15,11 @@ abstract interface class LibraryFiles {
   Database open(String path);
 
   void pause(Duration duration);
+
+  bool isMomentary(FileSystemException error);
 }
+
+const _windowsMomentary = {5, 32, 303};
 
 final class DiskLibraryFiles implements LibraryFiles {
   const DiskLibraryFiles();
@@ -50,6 +54,11 @@ final class DiskLibraryFiles implements LibraryFiles {
 
   @override
   void pause(Duration duration) => sleep(duration);
+
+  @override
+  bool isMomentary(FileSystemException error) =>
+      Platform.isWindows &&
+      _windowsMomentary.contains(error.osError?.errorCode);
 }
 
 const _patience = Duration(milliseconds: 250);
@@ -71,14 +80,19 @@ final class _TryAgain extends _Attempt {
 RowsOpening openLibraryFile(String path, LibraryFiles files) {
   final waited = Stopwatch()..start();
   final random = Random();
+  var seenHeld = false;
   while (true) {
     switch (_openOnce(path, files)) {
       case _Settled(:final opening):
         return opening;
-      case _TryAgain(:final opening) when waited.elapsed >= _patience:
-        return opening;
-      case _TryAgain():
-        files.pause(Duration(milliseconds: 2 + random.nextInt(20)));
+      case _TryAgain(:final opening):
+        seenHeld = seenHeld || opening is RowsHeld;
+        final left = _patience - waited.elapsed;
+        if (left <= Duration.zero) {
+          return seenHeld ? const RowsHeld() : opening;
+        }
+        final pause = Duration(milliseconds: 2 + random.nextInt(20));
+        files.pause(pause < left ? pause : left);
     }
   }
 }
@@ -109,9 +123,10 @@ _Attempt _openOnce(String path, LibraryFiles files) {
     companion = _strandedCompanion(path, files);
     librarySize = files.size(path);
   } on FileSystemException catch (error) {
-    return _TryAgain(
-      RowsRefused(DeviceFailure('the library files could not be read: $error')),
+    final refused = RowsRefused(
+      DeviceFailure('the library files could not be read: $error'),
     );
+    return files.isMomentary(error) ? _TryAgain(refused) : _Settled(refused);
   }
   if (companion != null && (librarySize ?? 0) == 0) {
     return _TryAgain(RowsRefused(LibraryFileGone(companion)));
