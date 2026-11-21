@@ -284,7 +284,7 @@ final class RowsDatabase {
     if (_connection case _Unusable(:final failure)) {
       return CommitRefused(failure);
     }
-    if (putPastLimit(changes, rowsMaxKeyLength) case final failure?) {
+    if (refusedName(changes, rowsMaxKeyLength) case final failure?) {
       return CommitRefused(failure);
     }
     var committing = false;

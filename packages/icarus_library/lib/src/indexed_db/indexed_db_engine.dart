@@ -274,7 +274,7 @@ final class IndexedDbLease implements StorageLease {
   @override
   Future<Committing> commit(List<Change> changes) {
     if (_ended) return Future.value(const CommitRefused(LeaseEnded()));
-    if (putPastLimit(changes, indexedDbMaxKeyLength) case final failure?) {
+    if (refusedName(changes, indexedDbMaxKeyLength) case final failure?) {
       return Future.value(CommitRefused(failure));
     }
     final committing = _committed(changes);

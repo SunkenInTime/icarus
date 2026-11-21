@@ -1,12 +1,16 @@
 import '../store/engine.dart';
 
-StorageFailure? putPastLimit(List<Change> changes, int maxKeyLength) {
+StorageFailure? refusedName(List<Change> changes, int maxKeyLength) {
   for (final change in changes) {
-    if (change case Put(
-      :final area,
-      :final key,
-    ) when area.length > maxAreaLength || key.length > maxKeyLength) {
-      return KeyTooLong(area, key);
+    final key = switch (change) {
+      Put(:final key) || Delete(:final key) => key,
+      ClearArea() => null,
+    };
+    if (!isArea(change.area) || (key != null && !isName(key))) {
+      return NameNotAllowed(change.area, key ?? '');
+    }
+    if (key != null && key.length > maxKeyLength) {
+      return KeyTooLong(change.area, key);
     }
   }
   return null;

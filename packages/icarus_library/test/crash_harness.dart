@@ -192,8 +192,8 @@ void _storeCrashContract(CrashHarness Function() makeHarness) {
       savedValue(await cleanStore.commit(strategyId, op));
       await cleanStore.close();
       final areas = {...seeded.keys, ...clean.contents.keys};
-      final before = withoutSlot(seeded);
-      final after = withoutSlot(clean.contents);
+      final before = seeded;
+      final after = clean.contents;
 
       await harness.start(seeded);
       final counting = await openStore(await harness.open());
@@ -235,7 +235,7 @@ void _storeCrashContract(CrashHarness Function() makeHarness) {
         final engine = await harness.open();
         await (await openStore(engine)).close();
         final lease = await leaseOf(engine);
-        final rows = withoutSlot(await contentsOf(lease, areas));
+        final rows = await contentsOf(lease, areas);
         await lease.release();
         final isBefore = sameContents(rows, before);
         final isAfter = sameContents(rows, after);
