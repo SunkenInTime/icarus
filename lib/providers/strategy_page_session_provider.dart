@@ -172,7 +172,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   bool _remoteChangeWaitsForEditor = false;
   bool _disposed = false;
   int _pageSessionGeneration = 0;
-  Future<void> _pageBeingInstalled = Future.value();
+  Future<void>? _pageBeingInstalled;
 
   /// Pages whose delete from this device the server applied, with the
   /// strategy revision the delete made. See [_deletedHere].
@@ -1096,7 +1096,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
     final RemotePageSnapshot? target;
     try {
-      await attempt.wait(_pageBeingInstalled);
+      if (_pageBeingInstalled case final installing?) {
+        await attempt.wait(installing);
+      }
       if (await _handOverLeftPage(pageSource, source, attempt) == false) {
         return _PageSwitch.stayed;
       }
@@ -1138,7 +1140,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       return _PageSwitch.superseded;
     }
     final installed = Completer<void>();
-    _pageBeingInstalled = installed.future;
+    final installing = installed.future;
+    _pageBeingInstalled = installing;
     try {
       if (target != null) {
         state = state.copyWith(activePageId: pageId);
@@ -1165,6 +1168,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       rethrow;
     } finally {
       installed.complete();
+      if (identical(_pageBeingInstalled, installing))
+        _pageBeingInstalled = null;
     }
   }
 
