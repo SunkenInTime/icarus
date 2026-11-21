@@ -12,6 +12,8 @@ const _secondId = 'strategy-2';
 typedef View = Map<String, String>;
 
 Object? _normal(Object? json) => switch (json) {
+  JsonObject() => _normal(json.toJson()),
+  JsonList() => _normal(json.toJson()),
   final Map<String, Object?> map => {
     for (final key in map.keys.toList()..sort()) key: _normal(map[key]),
   },
@@ -268,9 +270,11 @@ Outcome expected(String kind, Object? json, List<Object> at, Object? value) {
       replaced,
     ),
     ('element', ['kind']) => _either(value == 'text', replaced),
+    ('element', ['payloadVersion']) when value == 1 => Readable(replaced),
     ('element', ['payloadVersion']) => Unreadable(newer: value == 7),
     ('element', ['data']) => const Unreadable(),
     ('element', ['data', ...]) => Readable(replaced),
+    ('lineup', ['payloadVersion']) when value == 1 => Readable(replaced),
     ('lineup', ['kind'] || ['payloadVersion'] || ['data']) =>
       const Unreadable(),
     ('lineup', ['data', 'id']) => const Unreadable(),
@@ -364,6 +368,8 @@ const _marker = 'NUMBER_GOES_HERE';
 const _unholdable = [
   '1e400',
   '-1e400',
+  '1e309',
+  '-1.8e308',
   '9223372036854775808',
   '-9223372036854775809',
   '9007199254740993',
@@ -398,6 +404,7 @@ List<Corruption> corruptionsOf(String kind, String text, Random random) {
       outcome: whole,
     ),
   ];
+  var longNumbers = true;
   for (final (at, value) in _positions(json, const [])) {
     final where = at.isEmpty ? 'the row' : at.join('/');
     for (final other in _otherTypes(value)) {
@@ -422,6 +429,71 @@ List<Corruption> corruptionsOf(String kind, String text, Random random) {
         text: template.replaceFirst('"$_marker"', '1e308'),
         outcome: expected(kind, json, at, 1e308),
       ));
+      if (longNumbers) {
+        longNumbers = false;
+        corruptions
+          ..add((
+            name: '$where as 0. and 120,000 zeros, then 1e1100000',
+            text: template.replaceFirst(
+              '"$_marker"',
+              '0.${'0' * 120000}1e1100000',
+            ),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 1 and 120,000 zeros, then e-120000',
+            text: template.replaceFirst(
+              '"$_marker"',
+              '1${'0' * 120000}e-120000',
+            ),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 0. and 98 zeros, then 1e1100000',
+            text: template.replaceFirst('"$_marker"', '0.${'0' * 98}1e1100000'),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 1 and 99 zeros, then e-99',
+            text: template.replaceFirst('"$_marker"', '1${'0' * 99}e-99'),
+            outcome: expected(kind, json, at, 1.0),
+          ))
+          ..add((
+            name: '$where as 1 and 99 zeros, then e-1100000',
+            text: template.replaceFirst('"$_marker"', '1${'0' * 99}e-1100000'),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 0. and 93 zeros, then 1e401',
+            text: template.replaceFirst('"$_marker"', '0.${'0' * 93}1e401'),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 0. and 93 zeros, then 1e400',
+            text: template.replaceFirst('"$_marker"', '0.${'0' * 93}1e400'),
+            outcome: expected(kind, json, at, 1e306),
+          ))
+          ..add((
+            name: '$where as 1e-401',
+            text: template.replaceFirst('"$_marker"', '1e-401'),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 1 and 500 zeros, then e-400',
+            text: template.replaceFirst('"$_marker"', '1${'0' * 500}e-400'),
+            outcome: expected(kind, json, at, 1e100),
+          ))
+          ..add((
+            name: '$where as 1 and 400 zeros, then .0',
+            text: template.replaceFirst('"$_marker"', '1${'0' * 400}.0'),
+            outcome: whole,
+          ))
+          ..add((
+            name: '$where as 9.99e308',
+            text: template.replaceFirst('"$_marker"', '9.99e308'),
+            outcome: whole,
+          ));
+      }
     }
   }
   return corruptions;

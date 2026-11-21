@@ -537,7 +537,10 @@ void main() {
         );
         expect(canReadElementPayload(future.payload, MapValue.ascent), isFalse);
         final back = dataOf(made.rows.withRows([future]));
-        expect(back.unreadable.single.toJson(), future.toJson());
+        expect(
+          jsonDecode(jsonEncode(back.unreadable.single.toJson())),
+          jsonDecode(jsonEncode(future.toJson())),
+        );
       });
     }
 
@@ -558,7 +561,10 @@ void main() {
         revision: 1,
       );
       final back = dataOf(made.rows.withRows([broken]));
-      expect(back.unreadable.single.toJson(), broken.toJson());
+      expect(
+        jsonDecode(jsonEncode(back.unreadable.single.toJson())),
+        jsonDecode(jsonEncode(broken.toJson())),
+      );
       expect(
         back.strategy.pages.single.abilityData.map((a) => a.id),
         isNot(contains('broken')),

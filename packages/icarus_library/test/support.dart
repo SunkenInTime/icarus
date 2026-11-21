@@ -21,7 +21,7 @@ ReadableStrategy strategyRow({
   revision: revision,
   createdAt: createdAt ?? strategyCreatedAt,
   updatedAt: createdAt ?? strategyCreatedAt,
-  unknownFields: unknownFields,
+  unknownFields: jsonObject(unknownFields),
 );
 
 PageRow page(
@@ -162,7 +162,7 @@ final class Session {
 
   Map<String, Object?> dataOf(String elementId) =>
       switch (rows.element(elementId)) {
-        LiveElement(:final payload) => payload.data,
+        LiveElement(:final payload) => payload.data.toJson(),
         final other => fail('$elementId is not live: $other'),
       };
 

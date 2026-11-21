@@ -85,7 +85,7 @@ void main() {
         ['links/k1'],
       ),
     );
-    final data = session.groupAt('g1').payload.data;
+    final data = session.groupAt('g1').payload.data.toJson();
     expect(data['links'], [
       link('k1', 'o1', 'l1', notes: 'jump throw'),
       link('k2', 'o2', 'l1'),
@@ -206,7 +206,7 @@ void main() {
       ),
     );
     session.apply(undoOp(edited));
-    final data = session.groupAt('g1').payload.data;
+    final data = session.groupAt('g1').payload.data.toJson();
     expect(data['links'], [link('k1', 'o1', 'l1'), link('k2', 'o2', 'l1')]);
   });
 
@@ -244,7 +244,8 @@ void main() {
         ),
       ),
     );
-    final links = session.groupAt('g1').payload.data['links']! as List<Object?>;
+    final links =
+        session.groupAt('g1').payload.data.toJson()['links']! as List<Object?>;
     expect(
       [for (final link in links.cast<Map<String, Object?>>()) link['id']],
       ['b', 'a'],

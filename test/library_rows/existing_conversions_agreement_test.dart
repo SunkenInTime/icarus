@@ -90,12 +90,12 @@ List<String> elementDisagreements(
     expect(theirs.length, ours.length, reason: 'page ${page.publicId}');
     for (final (index, our) in ours.indexed) {
       final their = theirs[index];
-      final ourData = Map<String, Object?>.from(our.payload.data);
+      final ourData = Map<String, Object?>.from(our.payload.data.toJson());
       if (ourData['assetId'] == null && our.payload.kind == ElementKind.image) {
         ourData['assetId'] = ourData['id'];
       }
       final theirData = elementInLocalTerms(
-        their.payload.data,
+        their.payload.data.toJson(),
         localId: ourData['id']! as String,
         localPicture: localPicture,
       );
@@ -163,8 +163,9 @@ void expectSameLineupGroups(StrategyRowSet mine, MovedToCloud cloud) {
     expect(theirs.length, ours.length, reason: 'page ${page.publicId}');
     for (final (index, our) in ours.indexed) {
       final their = theirs[index];
-      final theirData = lineupInLocalTerms(their.payload.data, localPicture)!
-          as Map<String, Object?>;
+      final theirData =
+          lineupInLocalTerms(their.payload.data.toJson(), localPicture)!
+              as Map<String, Object?>;
       final linkIds = [
         for (final link in theirData['links']! as List)
           (link as Map<String, Object?>)['id'],
@@ -172,7 +173,7 @@ void expectSameLineupGroups(StrategyRowSet mine, MovedToCloud cloud) {
       final chosenByCloud = linkIds.contains(their.publicId);
       expect(
         sameJsonValue(
-          {...our.payload.data, if (!chosenByCloud) 'id': null},
+          {...our.payload.data.toJson(), if (!chosenByCloud) 'id': null},
           {...theirData, if (!chosenByCloud) 'id': null},
         ),
         isTrue,
@@ -356,7 +357,7 @@ void main() {
           payload: ElementPayload(
             kind: element.payload.kind,
             payloadVersion: 1,
-            data: element.payload.data,
+            data: element.payload.data.toJson(),
           ),
           sortIndex: element.sortIndex,
           revision: element.revision,

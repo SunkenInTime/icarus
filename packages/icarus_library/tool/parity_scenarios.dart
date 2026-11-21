@@ -363,7 +363,7 @@ final class _Generator {
       remember(element);
     }
     for (final group in _groups(rows)) {
-      groupHistory[group.publicId] = [group.payload.data];
+      groupHistory[group.publicId] = [group.payload.data.toJson()];
     }
     final ops = <Map<String, Object?>>[];
     final predicted = <Map<String, Object?>>[];
@@ -377,7 +377,7 @@ final class _Generator {
             case final ElementRow element:
               remember(element);
             case ReadableLineupGroupRow(:final publicId, :final payload):
-              (groupHistory[publicId] ??= []).add(payload.data);
+              (groupHistory[publicId] ??= []).add(payload.data.toJson());
             default:
               break;
           }
@@ -401,7 +401,7 @@ final class _Generator {
 
   void remember(ElementRow row) {
     if (row case ReadableElementRow(:final payload)) {
-      (history[row.publicId] ??= []).add(payload.data);
+      (history[row.publicId] ??= []).add(payload.data.toJson());
     }
   }
 
@@ -411,9 +411,9 @@ final class _Generator {
       kind: sample.kind,
       payloadVersion: sample.payloadVersion,
       data: {
-        ...sample.data,
+        ...sample.data.toJson(),
         'id': id,
-        if (sample.data.containsKey('assetId'))
+        if (sample.data.toJson().containsKey('assetId'))
           'assetId': chance(0.3) ? 'picture-shared' : 'picture-$id',
       },
     );
@@ -422,13 +422,13 @@ final class _Generator {
   ElementPayload longDrawing(String id, int points) {
     final freehand = [
       for (final sample in samples.ofKind(ElementKind.drawing))
-        if (sample.data['listOfPoints'] is List<Object?>) sample,
+        if (sample.data.toJson()['listOfPoints'] is List<Object?>) sample,
     ].first;
     return ElementPayload(
       kind: ElementKind.drawing,
       payloadVersion: freehand.payloadVersion,
       data: {
-        ...freehand.data,
+        ...freehand.data.toJson(),
         'id': id,
         'listOfPoints': [
           for (var i = 0; i < points; i++) {'dx': i % 1000, 'dy': i ~/ 1000},
@@ -455,7 +455,7 @@ final class _Generator {
     }
 
     for (final key in ['origins', 'landings', 'links']) {
-      collect(sample.data[key]);
+      collect(sample.data.toJson()[key]);
     }
     Object? rename(Object? value) => switch (value) {
       final String text => renamed[text] ?? text,
@@ -468,10 +468,10 @@ final class _Generator {
     return LineupGroupPayload(
       payloadVersion: sample.payloadVersion,
       data: {
-        ...sample.data,
+        ...sample.data.toJson(),
         'id': id,
         for (final key in ['origins', 'landings', 'links'])
-          key: rename(sample.data[key]),
+          key: rename(sample.data.toJson()[key]),
       },
     );
   }
@@ -529,7 +529,7 @@ final class _Generator {
       ReadableElementRow(:final payload) => payload,
       _ => elementPayload(id, pick(ElementKind.values)),
     };
-    final data = {...current.data};
+    final data = {...current.data.toJson()};
     final editable = [
       for (final key in data.keys)
         if (!_identityKeys.contains(key)) key,
@@ -576,7 +576,7 @@ final class _Generator {
       if (chance(0.03)) fields.add(fields.isEmpty ? 'x' : fields.first);
       Map<String, Object?>? base;
       if (chance(0.35)) {
-        final older = pick(history[id] ?? [current.data]);
+        final older = pick(history[id] ?? [current.data.toJson()]);
         base = {
           for (final f in fields)
             if (f == '@sortIndex')
@@ -631,7 +631,7 @@ final class _Generator {
     ReadableLineupGroupRow row,
     List<String> fields,
   ) {
-    final data = row.payload.data;
+    final data = row.payload.data.toJson();
     final origins = items(data, 'origins');
     final landings = items(data, 'landings');
     final links = items(data, 'links');
@@ -707,9 +707,10 @@ final class _Generator {
     final id = pick(groupIds());
     final row = _group(rows, id);
     if (row == null) return elementPatch(opId);
-    final versions = groupHistory[id] ?? [row.payload.data];
+    final versions = groupHistory[id] ?? [row.payload.data.toJson()];
     final current = {
-      for (final origin in items(row.payload.data, 'origins')) origin['id'],
+      for (final origin in items(row.payload.data.toJson(), 'origins'))
+        origin['id'],
     };
     final lost = [
       for (final version in versions)
@@ -878,7 +879,7 @@ final class _Generator {
               ? LineupGroupPayload(
                   payloadVersion: 1,
                   data: {
-                    ...pick(_groups(rows).toList()).payload.data,
+                    ...pick(_groups(rows).toList()).payload.data.toJson(),
                     'id': id,
                   },
                 )
@@ -931,7 +932,7 @@ final class _Generator {
           if (sortIndex != null && chance(0.5)) fields.add('@sortIndex');
           Map<String, Object?>? base;
           if (chance(0.35)) {
-            final older = pick(groupHistory[id] ?? [row.payload.data]);
+            final older = pick(groupHistory[id] ?? [row.payload.data.toJson()]);
             base = {};
             for (final field in fields) {
               if (field == '@sortIndex') {

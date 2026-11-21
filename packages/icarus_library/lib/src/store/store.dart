@@ -362,7 +362,7 @@ final class LibraryStore {
     switch (write) {
       case _PutRow(:final area, :final row):
         final name = nameOf(row);
-        switch (encodeJson(row.toJson())) {
+        switch (encodeJson(row.toJsonView())) {
           case NotEncoded(:final problem):
             return wouldNot(name.name, problem);
           case Encoded(:final text):
@@ -650,7 +650,7 @@ final class LibraryStore {
     for (final MapEntry(key: page, value: row) in settings.entries.toList()) {
       if (pages.containsKey(page)) continue;
       settings.remove(page);
-      keepUnplaced(SettingsName(page).name, row.toJson(), _noPageRow);
+      keepUnplaced(SettingsName(page).name, row.toJsonView(), _noPageRow);
     }
     final loaded = LoadedStrategy(
       digest: digest,
@@ -729,7 +729,7 @@ final class LibraryStore {
                 canRead: _canRead.element,
               )) {
                 case Placed(:final row) when orphaned:
-                  keepUnplaced(row.toJson(), _noPageRow);
+                  keepUnplaced(row.toJsonView(), _noPageRow);
                 case Placed(:final row):
                   page.elements[name.digest] = row;
                 case Unplaced(:final stored, :final problem):
@@ -744,7 +744,7 @@ final class LibraryStore {
                 canRead: _canRead.lineupGroup,
               )) {
                 case Placed(:final row) when orphaned:
-                  keepUnplaced(row.toJson(), _noPageRow);
+                  keepUnplaced(row.toJsonView(), _noPageRow);
                 case Placed(:final row):
                   page.lineupGroups[name.digest] = row;
                 case Unplaced(:final stored, :final problem):
@@ -817,10 +817,10 @@ final class LibraryStore {
       PageContent(
         page: page,
         settings: strategy.settingsOf(pagePublicId),
-        elements: loaded.elements.values.toList(),
-        lineupGroups: loaded.lineupGroups.values.toList(),
+        elements: loaded.elements.values,
+        lineupGroups: loaded.lineupGroups.values,
         unknownKinds: loaded.unknownKinds,
-        unplaced: loaded.unplaced.values.toList(),
+        unplaced: loaded.unplaced.values,
         foreignNames: loaded.foreignNames,
       ),
     );

@@ -60,16 +60,18 @@ sealed class Row {
 
   RowKey get key;
 
-  Object? toJson();
+  Object? toJsonView();
+
+  Object? toJson() => plainJson(toJsonView());
 
   @override
   bool operator ==(Object other) =>
       other is Row &&
       other.runtimeType == runtimeType &&
-      sameJson(other.toJson(), toJson());
+      sameJson(other.toJsonView(), toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 T _fromAdmission<T>(
@@ -82,6 +84,7 @@ T _fromAdmission<T>(
 };
 
 Map<String, Object?>? _object(Object? json) => switch (json) {
+  final JsonObject object => object.raw,
   final Map<String, Object?> map => map,
   _ => null,
 };
@@ -123,7 +126,7 @@ final class Placed<R extends Row> extends Parsed<R> {
 }
 
 final class Unplaced<R extends Row> extends Parsed<R> {
-  Unplaced(Object? stored, this.problem) : stored = frozenJson(stored);
+  Unplaced(Object? stored, this.problem) : stored = jsonValue(stored);
 
   final Object? stored;
   final String problem;
@@ -209,9 +212,8 @@ final class ReadableStrategy extends StrategyRow {
     this.folderPublicId,
     this.themeProfileId,
     this.themeOverridePalette,
-    Map<String, Object?> unknownFields = const {},
-  }) : unknownFields = frozenJsonObject(unknownFields),
-       super._(publicId);
+    this.unknownFields = JsonObject.empty,
+  }) : super._(publicId);
 
   final String? folderPublicId;
   final String name;
@@ -221,7 +223,7 @@ final class ReadableStrategy extends StrategyRow {
   final int revision;
   final DateTime createdAt;
   final DateTime updatedAt;
-  final Map<String, Object?> unknownFields;
+  final JsonObject unknownFields;
 
   ReadableStrategy rewritten({
     String? name,
@@ -248,15 +250,19 @@ final class ReadableStrategy extends StrategyRow {
   );
 
   @override
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'publicId': publicId,
     if (folderPublicId != null) 'folderPublicId': folderPublicId,
     'name': name,
     'mapData': mapData,
     if (themeProfileId != null) 'themeProfileId': themeProfileId,
     if (themeOverridePalette case final palette?)
-      'themeOverridePalette': palette.toJson(),
+      'themeOverridePalette': palette.toJsonView(),
     'revision': revision,
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
@@ -268,14 +274,14 @@ final class UnreadableStrategy extends StrategyRow {
     required String publicId,
     required Object? stored,
     required this.problem,
-  }) : stored = frozenJson(stored),
+  }) : stored = jsonValue(stored),
        super._(publicId);
 
   final Object? stored;
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }
 
 sealed class FolderRow extends Row {
@@ -355,9 +361,8 @@ final class ReadableFolder extends FolderRow {
     this.iconFontPackage,
     this.color,
     this.customColorValue,
-    Map<String, Object?> unknownFields = const {},
-  }) : unknownFields = frozenJsonObject(unknownFields),
-       super._(publicId);
+    this.unknownFields = JsonObject.empty,
+  }) : super._(publicId);
 
   final String name;
   final String? parentFolderPublicId;
@@ -367,11 +372,15 @@ final class ReadableFolder extends FolderRow {
   final String? iconFontPackage;
   final String? color;
   final int? customColorValue;
-  final Map<String, Object?> unknownFields;
+  final JsonObject unknownFields;
 
   @override
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'publicId': publicId,
     'name': name,
     if (parentFolderPublicId != null)
@@ -390,14 +399,14 @@ final class UnreadableFolder extends FolderRow {
     required String publicId,
     required Object? stored,
     required this.problem,
-  }) : stored = frozenJson(stored),
+  }) : stored = jsonValue(stored),
        super._(publicId);
 
   final Object? stored;
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }
 
 sealed class PageRow extends Row {
@@ -524,20 +533,23 @@ sealed class ReadablePageRow extends PageRow {
     required this.isAttack,
     required this.revision,
     required this.isAutoNamed,
-    required Map<String, Object?> unknownFields,
-  }) : unknownFields = frozenJsonObject(unknownFields),
-       super._();
+    required this.unknownFields,
+  }) : super._();
 
   final String name;
   final bool? isAutoNamed;
   final int sortIndex;
   final bool isAttack;
   final int revision;
-  final Map<String, Object?> unknownFields;
+  final JsonObject unknownFields;
 
   @override
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'publicId': publicId,
     'strategyPublicId': strategyPublicId,
     'name': name,
@@ -562,7 +574,7 @@ final class LivePage extends ReadablePageRow {
     required super.isAttack,
     required super.revision,
     super.isAutoNamed,
-    super.unknownFields = const {},
+    super.unknownFields = JsonObject.empty,
   }) : super._();
 
   LivePage placed({required String name, required int sortIndex}) => LivePage(
@@ -622,7 +634,7 @@ final class PendingTrashedPage extends TrashedPage {
     required super.isAttack,
     required super.revision,
     super.isAutoNamed,
-    super.unknownFields = const {},
+    super.unknownFields = JsonObject.empty,
   }) : super._();
 }
 
@@ -637,7 +649,7 @@ final class ConfirmedTrashedPage extends TrashedPage {
     required this.deletedAt,
     required this.deletedBy,
     super.isAutoNamed,
-    super.unknownFields = const {},
+    super.unknownFields = JsonObject.empty,
   }) : super._();
 
   final DateTime deletedAt;
@@ -652,7 +664,7 @@ final class UnreadablePage extends PageRow {
     required this.trashed,
     required Object? stored,
     required this.problem,
-  }) : stored = frozenJson(stored),
+  }) : stored = jsonValue(stored),
        super._();
 
   final int? sortIndex;
@@ -661,18 +673,19 @@ final class UnreadablePage extends PageRow {
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }
 
 sealed class PageDeleter {
   const PageDeleter();
 
-  static Decoded<PageDeleter> decode(Object? json) => switch (json) {
-    'you' => const Read(DeletedByYou()),
-    'unknown' => const Read(DeleterUnknown()),
-    {'name': final String name} => Read(DeletedByName(name)),
-    _ => CouldNotRead(json, 'Expected who deleted the page'),
-  };
+  static Decoded<PageDeleter> decode(Object? json) =>
+      switch (_object(json) ?? json) {
+        'you' => const Read(DeletedByYou()),
+        'unknown' => const Read(DeleterUnknown()),
+        {'name': final String name} => Read(DeletedByName(name)),
+        _ => CouldNotRead(json, 'Expected who deleted the page'),
+      };
 
   Object toJson();
 
@@ -762,13 +775,12 @@ final class ReadablePageSettings extends PageSettingsRow {
     required String pagePublicId,
     required this.revision,
     this.settings,
-    Map<String, Object?> unknownFields = const {},
-  }) : unknownFields = frozenJsonObject(unknownFields),
-       super._(pagePublicId);
+    this.unknownFields = JsonObject.empty,
+  }) : super._(pagePublicId);
 
   final PageSettings? settings;
   final int revision;
-  final Map<String, Object?> unknownFields;
+  final JsonObject unknownFields;
 
   ReadablePageSettings withSettings(PageSettings settings) =>
       ReadablePageSettings(
@@ -779,10 +791,14 @@ final class ReadablePageSettings extends PageSettingsRow {
       );
 
   @override
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'pagePublicId': pagePublicId,
-    if (settings case final settings?) 'settings': settings.toJson(),
+    if (settings case final settings?) 'settings': settings.toJsonView(),
     'revision': revision,
   };
 }
@@ -792,14 +808,14 @@ final class UnreadablePageSettings extends PageSettingsRow {
     required String pagePublicId,
     required Object? stored,
     required this.problem,
-  }) : stored = frozenJson(stored),
+  }) : stored = jsonValue(stored),
        super._(pagePublicId);
 
   final Object? stored;
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }
 
 sealed class ElementRow extends Row {
@@ -818,39 +834,37 @@ sealed class ElementRow extends Row {
     Object? json, {
     required bool Function(ElementPayload payload) canRead,
   }) {
-    final frozen = frozenJsonObjectOrNull(json);
-    if (frozen == null) {
+    final object = jsonObjectOrNull(json);
+    if (object == null) {
       return CouldNotRead(json, 'Expected element row to be a JSON object');
     }
-    final ids = JsonFields.read(frozen, 'element row', (fields) {
-      final publicId = fields.string('publicId');
-      final pagePublicId = fields.string('pagePublicId');
-      return () => (publicId, pagePublicId);
-    });
-    final (publicId, pagePublicId) = switch (ids) {
-      Read(:final value) => value,
-      CouldNotRead(:final problem) => (null, problem),
-    };
-    if (publicId == null) return CouldNotRead(json, pagePublicId);
-    return Read(_readable(frozen, publicId, pagePublicId, canRead));
-  }
-
-  static ElementRow _readable(
-    Map<String, Object?> frozen,
-    String publicId,
-    String pagePublicId,
-    bool Function(ElementPayload payload) canRead,
-  ) {
-    final readable = JsonFields.read(frozen, 'element row', (fields) {
-      final payload = fields.decoded('payload', ElementPayload.decode);
-      if (payload != null && (!payload.isReadable || !canRead(payload))) {
-        fields.reject('this build cannot read its payload');
-      }
-      final sortIndex = fields.whole('sortIndex');
-      final revision = fields.whole('revision');
-      final deleted = fields.boolean('deleted');
-      final unknown = fields.rest(_known);
-      return () => deleted
+    final fields = JsonFields.over(object);
+    final publicId = fields.string('publicId');
+    final pagePublicId = fields.string('pagePublicId');
+    if (fields.problem case final problem?) {
+      return CouldNotRead(json, 'element row: $problem');
+    }
+    final payload = fields.decoded('payload', ElementPayload.decode);
+    if (payload != null && (!payload.isReadable || !canRead(payload))) {
+      fields.reject('this build cannot read its payload');
+    }
+    final sortIndex = fields.whole('sortIndex');
+    final revision = fields.whole('revision');
+    final deleted = fields.boolean('deleted');
+    final unknown = fields.rest(_known);
+    if (fields.problem case final problem?) {
+      return Read(
+        UnreadableElement(
+          publicId: publicId,
+          pagePublicId: pagePublicId,
+          stored: object,
+          problem: 'element row: $problem',
+          reason: _reasonFor(object, canRead),
+        ),
+      );
+    }
+    return Read(
+      deleted
           ? DeletedElement(
               publicId: publicId,
               pagePublicId: pagePublicId,
@@ -866,18 +880,8 @@ sealed class ElementRow extends Row {
               sortIndex: sortIndex,
               revision: revision,
               unknownFields: unknown,
-            );
-    });
-    return switch (readable) {
-      Read(:final value) => value,
-      CouldNotRead(:final problem) => UnreadableElement(
-        publicId: publicId,
-        pagePublicId: pagePublicId,
-        stored: frozen,
-        problem: problem,
-        reason: _reasonFor(frozen, canRead),
-      ),
-    };
+            ),
+    );
   }
 
   static Parsed<ElementRow> parse(
@@ -932,9 +936,8 @@ sealed class ReadableElementRow extends ElementRow {
     required this.payload,
     required this.sortIndex,
     required this.revision,
-    required Map<String, Object?> unknownFields,
-  }) : unknownFields = frozenJsonObject(unknownFields),
-       super._() {
+    required this.unknownFields,
+  }) : super._() {
     if (!payload.isReadable) {
       throw ArgumentError.value(
         payload.payloadVersion,
@@ -947,7 +950,7 @@ sealed class ReadableElementRow extends ElementRow {
   final ElementPayload payload;
   final int sortIndex;
   final int revision;
-  final Map<String, Object?> unknownFields;
+  final JsonObject unknownFields;
 
   ElementRow rewritten({
     required bool deleted,
@@ -963,10 +966,10 @@ sealed class ReadableElementRow extends ElementRow {
         publicId: publicId,
         pagePublicId: page,
         stored: {
-          ...unknownFields,
+          ...viewsOf(unknownFields),
           'publicId': publicId,
           'pagePublicId': page,
-          'payload': written.toJson(),
+          'payload': written.toJsonView(),
           'sortIndex': place,
           'revision': revision + 1,
           'deleted': deleted,
@@ -995,11 +998,15 @@ sealed class ReadableElementRow extends ElementRow {
   }
 
   @override
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'publicId': publicId,
     'pagePublicId': pagePublicId,
-    'payload': payload.toJson(),
+    'payload': payload.toJsonView(),
     'sortIndex': sortIndex,
     'revision': revision,
     'deleted': this is DeletedElement,
@@ -1013,7 +1020,7 @@ final class LiveElement extends ReadableElementRow {
     required super.payload,
     required super.sortIndex,
     required super.revision,
-    super.unknownFields = const {},
+    super.unknownFields = JsonObject.empty,
   }) : super._();
 }
 
@@ -1024,7 +1031,7 @@ final class DeletedElement extends ReadableElementRow {
     required super.payload,
     required super.sortIndex,
     required super.revision,
-    super.unknownFields = const {},
+    super.unknownFields = JsonObject.empty,
   }) : super._();
 }
 
@@ -1060,7 +1067,7 @@ final class UnreadableElement extends ElementRow {
     required Object? stored,
     required this.problem,
     required this.reason,
-  }) : stored = frozenJson(stored),
+  }) : stored = jsonValue(stored),
        super._();
 
   final Object? stored;
@@ -1068,7 +1075,7 @@ final class UnreadableElement extends ElementRow {
   final UnreadableReason reason;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 
   bool? get deleted => _booleanAt(stored, 'deleted');
 }
@@ -1184,14 +1191,13 @@ sealed class ReadableLineupGroupRow extends LineupGroupRow {
     required this.payload,
     required this.sortIndex,
     required this.revision,
-    required Map<String, Object?> unknownFields,
-  }) : unknownFields = frozenJsonObject(unknownFields),
-       super._();
+    required this.unknownFields,
+  }) : super._();
 
   final LineupGroupPayload payload;
   final int sortIndex;
   final int revision;
-  final Map<String, Object?> unknownFields;
+  final JsonObject unknownFields;
 
   ReadableLineupGroupRow rewritten({
     required bool deleted,
@@ -1224,12 +1230,16 @@ sealed class ReadableLineupGroupRow extends LineupGroupRow {
   }
 
   @override
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'publicId': publicId,
     'strategyPublicId': strategyPublicId,
     'pagePublicId': pagePublicId,
-    'payload': payload.toJson(),
+    'payload': payload.toJsonView(),
     'sortIndex': sortIndex,
     'revision': revision,
     'deleted': this is DeletedLineupGroup,
@@ -1244,7 +1254,7 @@ final class LiveLineupGroup extends ReadableLineupGroupRow {
     required super.payload,
     required super.sortIndex,
     required super.revision,
-    super.unknownFields = const {},
+    super.unknownFields = JsonObject.empty,
   }) : super._();
 }
 
@@ -1256,7 +1266,7 @@ final class DeletedLineupGroup extends ReadableLineupGroupRow {
     required super.payload,
     required super.sortIndex,
     required super.revision,
-    super.unknownFields = const {},
+    super.unknownFields = JsonObject.empty,
   }) : super._();
 }
 
@@ -1267,12 +1277,12 @@ final class UnreadableLineupGroup extends LineupGroupRow {
     required super.pagePublicId,
     required Object? stored,
     required this.problem,
-  }) : stored = frozenJson(stored),
+  }) : stored = jsonValue(stored),
        super._();
 
   final Object? stored;
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }

@@ -41,10 +41,39 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   server's failure code, or `UnreadableTarget` with the key of the row this
   build cannot read. Nothing a user, the server or the disk can cause throws.
   An exception means a programmer error.
-- **JSON is read once, at the edge.** Stored text goes through `admit`,
-  which never throws: it returns `Admitted` with frozen JSON, or
-  `NotAdmitted` with the text kept and why (not JSON, a number that is not
-  finite, or nesting deeper than `maxJsonDepth`). Each row kind's `parse`
+- **JSON is read once, at the edge, and never copied on the way in.**
+  Stored text goes through `admit`, which never throws. One scan of the
+  text refuses nesting deeper than `maxJsonDepth`, a whole number
+  JavaScript cannot hold exactly, and an exponent over 400, which the VM's
+  JSON decoder reads as zero or infinity whatever the digits. It also sorts
+  every other number into ordinary, the spellings Dart and JavaScript write
+  (at most 17 significant digits, at most 21 integer and 22 fraction
+  digits, and an exponent only after one integer digit, from -324 up to a
+  value of at most the largest double), or unusual. Then `jsonDecode` runs
+  once. A row with only ordinary numbers is handed on as it is; a row with
+  an unusual one gets one walk over the decoded tree, without a copy, that
+  refuses a number that is not finite. The answer is `Admitted`, or
+  `NotAdmitted` with the text kept and why. A row holding a number token it
+  refuses is unreadable with its text kept, even when a later duplicate key
+  would replace that value; no build writes duplicate keys.
+- **Rows stay values by type.** Every JSON value a row holds (payload
+  `data`, `unknownFields`, an unreadable row's `stored`) is a `JsonObject`
+  or a `JsonList`. Neither is a `Map` or a `List`: they offer reads only,
+  and a nested object or list read from them is again a `JsonObject` or
+  `JsonList`. The decoded tree under them is reachable only through
+  `JsonObjectInside.raw` and `JsonListInside.raw`, which `src/json.dart`
+  defines and `icarus_library.dart` does not export; the package's own
+  decoders, merges and copies use them, and must not change what they reach.
+  A caller that needs a value it can change asks for a copy: `toMap()` is a
+  shallow copy whose nested values stay read-only, and anything named
+  `toJson()`, on a view, a row, a payload, an op or a merge, returns plain
+  maps and lists all the way down, a fresh copy each time. `toJsonView()`
+  returns fresh maps whose nested values are read-only views, for encoding
+  and comparing without a copy. `FieldMerge.base` is a `JsonObject`.
+  `withFieldDefaults` fills defaults in a view as it does in a plain map. A row or payload built
+  from a caller's map copies that map once, at construction, and adopts any
+  `JsonObject` or `JsonList` inside it without copying.
+  `test/rows_stay_values_test.dart` tries every way in. Each row kind's `parse`
   takes an `Admission` and the ids the key gives, and always returns a row:
   readable, or its unreadable case holding what was stored. Every `decode`
   returns `Read` or `CouldNotRead`. Whole numbers must fit what JavaScript

@@ -29,8 +29,15 @@ final class ElementPayload {
     required this.payloadVersion,
     required Map<String, Object?> data,
     Map<String, Object?> unknownFields = const {},
-  }) : data = frozenJsonObject(data),
-       unknownFields = frozenJsonObject(unknownFields);
+  }) : data = jsonObject(data),
+       unknownFields = jsonObject(unknownFields);
+
+  const ElementPayload._read({
+    required this.kind,
+    required this.payloadVersion,
+    required this.data,
+    required this.unknownFields,
+  });
 
   static Decoded<ElementPayload> decode(Object? json) =>
       JsonFields.read(json, 'element payload', (fields) {
@@ -39,7 +46,7 @@ final class ElementPayload {
         final payloadVersion = fields.whole('payloadVersion');
         final data = fields.object('data');
         final unknown = fields.rest(const {'kind', 'payloadVersion', 'data'});
-        return () => ElementPayload(
+        return () => ElementPayload._read(
           kind: kind!,
           payloadVersion: payloadVersion,
           data: data,
@@ -49,20 +56,23 @@ final class ElementPayload {
 
   final ElementKind kind;
   final int payloadVersion;
-  final Map<String, Object?> data;
-  final Map<String, Object?> unknownFields;
+  final JsonObject data;
+  final JsonObject unknownFields;
 
   bool get isReadable => payloadVersion <= newestElementPayloadVersion;
 
-  ElementPayload withData(Map<String, Object?> data) => ElementPayload(
+  ElementPayload withData(Map<String, Object?> data) => ElementPayload._read(
     kind: kind,
     payloadVersion: payloadVersion,
-    data: data,
+    data: jsonObject(data),
     unknownFields: unknownFields,
   );
 
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'kind': kind.name,
     'payloadVersion': payloadVersion,
     'data': data,
@@ -70,10 +80,10 @@ final class ElementPayload {
 
   @override
   bool operator ==(Object other) =>
-      other is ElementPayload && sameJson(toJson(), other.toJson());
+      other is ElementPayload && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 final class LineupGroupPayload {
@@ -81,8 +91,14 @@ final class LineupGroupPayload {
     required this.payloadVersion,
     required Map<String, Object?> data,
     Map<String, Object?> unknownFields = const {},
-  }) : data = frozenJsonObject(data),
-       unknownFields = frozenJsonObject(unknownFields);
+  }) : data = jsonObject(data),
+       unknownFields = jsonObject(unknownFields);
+
+  const LineupGroupPayload._read({
+    required this.payloadVersion,
+    required this.data,
+    required this.unknownFields,
+  });
 
   static Decoded<LineupGroupPayload> decode(Object? json) =>
       JsonFields.read(json, 'lineup group payload', (fields) {
@@ -97,7 +113,7 @@ final class LineupGroupPayload {
         }
         final data = fields.object('data');
         final unknown = fields.rest(const {'kind', 'payloadVersion', 'data'});
-        return () => LineupGroupPayload(
+        return () => LineupGroupPayload._read(
           payloadVersion: payloadVersion,
           data: data,
           unknownFields: unknown,
@@ -105,17 +121,21 @@ final class LineupGroupPayload {
       });
 
   final int payloadVersion;
-  final Map<String, Object?> data;
-  final Map<String, Object?> unknownFields;
+  final JsonObject data;
+  final JsonObject unknownFields;
 
-  LineupGroupPayload withData(Map<String, Object?> data) => LineupGroupPayload(
-    payloadVersion: payloadVersion,
-    data: data,
-    unknownFields: unknownFields,
-  );
+  LineupGroupPayload withData(Map<String, Object?> data) =>
+      LineupGroupPayload._read(
+        payloadVersion: payloadVersion,
+        data: jsonObject(data),
+        unknownFields: unknownFields,
+      );
 
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'kind': lineupGroupPayloadKind,
     'payloadVersion': payloadVersion,
     'data': data,
@@ -123,10 +143,10 @@ final class LineupGroupPayload {
 
   @override
   bool operator ==(Object other) =>
-      other is LineupGroupPayload && sameJson(toJson(), other.toJson());
+      other is LineupGroupPayload && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 final class PageSettings {
@@ -134,14 +154,14 @@ final class PageSettings {
     required this.agentSize,
     required this.abilitySize,
     required this.useNeutralTeamColors,
-  }) : unknownFields = const {};
+  }) : unknownFields = JsonObject.empty;
 
   PageSettings.keeping({
     required this.agentSize,
     required this.abilitySize,
     required this.useNeutralTeamColors,
     required Map<String, Object?> unknownFields,
-  }) : unknownFields = frozenJsonObject(unknownFields);
+  }) : unknownFields = jsonObject(unknownFields);
 
   static Decoded<PageSettings> decode(Object? json) =>
       JsonFields.read(json, 'page settings', (fields) {
@@ -157,17 +177,20 @@ final class PageSettings {
           agentSize: agentSize,
           abilitySize: abilitySize,
           useNeutralTeamColors: neutral,
-          unknownFields: unknown,
+          unknownFields: unknown.raw,
         );
       });
 
   final double agentSize;
   final double abilitySize;
   final bool useNeutralTeamColors;
-  final Map<String, Object?> unknownFields;
+  final JsonObject unknownFields;
 
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'agentSize': agentSize,
     'abilitySize': abilitySize,
     'useNeutralTeamColors': useNeutralTeamColors,
@@ -175,10 +198,10 @@ final class PageSettings {
 
   @override
   bool operator ==(Object other) =>
-      other is PageSettings && sameJson(toJson(), other.toJson());
+      other is PageSettings && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 final class ThemePalette {
@@ -186,14 +209,14 @@ final class ThemePalette {
     required this.base,
     required this.detail,
     required this.highlight,
-  }) : unknownFields = const {};
+  }) : unknownFields = JsonObject.empty;
 
   ThemePalette.keeping({
     required this.base,
     required this.detail,
     required this.highlight,
     required Map<String, Object?> unknownFields,
-  }) : unknownFields = frozenJsonObject(unknownFields);
+  }) : unknownFields = jsonObject(unknownFields);
 
   static Decoded<ThemePalette> decode(Object? json) =>
       JsonFields.read(json, 'theme palette', (fields) {
@@ -205,17 +228,20 @@ final class ThemePalette {
           base: base,
           detail: detail,
           highlight: highlight,
-          unknownFields: unknown,
+          unknownFields: unknown.raw,
         );
       });
 
   final String base;
   final String detail;
   final String highlight;
-  final Map<String, Object?> unknownFields;
+  final JsonObject unknownFields;
 
-  Map<String, Object?> toJson() => {
-    ...unknownFields,
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
+    ...viewsOf(unknownFields),
     'base': base,
     'detail': detail,
     'highlight': highlight,
@@ -223,8 +249,27 @@ final class ThemePalette {
 
   @override
   bool operator ==(Object other) =>
-      other is ThemePalette && sameJson(toJson(), other.toJson());
+      other is ThemePalette && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
+
+ElementPayload elementPayloadAdopting(
+  ElementPayload payload,
+  Map<String, Object?> trusted,
+) => ElementPayload._read(
+  kind: payload.kind,
+  payloadVersion: payload.payloadVersion,
+  data: adoptJsonObject(trusted),
+  unknownFields: payload.unknownFields,
+);
+
+LineupGroupPayload lineupPayloadAdopting(
+  LineupGroupPayload payload,
+  Map<String, Object?> trusted,
+) => LineupGroupPayload._read(
+  payloadVersion: payload.payloadVersion,
+  data: adoptJsonObject(trusted),
+  unknownFields: payload.unknownFields,
+);

@@ -141,7 +141,7 @@ void main() {
     );
     final copy = pageOf(await store.readPage(strategyId, 'page-copy'));
     final carried = copy.elements.whereType<UnreadableElement>().single;
-    final stored = carried.stored! as Map<String, Object?>;
+    final stored = (carried.stored! as JsonObject).toJson();
     expect(stored['newRowField'], 'kept');
     expect(stored['publicId'], carried.publicId);
   });

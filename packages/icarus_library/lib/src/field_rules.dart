@@ -1,3 +1,4 @@
+import 'json.dart';
 import 'payloads.dart';
 
 const elementIdentityKeys = ['id', 'elementType', 'kind', 'type', 'data'];
@@ -143,8 +144,11 @@ final class DefaultInside extends FieldDefault {
 
   @override
   void fill(Map<String, Object?> object) {
-    if (object[container] case final Map<String, Object?> inner) {
-      inner.putIfAbsent(field, () => value);
+    switch (object[container]) {
+      case final Map<String, Object?> inner:
+        inner.putIfAbsent(field, () => value);
+      case final JsonObject inner:
+        object[container] = inner.toJson()..putIfAbsent(field, () => value);
     }
   }
 }
@@ -166,6 +170,7 @@ const fieldDefaults = <FieldDefault>[
 ];
 
 Object? withFieldDefaults(Object? json) => switch (json) {
+  JsonObject() || JsonList() => withFieldDefaults(plainJson(json)),
   List<Object?>() => [for (final item in json) withFieldDefaults(item)],
   Map<Object?, Object?>() => _objectWithDefaults(json),
   _ => json,

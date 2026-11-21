@@ -36,7 +36,7 @@ void main() {
         desired,
         FieldMerge(fields: fields),
       )) {
-        Merged(:final value) => value.data,
+        Merged(:final value) => value.data.toJson(),
         final other => other,
       }, entry['merged']);
     });

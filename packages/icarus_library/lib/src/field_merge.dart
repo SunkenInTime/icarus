@@ -135,8 +135,8 @@ EditShape elementEdit(ElementPayload base, ElementPayload desired) {
   if (base.payloadVersion != desired.payloadVersion) {
     return const WholeEdit(PayloadVersionDiffers());
   }
-  final before = _normalized(base.data);
-  final after = _normalized(desired.data);
+  final before = _normalized(base.data.raw);
+  final after = _normalized(desired.data.raw);
   for (final key in elementIdentityKeys) {
     if (!_sameOrUnset(before, after, key)) {
       return WholeEdit(IdentityDiffers(key));
@@ -181,8 +181,8 @@ EditShape lineupEdit(LineupGroupPayload base, LineupGroupPayload desired) {
   if (base.payloadVersion != desired.payloadVersion) {
     return const WholeEdit(PayloadVersionDiffers());
   }
-  final before = _normalized(base.data);
-  final after = _normalized(desired.data);
+  final before = _normalized(base.data.raw);
+  final after = _normalized(desired.data.raw);
   if (!sameJson(before['id'], after['id'])) {
     return const WholeEdit(IdentityDiffers('id'));
   }
@@ -267,7 +267,7 @@ ElementPatchOp elementEditOp({
     (DrawnAt(), FieldEdit(:final fields)) => patch(
       _editMerge(
         fields,
-        _elementReader(base.payload.data),
+        _elementReader(base.payload.data.raw),
         baseSortIndex: base.sortIndex,
         sortIndex: sortIndex,
         connection: connection,
@@ -303,7 +303,7 @@ LineupGroupPatchOp lineupEditOp({
     (DrawnAt(), FieldEdit(:final fields)) => patch(
       _editMerge(
         fields,
-        _lineupBaseReader(base.payload.data),
+        _lineupBaseReader(base.payload.data.raw),
         baseSortIndex: base.sortIndex,
         sortIndex: sortIndex,
         connection: connection,
@@ -325,7 +325,7 @@ MergeOutcome<ElementPayload> mergeElementPayload(
   final fields = payloadFields(merge);
   for (final key in elementIdentityKeys) {
     if (fields.contains(key)) return WriteWhole(NamesIdentityKey(key));
-    if (!_same(_key(current.data, key), _key(desired.data, key))) {
+    if (!_same(_key(current.data.raw, key), _key(desired.data.raw, key))) {
       return WriteWhole(IdentityDiffers(key));
     }
   }
@@ -334,13 +334,15 @@ MergeOutcome<ElementPayload> mergeElementPayload(
   }
   if (_conflictingField(
         merge,
-        _elementReader(current.data),
-        _elementReader(desired.data),
+        _elementReader(current.data.raw),
+        _elementReader(desired.data.raw),
       )
       case final field?) {
     return MergeConflict(field);
   }
-  return Merged(_elementWith(current, fields, _elementReader(desired.data)));
+  return Merged(
+    _elementWith(current, fields, _elementReader(desired.data.raw)),
+  );
 }
 
 ElementPayload _elementWith(
@@ -348,7 +350,7 @@ ElementPayload _elementWith(
   List<String> fields,
   _Read Function(String field) valueOf,
 ) {
-  final data = {...payload.data};
+  final data = {...payload.data.raw};
   for (final field in fields) {
     switch (valueOf(field)) {
       case (present: true, :final value):
@@ -357,11 +359,11 @@ ElementPayload _elementWith(
         data.remove(field);
     }
   }
-  return payload.withData(data);
+  return elementPayloadAdopting(payload, data);
 }
 
 _Read _mergeBase(FieldMerge merge, String field) {
-  final base = merge.base!;
+  final base = merge.base!.raw;
   return (present: base.containsKey(field), value: base[field]);
 }
 
@@ -454,7 +456,7 @@ MergeOutcome<LineupGroupPayload> mergeLineupPayload(
   if (current.payloadVersion != desired.payloadVersion) {
     return const WriteWhole(PayloadVersionDiffers());
   }
-  if (!sameJson(current.data['id'], desired.data['id'])) {
+  if (!sameJson(current.data.raw['id'], desired.data.raw['id'])) {
     return const WriteWhole(IdentityDiffers('id'));
   }
   final List<LineupItemField> items;
@@ -466,13 +468,13 @@ MergeOutcome<LineupGroupPayload> mergeLineupPayload(
   }
   if (_conflictingField(
         merge,
-        _lineupReader(current.data),
-        _lineupReader(desired.data),
+        _lineupReader(current.data.raw),
+        _lineupReader(desired.data.raw),
       )
       case final field?) {
     return MergeConflict(field);
   }
-  return Merged(_lineupWith(current, items, _lineupReader(desired.data)));
+  return Merged(_lineupWith(current, items, _lineupReader(desired.data.raw)));
 }
 
 MergeOutcome<LineupGroupPayload> lineupPayloadAtMergeBase(
@@ -495,7 +497,7 @@ LineupGroupPayload _lineupWith(
 ) {
   final lists = {
     for (final collection in lineupCollections)
-      collection: [...lineupItems(payload.data, collection)],
+      collection: [...lineupItems(payload.data.raw, collection)],
   };
   for (final (:collection, :id) in items) {
     final list = lists[collection]!;
@@ -514,8 +516,8 @@ LineupGroupPayload _lineupWith(
   final links = lists['links']!;
   final usedOrigins = {for (final link in links) link['originId']};
   final usedLandings = {for (final link in links) link['landingId']};
-  return payload.withData({
-    ...payload.data,
+  return lineupPayloadAdopting(payload, {
+    ...payload.data.raw,
     'origins': [
       for (final origin in lists['origins']!)
         if (usedOrigins.contains(origin['id'])) origin,
@@ -544,7 +546,7 @@ String? _conflictingField(
 }
 
 bool placeChanged(FieldMerge? merge, int currentSortIndex, int? sortIndex) {
-  final base = merge?.base;
+  final base = merge?.base?.raw;
   if (merge == null || base == null || !merge.fields.contains(placeField)) {
     return false;
   }
@@ -552,18 +554,18 @@ bool placeChanged(FieldMerge? merge, int currentSortIndex, int? sortIndex) {
 }
 
 ElementPayload keepStoredFields(ElementPayload stored, ElementPayload next) {
-  final data = {...next.data};
-  final pictureId = stored.data[pictureIdField];
-  if (pictureId is String && !next.data.containsKey(pictureIdField)) {
+  final data = {...next.data.raw};
+  final pictureId = stored.data.raw[pictureIdField];
+  if (pictureId is String && !next.data.raw.containsKey(pictureIdField)) {
     data[pictureIdField] = pictureId;
   }
   for (final entry in laterElementFields) {
     if (entry.kinds.contains(next.kind) &&
-        stored.data.containsKey(entry.field) &&
+        stored.data.raw.containsKey(entry.field) &&
         !data.containsKey(entry.field)) {
-      data[entry.field] = stored.data[entry.field];
+      data[entry.field] = stored.data.raw[entry.field];
     }
   }
-  if (data.length == next.data.length) return next;
-  return next.withData(data);
+  if (data.length == next.data.raw.length) return next;
+  return elementPayloadAdopting(next, data);
 }

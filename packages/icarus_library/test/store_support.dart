@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:collection/collection.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
@@ -15,9 +13,10 @@ bool _anyElement(ElementPayload payload) => true;
 
 bool notesAreText(LineupGroupPayload payload) =>
     switch (payload.data['links']) {
-      final List<Object?> links => links.every(
+      final JsonList links => links.every(
         (link) => switch (link) {
-          {'notes': final Object? notes} => notes == null || notes is String,
+          final JsonObject link when link.containsKey('notes') =>
+            link['notes'] == null || link['notes'] is String,
           _ => true,
         },
       ),
@@ -48,16 +47,6 @@ String lineupName(String page, String id) =>
 String summaryName(String strategy) => 'summary/${digestOf(strategy)}';
 
 String folderName(String folder) => 'folder/${digestOf(folder)}';
-
-String canonicalRow(Row row) => jsonEncode(sortedJson(row.toJson()));
-
-Object? sortedJson(Object? value) => switch (value) {
-  final Map<String, Object?> map => {
-    for (final key in map.keys.toList()..sort()) key: sortedJson(map[key]),
-  },
-  final List<Object?> list => [for (final item in list) sortedJson(item)],
-  _ => value,
-};
 
 Future<LibraryStore> openStore(StorageEngine engine) async =>
     switch (await LibraryStore.open(

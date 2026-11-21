@@ -7,7 +7,7 @@ ElementPayload _with(LiveElement row, Map<String, Object?> changes) =>
     ElementPayload(
       kind: row.payload.kind,
       payloadVersion: row.payload.payloadVersion,
-      data: {...row.payload.data, ...changes},
+      data: {...row.payload.data.toMap(), ...changes},
     );
 
 Map<String, Object?> _link(String id, String notes) => {
@@ -128,8 +128,8 @@ void main() {
       fields: ['caption', 'isAlly'],
       base: {'isAlly': true},
     );
-    expect(elementPayloadAtMergeBase(payload, merge).data, {
-      ...jett.payload.data,
+    expect(elementPayloadAtMergeBase(payload, merge).data.toJson(), {
+      ...jett.payload.data.toJson(),
       'position': {'x': 9, 'y': 9},
     });
     expect(
@@ -226,7 +226,7 @@ void main() {
         final desired = ElementPayload(
           kind: kind,
           payloadVersion: 1,
-          data: {...base.data, member: 2},
+          data: {...base.data.toMap(), member: 2},
         );
         expect(switch (elementEdit(base, desired)) {
           FieldEdit(:final fields) => fields,
