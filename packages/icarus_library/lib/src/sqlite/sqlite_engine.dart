@@ -208,8 +208,6 @@ final class SqliteEngine implements StorageEngine {
     return first.future;
   }
 
-  PendingWrite holdNextCommit() => _granted.last._holdNextCommit();
-
   Future<Releasing> close() => _closing ??= _close();
 
   Future<Releasing> _close() async {
@@ -359,6 +357,10 @@ final class _HeldCommit implements PendingWrite {
 
   @override
   void letGo() => _requests.send(const _LetGo());
+}
+
+extension SqliteEngineHold on SqliteEngine {
+  PendingWrite holdNextCommit() => _granted.last._holdNextCommit();
 }
 
 extension SqliteLeaseWorker on SqliteLease {
