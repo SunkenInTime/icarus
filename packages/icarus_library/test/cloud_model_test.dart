@@ -144,6 +144,7 @@ final class Model {
         FoldedInto(:final opId) =>
           event is UserEdited && event.edit.op.opId == opId,
         RetriedUnder() => event is Reissue,
+        AlreadyGone() => event is! UserEdited,
         RemovedByUser() => event is UserAction && event.opId == entry.id,
       };
       if (!fits) throw StateError('${entry.id} removed for $cause by $event');
@@ -538,7 +539,7 @@ final class Model {
         if (entry is PendingOp &&
             (views[entry.id]!.state is Accepted ||
                 views[entry.id]!.holds.any(
-                  (hold) => hold is AwaitingRead || hold is AwaitingBase,
+                  (hold) => hold is AwaitingProof || hold is AwaitingBase,
                 )))
           ...pagesOf(entry),
     };
@@ -554,7 +555,7 @@ final class Model {
       case Standing.upgradeRequired:
         build = 'build-up-${restarts++}';
         must(AppRestarted(build: build), 'upgraded to $build');
-      case Standing.good || Standing.deletedOnServer:
+      case Standing.good || Standing.deletedOnServer || Standing.held:
         break;
     }
     readHeader();

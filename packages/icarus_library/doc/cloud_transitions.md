@@ -13,6 +13,11 @@ A field edit folds into an earlier field edit of the same row only when the earl
 
 `test/cloud_fold_test.dart` requires every other case to give what sending both gives.
 
+## Known and accepted
+
+- A checked page delete can land after a teammate added an element to the page, because the server guards a page delete by the strategy's revision only. That is [#670](https://github.com/SunkenInTime/icarus/issues/670), a server change; the queue does nothing about it.
+- An op whose answer was lost is sent again under the same op id before any fresh read, as long as the server's 30 days have not passed. That is safe: inside the window the server answers the same op id from memory instead of applying it again.
+
 ## never sent, free
 
 Starts as: never sent, free.
@@ -29,10 +34,10 @@ Starts as: never sent, free.
 | connection returned | x: never sent, free, awaiting a read of page page-a |
 | account changed | x: never sent, free, awaiting a read of page page-a |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; reissue x under a fresh id.
@@ -57,10 +62,10 @@ Starts as: never sent, free, behind first (sameRow).
 | connection returned | unchanged |
 | account changed | unchanged |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; reissue x under a fresh id.
@@ -79,17 +84,17 @@ Starts as: never sent, free, awaiting the base for ElementTarget(e1).
 | connection returned | unchanged |
 | account changed | unchanged |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | first: gone; x: never sent, needs user: changed by someone else since the user saw it; removes first (SeenInBase) |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | first: gone; x: never sent, needs user: changed by someone else since the user saw it; changes 3 base rows; removes first (SeenInBase) |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; reissue x under a fresh id.
 
 ## page delete waiting for a read of its page this session
 
-Starts as: never sent, free, awaiting a read of page page-b.
+Starts as: never sent, free, awaiting a read of the page list.
 
 | Event | Result |
 | --- | --- |
@@ -101,10 +106,10 @@ Starts as: never sent, free, awaiting a read of page page-b.
 | connection returned | unchanged |
 | account changed | unchanged |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | x: never sent, free; changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | x: never sent, free, awaiting a read of the page list |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; reissue x under a fresh id.
@@ -124,10 +129,10 @@ Starts as: never sent, needs user: oversized.
 | account changed | unchanged |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; reissue x under a fresh id.
@@ -148,13 +153,36 @@ Starts as: never sent, needs user: changed by someone else since the user saw it
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 7 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | x: never sent, free |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | x: never sent, free; changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: delete anyway; reissue x under a fresh id.
+
+## needs user: written by another version since the user saw it
+
+Starts as: never sent, needs user: written by another version since the user saw it.
+
+| Event | Result |
+| --- | --- |
+| user edits another item | z: never sent, free |
+| user edits the same item | w: never sent, free, behind x (sameRow) |
+| app restarted, same build | unchanged |
+| app restarted, new build | unchanged |
+| connection lost | unchanged |
+| connection returned | unchanged |
+| account changed | unchanged |
+| user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
+| read started | numbers read 7 |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | x: never sent, free; changes 3 base rows |
+| base: page-a read from before the last answer | unchanged |
+| base: page-b gone | changes 2 base rows |
+| base: strategy gone | standing deletedOnServer |
+
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; reissue x under a fresh id.
 
 ## needs user: page delete held, page changed
 
@@ -164,18 +192,18 @@ Starts as: never sent, needs user: page delete held (pageChanged).
 | --- | --- |
 | user edits another item | z: never sent, free, behind x (pageDelete) |
 | user edits the same item | w: never sent, free, behind x (pageDelete) |
-| app restarted, same build | x: never sent, free, awaiting a read of page page-a |
-| app restarted, new build | x: never sent, free, awaiting a read of page page-a |
+| app restarted, same build | x: never sent, free, awaiting a read of the page list |
+| app restarted, new build | x: never sent, free, awaiting a read of the page list |
 | connection lost | unchanged |
-| connection returned | x: never sent, free, awaiting a read of page page-a |
-| account changed | x: never sent, free, awaiting a read of page page-a |
+| connection returned | x: never sent, free, awaiting a read of the page list |
+| account changed | x: never sent, free, awaiting a read of the page list |
 | user: delete anyway | x: never sent, free |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 7 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | x: never sent, free |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | x: never sent, free; changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; reissue x under a fresh id.
@@ -195,10 +223,10 @@ Starts as: never sent, needs user: on deleted page page-b.
 | account changed | unchanged |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 9 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; reissue x under a fresh id.
@@ -213,9 +241,9 @@ Starts as: claimed in 1, free.
 | user edits the same item | w: never sent, free, behind x (sameRow) |
 | attempt 1 released | x: never sent, free |
 | attempt 1 transport failed | x: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), free, until 2026-11-20T12:00:00.600Z |
-| applied at 2 | x: accepted at 2, free |
-| noop at 2, applied when first received | x: accepted at 2, free |
-| noop at 2, not applied | x: accepted at 2, free |
+| applied at 2 | x: accepted at 2, free, awaiting a read of page page-a |
+| noop at 2, applied when first received | x: accepted at 2, free, awaiting a read of page page-a |
+| noop at 2, not applied | x: accepted at 2, free, awaiting a read of page page-a |
 | noop without a revision | x: gone; removes x (NothingToWaitFor) |
 | rejected: already_exists | x: refused: RejectedByServer(already_exists), free |
 | rejected: deleted | x: refused: RejectedByServer(deleted), free |
@@ -238,10 +266,10 @@ Starts as: claimed in 1, free.
 | connection returned | unchanged |
 | account changed | unchanged |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; reissue x under a fresh id.
@@ -256,9 +284,9 @@ Starts as: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), fr
 | user edits the same item | w: never sent, free, behind x (sameRow) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: accepted at 2, free |
-| noop at 2, applied when first received | x: accepted at 2, free |
-| noop at 2, not applied | x: accepted at 2, free |
+| applied at 2 | x: accepted at 2, free, awaiting a read of page page-a |
+| noop at 2, applied when first received | x: accepted at 2, free, awaiting a read of page page-a |
+| noop at 2, not applied | x: accepted at 2, free, awaiting a read of page page-a |
 | noop without a revision | x: gone; removes x (NothingToWaitFor) |
 | rejected: already_exists | x: refused: RejectedByServer(already_exists), free |
 | rejected: deleted | x: refused: RejectedByServer(deleted), free |
@@ -281,10 +309,10 @@ Starts as: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), fr
 | connection returned | unchanged |
 | account changed | unchanged |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; reissue x under a fresh id.
@@ -299,9 +327,9 @@ Starts as: answer unknown (8 failures, retries exhausted), free.
 | user edits the same item | w: never sent, free, behind x (sameRow) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: accepted at 2, free |
-| noop at 2, applied when first received | x: accepted at 2, free |
-| noop at 2, not applied | x: accepted at 2, free |
+| applied at 2 | x: accepted at 2, free, awaiting a read of page page-a |
+| noop at 2, applied when first received | x: accepted at 2, free, awaiting a read of page page-a |
+| noop at 2, not applied | x: accepted at 2, free, awaiting a read of page page-a |
 | noop without a revision | x: gone; removes x (NothingToWaitFor) |
 | rejected: already_exists | x: refused: RejectedByServer(already_exists), free |
 | rejected: deleted | x: refused: RejectedByServer(deleted), free |
@@ -327,10 +355,10 @@ Starts as: answer unknown (8 failures, retries exhausted), free.
 | user: retry | x: answer unknown (0 failures, retry now), free |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, mayHaveLanded)) |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; user: keep mine, same item; user: use cloud; user: delete anyway; reissue x under a fresh id.
@@ -373,10 +401,10 @@ Starts as: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), ne
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, mayHaveLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, mayHaveLanded)) |
 | read started | numbers read 7 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: delete anyway; reissue x under a fresh id.
@@ -391,9 +419,9 @@ Starts as: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), ne
 | user edits the same item | w: never sent, free, behind x (sameRow) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: accepted at 2, free |
-| noop at 2, applied when first received | x: accepted at 2, free |
-| noop at 2, not applied | x: accepted at 2, free |
+| applied at 2 | x: accepted at 2, free, awaiting a read of page page-a |
+| noop at 2, applied when first received | x: accepted at 2, free, awaiting a read of page page-a |
+| noop at 2, not applied | x: accepted at 2, free, awaiting a read of page page-a |
 | noop without a revision | x: gone; removes x (NothingToWaitFor) |
 | rejected: already_exists | x: refused: RejectedByServer(already_exists), free |
 | rejected: deleted | x: refused: RejectedByServer(deleted), free |
@@ -410,17 +438,17 @@ Starts as: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), ne
 | attempt 1 refused whole: unauthenticated | reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
 | attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
-| app restarted, same build | unchanged |
-| app restarted, new build | unchanged |
+| app restarted, same build | x: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), free, awaiting a read of page page-a |
+| app restarted, new build | x: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), free, awaiting a read of page page-a |
 | connection lost | unchanged |
-| connection returned | unchanged |
-| account changed | unchanged |
+| connection returned | x: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), free, awaiting a read of page page-a |
+| account changed | x: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), free, awaiting a read of page page-a |
 | reissue x under a fresh id | x: gone; x3: never sent, free; removes x (RetriedUnder(x3)) |
 | read started | numbers read 6 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | x: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), needs user: the server forgot whether it landed |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | x: answer unknown (1 failures, retry after 2026-11-20T12:00:00.600Z), needs user: the server forgot whether it landed; changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard.
@@ -433,27 +461,27 @@ Starts as: refused: FailedOnServer(PAGE_DELETED), needs a fresh op id: refused o
 | --- | --- |
 | user edits another item | z: never sent, free |
 | user edits the same item | w: never sent, free, behind x (sameRow) |
-| app restarted, same build | unchanged |
-| app restarted, new build | unchanged |
+| app restarted, same build | x: refused: FailedOnServer(PAGE_DELETED), free |
+| app restarted, new build | x: refused: FailedOnServer(PAGE_DELETED), free |
 | connection lost | unchanged |
-| connection returned | unchanged |
-| account changed | unchanged |
+| connection returned | x: refused: FailedOnServer(PAGE_DELETED), free |
+| account changed | x: refused: FailedOnServer(PAGE_DELETED), free |
 | user: keep mine, same item | x: gone; x2: never sent, free; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | reissue x under a fresh id | x: gone; x3: never sent, free; removes x (RetriedUnder(x3)) |
 | read started | numbers read 6 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: delete anyway.
 
 ## accepted at 2
 
-Starts as: accepted at 2, free.
+Starts as: accepted at 2, free, awaiting a read of page page-a.
 
 | Event | Result |
 | --- | --- |
@@ -465,10 +493,10 @@ Starts as: accepted at 2, free.
 | connection returned | unchanged |
 | account changed | unchanged |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | x: gone; removes x (SeenInBase) |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | x: gone; changes 3 base rows; removes x (SeenInBase) |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; reissue x under a fresh id.
@@ -490,10 +518,10 @@ Starts as: refused: RejectedByServer(revision_mismatch), free.
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: delete anyway; reissue x under a fresh id.
@@ -515,10 +543,10 @@ Starts as: refused: FailedOnServer(PAGE_DELETED), free.
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 4 |
-| base: header read as it is | x: refused: FailedOnServer(PAGE_DELETED), needs a fresh op id: refused on a deleted page that is live again |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | x: refused: FailedOnServer(PAGE_DELETED), needs a fresh op id: refused on a deleted page that is live again; changes 5 base rows |
+| base: page-a read with the item at revision 2 | x: refused: FailedOnServer(PAGE_DELETED), needs a fresh op id: refused on a deleted page that is live again; changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: delete anyway; reissue x under a fresh id.
@@ -538,10 +566,10 @@ Starts as: retired format.
 | account changed | unchanged |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, mayHaveLanded)) |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; reissue x under a fresh id.
@@ -561,10 +589,10 @@ Starts as: never sent, free.
 | account changed | x: never sent, free, awaiting a read of page page-a |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 5 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | unchanged |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; reissue x under a fresh id.
@@ -590,10 +618,10 @@ Starts as: never sent, free.
 | account changed | x: never sent, free, awaiting a read of page page-a; y: never sent, free, awaiting a read of page page-a |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; reissue x under a fresh id.
@@ -618,10 +646,10 @@ Starts as: never sent, free.
 | connection returned | x: never sent, free, awaiting a read of page page-a; y: never sent, free, awaiting a read of page page-a |
 | account changed | x: never sent, free, awaiting a read of page page-a; y: never sent, free, awaiting a read of page page-a |
 | read started | numbers read 4 |
-| base: header read as it is | unchanged |
-| base: page-a read with the item at revision 2 | unchanged |
+| base: header read as it is | changes 5 base rows |
+| base: page-a read with the item at revision 2 | changes 3 base rows |
 | base: page-a read from before the last answer | unchanged |
-| base: page-b gone | unchanged |
+| base: page-b gone | changes 2 base rows |
 | base: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; reissue x under a fresh id.

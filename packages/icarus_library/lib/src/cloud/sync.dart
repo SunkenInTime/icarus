@@ -10,6 +10,7 @@ enum Attention {
   changedUnseen,
   serverForgotAnswer,
   onDeletedPage,
+  payloadVersionChanged,
   heldPageDelete,
   incompletePageCopy,
   waitingOnRefused,
@@ -23,6 +24,7 @@ enum Waiting {
   sending,
   confirming,
   awaitingBase,
+  awaitingRead,
   reissue,
 }
 
@@ -185,6 +187,7 @@ SyncState syncStateOf(
   final face = switch (tally) {
     Tally(standing: Standing.deletedOnServer) => Face.deletedOnServer,
     Tally(standing: Standing.editAccessLost) => Face.editAccessLost,
+    Tally(standing: Standing.held) => Face.unreadableWork,
     Tally(unreadable: > 0) => Face.unreadableWork,
     Tally(needingYou: > 0) => Face.needsYou,
     Tally(total: 0) => null,

@@ -3,9 +3,7 @@ import '../ops.dart';
 import '../outcome.dart';
 import '../wire.dart';
 import 'events.dart';
-import 'op_facts.dart';
 import 'pending.dart';
-import 'queue.dart';
 
 const cloudRowVersion = 1;
 
@@ -40,9 +38,10 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
       Moving(:final from, :final to) => {'from': from, 'to': to},
     },
     'authored': switch (entry.authored) {
-      AuthoredRow(:final revision, :final digest) => {
+      AuthoredRow(:final revision, :final digest, :final payloadVersion) => {
         'revision': revision,
         'digest': digest,
+        'payloadVersion': ?payloadVersion,
       },
       AuthoredNoRow() => {'noRow': true},
       AuthoredUnreadable() => {'unreadable': true},
@@ -80,11 +79,10 @@ Map<String, Object?> _seenToJson(SeenPage seen) => {
 
 Object? _answerToJson(ServerAnswer answer) => switch (answer) {
   NotAnswered() => null,
-  AnsweredApplied(:final revision, :final by, :final afterRead, :final at) => {
+  AnsweredApplied(:final revision, :final by, :final afterRead) => {
     'applied': revision,
     'by': by.name,
     'afterRead': afterRead,
-    'at': _millis(at),
   },
   AnsweredNothingToDo() => {'nothingToDo': true},
   AnsweredRefused(
@@ -212,7 +210,14 @@ Decoded<Authored> _authored(Object? json) =>
       }
       final revision = fields.whole('revision');
       final digest = fields.string('digest');
-      return () => AuthoredRow(revision: revision, digest: digest);
+      final payloadVersion = fields.has('payloadVersion')
+          ? fields.whole('payloadVersion')
+          : null;
+      return () => AuthoredRow(
+        revision: revision,
+        digest: digest,
+        payloadVersion: payloadVersion,
+      );
     });
 
 SeenPart? _part(Object? name) => switch (name) {
@@ -268,9 +273,7 @@ Decoded<ServerAnswer> _answer(Object? json) =>
       if (fields.has('applied')) {
         final revision = fields.whole('applied');
         final by = _named(fields, 'by', AppliedBy.values);
-        final at = fields.time('at');
-        return () =>
-            AnsweredApplied(revision, by!, afterRead: afterRead, at: at);
+        return () => AnsweredApplied(revision, by!, afterRead: afterRead);
       }
       if (fields.has('rejected')) {
         final reason = RejectionReason.values
@@ -528,297 +531,5 @@ CloudRowReading<Counters> countersFromText(String text) => _fromText(
       fields.reject('counters start at 1');
     }
     return () => Counters(nextAttempt: nextAttempt, nextRead: nextRead);
-  }),
-);
-
-final class EvidenceGroup {
-  EvidenceGroup({
-    required Map<Target, RowEvidence> sightings,
-    this.content,
-    this.header,
-    this.gone,
-  }) : sightings = Map.unmodifiable(sightings);
-
-  final Map<Target, RowEvidence> sightings;
-  final ContentRead? content;
-  final HeaderListing? header;
-  final RowAbsent? gone;
-
-  bool get isEmpty =>
-      sightings.isEmpty && content == null && header == null && gone == null;
-
-  @override
-  bool operator ==(Object other) =>
-      other is EvidenceGroup &&
-      sameMap(other.sightings, sightings) &&
-      other.content == content &&
-      other.header == header &&
-      other.gone == gone;
-
-  @override
-  int get hashCode => Object.hash(sightings.length, content, header, gone);
-}
-
-String? groupPageOf(Target target, RowEvidence evidence) =>
-    switch ((target, evidence)) {
-      (StrategyTarget() || PageTarget() || SettingsTarget(), _) => null,
-      (_, RowSeen(:final page) || RowUnreadable(:final page)) => page,
-      (_, RowAbsent()) => null,
-    };
-
-Map<String?, EvidenceGroup> evidenceGroups(BaseFacts base) {
-  final sightings = <String?, Map<Target, RowEvidence>>{};
-  for (final MapEntry(key: target, value: evidence) in base.sightings.entries) {
-    (sightings[groupPageOf(target, evidence)] ??= {})[target] = evidence;
-  }
-  final pages = {
-    ...sightings.keys.nonNulls,
-    ...base.pageContent.keys,
-    ...base.notFound.keys,
-  };
-  return {
-    if (sightings.containsKey(null) || base.header != null)
-      null: EvidenceGroup(
-        sightings: sightings[null] ?? const {},
-        header: base.header,
-      ),
-    for (final page in pages)
-      page: EvidenceGroup(
-        sightings: sightings[page] ?? const {},
-        content: base.pageContent[page],
-        gone: base.notFound[page],
-      ),
-  };
-}
-
-BaseFacts baseFrom(Map<String?, EvidenceGroup> groups) {
-  final sightings = <Target, RowEvidence>{};
-  final pageContent = <String, ContentRead>{};
-  final notFound = <String, RowAbsent>{};
-  HeaderListing? header;
-  for (final MapEntry(key: page, value: group) in groups.entries) {
-    for (final MapEntry(key: target, value: evidence)
-        in group.sightings.entries) {
-      if ((sightings[target]?.read ?? 0) < evidence.read) {
-        sightings[target] = evidence;
-      }
-    }
-    if (page != null) {
-      if (group.content case final content?) pageContent[page] = content;
-      if (group.gone case final gone?) notFound[page] = gone;
-    }
-    if (group.header case final listing?) header = listing;
-  }
-  return BaseFacts(
-    sightings: sightings,
-    pageContent: pageContent,
-    header: header,
-    notFound: notFound,
-  );
-}
-
-Object? _targetToJson(Target target) => switch (target) {
-  StrategyTarget() => ['strategy'],
-  PageTarget(:final pagePublicId) => ['page', pagePublicId],
-  SettingsTarget(:final pagePublicId) => ['settings', pagePublicId],
-  ElementTarget(:final elementPublicId) => ['element', elementPublicId],
-  LineupTarget(:final lineupPublicId) => ['lineup', lineupPublicId],
-};
-
-Target? _target(Object? raw) => switch (raw) {
-  ['strategy'] => const StrategyTarget(),
-  ['page', final String id] => PageTarget(id),
-  ['settings', final String id] => SettingsTarget(id),
-  ['element', final String id] => ElementTarget(id),
-  ['lineup', final String id] => LineupTarget(id),
-  _ => null,
-};
-
-Map<String, Object?> groupToJson(String? page, EvidenceGroup group) => {
-  'version': cloudRowVersion,
-  'page': ?page,
-  'sightings': [
-    for (final MapEntry(key: target, value: evidence)
-        in group.sightings.entries)
-      switch (evidence) {
-        RowSeen(
-          :final read,
-          :final revision,
-          :final digest,
-          :final page,
-          :final life,
-          :final payloadVersion,
-        ) =>
-          {
-            'target': _targetToJson(target),
-            'read': read,
-            'revision': revision,
-            'digest': digest,
-            'page': ?page,
-            'life': life.name,
-            'payloadVersion': ?payloadVersion,
-          },
-        RowUnreadable(:final read, :final page) => {
-          'target': _targetToJson(target),
-          'read': read,
-          'unreadable': true,
-          'page': ?page,
-        },
-        RowAbsent() => throw StateError('an absence is never a sighting'),
-      },
-  ],
-  if (group.content case final content?)
-    'content': {
-      'read': content.read,
-      'digests': [
-        for (final MapEntry(:key, :value) in content.digests.entries)
-          ['$key', value],
-      ],
-      'present': [for (final target in content.present) _targetToJson(target)],
-    },
-  if (group.header case final header?)
-    'header': {
-      'read': header.read,
-      'pages': [...header.pages]..sort(),
-      'settings': [...header.settings]..sort(),
-    },
-  if (group.gone case final gone?) 'gone': {'read': gone.read},
-};
-
-int? _readOf(Map<Object?, Object?> raw) => switch (raw['read']) {
-  final num read when isSafeWhole(read) && read >= 1 => read.toInt(),
-  _ => null,
-};
-
-Set<String>? _ids(Object? raw) => switch (raw) {
-  final List<Object?> list when list.every((id) => id is String) =>
-    list.cast<String>().toSet(),
-  _ => null,
-};
-
-CloudRowReading<(String?, EvidenceGroup)> groupFromText(
-  String text, {
-  required bool header,
-}) => _fromText(
-  text,
-  (json) => JsonFields.read(json, 'base evidence', (fields) {
-    _versioned(fields, 'base evidence');
-    final page = header ? null : fields.string('page');
-    if (header && fields.has('page')) fields.reject('a page on the header');
-    final sightings = <Target, RowEvidence>{};
-    if (fields.json['sightings'] case final List<Object?> list) {
-      for (final raw in list) {
-        if (raw is! Map<String, Object?>) {
-          fields.reject('an unreadable sighting');
-          continue;
-        }
-        final target = _target(raw['target']);
-        final read = _readOf(raw);
-        final seenPage = raw['page'];
-        if (target == null ||
-            read == null ||
-            (seenPage != null && seenPage is! String) ||
-            sightings.containsKey(target)) {
-          fields.reject('an unreadable sighting');
-          continue;
-        }
-        final RowEvidence evidence;
-        if (raw['unreadable'] == true) {
-          evidence = RowUnreadable(read: read, page: seenPage as String?);
-        } else if ((
-              raw['revision'],
-              raw['digest'],
-              raw['life'],
-              raw['payloadVersion'],
-            )
-            case (
-              final num revision,
-              final String digest,
-              final String life,
-              final Object? version,
-            )
-            when isSafeWhole(revision) &&
-                Life.values.asNameMap().containsKey(life) &&
-                (version == null || (version is num && isSafeWhole(version)))) {
-          evidence = RowSeen(
-            read: read,
-            revision: revision.toInt(),
-            digest: digest,
-            page: seenPage as String?,
-            life: Life.values.asNameMap()[life]!,
-            payloadVersion: (version as num?)?.toInt(),
-          );
-        } else {
-          fields.reject('an unreadable sighting');
-          continue;
-        }
-        if (groupPageOf(target, evidence) != page) {
-          fields.reject('a sighting kept under another page');
-        }
-        sightings[target] = evidence;
-      }
-    } else {
-      fields.reject('expected sightings');
-    }
-    ContentRead? content;
-    if (fields.json['content'] case final Map<String, Object?> raw) {
-      final read = _readOf(raw);
-      final digests = _digests(raw['digests']);
-      final present = <Target>{};
-      if (raw['present'] case final List<Object?> list) {
-        for (final item in list) {
-          switch (_target(item)) {
-            case final ElementTarget target:
-              present.add(target);
-            case final LineupTarget target:
-              present.add(target);
-            case _:
-              fields.reject('unreadable content');
-          }
-        }
-      } else {
-        fields.reject('unreadable content');
-      }
-      if (read == null || digests == null || page == null) {
-        fields.reject('unreadable content');
-      } else {
-        content = ContentRead(read: read, digests: digests, present: present);
-      }
-    } else if (fields.has('content')) {
-      fields.reject('unreadable content');
-    }
-    HeaderListing? listing;
-    if (fields.json['header'] case final Map<String, Object?> raw) {
-      final read = _readOf(raw);
-      final pages = _ids(raw['pages']);
-      final settings = _ids(raw['settings']);
-      if (read == null || pages == null || settings == null || page != null) {
-        fields.reject('an unreadable page list');
-      } else {
-        listing = HeaderListing(read: read, pages: pages, settings: settings);
-      }
-    } else if (fields.has('header')) {
-      fields.reject('an unreadable page list');
-    }
-    RowAbsent? gone;
-    if (fields.json['gone'] case final Map<String, Object?> raw) {
-      final read = _readOf(raw);
-      if (read == null || page == null) {
-        fields.reject('an unreadable absence');
-      } else {
-        gone = RowAbsent(read: read);
-      }
-    } else if (fields.has('gone')) {
-      fields.reject('an unreadable absence');
-    }
-    return () => (
-      page,
-      EvidenceGroup(
-        sightings: sightings,
-        content: content,
-        header: listing,
-        gone: gone,
-      ),
-    );
   }),
 );

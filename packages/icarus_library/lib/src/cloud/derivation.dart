@@ -164,6 +164,8 @@ final class _Index {
     required this.readers,
     required this.attemptsByOp,
     required this.answered,
+    required this.forgetAt,
+    required this.forgetDays,
   });
 
   factory _Index.of(List<QueueEntry> entries, Map<int, AttemptFact> attempts) {
@@ -178,6 +180,14 @@ final class _Index {
     return edit.build();
   }
 
+  DateTime? get firstForgetting => switch (forgetDays.keys) {
+    final days when days.isEmpty => null,
+    final days => DateTime.fromMillisecondsSinceEpoch(
+      forgetDays[days.reduce((a, b) => a < b ? a : b)]!.first.$1,
+      isUtc: true,
+    ),
+  };
+
   static final empty = _Index(
     byId: const {},
     under: const {},
@@ -185,6 +195,8 @@ final class _Index {
     readers: const {},
     attemptsByOp: const {},
     answered: const {},
+    forgetAt: const {},
+    forgetDays: const {},
   );
 
   final Map<String, QueueEntry> byId;
@@ -193,6 +205,8 @@ final class _Index {
   final Map<Object, List<_Slot>> readers;
   final Map<String, List<int>> attemptsByOp;
   final Set<String> answered;
+  final Map<String, int> forgetAt;
+  final Map<int, List<_Slot>> forgetDays;
 
   String? lastBefore(Map<Object, List<_Slot>> lists, Object key, int place) {
     final slots = lists[key];
@@ -246,7 +260,10 @@ final class _IndexEdit {
   Map<Object, List<_Slot>>? _readers;
   Map<String, List<int>>? _attemptsByOp;
   Set<String>? _answered;
+  Map<String, int>? _forgetAt;
+  Map<int, List<_Slot>>? _forgetDays;
   final _copied = <(int, Object)>{};
+  final _copiedDays = <int>{};
 
   Map<String, QueueEntry> get byId => _byId ?? _from.byId;
 
@@ -261,6 +278,53 @@ final class _IndexEdit {
   Map<String, QueueEntry> get _ownById => _byId ??= {..._from.byId};
 
   Set<String> get _ownAnswered => _answered ??= {..._from.answered};
+
+  Map<String, int> get forgetAt => _forgetAt ?? _from.forgetAt;
+
+  Map<int, List<_Slot>> get forgetDays => _forgetDays ?? _from.forgetDays;
+
+  static int _dayOf(int millis) => millis ~/ Duration.millisecondsPerDay;
+
+  List<_Slot> _day(int day) {
+    final days = _forgetDays ??= {..._from.forgetDays};
+    if (_copiedDays.add(day)) days[day] = [...?days[day]];
+    return days[day]!;
+  }
+
+  void forgetBy(String id, DateTime at) {
+    final millis = at.add(serverRemembersAnswersFor).millisecondsSinceEpoch;
+    if (forgetAt[id] case final known? when known <= millis) return;
+    stopForgetting(id);
+    (_forgetAt ??= {..._from.forgetAt})[id] = millis;
+    final list = _day(_dayOf(millis));
+    list.insert(_slotAt(list, millis), (millis, id));
+  }
+
+  void stopForgetting(String id) {
+    final millis = forgetAt[id];
+    if (millis == null) return;
+    (_forgetAt ??= {..._from.forgetAt}).remove(id);
+    final day = _dayOf(millis);
+    final list = _day(day);
+    list.remove((millis, id));
+    if (list.isEmpty) _forgetDays!.remove(day);
+  }
+
+  List<String> forgottenBy(DateTime now) {
+    final millis = now.millisecondsSinceEpoch;
+    final today = _dayOf(millis);
+    final due = <String>[];
+    for (final MapEntry(key: day, value: list) in forgetDays.entries) {
+      derivationWork.visits++;
+      if (day > today) continue;
+      for (final (at, id) in list) {
+        if (at > millis) break;
+        derivationWork.visits++;
+        due.add(id);
+      }
+    }
+    return due;
+  }
 
   Map<String, List<int>> get _ownAttempts =>
       _attemptsByOp ??= {..._from.attemptsByOp};
@@ -313,6 +377,7 @@ final class _IndexEdit {
 
   void remove(QueueEntry entry) {
     _ownById.remove(entry.id);
+    stopForgetting(entry.id);
     if (entry is! PendingOp) return;
     final slot = (entry.place, entry.id);
     final keys = _keysOf(entry);
@@ -331,6 +396,7 @@ final class _IndexEdit {
   }
 
   void replace(QueueEntry old, QueueEntry entry) {
+    if (entry case PendingOp(memory: Forgotten())) stopForgetting(entry.id);
     if (old is PendingOp &&
         entry is PendingOp &&
         old.id == entry.id &&
@@ -354,6 +420,9 @@ final class _IndexEdit {
     final byOp = _ownAttempts;
     for (final opId in attempt.opIds) {
       byOp[opId] = [...?byOp[opId], attempt.number];
+      if (byId[opId] case PendingOp(memory: Remembered())) {
+        forgetBy(opId, attempt.at);
+      }
     }
   }
 
@@ -375,6 +444,8 @@ final class _IndexEdit {
     readers: _readers ?? _from.readers,
     attemptsByOp: _attemptsByOp ?? _from.attemptsByOp,
     answered: _answered ?? _from.answered,
+    forgetAt: _forgetAt ?? _from.forgetAt,
+    forgetDays: _forgetDays ?? _from.forgetDays,
   );
 }
 
@@ -430,7 +501,6 @@ final class _Derivation {
     required this.views,
     required this.expiry,
     required this.nextExpiry,
-    required this.deadlines,
     required this.counted,
     required this.waiting,
     required this.attention,
@@ -441,7 +511,6 @@ final class _Derivation {
   final Map<String, EntryView> views;
   final Map<String, DateTime> expiry;
   final DateTime? nextExpiry;
-  final Map<String, DateTime> deadlines;
   final Map<String, _Counted> counted;
   final Map<Waiting, int> waiting;
   final Map<Attention, int> attention;
@@ -455,16 +524,25 @@ final class _Lineage {
 }
 
 _Derivation _derive(CloudQueue queue, DateTime now) {
+  if (queue._index.firstForgetting case final first?
+      when !now.isBefore(first)) {
+    final remembered = switch (queue._remembered) {
+      (final at, final known) when at == now => known,
+      _ => _remembered(queue, now),
+    };
+    queue._remembered = (now, remembered);
+    return _derive(remembered, now);
+  }
   final known = queue._derived;
   if (known != null && known.at == now) return known;
   final _Derivation derived;
   if (known != null && !now.isBefore(known.at)) {
     derived = _Deriving(queue, known, _Change(), now).run();
-  } else if (queue._lineage case _Lineage(:final parent, :final change)
-      when parent._derived != null &&
-          !change.everything &&
-          !now.isBefore(parent._derived!.at)) {
-    derived = _Deriving(queue, parent._derived!, change, now).run();
+  } else if (queue._lineage case _Lineage(
+    :final parent,
+    :final change,
+  ) when !change.everything && _derivable(parent, now)) {
+    derived = _Deriving(queue, _derive(parent, now), change, now).run();
   } else {
     derived = _Deriving.full(queue, now).run();
   }
@@ -473,13 +551,27 @@ _Derivation _derive(CloudQueue queue, DateTime now) {
   return derived;
 }
 
+bool _derivable(CloudQueue queue, DateTime now) {
+  if (queue._index.firstForgetting case final first?
+      when !now.isBefore(first)) {
+    return false;
+  }
+  if (queue._derived case final known? when !now.isBefore(known.at)) {
+    return true;
+  }
+  return switch (queue._lineage) {
+    _Lineage(:final parent, :final change) =>
+      !change.everything && _derivable(parent, now),
+    null => false,
+  };
+}
+
 final class _Deriving {
   _Deriving(this.queue, _Derivation from, this.change, this.now)
     : states = {...from.states},
       views = {...from.views},
       expiry = {...from.expiry},
       nextExpiry = from.nextExpiry,
-      deadlines = {...from.deadlines},
       counted = {...from.counted},
       waiting = {...from.waiting},
       attention = {...from.attention},
@@ -491,7 +583,6 @@ final class _Deriving {
       views = {},
       expiry = {},
       nextExpiry = null,
-      deadlines = {},
       counted = {},
       waiting = {},
       attention = {},
@@ -504,7 +595,6 @@ final class _Deriving {
   final Map<String, EntryView> views;
   final Map<String, DateTime> expiry;
   DateTime? nextExpiry;
-  final Map<String, DateTime> deadlines;
   final Map<String, _Counted> counted;
   final Map<Waiting, int> waiting;
   final Map<Attention, int> attention;
@@ -542,7 +632,6 @@ final class _Deriving {
   void _forget(String id) {
     states.remove(id);
     views.remove(id);
-    deadlines.remove(id);
     _setExpiry(id, null);
     if (counted.remove(id) case final was?) _count(was, -1);
   }
@@ -616,7 +705,6 @@ final class _Deriving {
       views: views,
       expiry: expiry,
       nextExpiry: nextExpiry,
-      deadlines: deadlines,
       counted: counted,
       waiting: waiting,
       attention: attention,
@@ -632,13 +720,8 @@ final class _Deriving {
         derivationWork.views++;
         states.remove(entry.id);
         final before = views[entry.id];
-        final (view, until, deadline) = _viewOf(queue, entry, stateFor, now);
+        final (view, until) = _viewOf(queue, entry, stateFor, now);
         views[entry.id] = view;
-        if (deadline == null) {
-          deadlines.remove(entry.id);
-        } else {
-          deadlines[entry.id] = deadline;
-        }
         _setExpiry(entry.id, until);
         if (!full && (before != view || _spread.contains(entry.id))) {
           _spreadFrom(entry);
@@ -667,6 +750,7 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         ChangedUnseen() => Attention.changedUnseen,
         ServerForgotAnswer() => Attention.serverForgotAnswer,
         OnDeletedPage() => Attention.onDeletedPage,
+        PayloadVersionChanged() => Attention.payloadVersionChanged,
         DeleteHeld() => Attention.heldPageDelete,
       }),
       (AnswerUnknown(backoff: RetriesExhausted()), _) => const _Needs(
@@ -685,6 +769,8 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         const _Needs(Attention.waitingOnRefused),
       (_, Free()) when view.holds.any((hold) => hold is AwaitingBase) =>
         const _Waits(Waiting.awaitingBase),
+      (_, Free()) when view.holds.any((hold) => hold is AwaitingProof) =>
+        const _Waits(Waiting.awaitingRead),
       (AnswerUnknown(), Free()) => const _Waits(Waiting.answerUnknown),
       (NeverSent(), Free()) => const _Waits(Waiting.unsent),
     };
@@ -731,6 +817,8 @@ bool _open(PendingState state) => switch (state) {
   NeverSent() || Claimed() || AnswerUnknown() || ServerRefused() => true,
 };
 
+DateTime? forgetsNextAt(CloudQueue queue) => queue._index.firstForgetting;
+
 Map<String, EntryView> entryViews(CloudQueue queue, DateTime now) =>
     UnmodifiableMapView(_derive(queue, now).views);
 
@@ -749,12 +837,12 @@ Set<ReadNeed> readsNeeded(CloudQueue queue, DateTime now) {
   final needs = {
     for (final view in _derive(queue, now).views.values)
       for (final hold in view.holds)
-        if (hold case AwaitingRead(:final need)) need,
+        if (hold case AwaitingProof(:final need)) need,
   };
   return {if (needs.isNotEmpty) const PageListNeed(), ...needs};
 }
 
-(EntryView, DateTime?, DateTime?) _viewOf(
+(EntryView, DateTime?) _viewOf(
   CloudQueue queue,
   PendingOp entry,
   PendingState Function(String) stateFor,
@@ -769,7 +857,6 @@ Set<ReadNeed> readsNeeded(CloudQueue queue, DateTime now) {
   final holds = <Hold>[];
   Go go = const Free();
   DateTime? until;
-  DateTime? deadline;
   void soonest(DateTime at) {
     if (at.isAfter(now) && (until == null || at.isBefore(until!))) until = at;
   }
@@ -813,10 +900,10 @@ Set<ReadNeed> readsNeeded(CloudQueue queue, DateTime now) {
         continue;
       }
       final since = last == null ? 0 : _answeredAfterRead(last);
-      if (queue.base.pageGoneAfter(page, since)) {
+      if (queue.base.proves(PageIsGone(page, after: since)) is Proven) {
         go = NeedsUser(OnDeletedPage(page));
       } else if (last?.op is PageDeleteOp &&
-          !queue.base.pageLiveAfter(page, since)) {
+          queue.base.proves(PageIsLive(page, after: since)) is! Proven) {
         holds.add(AwaitingBase(PageTarget(page)));
       }
     }
@@ -831,40 +918,12 @@ Set<ReadNeed> readsNeeded(CloudQueue queue, DateTime now) {
       holds.add(UntilRetryTime(at));
       soonest(at);
     }
-    if ((state, entry.memory) case (
-      AnswerUnknown(:final firstSentAt),
-      Remembered(),
-    )) {
-      deadline = firstSentAt.add(serverRemembersAnswersFor);
-    }
-    if ((_isPutBack(op), entry.memory) case (true, Remembered())) {
-      if (index.lastBefore(index.accepted, target, place) case final id?) {
-        if (index.byId[id] case PendingOp(
-          op: ElementDeleteOp() || LineupGroupDeleteOp(),
-          answer: AnsweredApplied(:final at),
-        )) {
-          deadline = at.add(serverRemembersAnswersFor);
-        }
-      }
-    }
-    if (deadline case final at?) soonest(at);
-    if (entry.work case CheckedDelete(:final op)) {
-      final page = op.pagePublicId;
-      final read = [
-        queue.base.pageContent[page]?.read ?? 0,
-        queue.base.notFound[page]?.read ?? 0,
-      ].reduce((a, b) => a > b ? a : b);
-      if (!startedAfter(read, queue.session.readsAfter)) {
-        holds.add(AwaitingRead(PageNeed(page)));
-      }
-    }
     if (_oversized(entry)) go = const NeedsUser(Oversized());
     if (holds.isEmpty && go is Free) {
       go = _checked(
         queue,
         entry,
         state,
-        now,
         index.lastBefore(index.accepted, target, place) ??
             (target is PageTarget
                 ? index.lastBefore(index.accepted, const _Renumbering(), place)
@@ -884,10 +943,24 @@ Set<ReadNeed> readsNeeded(CloudQueue queue, DateTime now) {
         AnsweredRefused(:final afterRead),
       )
       when pages.isNotEmpty &&
-          pages.every((page) => queue.base.pageLiveAfter(page, afterRead))) {
+          pages.every(
+            (page) =>
+                queue.base.proves(
+                      PageIsLive(
+                        page,
+                        after: _later(afterRead, queue.session.readsAfter),
+                      ),
+                    )
+                    is Proven,
+          )) {
     go = const NeedsFreshId(PageLiveAgain());
+  } else if (entry.answer case AnsweredApplied(
+    :final revision,
+    :final afterRead,
+  )) {
+    holds.add(AwaitingProof(settlementOf(entry, revision, afterRead)));
   }
-  return (EntryView(state, go, holds), until, deadline);
+  return (EntryView(state, go, holds), until);
 }
 
 (List<PendingOp>, Set<String>) entriesForPages(

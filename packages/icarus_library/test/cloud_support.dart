@@ -281,3 +281,6 @@ ArrivedBase pageReadOf(StrategyRows rows, String page) =>
       ),
       null => PageGone(page),
     };
+
+Matcher awaitingRead(String page) =>
+    isA<AwaitingProof>().having((hold) => hold.need, 'need', PageNeed(page));

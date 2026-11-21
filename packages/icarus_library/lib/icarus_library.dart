@@ -64,6 +64,7 @@ export 'src/store/summary.dart'
         StrategySummary,
         SummarySync;
 export 'src/cloud/events.dart';
+export 'src/cloud/evidence.dart';
 export 'src/cloud/op_facts.dart'
     show
         Target,

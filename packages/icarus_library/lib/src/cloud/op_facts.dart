@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 
 import '../apply.dart';
 import '../derived_id.dart';
+import '../field_merge.dart';
 import '../field_rules.dart';
 import '../json.dart';
 import '../outcome.dart';
@@ -499,6 +500,11 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
     (final row?, final revision?) => AuthoredRow(
       revision: revision,
       digest: rowDigest(row),
+      payloadVersion: switch (row) {
+        ReadableElementRow(:final payload) => payload.payloadVersion,
+        ReadableLineupGroupRow(:final payload) => payload.payloadVersion,
+        _ => null,
+      },
     ),
     (_?, null) => const AuthoredUnreadable(),
     (null, _) => const AuthoredNoRow(),
@@ -534,55 +540,42 @@ SeenPage seenPageIn(StrategyRows rows, String pagePublicId) {
   );
 }
 
-StrategyOp withFieldBase(StrategyRows rows, StrategyOp op) {
-  Map<String, Object?> baseOf(
-    List<String> fields,
-    JsonObject data,
-    int sortIndex,
-  ) => {
-    for (final field in fields)
-      if (field == placeField)
-        field: sortIndex
-      else if (data.containsKey(field))
-        field: plainJson(data[field]),
-  };
-  return switch (op) {
-    ElementPatchOp(merge: FieldMerge(base: null, :final fields)) => switch (rows
-        .element(op.elementPublicId)) {
-      ReadableElementRow(:final payload, :final sortIndex) => ElementPatchOp(
-        opId: op.opId,
-        elementPublicId: op.elementPublicId,
-        expectedElementRevision: op.expectedElementRevision,
-        pagePublicId: op.pagePublicId,
-        payload: op.payload,
-        sortIndex: op.sortIndex,
-        merge: FieldMerge(
-          fields: fields,
-          base: baseOf(fields, payload.data, sortIndex),
-        ),
+StrategyOp withFieldBase(StrategyRows rows, StrategyOp op) => switch (op) {
+  ElementPatchOp(merge: FieldMerge(base: null, :final fields)) => switch (rows
+      .element(op.elementPublicId)) {
+    ReadableElementRow(:final payload, :final sortIndex) => ElementPatchOp(
+      opId: op.opId,
+      elementPublicId: op.elementPublicId,
+      expectedElementRevision: op.expectedElementRevision,
+      pagePublicId: op.pagePublicId,
+      payload: op.payload,
+      sortIndex: op.sortIndex,
+      merge: FieldMerge(
+        fields: fields,
+        base: elementMergeBase(payload, sortIndex, fields),
       ),
+    ),
+    _ => op,
+  },
+  LineupGroupPatchOp(merge: FieldMerge(base: null, :final fields)) =>
+    switch (rows.lineupGroup(op.lineupPublicId)) {
+      ReadableLineupGroupRow(:final payload, :final sortIndex) =>
+        LineupGroupPatchOp(
+          opId: op.opId,
+          lineupPublicId: op.lineupPublicId,
+          expectedLineupRevision: op.expectedLineupRevision,
+          pagePublicId: op.pagePublicId,
+          payload: op.payload,
+          sortIndex: op.sortIndex,
+          merge: FieldMerge(
+            fields: fields,
+            base: lineupMergeBase(payload, sortIndex, fields),
+          ),
+        ),
       _ => op,
     },
-    LineupGroupPatchOp(merge: FieldMerge(base: null, :final fields)) =>
-      switch (rows.lineupGroup(op.lineupPublicId)) {
-        ReadableLineupGroupRow(:final payload, :final sortIndex) =>
-          LineupGroupPatchOp(
-            opId: op.opId,
-            lineupPublicId: op.lineupPublicId,
-            expectedLineupRevision: op.expectedLineupRevision,
-            pagePublicId: op.pagePublicId,
-            payload: op.payload,
-            sortIndex: op.sortIndex,
-            merge: FieldMerge(
-              fields: fields,
-              base: baseOf(fields, payload.data, sortIndex),
-            ),
-          ),
-        _ => op,
-      },
-    _ => op,
-  };
-}
+  _ => op,
+};
 
 sealed class CopyExpansion {
   const CopyExpansion();

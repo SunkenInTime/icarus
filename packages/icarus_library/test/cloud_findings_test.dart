@@ -1,6 +1,7 @@
+import 'package:collection/collection.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/store/layout.dart'
-    show AttemptName, PendingName;
+    show AttemptName, PendingName, strategyArea;
 import 'package:test/test.dart';
 
 import 'cloud_store_support.dart';
@@ -61,7 +62,7 @@ void main() {
       client.edit(elementDelete('x'));
       final attempt = client.claim(['x']);
       client.must(TransportFailed(attempt, TransportFailure.network, at: now));
-      final boundary = now.add(serverRemembersAnswersFor);
+      final boundary = now.add(const Duration(days: 30));
       client.clock = boundary;
       expect(sendable(client, 'x'), isFalse);
       client.must(const ConnectionLost());
@@ -263,21 +264,53 @@ void main() {
       expect(elementOn(page, 'e1'), server.element('e1'));
     });
 
-    test('2: a page read for a page whose row is not stored yet writes '
-        'nothing', () async {
+    test('2: a page read for a page the store has no row for stores that '
+        'page with its evidence, and changes no base row when a newer page '
+        'list leaves the page out', () async {
       final storage = MemoryStorage();
       final store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      final before = storage.contents;
       final added = withOp(initialRows(), pageAdd('add', 'page-c'));
       final read = await startRead(store);
-      final counters = storage.contents;
-      final result = await store.record(strategyId, [
+      await recordAll(store, [
         BaseArrived(pageReadOf(added, 'page-c'), read: read),
       ]);
-      expect(result, isA<Saved<Recorded, CommitRefusal>>());
-      expect(sameContents(storage.contents, counters), isTrue);
-      expect(sameContents(before, counters), isFalse);
+      expect(
+        await store.readPage(strategyId, 'page-c'),
+        isA<Found<PageContent>>(),
+      );
+      final again = await openCloudStore(
+        MemoryEngine(MemoryStorage(storage.contents)),
+      );
+      expect(
+        await again.readPage(strategyId, 'page-c'),
+        isA<Found<PageContent>>(),
+      );
+
+      final other = withOp(initialRows(), pageAdd('add', 'page-d'));
+      final older = await startRead(store);
+      final newer = await startRead(store);
+      await recordAll(store, [BaseArrived(headerReadOf(added), read: newer)]);
+      final before = storage.contents;
+      final area = strategyArea(strategyId);
+      await recordAll(store, [
+        BaseArrived(pageReadOf(other, 'page-d'), read: older),
+      ]);
+      expect(
+        await store.readPage(strategyId, 'page-d'),
+        isA<NotFound<PageContent>>(),
+      );
+      Map<String, String> baseRows(Contents contents) => {
+        for (final MapEntry(:key, :value) in contents[area]!.entries)
+          if (!key.startsWith('read/')) key: value,
+      };
+      expect(
+        const MapEquality<String, String>().equals(
+          baseRows(before),
+          baseRows(storage.contents),
+        ),
+        isTrue,
+      );
     });
 
     test('3: what a header read settles is what reaches disk', () async {
@@ -351,7 +384,10 @@ void main() {
         OpAnswered(sent.attempt, const AppliedAnswer('a', revision: 2)),
       ]);
       expect(result, isA<Refused<Recorded, CommitRefusal>>());
-      expect(sameContents(disk.contents, contents), isTrue);
+      expect(
+        sameContents({area: disk.contents[area]!}, {area: contents[area]!}),
+        isTrue,
+      );
       expect(disk.contents[area]!.containsKey(AttemptName(1).name), isTrue);
     });
 

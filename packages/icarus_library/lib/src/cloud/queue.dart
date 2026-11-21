@@ -3,163 +3,14 @@ import 'dart:collection';
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
-import '../rows.dart';
 import 'events.dart';
+import 'evidence.dart';
 import 'fold.dart';
 import 'op_facts.dart';
 import 'pending.dart';
 import 'sync.dart';
 
 part 'derivation.dart';
-
-final class ContentRead {
-  ContentRead({
-    required this.read,
-    required Map<SeenPart, String> digests,
-    required Set<Target> present,
-  }) : digests = Map.unmodifiable(digests),
-       present = Set.unmodifiable(present);
-
-  final int read;
-  final Map<SeenPart, String> digests;
-  final Set<Target> present;
-
-  @override
-  bool operator ==(Object other) =>
-      other is ContentRead &&
-      other.read == read &&
-      sameSet(other.present, present) &&
-      BaseFacts.canonical(other.digests) == BaseFacts.canonical(digests);
-
-  @override
-  int get hashCode => Object.hash(ContentRead, read);
-}
-
-final class HeaderListing {
-  HeaderListing({
-    required this.read,
-    required Set<String> pages,
-    required Set<String> settings,
-  }) : pages = Set.unmodifiable(pages),
-       settings = Set.unmodifiable(settings);
-
-  final int read;
-  final Set<String> pages;
-  final Set<String> settings;
-
-  @override
-  bool operator ==(Object other) =>
-      other is HeaderListing &&
-      other.read == read &&
-      sameSet(other.pages, pages) &&
-      sameSet(other.settings, settings);
-
-  @override
-  int get hashCode => Object.hash(HeaderListing, read);
-}
-
-final class BaseFacts {
-  BaseFacts({
-    required Map<Target, RowEvidence> sightings,
-    required Map<String, ContentRead> pageContent,
-    required this.header,
-    required Map<String, RowAbsent> notFound,
-  }) : sightings = Map.unmodifiable(sightings),
-       pageContent = Map.unmodifiable(pageContent),
-       notFound = Map.unmodifiable(notFound);
-
-  static final none = BaseFacts(
-    sightings: const {},
-    pageContent: const {},
-    header: null,
-    notFound: const {},
-  );
-
-  final Map<Target, RowEvidence> sightings;
-  final Map<String, ContentRead> pageContent;
-  final HeaderListing? header;
-  final Map<String, RowAbsent> notFound;
-
-  RowEvidence? evidence(Target target, {String? authoredOn}) {
-    final seen = sightings[target];
-    RowEvidence? latest(Iterable<RowEvidence?> candidates) {
-      RowEvidence? best;
-      for (final candidate in candidates) {
-        if (candidate != null && (best == null || candidate.read > best.read)) {
-          best = candidate;
-        }
-      }
-      return best;
-    }
-
-    RowAbsent? unlisted(bool listed) => switch (header) {
-      final header? when !listed => RowAbsent(read: header.read),
-      _ => null,
-    };
-
-    RowAbsent? missingFrom(String? page) => switch (pageContent[page]) {
-      final content? when !content.present.contains(target) => RowAbsent(
-        read: content.read,
-      ),
-      _ => null,
-    };
-
-    return switch (target) {
-      StrategyTarget() => seen,
-      PageTarget(:final pagePublicId) => latest([
-        seen,
-        unlisted(header?.pages.contains(pagePublicId) ?? true),
-        notFound[pagePublicId],
-      ]),
-      SettingsTarget(:final pagePublicId) => latest([
-        seen,
-        unlisted(header?.settings.contains(pagePublicId) ?? true),
-        notFound[pagePublicId],
-      ]),
-      ElementTarget() || LineupTarget() => switch (seen) {
-        RowSeen(:final page) ||
-        RowUnreadable(:final page) => latest([seen, missingFrom(page)]),
-        RowAbsent() || null => missingFrom(authoredOn),
-      },
-    };
-  }
-
-  int get lastRead => [
-    for (final evidence in sightings.values) evidence.read,
-    for (final content in pageContent.values) content.read,
-    for (final absent in notFound.values) absent.read,
-    ?header?.read,
-  ].fold(0, (last, read) => read > last ? read : last);
-
-  bool pageGoneAfter(String pagePublicId, int read) =>
-      switch (evidence(PageTarget(pagePublicId))) {
-        RowSeen(life: Life.gone, read: final seen) ||
-        RowAbsent(read: final seen) => seen > read,
-        RowSeen() || RowUnreadable() || null => false,
-      };
-
-  bool pageLiveAfter(String pagePublicId, int read) =>
-      switch (evidence(PageTarget(pagePublicId))) {
-        RowSeen(life: Life.live, read: final seen) ||
-        RowUnreadable(read: final seen) => seen > read,
-        RowSeen() || RowAbsent() || null => false,
-      };
-
-  @override
-  bool operator ==(Object other) =>
-      other is BaseFacts &&
-      sameMap(other.sightings, sightings) &&
-      sameMap(other.pageContent, pageContent) &&
-      other.header == header &&
-      sameMap(other.notFound, notFound);
-
-  @override
-  int get hashCode => Object.hash(hashMap(sightings), pageContent.length);
-
-  static String canonical(Map<SeenPart, String> digests) => canonicalJson({
-    for (final MapEntry(:key, :value) in digests.entries) '$key': value,
-  });
-}
 
 final class QueueSession {
   const QueueSession({
@@ -196,7 +47,7 @@ final class CloudQueue {
     required Map<int, AttemptFact> attempts,
     required int nextAttempt,
     required int nextRead,
-    required BaseFacts base,
+    required Evidence base,
     required StrategyFacts strategy,
     required QueueSession session,
   }) {
@@ -242,7 +93,7 @@ final class CloudQueue {
     attempts: const {},
     nextAttempt: 1,
     nextRead: 1,
-    base: BaseFacts.none,
+    base: Evidence.none,
     strategy: StrategyFacts.fresh,
     session: QueueSession.start(build, nextRead: 1),
     index: _Index.empty,
@@ -253,21 +104,41 @@ final class CloudQueue {
   final Map<int, AttemptFact> attempts;
   final int nextAttempt;
   final int nextRead;
-  final BaseFacts base;
+  final Evidence base;
   final StrategyFacts strategy;
   final QueueSession session;
   final _Index _index;
   _Lineage? _lineage;
   _Derivation? _derived;
+  (DateTime, CloudQueue)? _remembered;
 
   QueueEntry? entry(String id) => _index.byId[id];
+
+  CloudQueue raisedTo({required int nextAttempt, required int nextRead}) {
+    if (nextAttempt <= this.nextAttempt && nextRead <= this.nextRead) {
+      return this;
+    }
+    return CloudQueue._(
+      entries: entries,
+      attempts: attempts,
+      nextAttempt: nextAttempt > this.nextAttempt
+          ? nextAttempt
+          : this.nextAttempt,
+      nextRead: nextRead > this.nextRead ? nextRead : this.nextRead,
+      base: base,
+      strategy: strategy,
+      session: session,
+      index: _index,
+      lineage: _Lineage(this, _Change()),
+    );
+  }
 
   static String? _problemWith(
     List<QueueEntry> entries,
     Map<int, AttemptFact> attempts,
     int nextAttempt,
     int nextRead,
-    BaseFacts base,
+    Evidence base,
     StrategyFacts strategy,
   ) {
     final ids = <String>{};
@@ -342,7 +213,7 @@ final class CloudQueue {
       Iterable<int>.generate(a.length).every((i) => a[i] == b[i]);
 }
 
-enum Standing { good, editAccessLost, upgradeRequired, deletedOnServer }
+enum Standing { good, editAccessLost, upgradeRequired, deletedOnServer, held }
 
 Standing standingOf(CloudQueue queue) => switch (queue.strategy) {
   StrategyFacts(presence: Presence.gone) => Standing.deletedOnServer,
@@ -625,6 +496,19 @@ final class ServerForgotAnswer extends UserReason {
   String toString() => 'the server forgot whether it landed';
 }
 
+final class PayloadVersionChanged extends UserReason {
+  const PayloadVersionChanged();
+
+  @override
+  bool operator ==(Object other) => other is PayloadVersionChanged;
+
+  @override
+  int get hashCode => (PayloadVersionChanged).hashCode;
+
+  @override
+  String toString() => 'written by another version since the user saw it';
+}
+
 final class OnDeletedPage extends UserReason {
   const OnDeletedPage(this.pagePublicId);
 
@@ -704,52 +588,22 @@ final class UntilRetryTime extends Hold {
   String toString() => 'until ${at.toIso8601String()}';
 }
 
-sealed class ReadNeed {
-  const ReadNeed();
-}
+final class AwaitingProof extends Hold {
+  const AwaitingProof(this.claim);
 
-final class PageListNeed extends ReadNeed {
-  const PageListNeed();
+  final Claim claim;
 
-  @override
-  bool operator ==(Object other) => other is PageListNeed;
-
-  @override
-  int get hashCode => (PageListNeed).hashCode;
-
-  @override
-  String toString() => 'the page list';
-}
-
-final class PageNeed extends ReadNeed {
-  const PageNeed(this.pagePublicId);
-
-  final String pagePublicId;
+  ReadNeed get need => claim.need;
 
   @override
   bool operator ==(Object other) =>
-      other is PageNeed && other.pagePublicId == pagePublicId;
+      other is AwaitingProof && other.claim == claim;
 
   @override
-  int get hashCode => Object.hash(PageNeed, pagePublicId);
+  int get hashCode => Object.hash(AwaitingProof, claim);
 
   @override
-  String toString() => 'page $pagePublicId';
-}
-
-final class AwaitingRead extends Hold {
-  const AwaitingRead(this.need);
-
-  final ReadNeed need;
-
-  @override
-  bool operator ==(Object other) => other is AwaitingRead && other.need == need;
-
-  @override
-  int get hashCode => Object.hash(AwaitingRead, need);
-
-  @override
-  String toString() => 'awaiting a read of $need';
+  String toString() => 'awaiting a read of ${claim.need}';
 }
 
 final class AwaitingBase extends Hold {
@@ -816,151 +670,115 @@ String? _authoredPage(Scope scope) => switch (scope) {
   StrategyWide() => null,
 };
 
-String? _evidencePage(RowEvidence? evidence) => switch (evidence) {
-  RowSeen(:final page) || RowUnreadable(:final page) => page,
-  RowAbsent() || null => null,
-};
-
-enum _Comparison { same, differs, unknown }
-
-_Comparison _compare(Authored authored, RowEvidence? evidence) =>
-    switch ((authored, evidence)) {
-      (AuthoredUnreadable(), _) => _Comparison.differs,
-      (_, null) => _Comparison.unknown,
-      (AuthoredRow(:final digest), RowSeen(digest: final seen)) =>
-        seen == digest ? _Comparison.same : _Comparison.differs,
-      (AuthoredRow(), RowUnreadable() || RowAbsent()) => _Comparison.differs,
-      (AuthoredNoRow(), RowAbsent() || RowSeen(life: Life.gone)) =>
-        _Comparison.same,
-      (AuthoredNoRow(), RowSeen() || RowUnreadable()) => _Comparison.differs,
-    };
-
 bool _isPutBack(StrategyOp op) => switch (op) {
   ElementAddOp(expectedElementRevision: _?) ||
   LineupGroupAddOp(expectedLineupRevision: _?) => true,
   _ => false,
 };
 
-bool pastServerMemory(DateTime since, DateTime now) =>
-    !now.isBefore(since.add(serverRemembersAnswersFor));
-
-ReadNeed readNeedOf(PendingOp entry) => switch (targetOf(entry.op)) {
-  StrategyTarget() || PageTarget() || SettingsTarget() => const PageListNeed(),
-  ElementTarget() || LineupTarget() => switch (_authoredPage(entry.scope)) {
-    final page? => PageNeed(page),
-    null => const PageListNeed(),
-  },
-};
-
-bool _versionChanged(StrategyOp op, RowEvidence? evidence) =>
-    switch ((op, evidence)) {
-      (
-        ElementPatchOp(merge: _?, :final payload?),
-        RowSeen(:final payloadVersion?),
-      ) =>
-        payloadVersion != payload.payloadVersion,
-      (
-        LineupGroupPatchOp(merge: _?, :final payload?),
-        RowSeen(:final payloadVersion?),
-      ) =>
-        payloadVersion != payload.payloadVersion,
-      _ => false,
-    };
+int _later(int a, int b) => a > b ? a : b;
 
 Go _overOwnDelete(
+  CloudQueue queue,
   PendingOp entry,
-  ServerAnswer answer,
-  RowEvidence? evidence,
+  PendingOp delete,
   List<Hold> holds,
-  DateTime now,
 ) {
-  if (entry.memory is Forgotten) return const NeedsUser(ServerForgotAnswer());
-  switch ((answer, entry.authored)) {
+  if (entry.memory is Forgotten || delete.memory is Forgotten) {
+    return const NeedsUser(ServerForgotAnswer());
+  }
+  switch ((delete.answer, entry.authored)) {
     case (
           AnsweredApplied(
             by: AppliedBy.thisClient,
             :final revision,
             :final afterRead,
-            :final at,
           ),
-          AuthoredRow(revision: final tombstone, :final digest),
+          AuthoredRow(revision: final tombstone),
         )
         when tombstone == revision:
-      if (pastServerMemory(at, now)) {
-        return const NeedsUser(ServerForgotAnswer());
-      }
-      if (evidence == null || !startedAfter(evidence.read, afterRead)) {
-        holds.add(AwaitingRead(readNeedOf(entry)));
-        return const Free();
-      }
-      return switch (evidence) {
-        RowSeen(revision: final seen, digest: final shown)
-            when seen == revision && shown == digest =>
-          const Free(),
-        _ => const NeedsUser(ChangedUnseen()),
+      final claim = RowAsAuthored(
+        targetOf(entry.op),
+        entry.authored,
+        onPage: _authoredPage(entry.scope),
+        after: _later(afterRead, queue.session.readsAfter),
+      );
+      return switch (queue.base.proves(claim)) {
+        ProvenAt(revision: final seen) when seen == revision => const Free(),
+        Unproven() => _waitFor(claim, holds),
+        ProvenAt() ||
+        Proven() ||
+        Disproven() => const NeedsUser(ChangedUnseen()),
       };
     case _:
       return const NeedsUser(ChangedUnseen());
   }
 }
 
-bool _sameRevision(Authored authored, RowEvidence evidence) =>
-    switch ((authored, evidence)) {
-      (AuthoredRow(:final revision), RowSeen(revision: final seen)) =>
-        seen == revision,
-      (AuthoredNoRow(), _) => true,
-      _ => false,
-    };
+Go _waitFor(Claim claim, List<Hold> holds) {
+  holds.add(AwaitingProof(claim));
+  return const Free();
+}
+
+int? _payloadVersionOf(StrategyOp op) => switch (op) {
+  ElementPatchOp(:final payload?) => payload.payloadVersion,
+  LineupGroupPatchOp(:final payload?) => payload.payloadVersion,
+  _ => null,
+};
 
 Go _checked(
   CloudQueue queue,
   PendingOp entry,
   PendingState state,
-  DateTime now,
   String? acceptedSameRow,
   bool Function(String page) acceptedOnPage,
   List<Hold> holds,
 ) {
+  final evidence = queue.base;
   final target = targetOf(entry.op);
-  final evidence = queue.base.evidence(
-    target,
-    authoredOn: _authoredPage(entry.scope),
-  );
-  if (state case AnswerUnknown(:final firstSentAt)) {
-    final int marker;
+  final page = _authoredPage(entry.scope);
+  final mark = queue.session.readsAfter;
+  if (state is AnswerUnknown) {
     switch (entry.memory) {
-      case Forgotten(:final afterRead):
-        marker = afterRead;
-      case Remembered() when pastServerMemory(firstSentAt, now):
-        marker = queue.nextRead - 1;
       case Remembered():
         return const Free();
+      case Forgotten(:final afterRead):
+        if (checkKindOf(sendForm(entry.op, SendPolicy.checked)) !=
+            CheckKind.revision) {
+          return const NeedsUser(ServerForgotAnswer());
+        }
+        final claim = RowAsAuthored(
+          target,
+          entry.authored,
+          onPage: page,
+          after: _later(afterRead, mark),
+        );
+        return switch ((evidence.proves(claim), entry.authored)) {
+          (Unproven(), _) => _waitFor(claim, holds),
+          (ProvenAt(:final revision), AuthoredRow(revision: final authored))
+              when revision == authored =>
+            const NeedsFreshId(ServerForgot()),
+          (ProvenAt() || Proven(), AuthoredNoRow()) => const NeedsFreshId(
+            ServerForgot(),
+          ),
+          _ => const NeedsUser(ServerForgotAnswer()),
+        };
     }
-    if (checkKindOf(sendForm(entry.op, SendPolicy.checked)) !=
-        CheckKind.revision) {
-      return const NeedsUser(ServerForgotAnswer());
-    }
-    if (evidence == null || !startedAfter(evidence.read, marker)) {
-      holds.add(AwaitingRead(readNeedOf(entry)));
-      return const Free();
-    }
-    return _compare(entry.authored, evidence) == _Comparison.same &&
-            _sameRevision(entry.authored, evidence)
-        ? const NeedsFreshId(ServerForgot())
-        : const NeedsUser(ServerForgotAnswer());
   }
   if (_isPutBack(entry.op)) {
-    if (queue.entry(acceptedSameRow ?? '') case PendingOp(
-      op: ElementDeleteOp() || LineupGroupDeleteOp(),
-      :final answer,
-    )) {
-      return _overOwnDelete(entry, answer, evidence, holds, now);
+    if (queue.entry(acceptedSameRow ?? '') case final PendingOp delete
+        when delete.op is ElementDeleteOp || delete.op is LineupGroupDeleteOp) {
+      return _overOwnDelete(queue, entry, delete, holds);
     }
   }
-  if (target case ElementTarget() || LineupTarget()) {
-    final page = _evidencePage(evidence);
-    final gone = entry.authored is AuthoredRow && evidence is RowAbsent;
-    if (gone || (page != null && page != _authoredPage(entry.scope))) {
+  if ((target, page) case (ElementTarget() || LineupTarget(), final page?)) {
+    final still = RowStillOn(
+      target,
+      page: page,
+      existed: entry.authored is AuthoredRow,
+      after: 0,
+    );
+    if (evidence.proves(still) is Disproven) {
       if (acceptedSameRow != null) {
         holds.add(AwaitingBase(target));
         return const Free();
@@ -968,25 +786,37 @@ Go _checked(
       return const NeedsUser(ChangedUnseen());
     }
   }
-  if (checkKindOf(sendForm(entry.op, entry.policy)) == CheckKind.revision ||
-      _versionChanged(entry.op, evidence)) {
+  if ((entry.authored, _payloadVersionOf(entry.op)) case (
+    AuthoredRow(payloadVersion: final authored?),
+    _?,
+  )) {
+    final version = RowPayloadVersion(
+      target,
+      payloadVersion: authored,
+      after: 0,
+    );
+    if (evidence.proves(version) is Disproven) {
+      return const NeedsUser(PayloadVersionChanged());
+    }
+  }
+  if (checkKindOf(sendForm(entry.op, entry.policy)) == CheckKind.revision) {
     if (acceptedSameRow != null) {
       holds.add(AwaitingBase(target));
       return const Free();
     }
-    if (evidence == null ||
-        !startedAfter(evidence.read, queue.session.readsAfter)) {
-      holds.add(AwaitingRead(readNeedOf(entry)));
-      return const Free();
-    }
-    switch (_compare(entry.authored, evidence)) {
-      case _Comparison.same:
+    final claim = RowAsAuthored(
+      target,
+      entry.authored,
+      onPage: page,
+      after: mark,
+    );
+    switch (evidence.proves(claim)) {
+      case Proven() || ProvenAt():
         break;
-      case _Comparison.differs:
+      case Disproven():
         return const NeedsUser(ChangedUnseen());
-      case _Comparison.unknown:
-        holds.add(AwaitingRead(readNeedOf(entry)));
-        return const Free();
+      case Unproven():
+        return _waitFor(claim, holds);
     }
   }
   if (entry.work case CheckedDelete(:final op, :final seen)) {
@@ -995,23 +825,18 @@ Go _checked(
     if (content is! ContentSeen) {
       return const NeedsUser(DeleteHeld(HeldDeleteCause.contentNeverRead));
     }
-    final current = {
-      ...?queue.base.pageContent[page]?.digests,
-      if (queue.base.evidence(SettingsTarget(page)) case RowSeen(:final digest))
-        const SeenSettings(): digest,
-    };
-    final pageDigest = switch (queue.base.evidence(PageTarget(page))) {
-      RowSeen(:final digest) => digest,
-      RowUnreadable() || RowAbsent() || null => null,
-    };
-    final same =
-        sameMap(current, content.digests) && pageDigest == seen.pageDigest;
-    if (!same) {
-      if (acceptedOnPage(page)) {
-        holds.add(AwaitingBase(PageTarget(page)));
-        return const Free();
-      }
-      return const NeedsUser(DeleteHeld(HeldDeleteCause.pageChanged));
+    final claim = PageAsSeen(page, seen, after: mark);
+    switch (evidence.proves(claim)) {
+      case Proven() || ProvenAt():
+        break;
+      case Unproven():
+        return _waitFor(claim, holds);
+      case Disproven():
+        if (acceptedOnPage(page)) {
+          holds.add(AwaitingBase(PageTarget(page)));
+          return const Free();
+        }
+        return const NeedsUser(DeleteHeld(HeldDeleteCause.pageChanged));
     }
   }
   return const Free();
@@ -1065,6 +890,16 @@ final class ReadNumbered extends QueueEffect {
   String toString() => 'ReadNumbered($read)';
 }
 
+final class BaseRowsChanged extends QueueEffect {
+  BaseRowsChanged(List<BaseChange> changes)
+    : changes = List.unmodifiable(changes);
+
+  final List<BaseChange> changes;
+
+  @override
+  String toString() => 'BaseRowsChanged(${changes.length})';
+}
+
 final class ReportUnauthenticated extends QueueEffect {
   const ReportUnauthenticated();
 
@@ -1107,6 +942,19 @@ final class NothingToWaitFor extends RemovalCause {
 
   @override
   String toString() => 'NothingToWaitFor';
+}
+
+final class AlreadyGone extends RemovalCause {
+  const AlreadyGone();
+
+  @override
+  bool operator ==(Object other) => other is AlreadyGone;
+
+  @override
+  int get hashCode => (AlreadyGone).hashCode;
+
+  @override
+  String toString() => 'AlreadyGone';
 }
 
 final class FoldedInto extends RemovalCause {
@@ -1342,7 +1190,7 @@ final class _Edit {
   final Map<int, AttemptFact> attempts;
   int nextAttempt;
   int nextRead;
-  BaseFacts base;
+  Evidence base;
   StrategyFacts strategy;
   QueueSession session;
   final _IndexEdit index;
@@ -1418,7 +1266,6 @@ final class _Edit {
   int get lastRead => nextRead - 1;
 
   Stepped done() {
-    _remember(this);
     _settle(this);
     return Stepped(
       CloudQueue._(
@@ -1437,12 +1284,18 @@ final class _Edit {
   }
 }
 
+CloudQueue _remembered(CloudQueue queue, DateTime now) {
+  if (queue._index.firstForgetting case final first?
+      when !now.isBefore(first)) {
+    final edit = _Edit(queue, now);
+    _remember(edit);
+    return edit.done().queue;
+  }
+  return queue;
+}
+
 void _remember(_Edit edit) {
-  final derived = _derive(edit.original, edit.now);
-  if (derived.nextExpiry case final next? when edit.now.isBefore(next)) return;
-  for (final MapEntry(key: id, value: deadline) in derived.deadlines.entries) {
-    derivationWork.visits++;
-    if (edit.now.isBefore(deadline)) continue;
+  for (final id in edit.index.forgottenBy(edit.now)) {
     if (edit.index.byId[id] case final PendingOp entry
         when entry.memory is Remembered) {
       edit.put(entry.copyWith(memory: Forgotten(afterRead: edit.lastRead)));
@@ -1454,17 +1307,33 @@ void _settle(_Edit edit) {
   final answered = edit.index.answered;
   final candidates = <String>{};
   final pageDeletes = <String>{};
+  bool deleteNotAnswered(String id) => switch (edit.index.byId[id]) {
+    PendingOp(
+      op: ElementDeleteOp() || LineupGroupDeleteOp(),
+      answer: NotAnswered(),
+    ) =>
+      true,
+    _ => false,
+  };
   void consider(Iterable<_Slot> slots) {
     for (final (_, id) in slots) {
       derivationWork.visits++;
-      if (answered.contains(id)) candidates.add(id);
+      if (answered.contains(id) || deleteNotAnswered(id)) candidates.add(id);
     }
   }
 
   if (edit.change.everything) {
     candidates.addAll(answered);
+    for (final entry in edit.entries) {
+      if (deleteNotAnswered(entry.id)) candidates.add(entry.id);
+    }
   } else {
-    candidates.addAll(edit.change.touched.where(answered.contains));
+    for (final id in edit.change.touched) {
+      if (answered.contains(id) || deleteNotAnswered(id)) candidates.add(id);
+      if (edit.index.byId[id] case PendingOp(op: PageDeleteOp())) {
+        pageDeletes.add(id);
+      }
+    }
     for (final target in edit.change.targets) {
       consider(edit.index.underOf(target));
     }
@@ -1513,7 +1382,7 @@ void _settle(_Edit edit) {
         revision,
         afterRead,
       ),
-      NotAnswered() => _lostDeleteSettled(edit, entry),
+      NotAnswered() => _notAnsweredSettled(edit, entry),
       AnsweredRefused() => null,
     };
     if (cause != null) edit.remove(entry.id, cause);
@@ -1537,50 +1406,70 @@ void _settle(_Edit edit) {
   }
 }
 
-RemovalCause? _lostDeleteSettled(_Edit edit, PendingOp entry) {
-  if (entry.op case PageDeleteOp(:final pagePublicId)) {
-    final sent = [
-      for (final number in edit.index.attemptsByOp[entry.id] ?? const <int>[])
-        ?edit.attempts[number],
-    ];
-    if (sent.isEmpty || sent.any((attempt) => attempt.outcome is AttemptOpen)) {
-      return null;
-    }
-    final after = sent
-        .map((attempt) => attempt.afterRead)
-        .reduce((a, b) => a > b ? a : b);
-    if (edit.base.pageGoneAfter(pagePublicId, after)) return const SeenInBase();
-  }
-  return null;
+RemovalCause? _notAnsweredSettled(_Edit edit, PendingOp entry) {
+  final sent = [
+    for (final number in edit.index.attemptsByOp[entry.id] ?? const <int>[])
+      ?edit.attempts[number],
+  ];
+  if (sent.any((attempt) => attempt.outcome is AttemptOpen)) return null;
+  final after = sent.fold(
+    _later(edit.session.readsAfter, edit.lastRead - 1),
+    (latest, attempt) => _later(latest, attempt.afterRead),
+  );
+  final claim = switch (entry.op) {
+    PageDeleteOp(:final pagePublicId) when sent.isNotEmpty => PageIsGone(
+      pagePublicId,
+      after: after,
+    ),
+    ElementDeleteOp() || LineupGroupDeleteOp()
+        when edit.index.underOf(targetOf(entry.op)).first.$2 == entry.id =>
+      RowIsGone(
+        targetOf(entry.op),
+        onPage: _authoredPage(entry.scope),
+        after: after,
+      ),
+    _ => null,
+  };
+  if (claim == null || edit.base.proves(claim) is! Proven) return null;
+  return entry.op is PageDeleteOp ? const SeenInBase() : const AlreadyGone();
+}
+
+Claim settlementOf(PendingOp entry, int revision, int afterRead) {
+  final target = targetOf(entry.op);
+  return switch (entry.scope) {
+    Moving(:final to) => RowShownOn(
+      target,
+      revision: revision,
+      page: to,
+      after: afterRead,
+    ),
+    _ => RowShown(
+      target,
+      revision: revision,
+      lookIn: _authoredPage(entry.scope),
+      after: afterRead,
+    ),
+  };
 }
 
 RemovalCause? _settledAt(
-  BaseFacts base,
+  Evidence base,
   PendingOp entry,
   int revision,
   int afterRead,
 ) {
-  if (_pagesOf(entry).any((page) => base.pageGoneAfter(page, afterRead))) {
+  final pages = switch (entry.scope) {
+    Moving(:final to) => {to},
+    _ => _pagesOf(entry),
+  };
+  if (pages.any(
+    (page) => base.proves(PageIsGone(page, after: afterRead)) is Proven,
+  )) {
     return const SeenInBase();
   }
-  final evidence = base.evidence(
-    targetOf(entry.op),
-    authoredOn: _authoredPage(entry.scope),
-  );
-  final shown = switch ((entry.scope, evidence)) {
-    (Moving(:final to), RowSeen(revision: final at, :final read, :final page))
-        when page == to =>
-      at >= revision || startedAfter(read, afterRead),
-    (Moving(), _) => false,
-    (_, RowSeen(revision: final at, :final read)) =>
-      at >= revision || startedAfter(read, afterRead),
-    (_, RowUnreadable(:final read) || RowAbsent(:final read)) => startedAfter(
-      read,
-      afterRead,
-    ),
-    (_, null) => false,
-  };
-  return shown ? const SeenInBase() : null;
+  return base.proves(settlementOf(entry, revision, afterRead)) is Proven
+      ? const SeenInBase()
+      : null;
 }
 
 StrategyOp sendable(CloudQueue queue, PendingOp entry) {
@@ -1593,11 +1482,11 @@ StrategyOp sendable(CloudQueue queue, PendingOp entry) {
   }
   final sent = sendForm(entry.op, entry.policy);
   final target = targetOf(sent);
-  final revision = switch (queue.base.evidence(target)) {
-    RowSeen(:final revision) => revision,
-    RowUnreadable() ||
-    RowAbsent() ||
-    null => _acceptedRevisionBefore(queue, entry, target),
+  final revision = switch (queue.base.proves(RowRevision(target, after: 0))) {
+    ProvenAt(:final revision) => revision,
+    Proven() ||
+    Disproven() ||
+    Unproven() => _acceptedRevisionBefore(queue, entry, target),
   };
   return revision == null ? sent : rebased(sent, revision);
 }
@@ -1616,85 +1505,8 @@ int? _acceptedRevisionBefore(CloudQueue queue, PendingOp entry, Target target) {
   return null;
 }
 
-BaseFacts _withBase(BaseFacts base, ArrivedBase arrived, int read) {
-  final sightings = {...base.sightings};
-  final pageContent = {...base.pageContent};
-  final notFound = {...base.notFound};
-  var header = base.header;
-  void seen(Target target, Row row, {String? page, String? digest}) {
-    if ((sightings[target]?.read ?? 0) > read) return;
-    sightings[target] = switch (revisionOfRow(row)) {
-      final revision? => RowSeen(
-        read: read,
-        revision: revision,
-        digest: digest ?? rowDigest(row),
-        page: page,
-        life: lifeOfRow(row),
-        payloadVersion: switch (row) {
-          ReadableElementRow(:final payload) => payload.payloadVersion,
-          ReadableLineupGroupRow(:final payload) => payload.payloadVersion,
-          _ => null,
-        },
-      ),
-      null => RowUnreadable(read: read, page: page),
-    };
-  }
-
-  switch (arrived) {
-    case HeaderRead(:final strategy, :final pages, :final settings):
-      seen(
-        const StrategyTarget(),
-        strategy,
-        digest: strategyDigest(strategy, pages),
-      );
-      for (final page in pages) {
-        seen(PageTarget(page.publicId), page);
-      }
-      for (final row in settings) {
-        seen(SettingsTarget(row.pagePublicId), row);
-      }
-      if ((header?.read ?? 0) <= read) {
-        header = HeaderListing(
-          read: read,
-          pages: {for (final page in pages) page.publicId},
-          settings: {for (final row in settings) row.pagePublicId},
-        );
-      }
-    case PageRead(:final page, :final elements, :final lineupGroups):
-      final id = page.publicId;
-      for (final row in elements) {
-        seen(ElementTarget(row.publicId), row, page: id);
-      }
-      for (final row in lineupGroups) {
-        seen(LineupTarget(row.publicId), row, page: id);
-      }
-      if ((pageContent[id]?.read ?? 0) <= read) {
-        pageContent[id] = ContentRead(
-          read: read,
-          digests: liveContentOn([...elements, ...lineupGroups], id),
-          present: {
-            for (final row in elements) ElementTarget(row.publicId),
-            for (final row in lineupGroups) LineupTarget(row.publicId),
-          },
-        );
-      }
-    case PageGone(:final pagePublicId):
-      if ((notFound[pagePublicId]?.read ?? 0) <= read) {
-        notFound[pagePublicId] = RowAbsent(read: read);
-      }
-    case StrategyGone():
-      break;
-  }
-  return BaseFacts(
-    sightings: sightings,
-    pageContent: pageContent,
-    header: header,
-    notFound: notFound,
-  );
-}
-
 Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
-  final edit = _Edit(queue, now);
+  final edit = _Edit(_remembered(queue, now), now);
   switch (event) {
     case UserEdited(edit: final change):
       return _userEdited(edit, change, now);
@@ -1814,7 +1626,11 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
       if (read < 1 || read >= edit.nextRead) {
         return NotApplicable(NoSuchRead(read));
       }
-      edit.base = _withBase(edit.base, base, read);
+      final taken = edit.base.take(base, read);
+      edit.base = taken.evidence;
+      if (taken.changes.isNotEmpty) {
+        edit.effects.add(BaseRowsChanged(taken.changes));
+      }
       switch (base) {
         case HeaderRead():
           edit.change.everything = true;
@@ -1907,7 +1723,7 @@ bool _foldableHold(Hold hold, Map<String, EntryView> views) => switch (hold) {
     _ => false,
   },
   UntilRetryTime() => true,
-  BehindEntry() || AwaitingRead() || AwaitingBase() => false,
+  BehindEntry() || AwaitingProof() || AwaitingBase() => false,
 };
 
 Step _claim(
@@ -1976,10 +1792,6 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
   }
   if (entry.answer is! NotAnswered) return edit.done();
   final afterRead = edit.lastRead;
-  final at = [
-    for (final number in edit.index.attemptsByOp[entry.id] ?? const <int>[])
-      ?edit.attempts[number]?.at,
-  ].fold(fact.at, (first, sent) => sent.isBefore(first) ? sent : first);
   edit.put(
     entry.copyWith(
       answer: switch (answer) {
@@ -1987,24 +1799,17 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
           revision,
           AppliedBy.thisClient,
           afterRead: afterRead,
-          at: at,
         ),
         NoopAnswer(
           :final revision,
           replay: NoopReplay.appliedWhenFirstReceived,
         ) =>
-          AnsweredApplied(
-            revision,
-            AppliedBy.thisClient,
-            afterRead: afterRead,
-            at: at,
-          ),
+          AnsweredApplied(revision, AppliedBy.thisClient, afterRead: afterRead),
         NoopAnswer(:final revision, replay: NoopReplay.notApplied) =>
           AnsweredApplied(
             revision,
             AppliedBy.alreadyThere,
             afterRead: afterRead,
-            at: at,
           ),
         NoopWithoutRevision() => const AnsweredNothingToDo(),
         RejectedAnswer(:final reason, :final current) => AnsweredRefused(

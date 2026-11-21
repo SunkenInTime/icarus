@@ -144,9 +144,15 @@ void main() {
       final earlier = client.startRead();
       final later = client.startRead();
       client.arrive(pageReadOf(changed, 'page-a'), read: later);
-      final before = client.queue.base.evidence(const ElementTarget('e1'));
+      final before = client.queue.base;
       client.arrive(pageReadOf(initialRows(), 'page-a'), read: earlier);
-      expect(client.queue.base.evidence(const ElementTarget('e1')), before);
+      expect(client.queue.base, before);
+      expect(
+        client.queue.base.proves(
+          const RowRevision(ElementTarget('e1'), after: 0),
+        ),
+        isA<ProvenAt>().having((proof) => proof.revision, 'revision', 2),
+      );
     });
 
     test('a later read replaces an earlier one even with a lower '
@@ -158,8 +164,10 @@ void main() {
       );
       client.read(initialRows(), pages: ['page-a']);
       expect(
-        client.queue.base.evidence(const ElementTarget('e1')),
-        isA<RowSeen>().having((seen) => seen.revision, 'revision', 1),
+        client.queue.base.proves(
+          const RowRevision(ElementTarget('e1'), after: 0),
+        ),
+        isA<ProvenAt>().having((proof) => proof.revision, 'revision', 1),
       );
     });
 
@@ -181,8 +189,10 @@ void main() {
         ),
       );
       expect(
-        client.queue.base.evidence(const ElementTarget('e2')),
-        isA<RowAbsent>(),
+        client.queue.base.proves(
+          const RowIsGone(ElementTarget('e2'), onPage: 'page-a', after: 0),
+        ),
+        isA<Proven>(),
       );
       client.arrive(
         HeaderRead(
@@ -198,10 +208,9 @@ void main() {
         ),
       );
       expect(
-        client.queue.base.evidence(const PageTarget('page-b')),
-        isA<RowAbsent>(),
+        client.queue.base.proves(const PageIsGone('page-b', after: 0)),
+        isA<Proven>(),
       );
-      expect(client.queue.base.pageGoneAfter('page-b', 0), isTrue);
     });
 
     test('a read number not yet issued is refused', () {
@@ -235,8 +244,10 @@ void main() {
       ),
     );
     expect(
-      client.queue.base.evidence(const ElementTarget('e1')),
-      isA<RowSeen>().having((seen) => seen.revision, 'revision', 5),
+      client.queue.base.proves(
+        const RowRevision(ElementTarget('e1'), after: 0),
+      ),
+      isA<ProvenAt>().having((proof) => proof.revision, 'revision', 5),
     );
   });
 
@@ -481,7 +492,8 @@ void main() {
       );
     });
 
-    test('no row waits for evidence of absence instead of assuming it', () {
+    test('no row waits for evidence of absence instead of assuming it, and a '
+        'delete of a row a read shows absent is settled', () {
       final server = withOp(initialRows(), pageAdd('add', 'page-c'));
       final client = Client(base: server);
       client.queue = CloudQueue(
@@ -506,14 +518,14 @@ void main() {
         attempts: const {},
         nextAttempt: 1,
         nextRead: client.queue.nextRead,
-        base: BaseFacts.none,
+        base: Evidence.none,
         strategy: StrategyFacts.fresh,
         session: client.queue.session,
       );
-      expect(client.view('x').holds, [const AwaitingRead(PageNeed('page-c'))]);
+      expect(client.view('x').holds, [awaitingRead('page-c')]);
       client.read(server, pages: ['page-c']);
-      expect(client.view('x').holds, isEmpty);
-      expect(client.view('x').go, isA<Free>());
+      expect(client.queue.entry('x'), isNull);
+      expect(client.effects, contains(const OpRemoved('x', AlreadyGone())));
     });
 
     test('an edit always records its field base; the policy only decides '
@@ -593,7 +605,7 @@ void main() {
 
     test('a read from before the window passed is not enough', () {
       final client = lostDelete(online: false);
-      expect(client.view('x').holds, [const AwaitingRead(PageNeed('page-a'))]);
+      expect(client.view('x').holds, [awaitingRead('page-a')]);
     });
 
     test('a row read as authored after the window is reissued under a fresh '
@@ -760,9 +772,7 @@ void main() {
       ]) {
         final (client, attempt) = deletedAndPutBack();
         client.must(OpAnswered(attempt, answer));
-        expect(client.view('back').holds, [
-          const AwaitingRead(PageNeed('page-a')),
-        ]);
+        expect(client.view('back').holds, [awaitingRead('page-a')]);
         client.read(deleted, pages: ['page-a']);
         expect(client.queue.entry('del'), isNotNull);
         expect(client.view('back').go, isA<Free>());

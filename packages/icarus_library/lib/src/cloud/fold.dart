@@ -1,4 +1,4 @@
-import '../json.dart';
+import '../field_merge.dart';
 import '../ops.dart';
 
 sealed class Folding {
@@ -20,23 +20,6 @@ bool _sameFields(FieldMerge first, FieldMerge then) =>
     then.fields.toSet().containsAll(first.fields) &&
     (first.base == null) == (then.base == null);
 
-Map<String, Object?> _named(
-  JsonObject into,
-  JsonObject from,
-  Iterable<String> fields,
-) {
-  final data = into.toJson();
-  for (final field in fields) {
-    if (field == placeField) continue;
-    if (from.containsKey(field)) {
-      data[field] = plainJson(from[field]);
-    } else {
-      data.remove(field);
-    }
-  }
-  return data;
-}
-
 Folding fold(StrategyOp first, StrategyOp then) => switch ((first, then)) {
   (
     final ElementPatchOp a &&
@@ -53,7 +36,7 @@ Folding fold(StrategyOp first, StrategyOp then) => switch ((first, then)) {
         opId: b.opId,
         elementPublicId: a.elementPublicId,
         expectedElementRevision: a.expectedElementRevision,
-        payload: into.withData(_named(into.data, from.data, am.fields)),
+        payload: elementWithNamedFields(into, from, am),
         sortIndex: am.fields.contains(placeField) ? b.sortIndex : a.sortIndex,
         merge: am,
       ),
@@ -68,15 +51,18 @@ Folding fold(StrategyOp first, StrategyOp then) => switch ((first, then)) {
           a.lineupPublicId == b.lineupPublicId &&
           a.pagePublicId == null &&
           b.pagePublicId == null =>
-    FoldedOp(
-      LineupGroupPatchOp(
-        opId: b.opId,
-        lineupPublicId: a.lineupPublicId,
-        expectedLineupRevision: a.expectedLineupRevision,
-        payload: into.withData(_named(into.data, from.data, am.fields)),
-        sortIndex: am.fields.contains(placeField) ? b.sortIndex : a.sortIndex,
-        merge: am,
+    switch (lineupWithNamedFields(into, from, am)) {
+      Merged(value: final payload) => FoldedOp(
+        LineupGroupPatchOp(
+          opId: b.opId,
+          lineupPublicId: a.lineupPublicId,
+          expectedLineupRevision: a.expectedLineupRevision,
+          payload: payload,
+          sortIndex: am.fields.contains(placeField) ? b.sortIndex : a.sortIndex,
+          merge: am,
+        ),
       ),
-    ),
+      WriteWhole() || MergeConflict() => const KeptApart(),
+    },
   _ => const KeptApart(),
 };

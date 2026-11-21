@@ -486,6 +486,18 @@ final class NoSettingsStored extends SettingsOnPage {
   const NoSettingsStored();
 }
 
+sealed class PageContentState {
+  const PageContentState();
+}
+
+final class ContentShown extends PageContentState {
+  const ContentShown();
+}
+
+final class ContentNotRead extends PageContentState {
+  const ContentNotRead();
+}
+
 final class PageContent {
   PageContent({
     required this.page,
@@ -496,6 +508,7 @@ final class PageContent {
     required Iterable<UnplacedRow> unplaced,
     required Iterable<ForeignName> foreignNames,
     this.sync = const LocalStrategy(),
+    this.content = const ContentShown(),
   }) : elements = List.unmodifiable(elements),
        lineupGroups = List.unmodifiable(lineupGroups),
        unknownKinds = List.unmodifiable(unknownKinds),
@@ -510,6 +523,7 @@ final class PageContent {
   final List<UnplacedRow> unplaced;
   final List<ForeignName> foreignNames;
   final StrategySync sync;
+  final PageContentState content;
 }
 
 sealed class LibraryState {

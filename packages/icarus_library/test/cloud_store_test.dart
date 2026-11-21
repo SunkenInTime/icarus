@@ -125,7 +125,8 @@ void main() {
       expect(counts.deleted, isEmpty);
     });
 
-    test('a claim writes its attempt, the counters and the summary', () async {
+    test('a claim writes its attempt, the library\'s numbers and the '
+        'summary', () async {
       final (store, counts) = await opened();
       await recordAll(store, [
         BatchClaimed(clientId: clientId, opIds: ['add7'], at: fixedClock()),
@@ -134,7 +135,7 @@ void main() {
         counts.written.map((write) => write.$2),
         unorderedEquals([
           'attempt/${(1).toString().padLeft(16, '0')}',
-          'counters',
+          'numbers',
           summaryName(strategyId),
         ]),
       );
@@ -183,7 +184,23 @@ void main() {
   });
 
   group('store rules', () {
-    test('a page read supplies content only', () async {
+    test('a local strategy is never put over a cloud strategy', () async {
+      final storage = MemoryStorage();
+      final store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      final before = storage.contents;
+      expect(
+        await store.putStrategy(initialRows()),
+        isA<Refused<LibraryEdited, LibraryRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<KeptInTheCloud>(),
+        ),
+      );
+      expect(sameContents(before, storage.contents), isTrue);
+    });
+
+    test('a page read supplies its page row and its content', () async {
       final storage = MemoryStorage();
       final store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
@@ -204,7 +221,7 @@ void main() {
         BaseArrived(pageReadOf(renamed, 'page-a'), read: read),
       ]);
       final page = pageOf(await store.readPage(strategyId, 'page-a'));
-      expect((page.page as LivePage).name, 'Page 1');
+      expect((page.page as LivePage).name, 'Renamed');
       expect(elementOn(page, 'e1'), renamed.element('e1'));
     });
 
@@ -342,7 +359,10 @@ void main() {
         await store.record(strategyId, [const ReadStarted()]),
         isA<Refused<Recorded, CommitRefusal>>(),
       );
-      expect(sameContents(disk.contents, contents), isTrue);
+      expect(
+        sameContents({area: disk.contents[area]!}, {area: contents[area]!}),
+        isTrue,
+      );
       expect(
         listOf(store).strategies.single.sync,
         isA<KeptInCloud>().having(
@@ -402,21 +422,15 @@ void main() {
       await withEntryText(entryText({'op': movePatch('good').toJson()}));
     });
 
-    test('an attempt, the counters, the facts or evidence it cannot '
-        'read', () async {
-      for (final name in [
-        AttemptName(1).name,
-        'counters',
-        'cloud',
-        'read/header',
-      ]) {
+    test('an attempt, the facts or evidence it cannot read', () async {
+      for (final name in [AttemptName(1).name, 'cloud', 'read/header']) {
         await expectHeld(name, '{"version":2}');
       }
     });
 
     test('only an explicit discard of unsent work lets it go, and removing '
         'the area as unreadable is refused without one', () async {
-      final (store, disk, _) = await withRow('counters', '{"version":2}');
+      final (store, disk, _) = await withRow('cloud', '{"version":2}');
       await store.readStrategy(strategyId);
       final discarded = await store.discardUnreadableQueue(
         strategyId,
@@ -450,8 +464,8 @@ void main() {
     expect(cloud.queue.nextAttempt, sent.attempt + 1);
   });
 
-  test('opening a cloud strategy reads its queue in three listings and two '
-      'reads besides the strategy itself', () async {
+  test('opening a cloud strategy reads its queue in three listings and one '
+      'read besides the strategy itself', () async {
     final storage = MemoryStorage();
     var store = await openCloudStore(MemoryEngine(storage));
     await addCloud(store, initialRows());
@@ -463,11 +477,7 @@ void main() {
     strategyOf(await store.readStrategy(strategyId));
     expect(
       counts.reads,
-      unorderedEquals([
-        (area, 'strategy'),
-        (area, 'cloud'),
-        (area, 'counters'),
-      ]),
+      unorderedEquals([(area, 'strategy'), (area, 'cloud')]),
     );
     expect(counts.keyListings, [(area, '')]);
     expect(

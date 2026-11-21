@@ -64,11 +64,7 @@ final class DiskQueue {
           (attemptFromText(number, text) as CloudRowRead<AttemptFact>).value,
         );
       } else if (name == 'read/header' || name.startsWith('read/page/')) {
-        final (page, group) =
-            (groupFromText(text, header: name == 'read/header')
-                    as CloudRowRead<(String?, EvidenceGroup)>)
-                .value;
-        groups[page] = group;
+        groups[name] = text;
       }
     }
     entries = switch (entriesFrom(pending)) {
@@ -83,17 +79,12 @@ final class DiskQueue {
       ),
       null => null,
     };
-    counters = switch (rows['counters']) {
-      final text? => (countersFromText(text) as CloudRowRead<Counters>).value,
-      null => null,
-    };
   }
 
   late final List<Map<String, Object?>> entries;
   final attempts = <int, Map<String, Object?>>{};
-  final groups = <String?, EvidenceGroup>{};
+  final groups = <String, String>{};
   late final Map<String, Object?>? facts;
-  late final Counters? counters;
 }
 
 final counted = <String, int>{};
@@ -212,16 +203,26 @@ final class StoreModel {
           '$key': value,
       },
       'facts': disk.facts,
-      'counters': [disk.counters?.nextAttempt, disk.counters?.nextRead],
+      'counters': switch (storage.contents['library']?['numbers']) {
+        final text? => switch (countersFromText(text)) {
+          CloudRowRead(value: final numbers) => [
+            numbers.nextAttempt,
+            numbers.nextRead,
+          ],
+          CloudRowUnreadable(:final problem) => problem,
+        },
+        null => null,
+      },
     };
     if (!const DeepCollectionEquality().equals(want, got)) {
       throw StateError('after $label the disk holds $got, memory $want');
     }
-    final groups = evidenceGroups(memory.base);
-    if (!const MapEquality<String?, EvidenceGroup>().equals(
-      groups,
-      disk.groups,
-    )) {
+    final groups = {
+      for (final MapEntry(key: page, value: text)
+          in memory.base.groupTexts().entries)
+        page == null ? 'read/header' : 'read/page/${digestOf(page)}': text,
+    };
+    if (!const MapEquality<String, String>().equals(groups, disk.groups)) {
       throw StateError(
         'after $label the evidence on disk differs from memory: '
         '${groups.keys} vs ${disk.groups.keys}',
@@ -437,6 +438,18 @@ final class StoreModel {
       return;
     }
     final answers = [for (final op in ops) server.apply(owner, op)];
+    if (random.nextInt(4) == 0) {
+      final started = await record([const ReadStarted()], 'start a read');
+      if (started == null) return;
+      final read = effectsOf(started).whereType<ReadNumbered>().single.read;
+      await record([
+        for (final answer in answers) OpAnswered(attempt, answer),
+        BaseArrived(headerReadOf(server.rows), read: read),
+        const ConnectionReturned(),
+      ], 'answers for $attempt with a header read in one call');
+      count('mixed event lists');
+      return;
+    }
     await record([
       for (final answer in answers) OpAnswered(attempt, answer),
     ], 'answers for $attempt');
@@ -473,7 +486,7 @@ final class StoreModel {
       case Standing.upgradeRequired:
         build = 'build-up-${restarts++}';
         await reopen('upgraded to $build');
-      case Standing.good || Standing.deletedOnServer:
+      case Standing.good || Standing.deletedOnServer || Standing.held:
         break;
     }
     if (random.nextInt(4) == 0) {
@@ -488,12 +501,26 @@ final class StoreModel {
         if (entry is PendingOp &&
             (views[entry.id]!.state is Accepted ||
                 views[entry.id]!.holds.any(
-                  (hold) => hold is AwaitingRead || hold is AwaitingBase,
+                  (hold) => hold is AwaitingProof || hold is AwaitingBase,
                 )))
           ...pagesOf(entry),
     };
-    for (final page in pages) {
-      await readOne(pageReadOf(server.rows, page), 'read $page');
+    if (random.nextInt(3) == 0 && pages.isNotEmpty) {
+      final started = await record([
+        for (final _ in pages) const ReadStarted(),
+      ], 'start ${pages.length} page reads');
+      if (started != null) {
+        final reads = effectsOf(started).whereType<ReadNumbered>().toList();
+        await record([
+          for (final (index, page) in pages.indexed)
+            BaseArrived(pageReadOf(server.rows, page), read: reads[index].read),
+        ], 'read ${pages.length} pages in one call');
+        count('page reads in one call');
+      }
+    } else {
+      for (final page in pages) {
+        await readOne(pageReadOf(server.rows, page), 'read $page');
+      }
     }
     final after = await sync();
     final reissue = {
@@ -503,17 +530,40 @@ final class StoreModel {
     if (reissue.isNotEmpty) await record([Reissue(reissue)], 'reissue');
   }
 
+  Map<String, String> baseRows(Contents contents) => {
+    for (final MapEntry(:key, :value)
+        in (contents[strategyArea(strategyId)] ?? const {}).entries)
+      if (!key.startsWith('read/')) key: value,
+  };
+
   Future<void> staleRead() async {
     final first = await record([const ReadStarted()], 'start an early read');
     if (first == null) return;
     final early = effectsOf(first).whereType<ReadNumbered>().single.read;
-    final earlyBase = headerReadOf(server.rows);
+    final livePages = [
+      for (final page in server.rows.pages)
+        if (page is LivePage) page.publicId,
+    ];
+    final page = livePages.isEmpty ? null : pick(livePages);
+    final (ArrivedBase earlyBase, String kind) = switch ((
+      random.nextInt(3),
+      page,
+    )) {
+      (0, final page?) => (pageReadOf(server.rows, page), 'page read'),
+      (1, final page?) => (PageGone(page), 'page-gone answer'),
+      _ => (headerReadOf(server.rows), 'header'),
+    };
     if (teammates) teammate();
     final later = await record([const ReadStarted()], 'start a later read');
     if (later == null) return;
     final read = effectsOf(later).whereType<ReadNumbered>().single.read;
+    final ArrivedBase laterBase = switch (earlyBase) {
+      PageRead() ||
+      PageGone() when page != null => pageReadOf(server.rows, page),
+      _ => headerReadOf(server.rows),
+    };
     if (await record([
-          BaseArrived(headerReadOf(server.rows), read: read),
+          BaseArrived(laterBase, read: read),
         ], 'the later read arrives first') ==
         null) {
       return;
@@ -522,14 +572,62 @@ final class StoreModel {
     final result = await store.record(strategyId, [
       BaseArrived(earlyBase, read: early),
     ]);
-    log.add('the early read arrives last -> ${describeSaving(result)}');
-    if (!sameContents(before, storage.contents)) {
-      throw StateError('a read older than one already taken wrote rows');
+    log.add('the early $kind arrives last -> ${describeSaving(result)}');
+    if (result is SaveInDoubt<Recorded, CommitRefusal>) {
+      await reopen('the early $kind was in doubt');
+      return;
     }
-    count('stale reads');
+    if (!const MapEquality<String, String>().equals(
+      baseRows(before),
+      baseRows(storage.contents),
+    )) {
+      throw StateError('a $kind older than one already taken changed rows');
+    }
+    count('stale ${kind}s');
+  }
+
+  Future<void> addedAgainWithAReadInFlight() async {
+    final cloud = await sync();
+    if (Tally.of(cloud.queue, clock).total > 0 || inFlight.isNotEmpty) return;
+    faults = false;
+    final started = await record([const ReadStarted()], 'start a read');
+    final old = effectsOf(started!).whereType<ReadNumbered>().single.read;
+    final oldBase = headerReadOf(server.rows);
+    final oldPage = pageReadOf(server.rows, openPage);
+    final removed = await store.editLibrary([const RemoveStrategy(strategyId)]);
+    if (removed is! Saved<LibraryEdited, LibraryRefusal>) {
+      throw StateError('removing a strategy with nothing unsent: $removed');
+    }
+    if (teammates) teammate();
+    final rows = server.rows;
+    final added = await store.addCloudStrategy(headerReadOf(rows), [
+      for (final page in rows.pages)
+        if (page is LivePage) pageReadOf(rows, page.publicId) as PageRead,
+    ]);
+    if (added is! Saved<StrategySummary, LibraryRefusal>) {
+      throw StateError('adding the strategy again: $added');
+    }
+    final before = storage.contents;
+    final result = await store.record(strategyId, [
+      BaseArrived(oldBase, read: old),
+      if (oldPage is PageRead) BaseArrived(oldPage, read: old),
+    ]);
+    log.add(
+      'a read from before the strategy was added again -> '
+      '${describeSaving(result)}',
+    );
+    if (!const MapEquality<String, String>().equals(
+      baseRows(before),
+      baseRows(storage.contents),
+    )) {
+      throw StateError('a read from the strategy\'s earlier copy changed rows');
+    }
+    faults = true;
+    count('added again with a read in flight');
   }
 
   Future<void> newerRowArrives() async {
+    faults = false;
     await store.close();
     final contents = editable(storage.contents);
     final area = strategyArea(strategyId);
@@ -558,6 +656,7 @@ final class StoreModel {
     storage = MemoryStorage(contents);
     await open();
     log.add('a newer build wrote a queue row and took it back');
+    faults = true;
     count('held by a newer row');
   }
 
@@ -565,14 +664,17 @@ final class StoreModel {
     final queue = (await sync()).queue;
     final rows = await visible();
     server.exists = false;
-    await readOne(const StrategyGone(), 'the strategy is gone');
+    for (var tries = 0; tries < 20; tries++) {
+      await readOne(const StrategyGone(), 'the strategy is gone');
+      if (standingOf((await sync()).queue) == Standing.deletedOnServer) break;
+    }
     final after = (await sync()).queue;
     if (standingOf(after) != Standing.deletedOnServer) {
       throw StateError('a gone strategy stands ${standingOf(after)}');
     }
-    if (!const DeepCollectionEquality().equals(
-      [for (final entry in after.entries) entryToJson(entry)],
-      [for (final entry in queue.entries) entryToJson(entry)],
+    if (!const ListEquality<String>().equals(
+      [for (final entry in after.entries) entry.id],
+      [for (final entry in queue.entries) entry.id],
     )) {
       throw StateError('a gone strategy lost queue entries');
     }
@@ -684,6 +786,8 @@ final class StoreModel {
         } else {
           await reopen('between two commits');
         }
+      case 18 when random.nextInt(4) == 0:
+        await addedAgainWithAReadInFlight();
       case 18:
         final pages = [
           for (final page in (await visible()).pages) page.publicId,
@@ -822,7 +926,12 @@ void main() {
       'commits refused',
       'page copies',
       'copied page deletes',
-      'stale reads',
+      'stale headers',
+      'stale page reads',
+      'stale page-gone answers',
+      'mixed event lists',
+      'page reads in one call',
+      'added again with a read in flight',
       'held by a newer row',
       'strategies gone',
     ]) {

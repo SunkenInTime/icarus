@@ -15,6 +15,7 @@ enum Kind {
   awaitingRead,
   oversized,
   changedUnseen,
+  payloadVersionChanged,
   deleteHeld,
   onDeletedPage,
   claimed,
@@ -40,6 +41,7 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
     (_, NeedsUser(:final reason)) => switch (reason) {
       Oversized() => Kind.oversized,
       ChangedUnseen() => Kind.changedUnseen,
+      PayloadVersionChanged() => Kind.payloadVersionChanged,
       ServerForgotAnswer() => Kind.serverForgotAnswer,
       OnDeletedPage() => Kind.onDeletedPage,
       DeleteHeld() => Kind.deleteHeld,
@@ -50,7 +52,7 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
         when view.holds.any((hold) => hold is BehindEntry) =>
       Kind.heldBehindEntry,
     (NeverSent() || AnswerUnknown(), Free())
-        when view.holds.any((hold) => hold is AwaitingRead) =>
+        when view.holds.any((hold) => hold is AwaitingProof) =>
       Kind.awaitingRead,
     (NeverSent() || AnswerUnknown(), Free())
         when view.holds.any((hold) => hold is AwaitingBase) =>
@@ -115,6 +117,35 @@ final rows = <Row>[
   Row('needs user: changed by someone else since the user saw it', () {
     final client = Client()..edit(elementDelete('x'));
     return client..read(withOp(initialRows(), movePatch('t', rotation: 90)));
+  }),
+  Row('needs user: written by another version since the user saw it', () {
+    final client = Client()
+      ..edit(movePatch('x', merge: FieldMerge(fields: ['position'])));
+    final e1 = initialRows().element('e1')! as LiveElement;
+    return client..read(
+      StrategyRowSet(
+        strategy: initialRows().strategy,
+        pages: initialRows().pages,
+        settings: initialRows().settings,
+        elements: [
+          for (final row in initialRows().elements)
+            if (row.publicId == 'e1')
+              LiveElement(
+                publicId: 'e1',
+                pagePublicId: 'page-a',
+                payload: ElementPayload(
+                  kind: e1.payload.kind,
+                  payloadVersion: 2,
+                  data: e1.payload.data.toJson(),
+                ),
+                sortIndex: e1.sortIndex,
+                revision: 2,
+              )
+            else
+              row,
+        ],
+      ),
+    );
   }),
   Row('needs user: page delete held, page changed', () {
     final client = Client()..edit(pageDelete('x', 'page-a'));
@@ -340,6 +371,8 @@ String outcome(Client before, Step result) {
             ReadNumbered(:final read) => 'numbers read $read',
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
+            BaseRowsChanged(:final changes) =>
+              'changes ${changes.length} base rows',
           },
         ),
       ];
@@ -390,6 +423,22 @@ String renderTable() {
     ..writeln(
       '`test/cloud_fold_test.dart` requires every other case to give what '
       'sending both gives.',
+    )
+    ..writeln()
+    ..writeln('## Known and accepted')
+    ..writeln()
+    ..writeln(
+      '- A checked page delete can land after a teammate added an element to '
+      'the page, because the server guards a page delete by the strategy\'s '
+      'revision only. That is '
+      '[#670](https://github.com/SunkenInTime/icarus/issues/670), a server '
+      'change; the queue does nothing about it.',
+    )
+    ..writeln(
+      '- An op whose answer was lost is sent again under the same op id before '
+      'any fresh read, as long as the server\'s 30 days have not passed. That '
+      'is safe: inside the window the server answers the same op id from '
+      'memory instead of applying it again.',
     );
   for (final row in rows) {
     final client = row.build();
@@ -433,7 +482,8 @@ void main() {
     }
   });
 
-  test('every kind of entry and every standing has a row', () {
+  test('every kind of entry and every standing the queue can reach has a '
+      'row', () {
     final kinds = <Kind>{};
     final standings = <Standing>{};
     for (final row in rows) {
@@ -443,7 +493,10 @@ void main() {
       standings.add(standingOf(client.queue));
     }
     expect(kinds, Kind.values.toSet());
-    expect(standings, Standing.values.toSet());
+    expect(standings, {
+      for (final standing in Standing.values)
+        if (standing != Standing.held) standing,
+    });
   });
 
   test('the table in $tablePath is the one the code gives', () {

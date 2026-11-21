@@ -367,7 +367,10 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
       effects: final made,
     )) {
       queue = next;
-      effects.addAll(made.map((effect) => '$effect'));
+      effects.addAll([
+        for (final effect in made)
+          if (effect is! BaseRowsChanged) '$effect',
+      ]);
       return made;
     }
     return const [];

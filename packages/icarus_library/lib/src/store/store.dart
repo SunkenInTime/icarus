@@ -19,6 +19,7 @@ import 'results.dart';
 import 'summary.dart';
 import '../cloud/codec.dart';
 import '../cloud/events.dart';
+import '../cloud/evidence.dart';
 import '../cloud/op_facts.dart';
 import '../cloud/pending.dart';
 import '../cloud/queue.dart';
@@ -314,7 +315,8 @@ final class LibraryStore {
   final _unplaced = <String, UnplacedRow>{};
   final _strategies = <String, LoadedStrategy>{};
   final _queues = <String, _LoadedQueue>{};
-  final _held = <String, List<UnreadableQueueRow>>{};
+  var _numbers = const Counters(nextAttempt: 1, nextRead: 1);
+  var _numbersStored = const Counters(nextAttempt: 1, nextRead: 1);
   final _unsaved = <String>{};
   final _changes = StreamController<StoreChange>.broadcast();
 
@@ -381,7 +383,7 @@ final class LibraryStore {
       FormatName() ||
       SummaryName() ||
       CloudName() ||
-      CountersName() ||
+      NumbersName() ||
       PendingName() ||
       AttemptName() ||
       HeaderReadName() ||
@@ -460,7 +462,7 @@ final class LibraryStore {
       case _PutEntry() ||
           _PutAttempt() ||
           _PutFacts() ||
-          _PutCounters() ||
+          _PutNumbers() ||
           _PutGroup():
         return _cloudChange(write);
     }
@@ -567,6 +569,14 @@ final class LibraryStore {
           }
         case final ForeignName name:
           foreign.add(name);
+        case NumbersName():
+          switch (countersFromText(value)) {
+            case CloudRowRead(value: final numbers):
+              _numbers = numbers;
+              _numbersStored = numbers;
+            case CloudRowUnreadable(:final problem):
+              return StorageFailed(WouldNotReadBack(libraryArea, key, problem));
+          }
         case _:
           break;
       }
@@ -1058,7 +1068,6 @@ final class LibraryStore {
     }
     _strategies.remove(digestOf(strategyPublicId));
     _queues.remove(digestOf(strategyPublicId));
-    _held.remove(digestOf(strategyPublicId));
     return const Unloaded();
   });
 
@@ -1394,6 +1403,9 @@ final class LibraryStore {
           :final failure,
         )) {
           return NotSaved(failure);
+        }
+        if (strategy.keeping == Keeping.cloud) {
+          return Refused(KeptInTheCloud(id));
         }
         if (_dropped(strategy) case final refusal?) {
           return Refused(refusal);
@@ -1865,10 +1877,28 @@ final class _LibraryEdit {
             _removedUnreadable.containsKey(digest)) {
           return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
         }
-        if (_summaryWithId(strategyPublicId) case StrategySummary(
-          sync: KeptInCloud(:final tally),
-        ) when tally.total > 0) {
-          return _Stop(Refused(CloudWorkOutstanding(strategyPublicId, tally)));
+        switch (await _store._strategy(strategyPublicId)) {
+          case Found(value: final strategy)
+              when strategy.keeping == Keeping.cloud:
+            switch (await _store._queueOf(strategy)) {
+              case _QueueLoaded(:final queue):
+                final tally = Tally.of(queue.current, _store._cloudNow());
+                if (tally.total > 0) {
+                  return _Stop(
+                    Refused(CloudWorkOutstanding(strategyPublicId, tally)),
+                  );
+                }
+              case _QueueHeld():
+                return _Stop(
+                  Refused(UnsentWorkInArea(StrategyRef(strategy.area))),
+                );
+              case _QueueNotRead(:final failure):
+                return _Stop(NotSaved(failure));
+              case _QueueRefused():
+                break;
+            }
+          case _:
+            break;
         }
         switch (await _header(strategyPublicId)) {
           case NotRead(:final failure):
@@ -1894,12 +1924,7 @@ final class _LibraryEdit {
           switch (await _store._lease.keys(ref.area, '')) {
             case StorageFailed(:final failure):
               return _Stop(NotSaved(failure));
-            case Done(:final value)
-                when value.any(
-                  (key) =>
-                      key.startsWith(pendingPrefix) ||
-                      key.startsWith(attemptPrefix),
-                ):
+            case Done(:final value) when value.any(_queueName):
               return _Stop(Refused(UnsentWorkInArea(ref)));
             case Done():
               break;
@@ -2070,7 +2095,6 @@ final class _LibraryEdit {
       _store._summaries.remove(digest);
       _store._strategies.remove(digest);
       _store._queues.remove(digest);
-      _store._held.remove(digest);
       _store._unreadable.remove(digest);
     }
     _store._summaries.addAll(_putSummaries);

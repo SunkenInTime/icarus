@@ -146,11 +146,11 @@ final class CloudName extends StoreName {
   String get name => 'cloud';
 }
 
-final class CountersName extends StoreName {
-  const CountersName();
+final class NumbersName extends StoreName {
+  const NumbersName();
 
   @override
-  String get name => 'counters';
+  String get name => 'numbers';
 }
 
 const placeDigits = 16;
@@ -236,9 +236,9 @@ StoreName readName(StoreArea area, String name) =>
         SummaryName(digest),
       (LibraryArea(), ['folder', final digest]) when _isDigest(digest) =>
         FolderName(digest),
+      (LibraryArea(), ['numbers']) => const NumbersName(),
       (StrategyArea(), ['strategy']) => const HeaderName(),
       (StrategyArea(), ['cloud']) => const CloudName(),
-      (StrategyArea(), ['counters']) => const CountersName(),
       (StrategyArea(), ['pending', final place]) when _place.hasMatch(place) =>
         PendingName(int.parse(place)),
       (StrategyArea(), ['attempt', final number])
