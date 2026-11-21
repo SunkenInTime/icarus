@@ -30,7 +30,7 @@ param(
   [string]$AccountsFile = (Join-Path $HOME '.agents\secrets\icarus\test-accounts.md'),
   [int]$TimeoutSeconds = 900,
   [string]$HiveStore,
-  [ValidateSet('off', 'shadow')] [string]$LibraryStore
+  [ValidateSet('off', 'shadow', 'mirror')] [string]$LibraryStore
 )
 $ErrorActionPreference = 'Stop'
 # New every run: the server refuses an item id another strategy holds.

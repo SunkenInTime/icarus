@@ -69,6 +69,7 @@ import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/strategy_folders.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
@@ -192,8 +193,8 @@ Future<void> main(List<String> args) async {
         guardedSignOutRequestProvider.overrideWith(
           (ref) => ref.watch(cloudSignOutRequestProvider),
         ),
-        if (storeLaunch.choice case final StoreSwitchShadow shadow)
-          libraryStoreSwitchProvider.overrideWithValue(shadow),
+        if (storeLaunch.choice case StoreSwitchShadow() || StoreSwitchMirror())
+          libraryStoreSwitchProvider.overrideWithValue(storeLaunch.choice),
       ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
@@ -290,16 +291,24 @@ Future<void> main(List<String> args) async {
       }
 
       final shadowStore = switch ((storeLaunch.choice, hiveDirectoryPath)) {
-        (StoreSwitchShadow(), final String directory)
+        (StoreSwitchShadow() || StoreSwitchMirror(), final String directory)
             when PlatformPolicy.current.allowsLocalLibrary =>
           (
             opening: appProviderContainer
                 .read(libraryStoreProvider.notifier)
                 .open(libraryStoreFile(directory)),
             directory: directory,
+            mode: switch (storeLaunch.choice) {
+              StoreSwitchMirror() => Mirroring(storeMirror()),
+              StoreSwitchShadow() || StoreSwitchOff() => const ShadowOnly(),
+            },
           ),
         _ => null,
       };
+      if (shadowStore
+          case (mode: Mirroring(:final mirror), opening: _, directory: _)) {
+        LocalLibrary.follower = mirror;
+      }
 
       // The cloud comes up degraded rather than not at all: a failure here
       // must never keep anyone from the library on this device.
@@ -352,12 +361,13 @@ Future<void> main(List<String> args) async {
           ),
         );
       }
-      if (shadowStore case (:final opening, :final directory)) {
+      if (shadowStore case (:final opening, :final directory, :final mode)) {
         closeLibraryStoreOnExit(appProviderContainer);
         appProviderContainer.read(shadowProvider.notifier).begin(
               opening: opening,
               firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
               hiveDirectory: directory,
+              mode: mode,
             );
       }
       if (driveBuild) startDrive();

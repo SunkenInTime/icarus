@@ -9,6 +9,7 @@ import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/store_check.dart';
+import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/startup/launch_clock.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:path/path.dart' as path;
@@ -25,6 +26,7 @@ final class StoreStepFailed implements Exception {
 String switchName(LibraryStoreSwitch choice) => switch (choice) {
       StoreSwitchOff() => 'off',
       StoreSwitchShadow() => 'shadow',
+      StoreSwitchMirror() => 'mirror',
     };
 
 Future<String> firstFrameLine(ProviderContainer c) async {
@@ -115,6 +117,9 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
               StrategyRowsNotEncodable(:final strategyId, :final notText) => [
                   'STORE not encodable $strategyId: $notText'
                 ],
+              StrategyWriteRefused(:final strategyId, :final reason) => [
+                  'STORE write refused $strategyId: $reason',
+                ],
               StrategyNotListed(:final strategyId) => [
                   'STORE not listed $strategyId',
                 ],
@@ -137,6 +142,8 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
                 'STORE folder missing $folderId',
               FolderUnreadableInStore(:final folderId, :final problem) =>
                 'STORE folder unreadable $folderId: $problem',
+              FolderWriteRefused(:final folderId, :final reason) =>
+                'STORE folder write refused $folderId: $reason',
               FolderNotInHive(:final folderId) =>
                 'STORE folder not in Hive $folderId',
             },
@@ -241,9 +248,10 @@ Future<List<String>> waitForShadowStore(
     'tookHiveVersion': _count<StrategyTookHiveVersion>(strategies),
     'removedWithHive': _count<StrategyRemovedWithHive>(strategies),
   };
+  final mirroring = c.read(shadowProvider.notifier).mode is Mirroring;
   final problems = [
     if (run.copy case ShadowCopyStopped(:final stop)) 'the copy stopped: $stop',
-    if (run.copy case ShadowCopyRaced(:final hiveWrites))
+    if (run.copy case ShadowCopyRaced(:final hiveWrites) when !mirroring)
       'Hive changed while the copy ran ($hiveWrites writes)',
     if (origin is StorageCreated &&
         strategies.any((strategy) =>
@@ -259,9 +267,9 @@ Future<List<String>> waitForShadowStore(
       StoreNotChecked(:final failure) => 'the check failed: '
           '${storageFailureWords(failure, StoreStep.read)} ($failure)',
     },
-    if (libraryChanged.isNotEmpty)
+    if (libraryChanged.isNotEmpty && !mirroring)
       'library boxes changed: ${libraryChanged.join(', ')}',
-    if (run.libraryBoxWrites > 0)
+    if (run.libraryBoxWrites > 0 && !mirroring)
       'the library boxes were written ${run.libraryBoxWrites} times',
     for (final MapEntry(:key, :value) in expected.entries)
       if (counts[key] != value) '$key is ${counts[key]}, expected $value',
@@ -292,4 +300,63 @@ Future<String?> closeStoreLine(ProviderContainer c) async {
           '${storageFailureWords(failure, StoreStep.release)} ($failure)',
     final other => 'FAIL STORE did not close: $other',
   };
+}
+
+String _describePhase(MirrorPhase phase) => switch (phase) {
+      MirrorWaitingForStore() => 'waiting for the store',
+      MirrorFollowing() => 'following saves',
+      MirrorHeld() => 'held',
+      MirrorStopped(:final stop) => 'stopped: $stop',
+    };
+
+String holdStore(ProviderContainer c) =>
+    switch (c.read(shadowProvider.notifier).mode) {
+      ShadowOnly() => throw StoreStepFailed(['the store is not mirroring']),
+      Mirroring(:final mirror) => () {
+          mirror.hold();
+          return 'STORE mirror ${_describePhase(mirror.phase)}';
+        }(),
+    };
+
+Future<List<String>> mirrorEndLines(ProviderContainer c) async {
+  final StoreMirror mirror;
+  switch (c.read(shadowProvider.notifier).mode) {
+    case ShadowOnly():
+      return const [];
+    case Mirroring(mirror: final following):
+      mirror = following;
+  }
+  final ready = switch (c.read(libraryStoreProvider)) {
+    final LibraryStoreReady ready => ready,
+    final other => throw StoreStepFailed(['the store is $other']),
+  };
+  switch (mirror.phase) {
+    case MirrorHeld():
+      return [
+        'STORE mirror held with ${mirror.pending} changes not written to the '
+            'store; the next start brings it up to date',
+      ];
+    case MirrorWaitingForStore() || MirrorStopped():
+      throw StoreStepFailed(['STORE mirror ${_describePhase(mirror.phase)}']);
+    case MirrorFollowing():
+      break;
+  }
+  final clock = Stopwatch()..start();
+  await mirror.drained().timeout(
+        const Duration(seconds: 120),
+        onTimeout: () => throw StoreStepFailed([
+          'STORE mirror did not drain in 120 s: ${mirror.pending} pending',
+        ]),
+      );
+  final drainedAfter = clock.elapsed;
+  final checkClock = Stopwatch()..start();
+  final check = await c.read(shadowProvider.notifier).checkAgain(ready);
+  final lines = [
+    'STORE mirror ${_describePhase(mirror.phase)}; ${mirror.batches} batches '
+        'written after saves; drained ${drainedAfter.inMilliseconds} ms after '
+        'the script ended',
+    ...describeCheck(check, checkClock.elapsed),
+  ];
+  if (check case StoreChecked(isExact: true)) return lines;
+  throw StoreStepFailed([...lines, 'the store differs from Hive']);
 }

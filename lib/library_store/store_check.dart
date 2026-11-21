@@ -4,6 +4,7 @@ import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/row_texts.dart';
+import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -74,6 +75,12 @@ final class StrategyRowsNotEncodable extends StrategyCheck {
   final RowsNotText notText;
 }
 
+final class StrategyWriteRefused extends StrategyCheck {
+  const StrategyWriteRefused(super.strategyId, this.reason);
+
+  final CopyRefusal reason;
+}
+
 final class StrategyNotListed extends StrategyCheck {
   const StrategyNotListed(super.strategyId);
 }
@@ -117,6 +124,12 @@ final class FolderUnreadableInStore extends FolderCheck {
   const FolderUnreadableInStore(super.folderId, this.problem);
 
   final String problem;
+}
+
+final class FolderWriteRefused extends FolderCheck {
+  const FolderWriteRefused(super.folderId, this.reason);
+
+  final CopyRefusal reason;
 }
 
 final class FolderNotInHive extends FolderCheck {
@@ -185,6 +198,8 @@ Future<StoreCheck> checkStoreAgainstHive(
   LibraryStore store, {
   required List<ForeignName> foreignNames,
   required Future<void> Function() breathe,
+  Map<String, CopyRefusal> strategiesRefused = const {},
+  Map<String, CopyRefusal> foldersRefused = const {},
 }) async {
   final strategies = <StrategyCheck>[];
   switch (await store.findStrategies()) {
@@ -210,6 +225,11 @@ Future<StoreCheck> checkStoreAgainstHive(
       case _Checked(:final checks):
         strategies.addAll(checks);
         notMirrored.addAll(checks.where((check) => check is! StrategySame));
+        if (strategiesRefused[expected.id] case final reason?) {
+          final refused = StrategyWriteRefused(expected.id, reason);
+          strategies.add(refused);
+          notMirrored.add(refused);
+        }
       case _NotRead(:final failure):
         return StoreNotChecked(failure);
     }
@@ -236,7 +256,11 @@ Future<StoreCheck> checkStoreAgainstHive(
     notMirrored: notMirrored,
     foreignNames: foreignNames,
     strategies: strategies,
-    folders: _checkFolders(hive.folders, list.folders),
+    folders: [
+      ..._checkFolders(hive.folders, list.folders),
+      for (final MapEntry(:key, :value) in foldersRefused.entries)
+        FolderWriteRefused(key, value),
+    ],
     unplaced: list.unplaced,
   );
 }

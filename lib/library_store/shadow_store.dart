@@ -15,6 +15,7 @@ import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_sqlite.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
+import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -114,6 +115,23 @@ final class ShadowNotOpened extends ShadowState {
   final LibraryStoreOpened opened;
 }
 
+sealed class ShadowMode {
+  const ShadowMode();
+}
+
+final class ShadowOnly extends ShadowMode {
+  const ShadowOnly();
+}
+
+final class Mirroring extends ShadowMode {
+  const Mirroring(this.mirror);
+
+  final StoreMirror mirror;
+}
+
+StoreMirror storeMirror() =>
+    StoreMirror(readHive: _hiveLibrary, breathe: _breathe);
+
 final shadowProvider = NotifierProvider<ShadowNotifier, ShadowState>(
   ShadowNotifier.new,
 );
@@ -136,16 +154,21 @@ class ShadowNotifier extends Notifier<ShadowState> {
   @override
   ShadowState build() => const ShadowIdle();
 
+  ShadowMode mode = const ShadowOnly();
+
   void begin({
     required Future<LibraryStoreOpened> opening,
     required Future<void> firstFrame,
     required String hiveDirectory,
-  }) =>
-      running = _run(
-        opening: opening,
-        firstFrame: firstFrame,
-        hiveDirectory: hiveDirectory,
-      );
+    required ShadowMode mode,
+  }) {
+    this.mode = mode;
+    running = _run(
+      opening: opening,
+      firstFrame: firstFrame,
+      hiveDirectory: hiveDirectory,
+    );
+  }
 
   Future<void> _run({
     required Future<LibraryStoreOpened> opening,
@@ -172,24 +195,28 @@ class ShadowNotifier extends Notifier<ShadowState> {
     final checkWatch = UiWatch();
     try {
       final copyClock = Stopwatch()..start();
-      final copy = await copyHiveIntoStore(
-        _hiveLibrary,
-        store,
-        writes: writes,
-        breathe: _breathe,
-        progress: (done, total) => state = ShadowCopying(done, total),
-      );
+      void progress(int done, int total) => state = ShadowCopying(done, total);
+      final copy = switch (mode) {
+        ShadowOnly() => await copyHiveIntoStore(
+            _hiveLibrary,
+            store,
+            writes: writes,
+            breathe: _breathe,
+            progress: progress,
+          ),
+        Mirroring(:final mirror) => await mirror.copyThenFollow(
+            store,
+            writes: writes,
+            progress: progress,
+          ),
+      };
+      if (mode case Mirroring(:final mirror)) await mirror.drained();
       final copyTook = copyClock.elapsed;
       final uiDuringCopy = copyWatch.stop();
       state = const ShadowChecking();
       checkWatch.start();
       final checkClock = Stopwatch()..start();
-      final check = await checkStoreAgainstHive(
-        _hiveLibrary(),
-        store,
-        foreignNames: foreignNames,
-        breathe: _breathe,
-      );
+      final check = await _check(store, foreignNames);
       final checkTook = checkClock.elapsed;
       final uiDuringCheck = checkWatch.stop();
       final after = await HiveFiles.of(Directory(hiveDirectory));
@@ -221,18 +248,41 @@ class ShadowNotifier extends Notifier<ShadowState> {
     }
   }
 
-  Future<StoreCheck> checkAgain(LibraryStoreReady ready) =>
+  Future<StoreCheck> checkAgain(LibraryStoreReady ready) async {
+    if (mode case Mirroring(:final mirror)) await mirror.drained();
+    return _check(ready.store, ready.foreignNames);
+  }
+
+  Future<StoreCheck> _check(
+    LibraryStore store,
+    List<ForeignName> foreignNames,
+  ) =>
       checkStoreAgainstHive(
         _hiveLibrary(),
-        ready.store,
-        foreignNames: ready.foreignNames,
+        store,
+        foreignNames: foreignNames,
         breathe: _breathe,
+        strategiesRefused: switch (mode) {
+          ShadowOnly() => const {},
+          Mirroring(:final mirror) => mirror.refusedStrategies,
+        },
+        foldersRefused: switch (mode) {
+          ShadowOnly() => const {},
+          Mirroring(:final mirror) => mirror.refusedFolders,
+        },
       );
 }
 
 void closeLibraryStoreOnExit(ProviderContainer container) {
   AppLifecycleListener(
     onExitRequested: () async {
+      if (container.read(shadowProvider.notifier).mode
+          case Mirroring(:final mirror)) {
+        await mirror.drained().timeout(
+              const Duration(seconds: 2),
+              onTimeout: () {},
+            );
+      }
       await container.read(libraryStoreProvider.notifier).close();
       return ui.AppExitResponse.exit;
     },
