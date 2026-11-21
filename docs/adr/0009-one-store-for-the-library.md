@@ -154,29 +154,37 @@ What decided it:
   way. The tests found two engine bugs, both fixed: a commit that failed after
   its log frames were written came back on the next open, and SQLite's quick
   check let a damaged file open with strategies missing.
-- **Costs**, on release builds (`bin/engine_costs.dart` ahead of time, and
-  `dart compile js -O4` in headless Chrome 157). The library holds 700
-  strategies (57 MiB on disk), one of them with 20 pages of 300 items whose
-  first page is half 1000-point drawings. Figures are medians of three runs
-  (each of 15 opens, 60 saves or 200 commits) on a Ryzen 7 5700U with a
-  Kingston NVMe drive, with other agents using it (load average 3 to 5); the
-  ext4 column is one run:
+- **Costs**, measured through the store on release builds
+  (`bin/engine_costs.dart` ahead of time, and `dart compile js -O4` in
+  headless Chrome 157). The library holds 700 strategies (60 MiB on disk),
+  one of them with 20 pages of 300 items whose first page is half 1000-point
+  drawings. Figures are medians of three runs (each of 15 opens, 60 saves or
+  200 moves) on a Ryzen 7 5700U with a Kingston NVMe drive, with other agents
+  using it (load average 3 to 13); the ext4 column is one run:
 
   | | Memory (floor) | SQLite, XFS | SQLite, ext4 | Memory in Chrome | IndexedDB, Chrome |
   | --- | --- | --- | --- | --- | --- |
-  | Cold start, list 700 strategies | 13.6 ms | 35.7 ms | 40.5 ms | 12.8 ms | 22.3 ms |
-  | Open the 20-page strategy | 21.3 ms | 20.7 ms | 21.2 ms | 15.6 ms | 49.3 ms |
-  | Cold read of a 300-item page | 163 ms | 159 ms | 176 ms | 168 ms | 195 ms |
-  | One commit shaped like a save (an element row and a summary, two areas): p50 / p95 | 0 ms | 5.3 / 6.6 ms | 1.8 / 2.3 ms | 0 ms | 2.1 / 2.8 ms |
-  | 200 such commits, each awaited: p50 / p95 | 0 ms | 5.4 / 7.9 ms | 1.4 / 2.1 ms | 0 ms | 2.0 / 4.2 ms |
-  | 200 such commits issued at once, all applied after | 1.1 ms | 1.18 s | 0.32 s | 2.0 ms | 0.40 s |
-  | Remove a 20-page, 6,000-item strategy in one commit | 0.01 ms | 14.8 ms | 7.8 ms | 0.1 ms | 50.2 ms |
+  | Cold start, list 700 strategies | 10.6 ms | 46.9 ms | 45.1 ms | 27.1 ms | 36.9 ms |
+  | Open the 20-page strategy | 14.8 ms | 14.4 ms | 14.0 ms | 16.1 ms | 52.7 ms |
+  | Cold read of a 300-item page | 168 ms | 179 ms | 169 ms | 193 ms | 245 ms |
+  | Save one moved item: p50 / p95 | 0.36 / 0.39 ms | 6.4 / 8.1 ms | 2.2 / 3.3 ms | 1.2 / 2.5 ms | 3.8 / 9.4 ms |
+  | Save one 1000-point drawing | 10.6 ms | 18.2 ms | 13.6 ms | 19.8 ms | 20.6 ms |
+  | 200 moves, each awaited: p50 / p95 | 0.34 / 0.35 ms | 5.8 / 7.4 ms | 2.0 / 3.8 ms | 1.2 / 2.8 ms | 3.6 / 4.7 ms |
+  | 200 moves issued at once, all saved after | 68 ms | 1.18 s | 0.46 s | 233 ms | 0.85 s |
+  | Remove the 20-page, 6,000-item strategy | 12.5 ms | 43.5 ms | 31.7 ms | 23.1 ms | 142 ms |
+  | List the 700 strategy areas (`areas`) | 0.18 ms | 1.05 ms | 1.28 ms | 0.4 ms | 105 ms |
 
-  A page read costs about the same on every engine because decoding 150
-  drawings dominates it. A save is one commit and one sync, so a save costs
-  one synced transaction; commits issued faster than that queue behind each
-  other, about 190 a second on the loaded XFS disk. macOS, where `fullfsync`
-  makes each sync slower, is not measured.
+  A save is one commit and one sync, so it costs one synced transaction, and
+  saves issued faster than that queue behind each other, about 170 a second
+  on the loaded XFS disk. A page read costs about the same on every engine,
+  because the engine's part of it is small: reading the page's 300 rows is
+  2.3 ms on SQLite and 44 ms on IndexedDB, and the rest is decoding them.
+  Under JavaScript, copying the decoded values into unmodifiable ones is
+  the largest part of that (164 to 271 ms timed on its own, against 22 to
+  27 ms for `jsonDecode`); on the VM `jsonDecode` is (110 ms against 46 ms).
+  Listing areas on IndexedDB walks a cursor one event per area, which is why
+  it costs 105 ms; the store calls it once after open. macOS, where
+  `fullfsync` makes each sync slower, is not measured.
 - **Size.** On Linux the release bundle grows by 1,801,745 bytes, the SQLite
   library itself, and the engine's Dart code adds 98,304 bytes to `libapp.so`
   once the app uses it. The Windows library is 1,709,056 bytes, and macOS
