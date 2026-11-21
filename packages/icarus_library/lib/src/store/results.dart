@@ -40,6 +40,8 @@ final class SaveInDoubt<S, R> extends Saving<S, R> {
 
 typedef CommitResult = Saving<Committed, CommitRefusal>;
 
+typedef BatchResult = Saving<List<Committed>, CommitRefusal>;
+
 typedef LibraryEditResult = Saving<LibraryEdited, LibraryRefusal>;
 
 typedef RebuildResult = Saving<StrategySummary, CommitRefusal>;
