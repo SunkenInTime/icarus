@@ -38,7 +38,7 @@ int _micros(void Function() task) {
   return watch.elapsedMicroseconds;
 }
 
-int _median(List<int> values) => (values..sort())[values.length ~/ 2];
+int _fastest(List<int> values) => values.reduce((a, b) => a < b ? a : b);
 
 void main() {
   test(
@@ -85,11 +85,11 @@ void main() {
       }
       final decoded = <int>[];
       final reads = <int>[];
-      for (var i = 0; i < 11; i++) {
+      for (var i = 0; i < 25; i++) {
         decoded.add(_micros(decode));
         reads.add(_micros(read));
       }
-      final ratio = _median(reads) / _median(decoded);
+      final ratio = _fastest(reads) / _fastest(decoded);
       printOnFailure('read / jsonDecode = ${ratio.toStringAsFixed(2)}');
       expect(ratio, lessThan(_budget));
     },
