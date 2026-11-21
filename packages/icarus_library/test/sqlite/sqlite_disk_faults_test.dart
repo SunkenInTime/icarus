@@ -89,6 +89,7 @@ void main() {
   test('a failed sync is a failure the caller receives, and after a power cut '
       'every saved move is there and none reported unsaved', () async {
     final harness = SqliteCrashHarness(const DropsUnsynced());
+    addTearDown(harness.finish);
     var syncsFailed = 0;
     var failuresSeen = 0;
     for (var sync = 1; sync <= 30; sync++) {
@@ -97,7 +98,7 @@ void main() {
       final (start, _) = await _jett(store);
       final target = harness.disk.syncs + sync;
       harness.disk.fault = FailSyncAt(target);
-      final outcomes = await _moves(store, 'sync-$sync', 6);
+      final outcomes = await _moves(store, 'sync-$sync', 32);
       if (harness.disk.syncs >= target) syncsFailed++;
       if (outcomes.any((outcome) => outcome.$2 is! Saved)) failuresSeen++;
       await harness.crash();
@@ -112,12 +113,12 @@ void main() {
     }
     expect(syncsFailed, greaterThanOrEqualTo(20));
     expect(failuresSeen, greaterThan(0));
-    await harness.finish();
   });
 
   test('a full disk is a failure the caller receives, the store saves again '
       'once there is room, and a power cut loses nothing saved', () async {
     final harness = SqliteCrashHarness(const DropsUnsynced());
+    addTearDown(harness.finish);
     var refusedSeen = 0;
     for (var room = 0; room <= 40000; room += 2000) {
       await harness.start(seeded);
@@ -148,7 +149,6 @@ void main() {
       );
     }
     expect(refusedSeen, greaterThan(5));
-    await harness.finish();
   });
 
   test(
@@ -192,6 +192,7 @@ void main() {
     'damage to the file is an explicit failure, never a shorter library',
     () async {
       final harness = SqliteCrashHarness(const KeepsUnsynced());
+      addTearDown(harness.finish);
       await harness.start(seeded);
       final seeding = await openStore(await harness.open());
       savedValue(
@@ -251,7 +252,6 @@ void main() {
             await store.close();
         }
       }
-      await harness.finish();
     },
   );
 }

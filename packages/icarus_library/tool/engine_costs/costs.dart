@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/json.dart' show frozenJson;
 
 const strategies = 700;
 const bigPages = 20;
@@ -254,47 +255,42 @@ Future<List<String>> measure(EngineOpener open, EngineCloser close) async {
   ];
   await Future.wait(waiting);
   final allSaved = clock.elapsedMicroseconds;
+  final removal = Times(
+    'remove a $bigPages-page strategy of ${bigPages * pageItems} items',
+  );
+  for (var i = 0; i < 5; i++) {
+    _saved(
+      await store.editLibrary([
+        AddStrategy(
+          _strategy('gone', pages: bigPages, items: pageItems, drawingPages: 1),
+        ),
+      ]),
+    );
+    _saved(
+      await removal.time(
+        () => store.editLibrary([const RemoveStrategy('gone')]),
+      ),
+    );
+  }
   await store.close();
   await close(engine);
-
-  final engineLines = await _measureCommits(open, close);
+  final split = await _pageReadSplit(open, close);
   return [
     cold.summary,
     strategy.summary,
-    page.summary,
     move.summary,
     redraw.summary,
     awaited.summary,
     issued.summary,
     '$burst moves issued at once: all saved after '
         '${(allSaved / 1000).toStringAsFixed(1)} ms',
-    ...engineLines,
+    removal.summary,
+    page.summary,
+    ...split,
   ];
 }
 
-String _json(Object? value) => jsonEncode(value);
-
-final _summary = _json({
-  'publicId': 'big',
-  'name': 'A strategy with a long name',
-  'mapData': 'lotus',
-  'pages': [
-    for (var page = 0; page < bigPages; page++)
-      {'publicId': 'big-p$page', 'items': pageItems, 'isAttack': page.isEven},
-  ],
-  'agents': ['jett', 'sova', 'omen', 'killjoy', 'kayo'],
-});
-
-List<Change> _moveCommit(int run) => [
-  Put(
-    'strategy/raw',
-    'content/p0/element/e0',
-    _json({'payload': _agent('e0', 500.0 + run).data, 'revision': run}),
-  ),
-  Put('library', 'summary/raw', '$_summary$run'),
-];
-
-Future<List<String>> _measureCommits(
+Future<List<String>> _pageReadSplit(
   EngineOpener open,
   EngineCloser close,
 ) async {
@@ -303,83 +299,32 @@ Future<List<String>> _measureCommits(
     Leased(:final lease) => lease,
     final other => throw StateError('no lease: $other'),
   };
-  void applied(Committing committing) {
-    if (committing is! CommitApplied) {
-      throw StateError('not applied: $committing');
-    }
-  }
-
-  final single = Times('one commit of one small key');
-  final shaped = Times(
-    'one commit shaped like a save: an element row and a summary, two areas',
+  final fetch = Times(
+    '  of which the engine reading the page\'s $pageItems rows in one range',
   );
-  var run = 0;
-  for (var i = 0; i < saveRuns; i++) {
-    applied(
-      await single.time(() => lease.commit([Put('probe', 'key', 'value $i')])),
+  final parse = Times('  of which jsonDecode of those $pageItems values');
+  final freeze = Times(
+    '  of which copying the decoded values into unmodifiable ones',
+  );
+  for (var run = 0; run < coldRuns; run++) {
+    final read = await fetch.time(
+      () =>
+          lease.entries(strategyArea('big'), 'content/${digestOf('big-p0')}/'),
     );
-    applied(await shaped.time(() => lease.commit(_moveCommit(run++))));
-  }
-  final awaited = Times(
-    '$burst save-shaped commits, each awaited before the next',
-  );
-  for (var i = 0; i < burst; i++) {
-    applied(await awaited.time(() => lease.commit(_moveCommit(run++))));
-  }
-  final issued = Times('$burst save-shaped commits issued at once');
-  final clock = Stopwatch()..start();
-  await Future.wait([
-    for (var i = 0; i < burst; i++)
-      lease.commit(_moveCommit(run++)).then((result) {
-        applied(result);
-        issued.add(clock.elapsedMicroseconds);
-      }),
-  ]);
-  final allApplied = clock.elapsedMicroseconds;
-
-  final removal = Times(
-    'remove a $bigPages-page strategy of ${bigPages * pageItems} items in '
-    'one commit',
-  );
-  for (var i = 0; i < 5; i++) {
-    for (var page = 0; page < bigPages; page++) {
-      applied(
-        await lease.commit([
-          for (var item = 0; item < pageItems; item++)
-            Put(
-              'strategy/gone',
-              'content/p$page/element/e$item',
-              _json(
-                page == 0 && item.isOdd
-                    ? _drawing('e$item', 0).data
-                    : _agent('e$item', item * 1.0).data,
-              ),
-            ),
-        ]),
-      );
-    }
-    applied(await lease.commit([Put('library', 'summary/gone', _summary)]));
-    applied(
-      await removal.time(
-        () => lease.commit(const [
-          ClearArea('strategy/gone'),
-          Delete('library', 'summary/gone'),
-        ]),
-      ),
+    final entries = switch (read) {
+      Done(:final value) when value.length == pageItems => value,
+      final other => throw StateError('page rows: $other'),
+    };
+    final decoded = await parse.time(
+      () async => [for (final (key: _, :value) in entries) jsonDecode(value)],
     );
-    if (await lease.keys('strategy/gone', '') case Done(value: [_, ...])) {
-      throw StateError('the strategy was not removed');
-    }
+    await freeze.time(() async {
+      for (final value in decoded) {
+        frozenJson(value);
+      }
+    });
   }
   await lease.release();
   await close(engine);
-  return [
-    single.summary,
-    shaped.summary,
-    awaited.summary,
-    issued.summary,
-    '$burst save-shaped commits issued at once: all applied after '
-        '${(allApplied / 1000).toStringAsFixed(1)} ms',
-    removal.summary,
-  ];
+  return [fetch.summary, parse.summary, freeze.summary];
 }

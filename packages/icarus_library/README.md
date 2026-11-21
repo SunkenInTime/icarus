@@ -519,7 +519,7 @@ web.
 The crash checks are in `test/crash_harness.dart`. For the store: after a
 crash at every step of every op type, the rows are those from before the edit
 or after it, a `Saved` edit is never lost, a `NotSaved` one never appears, and
-reopening can be cut short again and again. For the engine: random commits
+reopening can itself be cut short. For the engine: random commits
 across areas with puts, deletes and area clears, crashed at a random step;
 every applied commit is there, a refused one left nothing, an unknown one is
 wholly there or wholly absent, and no other row changed.

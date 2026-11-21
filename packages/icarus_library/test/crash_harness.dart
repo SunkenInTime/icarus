@@ -185,15 +185,15 @@ void _storeCrashContract(CrashHarness Function() makeHarness) {
 
   for (final MapEntry(key: name, value: op) in everyOpType().entries) {
     test('$name: a crash at any step leaves the rows before or after, an '
-        'acknowledged edit is never lost, and finishing it survives being '
-        'cut short again and again', () async {
+        'acknowledged edit is never lost, and reopening can itself be cut '
+        'short', () async {
       final clean = MemoryStorage(seeded);
       final cleanStore = await openStore(MemoryEngine(clean));
       savedValue(await cleanStore.commit(strategyId, op));
       await cleanStore.close();
-      final areas = {...seeded.keys, ...clean.contents.keys}..remove('journal');
-      final before = withoutJournal(seeded);
-      final after = withoutJournal(clean.contents);
+      final areas = {...seeded.keys, ...clean.contents.keys};
+      final before = withoutSlot(seeded);
+      final after = withoutSlot(clean.contents);
 
       await harness.start(seeded);
       final counting = await openStore(await harness.open());
@@ -235,7 +235,7 @@ void _storeCrashContract(CrashHarness Function() makeHarness) {
         final engine = await harness.open();
         await (await openStore(engine)).close();
         final lease = await leaseOf(engine);
-        final rows = await contentsOf(lease, areas);
+        final rows = withoutSlot(await contentsOf(lease, areas));
         await lease.release();
         final isBefore = sameContents(rows, before);
         final isAfter = sameContents(rows, after);
