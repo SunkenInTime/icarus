@@ -407,7 +407,7 @@ int? revisionOfRow(Row row) => switch (row) {
   UnreadablePage(:final stored) ||
   UnreadablePageSettings(:final stored) ||
   UnreadableElement(:final stored) ||
-  UnreadableLineupGroup(:final stored) => switch (stored) {
+  UnreadableLineupGroup(:final stored) => switch (plainJson(stored)) {
     {'revision': final int revision} => revision,
     _ => null,
   },

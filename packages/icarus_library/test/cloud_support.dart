@@ -309,7 +309,7 @@ final class Client {
     }
   }
 
-  EntryView view(String opId) => viewsOf(queue, at)[opId]!;
+  EntryView view(String opId) => entryViews(queue, at)[opId]!;
 }
 
 StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>

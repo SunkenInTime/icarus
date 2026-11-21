@@ -131,7 +131,7 @@ final class Scenario {
   }
 
   void claim() {
-    final views = viewsOf(client.queue, now);
+    final views = entryViews(client.queue, now);
     final ids = [
       for (final entry in client.queue.entries)
         if (views[entry.id]?.sendable ?? false) entry.id,
@@ -308,7 +308,7 @@ CloudQueue deliver(CloudQueue start, List<Fact> order) {
 }
 
 String describe(CloudQueue queue) {
-  final views = viewsOf(queue, now);
+  final views = entryViews(queue, now);
   return [
     for (final entry in queue.entries)
       '${entry.id}: ${views[entry.id]?.state} ${views[entry.id]?.go} ${views[entry.id]?.holds}',
