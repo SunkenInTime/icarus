@@ -173,6 +173,38 @@ final class _RefusingFiles implements LibraryFiles {
   bool isMomentary(FileSystemException error) => momentary;
 }
 
+final class _ScriptedFiles implements LibraryFiles {
+  _ScriptedFiles(this._files, this.failing);
+
+  final LibraryFiles _files;
+  final FileSystemException? Function(int call) failing;
+  Duration clock = Duration.zero;
+  final attemptsStartedAt = <Duration>[];
+  int calls = 0;
+
+  @override
+  int? size(String path) {
+    if (path == libraryPath) {
+      calls++;
+      if (failing(calls) case final error?) throw error;
+    }
+    if (path.endsWith('-wal')) attemptsStartedAt.add(clock);
+    return _files.size(path);
+  }
+
+  @override
+  Uint8List head(String path, int length) => _files.head(path, length);
+
+  @override
+  Database open(String path) => _files.open(path);
+
+  @override
+  void pause(Duration duration) => clock += duration;
+
+  @override
+  bool isMomentary(FileSystemException error) => error.osError?.errorCode == 32;
+}
+
 final class _RacedFiles implements LibraryFiles {
   _RacedFiles(this._files, this._meanwhile);
 
@@ -449,6 +481,76 @@ void main() {
       passFirst: 1,
     );
     expect(openLibraryFile(libraryPath, files), isA<RowsHeld>());
+    holder.close();
+    drive.unregister();
+  });
+
+  test('a sharing violation on the size check inside the open is retried '
+      'like any other momentary file error', () async {
+    final drive = FaultDrive();
+    final files = _ScriptedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      (call) => call == 2 ? _RefusingFiles.sharingViolation : null,
+    );
+    final opening = openLibraryFile(
+      libraryPath,
+      files,
+      elapsed: () => files.clock,
+    );
+    expect(opening, isA<RowsOpened>());
+    if (opening case RowsOpened(:final rows)) rows.close();
+    drive.unregister();
+  });
+
+  test('a permanent file error on the size check inside the open is refused '
+      'at once', () async {
+    final drive = FaultDrive();
+    final files = _ScriptedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      (call) => call == 2 ? _RefusingFiles.permissionDenied : null,
+    );
+    expect(
+      openLibraryFile(libraryPath, files, elapsed: () => files.clock),
+      isA<RowsRefused>().having(
+        (refused) => refused.failure,
+        'failure',
+        isA<DeviceFailure>(),
+      ),
+    );
+    expect(files.attemptsStartedAt, hasLength(1));
+    drive.unregister();
+  });
+
+  test('no attempt starts once the time allowed has run out', () async {
+    final drive = FaultDrive();
+    final files = _ScriptedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      (_) => _RefusingFiles.sharingViolation,
+    );
+    expect(
+      openLibraryFile(libraryPath, files, elapsed: () => files.clock),
+      isA<RowsRefused>(),
+    );
+    expect(files.attemptsStartedAt, isNotEmpty);
+    expect(
+      files.attemptsStartedAt.last,
+      lessThan(const Duration(milliseconds: 250)),
+    );
+    drive.unregister();
+  });
+
+  test('an attempt that found the library held makes held the answer, even '
+      'when a later attempt settles as a refusal', () async {
+    final drive = FaultDrive();
+    final holder = opened(drive.open());
+    final files = _ScriptedFiles(
+      FaultLibraryFiles(drive.disk, drive.vfs),
+      (call) => call >= 3 ? _RefusingFiles.permissionDenied : null,
+    );
+    expect(
+      openLibraryFile(libraryPath, files, elapsed: () => files.clock),
+      isA<RowsHeld>(),
+    );
     holder.close();
     drive.unregister();
   });

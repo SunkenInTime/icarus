@@ -210,11 +210,9 @@ final class RowsDatabase {
     } on FormatException catch (error) {
       _discard(db, prepared);
       return RowsRefused(_undescribed(error));
-    } on FileSystemException catch (error) {
+    } on FileSystemException {
       _discard(db, prepared);
-      return RowsRefused(
-        DeviceFailure('the library file could not be read: $error'),
-      );
+      rethrow;
     }
   }
 

@@ -20,38 +20,114 @@ void main() {
   });
 
   group('The library format', () {
-    Future<StoreOpening> opening(MemoryStorage disk) => LibraryStore.open(
-      MemoryEngine(disk),
-      canRead: readsKnownKinds,
-      clock: fixedClock,
-    );
-
-    test('a new library is told it was created and gets the store format; '
-        'opened again it existed', () async {
-      final disk = MemoryStorage();
-      final first = await opening(disk);
+    test('opening makes no commit, for a new library and for one with '
+        'strategies whose marker is missing; the first save carries the '
+        'marker in the same commit', () async {
+      final (fresh, freshCounts) = counting(MemoryEngine(MemoryStorage()));
+      final created = await LibraryStore.open(
+        fresh,
+        canRead: readsKnownKinds,
+        clock: fixedClock,
+      );
       expect(
-        first,
+        created,
         isA<StoreOpened>().having(
           (opened) => opened.origin,
           'origin',
           isA<StorageCreated>(),
         ),
       );
-      await (first as StoreOpened).store.close();
-      expect(disk.contents, {
-        libraryArea: {formatKey: '$storeFormat'},
-      });
-      final again = await opening(disk);
+      expect(freshCounts.commits, 0);
+      final store = (created as StoreOpened).store;
+      savedValue(await store.editLibrary([AddStrategy(sampleStrategy())]));
+      expect(freshCounts.commits, 1);
+      expect(freshCounts.written, contains((libraryArea, formatKey)));
+      await store.close();
+
+      final markerless = {
+        for (final MapEntry(:key, :value) in seeded.entries)
+          key: {...value}..remove(formatKey),
+      };
+      final (existing, counts) = counting(
+        MemoryEngine(MemoryStorage(markerless)),
+      );
+      final opened = await LibraryStore.open(
+        existing,
+        canRead: readsKnownKinds,
+        clock: fixedClock,
+      );
       expect(
-        again,
+        opened,
         isA<StoreOpened>().having(
           (opened) => opened.origin,
           'origin',
           isA<StorageExisted>(),
         ),
       );
-      await (again as StoreOpened).store.close();
+      expect(counts.commits, 0);
+      final reopened = (opened as StoreOpened).store;
+      savedValue(
+        await reopened.editLibrary([
+          AddStrategy(sampleStrategy(id: 'second', prefix: 'second-')),
+        ]),
+      );
+      expect(counts.commits, 1);
+      expect(counts.written, contains((libraryArea, formatKey)));
+      await reopened.close();
+    });
+
+    test('a library with strategies whose marker cannot be written opens all '
+        'the same, as existing, with its strategies listed', () async {
+      final markerless = {
+        for (final MapEntry(:key, :value) in seeded.entries)
+          key: {...value}..remove(formatKey),
+      };
+      final opening = await LibraryStore.open(
+        WrappingEngine(
+          MemoryEngine(MemoryStorage(markerless)),
+          _RefusingEveryCommit.new,
+        ),
+        canRead: readsKnownKinds,
+        clock: fixedClock,
+      );
+      expect(
+        opening,
+        isA<StoreOpened>().having(
+          (opened) => opened.origin,
+          'origin',
+          isA<StorageExisted>(),
+        ),
+      );
+      final store = (opening as StoreOpened).store;
+      expect(listOf(store).strategies, isNotEmpty);
+      await store.close();
+    });
+
+    Future<StoreOpening> opening(MemoryStorage disk) => LibraryStore.open(
+      MemoryEngine(disk),
+      canRead: readsKnownKinds,
+      clock: fixedClock,
+    );
+
+    test('a new library left unsaved is created again next time; after a '
+        'save it holds the marker and is existing', () async {
+      Future<StorageOrigin> originOn(MemoryStorage disk) async {
+        final opened = await opening(disk) as StoreOpened;
+        await opened.store.close();
+        return opened.origin;
+      }
+
+      final disk = MemoryStorage();
+      expect(await originOn(disk), isA<StorageCreated>());
+      expect(disk.contents, isEmpty);
+      expect(await originOn(disk), isA<StorageCreated>());
+      final opened = await opening(disk) as StoreOpened;
+      savedValue(
+        await opened.store.editLibrary([AddStrategy(sampleStrategy())]),
+      );
+      await opened.store.close();
+      expect(disk.contents[libraryArea]?[formatKey], '$storeFormat');
+      expect(await originOn(disk), isA<StorageExisted>());
     });
 
     test('a library with a newer store format is refused, and the store '
@@ -1724,4 +1800,12 @@ final class _AreaFailingLease extends ForwardingLease {
       failing.contains(area)
       ? const StorageFailed(DeviceFailure('cannot read'))
       : await super.entries(area, prefix);
+}
+
+final class _RefusingEveryCommit extends ForwardingLease {
+  _RefusingEveryCommit(super.inner);
+
+  @override
+  Future<Committing> commit(List<Change> changes) async =>
+      const CommitRefused(NoRoomForCommit(needed: 1 << 20, left: 0));
 }

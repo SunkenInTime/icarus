@@ -284,15 +284,12 @@ final class LibraryStore {
     };
   }
 
-  Future<Stored<void>> _markCreated() async => switch (await _lease.commit(
-    const [Put(libraryArea, formatKey, '$storeFormat')],
-  )) {
-    CommitApplied() => done,
-    CommitRefused(:final failure) ||
-    CommitUnknown(:final failure) => StorageFailed(failure),
-  };
+  List<Change> _withOwedMarker(List<Change> changes) => _markerOwed
+      ? [const Put(libraryArea, formatKey, '$storeFormat'), ...changes]
+      : changes;
 
   late final _WatchedLease _lease;
+  var _markerOwed = false;
   final CanRead _canRead;
   final DateTime Function() _clock;
   _State _state = const _Ready();
@@ -474,8 +471,9 @@ final class LibraryStore {
           return NotSaved(failure);
       }
     }
-    switch (await _lease.commit(_collapsed(changes))) {
+    switch (await _lease.commit(_withOwedMarker(_collapsed(changes)))) {
       case CommitApplied():
+        _markerOwed = false;
         return Saved(take());
       case CommitRefused(:final failure):
         if (failure is LeaseEnded) _shut(const StoreStopped(LeaseEnded()));
@@ -512,9 +510,7 @@ final class LibraryStore {
         case Done(:final value):
           origin = value;
       }
-      if (await _markCreated() case StorageFailed(:final failure)) {
-        return StorageFailed(failure);
-      }
+      _markerOwed = true;
     }
     final toRebuild = <String>[];
     for (final (:key, :value) in entries) {

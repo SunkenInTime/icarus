@@ -764,28 +764,30 @@ arise, so the app never says more than it knows.
 The app always knows which step a failure came from, because the store
 answers each step with its own result:
 
-- **opening:** `StoreNotOpened(OpenStorageFailed(failure))`, and nothing is
-  open;
-- **a refused save:** `NotSaved(failure)`, the edit is not stored, and the
-  store keeps going;
-- **a save in doubt:** `SaveInDoubt(failure)`, the edit may or may not be
+- **opening:** `StoreNotOpened(OpenStorageFailed(failure))`: the store did
+  not open, and opening makes no commit, so it wrote no row;
+- **a refused save:** `NotSaved(failure)`: the edit is not stored. The store
+  stays open unless the failure ended its lease; then every later step
+  answers `StoreStopped`;
+- **a save in doubt:** `SaveInDoubt(failure)`: the edit may or may not be
   stored (on IndexedDB, possibly in part), and the store stops;
-- **a read:** `NotRead(failure)`, and the store keeps going.
+- **a read:** `NotRead(failure)`: that read failed. As with a refused save,
+  the store stays open unless the lease ended.
 
 **Was the library just created?** `StoreOpened.origin` is `StorageCreated`
-when the library held nothing at all when it was opened: no rows in any
-area. The store decides this from what it reads, not from the engine, and in
-that same open writes the `format` row, its marker. Any library with rows is
-`StorageExisted`; one whose marker was lost gets it back and is still
-existing, never refused. Because the marker is the fact, a first open that
-stopped after the engine made the storage but before the marker was written
-(a crash, a failed listing, a late upgrade on IndexedDB) is still reported
-created on the next open.
+when the library held no `format` row and no row in any area when it was
+opened, and `StorageExisted` when it held a `format` row or any row. Opening
+decides and reports; it writes nothing. The `format` row, the store's
+marker, goes into the first commit the store makes for any reason, in the
+same engine commit as that save. A library that lost its marker is existing,
+is never refused for it, and gets it back the same way. A new library that
+is opened and closed with nothing saved is still empty, so it is created
+again the next time.
 
-- Certain: there was no library here when Icarus opened it.
-- Only possible: that one existed before and was deleted, evicted by the
-  browser, or cleared with the site's data, or that an earlier first run
-  stopped early. A zero-byte file and a first start look the same.
+- Certain: there were no rows here when Icarus opened it.
+- Only possible: that a library existed before and was deleted, evicted by
+  the browser, or cleared with the site's data, or that it was opened before
+  with nothing saved. A zero-byte file and a first start look the same.
 - The app knows whether it expected a library; the engine does not.
 
 | When | What the app can say |
@@ -805,37 +807,42 @@ opened:
   not change for what rows hold.
 - The **store format** is the store's row layout: the area and key names, and
   the shape of a summary and of every row the store reads back. It is the
-  `format` row in the `library` area (`storeFormat`), written by the open
-  that finds the library empty, or finds its marker missing. It changes when
+  `format` row in the `library` area (`storeFormat`), written with the first
+  save into a library that lacks it. It changes when
   an older store would misread the rows or write into them wrongly; a change
   that older stores read and keep correctly does not change it.
 
 Both are 1, the first format, and nothing earlier shipped. A build that
 raises a number must also say how it moves a library from the lower one. A
-`format` row is read only when it is a plain decimal with no sign, no
-leading zero and no spaces (`1`, `2`, `17`); anything else is
-`DamagedLibrary`, never a newer format.
+`format` row is read only when it is a plain decimal of one to nine digits
+with no sign, no leading zero and no spaces (`1`, `2`, `17`); anything else,
+including a longer number, is `DamagedLibrary`, never a newer format.
 
 A build that meets a number higher than it knows refuses to open with
 `NewerFormat`, naming the layer, the number found and the number it knows.
-No row is written or changed: the engine checks its number before it
-switches SQLite to its log, and the store checks the `format` row before it
-repairs or writes anything. SQLite has opened the file read-write by then,
+No row is written or changed and no commit is made: the engine checks its
+number before it switches SQLite to its log, and opening never commits.
+SQLite has opened the file read-write by then,
 so it may still roll back an interrupted transaction from a journal, switch
 a file to its log, or fold the log into the file when the connection
 closes; none of that changes what any row holds. On IndexedDB a newer
-database is refused by the browser before it opens, and nothing changes.
+database is refused by the browser before it opens. The engine then reads
+the version the browser lists for it in `indexedDB.databases()`, which opens
+nothing; if the database is no longer listed (it was cleared in between),
+the answer is `DeviceFailure`, not a version.
 
 **What can go wrong.** `StorageFailure` is a sealed set; a caller switches
 over it exhaustively.
 
 **`StorageFull`** has three cases.
 
-- `NoRoomForCommit`: IndexedDB's room check refused a save before anything
-  was written. Certain: the save was not stored, and the browser reported
-  too little room. Only possible: that the browser's estimate was wrong. Comes
-  only as a refused save. "There isn't enough storage space to save this
-  change."
+- `NoRoomForCommit`: Icarus's own room check on IndexedDB refused a save
+  before anything was written: the browser's estimate, less what pending
+  saves have reserved and a 1 MiB margin, was smaller than the save's
+  estimated size. Certain: the save was not stored. Only possible: that the
+  browser would have had room for it. Comes only as a refused save. "Icarus
+  held this change back because storage looked too full to save it
+  safely."
 - `OutOfRoom`: the disk (SQLite) or the browser (`QuotaExceededError`
   outside a commit's abort) ran out of room. Certain: the device or browser
   said it had no room. Only possible: whether the step completed, which the
@@ -845,38 +852,46 @@ over it exhaustively.
     saved."
   - save in doubt: "Storage ran out while saving, so this change may not
     have been saved."
+  - read: "There isn't enough storage space to read part of your library."
 - `AbortedForQuota`: the browser aborted an IndexedDB commit for lack of
   room (in Firefox, a full disk too). Certain: the browser aborted the save.
   Only possible: that part of it was kept (Firefox, bug 2080749). Comes only
   as a save in doubt. "The browser ran out of storage while saving, so this
   change may be only partly saved."
 
-**`NewerFormat`**: a number above what this build knows. Certain: a newer
-build of Icarus wrote this library. Comes only while opening. "This library
-was saved by a newer version of Icarus. Update Icarus to open it."
+**`NewerFormat`**: a number above what this build knows. Certain: the
+library holds a format number higher than this build knows, which is the
+number a newer build would write. Comes only while opening. "This library
+uses a newer format than this version of Icarus understands. Update Icarus
+to open it."
 
 **`DamagedLibrary`**: a failed integrity check, a file SQLite cannot read
 (`SQLITE_CORRUPT`, `SQLITE_NOTADB`), a file that is not an Icarus library, a
 value that is not text, a key that is not a name, a `format` row that is not
-a plain decimal, an IndexedDB database without its rows store. Certain:
-something in the library is not what Icarus wrote. Only possible: how much
-is affected; damage found later, in a read or a save, need not mean the rest
-is unreadable.
+a plain decimal, an IndexedDB database without its rows store. Certain at
+opening: the file or database is not one Icarus can read as its library.
+Certain at a read or a save: the engine met something it could not read
+(SQLite said the file is corrupt or not a database, or reported text it
+could not decode, or a stored value or key was not what Icarus writes). Only
+possible: how much is affected; a failure found in one read or save need not
+mean the rest is unreadable.
 
-- opening: "Your library is damaged, so Icarus can't open it."
-- read: "Part of your library is damaged and can't be read."
-- refused save: "Part of your library is damaged, so this change wasn't
-  saved."
-- save in doubt: "Part of your library is damaged, so this change may not
-  have been saved."
+- opening: "Icarus can't read this library file, so it can't open it."
+- read: "Icarus couldn't read part of your library."
+- refused save: "Icarus met something in your library it couldn't read, so
+  this change wasn't saved."
+- save in doubt: "Icarus met something in your library it couldn't read
+  while saving, so this change may not have been saved."
 
-**`LibraryFileGone`**: SQLite found the library file missing or empty while
-a log with content, or a journal whose header says it holds pages, sits
-beside it. Certain: the library file is missing or empty and a file of
-SQLite's own is beside it. Only possible: that it holds changes; a log can
-hold only its header. Comes only while opening, and nothing is touched.
-"Your library file is missing or empty, but a file SQLite keeps beside it is
-still there, so Icarus won't start a new library in its place."
+**`LibraryFileGone`**: the SQLite engine found the library file missing or
+empty while a file with the log's name (`-wal`) and some content, or a file
+with the journal's name (`-journal`) whose header says it holds pages, sits
+beside it. Certain: those files are there by name and size (and, for a
+journal, header). Only possible: that they are SQLite's and hold changes; a
+log can hold only its header. Comes only while opening, and nothing is
+touched. "Your library file is missing or empty, and a file named like
+SQLite's log or journal is beside it, so Icarus won't start a new library in
+its place."
 
 **`BrowserLacks`**: the browser does not report strict durability
 (`strictDurability`), or the page has no Web Locks (`webLocks`). Certain:
@@ -884,28 +899,36 @@ this browser or page lacks something Icarus needs to keep a library. Comes
 only while opening. "This browser can't keep your library safely, so Icarus
 won't store it here."
 
-**`NoAnswer`**: an IndexedDB browser call gave no answer within the
+**`NoAnswer`**: one IndexedDB browser call gave no answer within the
 engine's time limit (`IndexedDbEngine.patience`, 10 s by default). Certain:
-the browser did not answer in time. Only possible: that the call still
-completed later.
+that one call missed its limit. Only possible: that it still completed
+later, and that the browser is otherwise responsive.
 
-- opening: "The browser stopped responding while opening your library.
-  Reload the page to try again."
-- read: "The browser stopped responding while reading your library."
-- save in doubt: "The browser stopped responding while saving, so this
-  change may not have been saved."
-- release: a `ReleaseFailed`, which the app sees only as the library staying
-  held: "Icarus couldn't close your library cleanly. Reload the page."
+- opening: "Opening your library took too long, so Icarus stopped. Reload
+  the page to try again."
+- read: "Reading part of your library took too long."
+- save in doubt: "Saving took too long, so this change may not have been
+  saved."
+- release: a `ReleaseFailed`. Certain: Icarus could not confirm it let go of
+  the library, so it is not known whether another tab can open it now.
+  "Icarus couldn't confirm it closed your library. If another tab can't open
+  it, close this one."
 
 **`HeldByAnotherWriter`** (a `Leasing`, not a failure, answered as
-`StoreAlreadyOpen`): another tab, window or process holds the library.
-Certain: someone else holds it now. "Icarus is already open in another
-window or tab."
+`StoreAlreadyOpen`): when Icarus tried, another tab, window or process held
+the library (on SQLite, at least one attempt within 250 ms found it locked).
+Certain: it was held during the attempt. Only possible: that it is still
+held now. "Your library is open in another Icarus window or tab."
 
-**`LeaseEnded`, `EngineClosed`, `StoreClosed`**: the lease ended (another
-tab upgraded or deleted the database, the browser closed it, or the app
-closed the store). Certain: this library is no longer open here. "Your
-library was closed. Reopen it to keep working."
+**`LeaseEnded`, `StoreClosed`**: the lease ended (another tab upgraded or
+deleted the database, the browser closed it, or the app closed the store).
+Certain: this library is no longer open here. "Your library was closed.
+Reopen it to keep working."
+
+**`EngineClosed`**: the engine was closed, possibly before any library was
+opened through it. Certain: this engine will not open or use a library any
+more. "Icarus stopped using this storage. Reopen your library to keep
+working."
 
 **`StoreStopped(cause)`**: every step after the store stopped, carrying what
 stopped it. The sentence is the one for its `cause`.

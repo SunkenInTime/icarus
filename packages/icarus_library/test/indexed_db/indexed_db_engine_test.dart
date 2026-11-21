@@ -5,6 +5,8 @@ import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/indexed_db_storage.dart';
 import 'package:icarus_library/src/indexed_db/indexed_db_engine.dart'
+    show IndexedDbEngineHold;
+import 'package:icarus_library/src/indexed_db/indexed_db_engine.dart'
     show roomMargin;
 import 'package:test/test.dart';
 
@@ -521,26 +523,23 @@ void main() {
     await lease.release();
   });
 
-  test(
-    'an estimate that fails keeps the figure the engine already had',
-    () async {
+  test('an estimate that fails or cannot be read after the engine had a '
+      'figure leaves the room unchecked: the commit applies and the lease '
+      'says so, rather than trusting the old balance', () async {
+    for (final how in ['reject', 'badShape']) {
       pretendRoomLeft(roomMargin + 20000);
-      final lease = await openIndexedDb(name);
-      estimateFails('reject');
-      expect(
-        await lease.commit([Put('a', 'big', 'x' * 20000)]),
-        isA<CommitRefused>().having(
-          (refused) => refused.failure,
-          'failure',
-          isA<NoRoomForCommit>(),
-        ),
-      );
+      final engine = IndexedDbEngine('$name-$how');
+      final lease = await leaseOf(engine) as IndexedDbLease;
+      expect(lease.roomCheck, isA<RoomChecked>(), reason: how);
+      estimateFails(how);
+      final outcome = await lease.commit([Put('a', 'big', 'x' * 20000)]);
       estimateFails(null);
       pretendRoomLeft(null);
-      expect(lease.roomCheck, isA<RoomChecked>());
-      await lease.release();
-    },
-  );
+      expect(outcome, isA<CommitApplied>(), reason: how);
+      expect(lease.roomCheck, isA<RoomNotChecked>(), reason: how);
+      await engine.close();
+    }
+  });
 
   test('a browser that cannot say how much room there is gets a lease that '
       'says the room is not checked, and its commits apply', () async {
@@ -568,7 +567,7 @@ void main() {
         .timeout(const Duration(seconds: 5));
     estimateFails(null);
     pretendRoomLeft(null);
-    expect(outcome, isA<CommitRefused>());
+    expect(outcome, isA<CommitApplied>());
     expect(
       await lease.release().timeout(const Duration(seconds: 5)),
       isA<Released>(),
@@ -625,48 +624,28 @@ void main() {
     return opened.origin;
   }
 
-  test('the store says a library was created when it holds nothing: on the '
-      'first open, after a first open that stopped before the store marked '
-      'it, and after the database was deleted; a library with rows whose '
-      'marker was lost existed, and gets the marker back', () async {
+  test('the store says a library was created when it holds nothing, and '
+      'opening writes nothing: after an engine made the database, after an '
+      'unsaved open, after the database was deleted; a library with rows '
+      'whose marker was lost is existing, and its next save puts the marker '
+      'back', () async {
     await (await openIndexedDb(name)).release();
     expect(await originOf(name), isA<StorageCreated>());
-    expect(await originOf(name), isA<StorageExisted>());
+    expect(await originOf(name), isA<StorageCreated>());
     final lease = await openIndexedDb(name);
-    committed(
-      await lease.commit(const [
-        Delete('library', 'format'),
-        Put('library', 'folder/x', 'kept'),
-      ]),
-    );
+    expect(await lease.read('library', 'format'), isA<KeyMissing>());
+    committed(await lease.commit(const [Put('library', 'folder/x', 'kept')]));
     await lease.release();
     expect(await originOf(name), isA<StorageExisted>());
+    final store = await openStore(IndexedDbEngine(name));
+    savedValue(await store.editLibrary([AddStrategy(sampleStrategy())]));
+    await store.close();
     final reading = await openIndexedDb(name);
     expect(valueOf(await reading.read('library', 'format')), '$storeFormat');
     await reading.release();
     await deleteDatabase(name);
     expect(await originOf(name), isA<StorageCreated>());
   });
-
-  test(
-    'an open that gave up while a delete was blocked, and whose upgrade '
-    'then ran late, leaves a database the store still calls created',
-    () async {
-      await (await openIndexedDb(name)).release();
-      final other = await openRaw(name);
-      final deleting = deleteDatabase(name);
-      expect(
-        await IndexedDbEngine(
-          name,
-          patience: const Duration(milliseconds: 500),
-        ).lease(),
-        isA<LeaseFailed>(),
-      );
-      other.close();
-      await deleting;
-      expect(await originOf(name), isA<StorageCreated>());
-    },
-  );
 
   test(
     'a database at a newer engine format is refused and left as it was',
@@ -807,6 +786,26 @@ void main() {
     storeCreationThrows(false);
     expect(leasing, isA<LeaseFailed>());
     expect(await lockIsFree(name), isTrue);
+  });
+
+  test('a newer database cleared between the version error and the version '
+      'lookup is not created again, and is not reported as format 1', () async {
+    await (await openIndexedDb(name)).release();
+    expect(await upgradeFinishes(name, 2), isTrue);
+    deleteOnVersionError(true);
+    final leasing = await IndexedDbEngine(
+      name,
+    ).lease().timeout(const Duration(seconds: 5));
+    deleteOnVersionError(false);
+    expect(
+      leasing,
+      isA<LeaseFailed>().having(
+        (failed) => failed.failure,
+        'failure',
+        isNot(isA<NewerFormat>().having((newer) => newer.found, 'found', 1)),
+      ),
+    );
+    expect(await databaseExists(name), isFalse);
   });
 
   group('the engine contract', () {

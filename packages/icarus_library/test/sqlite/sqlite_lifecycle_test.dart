@@ -6,6 +6,8 @@ import 'dart:io';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/sqlite_storage.dart';
 import 'package:icarus_library/src/sqlite/sqlite_engine.dart'
+    show SqliteEngineHold;
+import 'package:icarus_library/src/sqlite/sqlite_engine.dart'
     show SqliteLeaseWorker;
 import 'package:test/test.dart';
 

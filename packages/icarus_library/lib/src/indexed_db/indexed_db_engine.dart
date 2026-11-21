@@ -243,23 +243,23 @@ Future<StorageFailure?> _deleteDatabase(String name, Duration patience) {
 
 Future<Stored<int>> _versionOf(String name, Duration patience) {
   const what = 'reading the version of a newer database';
-  final read = Completer<Stored<int>>();
-  final request = window.indexedDB.open(name);
-  request
-    ..onsuccess = ((Event _) => _into(read, () {
-      final db = request.result! as IDBDatabase;
-      final version = db.version;
-      db.close();
-      return Done(version);
-    })).toJS
-    ..onerror = ((Event event) {
-      event.preventDefault();
-      _into(read, () => StorageFailed<int>(_named(request.error, what)));
-    }).toJS;
-  return read.future.timeout(
-    patience,
-    onTimeout: () => StorageFailed(NoAnswer(what, patience)),
-  );
+  return Future.sync(() => window.indexedDB.databases().toDart)
+      .timeout(patience)
+      .then<Stored<int>>(
+        (listed) => switch ([
+          for (final info in listed.toDart)
+            if (info.name == name) info.version,
+        ]) {
+          [final version, ...] => Done(version),
+          [] => const StorageFailed(
+            DeviceFailure('the library was removed while it was being opened'),
+          ),
+        },
+      )
+      .then<Stored<int>>(
+        (version) => version,
+        onError: (Object error) => StorageFailed<int>(_thrown(error, what)),
+      );
 }
 
 StorageFailure? _problemWith(IDBDatabase db) {
@@ -376,6 +376,9 @@ final class _Room {
         .timeout(_patience)
         .then<_Estimate>(
           (estimate) => _Estimated(estimate.quota - estimate.usage),
+        )
+        .then<_Estimate>(
+          (estimate) => estimate,
           onError: (Object error) =>
               _NoEstimate('${_thrown(error, 'estimating storage')}'),
         );
@@ -390,6 +393,7 @@ final class _Room {
         case _Estimated(:final left):
           _left = left;
         case _NoEstimate(:final why):
+          _left = null;
           _unchecked = why;
       }
       _asking = null;
@@ -515,8 +519,6 @@ final class IndexedDbEngine implements StorageEngine {
     _granted.add(lease);
     return _closed ? const LeaseFailed(EngineClosed()) : Leased(lease);
   }
-
-  PendingWrite holdNextCommit() => _granted.last._held = _HeldCommit();
 
   Future<Releasing> close() => _closing ??= _close();
 
@@ -872,4 +874,8 @@ final class _HeldCommit implements PendingWrite {
 
   @override
   void letGo() => _letGo.complete();
+}
+
+extension IndexedDbEngineHold on IndexedDbEngine {
+  PendingWrite holdNextCommit() => _granted.last._held = _HeldCommit();
 }

@@ -5,6 +5,8 @@ import 'dart:js_interop_unsafe';
 import 'package:icarus_library/engine_contract.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/indexed_db_storage.dart';
+import 'package:icarus_library/src/indexed_db/indexed_db_engine.dart'
+    show IndexedDbEngineHold;
 import 'package:web/web.dart';
 
 import '../crash_harness.dart';
@@ -34,6 +36,7 @@ const _patch = '''
     swallowComplete: false,
     swallowReads: false,
     storeCreationThrows: false,
+    deleteOnVersionError: false,
     opened: [],
   };
   globalThis.icarusFaults = faults;
@@ -97,6 +100,9 @@ const _patch = '''
     if (faults.estimateFails === 'reject') return Promise.reject(new DOMException('no estimate', 'UnknownError'));
     if (faults.estimateFails === 'throw') throw new TypeError('estimate is broken');
     if (faults.estimateFails === 'hang') return new Promise(() => {});
+    if (faults.estimateFails === 'badShape') {
+      return Promise.resolve({ get quota() { throw new TypeError('no quota'); }, usage: 0 });
+    }
     if (faults.room === null) return estimate.apply(this, args);
     return Promise.resolve({ quota: faults.room + 4096, usage: 4096 });
   };
@@ -137,6 +143,14 @@ const _patch = '''
   IDBFactory.prototype.open = function (...args) {
     if (faults.openThrows) throw new TypeError('open is broken');
     const opening = open.apply(this, args);
+    if (faults.deleteOnVersionError && args.length > 1) {
+      opening.addEventListener('error', () => {
+        if (opening.error && opening.error.name === 'VersionError') {
+          faults.deleteOnVersionError = false;
+          deleteDatabase.call(indexedDB, args[0]);
+        }
+      });
+    }
     opening.addEventListener('success', () => faults.opened.push(opening.result));
     return opening;
   };
@@ -231,6 +245,9 @@ void swallowReads(bool swallow) => _faults['swallowReads'] = swallow.toJS;
 
 void storeCreationThrows(bool throws) =>
     _faults['storeCreationThrows'] = throws.toJS;
+
+void deleteOnVersionError(bool delete) =>
+    _faults['deleteOnVersionError'] = delete.toJS;
 
 void closeThrows(bool throws) => _faults['closeThrows'] = throws.toJS;
 

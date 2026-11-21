@@ -121,9 +121,11 @@ void _effect(
       _broke('$what: CommitApplied, but not every change is there');
     case CommitRefused() when !none:
       _broke('$what: $committing, but it changed storage');
+    case CommitUnknown(failure: AbortedForQuota()):
+      return;
     case CommitUnknown() when !all && !none:
       _broke('$what: $committing left some of its changes and not others');
-    case _:
+    case CommitApplied() || CommitRefused() || CommitUnknown():
       return;
   }
 }
