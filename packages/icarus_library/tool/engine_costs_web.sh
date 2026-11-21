@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 out=build/engine_costs_web
 mkdir -p "$out"
-dart compile js -O4 -o "$out/main.js" tool/engine_costs_web.dart >/dev/null
+dart compile js -O4 -o "$out/main.js" "${1:-tool/engine_costs_web.dart}" >/dev/null
 printf '<!doctype html><meta charset="utf-8"><script defer src="main.js"></script>\n' > "$out/index.html"
 port=$((20000 + RANDOM % 20000))
 python3 -m http.server "$port" --bind 127.0.0.1 --directory "$out" >/dev/null 2>&1 &
