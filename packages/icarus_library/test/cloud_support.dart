@@ -1,4 +1,7 @@
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/op_facts.dart'
+    show CopyExpanded, CopyNotExpanded, expandCopy;
+import 'package:icarus_library/src/cloud/visible.dart';
 import 'package:test/test.dart';
 
 import 'support.dart';
@@ -151,37 +154,8 @@ StrategyOp rebasedForTest(StrategyOp op, int revision) =>
       CouldNotRead(:final problem) => fail(problem),
     };
 
-StrategyRowSet visibleOf(StrategyRowSet base, CloudQueue queue) {
-  var rows = base;
-  for (final entry in queue.entries) {
-    if (entry is! PendingOp) continue;
-    var op = entry.op;
-    if ((entry.op, entry.answer) case (
-      final PageAddOp add,
-      AnsweredApplied(:final revision),
-    ) when add.copyContentFromPagePublicId != null) {
-      final shown = switch (queue.base.evidence(const StrategyTarget())) {
-        RowSeen(:final revision) => revision,
-        _ => -1,
-      };
-      if (shown >= revision) continue;
-      op = PageAddOp(
-        opId: add.opId,
-        pagePublicId: add.pagePublicId,
-        sortIndex: add.sortIndex,
-        expectedStrategyRevision: add.expectedStrategyRevision,
-        name: add.name,
-        isAutoNamed: add.isAutoNamed,
-        isAttack: add.isAttack,
-        settings: add.settings,
-      );
-    }
-    if (applyOp(rows, onVisible(rows, op)) case final OpApplied applied) {
-      rows = rows.withRows(applied.rows);
-    }
-  }
-  return rows;
-}
+StrategyRowSet visibleOf(StrategyRowSet base, CloudQueue queue) =>
+    visibleOver(base, queue, const AllPages());
 
 final class Client {
   Client({StrategyRowSet? base, this.clock}) : base = base ?? initialRows() {
@@ -232,11 +206,24 @@ final class Client {
         EditMade(:final edit) => edit,
         _ => fail('cannot edit $op'),
       },
-      NeedsRowPage() || NeedsPageDeleteEdit() => fail('cannot edit $op'),
+      NeedsRowPage() ||
+      NeedsPageDeleteEdit() ||
+      CopyMustBeExpanded() => fail('cannot edit $op'),
     });
   }
 
-  void edit(StrategyOp op) => must(editEvent(op));
+  void edit(StrategyOp op) {
+    if (op case PageAddOp(copyContentFromPagePublicId: _?)) {
+      switch (expandCopy(visible, op)) {
+        case CopyExpanded(:final ops):
+          ops.forEach(edit);
+        case CopyNotExpanded(:final result):
+          fail('cannot copy: $result');
+      }
+      return;
+    }
+    must(editEvent(op));
+  }
 
   int claim(List<String> ids, {String client = clientId}) {
     final result = stepped(
@@ -260,7 +247,7 @@ final class Client {
   }
 
   void arrive(ArrivedBase base, {int? read}) =>
-      must(BaseArrived(base, read: read ?? startRead(), startedAt: at));
+      must(BaseArrived(base, read: read ?? startRead()));
 
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
@@ -289,7 +276,6 @@ ArrivedBase pageReadOf(StrategyRows rows, String page) =>
     switch (rows.page(page)) {
       final row? => PageRead(
         page: row,
-        settings: rows.settingsOf(page)!,
         elements: rows.elementsOn(page).toList(),
         lineupGroups: rows.lineupGroupsOn(page).toList(),
       ),

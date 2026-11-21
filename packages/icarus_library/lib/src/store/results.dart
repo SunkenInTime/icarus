@@ -117,14 +117,45 @@ final class QueueRefusal extends CommitRefusal {
   String toString() => 'QueueRefusal($why)';
 }
 
-final class CloudStateNotReadable extends CommitRefusal {
-  const CloudStateNotReadable(this.ref, this.problem);
+final class UnreadableQueueRow {
+  const UnreadableQueueRow(this.ref, this.problem);
 
   final StoredRowRef ref;
   final String problem;
 
   @override
-  String toString() => 'CloudStateNotReadable($ref, $problem)';
+  bool operator ==(Object other) =>
+      other is UnreadableQueueRow &&
+      other.ref == ref &&
+      other.problem == problem;
+
+  @override
+  int get hashCode => Object.hash(ref, problem);
+
+  @override
+  String toString() => 'UnreadableQueueRow($ref, $problem)';
+}
+
+final class QueueHeld implements CommitRefusal, LibraryRefusal {
+  QueueHeld(List<UnreadableQueueRow> rows) : rows = List.unmodifiable(rows);
+
+  final List<UnreadableQueueRow> rows;
+
+  @override
+  String toString() => 'QueueHeld($rows)';
+}
+
+final class UnsentWorkInArea extends LibraryRefusal {
+  const UnsentWorkInArea(this.ref);
+
+  final StrategyRef ref;
+
+  @override
+  String toString() => 'UnsentWorkInArea($ref)';
+}
+
+final class DiscardsUnsentWork {
+  const DiscardsUnsentWork();
 }
 
 final class NotACloudStrategy extends CommitRefusal {
@@ -423,6 +454,12 @@ final class LocalStrategy extends StrategySync {
   const LocalStrategy();
 }
 
+final class CloudHeld extends StrategySync {
+  CloudHeld(List<UnreadableQueueRow> rows) : rows = List.unmodifiable(rows);
+
+  final List<UnreadableQueueRow> rows;
+}
+
 final class CloudStrategy extends StrategySync {
   CloudStrategy({
     required this.queue,
@@ -525,9 +562,10 @@ final class RemoveStrategy extends LibraryChange {
 }
 
 final class RemoveUnreadableStrategy extends LibraryChange {
-  const RemoveUnreadableStrategy(this.ref);
+  const RemoveUnreadableStrategy(this.ref, {this.discarding});
 
   final StrategyRef ref;
+  final DiscardsUnsentWork? discarding;
 }
 
 final class MoveStrategy extends LibraryChange {

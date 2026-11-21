@@ -52,9 +52,10 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     'work': switch (entry.work) {
       OpWork() => 'op',
       CheckedDelete(:final seen) => {'checkedDelete': _seenToJson(seen)},
-      ImportedIncompleteCopy() => 'importedIncompleteCopy',
     },
     'answer': _answerToJson(entry.answer),
+    if (entry.memory case Forgotten(:final afterRead))
+      'forgottenAfterRead': afterRead,
   },
   RetiredOp(:final opId, :final clientId, :final landing, :final stored) => {
     'version': cloudRowVersion,
@@ -64,7 +65,6 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     'landing': landing.name,
     'stored': plainJson(stored),
   },
-  UnreadableEntry() => throw StateError('an unreadable entry is never written'),
 };
 
 Map<String, Object?> _seenToJson(SeenPage seen) => {
@@ -80,10 +80,11 @@ Map<String, Object?> _seenToJson(SeenPage seen) => {
 
 Object? _answerToJson(ServerAnswer answer) => switch (answer) {
   NotAnswered() => null,
-  AnsweredApplied(:final revision, :final by, :final afterRead) => {
+  AnsweredApplied(:final revision, :final by, :final afterRead, :final at) => {
     'applied': revision,
     'by': by.name,
     'afterRead': afterRead,
+    'at': _millis(at),
   },
   AnsweredNothingToDo() => {'nothingToDo': true},
   AnsweredRefused(
@@ -141,9 +142,6 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
             : const NotAnswered();
         final Work? work = switch ((fields.json['work'], op)) {
           ('op', final op?) => OpWork(op),
-          ('importedIncompleteCopy', final PageAddOp add)
-              when add.copyContentFromPagePublicId != null =>
-            ImportedIncompleteCopy(add),
           ({'checkedDelete': final Object? check}, final PageDeleteOp delete) =>
             switch (_seen(adoptJson(check))) {
               Read(:final value) => CheckedDelete(delete, value),
@@ -155,6 +153,10 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
         if (op != null && scope != null && !_scopeFits(op, scope)) {
           fields.reject('a scope or field base that does not fit its op');
         }
+        final forgotten = fields.optionalWhole('forgottenAfterRead');
+        if (forgotten != null && forgotten < 0) {
+          fields.reject('a negative read number');
+        }
         return () => PendingOp(
           place: place,
           work: work!,
@@ -163,6 +165,9 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
           policy: policy!,
           answer: answer!,
           retriedAfter: retriedAfter,
+          memory: forgotten == null
+              ? const Remembered()
+              : Forgotten(afterRead: forgotten),
         );
       default:
         fields.reject('an entry kind this build does not read');
@@ -182,7 +187,7 @@ bool _scopeFits(StrategyOp op, Scope scope) => switch (editOf(
 )) {
   EditMade(:final edit) => edit.scope == scope,
   NeedsPageDeleteEdit(:final op) => scope == OnPage(op.pagePublicId),
-  NeedsRowPage() || NeedsFieldBase() => false,
+  NeedsRowPage() || NeedsFieldBase() || CopyMustBeExpanded() => false,
 };
 
 Decoded<Scope> _scope(Object? json) => JsonFields.read(json, 'scope', (fields) {
@@ -263,7 +268,9 @@ Decoded<ServerAnswer> _answer(Object? json) =>
       if (fields.has('applied')) {
         final revision = fields.whole('applied');
         final by = _named(fields, 'by', AppliedBy.values);
-        return () => AnsweredApplied(revision, by!, afterRead: afterRead);
+        final at = fields.time('at');
+        return () =>
+            AnsweredApplied(revision, by!, afterRead: afterRead, at: at);
       }
       if (fields.has('rejected')) {
         final reason = RejectionReason.values
@@ -307,40 +314,40 @@ Decoded<ServerAnswer> _answer(Object? json) =>
       );
     });
 
-QueueEntry entryFromText(int place, String text) => switch (admit(text)) {
-  NotAdmitted(:final problem) => UnreadableEntry(
-    place: place,
-    text: text,
-    problem: problem,
-  ),
-  Admitted(:final json) => switch (decodeEntry(place, json)) {
-    Read(:final value) => value,
-    CouldNotRead(:final problem) => UnreadableEntry(
-      place: place,
-      text: text,
-      problem: problem,
-    ),
-  },
-};
+sealed class EntriesReading {
+  const EntriesReading();
+}
 
-List<QueueEntry> entriesFrom(Iterable<(int, String)> stored) {
+final class EntriesRead extends EntriesReading {
+  EntriesRead(List<QueueEntry> entries) : entries = List.unmodifiable(entries);
+
+  final List<QueueEntry> entries;
+}
+
+final class EntriesUnreadable extends EntriesReading {
+  const EntriesUnreadable(this.place, this.problem);
+
+  final int place;
+  final String problem;
+}
+
+EntriesReading entriesFrom(Iterable<(int, String)> stored) {
   final seen = <String>{};
   final entries = <QueueEntry>[];
   for (final (place, text) in [
     ...stored,
   ]..sort((a, b) => a.$1.compareTo(b.$1))) {
-    final entry = entryFromText(place, text);
-    entries.add(
-      seen.add(entry.id)
-          ? entry
-          : UnreadableEntry(
-              place: place,
-              text: text,
-              problem: 'an op id another entry already holds',
-            ),
-    );
+    final reading = _fromText(text, (json) => decodeEntry(place, json));
+    switch (reading) {
+      case CloudRowRead(value: final entry) when seen.add(entry.id):
+        entries.add(entry);
+      case CloudRowRead():
+        return EntriesUnreadable(place, 'an op id another entry already holds');
+      case CloudRowUnreadable(:final problem):
+        return EntriesUnreadable(place, problem);
+    }
   }
-  return entries;
+  return EntriesRead(entries);
 }
 
 Map<String, Object?> attemptToJson(AttemptFact attempt) => {
@@ -348,6 +355,7 @@ Map<String, Object?> attemptToJson(AttemptFact attempt) => {
   'clientId': attempt.clientId,
   'build': attempt.build,
   'at': _millis(attempt.at),
+  'afterRead': attempt.afterRead,
   'ops': [for (final op in attempt.ops) op.toJson()],
   'outcome': switch (attempt.outcome) {
     AttemptOpen() => 'open',
@@ -417,6 +425,8 @@ CloudRowReading<AttemptFact> attemptFromText(int number, String text) =>
         final clientId = fields.string('clientId');
         final build = fields.string('build');
         final at = fields.time('at');
+        final afterRead = fields.whole('afterRead');
+        if (afterRead < 0) fields.reject('a negative read number');
         final ops = <StrategyOp>[];
         final ids = <String>{};
         if (fields.json['ops'] case final List<Object?> list
@@ -443,6 +453,7 @@ CloudRowReading<AttemptFact> attemptFromText(int number, String text) =>
           clientId: clientId,
           build: build,
           at: at,
+          afterRead: afterRead,
           ops: ops,
           outcome: outcome!,
         );
@@ -550,7 +561,7 @@ final class EvidenceGroup {
 
 String? groupPageOf(Target target, RowEvidence evidence) =>
     switch ((target, evidence)) {
-      (StrategyTarget() || PageTarget(), _) => null,
+      (StrategyTarget() || PageTarget() || SettingsTarget(), _) => null,
       (_, RowSeen(:final page) || RowUnreadable(:final page)) => page,
       (_, RowAbsent()) => null,
     };
@@ -632,25 +643,24 @@ Map<String, Object?> groupToJson(String? page, EvidenceGroup group) => {
       switch (evidence) {
         RowSeen(
           :final read,
-          :final readAt,
           :final revision,
           :final digest,
           :final page,
           :final life,
+          :final payloadVersion,
         ) =>
           {
             'target': _targetToJson(target),
             'read': read,
-            'at': _millis(readAt),
             'revision': revision,
             'digest': digest,
             'page': ?page,
             'life': life.name,
+            'payloadVersion': ?payloadVersion,
           },
-        RowUnreadable(:final read, :final readAt, :final page) => {
+        RowUnreadable(:final read, :final page) => {
           'target': _targetToJson(target),
           'read': read,
-          'at': _millis(readAt),
           'unreadable': true,
           'page': ?page,
         },
@@ -660,7 +670,6 @@ Map<String, Object?> groupToJson(String? page, EvidenceGroup group) => {
   if (group.content case final content?)
     'content': {
       'read': content.read,
-      'at': _millis(content.readAt),
       'digests': [
         for (final MapEntry(:key, :value) in content.digests.entries)
           ['$key', value],
@@ -670,21 +679,16 @@ Map<String, Object?> groupToJson(String? page, EvidenceGroup group) => {
   if (group.header case final header?)
     'header': {
       'read': header.read,
-      'at': _millis(header.readAt),
       'pages': [...header.pages]..sort(),
       'settings': [...header.settings]..sort(),
     },
-  if (group.gone case final gone?)
-    'gone': {'read': gone.read, 'at': _millis(gone.readAt)},
+  if (group.gone case final gone?) 'gone': {'read': gone.read},
 };
 
-(int, DateTime)? _readOf(Map<Object?, Object?> raw) =>
-    switch ((raw['read'], raw['at'])) {
-      (final num read, final num at)
-          when isSafeWhole(read) && read >= 1 && isSafeWhole(at) =>
-        (read.toInt(), _time(at)),
-      _ => null,
-    };
+int? _readOf(Map<Object?, Object?> raw) => switch (raw['read']) {
+  final num read when isSafeWhole(read) && read >= 1 => read.toInt(),
+  _ => null,
+};
 
 Set<String>? _ids(Object? raw) => switch (raw) {
   final List<Object?> list when list.every((id) => id is String) =>
@@ -720,22 +724,29 @@ CloudRowReading<(String?, EvidenceGroup)> groupFromText(
         }
         final RowEvidence evidence;
         if (raw['unreadable'] == true) {
-          evidence = RowUnreadable(
-            read: read.$1,
-            readAt: read.$2,
-            page: seenPage as String?,
-          );
-        } else if ((raw['revision'], raw['digest'], raw['life'])
-            case (final num revision, final String digest, final String life)
+          evidence = RowUnreadable(read: read, page: seenPage as String?);
+        } else if ((
+              raw['revision'],
+              raw['digest'],
+              raw['life'],
+              raw['payloadVersion'],
+            )
+            case (
+              final num revision,
+              final String digest,
+              final String life,
+              final Object? version,
+            )
             when isSafeWhole(revision) &&
-                Life.values.asNameMap().containsKey(life)) {
+                Life.values.asNameMap().containsKey(life) &&
+                (version == null || (version is num && isSafeWhole(version)))) {
           evidence = RowSeen(
-            read: read.$1,
-            readAt: read.$2,
+            read: read,
             revision: revision.toInt(),
             digest: digest,
             page: seenPage as String?,
             life: Life.values.asNameMap()[life]!,
+            payloadVersion: (version as num?)?.toInt(),
           );
         } else {
           fields.reject('an unreadable sighting');
@@ -771,12 +782,7 @@ CloudRowReading<(String?, EvidenceGroup)> groupFromText(
       if (read == null || digests == null || page == null) {
         fields.reject('unreadable content');
       } else {
-        content = ContentRead(
-          read: read.$1,
-          readAt: read.$2,
-          digests: digests,
-          present: present,
-        );
+        content = ContentRead(read: read, digests: digests, present: present);
       }
     } else if (fields.has('content')) {
       fields.reject('unreadable content');
@@ -789,12 +795,7 @@ CloudRowReading<(String?, EvidenceGroup)> groupFromText(
       if (read == null || pages == null || settings == null || page != null) {
         fields.reject('an unreadable page list');
       } else {
-        listing = HeaderListing(
-          read: read.$1,
-          readAt: read.$2,
-          pages: pages,
-          settings: settings,
-        );
+        listing = HeaderListing(read: read, pages: pages, settings: settings);
       }
     } else if (fields.has('header')) {
       fields.reject('an unreadable page list');
@@ -805,7 +806,7 @@ CloudRowReading<(String?, EvidenceGroup)> groupFromText(
       if (read == null || page == null) {
         fields.reject('an unreadable absence');
       } else {
-        gone = RowAbsent(read: read.$1, readAt: read.$2);
+        gone = RowAbsent(read: read);
       }
     } else if (fields.has('gone')) {
       fields.reject('an unreadable absence');

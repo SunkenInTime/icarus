@@ -58,7 +58,6 @@ export 'src/store/summary.dart'
         AllReadable,
         KeptHere,
         KeptInCloud,
-        QueuedRows,
         Readability,
         Sides,
         SomeUnreadable,

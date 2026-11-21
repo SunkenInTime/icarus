@@ -29,6 +29,7 @@ final class PendingOp extends QueueEntry {
     required this.policy,
     required this.answer,
     required this.retriedAfter,
+    this.memory = const Remembered(),
   });
 
   final Work work;
@@ -37,6 +38,7 @@ final class PendingOp extends QueueEntry {
   final SendPolicy policy;
   final ServerAnswer answer;
   final int retriedAfter;
+  final ServerMemory memory;
 
   StrategyOp get op => work.op;
 
@@ -51,6 +53,7 @@ final class PendingOp extends QueueEntry {
     SendPolicy? policy,
     ServerAnswer? answer,
     int? retriedAfter,
+    ServerMemory? memory,
   }) => PendingOp(
     place: place,
     work: work ?? this.work,
@@ -59,6 +62,7 @@ final class PendingOp extends QueueEntry {
     policy: policy ?? this.policy,
     answer: answer ?? this.answer,
     retriedAfter: retriedAfter ?? this.retriedAfter,
+    memory: memory ?? this.memory,
   );
 
   @override
@@ -70,11 +74,20 @@ final class PendingOp extends QueueEntry {
       other.authored == authored &&
       other.policy == policy &&
       other.answer == answer &&
-      other.retriedAfter == retriedAfter;
+      other.retriedAfter == retriedAfter &&
+      other.memory == memory;
 
   @override
-  int get hashCode =>
-      Object.hash(place, work, scope, authored, policy, answer, retriedAfter);
+  int get hashCode => Object.hash(
+    place,
+    work,
+    scope,
+    authored,
+    policy,
+    answer,
+    retriedAfter,
+    memory,
+  );
 
   @override
   String toString() => 'PendingOp($opId, $answer)';
@@ -113,31 +126,31 @@ final class RetiredOp extends QueueEntry {
   String toString() => 'RetiredOp($opId)';
 }
 
-final class UnreadableEntry extends QueueEntry {
-  const UnreadableEntry({
-    required super.place,
-    required this.text,
-    required this.problem,
-  });
+sealed class ServerMemory {
+  const ServerMemory();
+}
 
-  final String text;
-  final String problem;
+final class Remembered extends ServerMemory {
+  const Remembered();
 
   @override
-  String get id => 'unreadable/$place';
+  bool operator ==(Object other) => other is Remembered;
+
+  @override
+  int get hashCode => (Remembered).hashCode;
+}
+
+final class Forgotten extends ServerMemory {
+  const Forgotten({required this.afterRead});
+
+  final int afterRead;
 
   @override
   bool operator ==(Object other) =>
-      other is UnreadableEntry &&
-      other.place == place &&
-      other.text == text &&
-      other.problem == problem;
+      other is Forgotten && other.afterRead == afterRead;
 
   @override
-  int get hashCode => Object.hash(place, text, problem);
-
-  @override
-  String toString() => 'UnreadableEntry($place, $problem)';
+  int get hashCode => Object.hash(Forgotten, afterRead);
 }
 
 enum Landing { notLanded, mayHaveLanded }
@@ -174,20 +187,6 @@ final class CheckedDelete extends Work {
 
   @override
   int get hashCode => Object.hash(CheckedDelete, op, seen);
-}
-
-final class ImportedIncompleteCopy extends Work {
-  const ImportedIncompleteCopy(this.op);
-
-  @override
-  final PageAddOp op;
-
-  @override
-  bool operator ==(Object other) =>
-      other is ImportedIncompleteCopy && other.op == op;
-
-  @override
-  int get hashCode => Object.hash(ImportedIncompleteCopy, op);
 }
 
 final class SeenPage {
@@ -397,21 +396,28 @@ final class NotAnswered extends ServerAnswer {
 }
 
 final class AnsweredApplied extends ServerAnswer {
-  const AnsweredApplied(this.revision, this.by, {required this.afterRead});
+  const AnsweredApplied(
+    this.revision,
+    this.by, {
+    required this.afterRead,
+    required this.at,
+  });
 
   final int revision;
   final AppliedBy by;
   final int afterRead;
+  final DateTime at;
 
   @override
   bool operator ==(Object other) =>
       other is AnsweredApplied &&
       other.revision == revision &&
       other.by == by &&
-      other.afterRead == afterRead;
+      other.afterRead == afterRead &&
+      other.at == at;
 
   @override
-  int get hashCode => Object.hash(AnsweredApplied, revision, by, afterRead);
+  int get hashCode => Object.hash(AnsweredApplied, revision, by, afterRead, at);
 
   @override
   String toString() => 'AnsweredApplied($revision, ${by.name})';
@@ -569,6 +575,7 @@ final class AttemptFact {
     required this.clientId,
     required this.build,
     required this.at,
+    required this.afterRead,
     required List<StrategyOp> ops,
     required this.outcome,
   }) : ops = List.unmodifiable(ops);
@@ -577,6 +584,7 @@ final class AttemptFact {
   final String clientId;
   final String build;
   final DateTime at;
+  final int afterRead;
   final List<StrategyOp> ops;
   final AttemptOutcome outcome;
 
@@ -587,6 +595,7 @@ final class AttemptFact {
     clientId: clientId,
     build: build,
     at: at,
+    afterRead: afterRead,
     ops: ops,
     outcome: outcome,
   );
@@ -598,6 +607,7 @@ final class AttemptFact {
       other.clientId == clientId &&
       other.build == build &&
       other.at == at &&
+      other.afterRead == afterRead &&
       _listEquality.equals(other.ops, ops) &&
       other.outcome == outcome;
 
@@ -714,36 +724,36 @@ final class AppClosedWhileSending extends SendCut {
 enum TransportFailure { network, timeout, malformedAnswer, missingAnswer }
 
 sealed class RowEvidence {
-  const RowEvidence({required this.read, required this.readAt});
+  const RowEvidence({required this.read});
 
   final int read;
-  final DateTime readAt;
 }
 
 final class RowSeen extends RowEvidence {
   const RowSeen({
     required super.read,
-    required super.readAt,
     required this.revision,
     required this.digest,
     required this.page,
     required this.life,
+    required this.payloadVersion,
   });
 
   final int revision;
   final String digest;
   final String? page;
   final Life life;
+  final int? payloadVersion;
 
   @override
   bool operator ==(Object other) =>
       other is RowSeen &&
       other.read == read &&
-      other.readAt == readAt &&
       other.revision == revision &&
       other.digest == digest &&
       other.page == page &&
-      other.life == life;
+      other.life == life &&
+      other.payloadVersion == payloadVersion;
 
   @override
   int get hashCode => Object.hash(RowSeen, read, revision, digest, page, life);
@@ -753,37 +763,29 @@ final class RowSeen extends RowEvidence {
 }
 
 final class RowUnreadable extends RowEvidence {
-  const RowUnreadable({
-    required super.read,
-    required super.readAt,
-    required this.page,
-  });
+  const RowUnreadable({required super.read, required this.page});
 
   final String? page;
 
   @override
   bool operator ==(Object other) =>
-      other is RowUnreadable &&
-      other.read == read &&
-      other.readAt == readAt &&
-      other.page == page;
+      other is RowUnreadable && other.read == read && other.page == page;
 
   @override
-  int get hashCode => Object.hash(RowUnreadable, read, readAt, page);
+  int get hashCode => Object.hash(RowUnreadable, read, page);
 
   @override
   String toString() => 'RowUnreadable(read $read, $page)';
 }
 
 final class RowAbsent extends RowEvidence {
-  const RowAbsent({required super.read, required super.readAt});
+  const RowAbsent({required super.read});
 
   @override
-  bool operator ==(Object other) =>
-      other is RowAbsent && other.read == read && other.readAt == readAt;
+  bool operator ==(Object other) => other is RowAbsent && other.read == read;
 
   @override
-  int get hashCode => Object.hash(RowAbsent, read, readAt);
+  int get hashCode => Object.hash(RowAbsent, read);
 
   @override
   String toString() => 'RowAbsent(read $read)';

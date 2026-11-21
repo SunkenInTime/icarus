@@ -1,6 +1,5 @@
 import '../json.dart';
 import '../ops.dart';
-import '../payloads.dart';
 
 sealed class Folding {
   const Folding();
@@ -12,16 +11,14 @@ final class FoldedOp extends Folding {
   final StrategyOp op;
 }
 
-final class CancelsOut extends Folding {
-  const CancelsOut();
-}
-
 final class KeptApart extends Folding {
   const KeptApart();
 }
 
-int? _placeOf(int? first, int? then, FieldMerge? merge) =>
-    merge != null && !merge.fields.contains(placeField) ? first : then ?? first;
+bool _sameFields(FieldMerge first, FieldMerge then) =>
+    first.fields.toSet().containsAll(then.fields) &&
+    then.fields.toSet().containsAll(first.fields) &&
+    (first.base == null) == (then.base == null);
 
 Map<String, Object?> _named(
   JsonObject into,
@@ -40,108 +37,46 @@ Map<String, Object?> _named(
   return data;
 }
 
-ElementPayload _elementPayload(
-  ElementPayload into,
-  ElementPayload from,
-  FieldMerge? merge,
-) => merge == null
-    ? from
-    : into.withData(_named(into.data, from.data, merge.fields));
-
-LineupGroupPayload _lineupPayload(
-  LineupGroupPayload into,
-  LineupGroupPayload from,
-  FieldMerge? merge,
-) => merge == null
-    ? from
-    : into.withData(_named(into.data, from.data, merge.fields));
-
-Folding fold(StrategyOp first, StrategyOp then) {
-  final opId = then.opId;
-  switch ((first, then)) {
-    case (final ElementAddOp a, final ElementPatchOp b)
-        when b.payload != null && b.pagePublicId == null:
-      return FoldedOp(
-        ElementAddOp(
-          opId: opId,
-          elementPublicId: a.elementPublicId,
-          pagePublicId: a.pagePublicId,
-          payload: _elementPayload(a.payload, b.payload!, b.merge),
-          sortIndex: _placeOf(a.sortIndex, b.sortIndex, b.merge)!,
-          expectedElementRevision: a.expectedElementRevision,
-        ),
-      );
-    case (final ElementAddOp a, ElementDeleteOp())
-        when a.expectedElementRevision == null:
-      return const CancelsOut();
-    case (final ElementPatchOp a, final ElementPatchOp b)
-        when a.merge == null &&
-            b.merge == null &&
-            b.payload != null &&
-            a.pagePublicId == null &&
-            b.pagePublicId == null:
-      return FoldedOp(
-        ElementPatchOp(
-          opId: opId,
-          elementPublicId: a.elementPublicId,
-          expectedElementRevision: a.expectedElementRevision,
-          payload: b.payload,
-          sortIndex: b.sortIndex ?? a.sortIndex,
-        ),
-      );
-    case (final ElementPatchOp a, final ElementPatchOp b)
-        when a.merge != null &&
-            b.merge != null &&
-            (a.merge!.base == null) == (b.merge!.base == null) &&
-            a.merge!.fields.toSet().containsAll(b.merge!.fields) &&
-            b.payload != null &&
-            a.pagePublicId == null &&
-            b.pagePublicId == null:
-      return FoldedOp(
-        ElementPatchOp(
-          opId: opId,
-          elementPublicId: a.elementPublicId,
-          expectedElementRevision: a.expectedElementRevision,
-          payload: a.payload == null
-              ? b.payload
-              : _elementPayload(a.payload!, b.payload!, b.merge),
-          sortIndex: b.merge!.fields.contains(placeField)
-              ? b.sortIndex ?? a.sortIndex
-              : a.sortIndex,
-          merge: a.merge,
-        ),
-      );
-    case (final LineupGroupAddOp a, final LineupGroupPatchOp b)
-        when b.merge == null && b.payload != null && b.pagePublicId == null:
-      return FoldedOp(
-        LineupGroupAddOp(
-          opId: opId,
-          lineupPublicId: a.lineupPublicId,
-          pagePublicId: a.pagePublicId,
-          payload: _lineupPayload(a.payload, b.payload!, b.merge),
-          sortIndex: b.sortIndex ?? a.sortIndex,
-          expectedLineupRevision: a.expectedLineupRevision,
-        ),
-      );
-    case (final LineupGroupAddOp a, LineupGroupDeleteOp())
-        when a.expectedLineupRevision == null:
-      return const CancelsOut();
-    case (final LineupGroupPatchOp a, final LineupGroupPatchOp b)
-        when a.merge == null &&
-            b.merge == null &&
-            b.payload != null &&
-            a.pagePublicId == null &&
-            b.pagePublicId == null:
-      return FoldedOp(
-        LineupGroupPatchOp(
-          opId: opId,
-          lineupPublicId: a.lineupPublicId,
-          expectedLineupRevision: a.expectedLineupRevision,
-          payload: b.payload,
-          sortIndex: b.sortIndex ?? a.sortIndex,
-        ),
-      );
-    case _:
-      return const KeptApart();
-  }
-}
+Folding fold(StrategyOp first, StrategyOp then) => switch ((first, then)) {
+  (
+    final ElementPatchOp a &&
+        ElementPatchOp(merge: final am?, payload: final into?),
+    final ElementPatchOp b &&
+        ElementPatchOp(merge: final bm?, payload: final from?),
+  )
+      when _sameFields(am, bm) &&
+          a.elementPublicId == b.elementPublicId &&
+          a.pagePublicId == null &&
+          b.pagePublicId == null =>
+    FoldedOp(
+      ElementPatchOp(
+        opId: b.opId,
+        elementPublicId: a.elementPublicId,
+        expectedElementRevision: a.expectedElementRevision,
+        payload: into.withData(_named(into.data, from.data, am.fields)),
+        sortIndex: am.fields.contains(placeField) ? b.sortIndex : a.sortIndex,
+        merge: am,
+      ),
+    ),
+  (
+    final LineupGroupPatchOp a &&
+        LineupGroupPatchOp(merge: final am?, payload: final into?),
+    final LineupGroupPatchOp b &&
+        LineupGroupPatchOp(merge: final bm?, payload: final from?),
+  )
+      when _sameFields(am, bm) &&
+          a.lineupPublicId == b.lineupPublicId &&
+          a.pagePublicId == null &&
+          b.pagePublicId == null =>
+    FoldedOp(
+      LineupGroupPatchOp(
+        opId: b.opId,
+        lineupPublicId: a.lineupPublicId,
+        expectedLineupRevision: a.expectedLineupRevision,
+        payload: into.withData(_named(into.data, from.data, am.fields)),
+        sortIndex: am.fields.contains(placeField) ? b.sortIndex : a.sortIndex,
+        merge: am,
+      ),
+    ),
+  _ => const KeptApart(),
+};
