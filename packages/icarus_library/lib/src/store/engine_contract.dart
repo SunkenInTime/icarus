@@ -349,9 +349,20 @@ final List<EngineCheck> engineContract = [
   _check('an empty commit applies and changes nothing', (harness) async {
     final engine = await harness.open();
     final lease = await _lease(engine);
-    await _put(lease, 'a', {'x': '1'}, 'seed');
+    await _put(lease, 'a', {'x': '1', 'y': '2'}, 'seed');
+    await _put(lease, 'b', {'z': '3'}, 'seed');
+    const seeded = {'a', 'b'};
+    final before = await _snapshot(lease, seeded);
+    final areasBefore = _done(await lease.areas(''), 'areas');
     await _applied(lease, const [], 'an empty commit');
-    _same(await _read(lease, 'a', 'x'), '1', 'after an empty commit');
+    if (!_sameAreas(await _snapshot(lease, seeded), before)) {
+      _broke('an empty commit changed what is stored');
+    }
+    _sameList(
+      _done(await lease.areas(''), 'areas'),
+      areasBefore,
+      'areas after an empty commit',
+    );
     await harness.close(engine);
   }),
   _check(

@@ -427,7 +427,10 @@ final class _Apply {
             expectedPageSettingsRevision: after.revision,
           ),
         ),
-        null => const UndoUnavailable(),
+        null => UndoByWritingDefaultSettings(
+          pagePublicId: op.pagePublicId,
+          expectedPageSettingsRevision: after.revision,
+        ),
       },
     );
   }
@@ -997,7 +1000,8 @@ final class _Apply {
       if (element case UnreadableElement(
         :final key,
         :final stored,
-      ) when stored is! JsonObject) {
+        :final deleted,
+      ) when stored is! JsonObject || deleted == null) {
         return OpRefused(UnreadableTarget(key));
       }
     }

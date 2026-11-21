@@ -183,10 +183,6 @@ final class CorpusReport {
         elements: elements,
         lineupGroups: groups,
       ),
-      StrategyTimes(
-        createdAt: made.summary.createdAt,
-        lastEdited: made.summary.lastEdited,
-      ),
     );
     switch (back) {
       case StrategyDataRefused(:final problems):

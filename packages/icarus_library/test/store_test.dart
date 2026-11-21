@@ -451,7 +451,7 @@ void main() {
         expect(listOf(store).strategies, isEmpty);
         expect(
           listOf(store).unreadableStrategies.single.header,
-          isA<Placed<StrategyRow>>().having(
+          isA<HeaderPlaced>().having(
             (placed) => placed.row,
             'row',
             isA<UnreadableStrategy>().having(
@@ -684,6 +684,75 @@ void main() {
     ReadableFolder folder(String id, {String? parent}) =>
         ReadableFolder(publicId: id, name: id, parentFolderPublicId: parent);
 
+    test(
+      'a move into a folder and back in one edit is nothing to save, however often it is asked',
+      () async {
+        final disk = MemoryStorage(seeded);
+        final store = await openStore(MemoryEngine(disk));
+        savedValue(await store.editLibrary([PutFolder(folder('f'))]));
+        final before = {
+          for (final MapEntry(:key, :value) in disk.contents.entries)
+            key: {...value},
+        };
+        for (var round = 0; round < 2; round++) {
+          expect(
+            await store.editLibrary([
+              const MoveStrategy(strategyId, 'f'),
+              const MoveStrategy(strategyId, null),
+            ]),
+            isA<NothingToSave<LibraryEdited, LibraryRefusal>>(),
+            reason: 'round $round',
+          );
+        }
+        expect(sameContents(disk.contents, before), isTrue);
+        expect(listOf(store).strategies.single.folderPublicId, isNull);
+      },
+    );
+
+    test('several moves of one strategy in one edit advance it once', () async {
+      final store = await openOn(seeded);
+      savedValue(
+        await store.editLibrary([
+          PutFolder(folder('f')),
+          PutFolder(folder('g')),
+        ]),
+      );
+      final edited = savedValue(
+        await store.editLibrary([
+          const MoveStrategy(strategyId, 'f'),
+          const MoveStrategy(strategyId, 'g'),
+        ]),
+      );
+      expect(edited.summaries.single.folderPublicId, 'g');
+      expect(
+        headerOf(strategyOf(await store.readStrategy(strategyId))).revision,
+        2,
+      );
+    });
+
+    test(
+      'a strategy added and moved twice in one edit is stored once, at its own revision',
+      () async {
+        final disk = MemoryStorage(seeded);
+        final store = await openStore(MemoryEngine(disk));
+        final added = sampleStrategy(id: 'strategy-new', prefix: 'new-');
+        savedValue(
+          await store.editLibrary([
+            PutFolder(folder('f')),
+            PutFolder(folder('g')),
+            AddStrategy(added),
+            const MoveStrategy('strategy-new', 'f'),
+            const MoveStrategy('strategy-new', 'g'),
+          ]),
+        );
+        final header = headerOf(
+          strategyOf(await store.readStrategy('strategy-new')),
+        );
+        expect(header.folderPublicId, 'g');
+        expect(header.revision, added.strategy.revision);
+      },
+    );
+
     test('folders and moves are rows in the same store', () async {
       final disk = MemoryStorage(seeded);
       final store = await openStore(MemoryEngine(disk));
@@ -852,7 +921,7 @@ void main() {
         final store = await openStore(MemoryEngine(disk));
         final listing = listOf(store).unreadableStrategies.single;
         expect(listing.ref, StrategyRef(garbledArea));
-        expect(listing.header, isA<Unplaced<StrategyRow>>());
+        expect(listing.header, isA<HeaderUnplaced>());
         expect(
           listOf(store).strategies.map((summary) => summary.publicId),
           unorderedEquals([strategyId, garbledArea]),
@@ -1224,6 +1293,275 @@ void main() {
       },
     );
 
+    Contents copied(Contents contents) => {
+      for (final MapEntry(:key, :value) in contents.entries) key: {...value},
+    };
+
+    Future<Map<String, Object?>> listedAfterRebuild(Contents contents) async {
+      final store = await openOn(copied(contents));
+      await store.rebuildSummary(strategyId);
+      return listOf(store).strategies.single.toJson();
+    }
+
+    Contents withPageAGone(Contents clean) => without(clean, sampleArea, [
+      pageName('page-a'),
+      settingsName('page-a'),
+      elementName('page-a', 'jett'),
+      elementName('page-a', 'sova'),
+      elementName('page-a', 'line'),
+      lineupName('page-a', 'g1'),
+    ]);
+
+    test(
+      'moving a strategy into a folder before its rows are read saves the summary its rows give',
+      () async {
+        final disk = MemoryStorage(
+          without(await seededClean(), sampleArea, [pageName('page-a')]),
+        );
+        final store = await openStore(MemoryEngine(disk));
+        savedValue(
+          await store.editLibrary([
+            PutFolder(ReadableFolder(publicId: 'folder', name: 'Folder')),
+            const MoveStrategy(strategyId, 'folder'),
+          ]),
+        );
+        await store.close();
+        final listed = listOf(
+          await openStore(MemoryEngine(disk)),
+        ).strategies.single;
+        expect(listed.folderPublicId, 'folder');
+        expect(listed.pageCount, 2);
+        expect(
+          listed.readability,
+          isA<SomeUnreadable>().having((some) => some.damaged, 'damaged', 5),
+        );
+        expect(listed.toJson(), await listedAfterRebuild(disk.contents));
+      },
+    );
+
+    test(
+      'a save on a strategy whose page row is gone counts its orphans once',
+      () async {
+        final disk = MemoryStorage(
+          without(await seededClean(), sampleArea, [pageName('page-a')]),
+        );
+        final store = await openStore(MemoryEngine(disk));
+        savedValue(
+          await store.commit(
+            strategyId,
+            const PageAddOp(
+              opId: 'add-d',
+              pagePublicId: 'page-d',
+              sortIndex: 3,
+              expectedStrategyRevision: 1,
+              settings: defaultSettings,
+            ),
+          ),
+        );
+        expect(readabilityOf(store).damaged, 5);
+        expect(
+          listOf(store).strategies.single.toJson(),
+          await listedAfterRebuild(disk.contents),
+        );
+      },
+    );
+
+    test(
+      'a page added under the id of a page that is wholly gone counts only what it holds',
+      () async {
+        final disk = MemoryStorage(withPageAGone(await seededClean()));
+        final store = await openStore(MemoryEngine(disk));
+        savedValue(
+          await store.commit(
+            strategyId,
+            const PageAddOp(
+              opId: 'add-a-again',
+              pagePublicId: 'page-a',
+              sortIndex: 0,
+              expectedStrategyRevision: 1,
+              settings: defaultSettings,
+            ),
+          ),
+        );
+        expect(listOf(store).strategies.single.itemCount, 2);
+        expect(
+          listOf(store).strategies.single.toJson(),
+          await listedAfterRebuild(disk.contents),
+        );
+      },
+    );
+
+    test(
+      'a page added over orphaned content of a kind this build does not know is refused',
+      () async {
+        final gone = withPageAGone(await seededClean());
+        final before = {
+          ...gone,
+          sampleArea: {...gone[sampleArea]!, pinName: unknownRowJson},
+        };
+        final disk = MemoryStorage(before);
+        final store = await openStore(MemoryEngine(disk));
+        expect(
+          await store.commit(
+            strategyId,
+            const PageAddOp(
+              opId: 'over-pin',
+              pagePublicId: 'page-a',
+              sortIndex: 0,
+              expectedStrategyRevision: 1,
+              settings: defaultSettings,
+            ),
+          ),
+          isA<Refused<Committed, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<UnplacedRowInTheWay>(),
+          ),
+        );
+        expect(sameContents(disk.contents, before), isTrue);
+      },
+    );
+
+    test(
+      'findStrategies lists a strategy whose rows are all gone as unreadable, which can then be removed',
+      () async {
+        final clean = await seededClean();
+        final disk = MemoryStorage({...clean}..remove(sampleArea));
+        final store = await openStore(MemoryEngine(disk));
+        expect(listOf(store).strategies.single.publicId, strategyId);
+        final found = await store.findStrategies() as StrategiesFound;
+        expect(found.rebuilt, isEmpty);
+        expect(found.unreadable.single.ref, StrategyRef(sampleArea));
+        expect(listOf(store).strategies, isEmpty);
+        expect(
+          listOf(store).unreadableStrategies.single.ref,
+          StrategyRef(sampleArea),
+        );
+        expect(
+          await store.commit(strategyId, moveJett),
+          isA<Refused<Committed, CommitRefusal>>(),
+        );
+        savedValue(
+          await store.editLibrary([
+            RemoveUnreadableStrategy(StrategyRef(sampleArea)),
+          ]),
+        );
+        expect(disk.contents['library']?[summaryName(strategyId)], isNull);
+        expect(listOf(store).unreadableStrategies, isEmpty);
+      },
+    );
+
+    test(
+      'a damaged summary whose strategy has no rows is listed as unreadable at open, and can be removed',
+      () async {
+        final clean = await seededClean();
+        final disk = MemoryStorage(
+          {
+            ...clean,
+            'library': {...clean['library']!, summaryName(strategyId): '{}'},
+          }..remove(sampleArea),
+        );
+        final store = await openStore(MemoryEngine(disk));
+        final listing = listOf(store).unreadableStrategies.single;
+        expect(listing.ref, StrategyRef(sampleArea));
+        expect(listing.header, isA<HeaderAbsent>());
+        expect(listOf(store).strategies, isEmpty);
+        expect(
+          (await store.findStrategies() as StrategiesFound).unreadable,
+          isEmpty,
+        );
+        expect(listOf(store).unreadableStrategies.single.ref, listing.ref);
+        savedValue(
+          await store.editLibrary([RemoveUnreadableStrategy(listing.ref)]),
+        );
+        expect(disk.contents['library']?[summaryName(strategyId)], isNull);
+      },
+    );
+
+    test(
+      'findStrategies that cannot read one area changes nothing, and a retry finds every strategy',
+      () async {
+        final storage = MemoryStorage();
+        final seeding = await openStore(MemoryEngine(storage));
+        savedValue(
+          await seeding.editLibrary([
+            AddStrategy(sampleStrategy()),
+            AddStrategy(sampleStrategy(id: 'strategy-2', prefix: 'two-')),
+          ]),
+        );
+        await seeding.close();
+        final disk = MemoryStorage(
+          without(storage.contents, 'library', [
+            summaryName(strategyId),
+            summaryName('strategy-2'),
+          ]),
+        );
+        final failing = <String>{};
+        final store = await openStore(
+          WrappingEngine(
+            MemoryEngine(disk),
+            (lease) => _AreaFailingLease(lease, failing),
+          ),
+        );
+        for (final area in [sampleArea, strategyArea('strategy-2')]) {
+          failing
+            ..clear()
+            ..add(area);
+          expect(
+            await store.findStrategies(),
+            isA<StrategiesNotSearched>(),
+            reason: area,
+          );
+          expect(listOf(store).strategies, isEmpty, reason: area);
+          expect(listOf(store).unreadableStrategies, isEmpty, reason: area);
+        }
+        failing.clear();
+        final found = await store.findStrategies() as StrategiesFound;
+        expect(
+          found.rebuilt.map((summary) => summary.publicId),
+          unorderedEquals([strategyId, 'strategy-2']),
+        );
+        expect(listOf(store).strategies, hasLength(2));
+      },
+    );
+
+    test(
+      'an edit on a strategy that has rows but no summary is saved, and lists the strategy',
+      () async {
+        final clean = await seededClean();
+        final disk = MemoryStorage(
+          without(clean, 'library', [summaryName(strategyId)]),
+        );
+        final store = await openStore(MemoryEngine(disk));
+        expect(listOf(store).strategies, isEmpty);
+        savedValue(await store.commit(strategyId, moveJett));
+        expect(listOf(store).strategies.single.publicId, strategyId);
+        expect(disk.contents['library']?[summaryName(strategyId)], isNotNull);
+        expect(
+          listOf(store).strategies.single.toJson(),
+          await listedAfterRebuild(disk.contents),
+        );
+      },
+    );
+
+    test('a page read says whether a settings row is stored', () async {
+      final store = await openOn(
+        without(await seededClean(), sampleArea, [settingsName('page-b')]),
+      );
+      expect(
+        pageOf(await store.readPage(strategyId, 'page-a')).settings,
+        isA<SettingsStored>().having(
+          (stored) => stored.row,
+          'row',
+          isA<ReadablePageSettings>(),
+        ),
+      );
+      expect(
+        pageOf(await store.readPage(strategyId, 'page-b')).settings,
+        isA<NoSettingsStored>(),
+      );
+    });
+
     test('a settings row that cannot be read is counted as damaged', () async {
       final clean = await seededClean();
       final store = await openOn({
@@ -1257,4 +1595,27 @@ void main() {
       },
     );
   });
+}
+
+final class _AreaFailingLease extends ForwardingLease {
+  _AreaFailingLease(super.inner, this.failing);
+
+  final Set<String> failing;
+
+  @override
+  Future<KeyRead> read(String area, String key) async => failing.contains(area)
+      ? const KeyNotRead(DeviceFailure('cannot read'))
+      : await super.read(area, key);
+
+  @override
+  Future<Stored<List<String>>> keys(String area, String prefix) async =>
+      failing.contains(area)
+      ? const StorageFailed(DeviceFailure('cannot read'))
+      : await super.keys(area, prefix);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      failing.contains(area)
+      ? const StorageFailed(DeviceFailure('cannot read'))
+      : await super.entries(area, prefix);
 }

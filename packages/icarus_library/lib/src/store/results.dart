@@ -306,7 +306,7 @@ final class UnreadableStrategyListing {
   const UnreadableStrategyListing({required this.ref, required this.header});
 
   final StrategyRef ref;
-  final Parsed<StrategyRow> header;
+  final StrategyHeader header;
 }
 
 final class UnknownKindRow {
@@ -335,6 +335,20 @@ final class StrategyContent {
   final List<ForeignName> foreignNames;
 }
 
+sealed class SettingsOnPage {
+  const SettingsOnPage();
+}
+
+final class SettingsStored extends SettingsOnPage {
+  const SettingsStored(this.row);
+
+  final PageSettingsRow row;
+}
+
+final class NoSettingsStored extends SettingsOnPage {
+  const NoSettingsStored();
+}
+
 final class PageContent {
   PageContent({
     required this.page,
@@ -351,7 +365,7 @@ final class PageContent {
        foreignNames = List.unmodifiable(foreignNames);
 
   final PageRow page;
-  final PageSettingsRow? settings;
+  final SettingsOnPage settings;
   final List<ElementRow> elements;
   final List<LineupGroupRow> lineupGroups;
   final List<UnknownKindRow> unknownKinds;

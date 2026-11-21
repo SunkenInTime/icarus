@@ -146,6 +146,41 @@ void main() {
     expect(stored['publicId'], carried.publicId);
   });
 
+  test(
+    'a page copy that would include an element whose deleted flag is damaged is refused',
+    () async {
+      final area = {...seeded[sampleArea]!}
+        ..remove(elementName('page-a', 'smoke'))
+        ..remove(elementName('page-a', 'garbled'))
+        ..remove(pinName);
+      final jett =
+          jsonDecode(area[elementName('page-a', 'jett')]!)
+              as Map<String, Object?>;
+      area[elementName('page-a', 'jett')] = jsonEncode({
+        ...jett,
+        'deleted': 'no',
+      });
+      final before = {...seeded, sampleArea: area};
+      final disk = MemoryStorage(before);
+      final store = await openStore(MemoryEngine(disk));
+      expect(
+        await store.commit(
+          strategyId,
+          const PageAddOp(
+            opId: 'copy-a',
+            pagePublicId: 'page-copy',
+            sortIndex: 3,
+            expectedStrategyRevision: 1,
+            settings: defaultSettings,
+            copyContentFromPagePublicId: 'page-a',
+          ),
+        ),
+        isA<Refused<Committed, CommitRefusal>>(),
+      );
+      expect(sameContents(disk.contents, before), isTrue);
+    },
+  );
+
   final brokenGraphs =
       <String, Map<String, Object?> Function(Map<String, Object?> data)>{
         'links that are not items': (data) => {

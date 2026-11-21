@@ -200,10 +200,20 @@ final class _RebuiltSummary extends _Rebuilt {
   final StrategySummary summary;
 }
 
-final class _CannotRebuild extends _Rebuilt {
-  const _CannotRebuild(this.refusal);
+final class _HeaderUnreadable extends _Rebuilt {
+  const _HeaderUnreadable(this.row);
 
-  final CommitRefusal refusal;
+  final UnreadableStrategy row;
+}
+
+final class _HeaderMissing extends _Rebuilt {
+  const _HeaderMissing(this.ref);
+
+  final StrategyRef ref;
+}
+
+final class _NoStrategyThere extends _Rebuilt {
+  const _NoStrategyThere();
 }
 
 final class _RebuildNotRead extends _Rebuilt {
@@ -498,12 +508,43 @@ final class LibraryStore {
         _unsaved.remove(digest);
         _unreadable[digest] = UnreadableStrategyListing(
           ref: StrategyRef(StrategyArea(digest).name),
-          header: Unplaced(null, 'its rows could not be read: $failure'),
+          header: HeaderAbsent('its rows could not be read: $failure'),
         );
-      case _CannotRebuild():
+      case _HeaderUnreadable() || _HeaderMissing():
         if (_strategies[digest] case final strategy?) _listUnreadable(strategy);
+      case _NoStrategyThere():
+        _listGone(digest);
     }
   }
+
+  void _listGone(String digest) {
+    _summaries.remove(digest);
+    _unsaved.remove(digest);
+    _strategies.remove(digest);
+    _unreadable[digest] = UnreadableStrategyListing(
+      ref: StrategyRef(StrategyArea(digest).name),
+      header: const HeaderAbsent('none of its rows are stored'),
+    );
+  }
+
+  Future<_Rebuilt> _summaryFor(LoadedStrategy strategy) async {
+    if (_summaries[strategy.digest] case final summary?) {
+      return _RebuiltSummary(summary);
+    }
+    final rebuilt = await _rebuilt(strategy.digest);
+    if (rebuilt case _RebuiltSummary(:final summary)) {
+      _keepInMemory(strategy.digest, summary);
+    }
+    return rebuilt;
+  }
+
+  Future<_Rebuilt> _summaryForId(String strategyPublicId) async =>
+      switch (await _strategy(strategyPublicId)) {
+        Found(value: final strategy) => await _summaryFor(strategy),
+        NotFound() => const _NoStrategyThere(),
+        NotRead(:final failure) => _RebuildNotRead(failure),
+        InUnreadableStrategy(:final listing) => _HeaderMissing(listing.ref),
+      };
 
   void _keepInMemory(String digest, StrategySummary summary) {
     _unreadable.remove(digest);
@@ -536,7 +577,7 @@ final class LibraryStore {
   void _refresh(LoadedStrategy strategy) {
     final current = _summaries[strategy.digest];
     if (current == null) return;
-    if (strategy.header case Placed(row: final ReadableStrategy header)) {
+    if (strategy.header case HeaderPlaced(row: final ReadableStrategy header)) {
       _keepInMemory(
         strategy.digest,
         _summaryOf(strategy, header, current.tallies),
@@ -550,20 +591,20 @@ final class LibraryStore {
       case Found(:final value):
         strategy = value;
       case NotFound():
-        return _CannotRebuild(NoSuchStrategy(StrategyArea(digest).name));
+        return const _NoStrategyThere();
       case NotRead(:final failure):
         return _RebuildNotRead(failure);
       case InUnreadableStrategy(:final listing):
-        return _CannotRebuild(StrategyNotReadable(listing.ref));
+        return _HeaderMissing(listing.ref);
     }
     final ReadableStrategy header;
     switch (strategy.header) {
-      case Placed(row: final ReadableStrategy row):
+      case HeaderPlaced(row: final ReadableStrategy row):
         header = row;
-      case Placed(row: final UnreadableStrategy row):
-        return _CannotRebuild(UnreadableRowInTheWay(row));
-      case Unplaced():
-        return _CannotRebuild(StrategyNotReadable(StrategyRef(strategy.area)));
+      case HeaderPlaced(row: final UnreadableStrategy row):
+        return _HeaderUnreadable(row);
+      case HeaderUnplaced() || HeaderAbsent():
+        return _HeaderMissing(StrategyRef(strategy.area));
     }
     if (await _loadPages(strategy, strategy.pageDigests) case StorageFailed(
       :final failure,
@@ -577,21 +618,20 @@ final class LibraryStore {
     if (_strategies[digest] case final loaded?) return Found(loaded);
     final area = StrategyArea(digest);
     final known = _summaries[digest]?.publicId;
-    final Parsed<StrategyRow> header;
+    final StrategyHeader header;
     switch (await _lease.read(area.name, const HeaderName().name)) {
       case KeyNotRead(:final failure):
         return NotRead(failure);
       case KeyMissing():
-        header = Unplaced(null, 'the strategy row is missing');
+        header = const HeaderAbsent('the strategy row is missing');
       case KeyHeld(:final value):
-        header = StrategyRow.parse(
-          admit(value),
-          spot: _named(digest, known: known),
+        header = headerFrom(
+          StrategyRow.parse(admit(value), spot: _named(digest, known: known)),
         );
     }
     final strategyId = switch (header) {
-      Placed(:final row) => row.publicId,
-      Unplaced() => known,
+      HeaderPlaced(:final row) => row.publicId,
+      HeaderUnplaced() || HeaderAbsent() => known,
     };
     final List<StoreName> names;
     switch (await _lease.keys(area.name, '')) {
@@ -674,11 +714,11 @@ final class LibraryStore {
     switch (await _strategyAt(digestOf(strategyPublicId))) {
       case Found(value: final loaded):
         switch (loaded.header) {
-          case Placed(:final row) when row.publicId == strategyPublicId:
+          case HeaderPlaced(:final row) when row.publicId == strategyPublicId:
             return Found(loaded);
-          case Placed():
+          case HeaderPlaced():
             return const NotFound();
-          case Unplaced():
+          case HeaderUnplaced() || HeaderAbsent():
             _listUnreadable(loaded);
             return InUnreadableStrategy(_unreadable[loaded.digest]!);
         }
@@ -773,8 +813,10 @@ final class LibraryStore {
           Found(value: final strategy) => Found(
             StrategyContent(
               strategy: switch (strategy.header) {
-                Placed(:final row) => row,
-                Unplaced() => throw StateError('found by id'),
+                HeaderPlaced(:final row) => row,
+                HeaderUnplaced() || HeaderAbsent() => throw StateError(
+                  'a strategy found by id has its own row',
+                ),
               },
               pages: _ordered(strategy.pages),
               settings: strategy.settingsByPage,
@@ -816,7 +858,10 @@ final class LibraryStore {
     return Found(
       PageContent(
         page: page,
-        settings: strategy.settingsOf(pagePublicId),
+        settings: switch (strategy.settingsOf(pagePublicId)) {
+          final row? => SettingsStored(row),
+          null => const NoSettingsStored(),
+        },
         elements: loaded.elements.values,
         lineupGroups: loaded.lineupGroups.values,
         unknownKinds: loaded.unknownKinds,
@@ -837,32 +882,50 @@ final class LibraryStore {
       case Done(:final value):
         areas = value;
     }
-    final rebuilt = <StrategySummary>[];
-    final unreadable = <UnreadableStrategyListing>[];
+    final listed = <String>{};
+    final rebuilt = <String, StrategySummary>{};
+    final unreadable = <String, LoadedStrategy>{};
     for (final area in areas) {
       final digest = switch (strategyAreaNamed(area)) {
         StrategyArea(:final digest) => digest,
         null => null,
       };
-      if (digest == null ||
-          _summaries.containsKey(digest) ||
-          _unreadable.containsKey(digest)) {
+      if (digest == null) continue;
+      listed.add(digest);
+      if (_summaries.containsKey(digest) || _unreadable.containsKey(digest)) {
         continue;
       }
       switch (await _rebuilt(digest)) {
         case _RebuiltSummary(:final summary):
-          _keepInMemory(digest, summary);
-          rebuilt.add(summary);
+          rebuilt[digest] = summary;
         case _RebuildNotRead(:final failure):
           return StrategiesNotSearched(failure);
-        case _CannotRebuild():
+        case _HeaderUnreadable() || _HeaderMissing():
           if (_strategies[digest] case final strategy?) {
-            _listUnreadable(strategy);
-            unreadable.add(_unreadable[digest]!);
+            unreadable[digest] = strategy;
           }
+        case _NoStrategyThere():
+          break;
       }
     }
-    return StrategiesFound(rebuilt: rebuilt, unreadable: unreadable);
+    final gone = [
+      for (final digest in _summaries.keys)
+        if (!listed.contains(digest)) digest,
+    ];
+    for (final MapEntry(key: digest, value: summary) in rebuilt.entries) {
+      _keepInMemory(digest, summary);
+    }
+    for (final strategy in unreadable.values) {
+      _listUnreadable(strategy);
+    }
+    gone.forEach(_listGone);
+    return StrategiesFound(
+      rebuilt: rebuilt.values.toList(),
+      unreadable: [
+        for (final digest in [...unreadable.keys, ...gone])
+          _unreadable[digest]!,
+      ],
+    );
   });
 
   Future<Unloading> unload(String strategyPublicId) => _inTurn(() async {
@@ -1003,19 +1066,30 @@ final class LibraryStore {
         final digest = strategy.digest;
         final ReadableStrategy header;
         switch (strategy.header) {
-          case Placed(row: final ReadableStrategy row):
+          case HeaderPlaced(row: final ReadableStrategy row):
             header = row;
-          case Placed(row: final UnreadableStrategy row):
+          case HeaderPlaced(row: final UnreadableStrategy row):
             return Refused(UnreadableRowInTheWay(row));
-          case Unplaced():
+          case HeaderUnplaced() || HeaderAbsent():
             return Refused(NoSuchStrategy(strategyPublicId));
         }
         if (await _loadPages(strategy, _pagesFor(op, strategy))
             case StorageFailed(:final failure)) {
           return NotSaved(failure);
         }
-        final summary = _summaries[digest];
-        if (summary == null) return Refused(NoSuchStrategy(strategyPublicId));
+        final StrategySummary summary;
+        switch (await _summaryFor(strategy)) {
+          case _RebuiltSummary(summary: final found):
+            summary = found;
+          case _HeaderUnreadable(:final row):
+            return Refused(UnreadableRowInTheWay(row));
+          case _HeaderMissing(:final ref):
+            return Refused(StrategyNotReadable(ref));
+          case _RebuildNotRead(:final failure):
+            return NotSaved(failure);
+          case _NoStrategyThere():
+            return Refused(NoSuchStrategy(strategyPublicId));
+        }
         if (op case PageAddOp(
           :final pagePublicId,
           :final copyContentFromPagePublicId,
@@ -1108,10 +1182,14 @@ final class LibraryStore {
         switch (await _rebuilt(digest)) {
           case _RebuiltSummary(:final summary):
             rebuilt = summary;
-          case _CannotRebuild(:final refusal):
-            return Refused(refusal);
+          case _HeaderUnreadable(:final row):
+            return Refused(UnreadableRowInTheWay(row));
+          case _HeaderMissing(:final ref):
+            return Refused(StrategyNotReadable(ref));
           case _RebuildNotRead(:final failure):
             return NotSaved(failure);
+          case _NoStrategyThere():
+            return Refused(NoSuchStrategy(strategyPublicId));
         }
         if (rebuilt == _summaries[digest] && !_unsaved.contains(digest)) {
           return const NothingToSave();
@@ -1186,6 +1264,8 @@ final class _LibraryEdit {
   final Map<String, UnreadableStrategyListing> _unreadable;
   final writes = <_Write>[];
   final _headers = <String, ReadableStrategy>{};
+  final _stored = <String, (ReadableStrategy, StrategySummary)>{};
+  final _added = <String, (ReadableStrategy, StrategySummary)>{};
   final _putSummaries = <String, StrategySummary>{};
   final _removed = <String, String>{};
   final _removedUnreadable = <String, StrategyRef>{};
@@ -1204,7 +1284,7 @@ final class _LibraryEdit {
       switch (_unreadable[digestOf(id)]) {
         final listing? &&
                 UnreadableStrategyListing(
-                  header: Placed(row: StrategyRow(:final publicId)),
+                  header: HeaderPlaced(row: StrategyRow(:final publicId)),
                 )
             when publicId == id =>
           listing,
@@ -1242,6 +1322,8 @@ final class _LibraryEdit {
     _putSummaries.remove(digest);
     _unreadable.remove(digest);
     _headers.removeWhere((id, _) => digestOf(id) == digest);
+    _added.removeWhere((id, _) => digestOf(id) == digest);
+    _stored.removeWhere((id, _) => digestOf(id) == digest);
   }
 
   Future<_Step> add(LibraryChange change) async {
@@ -1284,21 +1366,25 @@ final class _LibraryEdit {
           tallies[row.pagePublicId] =
               (tallies[row.pagePublicId] ?? PageTally.empty).plusGroup(row, 1);
         }
-        _putSummary(
-          StrategySummary.of(
-            strategy: rows.strategy,
-            pages: rows.pages,
-            settings: rows.settings,
-            tallies: tallies,
-            elsewhere: PageTally.empty,
-          ),
+        final summary = StrategySummary.of(
+          strategy: rows.strategy,
+          pages: rows.pages,
+          settings: rows.settings,
+          tallies: tallies,
+          elsewhere: PageTally.empty,
         );
+        _added[id] = (rows.strategy, summary);
+        _putSummary(summary);
       case RemoveStrategy(:final strategyPublicId):
-        if (_unreadable[digestOf(strategyPublicId)]
-            case UnreadableStrategyListing(:final ref, header: Unplaced())) {
+        final digest = digestOf(strategyPublicId);
+        if (_unreadable[digest] case UnreadableStrategyListing(
+          :final ref,
+          header: HeaderUnplaced() || HeaderAbsent(),
+        )) {
           return _Stop(Refused(StrategyNotReadable(ref)));
         }
-        if (!_hasStrategy(strategyPublicId)) {
+        if (_removed.containsKey(digest) ||
+            _removedUnreadable.containsKey(digest)) {
           return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
         }
         switch (await _header(strategyPublicId)) {
@@ -1306,10 +1392,11 @@ final class _LibraryEdit {
             return _Stop(NotSaved(failure));
           case InUnreadableStrategy(:final listing):
             return _Stop(Refused(StrategyNotReadable(listing.ref)));
+          case NotFound() when !_hasStrategy(strategyPublicId):
+            return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
           case Found() || NotFound():
             break;
         }
-        final digest = digestOf(strategyPublicId);
         _removeArea(digest);
         _removed[digest] = strategyPublicId;
       case RemoveUnreadableStrategy(:final ref):
@@ -1323,8 +1410,9 @@ final class _LibraryEdit {
         _removeArea(digest);
         _removedUnreadable[digest] = ref;
       case MoveStrategy(:final strategyPublicId, :final folderPublicId):
-        final summary = _summaryWithId(strategyPublicId);
-        if (summary == null) {
+        final digest = digestOf(strategyPublicId);
+        if (_removed.containsKey(digest) ||
+            _removedUnreadable.containsKey(digest)) {
           return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
         }
         if (folderPublicId != null) {
@@ -1345,19 +1433,56 @@ final class _LibraryEdit {
           case InUnreadableStrategy(:final listing):
             return _Stop(Refused(StrategyNotReadable(listing.ref)));
         }
+        final found = switch (_putSummaries[digest]) {
+          final put? => _RebuiltSummary(put),
+          null => await _store._summaryForId(strategyPublicId),
+        };
+        final StrategySummary summary;
+        switch (found) {
+          case _RebuiltSummary(summary: final rebuilt):
+            summary = rebuilt;
+          case _HeaderUnreadable(:final row):
+            return _Stop(Refused(UnreadableRowInTheWay(row)));
+          case _HeaderMissing(:final ref):
+            return _Stop(Refused(StrategyNotReadable(ref)));
+          case _RebuildNotRead(:final failure):
+            return _Stop(NotSaved(failure));
+          case _NoStrategyThere():
+            return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
+        }
         if (current.folderPublicId == folderPublicId) return const _Next();
+        final added = _added[strategyPublicId];
+        final (header, headerSummary) =
+            added ??
+            _stored.putIfAbsent(strategyPublicId, () => (current, summary));
+        final area = strategyArea(strategyPublicId);
+        writes.removeWhere(
+          (write) => switch (write) {
+            _PutRow(row: StrategyRow()) => write.area == area,
+            _PutSummary() => write.digest == digest,
+            _ => false,
+          },
+        );
+        if (added == null && header.folderPublicId == folderPublicId) {
+          _headers[strategyPublicId] = header;
+          _putSummaries.remove(digest);
+          _summaries[digest] = headerSummary;
+          return const _Next();
+        }
         final now = _store._clock();
-        final moved = current.rewritten(
+        final moved = header.rewritten(
           folder: switch (folderPublicId) {
             final folder? => SetValue(folder),
             null => const ClearValue(),
           },
-          revision: current.revision + 1,
-          updatedAt: now.isAfter(current.updatedAt) ? now : current.updatedAt,
+          revision: added == null ? header.revision + 1 : header.revision,
+          updatedAt: added == null && now.isAfter(header.updatedAt)
+              ? now
+              : header.updatedAt,
         );
-        writes.add(_PutRow(strategyArea(strategyPublicId), moved));
+        writes.add(_PutRow(area, moved));
         _headers[strategyPublicId] = moved;
-        _putSummary(summary.withHeader(moved));
+        _putSummary(headerSummary.withHeader(moved));
       case PutFolder(:final folder):
         final id = folder.publicId;
         final digest = digestOf(id);
@@ -1408,9 +1533,16 @@ final class _LibraryEdit {
   }
 
   Future<Reading<StrategyRow>> _header(String strategyPublicId) async {
+    final digest = digestOf(strategyPublicId);
+    if (_removed.containsKey(digest) ||
+        _removedUnreadable.containsKey(digest)) {
+      return const NotFound();
+    }
     if (_headers[strategyPublicId] case final header?) return Found(header);
     return switch (await _store._strategy(strategyPublicId)) {
-      Found(value: LoadedStrategy(header: Placed(:final row))) => Found(row),
+      Found(value: LoadedStrategy(header: HeaderPlaced(:final row))) => Found(
+        row,
+      ),
       Found() || NotFound() => const NotFound(),
       NotRead(:final failure) => NotRead(failure),
       InUnreadableStrategy(:final listing) => InUnreadableStrategy(listing),
@@ -1438,7 +1570,7 @@ final class _LibraryEdit {
     }
     _store._summaries.addAll(_putSummaries);
     for (final MapEntry(:key, :value) in _headers.entries) {
-      _store._strategies[digestOf(key)]?.header = Placed(value);
+      _store._strategies[digestOf(key)]?.header = HeaderPlaced(value);
     }
     for (final digest in _removedFolders.keys) {
       _store._folders.remove(digest);

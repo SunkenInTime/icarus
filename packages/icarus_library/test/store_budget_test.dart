@@ -157,9 +157,13 @@ void main() {
         expect(counts.reads, isEmpty);
         expect(counts.keyListings, isEmpty);
         expect(counts.entryListings, [('library', '')]);
-        expect(counts.listedEntries.toSet(), {
-          for (var i = 0; i < strategies; i++) ('library', summaryName('s$i')),
-        });
+        expect(
+          counts.listedEntries,
+          unorderedEquals([
+            for (var i = 0; i < strategies; i++)
+              ('library', summaryName('s$i')),
+          ]),
+        );
         expect(counts.commits, 0);
       });
     });

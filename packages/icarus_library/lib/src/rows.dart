@@ -115,6 +115,34 @@ final class RowSpot {
       };
 }
 
+sealed class StrategyHeader {
+  const StrategyHeader();
+}
+
+final class HeaderPlaced extends StrategyHeader {
+  const HeaderPlaced(this.row);
+
+  final StrategyRow row;
+}
+
+final class HeaderUnplaced extends StrategyHeader {
+  const HeaderUnplaced(this.stored, this.problem);
+
+  final Object? stored;
+  final String problem;
+}
+
+final class HeaderAbsent extends StrategyHeader {
+  const HeaderAbsent(this.problem);
+
+  final String problem;
+}
+
+StrategyHeader headerFrom(Parsed<StrategyRow> parsed) => switch (parsed) {
+  Placed(:final row) => HeaderPlaced(row),
+  Unplaced(:final stored, :final problem) => HeaderUnplaced(stored, problem),
+};
+
 sealed class Parsed<R extends Row> {
   const Parsed();
 }

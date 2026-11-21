@@ -105,7 +105,7 @@ StrategyRowsMade rowsOf(StrategyData strategy) =>
     };
 
 StrategyDataMade dataOf(StrategyRowSet rows) =>
-    switch (strategyFromRows(rows, times)) {
+    switch (strategyFromRows(rows)) {
       StrategyDataMade() && final made => made,
       StrategyDataRefused(:final problems) =>
         throw TestFailure('refused: $problems'),
@@ -116,11 +116,6 @@ List<RowsProblem> refusalsOf(StrategyData strategy) =>
       StrategyRowsMade() => throw TestFailure('converted'),
       StrategyRowsRefused(:final problems) => problems,
     };
-
-final times = StrategyTimes(
-  createdAt: DateTime.utc(2026, 1, 2),
-  lastEdited: DateTime.utc(2026, 1, 3),
-);
 
 StrategyData strategyWith(List<StrategyPage> pages) => StrategyData(
       id: 'strategy-test',

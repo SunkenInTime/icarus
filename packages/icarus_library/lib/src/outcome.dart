@@ -101,6 +101,25 @@ final class UndoByRestoringPage extends Undo {
   int get hashCode => pagePublicId.hashCode;
 }
 
+final class UndoByWritingDefaultSettings extends Undo {
+  const UndoByWritingDefaultSettings({
+    required this.pagePublicId,
+    required this.expectedPageSettingsRevision,
+  });
+
+  final String pagePublicId;
+  final int expectedPageSettingsRevision;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UndoByWritingDefaultSettings &&
+      other.pagePublicId == pagePublicId &&
+      other.expectedPageSettingsRevision == expectedPageSettingsRevision;
+
+  @override
+  int get hashCode => Object.hash(pagePublicId, expectedPageSettingsRevision);
+}
+
 final class UndoUnavailable extends Undo {
   const UndoUnavailable();
 }
