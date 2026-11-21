@@ -267,7 +267,10 @@ export function isUploadPlaceholder(asset: Doc<"imageAssets">): boolean {
 }
 
 export function referencedAssetIds(
-  row: Doc<"elements"> | Doc<"lineups"> | null,
+  row:
+    | Pick<Doc<"elements">, "deleted" | "elementType" | "payload">
+    | Pick<Doc<"lineups">, "deleted" | "payload">
+    | null,
 ): Set<string> {
   if (row === null || row.deleted) return new Set();
   if ("elementType" in row) {

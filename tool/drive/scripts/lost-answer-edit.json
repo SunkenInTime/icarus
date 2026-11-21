@@ -31,5 +31,6 @@
   {"texts": 1},
   {"waitSettled": 30},
   {"probe": "settled"},
+  {"logItems": "settled"},
   {"exit": 1}
 ]

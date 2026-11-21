@@ -14,8 +14,8 @@
           "budget": 1489052
         },
         "readBytes": {
-          "today": 4704701,
-          "budget": 5880877
+          "today": 3365859,
+          "budget": 4207324
         }
       }
     },
@@ -24,8 +24,8 @@
       "about": "One element.patch of an agent's position through ops:applyBatch, on a page of 60 items watched in slices, with the library lists live behind the editor. Oct 19: the drag re-read every agent of the strategy to rebuild its agent summary (75 KB, #348).",
       "metrics": {
         "applyBatchReadBytes": {
-          "today": 4343,
-          "budget": 5429
+          "today": 2399,
+          "budget": 2999
         },
         "applyBatchWriteBytes": {
           "today": 2198,
@@ -36,8 +36,8 @@
           "budget": 1
         },
         "readBytes": {
-          "today": 12487,
-          "budget": 15609
+          "today": 10543,
+          "budget": 13179
         }
       }
     },
@@ -378,8 +378,8 @@
           "budget": 126
         },
         "readBytes": {
-          "today": 971572,
-          "budget": 1214465
+          "today": 888789,
+          "budget": 1110987
         },
         "writeBytes": {
           "today": 115698,
@@ -412,8 +412,8 @@
           "budget": 4
         },
         "readBytes": {
-          "today": 272236,
-          "budget": 340295
+          "today": 166716,
+          "budget": 208395
         },
         "writeBytes": {
           "today": 54312,
@@ -442,8 +442,8 @@
           "budget": 54
         },
         "readBytes": {
-          "today": 445791,
-          "budget": 557239
+          "today": 412685,
+          "budget": 515857
         },
         "writeBytes": {
           "today": 46275,
