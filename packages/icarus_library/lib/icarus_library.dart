@@ -51,7 +51,6 @@ export 'src/json.dart'
         jsonValue,
         maxJsonDepth;
 export 'src/store/engine.dart' hide done;
-export 'src/store/hive_record.dart';
 export 'src/store/layout.dart'
     show ForeignName, digestOf, longestName, storeFormat, strategyArea;
 export 'src/store/memory_engine.dart';

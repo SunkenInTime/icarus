@@ -1,11 +1,8 @@
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
-import 'package:icarus/library_store/hive_record.dart';
-import 'package:icarus/library_store/rows_digest.dart';
+import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
-import 'package:icarus/library_store/stored_strategy.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 sealed class StrategyCopy {
@@ -26,25 +23,12 @@ final class StrategyTookHiveVersion extends StrategyCopy {
   const StrategyTookHiveVersion(super.strategyId);
 }
 
-final class StrategyChangedOnBothSides extends StrategyCopy {
-  const StrategyChangedOnBothSides(
-    super.strategyId, {
-    required this.copiedFrom,
-    required this.hiveNow,
-    required this.storeNow,
-  });
-
-  final String copiedFrom;
-  final String hiveNow;
-  final String storeNow;
-}
-
 final class StrategyRemovedWithHive extends StrategyCopy {
   const StrategyRemovedWithHive(super.strategyId);
 }
 
-final class StrategyNotCopied extends StrategyCopy {
-  const StrategyNotCopied(super.strategyId, this.reason);
+final class StrategyNotMirrored extends StrategyCopy {
+  const StrategyNotMirrored(super.strategyId, this.reason);
 
   final CopyRefusal reason;
 }
@@ -69,25 +53,11 @@ final class StoreRefusedIt extends CopyRefusal {
   final LibraryRefusal refusal;
 
   @override
-  String toString() => 'the store refused it: $refusal';
-}
-
-final class StoreCopyUnreadable extends CopyRefusal {
-  const StoreCopyUnreadable(this.stored);
-
-  final StoredStrategy stored;
-
-  @override
-  String toString() => 'the store\'s copy could not be read back: $stored';
-}
-
-final class RowsNotEncodable extends CopyRefusal {
-  const RowsNotEncodable(this.notDigested);
-
-  final RowsNotDigested notDigested;
-
-  @override
-  String toString() => 'a row it converts to is not JSON: $notDigested';
+  String toString() => switch (refusal) {
+        PutWouldDrop(:final ref, :final dropped) =>
+          'the store holds what a copy would drop: ${dropped.name} at $ref',
+        final other => 'the store refused it: $other',
+      };
 }
 
 final class StoreCouldNotEncode extends CopyRefusal {
@@ -98,13 +68,6 @@ final class StoreCouldNotEncode extends CopyRefusal {
   @override
   String toString() =>
       '${storageFailureWords(failure, StoreStep.refusedSave)} ($failure)';
-}
-
-final class StoreHoldsItWithoutRecord extends CopyRefusal {
-  const StoreHoldsItWithoutRecord();
-
-  @override
-  String toString() => 'the store holds it without a Hive record';
 }
 
 sealed class FolderCopy {
@@ -182,57 +145,39 @@ final class ShadowCopyStopped extends ShadowCopy {
   final CopyStop stop;
 }
 
-sealed class _Edit {
-  const _Edit();
+sealed class _Saving {
+  const _Saving();
 }
 
-final class _Edited extends _Edit {
-  const _Edited();
+final class _Wrote extends _Saving {
+  const _Wrote();
 }
 
-final class _EditRefused extends _Edit {
-  const _EditRefused(this.refusal);
-
-  final LibraryRefusal refusal;
+final class _NothingToWrite extends _Saving {
+  const _NothingToWrite();
 }
 
-final class _EditNotEncoded extends _Edit {
-  const _EditNotEncoded(this.failure);
+final class _NotWritten extends _Saving {
+  const _NotWritten(this.reason);
 
-  final WouldNotReadBack failure;
+  final CopyRefusal reason;
 }
 
-final class _EditStopped extends _Edit {
-  const _EditStopped(this.stop);
+final class _Stop extends _Saving {
+  const _Stop(this.stop);
 
   final CopyStop stop;
 }
 
-Future<_Edit> _edit(LibraryStore store, List<LibraryChange> changes) async =>
-    switch (await store.editLibrary(changes)) {
-      Saved() || NothingToSave() => const _Edited(),
-      Refused(:final reason) => _EditRefused(reason),
+_Saving _saving(LibraryEditResult result) => switch (result) {
+      Saved() => const _Wrote(),
+      NothingToSave() => const _NothingToWrite(),
+      Refused(:final reason) => _NotWritten(StoreRefusedIt(reason)),
       NotSaved(failure: final WouldNotReadBack failure) =>
-        _EditNotEncoded(failure),
-      NotSaved(:final failure) => _EditStopped(StoreDidNotSave(failure)),
-      SaveInDoubt(:final failure) => _EditStopped(StoreSaveInDoubt(failure)),
+        _NotWritten(StoreCouldNotEncode(failure)),
+      NotSaved(:final failure) => _Stop(StoreDidNotSave(failure)),
+      SaveInDoubt(:final failure) => _Stop(StoreSaveInDoubt(failure)),
     };
-
-sealed class _Step {
-  const _Step();
-}
-
-final class _Done extends _Step {
-  const _Done(this.copy);
-
-  final StrategyCopy copy;
-}
-
-final class _Stopped extends _Step {
-  const _Stopped(this.stop);
-
-  final CopyStop stop;
-}
 
 Future<ShadowCopy> copyHiveIntoStore(
   HiveLibrary hive,
@@ -255,57 +200,53 @@ Future<ShadowCopy> copyHiveIntoStore(
   final storedFolders = {for (final row in list.folders) row.publicId: row};
   for (final folder in _parentsFirst(hive.folders)) {
     final row = _folderRow(folder, storedFolders[folder.id]);
-    if (storedFolders[folder.id] == row) {
-      folders.add(FolderUnchanged(folder.id));
-      continue;
-    }
-    switch (await _edit(store, [PutFolder(row)])) {
-      case _Edited():
+    switch (_saving(await store.editLibrary([PutFolder(row)]))) {
+      case _Wrote():
         folders.add(FolderCopied(folder.id));
-      case _EditRefused(:final refusal):
-        folders.add(FolderNotCopied(folder.id, StoreRefusedIt(refusal)));
-      case _EditNotEncoded(:final failure):
-        folders.add(FolderNotCopied(folder.id, StoreCouldNotEncode(failure)));
-      case _EditStopped(:final stop):
+      case _NothingToWrite():
+        folders.add(FolderUnchanged(folder.id));
+      case _NotWritten(:final reason):
+        folders.add(FolderNotCopied(folder.id, reason));
+      case _Stop(:final stop):
         return stopped(stop);
     }
   }
 
   final stored = {for (final summary in list.strategies) summary.publicId};
-  final unreadableIds = {
-    for (final listing in list.unreadableStrategies)
-      if (listing.header case HeaderPlaced(:final row)) row.publicId,
-  };
   final hiveIds = {for (final strategy in hive.strategies) strategy.id};
   final total = hive.strategies.length;
   for (final (index, strategy) in hive.strategies.indexed) {
-    final step = await _copyOne(
-      store,
-      strategy,
-      recorded: list.hiveRecords[strategy.id],
-      inStore:
-          stored.contains(strategy.id) || unreadableIds.contains(strategy.id),
-    );
-    switch (step) {
-      case _Done(:final copy):
-        strategies.add(copy);
-      case _Stopped(:final stop):
-        return stopped(stop);
+    final id = strategy.id;
+    switch (strategyToRows(strategy)) {
+      case StrategyRowsRefused(:final problems):
+        strategies.add(StrategyNotMirrored(id, ConverterRefused(problems)));
+      case StrategyRowsMade(:final rows):
+        switch (_saving(await store.putStrategy(rows))) {
+          case _Wrote():
+            strategies.add(
+              stored.contains(id)
+                  ? StrategyTookHiveVersion(id)
+                  : StrategyCopied(id),
+            );
+          case _NothingToWrite():
+            strategies.add(StrategyUnchanged(id));
+          case _NotWritten(:final reason):
+            strategies.add(StrategyNotMirrored(id, reason));
+          case _Stop(:final stop):
+            return stopped(stop);
+        }
     }
     progress?.call(index + 1, total);
     await breathe();
   }
 
-  for (final id in list.hiveRecords.keys) {
-    if (hiveIds.contains(id)) continue;
-    switch (await _edit(store, [RemoveStrategy(id)])) {
-      case _Edited():
+  for (final id in stored.difference(hiveIds)) {
+    switch (_saving(await store.editLibrary([RemoveStrategy(id)]))) {
+      case _Wrote() || _NothingToWrite():
         strategies.add(StrategyRemovedWithHive(id));
-      case _EditRefused(:final refusal):
-        strategies.add(StrategyNotCopied(id, StoreRefusedIt(refusal)));
-      case _EditNotEncoded(:final failure):
-        strategies.add(StrategyNotCopied(id, StoreCouldNotEncode(failure)));
-      case _EditStopped(:final stop):
+      case _NotWritten(:final reason):
+        strategies.add(StrategyNotMirrored(id, reason));
+      case _Stop(:final stop):
         return stopped(stop);
     }
   }
@@ -316,131 +257,16 @@ Future<ShadowCopy> copyHiveIntoStore(
       if (!hiveFolderIds.contains(row.publicId)) row,
   ];
   for (final row in _childrenFirst(leaving)) {
-    switch (await _edit(store, [RemoveFolder(row.publicId)])) {
-      case _Edited():
+    switch (_saving(await store.editLibrary([RemoveFolder(row.publicId)]))) {
+      case _Wrote() || _NothingToWrite():
         folders.add(FolderRemovedWithHive(row.publicId));
-      case _EditRefused(:final refusal):
-        folders.add(FolderNotCopied(row.publicId, StoreRefusedIt(refusal)));
-      case _EditNotEncoded(:final failure):
-        folders.add(
-          FolderNotCopied(row.publicId, StoreCouldNotEncode(failure)),
-        );
-      case _EditStopped(:final stop):
+      case _NotWritten(:final reason):
+        folders.add(FolderNotCopied(row.publicId, reason));
+      case _Stop(:final stop):
         return stopped(stop);
     }
   }
   return ShadowCopyFinished(strategies, folders);
-}
-
-Future<_Step> _copyOne(
-  LibraryStore store,
-  StrategyData strategy, {
-  required HiveRecordDigest? recorded,
-  required bool inStore,
-}) async {
-  final id = strategy.id;
-  final StrategyRowSet hiveRows;
-  switch (strategyToRows(strategy)) {
-    case StrategyRowsRefused(:final problems):
-      return _Done(StrategyNotCopied(id, ConverterRefused(problems)));
-    case StrategyRowsMade(:final rows):
-      hiveRows = rows;
-  }
-  final String digest;
-  switch (rowsDigestOf(hiveRows)) {
-    case final RowsNotDigested notDigested:
-      return _Done(StrategyNotCopied(id, RowsNotEncodable(notDigested)));
-    case RowsDigested(digest: final digested):
-      digest = digested;
-  }
-  switch (recorded) {
-    case null when inStore:
-      return _Done(StrategyNotCopied(id, const StoreHoldsItWithoutRecord()));
-    case null:
-      return _addRows(
-        store,
-        hiveRows,
-        HiveRecordDigest(strategyPublicId: id, digest: digest),
-        StrategyCopied(id),
-      );
-    case HiveRecordDigest(digest: final copied) when copied == digest:
-      return _Done(StrategyUnchanged(id));
-    case HiveRecordDigest(digest: final copied):
-      final StrategyRowSet storedRows;
-      switch (await readStoredRows(store, id)) {
-        case StoredRowsNot(stored: StoredNotRead(:final failure)):
-          return _Stopped(StoreDidNotRead(failure));
-        case StoredRowsNot(:final stored):
-          return _Done(StrategyNotCopied(id, StoreCopyUnreadable(stored)));
-        case StoredRowsRead(:final rows):
-          storedRows = rows;
-      }
-      final String storeNow;
-      switch (rowsDigestOf(storedRows)) {
-        case final RowsNotDigested notDigested:
-          return _Done(StrategyNotCopied(id, RowsNotEncodable(notDigested)));
-        case RowsDigested(digest: final digested):
-          storeNow = digested;
-      }
-      if (storeNow != copied) {
-        return _Done(
-          StrategyChangedOnBothSides(
-            id,
-            copiedFrom: copied,
-            hiveNow: digest,
-            storeNow: storeNow,
-          ),
-        );
-      }
-      return _takeHiveVersion(
-        store,
-        stored: storedRows,
-        hive: hiveRows,
-        record: recorded.withDigest(digest),
-      );
-  }
-}
-
-Future<_Step> _addRows(
-  LibraryStore store,
-  StrategyRowSet rows,
-  HiveRecordDigest record,
-  StrategyCopy copied,
-) async =>
-    switch (await _edit(store, [
-      AddStrategy(rows),
-      RememberHiveRecord(record),
-    ])) {
-      _Edited() => _Done(copied),
-      _EditRefused(:final refusal) => _Done(
-          StrategyNotCopied(record.strategyPublicId, StoreRefusedIt(refusal)),
-        ),
-      _EditNotEncoded(:final failure) => _Done(
-          StrategyNotCopied(
-            record.strategyPublicId,
-            StoreCouldNotEncode(failure),
-          ),
-        ),
-      _EditStopped(:final stop) => _Stopped(stop),
-    };
-
-Future<_Step> _takeHiveVersion(
-  LibraryStore store, {
-  required StrategyRowSet stored,
-  required StrategyRowSet hive,
-  required HiveRecordDigest record,
-}) async {
-  final id = record.strategyPublicId;
-  switch (await _edit(store, [RemoveStrategy(id)])) {
-    case _Edited():
-      return _addRows(store, hive, record, StrategyTookHiveVersion(id));
-    case _EditRefused(:final refusal):
-      return _Done(StrategyNotCopied(id, StoreRefusedIt(refusal)));
-    case _EditNotEncoded(:final failure):
-      return _Done(StrategyNotCopied(id, StoreCouldNotEncode(failure)));
-    case _EditStopped(:final stop):
-      return _Stopped(stop);
-  }
 }
 
 ReadableFolder _folderRow(Folder folder, FolderRow? stored) {

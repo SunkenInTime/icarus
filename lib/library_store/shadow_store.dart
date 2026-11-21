@@ -9,7 +9,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_store/hive_files.dart';
-import 'package:icarus/library_store/hive_record.dart';
+import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_sqlite.dart';
 import 'package:icarus/library_store/shadow_copy.dart';

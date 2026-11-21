@@ -9,7 +9,7 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_registration.dart';
-import 'package:icarus/library_store/hive_record.dart';
+import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
@@ -147,7 +147,7 @@ Future<void> _checkOne(
     if (copy case ShadowCopyStopped(:final stop))
       problem('copy stopped: $stop');
     for (final result in copy.strategies) {
-      if (result case StrategyNotCopied(:final strategyId, :final reason)) {
+      if (result case StrategyNotMirrored(:final strategyId, :final reason)) {
         problem('not copied $strategyId: $reason');
       }
     }

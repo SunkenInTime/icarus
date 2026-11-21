@@ -101,8 +101,7 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
               'unreadable '
               '${_count<StrategyUnreadableInStore>(checked.strategies)}; '
               'not in Hive ${_count<StrategyNotInHive>(checked.strategies)}; '
-              'stale records '
-              '${_count<StrategyRecordStale>(checked.strategies)}; folder '
+              'not mirrored ${checked.notMirrored.length}; folder '
               'problems ${checked.folderProblems.length}; unplaced rows '
               '${checked.unplaced.length}; ${took.inMilliseconds} ms',
           for (final problem in checked.strategyProblems)
@@ -117,13 +116,11 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
                   'STORE not converted $strategyId: '
                       '${problems.map((p) => p.runtimeType).join(', ')}',
                 ],
-              StrategyRowsNotEncodable(:final strategyId, :final notDigested) =>
-                ['STORE not encodable $strategyId: $notDigested'],
+              StrategyRowsNotEncodable(:final strategyId, :final notText) => [
+                  'STORE not encodable $strategyId: $notText'
+                ],
               StrategyNotListed(:final strategyId) => [
                   'STORE not listed $strategyId',
-                ],
-              RecordWithoutStrategy(:final strategyId) => [
-                  'STORE record without strategy $strategyId',
                 ],
               StrategyMissingFromStore(:final strategyId) => [
                   'STORE missing $strategyId',
@@ -134,12 +131,6 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
               StrategyNotInHive(:final strategyId) => [
                   'STORE not in Hive $strategyId',
                 ],
-              StrategyRecordStale(
-                :final strategyId,
-                :final recorded,
-                :final hiveNow,
-              ) =>
-                ['STORE stale record $strategyId: $recorded, Hive $hiveNow'],
             },
           for (final problem in checked.folderProblems)
             switch (problem) {
@@ -168,10 +159,9 @@ List<String> _describeCopy(ShadowRun run) {
       ShadowCopyStopped(:final stop) => 'stopped: $stop',
     }}: copied ${_count<StrategyCopied>(strategies)}, unchanged '
         '${_count<StrategyUnchanged>(strategies)}, took the Hive version '
-        '${_count<StrategyTookHiveVersion>(strategies)}, changed on both '
-        'sides ${_count<StrategyChangedOnBothSides>(strategies)}, removed '
-        'with Hive ${_count<StrategyRemovedWithHive>(strategies)}, not '
-        'copied ${_count<StrategyNotCopied>(strategies)}; folders copied '
+        '${_count<StrategyTookHiveVersion>(strategies)}, removed with Hive '
+        '${_count<StrategyRemovedWithHive>(strategies)}, not mirrored '
+        '${_count<StrategyNotMirrored>(strategies)}; folders copied '
         '${_count<FolderCopied>(folders)}, unchanged '
         '${_count<FolderUnchanged>(folders)}, removed '
         '${_count<FolderRemovedWithHive>(folders)}, not copied '
@@ -180,17 +170,8 @@ List<String> _describeCopy(ShadowRun run) {
     'STORE while copying: ${run.uiDuringCopy}',
     'STORE while checking: ${run.uiDuringCheck}',
     for (final strategy in strategies)
-      if (strategy case StrategyNotCopied(:final strategyId, :final reason))
-        'STORE not copied $strategyId: $reason'
-      else if (strategy
-          case StrategyChangedOnBothSides(
-            :final strategyId,
-            :final copiedFrom,
-            :final hiveNow,
-            :final storeNow,
-          ))
-        'STORE changed on both sides $strategyId: copied from $copiedFrom, '
-            'Hive now $hiveNow, store now $storeNow',
+      if (strategy case StrategyNotMirrored(:final strategyId, :final reason))
+        'STORE not mirrored $strategyId: $reason',
     for (final folder in folders)
       if (folder case FolderNotCopied(:final folderId, :final reason))
         'STORE folder not copied $folderId: $reason',
@@ -251,12 +232,10 @@ Future<List<String>> waitForShadowStore(
     if (run.copy case ShadowCopyStopped(:final stop)) 'the copy stopped: $stop',
     if (origin is StorageCreated &&
         strategies.any((strategy) =>
-            strategy is! StrategyCopied && strategy is! StrategyNotCopied))
+            strategy is! StrategyCopied && strategy is! StrategyNotMirrored))
       'the library was created, yet the copy found strategies already in it',
-    if (_count<StrategyNotCopied>(strategies) case final n when n > 0)
-      '$n strategies not copied',
-    if (_count<StrategyChangedOnBothSides>(strategies) case final n when n > 0)
-      '$n strategies changed on both sides',
+    if (_count<StrategyNotMirrored>(strategies) case final n when n > 0)
+      '$n strategies not mirrored',
     if (_count<FolderNotCopied>(run.copy.folders) case final n when n > 0)
       '$n folders not copied',
     switch (run.check) {

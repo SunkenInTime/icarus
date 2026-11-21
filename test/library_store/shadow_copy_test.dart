@@ -8,16 +8,14 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
-import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/library_store/hive_record.dart';
-import 'package:icarus/library_store/rows_digest.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
@@ -29,11 +27,6 @@ import '../library_rows/generated_strategies.dart';
 import 'hive_scratch.dart';
 
 Future<void> _still() async {}
-
-const fixedHandBuiltDigest =
-    'f63b2476719628869567b1263c1532b8715b4063ed5e45fd942034b09528e306';
-const fixedMovedAgentDigest =
-    'e61648ec65648f3eb045b9ace1b22484e5583943f56ce62ef7371140d8398eb4';
 
 StrategyData handBuilt(
         {Offset agentAt = const Offset(10, 20), bool agentAlly = true}) =>
@@ -67,14 +60,6 @@ StrategyData handBuilt(
         ),
       ],
     );
-
-String rowDigest(StrategyData strategy) => switch (strategyToRows(strategy)) {
-      StrategyRowsMade(:final rows) => switch (rowsDigestOf(rows)) {
-          RowsDigested(:final digest) => digest,
-          final RowsNotDigested other => throw StateError('$other'),
-        },
-      StrategyRowsRefused(:final problems) => throw StateError('$problems'),
-    };
 
 MemoryStorage edited(
   MemoryStorage storage,
@@ -178,18 +163,6 @@ void main() {
     expect(await writes.stop(), isEmpty);
   });
 
-  test('the store remembers the digest of each Hive record it copied',
-      () async {
-    final store = await openOn(MemoryStorage());
-    await copyNow(store);
-    final list = (store.library as LibraryOpen).list;
-    expect(list.hiveRecords.keys.toSet(), {for (final s in strategies) s.id});
-    for (final strategy in hiveLibraryNow().strategies) {
-      expect(list.hiveRecords[strategy.id]!.digest, rowDigest(strategy));
-    }
-    await store.close();
-  });
-
   test('a second start finds nothing to copy and writes nothing', () async {
     final storage = MemoryStorage();
     final first = await openOn(storage);
@@ -227,7 +200,7 @@ void main() {
       final resumed = await openOn(storage);
       final finished = await copyNow(resumed);
       expect(finished, isA<ShadowCopyFinished>(), reason: 'cut at $cut');
-      expect(finished.strategies.whereType<StrategyNotCopied>(), isEmpty);
+      expect(finished.strategies.whereType<StrategyNotMirrored>(), isEmpty);
       expect((await checkNow(resumed)).isExact, isTrue, reason: 'cut at $cut');
       await resumed.close();
       expect(storage.contents, whole.contents, reason: 'cut at $cut');
@@ -255,44 +228,43 @@ void main() {
   });
 
   test(
-      'stopped between removing the old copy and adding Hive\'s version, the next start copies it again as new',
+      'a strategy changed in Hive is brought up to date in one commit, and a stop before it leaves the old copy whole',
       () async {
     final storage = MemoryStorage();
     final first = await openOn(storage);
     await copyNow(first);
     await first.close();
+    final before = storage.contents;
     final edited = strategyBox
         .get('strategy-2')!
         .copyWith(name: 'Renamed in an older build');
     await strategyBox.put(edited.id, edited);
     final cut = switch (await LibraryStore.open(
-      _CutEngine(MemoryEngine(storage), after: 1),
+      _CutEngine(MemoryEngine(storage), after: 0),
       canRead: appCanRead,
     )) {
       StoreOpened(:final store) => store,
       StoreNotOpened(:final problem) => throw StateError('$problem'),
     };
-    final stopped = await copyNow(cut);
-    expect(stopped, isA<ShadowCopyStopped>());
-    final list = (cut.library as LibraryOpen).list;
-    expect(
-        list.strategies.map((s) => s.publicId), isNot(contains('strategy-2')));
-    expect(list.hiveRecords.containsKey('strategy-2'), isFalse);
+    expect(await copyNow(cut), isA<ShadowCopyStopped>());
     await cut.close();
-    final resumed = await openOn(storage);
+    expect(storage.contents, before);
+    final counted = _CutEngine(MemoryEngine(storage), after: 1000);
+    final resumed =
+        switch (await LibraryStore.open(counted, canRead: appCanRead)) {
+      StoreOpened(:final store) => store,
+      StoreNotOpened(:final problem) => throw StateError('$problem'),
+    };
     final again = await copyNow(resumed);
-    expect(again, isA<ShadowCopyFinished>());
-    expect(
-        again.strategies.whereType<StrategyCopied>().map((s) => s.strategyId),
-        ['strategy-2']);
     expect(kinds(again.strategies),
-        {StrategyUnchanged: strategies.length - 1, StrategyCopied: 1});
+        {StrategyUnchanged: strategies.length - 1, StrategyTookHiveVersion: 1});
+    expect(counted.commits, 1);
     expect((await checkNow(resumed)).isExact, isTrue);
     await resumed.close();
   });
 
   test(
-      'a strategy changed in Hive and in the store is kept on both sides and reported',
+      'a strategy changed in the store through an op is put back to what Hive holds',
       () async {
     final store = await openOn(MemoryStorage());
     await copyNow(store);
@@ -304,28 +276,18 @@ void main() {
           name: 'Renamed in the store'),
     );
     expect(saved, isA<Saved<Committed, CommitRefusal>>());
-    final edited =
-        strategyBox.get('strategy-3')!.copyWith(name: 'Renamed in Hive');
-    await strategyBox.put(edited.id, edited);
     final again = await copyNow(store);
-    final both =
-        again.strategies.whereType<StrategyChangedOnBothSides>().single;
-    expect(both.strategyId, 'strategy-3');
-    expect(both.hiveNow, rowDigest(strategyAsHiveHoldsIt(edited)));
-    final content = switch (await store.readStrategy('strategy-3')) {
-      Found(:final value) => value,
-      final other => throw StateError('$other'),
-    };
-    expect((content.strategy as ReadableStrategy).name, 'Renamed in the store');
-    final check = await checkNow(store);
-    expect(check.isExact, isFalse);
-    expect(check.strategyProblems.map((p) => p.strategyId).toSet(),
-        {'strategy-3'});
+    expect(
+        again.strategies
+            .whereType<StrategyTookHiveVersion>()
+            .map((s) => s.strategyId),
+        ['strategy-3']);
+    expect((await checkNow(store)).isExact, isTrue);
     await store.close();
   });
 
   test(
-      'a strategy deleted from Hive is removed from the store with its record, and a folder gone from Hive goes too',
+      'a strategy deleted from Hive is removed from the store, and a folder gone from Hive goes too',
       () async {
     final storage = MemoryStorage();
     final store = await openOn(storage);
@@ -342,123 +304,80 @@ void main() {
         again.folders.whereType<FolderRemovedWithHive>().map((f) => f.folderId),
         ['folder-2']);
     expect((await checkNow(store)).isExact, isTrue);
-    expect(
-        (store.library as LibraryOpen)
-            .list
-            .hiveRecords
-            .containsKey('strategy-1'),
-        isFalse);
     await store.close();
   });
 
   test(
-      'a strategy the converter refuses is reported with its reason, left alone in Hive, and the check says it is missing',
+      'strategies the converter refuses are not mirrored, with their reasons, left alone in Hive, and counted by the check',
       () async {
-    final refused =
+    final translucent = strategyNumbered(7).copyWith(
+      id: 'strategy-translucent',
+      themeOverridePalette: MapThemePalette(
+        baseColorValue: 0x80101820,
+        detailColorValue: 0xFFF2AA4C,
+        highlightColorValue: 0xFFFFFFFF,
+      ),
+    );
+    final page = handBuilt().pages.single;
+    final repeated = handBuilt().copyWith(
+        id: 'strategy-repeated', pages: [page, page.copyWith(sortIndex: 1)]);
+    final old =
         strategyNumbered(9).copyWith(versionNumber: 1, id: 'strategy-old');
-    await strategyBox.put(refused.id, refused);
+    for (final strategy in [translucent, repeated, old]) {
+      await strategyBox.put(strategy.id, strategy);
+    }
     final writes = await HiveWrites.watch(directory);
     final store = await openOn(MemoryStorage());
     final copy = await copyNow(store);
-    final notCopied = copy.strategies.whereType<StrategyNotCopied>().single;
-    expect(notCopied.strategyId, 'strategy-old');
-    expect(
-      notCopied.reason,
-      isA<ConverterRefused>()
-          .having((r) => r.problems.single, 'problem', isA<NotMigrated>()),
-    );
+    final reasons = {
+      for (final s in copy.strategies.whereType<StrategyNotMirrored>())
+        s.strategyId: switch (s.reason) {
+          ConverterRefused(:final problems) =>
+            problems.map((p) => p.runtimeType).toSet(),
+          final other => {other.runtimeType},
+        },
+    };
+    expect(reasons, {
+      'strategy-translucent': {PaletteHasTransparency},
+      'strategy-repeated': {PageIdRepeated},
+      'strategy-old': {NotMigrated},
+    });
     expect(copy.strategies.whereType<StrategyCopied>(),
         hasLength(strategies.length));
     final check = await checkNow(store);
     expect(check.isExact, isFalse);
     expect(
-      check.strategyProblems
-          .whereType<StrategyNotConverted>()
-          .map((p) => p.strategyId),
-      ['strategy-old'],
-    );
+        check.notMirrored.map((p) => (p.runtimeType, p.strategyId)).toSet(), {
+      (StrategyNotConverted, 'strategy-translucent'),
+      (StrategyNotConverted, 'strategy-repeated'),
+      (StrategyNotConverted, 'strategy-old'),
+    });
     await store.close();
     expect(await writes.stop(), isEmpty);
   });
 
   test(
-      'a strategy the store already holds without a Hive record is reported and left alone',
+      'a strategy that an update migrates without change is unchanged in the store, with nothing written',
       () async {
+    await strategyBox.put('hand-1', handBuilt());
     final storage = MemoryStorage();
     final store = await openOn(storage);
-    final made = strategyToRows(strategyAsHiveHoldsIt(strategies[3]))
-        as StrategyRowsMade;
-    expect(
-        await store.editLibrary([
-          PutFolder(folderToRow(folderAsHiveHoldsIt(folders.first))),
-          AddStrategy(made.rows),
-        ]),
-        isA<Saved<LibraryEdited, LibraryRefusal>>());
-    final copy = await copyNow(store);
-    final notCopied = copy.strategies.whereType<StrategyNotCopied>().single;
-    expect(notCopied.strategyId, strategies[3].id);
-    expect(notCopied.reason, isA<StoreHoldsItWithoutRecord>());
+    await copyNow(store);
     await store.close();
-  });
-
-  test('the digest of a hand-built strategy is a fixed value', () {
-    expect(rowDigest(handBuilt()), fixedHandBuiltDigest);
-    expect(rowDigest(handBuilt(agentAt: const Offset(11, 20))),
-        fixedMovedAgentDigest);
-  });
-
-  test(
-      'every change to what a strategy holds changes its digest, and a revision does not',
-      () {
-    final base = handBuilt();
-    StrategyPage page(StrategyPage Function(StrategyPage page) change) =>
-        change(base.pages.single);
-    final changed = <String, StrategyData>{
-      'name': base.copyWith(name: 'A split'),
-      'map': base.copyWith(mapData: MapValue.bind),
-      'folder': base.copyWith(folderID: 'folder-1'),
-      'theme': base.copyWith(themeProfileId: 'profile-2'),
-      'last edited': base.copyWith(lastEdited: DateTime.utc(2026, 1, 3)),
-      'page name':
-          base.copyWith(pages: [page((p) => p.copyWith(name: 'Retake'))]),
-      'page place':
-          base.copyWith(pages: [page((p) => p.copyWith(sortIndex: 1))]),
-      'page side':
-          base.copyWith(pages: [page((p) => p.copyWith(isAttack: false))]),
-      'page settings': base.copyWith(
-        pages: [
-          page((p) => p.copyWith(settings: StrategySettings(agentSize: 40)))
-        ],
-      ),
-      'agent place': handBuilt(agentAt: const Offset(10, 21)),
-      'agent side': handBuilt(agentAlly: false),
-    };
-    final digests = {
-      for (final MapEntry(:key, :value) in changed.entries)
-        key: rowDigest(value),
-    };
-    expect(digests.values.toSet(), hasLength(changed.length));
-    expect(digests.values, isNot(contains(rowDigest(base))));
-
-    final rows = (strategyToRows(base) as StrategyRowsMade).rows;
-    final revised = StrategyRowSet(
-      strategy: rows.strategy.rewritten(revision: 7),
-      pages: rows.pages,
-      settings: rows.settings,
-      elements: rows.elements,
-      lineupGroups: rows.lineupGroups,
-    );
-    expect((rowsDigestOf(revised) as RowsDigested).digest, rowDigest(base));
-  });
-
-  test(
-      'a strategy saved by an older version that migrates without change digests as it does in this one',
-      () {
+    final written = storage.contents;
     final older =
         handBuilt().copyWith(versionNumber: Settings.versionNumber - 1);
     final migrated = StrategyMigrator.migrateToCurrentVersion(older);
     expect(migrated.versionNumber, Settings.versionNumber);
-    expect(rowDigest(migrated), rowDigest(handBuilt()));
+    await strategyBox.put('hand-1', migrated);
+    final again = await openOn(storage);
+    final copy = await copyNow(again);
+    expect(
+        copy.strategies.whereType<StrategyUnchanged>().map((s) => s.strategyId),
+        contains('hand-1'));
+    expect(copy.strategies.whereType<StrategyTookHiveVersion>(), isEmpty);
+    await again.close();
+    expect(storage.contents, written);
   });
 
   test(
@@ -534,9 +453,9 @@ void main() {
     expect(copy, isA<ShadowCopyFinished>());
     expect(copy.strategies.whereType<StrategyCopied>().map((s) => s.strategyId),
         ['strategy-a', 'strategy-c']);
-    final notCopied = copy.strategies.whereType<StrategyNotCopied>().single;
-    expect(notCopied.strategyId, 'strategy-b');
-    expect(notCopied.reason, isA<RowsNotEncodable>());
+    final notMirrored = copy.strategies.whereType<StrategyNotMirrored>().single;
+    expect(notMirrored.strategyId, 'strategy-b');
+    expect(notMirrored.reason, isA<StoreCouldNotEncode>());
     final check = await checkNow(store);
     expect(check.strategyProblems.map((p) => (p.runtimeType, p.strategyId)),
         [(StrategyRowsNotEncodable, 'strategy-b')]);
@@ -545,7 +464,7 @@ void main() {
   });
 
   test(
-      'taking Hive\'s version keeps what the store holds that this build cannot read: on a folder, a record and a strategy row',
+      'what the store holds that this build cannot read is kept: a folder is rewritten around it, and a strategy holding it is not mirrored',
       () async {
     final storage = MemoryStorage();
     final first = await openOn(storage);
@@ -558,9 +477,6 @@ void main() {
       final folderName = 'folder/${digestOf('folder-1')}';
       library[folderName] =
           withField(library[folderName]!, 'fromNewerBuild', 1);
-      final recordName = 'hive/${digestOf('strategy-2')}';
-      library[recordName] =
-          withField(library[recordName]!, 'copiedBy', 'a newer build');
       final area = contents[strategyArea('strategy-3')]!;
       area['strategy'] = withField(area['strategy']!, 'newerField', true);
     });
@@ -580,22 +496,26 @@ void main() {
             .whereType<StrategyTookHiveVersion>()
             .map((s) => s.strategyId),
         ['strategy-2']);
+    final notMirrored =
+        again.strategies.whereType<StrategyNotMirrored>().single;
+    expect(notMirrored.strategyId, 'strategy-3');
     expect(
-        again.strategies
-            .whereType<StrategyChangedOnBothSides>()
-            .map((s) => s.strategyId),
-        ['strategy-3']);
+      notMirrored.reason,
+      isA<StoreRefusedIt>().having(
+        (r) => r.refusal,
+        'refusal',
+        isA<PutWouldDrop>()
+            .having((d) => d.dropped, 'dropped', Dropped.unknownField),
+      ),
+    );
+    final check = await checkNow(store);
+    expect(check.notMirrored.map((c) => c.strategyId), ['strategy-3']);
     await store.close();
-    final library = held.contents['library']!;
-    final folder = jsonDecode(library['folder/${digestOf('folder-1')}']!)
-        as Map<String, Object?>;
+    final folder =
+        jsonDecode(held.contents['library']!['folder/${digestOf('folder-1')}']!)
+            as Map<String, Object?>;
     expect(folder['fromNewerBuild'], 1);
     expect(folder['name'], 'Retakes, renamed in an older build');
-    final record = jsonDecode(library['hive/${digestOf('strategy-2')}']!)
-        as Map<String, Object?>;
-    expect(record['copiedBy'], 'a newer build');
-    expect(record['digest'],
-        rowDigest(strategyAsHiveHoldsIt(strategyBox.get('strategy-2')!)));
     final kept =
         jsonDecode(held.contents[strategyArea('strategy-3')]!['strategy']!)
             as Map<String, Object?>;
@@ -609,18 +529,20 @@ final class _CutEngine implements StorageEngine {
 
   final StorageEngine inner;
   final int after;
+  var commits = 0;
 
   @override
   Future<Leasing> lease() async => switch (await inner.lease()) {
-        Leased(:final lease) => Leased(_CutLease(lease, after)),
+        Leased(:final lease) => Leased(_CutLease(lease, after, this)),
         final other => other,
       };
 }
 
 final class _CutLease implements StorageLease {
-  _CutLease(this.inner, this.left);
+  _CutLease(this.inner, this.left, this.engine);
 
   final StorageLease inner;
+  final _CutEngine engine;
   int left;
 
   @override
@@ -648,6 +570,7 @@ final class _CutLease implements StorageLease {
     if (left == 0)
       return const CommitRefused(DeviceFailure('the app was stopped'));
     left--;
+    engine.commits++;
     return inner.commit(changes);
   }
 

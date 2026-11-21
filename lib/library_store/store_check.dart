@@ -2,8 +2,8 @@ import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
-import 'package:icarus/library_store/hive_record.dart';
-import 'package:icarus/library_store/rows_digest.dart';
+import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/row_texts.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -69,17 +69,13 @@ final class StrategyNotConverted extends StrategyCheck {
 }
 
 final class StrategyRowsNotEncodable extends StrategyCheck {
-  const StrategyRowsNotEncodable(super.strategyId, this.notDigested);
+  const StrategyRowsNotEncodable(super.strategyId, this.notText);
 
-  final RowsNotDigested notDigested;
+  final RowsNotText notText;
 }
 
 final class StrategyNotListed extends StrategyCheck {
   const StrategyNotListed(super.strategyId);
-}
-
-final class RecordWithoutStrategy extends StrategyCheck {
-  const RecordWithoutStrategy(super.strategyId);
 }
 
 final class StrategyMissingFromStore extends StrategyCheck {
@@ -94,13 +90,6 @@ final class StrategyUnreadableInStore extends StrategyCheck {
 
 final class StrategyNotInHive extends StrategyCheck {
   const StrategyNotInHive(super.strategyId);
-}
-
-final class StrategyRecordStale extends StrategyCheck {
-  const StrategyRecordStale(super.strategyId, this.recorded, this.hiveNow);
-
-  final String? recorded;
-  final String hiveNow;
 }
 
 sealed class FolderCheck {
@@ -142,15 +131,18 @@ final class StoreChecked extends StoreCheck {
   StoreChecked({
     required this.hiveStrategies,
     required this.hiveFolders,
+    required List<StrategyCheck> notMirrored,
     required List<StrategyCheck> strategies,
     required List<FolderCheck> folders,
     required List<UnplacedRow> unplaced,
-  })  : strategies = List.unmodifiable(strategies),
+  })  : notMirrored = List.unmodifiable(notMirrored),
+        strategies = List.unmodifiable(strategies),
         folders = List.unmodifiable(folders),
         unplaced = List.unmodifiable(unplaced);
 
   final int hiveStrategies;
   final int hiveFolders;
+  final List<StrategyCheck> notMirrored;
   final List<StrategyCheck> strategies;
   final List<FolderCheck> folders;
   final List<UnplacedRow> unplaced;
@@ -170,6 +162,7 @@ final class StoreChecked extends StoreCheck {
       ];
 
   bool get isExact =>
+      notMirrored.isEmpty &&
       sameStrategies == hiveStrategies &&
       sameFolders == hiveFolders &&
       strategyProblems.isEmpty &&
@@ -205,11 +198,13 @@ Future<StoreCheck> checkStoreAgainstHive(
       return StoreNotChecked(failure);
   }
   final hiveIds = <String>{};
+  final notMirrored = <StrategyCheck>[];
   for (final expected in hive.strategies) {
     hiveIds.add(expected.id);
-    switch (await _checkOne(store, expected, list.hiveRecords[expected.id])) {
+    switch (await _checkOne(store, expected)) {
       case _Checked(:final checks):
         strategies.addAll(checks);
+        notMirrored.addAll(checks.where((check) => check is! StrategySame));
       case _NotRead(:final failure):
         return StoreNotChecked(failure);
     }
@@ -218,9 +213,6 @@ Future<StoreCheck> checkStoreAgainstHive(
   final listed = {for (final summary in list.strategies) summary.publicId};
   for (final id in listed.difference(hiveIds)) {
     strategies.add(StrategyNotInHive(id));
-  }
-  for (final id in list.hiveRecords.keys.toSet().difference(listed)) {
-    strategies.add(RecordWithoutStrategy(id));
   }
   for (final listing in list.unreadableStrategies) {
     strategies.add(
@@ -236,6 +228,7 @@ Future<StoreCheck> checkStoreAgainstHive(
   return StoreChecked(
     hiveStrategies: hive.strategies.length,
     hiveFolders: hive.folders.length,
+    notMirrored: notMirrored,
     strategies: strategies,
     folders: _checkFolders(hive.folders, list.folders),
     unplaced: list.unplaced,
@@ -258,32 +251,19 @@ final class _NotRead extends _OneCheck {
   final StorageFailure failure;
 }
 
-Future<_OneCheck> _checkOne(
-  LibraryStore store,
-  StrategyData expected,
-  HiveRecordDigest? recorded,
-) async {
+Future<_OneCheck> _checkOne(LibraryStore store, StrategyData expected) async {
   final id = expected.id;
-  final RowsDigested hive;
   switch (strategyToRows(expected)) {
     case StrategyRowsRefused(:final problems):
       return _Checked([StrategyNotConverted(id, problems)]);
     case StrategyRowsMade(:final rows):
-      switch (rowsDigestOf(rows)) {
-        case final RowsNotDigested notDigested:
-          return _Checked([StrategyRowsNotEncodable(id, notDigested)]);
-        case final RowsDigested digested:
-          hive = digested;
-      }
+      return switch (rowTextsOf(rows)) {
+        final RowsNotText notText =>
+          _Checked([StrategyRowsNotEncodable(id, notText)]),
+        RowsAsText(rows: final texts) =>
+          await _compared(store, expected, texts),
+      };
   }
-  final stale = [
-    if (recorded?.digest != hive.digest)
-      StrategyRecordStale(id, recorded?.digest, hive.digest),
-  ];
-  return switch (await _compared(store, expected, hive.rows)) {
-    _Checked(:final checks) => _Checked([...stale, ...checks]),
-    final _NotRead notRead => notRead,
-  };
 }
 
 Future<_OneCheck> _compared(
@@ -306,10 +286,10 @@ Future<_OneCheck> _compared(
       storedRows = rows;
   }
   final Map<String, String> inStore;
-  switch (rowsDigestOf(storedRows)) {
-    case final RowsNotDigested notDigested:
-      return _Checked([StrategyRowsNotEncodable(id, notDigested)]);
-    case RowsDigested(rows: final texts):
+  switch (rowTextsOf(storedRows)) {
+    case final RowsNotText notText:
+      return _Checked([StrategyRowsNotEncodable(id, notText)]);
+    case RowsAsText(rows: final texts):
       inStore = texts;
   }
   final rows = [

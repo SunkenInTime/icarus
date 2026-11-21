@@ -1006,21 +1006,8 @@ wholly there or wholly absent, and no other row changed.
 
 | Area | Names |
 | --- | --- |
-| `library` | `summary/<s>`, `folder/<f>`, `hive/<s>` |
+| `library` | `summary/<s>`, `folder/<f>` |
 | `s/<s>` | `strategy`, `page/<p>`, `settings/<p>`, `content/<p>/e/<e>`, `content/<p>/l/<l>` |
-
-**The Hive record a strategy was copied from.** `hive/<s>` holds a
-`HiveRecordDigest`: the strategy's id and a digest of the Hive record the
-app copied it from or last took from Hive (ADR 0009, "Coming back from an
-older build"). `RememberHiveRecord` writes it in the same commit as the
-library's other changes, and only for a strategy the store holds after the
-earlier steps of that edit; `RemoveStrategy` and `RemoveUnreadableStrategy`
-delete it with the strategy. It is written whole, like a folder, so a caller
-that replaces a digest starts from the stored record (`withDigest`), which
-keeps the fields this build does not know. A record that does not decode, or
-names another strategy, is listed in `LibraryList.unplaced`, refuses a new
-record, and goes when its strategy is removed. `LibraryList.hiveRecords`
-holds the readable ones by strategy id.
 
 A folder row keeps `createdAt` in milliseconds when it has one, as the
 server's folder row does.

@@ -207,7 +207,7 @@ final class CorpusReport {
     if (folders.isNotEmpty) {
       await putting.editLibrary([
         for (final folder in _parentsFirst(folders))
-          PutFolder(folderToRow(folder).row),
+          PutFolder(folderToRow(folder)),
       ]);
     }
     final put = await putting.putStrategy(made.rows);

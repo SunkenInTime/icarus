@@ -6,7 +6,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_registration.dart';
-import 'package:icarus/library_store/hive_record.dart';
+import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 

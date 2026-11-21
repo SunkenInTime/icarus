@@ -94,15 +94,6 @@ final class FolderName extends StoreName {
   String get name => 'folder/$digest';
 }
 
-final class HiveRecordName extends StoreName {
-  const HiveRecordName(this.digest);
-
-  final String digest;
-
-  @override
-  String get name => 'hive/$digest';
-}
-
 final class HeaderName extends StoreName {
   const HeaderName();
 
@@ -185,8 +176,6 @@ StoreName readName(StoreArea area, String name) =>
         SummaryName(digest),
       (LibraryArea(), ['folder', final digest]) when _isDigest(digest) =>
         FolderName(digest),
-      (LibraryArea(), ['hive', final digest]) when _isDigest(digest) =>
-        HiveRecordName(digest),
       (StrategyArea(), ['strategy']) => const HeaderName(),
       (StrategyArea(), ['page', final digest]) when _isDigest(digest) =>
         PageName(digest),
