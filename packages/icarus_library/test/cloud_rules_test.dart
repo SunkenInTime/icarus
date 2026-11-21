@@ -641,9 +641,9 @@ void main() {
           ),
         ),
       );
-      client.arrive(pageReadOf(initialRows(), 'page-b'), read: early);
+      client.arrive(headerReadOf(initialRows()), read: early);
       expect(client.view('add').go, isA<Free>());
-      client.arrive(pageReadOf(initialRows(), 'page-b'));
+      client.arrive(headerReadOf(initialRows()));
       expect(
         client.view('add').go,
         isA<NeedsFreshId>().having(

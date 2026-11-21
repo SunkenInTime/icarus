@@ -139,6 +139,66 @@ final class LineupName extends StoreName {
   String get name => 'content/$page/l/$digest';
 }
 
+final class CloudName extends StoreName {
+  const CloudName();
+
+  @override
+  String get name => 'cloud';
+}
+
+final class CountersName extends StoreName {
+  const CountersName();
+
+  @override
+  String get name => 'counters';
+}
+
+const placeDigits = 16;
+
+final _place = RegExp(r'^[0-9]{16}$');
+
+String _numbered(int number) => number.toString().padLeft(placeDigits, '0');
+
+const pendingPrefix = 'pending/';
+
+final class PendingName extends StoreName {
+  const PendingName(this.place);
+
+  final int place;
+
+  @override
+  String get name => '$pendingPrefix${_numbered(place)}';
+}
+
+const attemptPrefix = 'attempt/';
+
+final class AttemptName extends StoreName {
+  const AttemptName(this.number);
+
+  final int number;
+
+  @override
+  String get name => '$attemptPrefix${_numbered(number)}';
+}
+
+const readPrefix = 'read/';
+
+final class HeaderReadName extends StoreName {
+  const HeaderReadName();
+
+  @override
+  String get name => '${readPrefix}header';
+}
+
+final class PageReadName extends StoreName {
+  const PageReadName(this.digest);
+
+  final String digest;
+
+  @override
+  String get name => '${readPrefix}page/$digest';
+}
+
 final class UnknownKindName extends StoreName {
   const UnknownKindName(this.page, this.name);
 
@@ -177,6 +237,16 @@ StoreName readName(StoreArea area, String name) =>
       (LibraryArea(), ['folder', final digest]) when _isDigest(digest) =>
         FolderName(digest),
       (StrategyArea(), ['strategy']) => const HeaderName(),
+      (StrategyArea(), ['cloud']) => const CloudName(),
+      (StrategyArea(), ['counters']) => const CountersName(),
+      (StrategyArea(), ['pending', final place]) when _place.hasMatch(place) =>
+        PendingName(int.parse(place)),
+      (StrategyArea(), ['attempt', final number])
+          when _place.hasMatch(number) =>
+        AttemptName(int.parse(number)),
+      (StrategyArea(), ['read', 'header']) => const HeaderReadName(),
+      (StrategyArea(), ['read', 'page', final digest]) when _isDigest(digest) =>
+        PageReadName(digest),
       (StrategyArea(), ['page', final digest]) when _isDigest(digest) =>
         PageName(digest),
       (StrategyArea(), ['settings', final digest]) when _isDigest(digest) =>

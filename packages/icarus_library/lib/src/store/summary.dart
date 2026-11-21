@@ -5,10 +5,47 @@ import '../outcome.dart';
 import '../payloads.dart';
 import '../rows.dart';
 import '../wire.dart';
+import '../cloud/sync.dart';
 
 const summaryVersion = 5;
 
 enum Sides { attack, defend, mixed }
+
+sealed class SummarySync {
+  const SummarySync();
+}
+
+final class KeptHere extends SummarySync {
+  const KeptHere();
+}
+
+final class KeptInCloud extends SummarySync {
+  const KeptInCloud(this.tally, this.queued);
+
+  final Tally tally;
+  final QueuedRows queued;
+}
+
+final class QueuedRows {
+  const QueuedRows({required this.count, required this.placeSum});
+
+  static const none = QueuedRows(count: 0, placeSum: 0);
+
+  factory QueuedRows.of(Iterable<int> places) => QueuedRows(
+    count: places.length,
+    placeSum: places.fold(0, (sum, place) => sum + place),
+  );
+
+  final int count;
+  final int placeSum;
+
+  @override
+  bool operator ==(Object other) =>
+      other is QueuedRows && other.count == count && other.placeSum == placeSum;
+
+  @override
+  int get hashCode => Object.hash(count, placeSum);
+}
 
 sealed class Readability {
   const Readability();
@@ -148,6 +185,7 @@ final class StrategySummary {
     required this.readability,
     required this.elsewhere,
     required Map<String, PageTally> tallies,
+    required this.sync,
   }) : agents = List.unmodifiable(agents),
        tallies = Map.unmodifiable(tallies);
 
@@ -157,6 +195,7 @@ final class StrategySummary {
     required Iterable<PageSettingsRow> settings,
     required Map<String, PageTally> tallies,
     required PageTally elsewhere,
+    SummarySync sync = const KeptHere(),
   }) {
     final pageIds = {for (final page in pages) page.publicId};
     tallies = {
@@ -196,6 +235,7 @@ final class StrategySummary {
           : SomeUnreadable(damaged: damaged, newer: newer),
       elsewhere: elsewhere,
       tallies: tallies,
+      sync: sync,
     );
   }
 
@@ -212,6 +252,24 @@ final class StrategySummary {
   final Readability readability;
   final PageTally elsewhere;
   final Map<String, PageTally> tallies;
+  final SummarySync sync;
+
+  StrategySummary withSync(SummarySync sync) => StrategySummary._(
+    publicId: publicId,
+    name: name,
+    mapData: mapData,
+    folderPublicId: folderPublicId,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    pageCount: pageCount,
+    sides: sides,
+    agents: agents,
+    itemCount: itemCount,
+    readability: readability,
+    elsewhere: elsewhere,
+    tallies: tallies,
+    sync: sync,
+  );
 
   StrategySummary after(
     ReadableStrategy strategy,
@@ -252,6 +310,7 @@ final class StrategySummary {
       settings: settings,
       tallies: tallies,
       elsewhere: elsewhere,
+      sync: sync,
     );
   }
 
@@ -269,6 +328,7 @@ final class StrategySummary {
     readability: readability,
     elsewhere: elsewhere,
     tallies: tallies,
+    sync: sync,
   );
 
   Map<String, Object?> toJson() => {
@@ -295,6 +355,12 @@ final class StrategySummary {
     'tallies': {
       for (final page in tallies.keys.sorted()) page: tallies[page]!.toJson(),
     },
+    if (sync case KeptInCloud(:final tally, :final queued))
+      'cloud': {
+        'tally': tally.toJson(),
+        'queued': queued.count,
+        'placeSum': queued.placeSum,
+      },
   };
 
   static Decoded<StrategySummary> decode(Object? json) =>
@@ -319,6 +385,7 @@ final class StrategySummary {
         final damaged = fields.whole('damagedRows');
         final newer = fields.whole('newerRows');
         final elsewhere = fields.decoded('elsewhere', PageTally.decode);
+        final cloud = fields.optionalDecoded('cloud', _cloudSync);
         final tallies = <String, PageTally>{};
         for (final MapEntry(:key, :value)
             in fields.object('tallies').raw.entries) {
@@ -345,7 +412,18 @@ final class StrategySummary {
               : SomeUnreadable(damaged: damaged, newer: newer),
           elsewhere: elsewhere!,
           tallies: tallies,
+          sync: cloud ?? const KeptHere(),
         );
+      });
+
+  static Decoded<KeptInCloud> _cloudSync(Object? json) =>
+      JsonFields.read(json, 'cloud sync', (fields) {
+        final tally = fields.decoded('tally', Tally.decode);
+        final count = fields.whole('queued');
+        final placeSum = fields.whole('placeSum');
+        if (count < 0 || placeSum < 0) fields.reject('expected queued rows');
+        return () =>
+            KeptInCloud(tally!, QueuedRows(count: count, placeSum: placeSum));
       });
 
   @override
