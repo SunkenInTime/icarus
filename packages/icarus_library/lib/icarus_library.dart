@@ -39,14 +39,19 @@ export 'src/json.dart'
     show
         Admission,
         Admitted,
+        Encoded,
+        Encoding,
         JsonList,
         JsonObject,
         NotAdmitted,
+        NotEncoded,
         admit,
+        encodeJson,
         jsonObject,
         jsonValue,
         maxJsonDepth;
 export 'src/store/engine.dart' hide done;
+export 'src/store/hive_record.dart';
 export 'src/store/layout.dart'
     show ForeignName, digestOf, longestName, strategyArea;
 export 'src/store/memory_engine.dart';

@@ -26,6 +26,11 @@ final _pool = <LibraryChange>[
     RemoveStrategy(id),
   ],
   AddStrategy(sampleStrategy(id: _third, prefix: 'three-')),
+  for (final id in [strategyId, _second, _third])
+    for (final digest in ['a', 'b'])
+      RememberHiveRecord(
+        HiveRecordDigest(strategyPublicId: id, digest: digest),
+      ),
 ];
 
 String _describe(LibraryChange change) => switch (change) {
@@ -37,6 +42,8 @@ String _describe(LibraryChange change) => switch (change) {
   RemoveStrategy(:final strategyPublicId) => 'remove $strategyPublicId',
   AddStrategy(:final rows) => 'add ${rows.strategy.publicId}',
   RemoveUnreadableStrategy(:final ref) => 'remove unreadable ${ref.area}',
+  RememberHiveRecord(:final record) =>
+    'remember ${record.digest} for ${record.strategyPublicId}',
 };
 
 Contents _copied(Contents contents) => {
