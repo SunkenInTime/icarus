@@ -10,6 +10,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class CenterSquareWidget extends ConsumerWidget {
   const CenterSquareWidget({
     super.key,
+    this.forcedAbilitySize,
     required this.width,
     required this.height,
     required this.iconPath,
@@ -34,11 +35,14 @@ class CenterSquareWidget extends ConsumerWidget {
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
 
+  final double? forcedAbilitySize;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
-    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final abilitySize =
+        forcedAbilitySize ?? ref.watch(strategySettingsProvider).abilitySize;
     final totalWidth = coordinateSystem.scale(abilitySize);
     final scaledWidth = coordinateSystem.scale(width);
     final scaledHeight = coordinateSystem.scale(height);
@@ -73,6 +77,7 @@ class CenterSquareWidget extends ConsumerWidget {
                 angle: -(rotation ?? 0),
                 alignment: Alignment.center,
                 child: AbilityWidget(
+                  forcedAbilitySize: forcedAbilitySize,
                   landingId: landingId,
                   iconPath: iconPath,
                   id: id,

@@ -14,6 +14,7 @@ class SectorCircleWidget extends ConsumerWidget {
 
   const SectorCircleWidget({
     super.key,
+    this.forcedAbilitySize,
     required this.iconPath,
     required this.size,
     required this.rangeOutlineColor,
@@ -50,6 +51,8 @@ class SectorCircleWidget extends ConsumerWidget {
   final List<ShadContextMenuItem>? contextMenuItems;
 
   bool get hasInnerRange => innerRangeSize != null;
+
+  final double? forcedAbilitySize;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -196,6 +199,7 @@ class SectorCircleWidget extends ConsumerWidget {
           angle: -(rotation ?? 0),
           alignment: Alignment.center,
           child: AbilityWidget(
+            forcedAbilitySize: forcedAbilitySize,
             landingId: landingId,
             iconPath: iconPath,
             id: id,

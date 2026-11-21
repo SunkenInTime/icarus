@@ -9,6 +9,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/community_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/cloud_work_sent.dart';
 import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/widgets/community/community_post_card.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -151,8 +152,24 @@ class _PostFormState extends ConsumerState<_PostForm> {
     });
     // Read before the wait: the dialog may be closed while it posts.
     final feed = ref.read(communityFeedProvider.notifier);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final dialog = ModalRoute.of(context)!;
+    switch (await sendStrategyWork(
+      container.read,
+      strategyId: widget.strategyPublicId,
+    )) {
+      case StrategyWorkNotOnServer(:final reason):
+        if (!mounted) return;
+        setState(() {
+          _posting = false;
+          _error = _notOnServerMessage(l10n, reason);
+        });
+        return;
+      case StrategyWorkOnServer():
+        if (!dialog.isCurrent) return;
+    }
     try {
-      await ref.read(communityRepositoryProvider).publish(
+      await container.read(communityRepositoryProvider).publish(
             postPublicId: widget.postPublicId,
             strategyPublicId: widget.strategyPublicId,
             title: _title.text,
@@ -346,8 +363,24 @@ class _PostedViewState extends ConsumerState<_PostedView> {
       _error = null;
     });
     final feed = ref.read(communityFeedProvider.notifier);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final dialog = ModalRoute.of(context)!;
+    switch (await sendStrategyWork(
+      container.read,
+      strategyId: widget.mine.sourceStrategyPublicId,
+    )) {
+      case StrategyWorkNotOnServer(:final reason):
+        if (!mounted) return;
+        setState(() {
+          _updating = false;
+          _error = _notOnServerMessage(l10n, reason);
+        });
+        return;
+      case StrategyWorkOnServer():
+        if (!dialog.isCurrent) return;
+    }
     try {
-      await ref
+      await container
           .read(communityRepositoryProvider)
           .updatePost(postPublicId: _post.publicId, refresh: true);
       unawaited(feed.readAgain());
@@ -551,6 +584,22 @@ class _PostedViewState extends ConsumerState<_PostedView> {
     );
   }
 }
+
+String _notOnServerMessage(
+  AppLocalizations l10n,
+  CloudWorkNotSentReason reason,
+) =>
+    switch (reason) {
+      CloudWorkNotSentReason.stillSending =>
+        l10n.communityPostNotSentStillSending,
+      CloudWorkNotSentReason.needsReview =>
+        l10n.communityPostNotSentNeedsReview,
+      CloudWorkNotSentReason.uploadFailed =>
+        l10n.communityPostNotSentUploadFailed,
+      CloudWorkNotSentReason.unreadable => l10n.communityPostNotSentUnreadable,
+      CloudWorkNotSentReason.accountChanged =>
+        l10n.communityPostNotSentAccountChanged,
+    };
 
 /// How long ago [time] was, inside a sentence: the cards' "Just now" starts
 /// a label, not a clause.

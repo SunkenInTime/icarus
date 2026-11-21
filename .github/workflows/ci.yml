@@ -830,6 +830,14 @@ jobs:
         with:
           workspaces: third_party/convex_flutter/rust -> ../../../build/windows/x64/plugins/convex_flutter/cargokit_build
 
+      - name: Start Reading WebView2 Runtime
+        run: |
+          Start-Process -FilePath powershell -WindowStyle Hidden -ArgumentList @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", "`"$PWD\scripts\read_webview2_runtime.ps1`"",
+            "-ResultPath", "`"$env:RUNNER_TEMP\webview2-read-ahead.json`""
+          )
+
       - name: Build Windows Client
         run: fvm flutter build windows --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 
@@ -845,7 +853,8 @@ jobs:
             throw "Release-candidate installer was not built."
           }
           powershell -ExecutionPolicy Bypass -File scripts/test_online_beta_windows_upgrade.ps1 `
-            -ReleaseCandidateInstaller $installer.FullName
+            -ReleaseCandidateInstaller $installer.FullName `
+            -BackgroundReadAheadResult "$env:RUNNER_TEMP\webview2-read-ahead.json"
 
       - name: Upload Windows Release Candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

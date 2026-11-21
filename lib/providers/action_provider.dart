@@ -12,6 +12,7 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -157,10 +158,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
     }
     DebugBreadcrumbs.add('canvas', '${action.type.name} ${action.group.name}');
     ref.read(strategyProvider.notifier).setUnsaved();
-    if (action.group != ActionGroup.ability) {
-      ref
-          .read(abilityBarProvider.notifier)
-          .updateData(null); // Make the agent tab disappear after an action
+    final usingAnotherTool =
+        ref.read(interactionStateProvider) != InteractionState.navigation;
+    if (action.group != ActionGroup.ability && usingAnotherTool) {
+      ref.read(abilityBarProvider.notifier).setAside();
     }
     poppedItems = [];
     final history = [...state, action.copy()];
@@ -181,9 +182,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
       if (undo == null) continue;
       DebugBreadcrumbs.add('canvas', 'redo ${action.group.name}');
       state = [...state, undo];
-      if (action.group == ActionGroup.bulk) {
-        ref.read(abilityBarProvider.notifier).updateData(null);
-      }
       return;
     }
   }

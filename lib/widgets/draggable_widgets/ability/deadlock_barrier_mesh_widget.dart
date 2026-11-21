@@ -100,6 +100,7 @@ double deadlockBarrierMeshArmLengthVirtual(
 class DeadlockBarrierMeshWidget extends ConsumerWidget {
   const DeadlockBarrierMeshWidget({
     super.key,
+    this.forcedAbilitySize,
     required this.iconPath,
     required this.id,
     required this.isAlly,
@@ -125,11 +126,14 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
 
+  final double? forcedAbilitySize;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rangeOpacity = AbilityRangeOpacity.of(context);
     final coordinateSystem = CoordinateSystem.instance;
-    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final abilitySize =
+        forcedAbilitySize ?? ref.watch(strategySettingsProvider).abilitySize;
     final normalizedArmLengths =
         normalizeDeadlockBarrierMeshArmLengths(armLengthsMeters);
     final maxExtentVirtual = deadlockBarrierMeshMaxExtent(
@@ -174,6 +178,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
               child: Align(
                 alignment: Alignment.center,
                 child: AbilityWidget(
+                  forcedAbilitySize: forcedAbilitySize,
                   landingId: landingId,
                   iconPath: iconPath,
                   id: id,
