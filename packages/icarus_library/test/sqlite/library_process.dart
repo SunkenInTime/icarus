@@ -72,6 +72,14 @@ final class ProbingEngine implements StorageEngine {
 Future<void> main(List<String> arguments) async {
   final [mode, path] = arguments;
   final engine = SqliteEngine(path);
+  if (mode == 'create') {
+    stdout.writeln('starting');
+    await stdout.flush();
+    await engine.lease();
+    stdout.writeln('created');
+    await engine.close();
+    return;
+  }
   if (mode == 'hold') {
     if (await engine.lease() case Leased()) stdout.writeln('held');
     await stdin.drain<void>();

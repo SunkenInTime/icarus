@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 import '../store_support.dart';
 import '../support.dart';
 import 'fault_disk.dart';
+import '../crash_harness.dart';
 import 'fault_harness.dart';
 
 ElementPatchOp _move(String opId, int revision, num x) => ElementPatchOp(
@@ -185,6 +186,70 @@ void main() {
       drive.disk.fault = const NoFault();
       expect(_opens(drive.open()), isTrue);
       drive.unregister();
+    },
+  );
+
+  test('a sync that fails at any point of creating the library, with or '
+      'without a power cut after it, never publishes a library without its '
+      'tables: the next open makes the library or opens it', () async {
+    for (final loss in const [KeepsUnsynced(), DropsUnsynced()]) {
+      var hit = true;
+      for (var sync = 1; hit; sync++) {
+        final drive = FaultDrive();
+        drive.disk.fault = FailSyncAt(sync);
+        if (drive.open() case RowsOpened(:final rows)) rows.close();
+        hit = drive.disk.syncs >= sync;
+        drive.disk.powerLoss(loss);
+        expect(
+          _opens(drive.open()),
+          isTrue,
+          reason: 'sync $sync of creating the library failed, then $loss',
+        );
+        drive.unregister();
+      }
+    }
+  });
+
+  test(
+    'a commit whose outcome is unknown, followed by one that applies, '
+    'writing or empty: after an app crash or a power cut the first is gone for good',
+    () async {
+      for (final loss in const [
+        KeepsUnsynced(),
+        DropsUnsynced(),
+        TearsUnsynced(5),
+      ]) {
+        for (final second in const <List<Change>>[
+          [Put('b', 'k', 'second')],
+          [],
+        ]) {
+          final harness = SqliteCrashHarness(loss);
+          await harness.start(const {});
+          final lease = await leaseOf(await harness.open());
+          committed(await lease.commit(const [Put('b', 'k', 'before')]));
+          harness.disk.fault = FailSyncAt(harness.disk.syncs + 1);
+          expect(
+            await lease.commit(const [Put('a', 'k', 'first')]),
+            isA<CommitUnknown>(),
+            reason: '$loss',
+          );
+          harness.disk.fault = const NoFault();
+          committed(await lease.commit(second));
+          await harness.crash();
+          final reopened = await leaseOf(await harness.open());
+          expect(
+            valueOf(await reopened.read('a', 'k')),
+            isNull,
+            reason: '$loss, second commit $second',
+          );
+          expect(
+            valueOf(await reopened.read('b', 'k')),
+            second.isEmpty ? 'before' : 'second',
+            reason: '$loss',
+          );
+          await harness.finish();
+        }
+      }
     },
   );
 

@@ -63,6 +63,32 @@ final class _Unusable extends _Connection {
   final StorageFailure failure;
 }
 
+sealed class Creation {
+  const Creation();
+}
+
+final class Created extends Creation {
+  const Created();
+}
+
+final class NotCreated extends Creation {
+  const NotCreated(this.failure);
+
+  final StorageFailure failure;
+}
+
+sealed class _Phase {
+  const _Phase();
+}
+
+final class _Writing extends _Phase {
+  const _Writing();
+}
+
+final class _Committing extends _Phase {
+  const _Committing();
+}
+
 final class RowsDatabase {
   RowsDatabase._(
     this._db, {
@@ -89,27 +115,14 @@ final class RowsDatabase {
        _supersede = supersede,
        _clearArea = clearArea;
 
-  static String? _prepareConnection(Database db) {
-    db
-      ..execute('PRAGMA locking_mode = EXCLUSIVE')
-      ..execute('PRAGMA busy_timeout = 0');
-    final mode = db.select('PRAGMA journal_mode = WAL').single.columnAt(0);
-    if (mode != 'wal') return 'no write-ahead log ($mode)';
-    db
-      ..execute('PRAGMA synchronous = FULL')
-      ..execute('PRAGMA fullfsync = ON')
-      ..execute('PRAGMA journal_size_limit = 4194304')
-      ..execute('BEGIN IMMEDIATE');
-    return null;
-  }
-
-  static RowsOpening? create(Database db) {
+  static Creation create(Database db) {
     try {
-      if (_prepareConnection(db) case final problem?) {
-        db.close();
-        return refusedFor(problem);
-      }
       db
+        ..execute('PRAGMA locking_mode = EXCLUSIVE')
+        ..execute('PRAGMA journal_mode = DELETE')
+        ..execute('PRAGMA synchronous = FULL')
+        ..execute('PRAGMA fullfsync = ON')
+        ..execute('BEGIN IMMEDIATE')
         ..execute(
           'CREATE TABLE rows (area TEXT NOT NULL, key TEXT NOT NULL, '
           'value TEXT NOT NULL, PRIMARY KEY (area, key)) STRICT',
@@ -120,13 +133,39 @@ final class RowsDatabase {
         ..execute('PRAGMA application_id = $libraryApplicationId')
         ..execute('COMMIT')
         ..close();
-      return null;
+      return const Created();
     } on SqliteException catch (error) {
       db.close();
-      return openingFailed(error);
-    } on FormatException catch (error) {
+      return NotCreated(failureOf(error));
+    }
+  }
+
+  static Creation verifyCreated(Database db) {
+    try {
+      final problem = switch (_identityProblem(db)) {
+        final String problem => problem,
+        null =>
+          db
+                      .select(
+                        "SELECT count(*) FROM sqlite_schema WHERE type = 'table' "
+                        "AND name IN ('rows', 'generation')",
+                      )
+                      .single
+                      .columnAt(0) ==
+                  2
+              ? null
+              : 'its tables are missing',
+      };
       db.close();
-      return refusedFor('damaged (${_undescribed(error)})');
+      return switch (problem) {
+        null => const Created(),
+        final problem => NotCreated(
+          DeviceFailure('the new library is not whole: $problem'),
+        ),
+      };
+    } on SqliteException catch (error) {
+      db.close();
+      return NotCreated(failureOf(error));
     }
   }
 
@@ -139,17 +178,24 @@ final class RowsDatabase {
     }
 
     try {
-      if (_prepareConnection(db) case final problem?) {
+      db
+        ..execute('PRAGMA locking_mode = EXCLUSIVE')
+        ..execute('PRAGMA busy_timeout = 0');
+      if (_identityProblem(db) ?? _damage(db) case final problem?) {
         db.close();
         return refusedFor(problem);
       }
-      if (_problemIn(db) case final problem?) {
-        db
-          ..execute('ROLLBACK')
-          ..close();
-        return refusedFor(problem);
+      final mode = db.select('PRAGMA journal_mode = WAL').single.columnAt(0);
+      if (mode != 'wal') {
+        db.close();
+        return refusedFor('no write-ahead log ($mode)');
       }
-      db.execute('COMMIT');
+      db
+        ..execute('PRAGMA synchronous = FULL')
+        ..execute('PRAGMA fullfsync = ON')
+        ..execute('PRAGMA journal_size_limit = 4194304')
+        ..execute('BEGIN IMMEDIATE')
+        ..execute('COMMIT');
       return RowsOpened(
         RowsDatabase._(
           db,
@@ -166,7 +212,7 @@ final class RowsDatabase {
             'SELECT min(area) FROM rows WHERE area >= ?1 '
             'UNION ALL SELECT (SELECT min(area) FROM rows '
             'WHERE area > found.area) FROM found WHERE found.area IS NOT NULL'
-            ') SELECT area FROM found WHERE area IS NOT NULL',
+            ') SELECT area FROM found WHERE area IS NOT NULL ORDER BY area',
           ),
           areasBetween: prepare(
             'WITH RECURSIVE found(area) AS ('
@@ -174,7 +220,7 @@ final class RowsDatabase {
             'UNION ALL SELECT (SELECT min(area) FROM rows '
             'WHERE area > found.area AND area < ?2) FROM found '
             'WHERE found.area IS NOT NULL'
-            ') SELECT area FROM found WHERE area IS NOT NULL',
+            ') SELECT area FROM found WHERE area IS NOT NULL ORDER BY area',
           ),
           entriesFrom: prepare(
             'SELECT key, value FROM rows WHERE area = ?1 AND key >= ?2 '
@@ -209,19 +255,20 @@ final class RowsDatabase {
     db.close();
   }
 
-  static String? _problemIn(Database db) {
+  static String? _identityProblem(Database db) {
     final applicationId = db.select('PRAGMA application_id').single.columnAt(0);
     if (applicationId != libraryApplicationId) {
       return 'not an Icarus library (application id $applicationId)';
     }
-    switch (db.select('PRAGMA user_version').single.columnAt(0)) {
-      case librarySchemaVersion:
-        break;
-      case final int version when version > librarySchemaVersion:
-        return 'written by a newer build (schema version $version)';
-      case final version:
-        return 'not an Icarus library (schema version $version)';
-    }
+    return switch (db.select('PRAGMA user_version').single.columnAt(0)) {
+      librarySchemaVersion => null,
+      final int version when version > librarySchemaVersion =>
+        'written by a newer build (schema version $version)',
+      final version => 'not an Icarus library (schema version $version)',
+    };
+  }
+
+  static String? _damage(Database db) {
     final check = [
       for (final row in db.select('PRAGMA integrity_check'))
         '${row.columnAt(0)}',
@@ -346,7 +393,7 @@ final class RowsDatabase {
     if (refusedName(changes, rowsMaxKeyLength) case final failure?) {
       return CommitRefused(failure);
     }
-    var committing = false;
+    _Phase phase = const _Writing();
     try {
       _db.execute('BEGIN IMMEDIATE');
       for (final change in changes) {
@@ -360,24 +407,24 @@ final class RowsDatabase {
         }
       }
       if (_connection is _AfterFailedWrite) _supersede.execute();
-      committing = true;
+      phase = const _Committing();
       _db.execute('COMMIT');
       _connection = const _Usable();
       return const CommitApplied();
     } on SqliteException catch (error) {
-      return _failedCommit(failureOf(error), committing: committing);
+      return _failedCommit(failureOf(error), phase);
     } on FormatException catch (error) {
-      return _failedCommit(
-        DeviceFailure(_undescribed(error)),
-        committing: committing,
-      );
+      return _failedCommit(DeviceFailure(_undescribed(error)), phase);
     }
   }
 
-  Committing _failedCommit(StorageFailure failure, {required bool committing}) {
-    if (committing) _connection = const _AfterFailedWrite();
+  Committing _failedCommit(StorageFailure failure, _Phase phase) {
+    if (phase is _Committing) _connection = const _AfterFailedWrite();
     if (!_db.autocommit) _rollBack(failure);
-    return committing ? CommitUnknown(failure) : CommitRefused(failure);
+    return switch (phase) {
+      _Writing() => CommitRefused(failure),
+      _Committing() => CommitUnknown(failure),
+    };
   }
 
   void _rollBack(StorageFailure cause) {

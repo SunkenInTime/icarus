@@ -132,65 +132,94 @@ Stored<void> _released(RowsDatabase rows, ReceivePort requests) {
   return done;
 }
 
+const _reservedSuffixes = ['.creating', '.lock', '-wal', '-shm', '-journal'];
+
 final class SqliteEngine implements StorageEngine {
-  SqliteEngine(this.path);
+  SqliteEngine(this.path) {
+    for (final suffix in _reservedSuffixes) {
+      if (path.endsWith(suffix)) {
+        throw ArgumentError.value(path, 'path', 'ends in $suffix');
+      }
+    }
+  }
 
   final String path;
   final _granted = <SqliteLease>[];
+  final _opening = <Future<Leasing>>{};
   var _closed = false;
 
   @override
-  Future<Leasing> lease() async {
-    if (_closed) return const LeaseFailed(EngineClosed());
+  Future<Leasing> lease() {
+    if (_closed) return Future.value(const LeaseFailed(EngineClosed()));
+    final leasing = _lease();
+    _opening.add(leasing);
+    return leasing.whenComplete(() => _opening.remove(leasing));
+  }
+
+  Future<Leasing> _lease() async {
     final replies = ReceivePort();
     final first = Completer<Leasing>();
+    final spawned = Completer<Isolate>();
     SqliteLease? granted;
+    void stopped(StorageFailure failure) {
+      replies.close();
+      granted?._workerStopped(failure);
+      if (!first.isCompleted) first.complete(LeaseFailed(failure));
+    }
+
     replies.listen((message) {
       switch (message) {
         case _Ready(:final requests):
-          final lease = granted = SqliteLease._(requests);
+          final lease = granted = SqliteLease._(requests, spawned.future);
           _granted.add(lease);
-          first.complete(Leased(lease));
+          first.complete(
+            _closed ? const LeaseFailed(EngineClosed()) : Leased(lease),
+          );
         case final Leasing refused:
           replies.close();
           first.complete(refused);
         case _Reply(:final id, :final result):
-          granted!._pending.remove(id)!.$1.complete(result);
+          granted?._answer(id, result);
         case _Reached():
-          granted!._held?._reached.complete();
+          granted?._held?._reached.complete();
         case [final error, final stack]:
-          final failure = DeviceFailure(
-            'the library worker failed: $error\n$stack',
-          );
-          granted?._stop(failure);
-          if (!first.isCompleted) first.complete(LeaseFailed(failure));
+          stopped(DeviceFailure('the library worker failed: $error\n$stack'));
         case null:
-          replies.close();
-          const failure = DeviceFailure('the library worker stopped');
-          if (granted case final lease? when lease._worker is _Running) {
-            lease._stop(failure);
-          }
-          if (!first.isCompleted) first.complete(const LeaseFailed(failure));
+          stopped(const DeviceFailure('the library worker stopped'));
       }
     });
-    await Isolate.spawn(
-      _serve,
-      (path, replies.sendPort),
-      onError: replies.sendPort,
-      onExit: replies.sendPort,
-      debugName: 'icarus library',
-    );
+    try {
+      spawned.complete(
+        await Isolate.spawn(
+          _serve,
+          (path, replies.sendPort),
+          onError: replies.sendPort,
+          onExit: replies.sendPort,
+          debugName: 'icarus library',
+        ),
+      );
+    } on IsolateSpawnException catch (error) {
+      replies.close();
+      return LeaseFailed(
+        DeviceFailure('the library worker did not start: $error'),
+      );
+    }
     return first.future;
   }
 
   PendingWrite holdNextCommit() => _granted.last._holdNextCommit();
 
-  Future<void> close() async {
+  Future<Releasing> close() async {
     _closed = true;
+    await Future.wait([..._opening]);
+    Releasing releasing = const Released();
     for (final lease in _granted) {
-      await lease.release();
+      if (await lease.release() case final ReleaseFailed failed) {
+        releasing = failed;
+      }
     }
     _granted.clear();
+    return releasing;
   }
 }
 
@@ -208,17 +237,14 @@ final class _Ended extends _Worker {
   const _Ended();
 }
 
-final class _Gone extends _Worker {
-  const _Gone(this.failure);
-
-  final StorageFailure failure;
-}
-
 final class SqliteLease implements StorageLease {
-  SqliteLease._(SendPort requests) : _worker = _Running(requests);
+  SqliteLease._(SendPort requests, this._isolate)
+    : _worker = _Running(requests);
 
+  final Future<Isolate> _isolate;
   _Worker _worker;
   _HeldCommit? _held;
+  Future<Releasing>? _releasing;
   var _next = 0;
   final _pending =
       <int, (Completer<Object>, Object Function(StorageFailure))>{};
@@ -227,11 +253,15 @@ final class SqliteLease implements StorageLease {
     _Running(:final requests) => _held = _HeldCommit(
       requests..send(const _HoldNextCommit()),
     ),
-    _Ended() || _Gone() => throw StateError('no running lease to hold'),
+    _Ended() => throw StateError('no running lease to hold'),
   };
 
-  void _stop(StorageFailure failure) {
-    _worker = _Gone(failure);
+  void _answer(int id, Object result) {
+    if (_pending.remove(id) case (final reply, _)?) reply.complete(result);
+  }
+
+  void _workerStopped(StorageFailure failure) {
+    _worker = const _Ended();
     for (final (waiting, gone) in _pending.values) {
       waiting.complete(gone(failure));
     }
@@ -246,8 +276,6 @@ final class SqliteLease implements StorageLease {
     switch (_worker) {
       case _Ended():
         return ended;
-      case _Gone(:final failure):
-        return gone(failure);
       case _Running(:final requests):
         final id = _next++;
         final reply = Completer<Object>();
@@ -262,7 +290,7 @@ final class SqliteLease implements StorageLease {
   @override
   LeaseStatus get status => switch (_worker) {
     _Running() => const Holding(),
-    _Ended() || _Gone() => const Ended(),
+    _Ended() => const Ended(),
   };
 
   @override
@@ -292,14 +320,15 @@ final class SqliteLease implements StorageLease {
 
   @override
   Future<Committing> commit(List<Change> changes) => _ask(
-    (id) => _Commit(id, changes),
+    (id) => _Commit(id, List.of(changes)),
     ended: const CommitRefused(LeaseEnded()),
     gone: CommitUnknown.new,
   );
 
   @override
-  Future<Releasing> release() async {
-    if (_worker is! _Running) return const Released();
+  Future<Releasing> release() => _releasing ??= _release();
+
+  Future<Releasing> _release() async {
     final releasing = _ask<Stored<void>>(
       _Release.new,
       ended: done,
@@ -324,4 +353,9 @@ final class _HeldCommit implements PendingWrite {
 
   @override
   void letGo() => _requests.send(const _LetGo());
+}
+
+extension SqliteLeaseWorker on SqliteLease {
+  Future<void> stopWorker() async =>
+      (await _isolate).kill(priority: Isolate.immediate);
 }

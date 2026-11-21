@@ -58,7 +58,7 @@ RowsOpening _openOnce(String path, LibraryFiles files) {
       if (files.exists('$path-wal')) {
         return refusedFor('the file is gone and its log is still there');
       }
-      if (_create(path, files) case final RowsOpening refused) return refused;
+      if (_create(path, files) case _NotMade(:final refusal)) return refusal;
     }
     return RowsDatabase.open(files.open(path, create: false));
   } on FileSystemException catch (error) {
@@ -68,7 +68,21 @@ RowsOpening _openOnce(String path, LibraryFiles files) {
   }
 }
 
-RowsOpening? _create(String path, LibraryFiles files) {
+sealed class _Making {
+  const _Making();
+}
+
+final class _InPlace extends _Making {
+  const _InPlace();
+}
+
+final class _NotMade extends _Making {
+  const _NotMade(this.refusal);
+
+  final RowsOpening refusal;
+}
+
+_Making _create(String path, LibraryFiles files) {
   final lock = files.open('$path.lock', create: true);
   try {
     lock
@@ -76,20 +90,27 @@ RowsOpening? _create(String path, LibraryFiles files) {
       ..execute('BEGIN EXCLUSIVE');
   } on SqliteException catch (error) {
     lock.close();
-    return openingFailed(error);
+    return _NotMade(openingFailed(error));
   }
   try {
-    if (files.exists(path)) return null;
+    if (files.exists(path)) return const _InPlace();
     final creating = '$path.creating';
     for (final leftover in [creating, '$creating-wal', '$creating-journal']) {
       if (files.exists(leftover)) files.delete(leftover);
     }
-    if (RowsDatabase.create(files.open(creating, create: true))
-        case final RowsOpening refused) {
-      return refused;
+    switch (RowsDatabase.create(files.open(creating, create: true))) {
+      case NotCreated(:final failure):
+        return _NotMade(RowsRefused(failure));
+      case Created():
+        break;
     }
-    files.rename(creating, path);
-    return null;
+    switch (RowsDatabase.verifyCreated(files.open(creating, create: false))) {
+      case NotCreated(:final failure):
+        return _NotMade(RowsRefused(failure));
+      case Created():
+        files.rename(creating, path);
+        return const _InPlace();
+    }
   } finally {
     lock.close();
   }

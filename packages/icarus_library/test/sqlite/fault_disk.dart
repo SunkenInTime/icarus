@@ -243,7 +243,10 @@ final class FaultDisk {
     }
     _files = {
       for (final MapEntry(key: path, value: file) in names.entries)
-        path: _DiskFile(file.afterPowerLoss(keep)),
+        path: _DiskFile(switch (loss) {
+          KeepsUnsynced() => Uint8List.fromList(file.visible),
+          DropsUnsynced() || TearsUnsynced() => file.afterPowerLoss(keep),
+        }),
     };
     _syncDirectory();
     _locks.clear();

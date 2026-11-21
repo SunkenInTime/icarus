@@ -232,6 +232,28 @@ void main() {
     );
   }
 
+  test('a process stopped at a random moment while it creates the library '
+      'leaves a library that the next open makes or opens', () async {
+    final random = Random(11);
+    for (var round = 0; round < 12; round++) {
+      final file = '${directory.path}/stopped-$round.sqlite';
+      final creator = await _start('create', file);
+      final lines = <String>[];
+      final reading = creator.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(lines.add);
+      while (!lines.contains('starting')) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      await Future<void>.delayed(Duration(milliseconds: random.nextInt(80)));
+      creator.kill(ProcessSignal.sigkill);
+      await creator.exitCode;
+      await reading.cancel();
+      expect(await _refusal(file), 'leased', reason: 'round $round: $lines');
+    }
+  }, timeout: const Timeout(Duration(minutes: 5)));
+
   test('a file that is not a library is refused, never opened empty', () async {
     await File(path).writeAsString('notes from a user');
     expect(await _refusal(path), contains('not an Icarus library'));
