@@ -33,6 +33,24 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## The library store in shadow
+
+`--library-store shadow` on Linux, `-LibraryStore shadow` on Windows, starts the app with the library store switched to shadow: as it starts, it copies every local strategy and folder from Hive into a SQLite store beside the Hive boxes (`library_store/library.sqlite`), reads every strategy back out and compares it with Hive. Nothing reads the store yet. `--hive-store DIR` (`-HiveStore`) starts the main instance on a copy of `DIR`, which is never opened itself, so a real library can be checked without touching it.
+
+```sh
+dart tool/drive/linux.dart run --script tool/drive/scripts/library-store-shadow.json \
+  --library-store shadow --hive-store ~/Code/<scratch>/store
+```
+
+Every run logs `FIRSTFRAME <ms> ms store=<off|shadow>`, the time from the start of `main` to the first frame on screen; `scripts/first-frame.json` does nothing else. The steps:
+
+- `{"libraryStore": "shadow", "seconds": n?, "expect": {...}?}` waits up to n seconds (600 by default) for the copy and the comparison, logs them as `STORE` lines, and fails unless the store opened, the copy finished with nothing left out, every strategy and folder reads back the same as Hive, and no `.hive` file changed while it ran. `expect` can name counts that must match: `copied`, `unchanged`, `tookHiveVersion`, `removedWithHive`.
+- `{"checkLibraryStore": 1}` reads every strategy back again and fails on any difference.
+
+At the end of a run the driver closes the store and logs `STORE closed`.
+
+`--kill-after-seconds S` (Linux only) kills the main instance with SIGKILL S seconds after it starts, as a crash would. Start the next run with `--hive-store <that run's out>/store-main` and `scripts/library-store-shadow.json` to see the copy pick up where it stopped.
+
 ## Keeping the two in step
 
 `run.ps1` and `linux.dart` are two launchers for the same driver. The driver decides pass or fail and writes the `SUMMARY` line; the launchers only set it up and read the log. `test/drive_linux_runner_test.dart` fails when the driver reads an `ICARUS_DRIVE_*` variable one launcher doesn't set, when Linux refuses a step the driver no longer has, or when either build stops refusing production. A change to what an instance gets goes into both launchers in the same commit.

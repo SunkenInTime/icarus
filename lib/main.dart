@@ -11,7 +11,12 @@ import 'package:icarus/dev/drive/drive.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
+    show
+        TargetPlatform,
+        defaultTargetPlatform,
+        kDebugMode,
+        kIsWeb,
+        kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/press_scale.dart';
@@ -72,6 +77,10 @@ import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
+import 'package:icarus/startup/launch_clock.dart';
+import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/library_store/library_store_switch.dart';
+import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -171,6 +180,7 @@ final _cloudOutOfReachProvider = Provider<bool>((ref) {
 Future<void> main(List<String> args) async {
   await runZonedGuarded(
     () async {
+      launchClock.start();
       IcarusBinding();
       watchForDebugBreadcrumbs();
       // Shad's dialogs, menus, popovers and tooltips animate through
@@ -179,10 +189,15 @@ Future<void> main(List<String> args) async {
       Animate.defaultCurve = Settings.easeOut;
       Animate.defaultDuration = const Duration(milliseconds: 200);
 
+      final storeLaunch = LibraryStoreLaunch.parse(
+        args,
+        mayShadow: !kIsWeb && (driveBuild || kDebugMode),
+      );
       appProviderContainer = ProviderContainer(overrides: [
         guardedSignOutRequestProvider.overrideWith(
           (ref) => ref.watch(cloudSignOutRequestProvider),
         ),
+        libraryStoreSwitchProvider.overrideWithValue(storeLaunch.choice),
       ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
@@ -191,7 +206,7 @@ Future<void> main(List<String> args) async {
         isReleaseMode: kReleaseMode,
       );
 
-      final launch = HiveStoreLaunch.parse(args);
+      final launch = HiveStoreLaunch.parse(storeLaunch.otherArgs);
       final PreparedHiveStore? alternateHiveStore;
       if (kIsWeb) {
         launch.validateForWeb();
@@ -214,11 +229,12 @@ Future<void> main(List<String> args) async {
             HiveStoreLaunch.defaultWindowsSingleInstanceId,
       );
 
+      String? hiveDirectoryPath;
       if (kIsWeb) {
         // On web, Hive uses IndexedDB; no path needed.
         await Hive.initFlutter();
       } else {
-        final hiveDirectoryPath = alternateHiveStore?.hiveDirectoryPath ??
+        hiveDirectoryPath = alternateHiveStore?.hiveDirectoryPath ??
             (await getApplicationSupportDirectory()).path;
         await getTemporaryDirectory();
         await Hive.initFlutter(hiveDirectoryPath);
@@ -277,6 +293,18 @@ Future<void> main(List<String> args) async {
         }
       }
 
+      final shadowStore = switch ((storeLaunch.choice, hiveDirectoryPath)) {
+        (StoreSwitchShadow(), final String directory)
+            when PlatformPolicy.current.allowsLocalLibrary =>
+          (
+            opening: appProviderContainer
+                .read(libraryStoreProvider.notifier)
+                .open(libraryStoreFile(directory)),
+            directory: directory,
+          ),
+        _ => null,
+      };
+
       // The cloud comes up degraded rather than not at all: a failure here
       // must never keep anyone from the library on this device.
       appProviderContainer.read(cloudStartupProvider.notifier).state =
@@ -319,6 +347,20 @@ Future<void> main(List<String> args) async {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _watchStrategyForDebugBreadcrumbs(),
       );
+      final firstFrame = WidgetsBinding.instance.waitUntilFirstFrameRasterized
+          .then((_) => appProviderContainer
+              .read(firstFrameProvider.notifier)
+              .state = FirstFrameDrawn(launchClock.elapsed));
+      if (shadowStore case (:final opening, :final directory)) {
+        closeLibraryStoreOnExit(appProviderContainer);
+        unawaited(
+          appProviderContainer.read(shadowProvider.notifier).start(
+                opening: opening,
+                firstFrame: firstFrame,
+                hiveDirectory: directory,
+              ),
+        );
+      }
       if (driveBuild) startDrive();
     },
     (error, stackTrace) {
