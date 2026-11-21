@@ -1194,4 +1194,13 @@ void main() {
       expect(client.visible.element('e1')!.pagePublicId, 'page-a');
     });
   });
+
+  test('a revision-checked edit takes its expected revision from the edit '
+      'queued ahead of it on the same row, not from rows that already show '
+      'that edit', () {
+    final client = online();
+    client.edit(pageAdd('add', 'page-c', expected: 1));
+    client.edit(pageDelete('drop', 'page-b', expected: 1));
+    expect(expectedOf((client.queue.entry('drop')! as PendingOp).op), 2);
+  });
 }

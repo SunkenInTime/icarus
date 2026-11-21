@@ -1188,7 +1188,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       }
     }
   }
-  final shift = _landedShift(queue, checkTargetOf(op));
+  final shift = _chainShift(edit, op) ?? _landedShift(queue, checkTargetOf(op));
   final placed = switch (expectedOf(op)) {
     final expected? when shift != 0 => rebased(op, expected + shift),
     _ => op,
@@ -1215,6 +1215,19 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
     ),
   );
   return edit.done();
+}
+
+int? _chainShift(_Edit edit, StrategyOp op) {
+  final expected = expectedOf(op);
+  if (expected == null) return null;
+  final slots = edit.index.checkedUnder(checkTargetOf(op)).toList();
+  for (final (_, id) in slots.reversed) {
+    if (edit.index.byId[id] case final PendingOp before) {
+      final ahead = expectedOf(before.op);
+      if (ahead != null) return ahead + 1 - expected;
+    }
+  }
+  return null;
 }
 
 int _shownRevision(Shown shown, Target target) => switch (target) {
