@@ -484,23 +484,24 @@ final class LibraryStore {
       }
     }
     for (final digest in toRebuild) {
-      if (await _repair(digest) case StorageFailed(:final failure)) {
-        return StorageFailed(failure);
-      }
+      await _repair(digest);
     }
     return done;
   }
 
-  Future<Stored<void>> _repair(String digest) async {
+  Future<void> _repair(String digest) async {
     switch (await _rebuilt(digest)) {
       case _RebuiltSummary(:final summary):
         _keepInMemory(digest, summary);
-        return done;
       case _RebuildNotRead(:final failure):
-        return StorageFailed(failure);
+        _summaries.remove(digest);
+        _unsaved.remove(digest);
+        _unreadable[digest] = UnreadableStrategyListing(
+          ref: StrategyRef(StrategyArea(digest).name),
+          header: Unplaced(null, 'its rows could not be read: $failure'),
+        );
       case _CannotRebuild():
         if (_strategies[digest] case final strategy?) _listUnreadable(strategy);
-        return done;
     }
   }
 

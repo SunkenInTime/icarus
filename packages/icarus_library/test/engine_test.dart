@@ -222,7 +222,14 @@ void main() {
   );
 
   final flawed = {
-    Flaw.racyLease: 'grants one lease when two callers ask at the same moment',
+    Flaw.racyLease:
+        'grants one lease among callers who ask at nearly the same moment',
+    Flaw.reservesOneMicrotask:
+        'grants one lease among callers who ask at nearly the same moment',
+    Flaw.restoresOldAfterEnd:
+        'a commit across areas cut short by a crash is seen whole or not at all',
+    Flaw.areasInInsertionOrder:
+        'lists the areas that hold names under a prefix, literally and in code unit order',
     Flaw.writesAfterClose:
         'a write pending when its engine closes lands whole before the next grant or not at all',
     Flaw.appliesFirstBeforeHold:

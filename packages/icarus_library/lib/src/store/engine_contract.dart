@@ -252,10 +252,12 @@ Future<void> _heldThroughEnd(
   ]);
   StorageLease? next;
   _Areas? atGrant;
+  var nextWrote = false;
   if (await second.lease() case Leased(:final lease)) {
     next = lease;
     atGrant = await _snapshot(lease, areas);
     await _put(lease, 'a', {'k0': 'next'}, 'the next holder\'s write');
+    nextWrote = true;
   }
   pending.letGo();
   await ending;
@@ -267,9 +269,12 @@ Future<void> _heldThroughEnd(
   final kept = {
     for (final MapEntry(:key, :value) in atGrant.entries) key: {...value},
   };
-  if (later['a']?['k0'] == 'next') kept['a']!['k0'] = 'next';
+  if (nextWrote) kept['a']!['k0'] = 'next';
   if (!_sameAreas(later, kept)) {
-    _broke('a write held while $how landed after the next lease was granted');
+    _broke(
+      'a write held while $how changed storage after the next lease was '
+      'granted, or undid what the next holder saved',
+    );
   }
   await harness.close(first);
   await harness.close(second);
@@ -493,16 +498,16 @@ final List<EngineCheck> engineContract = [
       final engine = await harness.open();
       final lease = await _lease(engine);
       const areas = [
-        'a',
-        'a-1',
-        'a.1',
-        'a/1',
-        'a_1',
-        'aa1',
-        'ab',
-        'b',
-        'x_y',
         'xay',
+        'a_1',
+        'b',
+        'a',
+        'ab',
+        'a/1',
+        'x_y',
+        'a.1',
+        'aa1',
+        'a-1',
       ];
       await _applied(lease, [
         for (final area in areas) Put(area, 'k', area),
@@ -659,26 +664,38 @@ final List<EngineCheck> engineContract = [
       'crashed',
     ),
   ),
-  _check('grants one lease when two callers ask at the same moment', (
+  _check('grants one lease among callers who ask at nearly the same moment', (
     harness,
   ) async {
-    final first = await harness.open();
-    final second = await harness.open();
-    for (final pair in [
-      [first, second],
-      [first, first],
-    ]) {
-      final asked = await Future.wait([pair[0].lease(), pair[1].lease()]);
+    final engines = [for (var i = 0; i < 3; i++) await harness.open()];
+    Future<Leasing> now(int i) => engines[i].lease();
+    Future<Leasing> nextMicrotask(int i) =>
+        Future.microtask(() => engines[i].lease());
+    Future<Leasing> nextTick(int i) => Future(() => engines[i].lease());
+    final rounds = <String, List<Future<Leasing>> Function()>{
+      'two in the same turn': () => [now(0), now(1)],
+      'the same engine twice in the same turn': () => [now(0), now(0)],
+      'one a microtask after the other': () => [now(0), nextMicrotask(1)],
+      'one a timer tick after the other': () => [now(0), nextTick(1)],
+      'three at staggered starts': () => [
+        now(0),
+        nextMicrotask(1),
+        nextTick(2),
+      ],
+    };
+    for (final MapEntry(key: what, value: ask) in rounds.entries) {
+      final asked = await Future.wait(ask());
       final granted = asked.whereType<Leased>().toList();
       if (granted.length != 1) {
-        _broke(
-          'two callers asking at once were granted ${granted.length} leases',
-        );
+        _broke('$what: ${granted.length} leases were granted, not one');
       }
-      await granted.single.lease.release();
+      for (final lease in granted) {
+        await lease.lease.release();
+      }
     }
-    await harness.close(first);
-    await harness.close(second);
+    for (final engine in engines) {
+      await harness.close(engine);
+    }
   }),
   _check('an ended lease answers LeaseEnded before anything else', (
     harness,

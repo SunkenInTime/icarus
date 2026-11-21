@@ -282,9 +282,16 @@ that grants everyone a lease, three whose prefixes match like SQL `LIKE`
 valid name, one that applies part of a commit and answers
 `CommitUnknown`, and a small test engine (`test/sloppy_engine.dart`) that
 keeps the whole contract until one flaw is switched on: a lease granted to
-two callers asking at once, a held write that lands after its engine
-closed, a commit cut short by a crash that leaves its first change, or a
-held write that lands after its lease was released. Every commit a check makes is compared with storage before
+two callers asking at once, or to a caller that asks a microtask after a
+reservation expires; a held write that lands after its engine closed, or
+after its lease was released; a commit cut short by a crash that leaves its
+first change; a held write that, once the next holder has saved, puts back
+the value it found; or areas listed in the order they were made.
+
+The suite is a floor. It runs in one isolate with a few chosen timings, so
+it cannot prove that an engine admits one writer under every timing; each
+engine carries its own tests with real concurrency, real processes for
+SQLite and real tabs or workers for IndexedDB. Every commit a check makes is compared with storage before
 and after it: `CommitApplied` must show every change, `CommitRefused` none,
 and `CommitUnknown` all or none, never part.
 
@@ -323,13 +330,14 @@ and `CommitUnknown` all or none, never part.
   or its engine closes, and once ended it never works again: every call
   through it answers `LeaseEnded` before any other check (a bad name, a
   name past the limit), as `CommitRefused` for a commit, and changes
-  nothing. Two callers asking at the same moment get one lease between
-  them. A commit pending when its lease ends, by release, by the engine
+  nothing. Callers asking at nearly the same moment (in the same turn, a
+  microtask apart, a timer tick apart) get one lease between them. A commit pending when its lease ends, by release, by the engine
   closing or by a crash, either lands whole before the next lease is
   granted, or does not land. The suite holds a write, ends its lease, waits
   for the ending or 200 ms, asks for the next lease and waits for its
   answer, looks at storage and writes through the new lease if it was
-  granted, and only then lets the held write go; it looks again after.
+  granted, and only then lets the held write go; it looks again after, and
+  everything the next holder saved must still be there.
 - **Closing.** A lease asked for after `close` is exactly
   `LeaseFailed(EngineClosed)`; one asked for during `close` is either
   refused that way or granted and then ended by the close.
@@ -477,7 +485,11 @@ lists its folders.
 the strategy's area holds rows but its own row is missing or has no id. Such
 a strategy is listed in `unreadableStrategies`, refuses every write with
 `StrategyNotReadable`, including `RemoveStrategy`, and is removed only by
-`RemoveUnreadableStrategy`. A strategy whose own row cannot be read but whose
+`RemoveUnreadableStrategy`, which is for strategies with no known id.
+`RemoveStrategy` by a known id removes the strategy's whole area, readable
+pages included, whether its own row reads or is damaged, because removal is
+the user's own action; only a strategy whose own row is missing or holds no
+id needs the removal by reference. A strategy whose own row cannot be read but whose
 id is known still reads: `StrategyContent.strategy` is its
 `UnreadableStrategy`, and its pages read as usual; edits to it are refused.
 

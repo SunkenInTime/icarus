@@ -38,6 +38,18 @@ final class SlowRelease extends ForwardingLease {
   }
 }
 
+final class FailingPageListing extends ForwardingLease {
+  FailingPageListing(super.inner, this.area);
+
+  final String area;
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      area == this.area && prefix == 'page/'
+      ? const StorageFailed(DeviceFailure('the page listing failed'))
+      : super.entries(area, prefix);
+}
+
 final class EndsAfterLastPageRead extends ForwardingLease {
   EndsAfterLastPageRead(super.inner);
 
@@ -329,6 +341,38 @@ void main() {
           await store.rebuildSummary(strategyId),
           isA<NothingToSave<StrategySummary, CommitRefusal>>(),
         );
+      },
+    );
+
+    test(
+      'when one strategy cannot be read for its repair, lists it as unreadable and opens',
+      () async {
+        final before = {
+          ...seeded,
+          'library': {
+            ...seeded['library']!,
+            summaryName(strategyId): '{"garbled',
+          },
+          sampleArea: {...seeded[sampleArea]!}..remove('strategy'),
+        };
+        final disk = MemoryStorage(before);
+        final opening = await LibraryStore.open(
+          WrappingEngine(
+            MemoryEngine(disk),
+            (lease) => FailingPageListing(lease, sampleArea),
+          ),
+          canRead: readsKnownKinds,
+        );
+        final store = switch (opening) {
+          StoreOpened(:final store) => store,
+          StoreNotOpened(:final problem) => fail('$problem'),
+        };
+        expect(
+          listOf(store).unreadableStrategies.single.ref,
+          StrategyRef(sampleArea),
+        );
+        expect(listOf(store).strategies, isEmpty);
+        expect(sameContents(disk.contents, before), isTrue);
       },
     );
 

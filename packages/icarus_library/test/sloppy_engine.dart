@@ -10,6 +10,9 @@ enum Flaw {
   writesAfterClose,
   appliesFirstBeforeHold,
   writesAfterRelease,
+  restoresOldAfterEnd,
+  reservesOneMicrotask,
+  areasInInsertionOrder,
 }
 
 final class SloppyHold implements PendingWrite {
@@ -27,6 +30,7 @@ final class SloppyStorage {
   final areas = <String, SplayTreeMap<String, String>>{};
   SloppyLease? holder;
   SloppyHold? hold;
+  bool reserved = false;
 }
 
 final class SloppyEngine implements StorageEngine {
@@ -40,8 +44,15 @@ final class SloppyEngine implements StorageEngine {
   @override
   Future<Leasing> lease() async {
     if (_closed) return const LeaseFailed(EngineClosed());
-    if (storage.holder?.status is Holding) return const HeldByAnotherWriter();
+    if (storage.holder?.status is Holding || storage.reserved) {
+      return const HeldByAnotherWriter();
+    }
     if (flaw == Flaw.racyLease) await Future<void>.delayed(Duration.zero);
+    if (flaw == Flaw.reservesOneMicrotask) {
+      storage.reserved = true;
+      scheduleMicrotask(() => storage.reserved = false);
+      await Future<void>.delayed(Duration.zero);
+    }
     final lease = SloppyLease(storage, flaw);
     storage.holder = lease;
     _granted.add(lease);
@@ -111,10 +122,13 @@ final class SloppyLease implements StorageLease {
 
   @override
   Future<Stored<List<String>>> areas(String prefix) async => _held(
-    () => [
-      for (final MapEntry(:key, :value) in _storage.areas.entries)
-        if (value.isNotEmpty && key.startsWith(prefix)) key,
-    ]..sort(compareCodeUnits),
+    () =>
+        [
+          for (final MapEntry(:key, :value) in _storage.areas.entries)
+            if (value.isNotEmpty && key.startsWith(prefix)) key,
+        ]..sort(
+          _flaw == Flaw.areasInInsertionOrder ? (a, b) => 0 : compareCodeUnits,
+        ),
   );
 
   void _apply(Change change) {
@@ -153,8 +167,21 @@ final class SloppyLease implements StorageLease {
     _storage.hold = null;
     final early = _flaw == Flaw.appliesFirstBeforeHold && changes.isNotEmpty;
     if (early) _apply(changes.first);
+    final first = changes.whereType<Put>().firstOrNull;
+    final old = first == null ? null : _storage.areas[first.area]?[first.key];
     hold._reached.complete();
     await hold._letGo.future;
+    if (_flaw == Flaw.restoresOldAfterEnd &&
+        _status is Ended &&
+        first != null) {
+      final area = _storage.areas.putIfAbsent(first.area, SplayTreeMap.new);
+      if (old == null) {
+        area.remove(first.key);
+      } else {
+        area[first.key] = old;
+      }
+      return const CommitRefused(LeaseEnded());
+    }
     final lands = switch (_flaw) {
       Flaw.writesAfterClose => _status is Holding || _endedByClose,
       Flaw.writesAfterRelease => _status is Holding || !_endedByClose,
