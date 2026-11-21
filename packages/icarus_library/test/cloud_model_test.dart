@@ -209,7 +209,7 @@ final class Model {
               policy: before.session.connected
                   ? SendPolicy.live
                   : SendPolicy.checked,
-              answer: const NoAnswer(),
+              answer: const NotAnswered(),
               retriedAfter: before.nextAttempt - 1,
             ),
           ],
