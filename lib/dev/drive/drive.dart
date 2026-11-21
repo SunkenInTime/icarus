@@ -167,6 +167,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
+import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -289,6 +290,7 @@ Future<void> _play(String script) async {
     exit(0);
   }
   _log('RUN $_runId $script');
+  _log(await firstFrameLine(appProviderContainer));
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
       _failedSteps++;
@@ -323,6 +325,10 @@ Future<void> _play(String script) async {
     await _flush();
   }
   await Future.wait(_pictureWatches);
+  if (await closeStoreLine(appProviderContainer) case final line?) {
+    if (line.startsWith('FAIL')) _failedSteps++;
+    _log(line);
+  }
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
   _log(
     'SUMMARY steps=$_steps failed=$_failedSteps '
@@ -985,6 +991,15 @@ Future<void> _place(
   await _frames();
 }
 
+Future<List<String>> _storeLines(Future<List<String>> lines) async {
+  try {
+    return await lines;
+  } on StoreStepFailed catch (failed) {
+    failed.problems.forEach(_log);
+    throw StateError('the library store step failed');
+  }
+}
+
 File _signal(String name) {
   final dir = _signals;
   if (dir == null) throw StateError('ICARUS_DRIVE_SIGNALS is not set');
@@ -999,6 +1014,18 @@ Future<void> _run(Map<String, dynamic> step) async {
   switch (name) {
     case 'wait':
       await _seconds(value as num);
+    case 'libraryStore':
+      final lines = await _storeLines(
+        waitForShadowStore(
+          c,
+          patience: Duration(seconds: (step['seconds'] ?? 600) as int),
+          expected: {...?(step['expect'] as Map<String, dynamic>?)},
+          hidden: step['hidden'] == true,
+        ),
+      );
+      lines.forEach(_log);
+    case 'checkLibraryStore':
+      (await _storeLines(checkStoreAgain(c))).forEach(_log);
     case 'soak':
       final until = DateTime.now().add(
         Duration(milliseconds: ((value as num) * 1000).round()),

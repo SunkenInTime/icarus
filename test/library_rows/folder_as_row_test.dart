@@ -8,8 +8,7 @@ import 'package:icarus_library/icarus_library.dart';
 import '../desktop_4_6_3_adapters_test_support.dart';
 
 Folder folderBack(Folder folder) {
-  final converted = folderToRow(folder);
-  return switch (folderFromRow(converted.row, converted.dateCreated)) {
+  return switch (folderFromRow(folderToRow(folder))) {
     FolderMade(:final folder) => folder,
     FolderRefused(:final problems) => throw TestFailure('refused: $problems'),
   };
@@ -29,7 +28,7 @@ void main() {
           Folder(
             id: 'folder-$iconId-${color.name}',
             name: 'Execs "B"',
-            dateCreated: DateTime.utc(2026, 8, 30, 1, 2, 3),
+            dateCreated: DateTime(2026, 8, 30, 1, 2, 3),
             iconId: iconId,
             color: color,
             parentID: iconId.isEven ? 'parent' : null,
@@ -59,8 +58,8 @@ void main() {
         iconFontFamily: legacy.fontFamily,
         iconFontPackage: legacy.fontPackage,
         color: 'red',
+        createdAt: DateTime.utc(2026),
       ),
-      DateTime.utc(2026),
     )) {
       FolderMade(:final folder) => folder,
       FolderRefused(:final problems) => throw TestFailure('$problems'),
@@ -74,7 +73,6 @@ void main() {
       'refused', () {
     final problems = switch (folderFromRow(
       ReadableFolder(publicId: 'f', name: 'F', color: 'teal'),
-      DateTime.utc(2026),
     )) {
       FolderRefused(:final problems) => problems,
       FolderMade() => throw TestFailure('converted'),
@@ -82,6 +80,7 @@ void main() {
     expect(problems.map((problem) => problem.runtimeType), [
       UnknownFolderColor,
       UnknownFolderIcon,
+      FolderCreatedAtMissing,
     ]);
   });
 }

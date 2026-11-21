@@ -110,7 +110,7 @@ final class CorpusReport {
     final adding = await open(storage);
     final added = await adding.editLibrary([
       for (final folder in _parentsFirst(folders))
-        PutFolder(folderToRow(folder).row),
+        PutFolder(folderToRow(folder)),
       AddStrategy(made.rows),
     ]);
     await adding.close();
@@ -207,7 +207,7 @@ final class CorpusReport {
     if (folders.isNotEmpty) {
       await putting.editLibrary([
         for (final folder in _parentsFirst(folders))
-          PutFolder(folderToRow(folder).row),
+          PutFolder(folderToRow(folder)),
       ]);
     }
     final put = await putting.putStrategy(made.rows);
@@ -237,8 +237,7 @@ final class CorpusReport {
 
   void addFolder(Folder folder) {
     folders++;
-    final converted = folderToRow(folder);
-    switch (folderFromRow(converted.row, converted.dateCreated)) {
+    switch (folderFromRow(folderToRow(folder))) {
       case FolderRefused(:final problems):
         for (final problem in problems) {
           count(refusals, 'folder: ${problem.runtimeType}');

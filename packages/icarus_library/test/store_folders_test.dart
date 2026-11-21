@@ -161,4 +161,20 @@ void main() {
       ),
     );
   });
+
+  test('a folder keeps the time it was created', () async {
+    final storage = MemoryStorage();
+    final store = await openStore(MemoryEngine(storage));
+    final created = DateTime.utc(2025, 3, 4, 5, 6, 7, 8);
+    final folder = ReadableFolder(
+      publicId: 'f1',
+      name: 'Ascent',
+      createdAt: created,
+    );
+    savedValue(await store.editLibrary([PutFolder(folder)]));
+    await store.close();
+    final folders = listOf(await openStore(MemoryEngine(storage))).folders;
+    expect(folders, [folder]);
+    expect((folders.single as ReadableFolder).createdAt, created);
+  });
 }
