@@ -265,6 +265,9 @@ final class _IndexEdit {
 
   Map<String, QueueEntry> get byId => _byId ?? _from.byId;
 
+  List<_Slot> underOf(Object key) =>
+      (_under ?? _from.under)[key] ?? const <_Slot>[];
+
   Map<String, List<int>> get attemptsByOp =>
       _attemptsByOp ?? _from.attemptsByOp;
 
