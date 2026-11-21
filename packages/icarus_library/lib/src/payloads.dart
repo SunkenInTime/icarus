@@ -68,26 +68,22 @@ final class ElementPayload {
     unknownFields: unknownFields,
   );
 
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'kind': kind.name,
     'payloadVersion': payloadVersion,
     'data': data,
   };
 
-  Map<String, Object?> toPlainJson() => {
-    ...unknownFields.toJson(),
-    'kind': kind.name,
-    'payloadVersion': payloadVersion,
-    'data': data.toJson(),
-  };
-
   @override
   bool operator ==(Object other) =>
-      other is ElementPayload && sameJson(toJson(), other.toJson());
+      other is ElementPayload && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 final class LineupGroupPayload {
@@ -135,26 +131,22 @@ final class LineupGroupPayload {
         unknownFields: unknownFields,
       );
 
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'kind': lineupGroupPayloadKind,
     'payloadVersion': payloadVersion,
     'data': data,
   };
 
-  Map<String, Object?> toPlainJson() => {
-    ...unknownFields.toJson(),
-    'kind': lineupGroupPayloadKind,
-    'payloadVersion': payloadVersion,
-    'data': data.toJson(),
-  };
-
   @override
   bool operator ==(Object other) =>
-      other is LineupGroupPayload && sameJson(toJson(), other.toJson());
+      other is LineupGroupPayload && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 final class PageSettings {
@@ -194,7 +186,10 @@ final class PageSettings {
   final bool useNeutralTeamColors;
   final JsonObject unknownFields;
 
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'agentSize': agentSize,
     'abilitySize': abilitySize,
@@ -203,10 +198,10 @@ final class PageSettings {
 
   @override
   bool operator ==(Object other) =>
-      other is PageSettings && sameJson(toJson(), other.toJson());
+      other is PageSettings && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 final class ThemePalette {
@@ -242,7 +237,10 @@ final class ThemePalette {
   final String highlight;
   final JsonObject unknownFields;
 
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'base': base,
     'detail': detail,
@@ -251,10 +249,10 @@ final class ThemePalette {
 
   @override
   bool operator ==(Object other) =>
-      other is ThemePalette && sameJson(toJson(), other.toJson());
+      other is ThemePalette && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 ElementPayload elementPayloadAdopting(

@@ -64,6 +64,21 @@ void main() {
         }
       }
 
+      for (final text in texts) {
+        expect(
+          ElementRow.parse(
+            admit(text),
+            spot: RowSpot(names: (id) => true),
+            page: page,
+            canRead: (_) => true,
+          ),
+          isA<Placed<ElementRow>>().having(
+            (placed) => placed.row,
+            'row',
+            isA<LiveElement>(),
+          ),
+        );
+      }
       for (var i = 0; i < 3; i++) {
         decode();
         read();

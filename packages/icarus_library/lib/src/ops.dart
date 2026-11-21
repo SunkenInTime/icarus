@@ -9,7 +9,7 @@ const placeField = '@sortIndex';
 final class FieldMerge {
   FieldMerge({required List<String> fields, Map<String, Object?>? base})
     : fields = List.unmodifiable(fields),
-      base = base == null ? null : jsonObject(base).raw;
+      base = base == null ? null : jsonObject(base);
 
   static Decoded<FieldMerge> decode(
     Object? json,
@@ -49,9 +49,12 @@ final class FieldMerge {
   });
 
   final List<String> fields;
-  final Map<String, Object?>? base;
+  final JsonObject? base;
 
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
     'fields': fields,
     if (base case final base?)
       'base': [
@@ -62,10 +65,10 @@ final class FieldMerge {
 
   @override
   bool operator ==(Object other) =>
-      other is FieldMerge && sameJson(toJson(), other.toJson());
+      other is FieldMerge && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 enum OpType {
@@ -128,7 +131,10 @@ sealed class StrategyOp {
 
   OpType get type;
 
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  Map<String, Object?> toJsonView() => {
     'opId': opId,
     'type': type.wireName,
     ..._fieldsJson(),
@@ -138,10 +144,10 @@ sealed class StrategyOp {
 
   @override
   bool operator ==(Object other) =>
-      other is StrategyOp && sameJson(toJson(), other.toJson());
+      other is StrategyOp && sameJson(toJsonView(), other.toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 typedef _Build = StrategyOp Function();
@@ -498,7 +504,7 @@ final class StrategyPatchOp extends StrategyOp {
       },
       ...switch (themeOverridePalette) {
         KeepValue() => const <String, Object?>{},
-        SetValue(:final value) => {'themeOverridePalette': value.toJson()},
+        SetValue(:final value) => {'themeOverridePalette': value.toJsonView()},
         ClearValue() => const {'clearThemeOverridePalette': true},
       },
     },
@@ -537,7 +543,7 @@ final class PageAddOp extends StrategyOp {
     'payload': {
       if (name != null) 'name': name,
       if (isAutoNamed != null) 'isAutoNamed': isAutoNamed,
-      if (settings case final settings?) 'settings': settings.toJson(),
+      if (settings case final settings?) 'settings': settings.toJsonView(),
       if (isAttack != null) 'isAttack': isAttack,
     },
     'sortIndex': sortIndex,
@@ -639,7 +645,7 @@ final class PageSettingsPatchOp extends StrategyOp {
   @override
   Map<String, Object?> _fieldsJson() => {
     'pagePublicId': pagePublicId,
-    'settings': settings.toJson(),
+    'settings': settings.toJsonView(),
     'expectedPageContentRevision': expectedPageSettingsRevision,
   };
 }
@@ -667,7 +673,7 @@ final class ElementAddOp extends StrategyOp {
   Map<String, Object?> _fieldsJson() => {
     'elementPublicId': elementPublicId,
     'pagePublicId': pagePublicId,
-    'payload': payload.toJson(),
+    'payload': payload.toJsonView(),
     'sortIndex': sortIndex,
     if (expectedElementRevision != null)
       'expectedElementRevision': expectedElementRevision,
@@ -699,10 +705,10 @@ final class ElementPatchOp extends StrategyOp {
   Map<String, Object?> _fieldsJson() => {
     'elementPublicId': elementPublicId,
     if (pagePublicId != null) 'pagePublicId': pagePublicId,
-    if (payload case final payload?) 'payload': payload.toJson(),
+    if (payload case final payload?) 'payload': payload.toJsonView(),
     if (sortIndex != null) 'sortIndex': sortIndex,
     'expectedElementRevision': expectedElementRevision,
-    if (merge case final merge?) 'merge': merge.toJson(),
+    if (merge case final merge?) 'merge': merge.toJsonView(),
   };
 }
 
@@ -781,7 +787,7 @@ final class LineupGroupAddOp extends StrategyOp {
   Map<String, Object?> _fieldsJson() => {
     'lineupPublicId': lineupPublicId,
     'pagePublicId': pagePublicId,
-    'payload': payload.toJson(),
+    'payload': payload.toJsonView(),
     'sortIndex': sortIndex,
     if (expectedLineupRevision != null)
       'expectedLineupRevision': expectedLineupRevision,
@@ -813,10 +819,10 @@ final class LineupGroupPatchOp extends StrategyOp {
   Map<String, Object?> _fieldsJson() => {
     'lineupPublicId': lineupPublicId,
     if (pagePublicId != null) 'pagePublicId': pagePublicId,
-    if (payload case final payload?) 'payload': payload.toJson(),
+    if (payload case final payload?) 'payload': payload.toJsonView(),
     if (sortIndex != null) 'sortIndex': sortIndex,
     'expectedLineupRevision': expectedLineupRevision,
-    if (merge case final merge?) 'merge': merge.toJson(),
+    if (merge case final merge?) 'merge': merge.toJsonView(),
   };
 }
 

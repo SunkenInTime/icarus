@@ -80,7 +80,11 @@ Object? _raw(Object? value) => switch (value) {
   _ => value,
 };
 
+Object? plainJson(Object? value) => _plain(value);
+
 Object? _plain(Object? raw) => switch (raw) {
+  JsonObject(:final _map) => _plain(_map),
+  JsonList(:final _list) => _plain(_list),
   final Map<String, Object?> map => {
     for (final MapEntry(:key, :value) in map.entries) key: _plain(value),
   },
@@ -161,6 +165,10 @@ final class _Unsafe extends _Scan {
 
 const _largestExactWhole = '9007199254740991';
 
+const _exponentCeiling = 450359962737049;
+
+const _mostMantissaDigits = 100;
+
 bool _isDigit(int unit) => unit >= 0x30 && unit <= 0x39;
 
 bool _isExact(String digits) =>
@@ -194,6 +202,7 @@ _Scan _scan(String text) {
       final integerDigits = at - start;
       var fraction = false;
       var fractionZeros = 0;
+      var fractionDigits = 0;
       if (at < text.length && text.codeUnitAt(at) == 0x2e) {
         fraction = true;
         at++;
@@ -201,6 +210,7 @@ _Scan _scan(String text) {
         while (at < text.length && _isDigit(text.codeUnitAt(at))) {
           at++;
         }
+        fractionDigits = at - fractionStart;
         while (fractionStart + fractionZeros < at &&
             text.codeUnitAt(fractionStart + fractionZeros) == 0x30) {
           fractionZeros++;
@@ -218,12 +228,17 @@ _Scan _scan(String text) {
           at++;
         }
         while (at < text.length && _isDigit(text.codeUnitAt(at))) {
-          if (exponent < 100000) {
+          if (exponent < _exponentCeiling) {
             exponent = exponent * 10 + text.codeUnitAt(at) - 0x30;
           }
           at++;
         }
         exponent *= sign;
+      }
+      if (integerDigits + fractionDigits > _mostMantissaDigits) {
+        return const _Unsafe(
+          'holds a number spelled with more digits than any build writes',
+        );
       }
       if (!fraction && !hasExponent) {
         if (integerDigits >= _largestExactWhole.length &&

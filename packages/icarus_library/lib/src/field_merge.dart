@@ -363,7 +363,7 @@ ElementPayload _elementWith(
 }
 
 _Read _mergeBase(FieldMerge merge, String field) {
-  final base = merge.base!;
+  final base = merge.base!.raw;
   return (present: base.containsKey(field), value: base[field]);
 }
 
@@ -546,7 +546,7 @@ String? _conflictingField(
 }
 
 bool placeChanged(FieldMerge? merge, int currentSortIndex, int? sortIndex) {
-  final base = merge?.base;
+  final base = merge?.base?.raw;
   if (merge == null || base == null || !merge.fields.contains(placeField)) {
     return false;
   }

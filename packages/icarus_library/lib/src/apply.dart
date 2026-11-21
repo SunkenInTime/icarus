@@ -15,7 +15,7 @@ import 'rows.dart';
 import 'strategy_rows.dart';
 
 ApplyResult applyOp(StrategyRows rows, StrategyOp op) {
-  final json = op.toJson();
+  final json = op.toJsonView();
   if (!isJson(json) || exceedsSizePolicy(json)) {
     return _failed(FailureCode.invalidPayload);
   }
@@ -469,7 +469,7 @@ final class _Apply {
         return OpRefused(UnreadableTarget(key));
       case DeletedElement(:final payload, :final revision):
         final kept = keepStoredFields(payload, op.payload);
-        if (kept != op.payload && exceedsSizePolicy(kept.toJson())) {
+        if (kept != op.payload && exceedsSizePolicy(kept.toJsonView())) {
           return _failed(FailureCode.invalidPayload);
         }
         if (_revisionRefusal(op.expectedElementRevision, revision)
@@ -488,7 +488,7 @@ final class _Apply {
         );
       case LiveElement(:final payload, :final sortIndex):
         final kept = keepStoredFields(payload, op.payload);
-        if (kept != op.payload && exceedsSizePolicy(kept.toJson())) {
+        if (kept != op.payload && exceedsSizePolicy(kept.toJsonView())) {
           return _failed(FailureCode.invalidPayload);
         }
         final identical =
@@ -623,7 +623,7 @@ final class _Apply {
           case MergeConflict():
             return _rejected(RejectionReason.fieldConflict);
           case Merged(:final value):
-            if (exceedsSizePolicy(value.toJson())) {
+            if (exceedsSizePolicy(value.toJsonView())) {
               return _failed(FailureCode.invalidPayload);
             }
             written = value;
@@ -632,7 +632,7 @@ final class _Apply {
         }
       }
       payload = keepStoredFields(stored, written);
-      if (payload != written && exceedsSizePolicy(payload.toJson())) {
+      if (payload != written && exceedsSizePolicy(payload.toJsonView())) {
         return _failed(FailureCode.invalidPayload);
       }
     }
@@ -892,7 +892,7 @@ final class _Apply {
           case MergeConflict():
             return _rejected(RejectionReason.fieldConflict);
           case Merged(:final value):
-            if (exceedsSizePolicy(value.toJson())) {
+            if (exceedsSizePolicy(value.toJsonView())) {
               return _failed(FailureCode.invalidPayload);
             }
             if (_lineupPayloadRefusal(value, existing.publicId) != null) {
@@ -1085,7 +1085,7 @@ ElementRow _elementRow({
         stored: {
           'publicId': publicId,
           'pagePublicId': pagePublicId,
-          'payload': payload.toJson(),
+          'payload': payload.toJsonView(),
           'sortIndex': sortIndex,
           'revision': revision,
           'deleted': false,

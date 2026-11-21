@@ -493,7 +493,7 @@ _Lineups _lineupGraphOf(String pageId, List<LiveLineupGroup> groups) {
   for (final group in groups) {
     final row = CloudLineupRow(
       publicId: group.publicId,
-      payload: group.payload.toPlainJson(),
+      payload: group.payload.toJson(),
     );
     try {
       final alone = lineUpGraphFromCloudRows([row]).graph;

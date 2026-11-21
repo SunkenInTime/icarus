@@ -60,16 +60,18 @@ sealed class Row {
 
   RowKey get key;
 
-  Object? toJson();
+  Object? toJsonView();
+
+  Object? toJson() => plainJson(toJsonView());
 
   @override
   bool operator ==(Object other) =>
       other is Row &&
       other.runtimeType == runtimeType &&
-      sameJson(other.toJson(), toJson());
+      sameJson(other.toJsonView(), toJsonView());
 
   @override
-  int get hashCode => canonicalJson(toJson()).hashCode;
+  int get hashCode => canonicalJson(toJsonView()).hashCode;
 }
 
 T _fromAdmission<T>(
@@ -248,7 +250,11 @@ final class ReadableStrategy extends StrategyRow {
   );
 
   @override
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'publicId': publicId,
     if (folderPublicId != null) 'folderPublicId': folderPublicId,
@@ -256,7 +262,7 @@ final class ReadableStrategy extends StrategyRow {
     'mapData': mapData,
     if (themeProfileId != null) 'themeProfileId': themeProfileId,
     if (themeOverridePalette case final palette?)
-      'themeOverridePalette': palette.toJson(),
+      'themeOverridePalette': palette.toJsonView(),
     'revision': revision,
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
@@ -275,7 +281,7 @@ final class UnreadableStrategy extends StrategyRow {
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }
 
 sealed class FolderRow extends Row {
@@ -369,7 +375,11 @@ final class ReadableFolder extends FolderRow {
   final JsonObject unknownFields;
 
   @override
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'publicId': publicId,
     'name': name,
@@ -396,7 +406,7 @@ final class UnreadableFolder extends FolderRow {
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }
 
 sealed class PageRow extends Row {
@@ -534,7 +544,11 @@ sealed class ReadablePageRow extends PageRow {
   final JsonObject unknownFields;
 
   @override
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'publicId': publicId,
     'strategyPublicId': strategyPublicId,
@@ -659,7 +673,7 @@ final class UnreadablePage extends PageRow {
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }
 
 sealed class PageDeleter {
@@ -777,10 +791,14 @@ final class ReadablePageSettings extends PageSettingsRow {
       );
 
   @override
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'pagePublicId': pagePublicId,
-    if (settings case final settings?) 'settings': settings.toJson(),
+    if (settings case final settings?) 'settings': settings.toJsonView(),
     'revision': revision,
   };
 }
@@ -797,7 +815,7 @@ final class UnreadablePageSettings extends PageSettingsRow {
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }
 
 sealed class ElementRow extends Row {
@@ -951,7 +969,7 @@ sealed class ReadableElementRow extends ElementRow {
           ...viewsOf(unknownFields),
           'publicId': publicId,
           'pagePublicId': page,
-          'payload': written.toJson(),
+          'payload': written.toJsonView(),
           'sortIndex': place,
           'revision': revision + 1,
           'deleted': deleted,
@@ -980,11 +998,15 @@ sealed class ReadableElementRow extends ElementRow {
   }
 
   @override
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'publicId': publicId,
     'pagePublicId': pagePublicId,
-    'payload': payload.toJson(),
+    'payload': payload.toJsonView(),
     'sortIndex': sortIndex,
     'revision': revision,
     'deleted': this is DeletedElement,
@@ -1053,7 +1075,7 @@ final class UnreadableElement extends ElementRow {
   final UnreadableReason reason;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 
   bool? get deleted => _booleanAt(stored, 'deleted');
 }
@@ -1208,12 +1230,16 @@ sealed class ReadableLineupGroupRow extends LineupGroupRow {
   }
 
   @override
-  Map<String, Object?> toJson() => {
+  Map<String, Object?> toJson() =>
+      plainJson(toJsonView())! as Map<String, Object?>;
+
+  @override
+  Map<String, Object?> toJsonView() => {
     ...viewsOf(unknownFields),
     'publicId': publicId,
     'strategyPublicId': strategyPublicId,
     'pagePublicId': pagePublicId,
-    'payload': payload.toJson(),
+    'payload': payload.toJsonView(),
     'sortIndex': sortIndex,
     'revision': revision,
     'deleted': this is DeletedLineupGroup,
@@ -1258,5 +1284,5 @@ final class UnreadableLineupGroup extends LineupGroupRow {
   final String problem;
 
   @override
-  Object? toJson() => stored;
+  Object? toJsonView() => stored;
 }

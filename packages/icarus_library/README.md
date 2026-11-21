@@ -44,9 +44,15 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
 - **JSON is read once, at the edge, and never copied on the way in.**
   Stored text goes through `admit`, which never throws. One scan of the
   text refuses nesting deeper than `maxJsonDepth`, a number that would not
-  be finite, and a whole number JavaScript cannot hold exactly; then
-  `jsonDecode` runs once and its result is handed on as it is, as
-  `Admitted`, or `NotAdmitted` with the text kept and why.
+  be finite (decided exactly, whatever the number of digits or the size of
+  the exponent), a whole number JavaScript cannot hold exactly, and a
+  number spelled with more than 100 mantissa digits, since no build writes
+  more than 17 and the VM's JSON parser reads over 400 differently from the
+  web; then `jsonDecode` runs once and its result is handed on as it is, as
+  `Admitted`, or `NotAdmitted` with the text kept and why. A row holding a
+  number token it refuses is unreadable with its text kept, even when a
+  later duplicate key would replace that value; no build writes duplicate
+  keys.
 - **Rows stay values by type.** Every JSON value a row holds (payload
   `data`, `unknownFields`, an unreadable row's `stored`) is a `JsonObject`
   or a `JsonList`. Neither is a `Map` or a `List`: they offer reads only,
@@ -56,8 +62,12 @@ the words it uses (Row, Element, Store, Base, Op, Pending op) are the ones in
   defines and `icarus_library.dart` does not export; the package's own
   decoders, merges and copies use them, and must not change what they reach.
   A caller that needs a value it can change asks for a copy: `toMap()` is a
-  shallow copy whose nested values stay read-only, `toJson()` and a
-  payload's `toPlainJson()` are deep plain copies. A row or payload built
+  shallow copy whose nested values stay read-only, and anything named
+  `toJson()`, on a view, a row, a payload, an op or a merge, returns plain
+  maps and lists all the way down, a fresh copy each time. `toJsonView()`
+  returns fresh maps whose nested values are read-only views, for encoding
+  and comparing without a copy. `FieldMerge.base` is a `JsonObject`.
+  `withFieldDefaults` fills defaults in a view as it does in a plain map. A row or payload built
   from a caller's map copies that map once, at construction, and adopts any
   `JsonObject` or `JsonList` inside it without copying.
   `test/rows_stay_values_test.dart` tries every way in. Each row kind's `parse`

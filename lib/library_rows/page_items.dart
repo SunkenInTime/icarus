@@ -12,7 +12,7 @@ sealed class PageItem {
   const PageItem();
 
   static Decoded<PageItem> decode(ElementPayload payload, MapValue map) {
-    final upgraded = upgradeCloudPayload(payload.toPlainJson(), map);
+    final upgraded = upgradeCloudPayload(payload.toJson(), map);
     final data = Map<String, dynamic>.from(upgraded['data'] as Map);
     if (payload.kind == ElementKind.agent &&
         !_agentKinds.contains(data['kind'] ?? PlacedAgentNode.plainKind)) {
