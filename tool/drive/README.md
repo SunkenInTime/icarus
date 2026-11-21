@@ -24,6 +24,8 @@ dart tool/drive/linux.dart run --script tool/drive/scripts/shape-opacity-cloud.j
 
 Passwords come from `~/.agents/secrets/icarus/test-accounts.md`, or over `ssh windows` when that file is not on this machine. They go only into the app's environment.
 
+`linux-stall-uploads.sh <exe dir> <new out dir> <label> <account>` runs `scripts/picture-upload-stalled.json` with picture uploads stalled for that run only: inside its own systemd scope, a connection whose TLS hello names `r2.cloudflarestorage.com` goes silent both ways once it has sent 64 KB, so a 197 KB picture never gets an answer while the 5 KB logo, Convex and every other process are untouched. The script signals when to lift it. It needs passwordless `sudo` for `iptables`, removes its rules on exit, and records the run's screen to `<label>.mp4` beside the out dir.
+
 What doesn't run on Linux:
 
 - The `clipboard` step puts a picture on the Windows clipboard through PowerShell. `run` refuses scripts that use it (`paste-on-canvas`, `paste-picture`, `paste-while-busy`).

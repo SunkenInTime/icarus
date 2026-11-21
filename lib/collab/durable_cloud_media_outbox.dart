@@ -241,6 +241,21 @@ Map<String, dynamic> _jobToJson(CloudMediaUploadJob job) {
   if (accountId.isEmpty) {
     throw StateError('New media outbox records require an owning account.');
   }
+  final (state, media, attempts, why) = switch (job.phase) {
+    MediaWaitingToUpload() => (CloudMediaJobState.pendingUpload, null, 0, null),
+    MediaUploaded(:final media) => (
+        CloudMediaJobState.pendingAttach,
+        media,
+        0,
+        null
+      ),
+    MediaUploadFailed(:final media, :final attempts, :final why) => (
+        CloudMediaJobState.failed,
+        media,
+        attempts,
+        why,
+      ),
+  };
   return <String, dynamic>{
     'outboxVersion': durableCloudMediaOutboxRecordVersion,
     'jobId': job.jobId,
@@ -251,18 +266,21 @@ Map<String, dynamic> _jobToJson(CloudMediaUploadJob job) {
     'mimeType': job.mimeType,
     if (job.width != null) 'width': job.width,
     if (job.height != null) 'height': job.height,
-    if (job.byteSize != null) 'byteSize': job.byteSize,
-    if (job.provider != null) 'provider': job.provider,
-    if (job.uploadId != null) 'uploadId': job.uploadId,
-    if (job.objectKey != null) 'objectKey': job.objectKey,
-    if (job.storageId != null) 'storageId': job.storageId,
-    if (job.etag != null) 'etag': job.etag,
-    if (job.uploadUrlExpiresAt != null)
-      'uploadUrlExpiresAt': job.uploadUrlExpiresAt!.toUtc().toIso8601String(),
-    'state': job.state.name,
+    ...switch (media) {
+      null => const <String, dynamic>{},
+      R2UploadedMedia() => <String, dynamic>{
+          'provider': 'r2',
+          'uploadId': media.uploadId,
+          'objectKey': media.objectKey,
+          if (media.etag != null) 'etag': media.etag,
+          if (media.byteSize != null) 'byteSize': media.byteSize,
+        },
+      ConvexStoredMedia() => <String, dynamic>{'storageId': media.storageId},
+    },
+    'state': state.name,
     'referenceDurable': job.referenceDurable,
-    'attempts': job.attempts,
-    if (job.lastError != null) 'lastError': job.lastError,
+    'attempts': attempts,
+    if (why != null) 'lastError': why,
     'updatedAt': job.updatedAt.toUtc().toIso8601String(),
   };
 }
@@ -272,6 +290,10 @@ CloudMediaUploadJob _jobFromJson(Map<String, dynamic> json) {
   if (version != durableCloudMediaOutboxRecordVersion) {
     throw FormatException('Unsupported media outbox record version: $version');
   }
+  final state = CloudMediaJobState.values.byName(
+    _nonEmptyString(json['state'], field: 'state'),
+  );
+  final media = _uploadedMediaFromJson(json);
   return CloudMediaUploadJob(
     jobId: _nonEmptyString(json['jobId'], field: 'jobId'),
     accountId: _nonEmptyString(json['accountId'], field: 'accountId'),
@@ -287,21 +309,36 @@ CloudMediaUploadJob _jobFromJson(Map<String, dynamic> json) {
     mimeType: _nonEmptyString(json['mimeType'], field: 'mimeType'),
     width: (json['width'] as num?)?.toInt(),
     height: (json['height'] as num?)?.toInt(),
-    byteSize: (json['byteSize'] as num?)?.toInt(),
-    provider: json['provider'] as String?,
-    uploadId: json['uploadId'] as String?,
-    objectKey: json['objectKey'] as String?,
-    storageId: json['storageId'] as String?,
-    etag: json['etag'] as String?,
-    uploadUrlExpiresAt: _optionalDate(json['uploadUrlExpiresAt']),
-    state: CloudMediaJobState.values.byName(
-      _nonEmptyString(json['state'], field: 'state'),
-    ),
+    phase: switch ((state, media)) {
+      (CloudMediaJobState.failed, _) => MediaUploadFailed(
+          why: json['lastError'] as String? ?? '',
+          attempts: (json['attempts'] as num?)?.toInt() ?? 0,
+          media: media,
+        ),
+      (_, final UploadedMedia media) => MediaUploaded(media),
+      (_, null) => const MediaWaitingToUpload(),
+    },
     referenceDurable: json['referenceDurable'] as bool? ?? true,
-    attempts: (json['attempts'] as num?)?.toInt() ?? 0,
-    lastError: json['lastError'] as String?,
     updatedAt: _requiredDate(json['updatedAt'], field: 'updatedAt'),
   );
+}
+
+UploadedMedia? _uploadedMediaFromJson(Map<String, dynamic> json) {
+  if (json['provider'] == 'r2') {
+    return switch ((json['uploadId'], json['objectKey'])) {
+      (final String uploadId, final String objectKey) => R2UploadedMedia(
+          uploadId: uploadId,
+          objectKey: objectKey,
+          etag: json['etag'] as String?,
+          byteSize: (json['byteSize'] as num?)?.toInt(),
+        ),
+      _ => null,
+    };
+  }
+  return switch (json['storageId']) {
+    final String storageId => ConvexStoredMedia(storageId),
+    _ => null,
+  };
 }
 
 String _nonEmptyString(Object? value, {required String field}) {

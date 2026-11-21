@@ -4,16 +4,21 @@ import 'dart:io';
 
 import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:icarus/collab/cloud_library_copy.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/durable_cloud_media_outbox.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/agents.dart';
@@ -24,6 +29,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
@@ -40,6 +46,8 @@ import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as p;
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 import '../collab/strategy_copy_fixtures.dart';
 
@@ -95,14 +103,20 @@ void main() {
     await dir.delete(recursive: true);
   });
 
-  ProviderContainer open({StrategyProvider Function()? editor}) {
+  ProviderContainer open({
+    StrategyProvider Function()? editor,
+    List<Override> uploadQueue = const [],
+  }) {
     return container = ProviderContainer(overrides: [
       convexStrategyRepositoryProvider.overrideWithValue(cloud),
       authProvider.overrideWith(_CloudReadyAuth.new),
       cloudMediaAccountIdProvider.overrideWith((ref) => ref.watch(_account)),
       convexConnectionSnapshotProvider
           .overrideWith((ref) => ref.watch(_online)),
-      cloudMediaUploadQueueProvider.overrideWith(() => uploads),
+      if (uploadQueue.isEmpty)
+        cloudMediaUploadQueueProvider.overrideWith(() => uploads)
+      else
+        ...uploadQueue,
       strategyProvider.overrideWith(editor ?? _ClosedStrategy.new),
       cloudStrategiesProvider.overrideWith((ref) => const Stream.empty()),
       cloudFolderTreeProvider.overrideWith((ref) => const Stream.empty()),
@@ -683,6 +697,71 @@ void main() {
     expect(cloud.strategies.values.single.unfinished, isFalse);
   });
 
+  testWidgets("a move behind another strategy's stalled upload still lands",
+      (tester) async {
+    await tester.pumpWidget(
+      const ToastificationWrapper(child: ShadApp(home: SizedBox())),
+    );
+    await tester.runAsync(() async {
+      await putStrategy('s1');
+      await imageFile('other', 'other-image').create(recursive: true);
+      await imageFile('other', 'other-image').writeAsBytes([4, 5, 6]);
+      final outbox = MemoryDurableCloudMediaOutboxStore();
+      await outbox.put(CloudMediaUploadJob(
+        jobId: 'other-image',
+        accountId: 'account-1',
+        strategyPublicId: 'other',
+        assetPublicId: 'other-image',
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        updatedAt: DateTime.utc(2026),
+      ));
+      final puts = <String>[];
+      final client = MockClient((request) {
+        puts.add(request.url.pathSegments.last);
+        if (request.url.pathSegments.last == 'other-image') {
+          return Completer<http.Response>().future;
+        }
+        return Future.value(http.Response('', 200));
+      });
+
+      await http.runWithClient(() async {
+        open(uploadQueue: [
+          cloudMediaUploadQueueProvider.overrideWith(
+            () => CloudMediaUploadQueueNotifier(
+              deadlines: const CloudMediaDeadlines(
+                answer: Duration(milliseconds: 300),
+              ),
+            ),
+          ),
+          durableCloudMediaOutboxStoreProvider.overrideWithValue(outbox),
+          durableStrategyOutboxStoreProvider
+              .overrideWithValue(MemoryDurableStrategyOutboxStore()),
+          cloudCollabModeProvider.overrideWith(_CloudModeOn.new),
+          convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+          cloudMediaReferenceLoaderProvider
+              .overrideWithValue((_, ids) async => ids.toSet()),
+        ]);
+        await mover().moveStrategy('s1').timeout(const Duration(seconds: 20));
+      }, () => client);
+
+      expect(puts, hasLength(2));
+      expect(puts.first, 'other-image');
+      expect(strategies().containsKey('s1'), isFalse);
+      final moved = cloud.strategies.values.single;
+      expect(moved.unfinished, isFalse);
+      expect(moved.activePictures, {puts.last});
+      expect(
+        container.read(cloudMediaUploadQueueProvider).jobs.single,
+        isA<CloudMediaUploadJob>()
+            .having((job) => job.assetPublicId, 'assetPublicId', 'other-image')
+            .having((job) => job.isFailed, 'isFailed', isTrue),
+      );
+    });
+    toastification.dismissAll(delayForAnimation: false);
+    await tester.pump(const Duration(seconds: 4));
+  });
+
   test('a refused item deletes the cloud copy and keeps the original',
       () async {
     await putStrategy('s1');
@@ -1042,6 +1121,14 @@ class _HeldStrategy extends StrategyProvider {
   }
 }
 
+class _CloudModeOn extends CloudCollabModeNotifier {
+  @override
+  CloudCollabModeState build() => const CloudCollabModeState(
+        featureFlagEnabled: true,
+        forceLocalFallback: false,
+      );
+}
+
 /// Holds queued pictures until the test lets them upload, or uploads them
 /// at once.
 class _HeldUploads extends CloudMediaUploadQueueNotifier {
@@ -1069,8 +1156,6 @@ class _HeldUploads extends CloudMediaUploadQueueNotifier {
           assetPublicId: image.assetPublicId,
           fileExtension: image.fileExtension,
           mimeType: 'image/png',
-          state: CloudMediaJobState.pendingUpload,
-          attempts: 0,
           updatedAt: DateTime.utc(2026),
         ),
       );
@@ -1273,6 +1358,44 @@ class _FakeCloud extends ConvexStrategyRepository {
       createdAt: DateTime.utc(2026),
       updatedAt: DateTime.utc(2026),
     );
+  }
+
+  @override
+  Future<CloudImageUploadIntent> generateImageUploadUrl({
+    required String strategyPublicId,
+    required String assetPublicId,
+    required String mimeType,
+    required String fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async =>
+      CloudImageUploadIntent(
+        provider: 'r2',
+        uploadId: 'upload-$assetPublicId',
+        objectKey: 'strategies/$strategyPublicId/$assetPublicId',
+        uploadUrl: 'https://r2.example.com/$assetPublicId',
+        requiredHeaders: {'Content-Type': mimeType},
+        expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+        maxBytes: 0,
+      );
+
+  @override
+  Future<void> completeImageUpload({
+    required String strategyPublicId,
+    required String assetPublicId,
+    String? provider,
+    String? uploadId,
+    String? objectKey,
+    String? storageId,
+    String? etag,
+    String? mimeType,
+    String? fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    strategies[strategyPublicId]?.activePictures.add(assetPublicId);
   }
 
   @override
