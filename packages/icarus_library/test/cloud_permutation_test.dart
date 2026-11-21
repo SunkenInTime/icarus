@@ -335,6 +335,15 @@ Iterable<List<Fact>> orderings(List<Fact> facts) sync* {
         return false;
       }
       if (!used[other] &&
+          other < index &&
+          facts[other] is ReadFact &&
+          switch (facts[index]) {
+            EventFact(event: OpAnswered()) => true,
+            _ => false,
+          }) {
+        return false;
+      }
+      if (!used[other] &&
           facts[index] is ClockFact &&
           switch (facts[other]) {
             EventFact(event: BatchRefused()) => true,

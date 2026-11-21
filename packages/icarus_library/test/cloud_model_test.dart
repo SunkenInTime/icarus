@@ -37,6 +37,40 @@ final class Model {
   final log = <String>[];
   bool teammateEdited = false;
   bool userRemoved = false;
+  bool jumped = false;
+  final seen = <Target, Set<int>>{};
+  final produced = <Target, Set<int>>{};
+
+  final seenDigest = <String, String>{};
+
+  OpAnswer applyOwn(String owner, StrategyOp op) {
+    final before = revisionsOf(server.rows);
+    final beforeRow = rowOf(server.rows, checkTargetOf(op));
+    final answer = server.apply(owner, op);
+    if (answer case AppliedAnswer()) {
+      final target = checkTargetOf(op);
+      final named = expectedOf(op);
+      final asSeen =
+          beforeRow != null &&
+          seenDigest[op.opId] != null &&
+          rowDigest(beforeRow) == seenDigest[op.opId];
+      if (named != null &&
+          !asSeen &&
+          !(seen[target]?.contains(named) ?? false) &&
+          !(produced[target]?.contains(named) ?? false)) {
+        throw StateError(
+          '${op.opId} landed on revision $named of $target, which the user '
+          'never saw and no answer of this device produced',
+        );
+      }
+      count('checked revisions verified');
+      for (final MapEntry(:key, :value) in revisionsOf(server.rows).entries) {
+        if (before[key] != value) (produced[key] ??= {}).add(value);
+      }
+    }
+    return answer;
+  }
+
   int drainHelps = 0;
   int nextId = 0;
 
@@ -375,6 +409,15 @@ final class Model {
     };
     var stepped = ops.isNotEmpty;
     for (final each in ops) {
+      if (expectedOf(each) case final revision?) {
+        (seen[checkTargetOf(each)] ??= {}).add(revision);
+      }
+      if (revisionsOf(client.base)[checkTargetOf(each)] case final shown?) {
+        (seen[checkTargetOf(each)] ??= {}).add(shown);
+      }
+      if (rowOf(client.visible, checkTargetOf(each)) case final row?) {
+        seenDigest[each.opId] = rowDigest(row);
+      }
       stepped =
           apply(
                 client.editEvent(each),
@@ -450,7 +493,7 @@ final class Model {
       apply(BatchRefused(attempt, refusal), 'refused whole ${refusal.name}');
       return;
     }
-    final answers = [for (final op in ops) server.apply(owner, op)];
+    final answers = [for (final op in ops) applyOwn(owner, op)];
     if (roll == 9) {
       apply(
         TransportFailed(attempt, TransportFailure.timeout, at: clock),
@@ -473,7 +516,7 @@ final class Model {
     for (final (_, owner, ops) in inFlight) {
       if (random.nextBool() && server.exists) {
         for (final op in ops) {
-          server.apply(owner, op);
+          applyOwn(owner, op);
         }
       }
     }
@@ -675,8 +718,13 @@ final class Model {
         _ => null,
       };
       if (action == null) continue;
-      final forgotten = switch (view?.state) {
-        NeedsUser(reason: WindowClosed()) => true,
+      final forgotten = switch ((view?.state, entry)) {
+        (NeedsUser(reason: WindowClosed()), _) => true,
+        (
+          NeedsUser(reason: ChangedUnseen()),
+          PendingOp(op: ElementAddOp(expectedElementRevision: _?)),
+        ) =>
+          jumped,
         _ => false,
       };
       if (forgotten) count('forgotten answers handed to the user');
@@ -699,8 +747,10 @@ final class Model {
   }
 
   void stepOnce() {
+    final jump = random.nextInt(400) == 0;
+    if (jump) jumped = true;
     clock = clock.add(
-      random.nextInt(400) == 0
+      jump
           ? serverRemembersAnswersFor + const Duration(hours: 1)
           : Duration(milliseconds: random.nextInt(2000)),
     );
@@ -836,3 +886,23 @@ void main() {
     }
   });
 }
+
+Map<Target, int> revisionsOf(StrategyRowSet rows) => {
+  const StrategyTarget(): rows.strategy.revision,
+  for (final page in rows.pages)
+    PageTarget(page.publicId): ?revisionOfRowForTest(page),
+  for (final settings in rows.settings)
+    SettingsTarget(settings.pagePublicId): ?revisionOfRowForTest(settings),
+  for (final row in rows.elements)
+    ElementTarget(row.publicId): ?revisionOfRowForTest(row),
+  for (final row in rows.lineupGroups)
+    LineupTarget(row.publicId): ?revisionOfRowForTest(row),
+};
+
+Row? rowOf(StrategyRows rows, Target target) => switch (target) {
+  StrategyTarget() => rows.strategy,
+  PageTarget(:final pagePublicId) => rows.page(pagePublicId),
+  SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
+  ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+  LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+};

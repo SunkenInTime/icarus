@@ -1087,7 +1087,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
 Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
   final fact = edit.attempts[attempt];
   if (fact == null) return NotApplicable(edit.original, NoSuchAttempt(attempt));
-  if (fact.outcome is AttemptOpen) {
+  if (fact.outcome is! AttemptRefusedWhole) {
     edit.setAttempt(fact.withOutcome(AttemptRefusedWhole(refusal)));
   }
   switch (refusal) {
@@ -1132,6 +1132,26 @@ Step _arrived(_Edit edit, ArrivedBase base) {
   }
   final before = edit.shown;
   edit.shown = edit.shown.take(base);
+  if (base case PageRead(:final page, :final elements, :final lineupGroups)) {
+    final held = {
+      for (final row in elements) ElementTarget(row.publicId),
+      for (final row in lineupGroups) LineupTarget(row.publicId),
+    };
+    for (final (at, work) in [...edit.landed.indexed]) {
+      final added = switch (work.op) {
+        ElementAddOp(:final pagePublicId) ||
+        LineupGroupAddOp(:final pagePublicId) => pagePublicId,
+        _ => null,
+      };
+      if (work.own &&
+          !work.shownWithout &&
+          added == page.publicId &&
+          !held.contains(targetOf(work.op))) {
+        edit.landed[at] = work.seenWithout();
+        edit.change.targets.add(targetOf(work.op));
+      }
+    }
+  }
   for (final work in [...edit.landed]) {
     if (!_alreadyShown(edit.shown, work)) continue;
     edit.landed.remove(work);
@@ -1208,6 +1228,14 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
   }
   final placed = op;
   final authored = change.authored;
+  final drawnOver = queue.landed
+      .where(
+        (work) =>
+            work.own &&
+            checkTargetOf(work.op) == checkTargetOf(op) &&
+            !_alreadyShown(queue.shown, work),
+      )
+      .lastOrNull;
   edit.append(
     PendingOp(
       place: edit.entries.isEmpty ? 0 : edit.entries.last.place + 1,
@@ -1223,6 +1251,22 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       authoredIn: edit.session.number,
       refusal: const NotRefused(),
       retriedAfter: edit.lastAttempt,
+      ahead: switch (drawnOver) {
+        final work? => AnsweredAhead(
+          work.revision,
+          whole: work.shape == LandedShape.whole,
+        ),
+        null
+            when op is PagePatchOp &&
+                queue.landed.any(
+                  (work) =>
+                      work.own &&
+                      renumbersPages(work.op) &&
+                      !_alreadyShown(queue.shown, work),
+                ) =>
+          const AnsweredAhead.renumbered(),
+        null => null,
+      },
     ),
   );
   return edit.done();
@@ -1248,9 +1292,10 @@ sealed class _Verdict {
 }
 
 final class _NameAt extends _Verdict {
-  const _NameAt(this.revision);
+  const _NameAt(this.revision, {this.until});
 
   final int? revision;
+  final DateTime? until;
 }
 
 final class _AwaitRow extends _Verdict {
@@ -1263,7 +1308,7 @@ final class _AskUser extends _Verdict {
   const _AskUser();
 }
 
-enum _Writes { wholeRow, putBack, latest }
+enum _Writes { wholeRow, putBack, other }
 
 _Writes _writesOf(StrategyOp op) => switch (op) {
   ElementPatchOp(merge: null, payload: _?) ||
@@ -1272,88 +1317,92 @@ _Writes _writesOf(StrategyOp op) => switch (op) {
   PageSettingsPatchOp() => _Writes.wholeRow,
   ElementAddOp(expectedElementRevision: _?) ||
   LineupGroupAddOp(expectedLineupRevision: _?) => _Writes.putBack,
-  _ => _Writes.latest,
+  _ => _Writes.other,
 };
 
-_Verdict _judge(CloudQueue queue, PendingOp entry) {
+_Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
   final op = entry.op;
-  final expected = expectedOf(op);
-  if (expected == null) return const _NameAt(null);
+  final authored = expectedOf(op);
+  if (authored == null) return const _NameAt(null);
+  if (entry.authored case KeptOverServer(:final revision)) {
+    return _NameAt(revision);
+  }
   final target = checkTargetOf(op);
-  final shown = queue.shown;
-  final landed = [
-    for (final work in queue.landed)
-      if (checkTargetOf(work.op) == target) work,
-  ];
-  final row = _shownRow(shown, target);
-  final shownRevision = switch (target) {
-    StrategyTarget() => shown.strategyRevision,
-    _ => row?.revision,
+  final named = switch (entry.ahead) {
+    AnsweredAhead(:final revision?) => revision,
+    AnsweredAhead() => null,
+    null => authored,
   };
-  int? newest(Iterable<int?> revisions) => revisions.fold<int?>(
-    null,
-    (most, next) =>
-        next == null || (most != null && most >= next) ? most : next,
-  );
-  final landedTop = newest([for (final work in landed) work.revision]);
+  final partial = entry.ahead?.whole == false;
   switch (_writesOf(op)) {
-    case _Writes.latest:
-      return _NameAt(newest([landedTop, shownRevision]) ?? expected);
+    case _Writes.other:
+      return _NameAt(named ?? authored);
     case _Writes.putBack:
-      final deletes = [
-        for (final work in landed)
-          if (_ownDelete(work)) work.revision,
-      ];
-      final tombstone = newest(deletes);
-      final known = newest([landedTop, shown.highest[target]]);
-      if (tombstone != null && known == tombstone) return _NameAt(tombstone);
-      return const _AskUser();
+      final shown = queue.shown.highest[target] ?? 0;
+      final delete = queue.landed.where(
+        (work) =>
+            _ownDelete(work) &&
+            checkTargetOf(work.op) == target &&
+            work.revision == named,
+      );
+      if (named == null || delete.isEmpty || shown > named) {
+        return const _AskUser();
+      }
+      final until = delete.last.at.add(resendWindow);
+      return now.isBefore(until)
+          ? _NameAt(named, until: until)
+          : const _AskUser();
     case _Writes.wholeRow:
-      if (entry.authored case KeptOverServer(:final revision)) {
-        final known = newest([landedTop, shownRevision]);
-        return known == null || known <= revision
-            ? _NameAt(revision)
-            : const _AskUser();
-      }
-      final page = switch ((target, row, entry.scope)) {
-        (PageTarget(:final pagePublicId), _, _) => pagePublicId,
-        (_, ShownRow(:final page), _) => page,
-        (_, null, OnPage(:final pagePublicId)) => pagePublicId,
-        (_, null, Moving(:final from)) => from,
-        (_, null, StrategyWide()) => null,
-      };
-      final current = switch (target) {
-        PageTarget() => shown.headerThisSession,
-        _ => page != null && shown.pagesThisSession.contains(page),
-      };
-      final wasShown = shown.highest.containsKey(target);
-      final renumbered =
-          target is PageTarget &&
-          queue.landed.any((work) => renumbersPages(work.op));
-      if (renumbered) return _AwaitRow(page);
-      if (landedTop != null && (shownRevision ?? 0) < landedTop) {
-        final top = landed.lastWhere((work) => work.revision == landedTop);
-        if (top.own && top.shape == LandedShape.whole && !_deletes(top.op)) {
-          return _NameAt(landedTop);
-        }
-        if (current && row == null && wasShown) return const _AskUser();
-        return _AwaitRow(page);
-      }
-      if (row == null) {
-        if (current && wasShown) return const _AskUser();
-        return landedTop == null ? _NameAt(expected) : _AwaitRow(page);
-      }
-      final seen = switch (entry.authored) {
-        AuthoredRow(:final digest) => digest,
-        _ => null,
-      };
-      if (row.digest == seen) return _NameAt(row.revision ?? expected);
-      return current ? const _AskUser() : _AwaitRow(page);
+      if (partial) return _awaitRow(queue, entry, target, named);
+      return _NameAt(named ?? authored);
   }
 }
 
-bool _deletes(StrategyOp op) =>
-    op is ElementDeleteOp || op is LineupGroupDeleteOp;
+_Verdict _awaitRow(
+  CloudQueue queue,
+  PendingOp entry,
+  Target target,
+  int? named,
+) {
+  final shown = queue.shown;
+  final row = _shownRow(shown, target);
+  final page = switch ((target, row, entry.scope)) {
+    (PageTarget(:final pagePublicId), _, _) => pagePublicId,
+    (_, ShownRow(:final page), _) => page,
+    (_, null, OnPage(:final pagePublicId)) => pagePublicId,
+    (_, null, Moving(:final from)) => from,
+    (_, null, StrategyWide()) => null,
+  };
+  final current = switch (target) {
+    PageTarget() => shown.headerThisSession,
+    _ => page != null && shown.pagesThisSession.contains(page),
+  };
+  final unshown = queue.landed.any(
+    (work) =>
+        (checkTargetOf(work.op) == target &&
+            (row?.revision ?? 0) < work.revision) ||
+        (target is PageTarget &&
+            renumbersPages(work.op) &&
+            !_alreadyShown(shown, work)),
+  );
+  if (row == null) {
+    final existed =
+        shown.highest.containsKey(target) ||
+        queue.landed.any(
+          (work) => checkTargetOf(work.op) == target && work.shownWithout,
+        );
+    return current && existed ? const _AskUser() : _AwaitRow(page);
+  }
+  if (unshown) return _AwaitRow(page);
+  final seen = switch (entry.authored) {
+    AuthoredRow(:final digest) => digest,
+    _ => null,
+  };
+  if (row.digest == seen && (named == null || row.revision == named)) {
+    return _NameAt(named ?? row.revision);
+  }
+  return current ? const _AskUser() : _AwaitRow(page);
+}
 
 PendingOp _named(_Edit edit, PendingOp entry, int revision) {
   if (expectedOf(entry.op) == revision) return entry;
@@ -1408,7 +1457,7 @@ Step _claim(
     ) when owner != clientId) {
       return NotApplicable(queue, OtherClient(opId, owner));
     }
-    final named = switch ((view.state, _judge(queue, entry))) {
+    final named = switch ((view.state, _judge(queue, entry, now))) {
       (Waiting(), _NameAt(:final revision?)) => _named(edit, entry, revision),
       _ => entry,
     };
@@ -1530,11 +1579,33 @@ void _landed(
     revision: revision,
     shape: _shapeOf(sent),
     own: ours,
+    at: edit.attempts[carried.attempt]!.at,
   );
   if (!_alreadyShown(edit.shown, work)) {
     edit.landed
       ..add(work)
       ..sort((a, b) => a.compareTo(b));
+  }
+  if (ours && renumbersPages(sent)) {
+    for (final next in [...edit.entries]) {
+      if (next is! PendingOp || next.op is! PagePatchOp) continue;
+      if (next.refusal is! NotRefused) continue;
+      if ((edit.index.attemptsByOp[next.id] ?? const []).isNotEmpty) continue;
+      edit.put(next.copyWith(ahead: const AnsweredAhead.renumbered()));
+    }
+  }
+  if (ours) {
+    final ahead = AnsweredAhead(
+      revision,
+      whole: work.shape == LandedShape.whole,
+    );
+    for (final (place, id) in edit.index.checkedUnder(checkTargetOf(sent))) {
+      if (place <= entry.place) continue;
+      final next = edit.index.byId[id];
+      if (next is! PendingOp || next.refusal is! NotRefused) continue;
+      if ((edit.index.attemptsByOp[id] ?? const []).isNotEmpty) continue;
+      edit.put(next.copyWith(ahead: ahead));
+    }
   }
   edit.change.targets.add(checkTargetOf(sent));
   edit.change.lives.addAll([

@@ -1458,7 +1458,8 @@ for that strategy, and the page delete, until
 [#670](https://github.com/SunkenInTime/icarus/issues/670): the server guards a
 page delete by the strategy's revision only, so a page delete waits for a
 result of its page and needs the user when the page no longer holds what the
-user saw. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
+user saw. It goes as soon as a page list or the page's own result says the
+page is gone. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
 out in one piece when the server checks the page.
 
 **Entry states.** An entry is in one of four states, derived from the facts
@@ -1500,7 +1501,8 @@ days (`serverRemembersAnswersFor`, beside `DAYS_30_MS` in
 replays the first answer instead of applying it twice. The queue resends only
 until 29 days after an op's first send (`resendWindow`), a day of margin. A
 batch refused whole (upgrade, sign-in, access) was never tried by the server,
-so it does not count as a first send. When a transition finds the time
+so it does not count as a first send, even when the refusal arrives after the
+attempt was given up. When a transition finds the time
 passed, it records it on the entry before anything else, even when the event
 changes nothing more; from then on the entry needs the user and is never sent
 again, even if the clock moves back. Views show only what a transition
@@ -1512,30 +1514,37 @@ handed over: the sender must give an attempt up as unanswered within
 `sendGiveUpAfter` (one hour) of claiming it, well inside the day of margin.
 An open attempt shows as sending until it does.
 
-**Which revision an op names.** Nothing is predicted. An entry waits for the
-answer of the entry ahead of it on its row, and the revision it names is
-chosen when it is first claimed (resends send the same op):
+**Which revision an op names.** An op names the revision the user's edit
+was made against. Only this device's own applied answer on that row can move
+it forward, and only for work queued behind that answer in the row's chain
+(or made over it while it was still drawn as landed); the entry records that
+answer as a fact (`AnsweredAhead`). A result never changes the revision an op
+names. If the row has since changed, the server rejects the op and the user
+is asked, which is the point of sending it checked. `_judge` is the only
+place an outgoing revision is chosen, and its answer is one of: the authored
+revision, this device's own answer ahead of it, the revision the user kept
+theirs over, wait for the row's result, or needs the user.
 
 - A whole-row write (an element or lineup group written whole, a page or its
-  settings) goes only against a row this device fully knows: its own add or
-  whole write answered applied at that revision, or a result showing the row
-  exactly as the user saw it. A "nothing to do", a field merge, a rejection
-  or a page renumbering never makes a row fully known. Otherwise the write
-  waits for the row's result (`AwaitingResult`), and needs the user when a
-  result of this session shows the row otherwise, or a result of its page no
-  longer holds a row that results have shown before (a row this device just
-  added may simply not be in a result yet).
+  settings) behind this device's own field merge waits for the row's result
+  (`AwaitingResult`) and goes only if it shows the row exactly as the user
+  saw it at the merge's revision. It needs the user when a result of this
+  session shows the row otherwise, or when its page's result no longer holds
+  a row that results have shown or that this device added and a later result
+  left out.
+- A page renumbering this device made moves its pages' revisions by amounts
+  its answer does not name, so a page rename behind it waits for the first
+  page list after it and names the revision shown there only if the page is
+  exactly as the user saw it. That is the one place a result supplies a
+  revision, because the move was this device's own.
 - An undo of a delete ([#668](https://github.com/SunkenInTime/icarus/issues/668))
-  is an add over the tombstone. It waits behind the delete, and goes without
-  asking only when this device's delete was answered applied, at the
-  tombstone revision that answer named. Anything else needs the user. A
-  delete this device made stays known as its own until a result shows a
-  later revision of the row, so an undo pressed after the result still goes.
-- Everything else (deletes, reorders, page adds, reorders and deletes,
-  strategy changes) names the latest revision the device has an answer or a
-  result for, and the server decides. A delete sent live is last writer wins,
-  as in the shipped app, and does not wait behind a landed merge.
-- Keep mine goes at the revision the user chose it over.
+  is an add over the tombstone. It goes without asking only over this
+  device's applied delete, at the tombstone revision that answer named, and
+  only within 29 days of sending that delete. Anything else needs the user.
+  The delete stays known as this device's until a result shows a later
+  revision of the row.
+- Keep mine names the revision the user chose theirs over.
+- Live sends: a delete sent live is last writer wins, as in the shipped app.
 
 **Landed work.** An answered op is drawn on top of the latest results until
 a result shows its row at the answered revision or later. The queue keeps
@@ -1544,7 +1553,9 @@ restored in between does not change when that happens. A row no result has
 shown does not count, since a result older than the answer can lack a row
 the answer just added. Landed work is drawn in the order the server applied
 it: by the attempt that carried it and its place in that attempt. A landed
-move is drawn off its source page and on its destination in every page view.
+move is drawn off its source page and on its destination in every page view,
+and asks for the page its row comes from. A queued edit of a row a teammate
+moved is drawn wherever the row now is.
 Field merges, page adds, page reorders and page deletes land as partial (the
 server may have merged or renumbered rows the device has not seen);
 everything else lands whole.

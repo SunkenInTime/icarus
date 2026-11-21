@@ -37,8 +37,10 @@ final class Shown {
     required Map<Target, ShownRow> rows,
     this.headerThisSession = false,
     Set<String> pagesThisSession = const {},
+    Set<String> goneThisSession = const {},
     Map<Target, int> highest = const {},
   }) : pagesThisSession = Set.unmodifiable(pagesThisSession),
+       goneThisSession = Set.unmodifiable(goneThisSession),
        highest = Map.unmodifiable(highest),
        pages = Map.unmodifiable(pages),
        settings = Map.unmodifiable(settings),
@@ -102,6 +104,7 @@ final class Shown {
   final int? strategyRevision;
   final bool headerThisSession;
   final Set<String> pagesThisSession;
+  final Set<String> goneThisSession;
   final Map<Target, int> highest;
   final Map<String, ShownRow> pages;
   final Map<String, ShownRow> settings;
@@ -122,6 +125,7 @@ final class Shown {
     HeaderRead(:final strategy, :final pages, :final settings) => Shown(
       headerThisSession: true,
       pagesThisSession: pagesThisSession,
+      goneThisSession: goneThisSession,
       highest: _raised(highest, {
         const StrategyTarget(): ?revisionOfRow(strategy),
         for (final page in pages)
@@ -159,6 +163,7 @@ final class Shown {
     PageGone(:final pagePublicId) => Shown(
       headerThisSession: headerThisSession,
       pagesThisSession: {...pagesThisSession}..remove(pagePublicId),
+      goneThisSession: {...goneThisSession, pagePublicId},
       highest: highest,
       strategyRevision: strategyRevision,
       pages: {...pages}..remove(pagePublicId),
@@ -217,6 +222,7 @@ final class Shown {
     return Shown(
       headerThisSession: headerThisSession,
       pagesThisSession: {...pagesThisSession, page},
+      goneThisSession: {...goneThisSession}..remove(page),
       highest: raised,
       strategyRevision: strategyRevision,
       pages: pages,
@@ -231,6 +237,10 @@ final class Shown {
       other is Shown &&
       other.strategyRevision == strategyRevision &&
       other.headerThisSession == headerThisSession &&
+      const SetEquality<String>().equals(
+        other.goneThisSession,
+        goneThisSession,
+      ) &&
       const SetEquality<String>().equals(
         other.pagesThisSession,
         pagesThisSession,

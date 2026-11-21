@@ -12,15 +12,16 @@ Each section builds a queue by real events until op `x` is in that state, then a
 
 ## Which revision an op names
 
-Nothing is predicted. An entry waits for the answer of the entry ahead of it on its row, and the revision it names is chosen when it is first claimed:
+An op names the revision the user's edit was made against. Only this device's own applied answer on that row can move it forward, and only for work queued behind that answer in the row's chain, or made over it while it was still drawn as landed. A result never changes the revision an op names. If the row has since changed, the server rejects the op and the user is asked, which is the point of sending it checked. `_judge` in `lib/src/cloud/queue.dart` is the only place an outgoing revision is chosen.
 
-- A whole-row write (an element or lineup group written whole, a page or its settings) goes only against a row this device fully knows: its own add or whole write answered applied at that revision, or a result showing the row as the user saw it. A "nothing to do", a field merge, a rejection or a page renumbering never makes a row fully known. Otherwise it waits for the row's result, and needs the user if a result of this session shows the row otherwise, or a result of its page no longer holds a row that results have shown before.
-- An undo of a delete goes without asking only when this device's delete was answered applied, at the tombstone revision that answer named. Anything else needs the user.
-- Everything else (deletes, reorders, page adds, reorders and deletes, strategy changes) names the latest revision the device has an answer or a result for, and the server decides. A delete sent live is last writer wins, as in the shipped app.
+- A whole-row write (an element or lineup group written whole, a page or its settings) behind this device's own field merge waits for the row's result, and goes only if that result shows the row exactly as the user saw it at the merge's revision. It needs the user if a result of this session shows the row otherwise, or a result of its page no longer holds a row that results have shown or that this device added and a later result left out.
+- A page renumbering this device made (a page add, reorder or delete) moves its pages' revisions by amounts its answer does not name. A page rename behind it waits for the first page list after it, and names the revision shown there only if the page is exactly as the user saw it. This is the one place a result supplies a revision, because the move was this device's own.
+- An undo of a delete goes without asking only over this device's applied delete, at the tombstone revision that answer named, and only within 29 days of sending that delete. Anything else needs the user.
+- Keep mine names the revision the user chose theirs over.
 
 ## The resend window and the sender
 
-- An answer that never came is sent again under the same op id, in checked form, until 29 days after the op was first sent; the server remembers answers for 30. A batch refused whole (upgrade, sign-in, access) was never tried, so it does not start that clock. A transition that finds the 29 days passed records it, even when it changes nothing else; views show only what was recorded, and `look` records and returns the views of the queue it returns. Once recorded, the entry waits for the user and is never sent again.
+- An answer that never came is sent again under the same op id, in checked form, until 29 days after the op was first sent; the server remembers answers for 30. A batch refused whole (upgrade, sign-in, access) was never tried, so it does not start that clock, even when the refusal arrives after the attempt was given up. A transition that finds the 29 days passed records it, even when it changes nothing else; views show only what was recorded, and `look` records and returns the views of the queue it returns. Once recorded, the entry waits for the user and is never sent again.
 - The queue cannot stop a send it already handed over. The sender must give an attempt up as unanswered (`TransportFailed`) within `sendGiveUpAfter` (one hour) of claiming it, well inside the one-day margin between the queue's window and the server's memory. An open attempt shows as sending until the sender does so.
 - Answered work that the latest results do not show yet is drawn as landed, in the order the server applied it, off its source page and on its destination, until a result shows that row at the answered revision or later. A delete this device made stays known as its own until a result shows a later revision of the row.
 
@@ -35,7 +36,7 @@ A field edit folds into an earlier field edit of the same row only when the earl
 
 ## The page delete exception, until #670
 
-The server guards a page delete by the strategy's revision only, so a page delete can land after a teammate added an element to the page ([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the server checks the page itself, a page delete waits for a result of its page and needs the user when that page no longer holds what the user saw, or when its content was never read. It goes as soon as a result says the page is gone, since there is nothing left to protect. All of this lives in `lib/src/cloud/held_page_delete.dart` and comes out in one piece when #670 lands.
+The server guards a page delete by the strategy's revision only, so a page delete can land after a teammate added an element to the page ([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the server checks the page itself, a page delete waits for a result of its page and needs the user when that page no longer holds what the user saw, or when its content was never read. It goes as soon as a result (a page list or the page's own result) says the page is gone, since there is nothing left to protect. All of this lives in `lib/src/cloud/held_page_delete.dart` and comes out in one piece when #670 lands.
 
 ## waiting, nothing ahead of it
 
@@ -54,7 +55,7 @@ Starts as: waiting.
 | account changed | opens session 2 |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | x: needs user: changed by someone else since the user saw it |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
@@ -196,10 +197,10 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 
 | rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
 | rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
 | failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
+| attempt 1 refused whole: upgradeRequired | x: waiting; standing upgradeRequired; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | x: waiting; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost |
+| attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
 | connection lost | unchanged |
@@ -239,10 +240,10 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z).
 | rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
 | rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
 | failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
+| attempt 1 refused whole: upgradeRequired | x: waiting; standing upgradeRequired; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | x: waiting; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost |
+| attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
 | connection lost | unchanged |
@@ -374,10 +375,10 @@ Starts as: needs user: retries exhausted.
 | rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
 | rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
 | failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
+| attempt 1 refused whole: upgradeRequired | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing upgradeRequired; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing editAccessLost |
+| attempt 1 refused whole: strategyDeleted | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing deletedOnServer |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
 | connection lost | unchanged |
@@ -500,7 +501,7 @@ Starts as: waiting.
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | x: needs user: changed by someone else since the user saw it |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | unchanged |
 | result: strategy gone | unchanged |
 
@@ -528,7 +529,7 @@ Starts as: waiting.
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | x: needs user: changed by someone else since the user saw it |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
@@ -555,7 +556,7 @@ Starts as: waiting.
 | account changed | opens session 2 |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | x: needs user: changed by someone else since the user saw it |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 

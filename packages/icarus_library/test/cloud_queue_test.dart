@@ -3,7 +3,7 @@ import 'package:icarus_library/src/cloud/fold.dart';
 import 'package:icarus_library/src/cloud/op_facts.dart'
     show CopyExpanded, CopyNotExpanded, expandCopy;
 import 'package:icarus_library/src/cloud/visible.dart'
-    show SomePages, visibleOver;
+    show SomePages, pagesToLoad, visibleOver;
 import 'package:icarus_library/src/field_merge.dart'
     show elementMergeBase, lineupMergeBase;
 import 'package:test/test.dart';
@@ -1234,9 +1234,9 @@ void main() {
       client.edit(movePatch('whole', x: 40, expected: 2));
       client.must(const ConnectionReturned());
       sendAndAnswer(client, server, ['order']);
-      expect(client.view('whole').sendable, isFalse);
       client.read(server.rows, pages: ['page-a']);
-      expect(stateOf(client, 'whole'), const NeedsUser(ChangedUnseen()));
+      sendAndAnswer(client, server, ['whole']);
+      expect(stateOf(client, 'whole'), isA<NeedsUser>());
       expect(rotationOf(server.rows), 90);
     });
 
@@ -1432,6 +1432,224 @@ void main() {
       client.arrive(headerReadOf(gone));
       client.arrive(const PageGone('page-b'));
       expect(client.view('drop').sendable, isTrue);
+    });
+  });
+
+  group('the revision an op names', () {
+    final e1 = initialRows().element('e1')! as LiveElement;
+
+    StrategyRowSet movedAndRotated() => withOp(
+      initialRows(),
+      ElementPatchOp(
+        opId: 't',
+        elementPublicId: 'e1',
+        expectedElementRevision: 1,
+        pagePublicId: 'page-b',
+        payload: agentPayload('e1', {
+          ...e1.payload.data.toJson(),
+          'rotation': 90,
+        }),
+        sortIndex: 0,
+      ),
+    );
+
+    test('an offline drag never moves a teammate\'s element back over a '
+        'revision it did not see', () {
+      final server = Server()..rows = movedAndRotated();
+      final client = Client();
+      client.edit(
+        ElementPatchOp(
+          opId: 'drag',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-a',
+          payload: agentPayload('e1', {
+            ...e1.payload.data.toJson(),
+            'position': {'dx': 40, 'dy': 0},
+          }),
+          sortIndex: e1.sortIndex,
+          merge: FieldMerge(fields: ['position']),
+        ),
+      );
+      client.must(const ConnectionReturned());
+      client.read(server.rows);
+      sendAndAnswer(client, server, ['drag']);
+      expect(stateOf(client, 'drag'), isA<NeedsUser>());
+      expect(server.rows.element('e1')!.pagePublicId, 'page-b');
+    });
+
+    test('an offline rename never takes a teammate\'s rename revision', () {
+      final server = Server()
+        ..rows = withOp(
+          initialRows(),
+          const StrategyPatchOp(
+            opId: 't',
+            expectedStrategyRevision: 1,
+            name: 'Theirs',
+          ),
+        );
+      final client = Client();
+      client.edit(
+        const StrategyPatchOp(
+          opId: 'rename',
+          expectedStrategyRevision: 1,
+          name: 'Mine',
+        ),
+      );
+      client.must(const ConnectionReturned());
+      client.read(server.rows);
+      sendAndAnswer(client, server, ['rename']);
+      expect(stateOf(client, 'rename'), isA<NeedsUser>());
+      expect(server.rows.strategy.name, 'Theirs');
+    });
+
+    test('an offline checked delete never takes a teammate\'s move', () {
+      final server = Server()..rows = movedAndRotated();
+      final client = Client();
+      client.edit(elementDelete('drop'));
+      client.must(const ConnectionReturned());
+      client.read(server.rows);
+      sendAndAnswer(client, server, ['drop']);
+      expect(stateOf(client, 'drop'), isA<NeedsUser>());
+      expect(server.rows.element('e1'), isA<LiveElement>());
+    });
+
+    test('a whole edit behind this device\'s own add and drag needs the user '
+        'when a later result of the page no longer holds the row', () {
+      final server = Server();
+      final client = online();
+      client.edit(elementAdd('add', elementId: 'e9'));
+      sendAndAnswer(client, server, ['add']);
+      client.edit(
+        movePatch(
+          'drag',
+          elementId: 'e9',
+          x: 40,
+          merge: FieldMerge(fields: ['position']),
+        ),
+      );
+      sendAndAnswer(client, server, ['drag']);
+      client.edit(movePatch('whole', elementId: 'e9', x: 70, expected: 2));
+      final row = server.rows.element('e9')! as LiveElement;
+      server.rows = withOp(
+        server.rows,
+        ElementPatchOp(
+          opId: 'away',
+          elementPublicId: 'e9',
+          expectedElementRevision: 2,
+          pagePublicId: 'page-b',
+          payload: row.payload,
+          sortIndex: 1,
+        ),
+      );
+      client.read(server.rows, pages: ['page-a']);
+      expect(stateOf(client, 'whole'), const NeedsUser(ChangedUnseen()));
+    });
+
+    test('keep mine on an undo conflict goes', () {
+      final server = Server()..rows = withOp(initialRows(), elementDelete('t'));
+      final client = online();
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      sendAndAnswer(client, server, ['del']);
+      client.edit(putBackOf('back', drawn, 'e1'));
+      expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+      final tombstone = server.rows.element('e1')! as DeletedElement;
+      client.must(
+        UserKeptMine(
+          'back',
+          rebasedForTest(putBackOf('mine', drawn, 'e1'), tombstone.revision),
+          authored: const AuthoredNoRow(),
+        ),
+      );
+      expect(client.view('mine').sendable, isTrue);
+    });
+
+    test('a put-back over a delete answered more than 29 days ago needs the '
+        'user', () {
+      final client = online();
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      client.edit(putBackOf('back', drawn, 'e1'));
+      final attempt = client.claim(['del']);
+      client.must(OpAnswered(attempt, const AppliedAnswer('del', revision: 2)));
+      expect(client.view('back').sendable, isTrue);
+      client.clock = now.add(const Duration(days: 30));
+      expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+    });
+
+    test('a whole-batch refusal after the attempt was given up still means '
+        'the server never tried it', () {
+      final client = online();
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(TransportFailed(attempt, TransportFailure.network, at: now));
+      client.must(BatchRefused(attempt, BatchRefusal.upgradeRequired));
+      client.must(const AppRestarted(build: 'build-2'));
+      client.clock = now.add(const Duration(days: 31));
+      client.queue = look(client.queue, client.at).queue;
+      expect(stateOf(client, 'move'), const Waiting());
+    });
+
+    test('a page-gone result releases a waiting page delete without a '
+        'header', () {
+      final server = Server();
+      final client = online();
+      client.edit(elementAdd('add', elementId: 'n', pageId: 'page-b'));
+      sendAndAnswer(client, server, ['add']);
+      client.edit(pageDelete('drop', 'page-b'));
+      client.must(const ConnectionLost());
+      client.must(const ConnectionReturned());
+      client.arrive(const PageGone('page-b'));
+      expect(client.view('drop').sendable, isTrue);
+    });
+
+    test('two people renaming a page to the same name settles without a '
+        'question', () {
+      final server = Server()
+        ..rows = withOp(
+          initialRows(),
+          const PagePatchOp(
+            opId: 't',
+            pagePublicId: 'page-a',
+            expectedPageRevision: 1,
+            name: 'Same',
+          ),
+        );
+      final client = Client();
+      client.edit(
+        const PagePatchOp(
+          opId: 'rename',
+          pagePublicId: 'page-a',
+          expectedPageRevision: 1,
+          name: 'Same',
+        ),
+      );
+      client.must(const ConnectionReturned());
+      client.read(server.rows);
+      expect(client.view('rename').sendable, isTrue);
+      sendAndAnswer(client, server, ['rename']);
+      expect(client.queue.entries, isEmpty);
+    });
+
+    test('a landed move asks for the page its row comes from', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+          payload: e1.payload,
+          sortIndex: 0,
+        ),
+      );
+      sendAndAnswer(client, server, ['move']);
+      expect(
+        pagesToLoad(client.queue, SomePages(['page-b'])),
+        contains('page-a'),
+      );
     });
   });
 }

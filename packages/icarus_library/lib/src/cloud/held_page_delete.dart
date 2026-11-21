@@ -37,7 +37,8 @@ PageDeleteVerdict pageDeleteVerdict(
     ContentNeverRead() => null,
   };
   final pageRow = shown.pages[page];
-  if (pageRow == null && shown.headerThisSession) {
+  if ((pageRow == null && shown.headerThisSession) ||
+      shown.goneThisSession.contains(page)) {
     return const PageAlreadyGone();
   }
   if (digests == null) return const PageHeld(HeldDeleteCause.contentNeverRead);

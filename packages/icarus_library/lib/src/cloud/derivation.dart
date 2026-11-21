@@ -866,7 +866,9 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   }
   final head = !holds.any((hold) => hold is BehindEntry);
   if (head && state is Waiting) {
-    switch (_judge(queue, entry)) {
+    switch (_judge(queue, entry, now)) {
+      case _NameAt(until: final deadline?):
+        if (until == null || deadline.isBefore(until)) until = deadline;
       case _NameAt():
         break;
       case _AwaitRow(:final page):
@@ -920,6 +922,12 @@ String? _landedPage(StrategyOp op) => switch (op) {
   LineupGroupPatchOp(:final pagePublicId) => pagePublicId,
   _ => null,
 };
+
+List<PendingOp> entriesOnRows(CloudQueue queue, Iterable<Target> targets) => [
+  for (final target in targets)
+    for (final id in queue._index.ids(target))
+      if (queue._index.byId[id] case final PendingOp entry) entry,
+];
 
 (List<PendingOp>, Set<String>) entriesForPages(
   CloudQueue queue,

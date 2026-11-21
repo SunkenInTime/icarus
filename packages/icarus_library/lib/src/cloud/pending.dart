@@ -34,6 +34,7 @@ final class PendingOp extends QueueEntry {
     required this.refusal,
     required this.retriedAfter,
     this.window = const WindowOpen(),
+    this.ahead,
   });
 
   final Work work;
@@ -43,6 +44,7 @@ final class PendingOp extends QueueEntry {
   final RefusalRecord refusal;
   final int retriedAfter;
   final ResendWindow window;
+  final AnsweredAhead? ahead;
 
   StrategyOp get op => work.op;
 
@@ -57,6 +59,7 @@ final class PendingOp extends QueueEntry {
     RefusalRecord? refusal,
     int? retriedAfter,
     ResendWindow? window,
+    AnsweredAhead? ahead,
   }) => PendingOp(
     place: place,
     work: work ?? this.work,
@@ -66,6 +69,7 @@ final class PendingOp extends QueueEntry {
     refusal: refusal ?? this.refusal,
     retriedAfter: retriedAfter ?? this.retriedAfter,
     window: window ?? this.window,
+    ahead: ahead ?? this.ahead,
   );
 
   @override
@@ -78,7 +82,8 @@ final class PendingOp extends QueueEntry {
       other.authoredIn == authoredIn &&
       other.refusal == refusal &&
       other.retriedAfter == retriedAfter &&
-      other.window == window;
+      other.window == window &&
+      other.ahead == ahead;
 
   @override
   int get hashCode => Object.hash(
@@ -90,10 +95,32 @@ final class PendingOp extends QueueEntry {
     refusal,
     retriedAfter,
     window,
+    ahead,
   );
 
   @override
   String toString() => 'PendingOp($opId, $refusal)';
+}
+
+final class AnsweredAhead {
+  const AnsweredAhead(this.revision, {required this.whole});
+
+  const AnsweredAhead.renumbered() : revision = null, whole = false;
+
+  final int? revision;
+  final bool whole;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AnsweredAhead &&
+      other.revision == revision &&
+      other.whole == whole;
+
+  @override
+  int get hashCode => Object.hash(AnsweredAhead, revision, whole);
+
+  @override
+  String toString() => 'AnsweredAhead($revision${whole ? ', whole' : ''})';
 }
 
 final class RetiredOp extends QueueEntry {
@@ -708,6 +735,8 @@ final class LandedWork {
     required this.revision,
     required this.shape,
     required this.own,
+    required this.at,
+    this.shownWithout = false,
   });
 
   final int attempt;
@@ -716,6 +745,19 @@ final class LandedWork {
   final int revision;
   final LandedShape shape;
   final bool own;
+  final DateTime at;
+  final bool shownWithout;
+
+  LandedWork seenWithout() => LandedWork(
+    attempt: attempt,
+    position: position,
+    op: op,
+    revision: revision,
+    shape: shape,
+    own: own,
+    at: at,
+    shownWithout: true,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -725,11 +767,22 @@ final class LandedWork {
       other.op == op &&
       other.revision == revision &&
       other.shape == shape &&
-      other.own == own;
+      other.own == own &&
+      other.at == at &&
+      other.shownWithout == shownWithout;
 
   @override
-  int get hashCode =>
-      Object.hash(LandedWork, attempt, position, op, revision, shape, own);
+  int get hashCode => Object.hash(
+    LandedWork,
+    attempt,
+    position,
+    op,
+    revision,
+    shape,
+    own,
+    at,
+    shownWithout,
+  );
 
   int compareTo(LandedWork other) {
     final byAttempt = attempt.compareTo(other.attempt);

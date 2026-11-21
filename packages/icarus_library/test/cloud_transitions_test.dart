@@ -397,32 +397,39 @@ String renderTable() {
     ..writeln('## Which revision an op names')
     ..writeln()
     ..writeln(
-      'Nothing is predicted. An entry waits for the answer of the entry ahead '
-      'of it on its row, and the revision it names is chosen when it is '
-      'first claimed:',
+      'An op names the revision the user\'s edit was made against. Only this '
+      'device\'s own applied answer on that row can move it forward, and only '
+      'for work queued behind that answer in the row\'s chain, or made over '
+      'it while it was still drawn as landed. A result never changes the '
+      'revision an op names. If the row has since changed, the server '
+      'rejects the op and the user is asked, which is the point of sending '
+      'it checked. `_judge` in `lib/src/cloud/queue.dart` is the only place '
+      'an outgoing revision is chosen.',
     )
     ..writeln()
     ..writeln(
       '- A whole-row write (an element or lineup group written whole, a page '
-      'or its settings) goes only against a row this device fully knows: '
-      'its own add or whole write answered applied at that revision, or a '
-      'result showing the row as the user saw it. A "nothing to do", a field '
-      'merge, a rejection or a page renumbering never makes a row fully '
-      'known. Otherwise it waits for the row\'s result, and needs the user '
-      'if a result of this session shows the row otherwise, or a result of '
-      'its page no longer holds a row that results have shown before.',
+      'or its settings) behind this device\'s own field merge waits for the '
+      'row\'s result, and goes only if that result shows the row exactly as '
+      'the user saw it at the merge\'s revision. It needs the user if a '
+      'result of this session shows the row otherwise, or a result of its '
+      'page no longer holds a row that results have shown or that this '
+      'device added and a later result left out.',
     )
     ..writeln(
-      '- An undo of a delete goes without asking only when this device\'s '
-      'delete was answered applied, at the tombstone revision that answer '
-      'named. Anything else needs the user.',
+      '- A page renumbering this device made (a page add, reorder or delete) '
+      'moves its pages\' revisions by amounts its answer does not name. A '
+      'page rename behind it waits for the first page list after it, and '
+      'names the revision shown there only if the page is exactly as the '
+      'user saw it. This is the one place a result supplies a revision, '
+      'because the move was this device\'s own.',
     )
     ..writeln(
-      '- Everything else (deletes, reorders, page adds, reorders and '
-      'deletes, strategy changes) names the latest revision the device has '
-      'an answer or a result for, and the server decides. A delete sent live '
-      'is last writer wins, as in the shipped app.',
+      '- An undo of a delete goes without asking only over this device\'s '
+      'applied delete, at the tombstone revision that answer named, and only '
+      'within 29 days of sending that delete. Anything else needs the user.',
     )
+    ..writeln('- Keep mine names the revision the user chose theirs over.')
     ..writeln()
     ..writeln('## The resend window and the sender')
     ..writeln()
@@ -430,7 +437,8 @@ String renderTable() {
       '- An answer that never came is sent again under the same op id, in '
       'checked form, until 29 days after the op was first sent; the server '
       'remembers answers for 30. A batch refused whole (upgrade, sign-in, '
-      'access) was never tried, so it does not start that clock. A '
+      'access) was never tried, so it does not start that clock, even when '
+      'the refusal arrives after the attempt was given up. A '
       'transition that finds the 29 days passed records it, even when it '
       'changes nothing else; views show only what was recorded, and `look` '
       'records and returns the views of the queue it returns. Once recorded, '
@@ -487,7 +495,8 @@ String renderTable() {
       'server checks the page itself, a page delete waits for a result of its '
       'page and needs the user when that page no longer holds what the user '
       'saw, or when its content was never read. It goes as soon as a result '
-      'says the page is gone, since there is nothing left to protect. All of '
+      '(a page list or the page\'s own result) says the page is gone, since '
+      'there is nothing left to protect. All of '
       'this lives in '
       '`lib/src/cloud/held_page_delete.dart` and comes out in one piece when '
       '#670 lands.',
