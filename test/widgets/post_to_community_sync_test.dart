@@ -261,8 +261,7 @@ final _failedImage = CloudMediaUploadJob(
   assetPublicId: 'image-1',
   fileExtension: '.png',
   mimeType: 'image/png',
-  state: CloudMediaJobState.failed,
-  attempts: 3,
+  phase: const MediaUploadFailed(why: 'upload failed', attempts: 3),
   updatedAt: DateTime.utc(2026),
 );
 
