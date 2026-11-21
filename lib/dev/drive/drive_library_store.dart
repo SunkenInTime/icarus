@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
@@ -65,11 +64,6 @@ String _describeOpened(LibraryStoreOpened opened) => switch (opened) {
       LibraryStoreTooSmall(:final maxKeyLength) =>
         'the engine holds keys of only $maxKeyLength characters',
     };
-
-const _libraryBoxFiles = {
-  '${HiveBoxNames.strategiesBox}.hive',
-  '${HiveBoxNames.foldersBox}.hive',
-};
 
 int _bytes(File file) => file.existsSync() ? file.lengthSync() : 0;
 
@@ -201,14 +195,8 @@ Future<List<String>> waitForShadowStore(
     StorageCreated() => 'created',
     StorageExisted() => 'existed',
   };
-  final libraryChanged = [
-    for (final name in run.hiveFilesChanged)
-      if (_libraryBoxFiles.contains(name)) name,
-  ];
-  final othersChanged = [
-    for (final name in run.hiveFilesChanged)
-      if (!_libraryBoxFiles.contains(name)) name,
-  ];
+  final libraryChanged = run.libraryBoxesChanged;
+  final othersChanged = run.otherHiveFilesChanged;
   final lines = [
     'STORE opened ${file.path}; the library $originName',
     _sizes(file),

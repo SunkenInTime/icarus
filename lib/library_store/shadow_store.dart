@@ -175,9 +175,11 @@ final class ShadowRun {
     required this.uiDuringCopy,
     required this.uiDuringCheck,
     required this.hiveFiles,
-    required List<String> hiveFilesChanged,
+    required List<String> libraryBoxesChanged,
+    required List<String> otherHiveFilesChanged,
     required this.libraryBoxWrites,
-  }) : hiveFilesChanged = List.unmodifiable(hiveFilesChanged);
+  })  : libraryBoxesChanged = List.unmodifiable(libraryBoxesChanged),
+        otherHiveFilesChanged = List.unmodifiable(otherHiveFilesChanged);
 
   final int libraryBoxWrites;
 
@@ -188,7 +190,8 @@ final class ShadowRun {
   final UiStats uiDuringCopy;
   final UiStats uiDuringCheck;
   final int hiveFiles;
-  final List<String> hiveFilesChanged;
+  final List<String> libraryBoxesChanged;
+  final List<String> otherHiveFilesChanged;
 }
 
 sealed class ShadowState {
@@ -227,6 +230,11 @@ final shadowProvider = NotifierProvider<ShadowNotifier, ShadowState>(
 );
 
 Future<void> _breathe() => Future<void>.delayed(Duration.zero);
+
+Set<String> _libraryBoxFiles() => {
+      '${Hive.box<StrategyData>(HiveBoxNames.strategiesBox).name}.hive',
+      '${Hive.box<Folder>(HiveBoxNames.foldersBox).name}.hive',
+    };
 
 HiveLibrary _hiveLibrary() => HiveLibrary(
       strategies: Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values,
@@ -299,7 +307,14 @@ class ShadowNotifier extends Notifier<ShadowState> {
           uiDuringCopy: uiDuringCopy,
           uiDuringCheck: uiDuringCheck,
           hiveFiles: after.count,
-          hiveFilesChanged: after.changedSince(before),
+          libraryBoxesChanged: [
+            for (final name in after.changedSince(before))
+              if (_libraryBoxFiles().contains(name)) name,
+          ],
+          otherHiveFilesChanged: [
+            for (final name in after.changedSince(before))
+              if (!_libraryBoxFiles().contains(name)) name,
+          ],
           libraryBoxWrites: writes.count,
         ),
       );
