@@ -29,6 +29,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/view_cone/page_occluders.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 
 Offset _overlayScreenPosition({
   required PlacedWidget widget,
@@ -123,13 +124,10 @@ class TransitionEntriesLayer extends ConsumerWidget {
     );
 
     return PageOccludersScope(
-      occluders: pageOccluders(
-        [
-          for (final entry in orderedEntries)
-            if (renderer.blockerAsDrawn(entry) case final blocker?) blocker,
-        ],
-        mapScale: mapScale,
-      ),
+      occluders: [
+        for (final entry in orderedEntries)
+          if (renderer.occluderAt(entry) case final occluder?) occluder,
+      ],
       child: IgnorePointer(
         ignoring: true,
         child: Stack(
@@ -268,14 +266,16 @@ class _EntryRenderer {
 
   bool get _pastHalfway => t >= 0.5;
 
-  PlacedAbility? blockerAsDrawn(PageTransitionEntry entry) {
+  VisionOccluder? occluderAt(PageTransitionEntry entry) {
     final shown = entry.to ?? entry.from;
     if (shown is! PlacedAbility || !blocksSight(shown.data)) return null;
     final directionalOffset = coordinateSystem.scale(28) *
         (direction == PageTransitionDirection.forward ? 1.0 : -1.0);
     Offset slid(Offset position, double screenX) =>
         position + Offset(_canonicalHorizontalTranslation(screenX), 0);
-    return switch (entry.kind) {
+    final from = PageTransitionEntry.wallPathOf(entry.from);
+    final to = PageTransitionEntry.wallPathOf(entry.to);
+    final drawn = switch (entry.kind) {
       TransitionKind.none => shown,
       TransitionKind.appear when _pastHalfway => shown.copyWith(
           position: slid(entry.endPos, directionalOffset * (1 - t)),
@@ -291,18 +291,18 @@ class _EntryRenderer {
             shown.rotation,
             t,
           ),
-          wallPath: _wallPathAt(
-            PageTransitionEntry.wallPathOf(entry.from),
-            PageTransitionEntry.wallPathOf(entry.to),
-          ),
+          wallPath: (_pastHalfway ? to : from) ?? const [],
         ),
       _ => null,
     };
-  }
-
-  List<Offset> _wallPathAt(List<Offset>? from, List<Offset>? to) {
-    if (from != null && to != null) return _morphedWall(from, to)!.sublist(1);
-    return (_pastHalfway ? to : from) ?? const [];
+    if (drawn == null) return null;
+    if (entry.kind == TransitionKind.move && from != null && to != null) {
+      final middle = placedAbilityMiddle(drawn, mapScale: mapScale);
+      return LineOccluder([
+        for (final point in _morphedWall(from, to)!) middle + point,
+      ]);
+    }
+    return occluderOf(drawn, mapScale: mapScale);
   }
 
   /// The two walls blended by [t], as a drawn line; just the one when only
