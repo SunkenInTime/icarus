@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
@@ -68,6 +69,11 @@ String _describeOpened(LibraryStoreOpened opened) => switch (opened) {
       LibraryStoreTooSmall(:final maxKeyLength) =>
         'the engine holds keys of only $maxKeyLength characters',
     };
+
+const _libraryBoxFiles = {
+  '${HiveBoxNames.strategiesBox}.hive',
+  '${HiveBoxNames.foldersBox}.hive',
+};
 
 int _bytes(File file) => file.existsSync() ? file.lengthSync() : 0;
 
@@ -200,13 +206,23 @@ Future<List<String>> waitForShadowStore(
     LibraryStoreReady(:final file) => file,
     final other => throw StoreStepFailed(['the store is $other']),
   };
+  final libraryChanged = [
+    for (final name in run.hiveFilesChanged)
+      if (_libraryBoxFiles.contains(name)) name,
+  ];
+  final othersChanged = [
+    for (final name in run.hiveFilesChanged)
+      if (!_libraryBoxFiles.contains(name)) name,
+  ];
   final lines = [
     'STORE opened ${file.path}',
     _sizes(file),
     ..._describeCopy(run),
     ...describeCheck(run.check, run.checkTook),
-    'STORE Hive files ${run.hiveFiles} read before and after; '
-        '${run.hiveFilesChanged.isEmpty ? 'none changed' : 'changed: ${run.hiveFilesChanged.join(', ')}'}',
+    'STORE Hive files ${run.hiveFiles} read before and after; library '
+        'boxes ${libraryChanged.isEmpty ? 'unchanged' : 'changed: ${libraryChanged.join(', ')}'}; '
+        'boxes the copy never opens, written by the rest of the app: '
+        '${othersChanged.isEmpty ? 'none' : othersChanged.join(', ')}',
   ];
   final strategies = run.copy.strategies;
   final counts = {
@@ -228,8 +244,8 @@ Future<List<String>> waitForShadowStore(
       StoreChecked() => 'the store differs from Hive',
       StoreNotChecked(:final failure) => 'the check failed: $failure',
     },
-    if (run.hiveFilesChanged.isNotEmpty)
-      'Hive files changed: ${run.hiveFilesChanged.join(', ')}',
+    if (libraryChanged.isNotEmpty)
+      'library boxes changed: ${libraryChanged.join(', ')}',
     for (final MapEntry(:key, :value) in expected.entries)
       if (counts[key] != value) '$key is ${counts[key]}, expected $value',
   ].nonNulls.toList();
