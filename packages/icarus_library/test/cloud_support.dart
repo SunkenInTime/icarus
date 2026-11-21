@@ -5,16 +5,16 @@ import 'support.dart';
 
 const clientId = 'client-1';
 
-final now = DateTime.utc(2026, 11, 20, 12);
+const build = 'build-1';
 
-Attempt attempt(String id, {String client = clientId, DateTime? at}) =>
-    Attempt(id, clientId: client, at: at ?? now);
+final now = DateTime.utc(2026, 11, 20, 12);
 
 ElementPatchOp movePatch(
   String opId, {
   String elementId = 'e1',
   int expected = 1,
   double x = 10,
+  double rotation = 0,
   String? pageId,
   FieldMerge? merge,
 }) => ElementPatchOp(
@@ -25,6 +25,7 @@ ElementPatchOp movePatch(
   merge: merge,
   payload: agentPayload(elementId, {
     'position': {'dx': x, 'dy': 0},
+    if (rotation != 0) 'rotation': rotation,
   }),
 );
 
@@ -57,12 +58,13 @@ PageAddOp pageAdd(
   String pageId, {
   int expected = 1,
   String? copyFrom,
+  int sortIndex = 2,
 }) => PageAddOp(
   opId: opId,
   pagePublicId: pageId,
-  sortIndex: 2,
+  sortIndex: sortIndex,
   expectedStrategyRevision: expected,
-  name: 'Page 3',
+  name: 'Page',
   copyContentFromPagePublicId: copyFrom,
 );
 
@@ -73,112 +75,245 @@ PageDeleteOp pageDelete(String opId, String pageId, {int expected = 1}) =>
       expectedStrategyRevision: expected,
     );
 
-PageReorderOp pageReorder(String opId, String pageId, {int expected = 1}) =>
-    PageReorderOp(
-      opId: opId,
-      pagePublicId: pageId,
-      sortIndex: 0,
-      expectedStrategyRevision: expected,
-    );
-
-PagePatchOp pageRename(String opId, String pageId, {int expected = 1}) =>
-    PagePatchOp(
-      opId: opId,
-      pagePublicId: pageId,
-      expectedPageRevision: expected,
-      name: 'Retake',
-    );
-
-SeenPage seenOf(String name, {Map<SeenPart, int>? content}) => SeenPage(
-  name: name,
-  isAttack: true,
-  content: ContentSeen(content ?? {const SeenSettings(): 1}),
-);
-
-Edit plain(StrategyOp op, {String rowPage = 'page-a'}) =>
-    switch (editOf(op, rowPage: rowPage)) {
-      EditMade(:final edit) => edit,
-      NeedsRowPage() => fail('no page for ${op.opId}'),
-    };
-
-QueueEvent userEdits(StrategyOp op, {String rowPage = 'page-a'}) =>
-    UserEdited(plain(op, rowPage: rowPage));
-
-QueueEvent deleting(PageDeleteOp op, SeenPage seen) =>
-    UserEdited(PageDeleteEdit(op, seen));
-
-QueueEvent answered(OpAnswer answer, {Attempt? by, BaseRow? base}) =>
-    OpAnswered(by ?? attempt('a1'), answer, base: base ?? const BaseLacks());
-
-PendingOp pending(
-  StrategyOp op,
-  PendingState state, {
-  int place = 0,
-  Work? work,
-  Scope scope = const OnPage('page-a'),
-  Against? against,
-  SendPolicy policy = SendPolicy.checked,
-  BaseWait wait = const NoWait(),
-}) => PendingOp(
-  place: place,
-  work: work ?? OpWork(op),
-  scope: scope,
-  against: against ?? const OnBase(1),
-  policy: policy,
-  wait: wait,
-  state: state,
-);
-
-CloudQueue queueOf(
-  List<QueueEntry> entries, {
-  Standing standing = Standing.good,
-  bool connected = false,
-  Map<String, SeenPage> checks = const {},
-}) => CloudQueue(
-  entries: entries,
-  standing: standing,
-  session: QueueSession(connected: connected, deleteChecks: checks),
-);
-
 Stepped stepped(Step step) => switch (step) {
   final Stepped done => done,
   NotApplicable(:final why) => fail('Expected the event to apply: $why'),
 };
 
 Inapplicable notApplicable(Step step) => switch (step) {
-  Stepped(:final queue) => fail('Expected it not to apply, got $queue'),
+  Stepped() => fail('Expected it not to apply'),
   NotApplicable(:final why) => why,
 };
 
-CloudQueue run(CloudQueue queue, List<QueueEvent> events, {DateTime? at}) {
-  var current = queue;
-  for (final event in events) {
-    current = stepped(transition(current, event, now: at ?? now)).queue;
-  }
-  return current;
-}
+StrategyRowSet initialRows() => strategyRows(
+  elements: [
+    element('e1'),
+    element('e2'),
+    element('e3', pageId: 'page-b'),
+  ],
+);
 
-CloudQueue edits(List<StrategyOp> ops) =>
-    run(CloudQueue.empty, [for (final op in ops) userEdits(op)]);
+int? visibleRevision(StrategyRows rows, StrategyOp op) =>
+    switch (targetOf(op)) {
+      StrategyTarget() => rows.strategy.revision,
+      PageTarget(:final pagePublicId) => switch (rows.page(pagePublicId)) {
+        final row? => revisionOfRowForTest(row),
+        null => null,
+      },
+      SettingsTarget(:final pagePublicId) => switch (rows.settingsOf(
+        pagePublicId,
+      )) {
+        final row? => revisionOfRowForTest(row),
+        null => null,
+      },
+      ElementTarget(:final elementPublicId) => switch (rows.element(
+        elementPublicId,
+      )) {
+        final row? => revisionOfRowForTest(row),
+        null => null,
+      },
+      LineupTarget(:final lineupPublicId) => switch (rows.lineupGroup(
+        lineupPublicId,
+      )) {
+        final row? => revisionOfRowForTest(row),
+        null => null,
+      },
+    };
 
-PendingOp entryOf(CloudQueue queue, String opId) => switch (queue.entry(opId)) {
-  final PendingOp entry => entry,
-  final other => fail('$opId is not a pending op: $other'),
+int? revisionOfRowForTest(Row row) => switch (row) {
+  ReadablePageRow(:final revision) ||
+  ReadablePageSettings(:final revision) ||
+  ReadableElementRow(:final revision) ||
+  ReadableLineupGroupRow(:final revision) ||
+  ReadableStrategy(:final revision) => revision,
+  _ => null,
 };
 
-PendingState stateOf(CloudQueue queue, String opId) =>
-    entryOf(queue, opId).state;
+StrategyOp onVisible(StrategyRows rows, StrategyOp op) =>
+    switch ((expectedOf(op), visibleRevision(rows, op))) {
+      (_?, final revision?) => rebasedForTest(op, revision),
+      _ => op,
+    };
 
-List<Hold> holdsFor(CloudQueue queue, String opId, {DateTime? at}) =>
-    holdsOf(queue, at ?? now)[opId] ?? const [];
+StrategyOp rebasedForTest(StrategyOp op, int revision) =>
+    switch (StrategyOp.decode({
+      ...op.toJson(),
+      for (final key in const [
+        'expectedStrategyRevision',
+        'expectedPageRevision',
+        'expectedPageContentRevision',
+        'expectedElementRevision',
+        'expectedLineupRevision',
+      ])
+        if (op.toJson().containsKey(key)) key: revision,
+    })) {
+      Read(:final value) => value,
+      CouldNotRead(:final problem) => fail(problem),
+    };
 
-const neverSentFree = Unsent(NeverSent(), Free());
+StrategyRowSet visibleOf(StrategyRowSet base, CloudQueue queue) {
+  var rows = base;
+  for (final entry in queue.entries) {
+    if (entry is! PendingOp) continue;
+    var op = entry.op;
+    if ((entry.op, entry.answer) case (
+      final PageAddOp add,
+      AnsweredApplied(:final revision),
+    ) when add.copyContentFromPagePublicId != null) {
+      final shown = queue.base.rows[const StrategyTarget()]?.revision ?? -1;
+      if (shown >= revision) continue;
+      op = PageAddOp(
+        opId: add.opId,
+        pagePublicId: add.pagePublicId,
+        sortIndex: add.sortIndex,
+        expectedStrategyRevision: add.expectedStrategyRevision,
+        name: add.name,
+        isAutoNamed: add.isAutoNamed,
+        isAttack: add.isAttack,
+        settings: add.settings,
+      );
+    }
+    if (applyOp(rows, onVisible(rows, op)) case final OpApplied applied) {
+      rows = rows.withRows(applied.rows);
+    }
+  }
+  return rows;
+}
 
-AnswerUnknown unknown(int failures, {Backoff retry = const RetryNow()}) =>
-    AnswerUnknown(
-      clientId: clientId,
-      firstSentAt: now,
-      failures: failures,
-      retry: retry,
-      cause: const TransportCut(TransportFailure.network),
+BaseFacts factsOf(StrategyRowSet rows) {
+  var queue = CloudQueue.start(build: build);
+  queue = stepped(
+    transition(
+      queue,
+      BaseArrived(
+        HeaderRead(
+          strategy: rows.strategy,
+          pages: rows.pages.toList(),
+          settings: rows.settings.toList(),
+        ),
+      ),
+      now: now,
+    ),
+  ).queue;
+  for (final page in rows.pages) {
+    queue = stepped(
+      transition(
+        queue,
+        BaseArrived(
+          PageRead(
+            page: page,
+            settings: rows.settingsOf(page.publicId)!,
+            elements: rows.elementsOn(page.publicId).toList(),
+            lineupGroups: rows.lineupGroupsOn(page.publicId).toList(),
+          ),
+        ),
+        now: now,
+      ),
+    ).queue;
+  }
+  return queue.base;
+}
+
+final class Client {
+  Client({StrategyRowSet? base, this.clock}) : base = base ?? initialRows() {
+    queue = CloudQueue.start(build: build, base: factsOf(this.base));
+  }
+
+  StrategyRowSet base;
+  DateTime? clock;
+  late CloudQueue queue;
+  final effects = <QueueEffect>[];
+
+  DateTime get at => clock ?? now;
+
+  StrategyRowSet get visible => visibleOf(base, queue);
+
+  Step step(QueueEvent event) {
+    final result = transition(queue, event, now: at);
+    if (result case Stepped(queue: final next, effects: final made)) {
+      queue = next;
+      effects.addAll(made);
+    }
+    return result;
+  }
+
+  void must(QueueEvent event) => stepped(step(event));
+
+  QueueEvent editEvent(StrategyOp op) {
+    final rows = visible;
+    final authored = authoredFor(rows, op);
+    if (op is PageDeleteOp) {
+      return UserEdited(
+        PageDeleteEdit(op, seenPageIn(rows, op.pagePublicId), authored),
+      );
+    }
+    final rowPage = switch (op) {
+      ElementPatchOp(:final elementPublicId) =>
+        rows.element(elementPublicId)?.pagePublicId,
+      LineupGroupPatchOp(:final lineupPublicId) =>
+        rows.lineupGroup(lineupPublicId)?.pagePublicId,
+      _ => null,
+    };
+    return UserEdited(switch (editOf(
+      op,
+      authored: authored,
+      rowPage: rowPage,
+    )) {
+      EditMade(:final edit) => edit,
+      NeedsRowPage() || NeedsPageDeleteEdit() => fail('cannot edit $op'),
+    });
+  }
+
+  void edit(StrategyOp op) => must(editEvent(op));
+
+  int claim(List<String> ids, {String client = clientId}) {
+    final result = stepped(
+      transition(
+        queue,
+        BatchClaimed(clientId: client, opIds: ids, at: at),
+        now: at,
+      ),
     );
+    queue = result.queue;
+    effects.addAll(result.effects);
+    return result.effects.whereType<SendBatch>().single.attempt;
+  }
+
+  List<StrategyOp> lastSent() =>
+      effects.whereType<SendBatch>().last.ops.toList();
+
+  void read(StrategyRowSet server, {Iterable<String>? pages}) {
+    base = server;
+    must(
+      BaseArrived(
+        HeaderRead(
+          strategy: server.strategy,
+          pages: server.pages.toList(),
+          settings: server.settings.toList(),
+        ),
+      ),
+    );
+    for (final page in pages ?? server.pages.map((page) => page.publicId)) {
+      if (server.page(page) case final row?) {
+        must(
+          BaseArrived(
+            PageRead(
+              page: row,
+              settings: server.settingsOf(page)!,
+              elements: server.elementsOn(page).toList(),
+              lineupGroups: server.lineupGroupsOn(page).toList(),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  EntryView view(String opId) => viewsOf(queue, at)[opId]!;
+}
+
+StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
+    switch (applyOp(rows, op)) {
+      final OpApplied done => rows.withRows(done.rows),
+      final other => fail('expected $op to apply, got $other'),
+    };
