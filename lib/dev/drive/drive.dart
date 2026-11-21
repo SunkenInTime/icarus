@@ -207,6 +207,7 @@ import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 // The driver alone swaps the platform's launcher; the app uses url_launcher.
@@ -1842,15 +1843,15 @@ Future<void> _run(Map<String, dynamic> step) async {
       final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
       final strategy = box.get(c.read(strategyProvider).strategyId)!;
       final pageId = c.read(strategyPageSessionProvider).activePageId;
-      await box.put(
-        strategy.id,
+      (await const LocalLibrary().changePages(
         strategy.copyWith(
           pages: [
             for (final page in strategy.pages)
               if (page.id != pageId) page,
           ],
         ),
-      );
+      ))
+          .orThrow();
     case 'texts':
       final seen = <String>[];
       void visit(Element element) {

@@ -29,6 +29,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -121,7 +122,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
 
     final migrated = StrategyMigrator.migrateToCurrentVersion(current);
     if (!identical(current, migrated)) {
-      await box.put(migrated.id, migrated);
+      (await const LocalLibrary().replaceAfterMigration(migrated)).orThrow();
     }
 
     final orderedPages = [...migrated.pages]
@@ -191,7 +192,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       lastEdited: DateTime.now(),
     );
     try {
-      await box.put(updated.id, updated);
+      (await const LocalLibrary().savePageOnScreen(updated)).orThrow();
     } on Object catch (error, stackTrace) {
       AppErrorReporter.reportWarning(
         'The page on screen could not be written to the library.',

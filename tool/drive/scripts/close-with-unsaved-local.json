@@ -1,0 +1,19 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"newLocal": "bind", "name": "Close unsaved {run}"},
+  {"wait": 3},
+  {"tapText": "Close unsaved {run}", "optional": true},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"addAgent": "a1-{run}", "agent": "jett", "at": [655, 352]},
+  {"tapAt": [33, 857]},
+  {"wait": 3},
+  {"addAgent": "a2-{run}", "agent": "sova", "at": [820, 420]},
+  {"addText": "t1-{run}", "at": [500, 500], "text": "unsaved when closed"},
+  {"dragAgent": "a1-{run}", "by": [60, 40]},
+  {"logPage": "before close"},
+  {"tapAt": [1577, 16]},
+  {"wait": 20}
+]
