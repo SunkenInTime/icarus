@@ -430,13 +430,13 @@ void main() {
     await tester.pump();
     await finger.moveBy(const Offset(40, 40));
     await tester.pump();
-    expect(container.read(wallCarriedProvider), 'tide');
+    expect(container.read(wallCarriedProvider), {'tide'});
 
     container.read(abilityProvider.notifier).fromHive(const []);
     await tester.pump();
     await tester.pump();
 
-    expect(container.read(wallCarriedProvider), isNull);
+    expect(container.read(wallCarriedProvider), isEmpty);
     await finger.up();
     await tester.pump();
   });

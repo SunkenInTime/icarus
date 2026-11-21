@@ -264,7 +264,8 @@ void main() {
       final painter = tester
           .widgetList<CustomPaint>(find.byType(CustomPaint))
           .map((p) => p.painter)
-          .whereType<SvgHeightViewConePainter>()
+          .whereType<ShadowedConePainter>()
+          .map((painter) => painter.cone)
           .single;
       return (await tester.runAsync(() async {
         final recorder = ui.PictureRecorder();
@@ -334,7 +335,8 @@ void main() {
     final painter = tester
         .widgetList<CustomPaint>(find.byType(CustomPaint))
         .map((p) => p.painter)
-        .whereType<SvgHeightViewConePainter>()
+        .whereType<ShadowedConePainter>()
+          .map((painter) => painter.cone)
         .single;
     const size = Size(400, 300);
     final bytes = (await tester.runAsync(() async {
@@ -430,7 +432,7 @@ void main() {
     expect(
         find.byWidgetPredicate((widget) =>
             widget is CustomPaint &&
-            widget.painter is SvgHeightViewConePainter),
+            widget.painter is ShadowedConePainter),
         findsOneWidget);
   });
 
@@ -460,7 +462,8 @@ void main() {
       return tester
           .widgetList<CustomPaint>(find.byType(CustomPaint))
           .map((p) => p.painter)
-          .whereType<SvgHeightViewConePainter>()
+          .whereType<ShadowedConePainter>()
+          .map((painter) => painter.cone)
           .single;
     }
 
@@ -562,7 +565,8 @@ void main() {
         final actual = tester
             .widgetList<CustomPaint>(find.byType(CustomPaint))
             .map((p) => p.painter)
-            .whereType<SvgHeightViewConePainter>()
+            .whereType<ShadowedConePainter>()
+          .map((painter) => painter.cone)
             .single;
         final origin = coordinates.positionForSide(
             canonicalPosition: canonical,

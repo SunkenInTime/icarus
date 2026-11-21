@@ -1,6 +1,6 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/map_artwork_registration.dart';
@@ -8,6 +8,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 
 class SvgHeightMapTransform {
   SvgHeightMapTransform._(this.map)
@@ -131,6 +132,8 @@ class SvgHeightViewCone extends StatefulWidget {
     this.elevation,
     this.opacity = 1,
     this.changedDoors = const {},
+    this.blockers,
+    this.carriedBy = Offset.zero,
   });
 
   final SvgHeightRuntime runtime;
@@ -140,6 +143,8 @@ class SvgHeightViewCone extends StatefulWidget {
   final double? elevation;
   final double opacity;
   final Set<String> changedDoors;
+  final SightBlockers? blockers;
+  final Offset carriedBy;
 
   @override
   State<SvgHeightViewCone> createState() => _SvgHeightViewConeState();
@@ -148,8 +153,12 @@ class SvgHeightViewCone extends StatefulWidget {
 class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
   static final _receiverPaths = Expando<Path>();
   final _observer = Object();
-  Object? _paintInputs;
-  SvgHeightViewConePainter? _painter;
+  ({
+    Object inputs,
+    SvgHeightViewConePainter cone,
+    Float64List sourceToCanvas
+  })? _drawnCone;
+  ShadowedConePainter? _painter;
   Object? _receiverKey;
   Path? _rotatedReceiver;
 
@@ -189,13 +198,14 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       return const SizedBox.expand();
     }
 
+    final reach = widget.range / mapTransform.scale;
     final support = model.standingSupportAt(sourceOrigin,
         savedEyeElevationCm: widget.elevation);
     final result = widget.runtime.cache(widget.isAttack).cone(
           observerId: _observer,
           origin: sourceOrigin,
           directionRadians: widget.rotation - math.pi / 2,
-          range: widget.range / mapTransform.scale,
+          range: reach,
           apertureRadians: widget.angle,
           supportId: support?.id,
           changedDoors: widget.changedDoors,
@@ -217,9 +227,50 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
       coordinates.worldOffsetToScreen(const Offset(1, 1)),
       widget.opacity,
     );
-    if (_paintInputs == paintInputs) {
-      return ConeArea(size: size, painter: _painter!, fallback: _painter!);
+    final previous = _drawnCone;
+    final drawnCone = previous != null && previous.inputs == paintInputs
+        ? previous
+        : _paintCone(paintInputs, model, mapTransform, rawOrigin, result.cone,
+            radius, reach);
+    _drawnCone = drawnCone;
+    final (cone: cone, sourceToCanvas: sourceToCanvas, inputs: _) = drawnCone;
+    final shown = _painter;
+    if (shown != null &&
+        identical(shown.cone, cone) &&
+        identical(shown.blockers, widget.blockers) &&
+        shown.sight.carriedBy == widget.carriedBy) {
+      return ConeArea(size: size, painter: shown, fallback: shown);
     }
+    final painter = _painter = ShadowedConePainter(
+      cone,
+      blockers: widget.blockers,
+      sight: ConeSight(
+        map: mapTransform,
+        isAttack: widget.isAttack,
+        eye: rawOrigin,
+        reach: reach,
+        view: (
+          heading: widget.rotation - math.pi / 2,
+          spread: widget.angle / 2,
+        ),
+        sourceToCanvas: sourceToCanvas,
+        carriedBy: widget.carriedBy,
+      ),
+    );
+    return ConeArea(size: size, painter: painter, fallback: painter);
+  }
+
+  ({Object inputs, SvgHeightViewConePainter cone, Float64List sourceToCanvas})
+      _paintCone(
+    Object inputs,
+    SvgHeightVisibility model,
+    SvgHeightMapTransform mapTransform,
+    Offset rawOrigin,
+    SvgVisibilityCone cone,
+    double radius,
+    double reach,
+  ) {
+    final coordinates = CoordinateSystem.instance;
     final apex = Offset(radius, radius);
     final inverse = -widget.rotation;
     final cosine = math.cos(inverse), sine = math.sin(inverse);
@@ -256,19 +307,16 @@ class _SvgHeightViewConeState extends State<SvgHeightViewCone> {
         ..[10] = 1
         ..[15] = 1);
     }
-    _paintInputs = paintInputs;
-    _painter = SvgHeightViewConePainter.fromPaths(
-      visibility: result.cone.outlinePath(transform),
+    final painter = SvgHeightViewConePainter.fromPaths(
+      visibility: cone.outlinePath(transform),
       receiver: _rotatedReceiver!,
       receiverOffset: Offset(transform[12], transform[13]),
       apex: apex,
       radius: radius,
       opacity: widget.opacity,
-      floors: result.cone.floors.isEmpty
-          ? null
-          : (result.cone, transform, widget.range / mapTransform.scale),
+      floors: cone.floors.isEmpty ? null : (cone, transform, reach),
     );
-    return ConeArea(size: size, painter: _painter!, fallback: _painter!);
+    return (inputs: inputs, cone: painter, sourceToCanvas: transform);
   }
 
   static Path _combinedReceiver(SvgHeightVisibility model) {
@@ -441,4 +489,146 @@ class SvgHeightViewConePainter extends CustomPainter
       oldDelegate.receiverOffset != receiverOffset ||
       oldDelegate.opacity != opacity ||
       oldDelegate.floors != floors;
+}
+
+VisionOccluder occluderInSource(
+  VisionOccluder canonical,
+  SvgHeightMapTransform map, {
+  required bool isAttack,
+  Offset carriedBy = Offset.zero,
+}) {
+  Offset source(Offset point) => map.sourceFromSideWorld(
+        CoordinateSystem.instance.positionForSide(
+          canonicalPosition: point - carriedBy,
+          reflectionOffset: Offset.zero,
+          isAttack: isAttack,
+        ),
+        isAttack: isAttack,
+      );
+  return switch (canonical) {
+    CircleOccluder() => canonical.map(source, 1 / map.scale),
+    LineOccluder() => canonical.map(source),
+  };
+}
+
+@immutable
+class ConeSight {
+  const ConeSight({
+    required this.map,
+    required this.isAttack,
+    required this.eye,
+    required this.reach,
+    required this.view,
+    required this.sourceToCanvas,
+    this.carriedBy = Offset.zero,
+  });
+
+  final SvgHeightMapTransform map;
+  final bool isAttack;
+  final Offset eye;
+  final double reach;
+  final ConeView view;
+  final Float64List sourceToCanvas;
+  final Offset carriedBy;
+
+  List<VisionOccluder> near(Iterable<SightBlock> blocks) => [
+        for (final block in blocks)
+          if (occluderInSource(block.shape, map,
+                  isAttack: isAttack, carriedBy: carriedBy)
+              case final shape when shape.reaches(eye, reach))
+            shape,
+      ];
+}
+
+class ShadowedConePainter extends CustomPainter implements ConeAreaPainter {
+  ShadowedConePainter(this.cone, {required this.sight, this.blockers})
+      : super(repaint: blockers);
+
+  final SvgHeightViewConePainter cone;
+  final ConeSight sight;
+  final SightBlockers? blockers;
+  final _shadows = _Shadows();
+
+  @override
+  double get opacity => cone.opacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final hidden = _shadows.of(sight, blockers);
+    switch (hidden) {
+      case _Blind():
+        return;
+      case _Clear():
+        cone.paint(canvas, size);
+      case _Hidden():
+        canvas.saveLayer(Offset.zero & size, Paint());
+        cone.paint(canvas, size);
+        _erase(canvas, hidden.path);
+        canvas.restore();
+    }
+  }
+
+  @override
+  void paintArea(Canvas canvas, Size size, Paint fill,
+      {required bool clipToFloor}) {
+    final hidden = _shadows.of(sight, blockers);
+    if (hidden is _Blind) return;
+    cone.paintArea(canvas, size, fill, clipToFloor: clipToFloor);
+    if (hidden is _Hidden) _erase(canvas, hidden.path);
+  }
+
+  static final _clear = Paint()..blendMode = BlendMode.clear;
+
+  void _erase(Canvas canvas, Path hidden) {
+    canvas.save();
+    canvas.transform(sight.sourceToCanvas);
+    canvas.drawPath(hidden, _clear);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(ShadowedConePainter oldDelegate) =>
+      cone.shouldRepaint(oldDelegate.cone) ||
+      !identical(oldDelegate.sight, sight) ||
+      !identical(oldDelegate.blockers, blockers);
+}
+
+sealed class _WhatBlocks {
+  const _WhatBlocks();
+}
+
+class _Clear extends _WhatBlocks {
+  const _Clear();
+}
+
+class _Blind extends _WhatBlocks {
+  const _Blind();
+}
+
+class _Hidden extends _WhatBlocks {
+  const _Hidden(this.path);
+
+  final Path path;
+}
+
+class _Shadows {
+  int? _version;
+  List<VisionOccluder>? _near;
+  _WhatBlocks _last = const _Clear();
+
+  _WhatBlocks of(ConeSight sight, SightBlockers? blockers) {
+    final version = blockers?.version ?? 0;
+    if (version == _version) return _last;
+    _version = version;
+    final near = sight.near(blockers?.all ?? const []);
+    if (listEquals(near, _near)) return _last;
+    _near = near;
+    return _last = standsInsideSmoke(sight.eye, near)
+        ? const _Blind()
+        : switch (
+            occluderShadows(sight.eye, sight.reach, near, view: sight.view)) {
+            final path? => _Hidden(path),
+            null => const _Clear(),
+          };
+  }
 }

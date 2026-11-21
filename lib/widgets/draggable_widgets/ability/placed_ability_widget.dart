@@ -24,6 +24,7 @@ import 'package:icarus/widgets/draggable_widgets/view_cone_drag_origin.dart';
 import 'dart:math' as math;
 
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
@@ -84,7 +85,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   double? localLength;
   bool isDragging = false;
   String? _activeDragId;
-  final _visionDragOrigin = ViewConeDragOrigin();
+  final _dragOrigin = ViewConeDragOrigin();
   ProviderContainer? _container;
 
   @override
@@ -97,16 +98,13 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   void dispose() {
     // Flutter skips onDragEnd once the Draggable has gone, which would leave
     // the wall hidden for good.
-    if (_activeDragId != null) {
+    if (_activeDragId case final id?) {
       final container = _container!;
-      final id = _activeDragId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (container.read(wallCarriedProvider) == id) {
-          container.read(wallCarriedProvider.notifier).set(null);
-        }
+        container.read(wallCarriedProvider.notifier).drop(id);
       });
     }
-    _visionDragOrigin.dispose();
+    _dragOrigin.dispose();
     super.dispose();
   }
 
@@ -134,6 +132,72 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final rotatedY = dx * math.sin(angle) + dy * math.cos(angle);
 
     return Offset(rotatedX + origin.dx, rotatedY + origin.dy);
+  }
+
+  void _startDrag(Offset dot, bool isAttack) => _dragOrigin.start(
+        origin: dot,
+        coordinates: CoordinateSystem.instance,
+        zoom: ref.read(screenZoomProvider),
+        isAttack: isAttack,
+      );
+
+  int? _dragLimit(PlacedAbility ability) =>
+      itemDragLimit(context) ?? (blocksSight(ability.data) ? 1 : null);
+
+  Widget _heldWhileOnPage(PlacedAbility held, Widget preview) {
+    if (!blocksSight(held.data)) return preview;
+    return Consumer(
+      child: preview,
+      builder: (context, ref, preview) => ref.watch(abilityProvider.select(
+              (abilities) => abilities.any((ability) => ability.id == held.id)))
+          ? preview!
+          : const SizedBox.shrink(),
+    );
+  }
+
+  void _endDrag(DraggableDetails details, String id) {
+    _dragOrigin.end();
+    widget.onDragEnd(details, id);
+  }
+
+  Widget _blockingAsDrawn({
+    required PlacedAbility saved,
+    required Offset dot,
+    required double mapScale,
+    required bool isAttack,
+    required Widget child,
+  }) {
+    if (widget.isLineUp || !blocksSight(saved.data)) return child;
+    final carried = carriedBySelection(context);
+    final draft = ref.watch(wallDraftProvider
+        .select((draft) => draft?.id == saved.id ? draft!.path : null));
+    return ValueListenableBuilder<Offset?>(
+      valueListenable: _dragOrigin,
+      child: child,
+      builder: (context, _, child) {
+        final dragged = _dragOrigin.anchorSeenFrom(isAttack: isAttack);
+        final turn = dragged == null
+            ? 0.0
+            : _dragOrigin.turnSeenFrom(isAttack: isAttack);
+        final position = dragged != null
+            ? saved.position + dragged - dot
+            : carried != null
+                ? saved.position +
+                    selectionDragInWorld(carried, isAttack: isAttack)
+                : saved.position;
+        return SightBlocker(
+          block: sightBlockOf(
+            saved.copyWith(
+              position: position,
+              rotation: localRotation! + turn,
+              wallPath: draft,
+            ),
+            mapScale: mapScale,
+          ),
+          child: child!,
+        );
+      },
+    );
   }
 
   /// Looks the ability up now, not at build: a teammate's change may have
@@ -294,7 +358,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       } else {
         buttonTop = null;
       }
-      return Positioned(
+      final drawn = Positioned(
         left: screenPosition.dx,
         top: screenPosition.dy,
         child: RotatableWidget(
@@ -382,9 +446,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           },
           child: CanvasDraggable<PlacedWidget>(
             dot: dot,
-            maxSimultaneousDrags: itemDragLimit(context),
+            maxSimultaneousDrags: _dragLimit(abilityRef),
             data: widget.data,
             dragAnchorStrategy: (draggable, context, position) {
+              _startDrag(dot, isAttack);
               final RenderBox renderObject =
                   context.findRenderObject()! as RenderBox;
               final anchorPoint = abilityData
@@ -403,7 +468,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                   .read(screenZoomProvider.notifier)
                   .zoomOffset(rotatedPos);
             },
-            feedback: Opacity(
+            feedback: _heldWhileOnPage(
+              abilityRef,
+              Opacity(
               opacity: Settings.feedbackOpacity,
               child: Transform.rotate(
                 angle: displayRotation,
@@ -432,8 +499,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                   ),
                 ),
               ),
-            ),
+            )),
             childWhenDragging: const SizedBox.shrink(),
+            onDragUpdate: _dragOrigin.update,
             onDragStarted: () {
               final shouldDuplicate =
                   !widget.isLineUp && ref.read(duplicateDragModifierProvider);
@@ -454,7 +522,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                 isDragging = false;
                 _activeDragId = null;
               });
-              widget.onDragEnd(details, dragId);
+              _endDrag(details, dragId);
             },
             child: EditorItemOutline(
               child: abilityData.createWidget(
@@ -472,6 +540,13 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           ),
         ),
       );
+      return _blockingAsDrawn(
+        saved: abilityRef,
+        dot: dot,
+        mapScale: mapScale,
+        isAttack: isAttack,
+        child: drawn,
+      );
     }
     final screenPosition = screenPositionForWidget(
       widget: widget.ability,
@@ -486,16 +561,22 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             isAttack: isAttack,
           )
         : null;
-    return Positioned(
+    final drawn = Positioned(
       left: screenPosition.dx,
       top: screenPosition.dy,
       child: CanvasDraggable<PlacedWidget>(
         dot: dot,
-        maxSimultaneousDrags: itemDragLimit(context),
-        dragAnchorStrategy:
-            ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+        maxSimultaneousDrags: _dragLimit(abilityRef),
+        dragAnchorStrategy: (draggable, context, position) {
+          _startDrag(dot, isAttack);
+          return ref
+              .read(screenZoomProvider.notifier)
+              .zoomDragAnchorStrategy(draggable, context, position);
+        },
         data: widget.data,
-        feedback: Opacity(
+        feedback: _heldWhileOnPage(
+              abilityRef,
+              Opacity(
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(
             child: WallFeedback(
@@ -511,8 +592,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               ),
             ),
           ),
-        ),
+        )),
         childWhenDragging: const SizedBox.shrink(),
+        onDragUpdate: _dragOrigin.update,
         onDragStarted: () {
           final shouldDuplicate =
               !widget.isLineUp && ref.read(duplicateDragModifierProvider);
@@ -525,15 +607,15 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           setState(() {
             _activeDragId = duplicateId ?? abilityRef.id;
           });
-          ref.read(wallCarriedProvider.notifier).set(_activeDragId);
+          ref.read(wallCarriedProvider.notifier).carry(_activeDragId!);
         },
         onDragEnd: (details) {
           final dragId = _activeDragId ?? abilityRef.id;
           setState(() {
             _activeDragId = null;
           });
-          widget.onDragEnd(details, dragId);
-          ref.read(wallCarriedProvider.notifier).set(null);
+          _endDrag(details, dragId);
+          ref.read(wallCarriedProvider.notifier).drop(dragId);
         },
         child: EditorItemOutline(
           child: widget.ability.data.abilityData!.createWidget(
@@ -548,6 +630,13 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           ),
         ),
       ),
+    );
+    return _blockingAsDrawn(
+      saved: abilityRef,
+      dot: dot,
+      mapScale: mapScale,
+      isAttack: isAttack,
+      child: drawn,
     );
   }
 
@@ -650,7 +739,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           maxSimultaneousDrags: itemDragLimit(context),
           data: widget.data,
           dragAnchorStrategy: (draggable, context, position) {
-            _visionDragOrigin.start(
+            _dragOrigin.start(
                 origin: abilityRef.position +
                     coordinateSystem.virtualOffsetToWorld(storedAbilityAnchor(
                         ability: abilityData, mapScale: mapScale)),
@@ -668,11 +757,13 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                 .read(screenZoomProvider.notifier)
                 .zoomOffset(rotatedPosition);
           },
-          feedback: Opacity(
+          feedback: SightBlockersScope(
+            blockers: SightBlockersScope.of(context),
+            child: Opacity(
             opacity: Settings.feedbackOpacity,
             child: ZoomTransform(
               child: ValueListenableBuilder<Offset?>(
-                valueListenable: _visionDragOrigin,
+                valueListenable: _dragOrigin,
                 builder: (context, origin, child) => AbilityVisionConeComposite(
                   ability: abilityRef,
                   spec: visionSpec,
@@ -685,9 +776,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                 ),
               ),
             ),
-          ),
+          )),
           childWhenDragging: const SizedBox.shrink(),
-          onDragUpdate: _visionDragOrigin.update,
+          onDragUpdate: _dragOrigin.update,
           onDragStarted: () {
             final shouldDuplicate = ref.read(duplicateDragModifierProvider);
             final duplicateId = shouldDuplicate
@@ -702,7 +793,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             });
           },
           onDragEnd: (details) {
-            _visionDragOrigin.end();
+            _dragOrigin.end();
             final dragId = _activeDragId ?? abilityRef.id;
             setState(() {
               isDragging = false;

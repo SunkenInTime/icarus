@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 
 /// View cones as a revealed floor: the floor under any cone turns one
 /// lighter shade of itself, however many cones cover it, and walls, sites and
@@ -19,6 +20,11 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 /// of painting themselves; a cone outside any [ConeCoverageScope] (a drag
 /// preview in the app's overlay) paints itself.
 class ConeCoverage extends ChangeNotifier {
+  ConeCoverage() {
+    blockers.addListener(notifyListeners);
+  }
+
+  final blockers = SightBlockers();
   final _areas = <RenderConeArea>{};
 
   Iterable<RenderConeArea> get areas => _areas;
@@ -37,6 +43,12 @@ class ConeCoverage extends ChangeNotifier {
   /// Repaints the layer from where the cones sit now, after something above
   /// them moved them without a new layout (a drag of the selection).
   void moved() => notifyListeners();
+
+  @override
+  void dispose() {
+    blockers.dispose();
+    super.dispose();
+  }
 }
 
 /// How much of the way a cone lifts the floor toward the theme's wall

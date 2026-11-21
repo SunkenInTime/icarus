@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/widgets/canvas_draggable.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
@@ -326,7 +327,9 @@ class _PlacedViewConeAgentWidgetState
           // No Opacity wrapper: the cone paints at the preview alpha itself,
           // so the engine does not composite the whole preview offscreen on
           // every drag frame.
-          feedback: ZoomTransform(
+          feedback: SightBlockersScope(
+            blockers: SightBlockersScope.of(context),
+            child: ZoomTransform(
             child: ValueListenableBuilder<Offset?>(
               valueListenable: _dragOrigin,
               builder: (context, origin, child) => ViewConeAgentComposite(
@@ -339,7 +342,7 @@ class _PlacedViewConeAgentWidgetState
                 previewOpacity: Settings.feedbackOpacity,
               ),
             ),
-          ),
+          )),
           childWhenDragging: const SizedBox.shrink(),
           onDragUpdate: _dragOrigin.update,
           onDragStarted: () {
