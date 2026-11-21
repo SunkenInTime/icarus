@@ -140,17 +140,6 @@ enum ReplayUtilityKind {
   flight,
 }
 
-/// How a utility blocks sight while it is up, beyond the map's walls.
-enum ReplayVisionBlock {
-  /// A smoke, as wide as the ability draws it.
-  sphere,
-
-  /// A wall of smoke, fire or water along the utility's shape points, or
-  /// along its path when it has none (Harbor's High Tide is where its head
-  /// went).
-  line,
-}
-
 /// Whether [classPath] is the actor that keeps a
 /// [ReplayUtilityKind.guidedWall] standing once its head has stopped. The
 /// same cast opens it and it closes when the wall comes down; it draws
@@ -163,9 +152,8 @@ class ReplayAbilityEntry {
     this.agent,
     this.abilityIndex,
     this.kind,
-    this._placement, {
-    this.blocks,
-  });
+    this._placement,
+  );
 
   final AgentType agent;
 
@@ -175,9 +163,6 @@ class ReplayAbilityEntry {
   final int abilityIndex;
   final ReplayUtilityKind kind;
   final _Placement _placement;
-
-  /// How it blocks sight, when it does.
-  final ReplayVisionBlock? blocks;
 
   AbilityInfo get ability => AgentData.agents[agent]!.abilities[abilityIndex];
 
@@ -446,9 +431,6 @@ const _fromStart = _FromStart();
 
 ReplayAbilityEntry _area(AgentType agent, int index) =>
     ReplayAbilityEntry._(agent, index, ReplayUtilityKind.area, _point);
-ReplayAbilityEntry _smoke(AgentType agent, int index) =>
-    ReplayAbilityEntry._(agent, index, ReplayUtilityKind.area, _point,
-        blocks: ReplayVisionBlock.sphere);
 ReplayAbilityEntry _flight(AgentType agent, int index) =>
     ReplayAbilityEntry._(agent, index, ReplayUtilityKind.flight, _point);
 ReplayAbilityEntry _marker(AgentType agent, int index) =>
@@ -473,8 +455,8 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   // Astra (Rift), asset index. Astra Star (index 4) has no actor we know of.
   'GameObject_Rift_4_BlackHole': _area(AgentType.astra, 0),
   'GameObject_Rift_Q_FlashBurst': _area(AgentType.astra, 1),
-  'GameObject_Rift_E_SmokeZone': _smoke(AgentType.astra, 2),
-  'GameObject_Rift_E_SmokeZone_Fake': _smoke(AgentType.astra, 2),
+  'GameObject_Rift_E_SmokeZone': _area(AgentType.astra, 2),
+  'GameObject_Rift_E_SmokeZone_Fake': _area(AgentType.astra, 2),
   'GameObject_Rift_X_GlobalWall': const ReplayAbilityEntry._(
       AgentType.astra, 3, ReplayUtilityKind.wall, _facing),
 
@@ -489,7 +471,7 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Projectile_Sarge_E_SpeedStim': _flight(AgentType.brimstone, 0),
   'Patch_Sarge_Q_Molotov_Production': _area(AgentType.brimstone, 1),
   'Projectile_Sarge_Q_Molotov_Production': _flight(AgentType.brimstone, 1),
-  'GameObject_Sarge_4_Smoke_ProductionNEW': _smoke(AgentType.brimstone, 2),
+  'GameObject_Sarge_4_Smoke_ProductionNEW': _area(AgentType.brimstone, 2),
   'GameObject_Sarge_X_OrbitalStrike_Production': _area(AgentType.brimstone, 3),
 
   // Chamber (Deadeye). Headhunter and Tour De Force are guns.
@@ -500,8 +482,8 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   // Clove (Smonk). Pick-me-up and Not Dead Yet have no actor.
   'GameObject_Smonk_Q_DecayExplosion': _area(AgentType.clove, 1),
   'Projectile_Smonk_DecayNade': _flight(AgentType.clove, 1),
-  'GameObject_Smonk_NewSmoke': _smoke(AgentType.clove, 2),
-  'GameObject_Smonk_NewSmoke_PDS': _smoke(AgentType.clove, 2),
+  'GameObject_Smonk_NewSmoke': _area(AgentType.clove, 2),
+  'GameObject_Smonk_NewSmoke_PDS': _area(AgentType.clove, 2),
 
   // Cypher (Gumshoe). The Trapwire actor sits on its first anchor, its yaw
   // toward the second, which is the _SecondWire actor's position. Given
@@ -509,7 +491,7 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   // yaw at full length. The thrown cage never replicates where it lands
   // (its actor stays on Cypher), so only the cage zone is drawn.
   'GameObject_Gumshoe_E_TripWire': _wall(AgentType.cypher, 0),
-  'Zone_Gumshoe_4_Cage': _smoke(AgentType.cypher, 1),
+  'Zone_Gumshoe_4_Cage': _area(AgentType.cypher, 1),
   'Pawn_Gumshoe_Q_PossessableCamera': _marker(AgentType.cypher, 2),
   'GameObject_RemovableObject_GumshoeTrackingDart':
       _marker(AgentType.cypher, 2),
@@ -551,9 +533,8 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   // wall up after it stops, 15 s in the 13.09 blueprints.
   'GameObject_Mage_4_SplashGrenade': _area(AgentType.harbor, 0),
   'Projectile_Mage_Q_Wall': const ReplayAbilityEntry._(
-      AgentType.harbor, 1, ReplayUtilityKind.guidedWall, _point,
-      blocks: ReplayVisionBlock.line),
-  'GameObject_Mage_E_WorldSmoke': _smoke(AgentType.harbor, 2),
+      AgentType.harbor, 1, ReplayUtilityKind.guidedWall, _point),
+  'GameObject_Mage_E_WorldSmoke': _area(AgentType.harbor, 2),
   'GameObject_Mage_X_TidalWave': _rectangle(AgentType.harbor, 3),
 
   // Hush (Paprika), 13.09 asset index. Flow's actor is its anchor; the
@@ -575,7 +556,7 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'GameObject_Sequoia_X_LineCapture': _rectangle(AgentType.iso, 3),
 
   // Jett (Wushu). Updraft, Tailwind and Blade Storm have no lasting actor.
-  'GameObject_Wushu_4_SmokeZone': _smoke(AgentType.jett, 0),
+  'GameObject_Wushu_4_SmokeZone': _area(AgentType.jett, 0),
   'Projectile_Wushu_4_Smoke': _flight(AgentType.jett, 0),
 
   // KAY/O (Grenadier). FRAG/ment and NULL/cmd from the asset index. The
@@ -599,7 +580,7 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   'Projectile_Thumper_Concuss': _flight(AgentType.miks, 0),
   'Projectile_Thumper_Heal': _flight(AgentType.miks, 1),
   'GameObject_Thumper_Heal': _area(AgentType.miks, 1),
-  'GameObject_Iris_E_Smoke': _smoke(AgentType.miks, 2),
+  'GameObject_Iris_E_Smoke': _area(AgentType.miks, 2),
   'GameObject_Iris_X_SonicWave': const ReplayAbilityEntry._(
       AgentType.miks, 4, ReplayUtilityKind.area, _facing),
 
@@ -609,7 +590,7 @@ final Map<String, ReplayAbilityEntry> _catalog = {
 
   // Omen (Wraith). Shrouded Step has no actor.
   'Projectile_Wraith_Q_NearsightMissile': _sweep(AgentType.omen, 1),
-  'Zone_Wraith_4_Smoke': _smoke(AgentType.omen, 2),
+  'Zone_Wraith_4_Smoke': _area(AgentType.omen, 2),
   'Projectile_Wraith_4_Smoke': _flight(AgentType.omen, 2),
   'Intention_Wraith_X_GlobalTeleport': _marker(AgentType.omen, 3),
 
@@ -618,8 +599,7 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   // projectile, left or right.
   'GameObject_Phoenix_Q_FlameWallManager_Production':
       const ReplayAbilityEntry._(
-          AgentType.pheonix, 0, ReplayUtilityKind.wall, _fromStart,
-          blocks: ReplayVisionBlock.line),
+          AgentType.pheonix, 0, ReplayUtilityKind.wall, _fromStart),
   'Patch_Phoenix_MolotovFire': _area(AgentType.pheonix, 2),
   'Projectile_Phoenix_E_FlareCurve_Synced': _projectile(AgentType.pheonix, 1),
   'Projectile_Phoenix_E_FlareCurve_Synced_Right':
@@ -680,10 +660,9 @@ final Map<String, ReplayAbilityEntry> _catalog = {
   // Viper (Pandemic), asset index. Toxic Screen's points come from its
   // manager's MulticastAddSmokeScreenPoint (Giehl's SmokeScreenManager).
   'Patch_Pandemic_AcidMolotov_NewMolotov': _area(AgentType.viper, 0),
-  'GameObject_Pandemic_4_SmokeZone': _smoke(AgentType.viper, 1),
+  'GameObject_Pandemic_4_SmokeZone': _area(AgentType.viper, 1),
   'GameObject_Pandemic_E_SmokeScreenManager': const ReplayAbilityEntry._(
-      AgentType.viper, 2, ReplayUtilityKind.wall, _fromStart,
-      blocks: ReplayVisionBlock.line),
+      AgentType.viper, 2, ReplayUtilityKind.wall, _fromStart),
   'Patch_Pandemic_X_Circular': _area(AgentType.viper, 3),
 
   // Vyse (Nox). Icarus index 0 is Shear and index 1 Razorvine, not the
