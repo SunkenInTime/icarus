@@ -7280,6 +7280,73 @@ void main() {
       await _settle();
     });
 
+    Map<String, List<String>> lineupOrder(LineUpState state) => {
+          'origins': [for (final origin in state.origins) origin.id],
+          'landings': [for (final landing in state.landings) landing.id],
+          'links': [for (final link in state.links) link.id],
+        };
+
+    LineUpLink placeFrom(ProviderContainer container, String originId) {
+      final lineUps = container.read(lineUpProvider.notifier)
+        ..startFromOrigin(originId);
+      lineUps.setDraftAbility(PlacedAbility(
+        id: 'ability-from-$originId',
+        data: AgentData.agents[AgentType.sova]!.abilities[2],
+        position: const Offset(320, 320),
+      ));
+      return lineUps.commitPlacement()!;
+    }
+
+    test(
+        'a lineup from a standing spot already there lands as the editor '
+        'shows it', () async {
+      final (container, remote, page) = await openEmpty();
+      final a1 = place(container);
+      final b1 = place(container);
+      await land(container, remote, page, contentRevision: 2);
+
+      final a2 = placeFrom(container, a1.originId);
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      expect(drawn['links'], [a1.id, a2.id, b1.id]);
+      final ops = lineupOps(desiredOps(container, page));
+      expect(ops.keys, [keyOf(page, groupOf(container, page, a1.id))]);
+      final patch = ops.values.single as LineupPatchOp;
+      expect(
+        _entries(cloudPayloadData(patch.payload), 'links')
+            .map((link) => link['id']),
+        [a1.id, a2.id],
+      );
+
+      await land(container, remote, page, contentRevision: 3);
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
+    test('an undone deletion lands where the editor puts it back', () async {
+      final (container, remote, page) = await openEmpty();
+      final a1 = place(container);
+      final a2 = placeFrom(container, a1.originId);
+      final b1 = place(container);
+      final c1 = place(container);
+      await land(container, remote, page, contentRevision: 2);
+      final placed = lineupOrder(container.read(lineUpProvider));
+      expect(placed['links'], [a1.id, a2.id, b1.id, c1.id]);
+
+      container.read(lineUpProvider.notifier)
+        ..deleteLink(a1.id)
+        ..deleteLink(b1.id);
+      await land(container, remote, page, contentRevision: 3);
+      expect(server.row(groupOf(container, page, b1.id)).deleted, isTrue);
+      container.read(actionProvider.notifier)
+        ..undoAction()
+        ..undoAction();
+      expect(lineupOrder(container.read(lineUpProvider)), placed);
+
+      await land(container, remote, page, contentRevision: 4);
+      expect(lineupOrder(container.read(lineUpProvider)), placed);
+      await _settle();
+    });
+
     test('a fan-out lineup keeps its shared origin, ids and names', () async {
       final (container, remote, page) = await openEmpty();
       final (a, b) = placeFanOut(container);
@@ -7384,8 +7451,8 @@ void main() {
       final restored = container.read(lineUpProvider);
       expect(restored.landings.single.id, a.landingId);
       expect(linkShape(restored), [
-        (b.id, b.originId, a.landingId, 'From mid'),
         (a.id, a.originId, a.landingId, 'From heaven'),
+        (b.id, b.originId, a.landingId, 'From mid'),
       ]);
       final ops = desiredOps(container, page);
       expectLineupRows(ops);
@@ -7395,7 +7462,7 @@ void main() {
         server.row(group).revision,
       );
       lineups = await land(container, remote, page, contentRevision: 4);
-      expect(_groupsOf(lineups)[group]!['links'], [b.id, a.id]);
+      expect(_groupsOf(lineups)[group]!['links'], [a.id, b.id]);
       expect(_groupsOf(lineups)[group]!['landings'], [a.landingId]);
       expect(server.row(group).revision, 3);
       expect(linkShape(container.read(lineUpProvider)), hasLength(2));
@@ -8316,8 +8383,8 @@ void main() {
       store.failPut = null;
       await session.setActivePage(other.publicId);
       readPage(other.publicId);
-      await _until(() =>
-          server.elements.any((element) => element.publicId == 'local'));
+      await _until(
+          () => server.elements.any((element) => element.publicId == 'local'));
       expect(container.read(strategyPageSessionProvider).activePageId,
           other.publicId);
     });
@@ -8340,8 +8407,8 @@ void main() {
             type: AgentType.jett,
             position: const Offset(40, 40),
           ));
-      await _until(() =>
-          container.read(strategyOpQueueProvider).hasDurabilityFailure);
+      await _until(
+          () => container.read(strategyOpQueueProvider).hasDurabilityFailure);
       for (var i = 0; i < 10; i++) {
         await _settle();
       }
@@ -8358,8 +8425,8 @@ void main() {
 
       expect(container.read(strategyPageSessionProvider).activePageId,
           page.publicId);
-      expect(container.read(agentProvider).map((agent) => agent.id),
-          ['agent-b']);
+      expect(
+          container.read(agentProvider).map((agent) => agent.id), ['agent-b']);
 
       store.failPut = null;
       await container
@@ -8395,8 +8462,8 @@ void main() {
             type: AgentType.jett,
             position: const Offset(40, 40),
           ));
-      await _until(() =>
-          container.read(strategyOpQueueProvider).hasDurabilityFailure);
+      await _until(
+          () => container.read(strategyOpQueueProvider).hasDurabilityFailure);
       for (var i = 0; i < 10; i++) {
         await _settle();
       }

@@ -1,5 +1,6 @@
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/lineup_group_order.dart';
 import 'package:uuid/uuid.dart';
 
 /// One cloud row per lineup group: lineups that share a standing spot or a
@@ -138,33 +139,15 @@ CloudLineupRows cloudLineupRows(
     }
   }
 
-  // New lineups, joined through the spots they share: each kind of id in
-  // its own namespace, so an origin and a landing with one id stay apart.
-  final parent = <String, String>{};
-  String find(String node) {
-    final up = parent[node] ?? node;
-    if (up == node) return node;
-    return parent[node] = find(up);
-  }
-
-  void union(String a, String b) {
-    final rootA = find(a);
-    final rootB = find(b);
-    if (rootA != rootB) parent[rootA] = rootB;
-  }
-
   final newLinks = [
     for (final link in links)
       if (!linkGroup.containsKey(link.id)) link,
   ];
-  for (final link in newLinks) {
-    union('k:${link.id}', 'o:${link.originId}');
-    union('k:${link.id}', 'l:${link.landingId}');
-  }
+  final componentOf = sharedSpotGroups(newLinks);
   final componentLinks = <String, List<LineUpLink>>{};
   final componentGroups = <String, Set<String>>{};
   for (final link in newLinks) {
-    final root = find('k:${link.id}');
+    final root = componentOf[link.id]!;
     (componentLinks[root] ??= []).add(link);
     for (final spot in ['o:${link.originId}', 'l:${link.landingId}']) {
       if (spotGroup[spot] case final group?) {
@@ -197,28 +180,23 @@ CloudLineupRows cloudLineupRows(
     }
   }
 
-  final linksByGroup = <String, List<LineUpLink>>{};
-  for (final link in links) {
-    (linksByGroup[linkGroup[link.id]!] ??= []).add(link);
-  }
+  final groups = LineUpGraph(
+    origins: graph.origins,
+    landings: graph.landings,
+    links: links,
+  ).groupsBy((link) => linkGroup[link.id]!);
   final assigned = <String, String>{};
   final rows = <CloudLineupRow>[];
-  for (final MapEntry(key: id, value: groupLinks) in linksByGroup.entries) {
-    final usedOrigins = {for (final link in groupLinks) link.originId};
-    final usedLandings = {for (final link in groupLinks) link.landingId};
-    final origins = [
-      for (final origin in graph.origins)
-        if (usedOrigins.contains(origin.id)) origin,
-    ];
-    final landings = [
-      for (final landing in graph.landings)
-        if (usedLandings.contains(landing.id)) landing,
-    ];
-    for (final link in groupLinks) {
+  for (final group in groups) {
+    final id = linkGroup[group.links.first.id]!;
+    for (final link in group.links) {
       assigned[link.id] = id;
     }
     // A spot carried by two rows stays with the group it was in.
-    for (final spot in [...usedOrigins, ...usedLandings]) {
+    for (final spot in [
+      for (final origin in group.origins) origin.id,
+      for (final landing in group.landings) landing.id,
+    ]) {
       assigned.putIfAbsent(spot, () => groupOf[spot] ?? id);
     }
     rows.add(
@@ -226,9 +204,9 @@ CloudLineupRows cloudLineupRows(
         publicId: id,
         payload: cloudLineupsPayload({
           'id': id,
-          'origins': [for (final origin in origins) origin.toJson()],
-          'landings': [for (final landing in landings) landing.toJson()],
-          'links': [for (final link in groupLinks) link.toJson()],
+          'origins': [for (final origin in group.origins) origin.toJson()],
+          'landings': [for (final landing in group.landings) landing.toJson()],
+          'links': [for (final link in group.links) link.toJson()],
         }),
       ),
     );
@@ -296,8 +274,10 @@ final _retiredLineupKey = RegExp(r'^lineup(Origin|Landing|Link):');
     return group;
   } catch (error, stackTrace) {
     Error.throwWithStackTrace(
-      FormatException('Cloud lineup group ${row.publicId} could not be read: '
-          '$error'),
+      FormatException(
+        'Cloud lineup group ${row.publicId} could not be read: '
+        '$error',
+      ),
       stackTrace,
     );
   }
