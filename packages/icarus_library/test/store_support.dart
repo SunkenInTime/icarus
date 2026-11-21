@@ -132,6 +132,9 @@ abstract base class ForwardingLease implements StorageLease {
       inner.keys(area, prefix);
 
   @override
+  Future<Stored<List<String>>> areas(String prefix) => inner.areas(prefix);
+
+  @override
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
       inner.entries(area, prefix);
 
@@ -144,6 +147,7 @@ abstract base class ForwardingLease implements StorageLease {
 
 final class Counts {
   final reads = <(String, String)>[];
+  final areaListings = <String>[];
   final keyListings = <(String, String)>[];
   final entryListings = <(String, String)>[];
   final listedEntries = <(String, String)>[];
@@ -156,6 +160,7 @@ final class Counts {
 
   void reset() {
     reads.clear();
+    areaListings.clear();
     keyListings.clear();
     entryListings.clear();
     listedEntries.clear();
@@ -187,6 +192,12 @@ final class CountingLease extends ForwardingLease {
       ]);
     }
     return result;
+  }
+
+  @override
+  Future<Stored<List<String>>> areas(String prefix) {
+    counts.areaListings.add(prefix);
+    return super.areas(prefix);
   }
 
   @override

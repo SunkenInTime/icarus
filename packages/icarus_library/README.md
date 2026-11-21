@@ -274,8 +274,8 @@ app stops without closing, and `holdNextWrite`, which keeps the engine's next
 commit pending until `letGo`). Each check returns `Passed` or `Broke(what)`.
 This package runs them on `MemoryEngine` in `test/engine_test.dart`, along
 with broken engines the checks catch: one that loses writes in a crash, one
-that grants everyone a lease, two whose prefixes match like SQL `LIKE` (in
-`keys` and in `entries`), one that cuts a delete past the limit down onto a
+that grants everyone a lease, three whose prefixes match like SQL `LIKE`
+(in `keys`, `entries` and `areas`), one that cuts a delete past the limit down onto a
 valid name, and one that applies part of a commit and answers
 `CommitUnknown`. Every commit a check makes is compared with storage before
 and after it: `CommitApplied` must show every change, `CommitRefused` none,
@@ -295,7 +295,10 @@ and `CommitUnknown` all or none, never part.
   Reading a name past the limit is `KeyMissing`.
 - **Reading.** `read(area, key)` is `KeyHeld(value)`, `KeyMissing` or
   `KeyNotRead(failure)`. `keys(area, prefix)` lists names, `entries` lists
-  them with their values.
+  them with their values, and `areas(prefix)` lists the areas that hold at
+  least one name, under the same rules: the prefix matches literally and
+  the list is in ascending code unit order (`compareCodeUnits`). An area
+  whose last name was deleted or that was cleared is not listed.
 - **Writing is one commit, and says whether it had an effect.**
   `commit(changes)` takes any list of `Put(area, key, value)`,
   `Delete(area, key)` and `ClearArea(area)` across any areas, applies them

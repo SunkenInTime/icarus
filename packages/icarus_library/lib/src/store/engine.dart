@@ -123,6 +123,8 @@ abstract interface class StorageLease {
 
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix);
 
+  Future<Stored<List<String>>> areas(String prefix);
+
   Future<Committing> commit(List<Change> changes);
 
   Future<Releasing> release();
@@ -234,5 +236,13 @@ bool isName(String name) =>
     name.codeUnits.every((unit) => nameAlphabet.codeUnits.contains(unit));
 
 bool isArea(String area) => area.length <= maxAreaLength && isName(area);
+
+int compareCodeUnits(String a, String b) {
+  for (var i = 0; i < a.length && i < b.length; i++) {
+    final order = a.codeUnitAt(i) - b.codeUnitAt(i);
+    if (order != 0) return order;
+  }
+  return a.length - b.length;
+}
 
 const done = Done<void>(null);

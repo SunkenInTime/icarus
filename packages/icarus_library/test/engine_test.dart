@@ -91,6 +91,20 @@ final class EntriesWildcardLease extends ForwardingLease {
       };
 }
 
+final class AreasWildcardLease extends ForwardingLease {
+  AreasWildcardLease(super.inner);
+
+  @override
+  Future<Stored<List<String>>> areas(String prefix) async =>
+      switch (await inner.areas('')) {
+        Done(:final value) => Done([
+          for (final area in value)
+            if (WildcardLease(inner)._matches(area, prefix)) area,
+        ]),
+        final failed => failed,
+      };
+}
+
 final class TruncatingLease extends ForwardingLease {
   TruncatingLease(super.inner);
 
@@ -178,6 +192,10 @@ void main() {
     'whose entry prefixes match like SQL LIKE': (
       EntriesWildcardLease.new,
       'keys and entries match a prefix literally',
+    ),
+    'whose area prefixes match like SQL LIKE': (
+      AreasWildcardLease.new,
+      'lists the areas that hold names under a prefix, literally and in code unit order',
     ),
     'that cuts a delete past the limit down onto a valid name': (
       TruncatingLease.new,

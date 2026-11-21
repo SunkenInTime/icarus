@@ -172,6 +172,9 @@ final class _WatchedLease {
   Future<Stored<List<String>>> keys(String area, String prefix) =>
       _watch(_inner.keys(area, prefix));
 
+  Future<Stored<List<String>>> areas(String prefix) =>
+      _watch(_inner.areas(prefix));
+
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
       _watch(_inner.entries(area, prefix));
 

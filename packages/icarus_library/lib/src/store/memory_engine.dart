@@ -102,6 +102,14 @@ final class _MemoryLease implements StorageLease {
       );
 
   @override
+  Future<Stored<List<String>>> areas(String prefix) async => _held(
+    () => [
+      for (final MapEntry(:key, :value) in _storage._areas.entries)
+        if (value.isNotEmpty && key.startsWith(prefix)) key,
+    ]..sort(compareCodeUnits),
+  );
+
+  @override
   Future<Stored<List<String>>> keys(String area, String prefix) async =>
       _held(() => [for (final entry in _under(area, prefix)) entry.key]);
 

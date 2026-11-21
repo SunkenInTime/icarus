@@ -253,14 +253,6 @@ const _values = {
   'quotes': '{"a":"\\"b\\"","c":[1,2.5,null]}',
 };
 
-int _compareUnits(String a, String b) {
-  for (var i = 0; i < a.length && i < b.length; i++) {
-    final order = a.codeUnitAt(i) - b.codeUnitAt(i);
-    if (order != 0) return order;
-  }
-  return a.length - b.length;
-}
-
 final List<EngineCheck> engineContract = [
   _check('a commit across areas is seen whole or not at all after a reopen', (
     harness,
@@ -411,7 +403,7 @@ final List<EngineCheck> engineContract = [
       'nxay',
     ];
     await _put(lease, 'a', {for (final name in names) name: name}, 'write');
-    final sorted = [...names]..sort(_compareUnits);
+    final sorted = [...names]..sort(compareCodeUnits);
     _sameList(_done(await lease.keys('a', ''), 'keys'), sorted, 'order');
     _sameList(await _entryKeys(lease, 'a', ''), sorted, 'entries order');
     for (final name in names) {
@@ -438,7 +430,7 @@ final List<EngineCheck> engineContract = [
     await _put(lease, 'a', {for (final name in names) name: name}, 'write');
     for (final prefix in ['a_', 'a-', 'a.', 'a/', 'x_', 'x_y', 'a.b', 'aa']) {
       final expected = [
-        for (final name in [...names]..sort(_compareUnits))
+        for (final name in [...names]..sort(compareCodeUnits))
           if (name.startsWith(prefix)) name,
       ];
       _sameList(
@@ -454,6 +446,47 @@ final List<EngineCheck> engineContract = [
     }
     await harness.close(engine);
   }),
+  _check(
+    'lists the areas that hold names under a prefix, literally and in code unit order',
+    (harness) async {
+      final engine = await harness.open();
+      final lease = await _lease(engine);
+      const areas = [
+        'a',
+        'a-1',
+        'a.1',
+        'a/1',
+        'a_1',
+        'aa1',
+        'ab',
+        'b',
+        'x_y',
+        'xay',
+      ];
+      await _applied(lease, [
+        for (final area in areas) Put(area, 'k', area),
+        const Put('gone', 'k', '1'),
+        const Put('emptied', 'k', '1'),
+      ], 'seed');
+      await _applied(lease, const [
+        ClearArea('gone'),
+        Delete('emptied', 'k'),
+      ], 'empty two areas');
+      final sorted = [...areas]..sort(compareCodeUnits);
+      _sameList(
+        _done(await lease.areas(''), 'areas'),
+        sorted,
+        'every area holding a name',
+      );
+      for (final prefix in ['a_', 'a-', 'a.', 'a/', 'x_', 'a', 'e', 'zz']) {
+        _sameList(_done(await lease.areas(prefix), 'areas'), [
+          for (final area in sorted)
+            if (area.startsWith(prefix)) area,
+        ], 'areas under $prefix');
+      }
+      await harness.close(engine);
+    },
+  ),
   _check('lists keys with values by prefix', (harness) async {
     final engine = await harness.open();
     final lease = await _lease(engine);
@@ -620,6 +653,7 @@ final List<EngineCheck> engineContract = [
     _ended(await lease.read('A', 'x'), 'read outside the alphabet');
     _ended(await lease.keys('a', ''), 'keys');
     _ended(await lease.entries('a', ''), 'entries');
+    _ended(await lease.areas(''), 'areas');
     _ended(await lease.commit(const [Put('a', 'x', 'lost')]), 'write');
     _ended(await lease.commit([Put('a', long, 'lost')]), 'long write');
     _ended(await lease.commit([Delete('a', long)]), 'long delete');
