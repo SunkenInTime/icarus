@@ -1,6 +1,7 @@
 import 'package:collection/collection.dart';
 
 import 'apply.dart';
+import 'field_merge.dart' show lineupCollections, lineupItems;
 import 'field_rules.dart';
 import 'json.dart';
 import 'ops.dart';
@@ -61,28 +62,31 @@ DiffCheck checkReached(
           (page is LivePage && !targetLive.contains(page.publicId)))
         page.publicId,
   };
-  final targetElements = {for (final row in target.elements) row.publicId};
-  final targetGroups = {for (final row in target.lineupGroups) row.publicId};
+  final keptElements = [
+    for (final row in stored.elements)
+      if (row is LiveElement && staysWithPage.contains(row.pagePublicId)) row,
+  ];
+  final keptGroups = [
+    for (final row in stored.lineupGroups)
+      if (row is LiveLineupGroup && staysWithPage.contains(row.pagePublicId))
+        row,
+  ];
+  final keptElementIds = {for (final row in keptElements) row.publicId};
+  final keptGroupIds = {for (final row in keptGroups) row.publicId};
   final wantedRows = _Rows(
     StrategyRowSet(
       strategy: target.strategy,
       pages: target.pages,
       settings: target.settings,
       elements: [
-        ...target.elements,
-        for (final row in stored.elements)
-          if (row is LiveElement &&
-              !targetElements.contains(row.publicId) &&
-              staysWithPage.contains(row.pagePublicId))
-            row,
+        for (final row in target.elements)
+          if (!keptElementIds.contains(row.publicId)) row,
+        ...keptElements,
       ],
       lineupGroups: [
-        ...target.lineupGroups,
-        for (final row in stored.lineupGroups)
-          if (row is LiveLineupGroup &&
-              !targetGroups.contains(row.publicId) &&
-              staysWithPage.contains(row.pagePublicId))
-            row,
+        for (final row in target.lineupGroups)
+          if (!keptGroupIds.contains(row.publicId)) row,
+        ...keptGroups,
       ],
     ),
   );
@@ -251,6 +255,19 @@ Map<String, Object?> _view(
   final keptSettings = {for (final row in kept.settings) row.pagePublicId: row};
   final keptElements = {for (final row in kept.elements) row.publicId: row};
   final keptGroups = {for (final row in kept.groups) row.publicId: row};
+  final keptItems = <String, Map<String, Map<Object?, Object?>>>{};
+  for (final row in kept.groups) {
+    if (row case ReadableLineupGroupRow(:final pagePublicId, :final payload)) {
+      final onPage = keptItems[pagePublicId] ??= {
+        for (final collection in lineupCollections) collection: {},
+      };
+      for (final collection in lineupCollections) {
+        for (final item in lineupItems(payload.data.toJson(), collection)) {
+          onPage[collection]![item['id']] = item;
+        }
+      }
+    }
+  }
   final strategy = rows.strategy;
   return {
     'strategy': {
@@ -324,7 +341,7 @@ Map<String, Object?> _view(
           publicId: _group(row, switch (keptGroups[publicId]) {
             final ReadableLineupGroupRow stored => stored,
             _ => null,
-          }),
+          }, keptItems[row.pagePublicId] ?? const {}),
     },
     'unreadable': {
       for (final row in [...rows.all, ...kept.all])
@@ -336,6 +353,29 @@ Map<String, Object?> _view(
     },
   };
 }
+
+Object? _keptDeep(Object? wanted, Object? stored) => switch ((wanted, stored)) {
+  (final Map<String, Object?> w, final Map<String, Object?> s) => {
+    for (final MapEntry(:key, :value) in w.entries)
+      key: _keptDeep(value, s[key]),
+    for (final MapEntry(:key, :value) in s.entries)
+      if (!w.containsKey(key) && !_clearable.contains(key)) key: value,
+  },
+  (final List<Object?> w, final List<Object?> s) => [
+    for (final item in w)
+      if (item case {'id': final Object id})
+        _keptDeep(
+          item,
+          [
+            for (final old in s)
+              if (old case {'id': final Object oldId} when oldId == id) old,
+          ].firstOrNull,
+        )
+      else
+        item,
+  ],
+  _ => wanted,
+};
 
 Object? _keeping(Object? wanted, Object? stored) => switch ((wanted, stored)) {
   (final Map<String, Object?> w, final Map<String, Object?> s) => {
@@ -367,11 +407,7 @@ Map<String, Object?> _element(LiveElement row, ReadableElementRow? stored) {
     'sortIndex': row.sortIndex,
     'kind': row.payload.kind.name,
     'payloadVersion': row.payload.payloadVersion,
-    'data': {
-      for (final MapEntry(:key, :value) in storedData.entries)
-        if (!data.containsKey(key) && !_clearable.contains(key)) key: value,
-      ...data,
-    },
+    'data': _keptDeep(data, storedData),
     'envelope': _keeping(
       row.payload.unknownFields.toJson(),
       stored?.payload.unknownFields.toJson(),
@@ -386,6 +422,7 @@ Map<String, Object?> _element(LiveElement row, ReadableElementRow? stored) {
 Map<String, Object?> _group(
   LiveLineupGroup row,
   ReadableLineupGroupRow? stored,
+  Map<String, Map<Object?, Object?>> keptItems,
 ) {
   final data = row.payload.data.toJson();
   final storedData = stored?.payload.data.toJson() ?? const {};
@@ -397,19 +434,20 @@ Map<String, Object?> _group(
       for (final MapEntry(:key, :value) in storedData.entries)
         if (!data.containsKey(key)) key: value,
       for (final MapEntry(:key, :value) in data.entries)
-        key: switch ((value, storedData[key])) {
-          (final List<Object?> items, final List<Object?> storedItems) => [
+        key: switch (value) {
+          final List<Object?> items when lineupCollections.contains(key) => [
             for (final item in items)
-              _keeping(
+              if (item case {'id': final Object id})
+                _keptDeep(
+                  item,
+                  {
+                        for (final old in lineupItems(storedData, key))
+                          old['id']: old,
+                      }[id] ??
+                      keptItems[key]?[id],
+                )
+              else
                 item,
-                [
-                  for (final storedItem in storedItems)
-                    if (storedItem is Map &&
-                        item is Map &&
-                        storedItem['id'] == item['id'])
-                      storedItem,
-                ].firstOrNull,
-              ),
           ],
           _ => value,
         },

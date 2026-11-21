@@ -193,10 +193,16 @@ final class _Planned {
 
   void add(String rowId, _MakeOp make) => _made.add((rowId, make));
 
-  Iterable<_MakeOp> get inIdOrder =>
-      (_made.toList()..sort((a, b) => a.$1.compareTo(b.$1))).map(
-        (planned) => planned.$2,
+  Iterable<_MakeOp> get inIdOrder {
+    final order = [for (var i = 0; i < _made.length; i++) i]
+      ..sort(
+        (a, b) => switch (_made[a].$1.compareTo(_made[b].$1)) {
+          0 => a.compareTo(b),
+          final byId => byId,
+        },
       );
+    return [for (final i in order) _made[i].$2];
+  }
 }
 
 bool _sameSettings(PageSettings a, PageSettings b) =>
@@ -360,15 +366,19 @@ final class _Plan {
       )) {
         (null, _, ReadablePageSettings()) => true,
         (null, _, _) => false,
-        (LivePage(), null, null) => true,
-        (LivePage(), ReadablePageSettings(settings: null), _) ||
+        (LivePage(), null, null) ||
+        (LivePage(), UnreadablePageSettings(), _) ||
+        (
+          LivePage(),
+          ReadablePageSettings(settings: null),
+          ReadablePageSettings(),
+        ) ||
         (
           LivePage(),
           ReadablePageSettings(),
           ReadablePageSettings(settings: _?),
         ) => true,
-        (LivePage(), ReadablePageSettings(), _) => false,
-        (LivePage(), null, _) => false,
+        (LivePage(), _, _) => false,
         _ => true,
       };
       if (!reachable) yield SettingsUnreachable(page.key);
@@ -602,19 +612,57 @@ final class _Plan {
         ),
       );
     }
-    if (staying.isEmpty && !movesPlace) return;
-    final revision = before.revision + (leaving.isEmpty ? 0 : 1);
-    groupEdits.add(
-      before.publicId,
-      (opId) => LineupGroupPatchOp(
-        opId: opId,
-        lineupPublicId: before.publicId,
-        payload: staying.isEmpty ? null : desired,
-        sortIndex: wanted.sortIndex,
-        expectedLineupRevision: revision,
-        merge: FieldMerge(fields: [...staying, if (movesPlace) placeField]),
-      ),
-    );
+    final had = _itemIds(before.payload);
+    final edited = [
+      for (final field in staying)
+        if (had.contains(field)) field,
+    ];
+    final added = {
+      for (final field in staying)
+        if (!had.contains(field)) field,
+    };
+    final perLineup = <List<String>>[];
+    for (final link in lineupItems(desired.data.toJson(), 'links')) {
+      final field = 'links/${link['id']}';
+      if (!added.remove(field)) continue;
+      perLineup.add([
+        field,
+        for (final spot in [
+          'origins/${link['originId']}',
+          'landings/${link['landingId']}',
+        ])
+          if (added.remove(spot)) spot,
+      ]);
+    }
+    edited.addAll(added);
+    var revision = before.revision + (leaving.isEmpty ? 0 : 1);
+    if (edited.isNotEmpty || movesPlace) {
+      final expected = revision++;
+      groupEdits.add(
+        before.publicId,
+        (opId) => LineupGroupPatchOp(
+          opId: opId,
+          lineupPublicId: before.publicId,
+          payload: edited.isEmpty ? null : desired,
+          sortIndex: wanted.sortIndex,
+          expectedLineupRevision: expected,
+          merge: FieldMerge(fields: [...edited, if (movesPlace) placeField]),
+        ),
+      );
+    }
+    for (final fields in perLineup) {
+      final expected = revision++;
+      groupEdits.add(
+        before.publicId,
+        (opId) => LineupGroupPatchOp(
+          opId: opId,
+          lineupPublicId: before.publicId,
+          payload: desired,
+          expectedLineupRevision: expected,
+          merge: FieldMerge(fields: fields),
+        ),
+      );
+    }
   }
 
   static _MakeOp _deleteGroup(LiveLineupGroup group) =>

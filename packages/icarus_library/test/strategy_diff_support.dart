@@ -227,6 +227,7 @@ final class Generator {
     };
     final elements = {for (final row in rows.elements) row.publicId: row};
     final groups = {for (final row in rows.lineupGroups) row.publicId: row};
+    final movedOff = <String>{};
     for (var step = 1 + random.nextInt(8); step > 0; step--) {
       final livePages = pages.keys.toList();
       final live = [
@@ -267,6 +268,7 @@ final class Generator {
           elements[id('x')] = item(pageId, 0);
         case 3 when pages.length > 1:
           final gone = pick(livePages);
+          if (movedOff.contains(gone)) break;
           pages.remove(gone);
           settingsRows.remove(gone);
           elements.removeWhere(
@@ -312,6 +314,7 @@ final class Generator {
           );
         case 9 when live.isNotEmpty:
           final row = pick(live);
+          movedOff.add(row.pagePublicId);
           elements[row.publicId] = row.rewritten(
             deleted: false,
             pagePublicId: pick(livePages),
@@ -346,9 +349,11 @@ final class Generator {
           if (chance(0.5)) {
             groups.remove(group.publicId);
           } else {
+            final pageId = chance(0.7) ? group.pagePublicId : pick(livePages);
+            if (pageId != group.pagePublicId) movedOff.add(group.pagePublicId);
             groups[group.publicId] = lineupGroup(
               group.publicId,
-              pageId: chance(0.7) ? group.pagePublicId : pick(livePages),
+              pageId: pageId,
               sortIndex: random.nextInt(3),
               notes: id('notes'),
               links: 1 + random.nextInt(2),

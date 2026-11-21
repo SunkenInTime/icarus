@@ -9,6 +9,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_rows/strategy_for_save.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -506,7 +507,11 @@ void main() {
     var stored = rowsOf(states.first);
     final opsPerStep = <int>[];
     for (final (index, state) in states.indexed.skip(1)) {
-      switch (diffAndApply(stored, rowsOf(state), 'step-$index')) {
+      final target = switch (strategyToRowsOver(stored, state)) {
+        StrategyRowsMade(:final rows) => rows,
+        StrategyRowsRefused(:final problems) => fail('$problems'),
+      };
+      switch (diffAndApply(stored, target, 'step-$index')) {
         case Missed(:final what):
           fail('step $index: $what');
         case Reached(:final rows, :final ops):
@@ -552,6 +557,8 @@ void main() {
       var fromEmptyOps = 0;
       var mutatedOps = 0;
       StrategyRowSet? largest;
+      StrategyData? largestModel;
+      var unchangedSaves = 0;
       final misses = <String>[];
       final watch = Stopwatch()..start();
       void check(StrategyData strategy) {
@@ -573,8 +580,23 @@ void main() {
               mutatedOps += ops;
           }
         }
+        switch (strategyToRowsOver(rows, strategy)) {
+          case StrategyRowsMade(rows: final over):
+            switch (diffStrategy(rows, over, editId: 'over-$ordinal')) {
+              case DiffOps(ops: []):
+                unchangedSaves++;
+              case DiffOps(:final ops):
+                misses.add(
+                    'strategy $ordinal saved unchanged: ${ops.length} ops');
+              case DiffRefused(:final refusal):
+                misses.add('strategy $ordinal saved unchanged: $refusal');
+            }
+          case StrategyRowsRefused(:final problems):
+            misses.add('strategy $ordinal saved unchanged: $problems');
+        }
         if (rows.elements.length > (largest?.elements.length ?? -1)) {
           largest = rows;
+          largestModel = strategy;
         }
       }
 
@@ -591,14 +613,41 @@ void main() {
       final bigTook = fastest(25, () {
         diffStrategy(big, bigMoved, editId: 'move');
       });
+      final model = largestModel!;
+      final page = model.pages.firstWhere((page) => page.agentData.isNotEmpty);
+      final moved = model.copyWith(pages: [
+        for (final each in model.pages)
+          each.id == page.id
+              ? each.copyWith(agentData: [
+                  for (final (index, agent) in each.agentData.indexed)
+                    index == 0
+                        ? PlacedAgent.fromJson({
+                            ...agent.toJson(),
+                            'position': {'dx': 12.5, 'dy': 34.5},
+                          })
+                        : agent,
+                ])
+              : each,
+      ]);
+      var saveOps = 0;
+      final saveTook = fastest(25, () {
+        final target =
+            (strategyToRowsOver(big, moved) as StrategyRowsMade).rows;
+        saveOps =
+            (diffStrategy(big, target, editId: 'save') as DiffOps).ops.length;
+      });
       stdout.writeln(
         'strategies: $strategies (${icaFiles.length} from .ica files), ops from empty: $fromEmptyOps, '
         'ops to a mutated copy: $mutatedOps, misses: ${misses.length}, '
         'took ${watch.elapsed.inSeconds} s; largest strategy: '
         '${big.elements.length} elements on ${big.pages.length} pages, one item '
-        'moved: fastest of 25 ${bigTook.inMicroseconds} us',
+        'moved: fastest of 25 ${bigTook.inMicroseconds} us; a save of it with '
+        'one agent moved, target built from the stored rows then diffed: '
+        'fastest of 25 ${saveTook.inMicroseconds} us, $saveOps op; '
+        '$unchangedSaves strategies saved unchanged gave no ops',
       );
       expect(misses, isEmpty);
+      expect(saveOps, 1);
       expect(strategies, greaterThan(0));
     },
     timeout: const Timeout(Duration(minutes: 30)),

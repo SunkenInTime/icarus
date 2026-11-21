@@ -292,7 +292,11 @@ not.
   this build does not know still survive. A lineup group is merged per
   lineup item the same way, with any field of an item that the target's
   item lacks kept from the stored item. A lineup moving to another group
-  first leaves its old group, so no step holds it in two. A group cannot
+  first leaves its old group, so no step holds it in two. New lineups in a
+  group go one op per lineup (its link with any new origin or landing it
+  aims at), in the target's order: a field merge adds the items it names in
+  id order, so naming them one lineup at a time lands each at the end, in
+  the order the user placed them. A group cannot
   change page by a patch, so one that moves page is deleted and added again
   with its merged payload. Page settings and the theme palette are replaced
   whole by their ops, so their known fields are compared and, when one
@@ -302,8 +306,7 @@ not.
 - **Page order, then names.** New pages are added at the end, removed pages
   are trashed, and the pages are then reordered to the target's order. A
   trashed page keeps everything on it, as a page delete always does, so
-  restoring it brings it back whole; an item the target moved off it is
-  moved first. Rows already on a page in the trash are left alone, and are
+  restoring it brings it back whole. Rows already on a page in the trash are left alone, and are
   refused only if the target changes them. Moving pages renames auto-named
   ones to `Page N`, as `applyOp` does, so page names, sides and settings are
   patched last. Pages are compared by order, not by `sortIndex`, because
@@ -318,18 +321,34 @@ not.
   trash, or a row on one, that the target changes), `FieldNotClearable` (a
   door, a zone, a picture id or `isAutoNamed` the target leaves out),
   `SettingsUnreachable` (a page whose settings row the target has and the
-  stored rows lack, or the other way round), `KindChanged`, `FolderChanged`
+  stored rows lack, or the other way round, a stored row holding no
+  settings counting as a row the target must also hold), `KindChanged`,
+  `FolderChanged`
   (a folder move is a library edit) and `LastPageRemoved`.
+
+The diff is right for the rows it is given; the target has to be the right
+rows. The app builds a save's target from the stored rows
+(`strategyToRowsOver` in `lib/library_rows/strategy_for_save.dart`): each
+element and lineup group in the editor's strategy is matched to the stored
+row it already is, an element by its page and its item id, a group through
+the lineups it holds. A row whose decoded value equals the editor's is
+reused exactly, bytes, payload version and id; a changed one keeps its id,
+its place while that still orders it, and every stored field the editor's
+value does not hold. Only something with no stored row gets a new id, and
+never one a stored row holds, tombstones and rows on trashed pages
+included. So removing a page or a lineup never changes another row's id,
+and nothing the user did not touch is written.
 
 `package:icarus_library/strategy_diff_check.dart` holds `checkDiff`, which
 applies ops with `applyOp`, and `checkReached`, which compares rows with
 what the target asked for: the strategy's id and fields, the live pages in
 order with their settings and whether they have a settings row, the pages
-in the trash, the live elements and lineup groups wherever they are,
-including those that stay on a page the target removed, the rows this
-build cannot read, and every field this build does not know (on a row, on
-a payload envelope, at the top of an element's data, and on a lineup item),
-which must hold its stored value. Revisions and times are left out, and a
+in the trash, the live elements and lineup groups wherever they are, every
+stored row on a page in the trash or removed by the target exactly where and
+as it was (whatever ids the target uses), the rows this build cannot read,
+and every field this build does not know (on a row, on a payload envelope,
+anywhere in an element's data, and on a lineup item, looked up in every
+group on its page), which must hold its stored value. Revisions and times are left out, and a
 later field holding its empty value counts as absent.
 `test/strategy_diff_test.dart` checks hand-made cases and 600 generated
 pairs, half of them with a field this build does not know at every level

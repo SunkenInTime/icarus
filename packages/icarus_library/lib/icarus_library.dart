@@ -46,7 +46,8 @@ export 'src/json.dart'
         admit,
         jsonObject,
         jsonValue,
-        maxJsonDepth;
+        maxJsonDepth,
+        sameJsonTree;
 export 'src/store/engine.dart' hide done;
 export 'src/store/layout.dart'
     show ForeignName, digestOf, longestName, strategyArea;

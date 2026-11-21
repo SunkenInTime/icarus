@@ -284,12 +284,20 @@ void main() {
       expectReached(stored, target);
     });
 
-    test('keeps an item the target moved to another page', () {
+    test('is not reached by a target that moves its content away', () {
       final target = strategyRows(
         pages: [page('page-a', sortIndex: 0)],
         elements: [element('jett'), element('sova', sortIndex: 1)],
       );
-      expectReached(stored, target);
+      final ops = opsOf(diffStrategy(stored, target, editId: 'e'));
+      expect(
+        checkDiff(stored, target, ops),
+        isA<DiffMissed>().having(
+          (missed) => missed.what,
+          'what',
+          contains('sova'),
+        ),
+      );
     });
 
     test('in the trash with its content needs no op', () {
@@ -383,6 +391,24 @@ void main() {
           settings('page-b'),
         ],
       );
+      expect(
+        refusalOf(diffStrategy(stored, target, editId: 'e')),
+        isA<SettingsUnreachable>().having(
+          (refusal) => refusal.key,
+          'key',
+          const PageKey('page-a'),
+        ),
+      );
+    });
+
+    test('held as null and left out by the target are refused', () {
+      final stored = strategyRows(
+        pageSettings: [
+          ReadablePageSettings(pagePublicId: 'page-a', revision: 1),
+          settings('page-b'),
+        ],
+      );
+      final target = strategyRows(pageSettings: [settings('page-b')]);
       expect(
         refusalOf(diffStrategy(stored, target, editId: 'e')),
         isA<SettingsUnreachable>().having(
