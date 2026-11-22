@@ -6,6 +6,7 @@
   {"openStoredCloudStrategy": true},
   {"wait": 12},
   {"tapIcon": "x", "optional": true},
+  {"waitSettled": 60},
   {"wait": 4},
   {"addAgent": "q1-{run}", "agent": "sova", "at": [820, 360]},
   {"waitSettled": 60},

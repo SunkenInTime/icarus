@@ -11,6 +11,7 @@
   {"tapText": "Restart shadow {run}"},
   {"wait": 12},
   {"tapIcon": "x", "optional": true},
+  {"waitSettled": 60},
   {"addAgent": "r1-{run}", "at": [600, 400]},
   {"addSmoke": "r2-{run}", "at": [760, 520]},
   {"waitSettled": 60},
