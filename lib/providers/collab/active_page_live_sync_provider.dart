@@ -169,8 +169,25 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   String? lineupGroupOf(String pageId, String itemId) =>
       _lineupGroupOfByPage[pageId]?[itemId];
 
-  Map<String, String> lineupGroupsOf(String pageId) =>
-      Map.unmodifiable(_lineupGroupOfByPage[pageId] ?? const {});
+  LineupGroupMemory lineupGroupMemory(String pageId) => LineupGroupMemory(
+        groupOf: Map.unmodifiable(_lineupGroupOfByPage[pageId] ?? const {}),
+        places: {
+          for (final key in {
+            ..._hydratedBaseByEntityKey.keys,
+            ...state.overlayByEntityKey.keys,
+            ..._drawnWorkByKey.keys,
+          })
+            if (key.pageId == pageId &&
+                key.kind == EntitySyncKeyKind.lineup &&
+                _knownSortIndex(key) != null)
+              key.entityId!: _knownSortIndex(key)!,
+        },
+      );
+
+  int? _knownSortIndex(EntitySyncKey key) =>
+      state.overlayByEntityKey[key]?.desiredSortIndex ??
+      _drawnWorkByKey[key]?.drawn.sortIndex ??
+      _hydratedBaseByEntityKey[key]?.sortIndex;
 
   @override
   ActivePageLiveSyncState build() {
@@ -1635,22 +1652,17 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     // the page's highest. Removing an element or lineup (here or by a
     // teammate) then rewrites no row after it, which would collide with a
     // teammate editing one of them; the server never renumbers either.
-    int? knownSortIndex(EntitySyncKey key) =>
-        state.overlayByEntityKey[key]?.desiredSortIndex ??
-        _drawnWorkByKey[key]?.drawn.sortIndex ??
-        _hydratedBaseByEntityKey[key]?.sortIndex;
-
     int Function() freshSortIndexes(EntitySyncKeyKind kind) {
       bool onPage(EntitySyncKey key) =>
           key.pageId == pageId && key.kind == kind;
       var next = 1 +
           [
             for (final key in _hydratedBaseByEntityKey.keys)
-              if (onPage(key)) knownSortIndex(key) ?? 0,
+              if (onPage(key)) _knownSortIndex(key) ?? 0,
             for (final key in state.overlayByEntityKey.keys)
-              if (onPage(key)) knownSortIndex(key) ?? 0,
+              if (onPage(key)) _knownSortIndex(key) ?? 0,
             for (final key in _drawnWorkByKey.keys)
-              if (onPage(key)) knownSortIndex(key) ?? 0,
+              if (onPage(key)) _knownSortIndex(key) ?? 0,
           ].fold<int>(-1, max);
       return () => next++;
     }
@@ -1670,7 +1682,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
 
     int stackedSortIndex(EntitySyncKey key, _CollabElementKind kind) {
-      final known = knownSortIndex(key);
+      final known = _knownSortIndex(key);
       if (_heldDeletedKeys.contains(key) && known != null) return known;
       final previous = previousByKind[kind];
       final keep = known != null &&
@@ -1733,7 +1745,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
         payload: row.payload,
-        sortIndex: knownSortIndex(key) ?? freshLineupSortIndex(),
+        sortIndex: _knownSortIndex(key) ?? freshLineupSortIndex(),
         revision: 0,
         deleted: false,
       );

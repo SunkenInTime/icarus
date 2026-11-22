@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -122,6 +123,27 @@ class _Editor {
   }
 }
 
+void _expectBroughtBackLast(
+  LineUpGraph before,
+  LineUpGraph after,
+  String reason,
+) {
+  final had = {for (final link in before.links) link.id};
+  final groupOf = <String, String>{
+    for (final (:id, :lineUps) in lineupGroups(after))
+      for (final link in lineUps.links) link.id: id,
+  };
+  final order = [for (final link in after.links) link.id];
+  for (final (index, id) in order.indexed) {
+    if (had.contains(id)) continue;
+    final laterOldOnes = [
+      for (final later in order.skip(index + 1))
+        if (had.contains(later) && groupOf[later] == groupOf[id]) later,
+    ];
+    expect(laterOldOnes, isEmpty, reason: '$reason: $id came back before them');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() => appProviderContainer = ProviderContainer());
@@ -157,21 +179,22 @@ void main() {
     editor.expectReadOrder('A1, B1, then A2 into A');
   });
 
-  test('undoing the deletion of the first of two lineups puts it back first',
+  test('undoing the deletion of the first of two lineups brings it back last',
       () {
     final editor = _Editor();
     final a1 = editor.fresh();
     final a2 = editor.fromOrigin(a1.originId);
-    final placed = _orderOf(editor.state.graph);
+    final b1 = editor.fresh();
 
     editor.lineUps.deleteLink(a1.id);
     editor.history.undoAction();
 
-    expect(_orderOf(editor.state.graph), placed);
-    expect(placed['links'], [a1.id, a2.id]);
+    expect(_orderOf(editor.state.graph)['links'], [a2.id, a1.id, b1.id]);
+    editor.expectReadOrder('after undo');
     editor.history.redoAction();
     editor.history.undoAction();
-    expect(_orderOf(editor.state.graph), placed);
+    expect(_orderOf(editor.state.graph)['links'], [a2.id, a1.id, b1.id]);
+    editor.expectReadOrder('after redo and undo');
   });
 
   test('undoing an addition and redoing it puts the lineup back in its place',
@@ -210,6 +233,19 @@ void main() {
 
     expect(_orderOf(editor.state.graph)['links']!, [a.id, d.id, c.id]);
     editor.expectReadOrder('after deleting the joining lineup');
+  });
+
+  test(
+      'undoing the deletion of a joining lineup brings it back last in the '
+      'group it joins again', () {
+    final editor = _Editor();
+    final (a, b, c, d) = joinedThroughOne(editor);
+
+    editor.lineUps.deleteLink(b.id);
+    editor.history.undoAction();
+
+    expect(_orderOf(editor.state.graph)['links']!, [a.id, d.id, c.id, b.id]);
+    editor.expectReadOrder('after undo');
   });
 
   test('pasted lineups whose group is split by the copy paste group by group',
@@ -361,9 +397,19 @@ void main() {
             case 6:
               editor.history.undoAction();
               steps.add('undo');
+              _expectBroughtBackLast(
+                state.graph,
+                editor.state.graph,
+                'seed $seed: ${steps.join(', ')}',
+              );
             case 7:
               editor.history.redoAction();
               steps.add('redo');
+              _expectBroughtBackLast(
+                state.graph,
+                editor.state.graph,
+                'seed $seed: ${steps.join(', ')}',
+              );
             case 8:
               final picked = {
                 for (final link in state.links)

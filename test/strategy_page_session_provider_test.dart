@@ -7417,26 +7417,77 @@ void main() {
       await _settle();
     });
 
+    test('a lineup an undo restores into its row comes back last in it',
+        () async {
+      final (container, remote, page) = await openMerging();
+      final a = place(container);
+      final b = placeFrom(container, a.originId);
+      await land(container, remote, page, contentRevision: 2);
+      container.read(lineUpProvider.notifier).deleteLink(a.id);
+      await land(container, remote, page, contentRevision: 3);
+
+      container.read(actionProvider.notifier).undoAction();
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      final lineups = await land(container, remote, page, contentRevision: 4);
+
+      expect(drawn['links'], [b.id, a.id]);
+      expect(
+        _groupsOf(lineups)[groupOf(container, page, a.id)]!['links'],
+        [b.id, a.id],
+      );
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
     test(
-      'a lineup an undo restores into its row lands where the editor shows it',
-      () async {
-        final (container, remote, page) = await openMerging();
-        final a = place(container);
-        final b = placeFrom(container, a.originId);
-        await land(container, remote, page, contentRevision: 2);
-        container.read(lineUpProvider.notifier).deleteLink(a.id);
-        await land(container, remote, page, contentRevision: 3);
-
-        container.read(actionProvider.notifier).undoAction();
+        'undo and redo over and over, with lineups added between, land as '
+        'the editor shows them', () async {
+      final (container, remote, page) = await openMerging();
+      final history = container.read(actionProvider.notifier);
+      final a = place(container);
+      final a2 = placeFrom(container, a.originId);
+      final b = place(container);
+      var revision = 2;
+      Future<void> landed(String step) async {
         final drawn = lineupOrder(container.read(lineUpProvider));
-        await land(container, remote, page, contentRevision: 4);
+        await land(container, remote, page, contentRevision: revision++);
+        expect(
+          lineupOrder(container.read(lineUpProvider)),
+          drawn,
+          reason: step,
+        );
+        expect(
+          [
+            for (final link
+                in lineUpGraphFromRemoteLineups(server.liveRows).links)
+              link.id,
+          ],
+          drawn['links'],
+          reason: step,
+        );
+      }
 
-        expect(drawn['links'], unorderedEquals([a.id, b.id]));
-        expect(lineupOrder(container.read(lineUpProvider)), drawn);
-        await _settle();
-      },
-      skip: 'Waits on where a restored lineup goes in its group (PR #685)',
-    );
+      await landed('placed');
+      container.read(lineUpProvider.notifier).deleteLink(a.id);
+      await landed('deleted A');
+      history.undoAction();
+      await landed('undo');
+      history.redoAction();
+      await landed('redo');
+      placeFrom(container, a2.originId);
+      await landed('added after A2');
+      history.undoAction();
+      await landed('undo the add');
+      history.undoAction();
+      await landed('undo the delete again');
+      placeFrom(container, b.originId);
+      await landed('added to B');
+      history.undoAction();
+      await landed('undo the add to B');
+      history.redoAction();
+      await landed('redo the add to B');
+      await _settle();
+    });
 
     test('a fan-out lineup keeps its shared origin, ids and names', () async {
       final (container, remote, page) = await openEmpty();
@@ -7542,8 +7593,8 @@ void main() {
       final restored = container.read(lineUpProvider);
       expect(restored.landings.single.id, a.landingId);
       expect(linkShape(restored), [
-        (a.id, a.originId, a.landingId, 'From heaven'),
         (b.id, b.originId, a.landingId, 'From mid'),
+        (a.id, a.originId, a.landingId, 'From heaven'),
       ]);
       final ops = desiredOps(container, page);
       expectLineupRows(ops);
@@ -7553,7 +7604,7 @@ void main() {
         server.row(group).revision,
       );
       lineups = await land(container, remote, page, contentRevision: 4);
-      expect(_groupsOf(lineups)[group]!['links'], [a.id, b.id]);
+      expect(_groupsOf(lineups)[group]!['links'], [b.id, a.id]);
       expect(_groupsOf(lineups)[group]!['landings'], [a.landingId]);
       expect(server.row(group).revision, 3);
       expect(linkShape(container.read(lineUpProvider)), hasLength(2));
@@ -8993,6 +9044,51 @@ void main() {
       expect(lineUpGraphFromRemoteLineups(server.liveRows).links.single.notes,
           'mine');
       expect(onScreen()?.notes, 'mine');
+    });
+
+    test(
+        'Keep mine restores a lineup group a teammate deleted in the order '
+        'the editor shows', () async {
+      final page = _page('page-1', 0);
+      server = _FakeServer(page.publicId, lineups: [
+        fanIn(page.publicId),
+        _lineup(page.publicId, 'c', sortIndex: 1),
+      ])
+        ..mergesByField = true;
+      final (container, batches) = await openOnRealQueue(page);
+      List<String> drawn() => [
+            for (final link in container.read(lineUpProvider).links) link.id,
+          ];
+      expect(drawn(), ['link-a', 'link-b', 'link-c']);
+
+      server.teammateDelete('link-a');
+      final lineUps = container.read(lineUpProvider.notifier)
+        ..startToLanding('landing');
+      lineUps.setDraftAgent(PlacedAgent(
+        id: 'agent-kept',
+        type: AgentType.sova,
+        position: const Offset(150, 150),
+      ));
+      final added = lineUps.commitPlacement()!;
+      expect(drawn(), ['link-a', 'link-b', added.id, 'link-c']);
+
+      final restore = await refusedThenKeptMine(
+          container, batches, _lineupKey(page.publicId, 'a'));
+
+      expect(restore, isA<LineupAddOp>());
+      expect(
+        [
+          for (final link
+              in lineUpGraphFromRemoteLineups(server.liveRows).links)
+            link.id,
+        ],
+        ['link-a', 'link-b', added.id, 'link-c'],
+      );
+      showServer();
+      for (var i = 0; i < 10; i++) {
+        await _settle();
+      }
+      expect(drawn(), ['link-a', 'link-b', added.id, 'link-c']);
     });
 
     test(

@@ -767,12 +767,10 @@ class LineUpGraphAction extends UserAction {
     required super.id,
     this.before = LineUpGraph.empty,
     this.after = LineUpGraph.empty,
-    this.formerly = LineUpOrder.none,
   }) : super(group: ActionGroup.lineUp);
 
   final LineUpGraph before;
   final LineUpGraph after;
-  final LineUpOrder formerly;
 
   // History stores copies, so the copy must keep the change.
   @override
@@ -782,7 +780,6 @@ class LineUpGraphAction extends UserAction {
       id: id,
       before: before.deepCopy(),
       after: after.deepCopy(),
-      formerly: formerly,
     );
   }
 }
@@ -1307,7 +1304,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       landings: [landing],
       links: [link],
     );
-    final placed = state.graph.withLineUpsPlaced(added, groupOf: _groupOf);
+    final placed = state.graph.withLineUpsPlaced(added, memory: _groupMemory);
     state = state.copyWith(
       origins: placed.origins,
       landings: placed.landings,
@@ -1518,27 +1515,25 @@ class LineUpProvider extends Notifier<LineUpState> {
           .toList(),
       links: removedLinks,
     );
-    final formerly = LineUpOrder.of(state.graph);
     _apply(from: removed, to: LineUpGraph.empty);
     _record(
       LineUpGraphAction(
         type: ActionType.deletion,
         id: actionId,
         before: removed,
-        formerly: formerly,
       ),
     );
   }
 
-  Map<String, String> get _groupOf {
+  LineupGroupMemory get _groupMemory {
     final source = ref.container.read(strategyProvider).source;
     final pageId = ref.container.read(strategyPageSessionProvider).activePageId;
     if (source != StrategySource.cloud || pageId == null) {
-      return const {};
+      return LineupGroupMemory.none;
     }
     return ref.container
         .read(activePageLiveSyncProvider.notifier)
-        .lineupGroupsOf(pageId);
+        .lineupGroupMemory(pageId);
   }
 
   void _record(UserAction action) {
@@ -1548,7 +1543,6 @@ class LineUpProvider extends Notifier<LineUpState> {
   void _apply({
     required LineUpGraph from,
     required LineUpGraph to,
-    LineUpOrder formerly = LineUpOrder.none,
   }) {
     final droppedLinks = from.links.map((link) => link.id).toSet()
       ..removeAll(to.links.map((link) => link.id));
@@ -1559,7 +1553,7 @@ class LineUpProvider extends Notifier<LineUpState> {
         for (final link in state.links)
           if (!droppedLinks.contains(link.id)) link,
       ],
-    ).withLineUpsPlaced(to, formerly: formerly, groupOf: _groupOf);
+    ).withLineUpsPlaced(to, memory: _groupMemory);
     final usedOrigins = placed.links.map((link) => link.originId).toSet();
     final usedLandings = placed.links.map((link) => link.landingId).toSet();
 
@@ -1668,9 +1662,7 @@ class LineUpProvider extends Notifier<LineUpState> {
     if (removing.isEmpty && inserting.isEmpty) return null;
 
     final removed = _currentEntries(removing);
-    final formerly = LineUpOrder.of(state.graph);
     _apply(
-      formerly: action.formerly,
       from: removed,
       to: LineUpGraph(
         origins: to.origins,
@@ -1687,7 +1679,6 @@ class LineUpProvider extends Notifier<LineUpState> {
       id: action.id,
       before: undo ? inserted : removed,
       after: undo ? removed : inserted,
-      formerly: formerly,
     );
   }
 
@@ -1755,7 +1746,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   void addRecovered(LineUpGraph graph) {
     final placed = state.graph.withLineUpsPlaced(
       graph.deepCopy(),
-      groupOf: _groupOf,
+      memory: _groupMemory,
     );
     state = state.copyWith(
       origins: placed.origins,

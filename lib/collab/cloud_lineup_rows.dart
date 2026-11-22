@@ -147,16 +147,36 @@ CloudLineupRows cloudLineupRows(
   return CloudLineupRows(rows: rows, groupOf: assigned);
 }
 
+class LineupGroupMemory {
+  const LineupGroupMemory({this.groupOf = const {}, this.places = const {}});
+
+  static const none = LineupGroupMemory();
+
+  final Map<String, String> groupOf;
+  final Map<String, int> places;
+}
+
 LineUpGraph lineUpsInGroupOrder(
   LineUpGraph graph, {
-  Map<String, String> groupOf = const {},
+  LineupGroupMemory memory = LineupGroupMemory.none,
 }) {
-  final groups = [
-    for (final (id: _, :lineUps) in lineupGroups(graph, groupOf: groupOf))
-      lineUps,
-  ];
+  final groups = lineupGroups(graph, groupOf: memory.groupOf);
+  final firstSeen = {
+    for (final (index, group) in groups.indexed) group.id: index,
+  };
+  groups.sort((a, b) {
+    final placeA = memory.places[a.id];
+    final placeB = memory.places[b.id];
+    if (placeA != null && placeB != null) {
+      return placeA != placeB ? placeA.compareTo(placeB) : a.id.compareTo(b.id);
+    }
+    if (placeA != null) return -1;
+    if (placeB != null) return 1;
+    return firstSeen[a.id]!.compareTo(firstSeen[b.id]!);
+  });
   return groups
-      .fold(LineUpGraph.empty, (order, group) => order.followedBy(group))
+      .fold(
+          LineUpGraph.empty, (order, group) => order.followedBy(group.lineUps))
       .followedBy(graph);
 }
 
