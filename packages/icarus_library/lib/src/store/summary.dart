@@ -341,6 +341,8 @@ final class StrategySummary {
     },
     if (sync case KeptInCloud(:final tally))
       'cloud': {'tally': tally.toJson(), 'rowsVersion': cloudRowVersion},
+    if (sync case CloudUnverified())
+      'cloud': {'unverified': true, 'rowsVersion': cloudRowVersion},
   };
 
   static Decoded<StrategySummary> decode(Object? json) =>

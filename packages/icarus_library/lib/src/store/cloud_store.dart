@@ -60,6 +60,33 @@ final class _PutNumbers extends _Write {
   final Counters numbers;
 }
 
+sealed class _NumbersRow {
+  const _NumbersRow();
+}
+
+final class _NoNumbersRow extends _NumbersRow {
+  const _NoNumbersRow();
+}
+
+final class _NumbersRowRead extends _NumbersRow {
+  const _NumbersRowRead(this.counters);
+
+  final Counters counters;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _NumbersRowRead && other.counters == counters;
+
+  @override
+  int get hashCode => counters.hashCode;
+}
+
+final class _NumbersRowUnreadable extends _NumbersRow {
+  const _NumbersRowUnreadable(this.problem);
+
+  final String problem;
+}
+
 sealed class _QueueLoad {
   const _QueueLoad();
 }
@@ -287,6 +314,7 @@ extension _CloudStore on LibraryStore {
     }
     final area = strategy.area;
     final storeArea = StrategyArea(strategy.digest);
+    final listed = _summaries[strategy.digest];
     final unreadable = <UnreadableQueueRow>[];
     void cannotRead(String name, String problem) =>
         unreadable.add(UnreadableQueueRow(strategy.refOf(name), problem));
@@ -393,14 +421,7 @@ extension _CloudStore on LibraryStore {
         cannotRead(PendingName(place).name, problem);
         entries = const [];
     }
-    if (_numbersProblem case final problem?) {
-      unreadable.add(
-        UnreadableQueueRow(
-          StoredRowRef(libraryArea, const NumbersName().name),
-          problem,
-        ),
-      );
-    }
+    if (_numbersHold case final row?) unreadable.add(row);
     if (unreadable.isNotEmpty) {
       if (strategy.header case HeaderPlaced(
         row: final ReadableStrategy header,
@@ -419,7 +440,7 @@ extension _CloudStore on LibraryStore {
           ).withSync(_heldSync(unreadable)),
         );
       }
-      _checked(strategy.digest);
+      _checked(strategy.digest, listed);
       return _QueueHeld(unreadable);
     }
     final pending = entries.whereType<PendingOp>();
@@ -468,13 +489,14 @@ extension _CloudStore on LibraryStore {
         summary.withSync(_syncOf(current, _cloudNow())),
       );
     }
-    _checked(strategy.digest);
+    _checked(strategy.digest, listed);
     return _QueueLoaded(loaded);
   }
 
-  void _checked(String digest) {
-    if (!_unchecked.remove(digest)) return;
-    if (_summaries[digest] case final summary?) {
+  void _checked(String digest, StrategySummary? listed) {
+    final wasUnchecked = _unchecked.remove(digest);
+    if (_summaries[digest] case final summary?
+        when wasUnchecked || summary != listed) {
       _emit(
         StrategyRefreshed(strategyPublicId: summary.publicId, summary: summary),
       );
@@ -1037,7 +1059,7 @@ extension _CloudStore on LibraryStore {
       ...base.writes,
       ...queued.writes,
       ..._resultWrites(area, disk, groups),
-      if (numbers != _numbersStored) _PutNumbers(numbers),
+      if (_numbersRow != _NumbersRowRead(numbers)) _PutNumbers(numbers),
       if (summary != previous || _unsaved.contains(digest))
         _PutSummary(digest, summary),
     ];
@@ -1051,7 +1073,7 @@ extension _CloudStore on LibraryStore {
       cloud.queue.current = next;
       _summaries[digest] = summary;
       _unsaved.remove(digest);
-      _numbersStored = numbers;
+      _numbersRow = _NumbersRowRead(numbers);
       return take(summary);
     });
     switch (result) {
@@ -1406,10 +1428,14 @@ extension _CloudStore on LibraryStore {
       case Done():
         break;
     }
-    if (_numbersUnreadable != null ||
-        (_numbersStored == null &&
-            _summaries.values.any((summary) => summary.sync is! KeptHere))) {
-      return const Refused(NumbersUnreadable());
+    switch (_numbersRow) {
+      case _NumbersRowUnreadable():
+        return const Refused(NumbersUnreadable());
+      case _NoNumbersRow()
+          when _summaries.values.any((summary) => summary.sync is! KeptHere):
+        return const Refused(NumbersUnreadable());
+      case _NumbersRowRead() || _NoNumbersRow():
+        break;
     }
     final strategy = LoadedStrategy(
       digest: digest,
@@ -1498,11 +1524,11 @@ extension _CloudStore on LibraryStore {
     )) {
       return NotSaved(failure);
     }
-    final summary = LibraryStore._summaryOf(
-      strategy,
-      header,
-      const {},
-    ).withSync(_syncOf(CloudQueue.start(build: _build), _cloudNow()));
+    final summary = LibraryStore._summaryOf(strategy, header, const {})
+        .withSync(switch (_numbersHold) {
+          final row? => _heldSync([row]),
+          null => _syncOf(CloudQueue.start(build: _build), _cloudNow()),
+        });
     final result = await _commit<StrategySummary, CommitRefusal>(
       [
         for (final key in keys)

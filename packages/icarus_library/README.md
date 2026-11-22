@@ -1446,9 +1446,10 @@ JavaScript, holds the strategy. An area with cloud rows but no `cloud` row is
 a held cloud strategy, never a local one. The library area holds one more row, `numbers`: the next
 attempt and session numbers for the whole library, never reset, so a result
 from a session of an earlier copy of a strategy can never pass for one of a
-new copy. A number is written before anyone is given it. When `numbers` does
-not read, or is missing while the library holds a cloud strategy, the store
-does not guess: every cloud queue reads as held, importing a cloud strategy is
+new copy. A number is written before anyone is given it. The row is in one
+of three named states: missing, read, or unreadable. When it is unreadable,
+or missing while the library holds a cloud strategy, the store does not
+guess: every cloud queue reads as held, importing a cloud strategy is
 refused (`NumbersUnreadable`), and local strategies are untouched. Getting out of that state needs a repair that is not built yet.
 
 **Reads never commit.** `readStrategy` and `readPage` return the drawn rows
@@ -1477,8 +1478,13 @@ left and the pages of queued and landed work on any row of a page the call
 changed. A clean stored summary of a cloud strategy is listed as
 `CloudUnverified` until that strategy's queue has been loaded in this run,
 because only the queue can say nothing is waiting; loading it on the normal
-lazy read promotes it and sends `StrategyRefreshed`. Stored pending and held
-counts show at once. No queue is loaded just to draw the list.
+lazy read promotes it and sends `StrategyRefreshed`. The status is on the
+list entry itself, so it never compares equal to a summary kept here. Stored
+pending and held counts show at once, and any time loading a queue changes a
+strategy's entry, held included, the store sends `StrategyRefreshed`. No
+queue is loaded just to draw the list. Reading one page lists the
+strategy's keys on a cold read, and drawing walks every loaded page; both
+are measured (3,303 keys at 100 pages) and not yet addressed.
 Loading a strategy's queue is four listings (`pending/`, `attempt/`,
 `landed/`, `read/`) and one read (`cloud`).
 
@@ -1505,8 +1511,12 @@ the summary, kept in memory when the store finds it and saved with the next
 commit; a summary from a newer build also reads as held. A newer build reads
 the queue; otherwise the only way out is `discardUnreadableQueue(id, const
 DiscardsUnsentWork())`, which deletes the queue rows and writes fresh facts
-and the rebuilt summary in one commit, or changes nothing. Removal reads the
-strategy's queue from disk and refuses a held queue or outstanding work.
+and the rebuilt summary in one commit, or changes nothing; while the numbers
+row holds the library, the summary it writes still says held. Removal reads
+the strategy's queue from disk and refuses a held queue or outstanding work.
+A read that fails ends a removal, a discard, a folder move or the
+`putStrategy` guard as not saved; a failed read is never taken as "not a
+cloud strategy".
 
 **One call, one commit, computed once.** Each `commit`, `commitAll` or
 `record` call runs all its events through the queue first, then computes the

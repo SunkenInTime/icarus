@@ -1,6 +1,7 @@
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
+import '../rows.dart';
 import '../wire.dart';
 import 'events.dart';
 import 'op_facts.dart';
@@ -59,6 +60,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
       AuthoredUnreadable() => {'unreadable': true},
     },
     'authoredIn': entry.authoredIn,
+    'authoredAt': _millis(entry.authoredAt),
     'retriedAfter': entry.retriedAfter,
     'work': switch (entry.work) {
       OpWork() => 'op',
@@ -97,12 +99,40 @@ Map<String, Object?> _rowToJson(AuthoredRow row) => {
   'digest': row.digest,
   'payloadVersion': ?row.payloadVersion,
   if (row.produces case final produces?) 'produces': _producedToJson(produces),
+  if (row.movedRow case final moved?) 'movedRow': moved.toJson(),
 };
+
+Row? Function() _movedRowOf(JsonFields fields) {
+  if (!fields.has('movedRow')) return () => null;
+  final everywhere = RowSpot(names: (_) => true);
+  final admitted = admit(canonicalJson(fields.json['movedRow']));
+  final Row? row = switch (ElementRow.parse(
+    admitted,
+    spot: everywhere,
+    page: everywhere,
+    canRead: (_) => true,
+  )) {
+    Placed(row: final LiveElement row) => row,
+    _ => switch (LineupGroupRow.parse(
+      admitted,
+      spot: everywhere,
+      page: everywhere,
+      strategy: everywhere,
+      canRead: (_) => true,
+    )) {
+      Placed(row: final LiveLineupGroup row) => row,
+      _ => null,
+    },
+  };
+  if (row == null) fields.reject('an unreadable moved row');
+  return () => row;
+}
 
 Map<String, Object?> _producedToJson(ProducedRow row) => {
   'page': ?row.page,
   'revision': row.revision,
   'digest': row.digest,
+  if (!row.justifies) 'justifies': false,
 };
 
 Decoded<ProducedRow> _producedRow(Object? json) =>
@@ -118,7 +148,20 @@ Decoded<ProducedRow> _producedRow(Object? json) =>
       final revision = fields.whole('revision');
       if (revision < 1) fields.reject('revisions start at 1');
       final digest = fields.string('digest');
-      return () => ProducedRow(page: page, revision: revision, digest: digest);
+      final justifies = switch (fields.json['justifies']) {
+        null => true,
+        false => false,
+        _ => () {
+          fields.reject('an unreadable flag');
+          return true;
+        }(),
+      };
+      return () => ProducedRow(
+        page: page,
+        revision: revision,
+        digest: digest,
+        justifies: justifies,
+      );
     });
 
 ProducedRow? Function() _producesOfKey(JsonFields fields, String key) {
@@ -170,6 +213,7 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
         final scope = fields.decoded('scope', _scope);
         final authored = fields.decoded('authored', _authored);
         final authoredIn = fields.whole('authoredIn');
+        final authoredAt = _timeAt(fields, 'authoredAt');
         if (authoredIn < 0) fields.reject('a negative session number');
         final retriedAfter = fields.whole('retriedAfter');
         if (retriedAfter < 0) fields.reject('a negative attempt number');
@@ -212,6 +256,7 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
           scope: scope!,
           authored: authored!,
           authoredIn: authoredIn,
+          authoredAt: authoredAt,
           refusal: refused == null ? const NotRefused() : RefusedWith(refused),
           retriedAfter: retriedAfter,
           window: windowPassed ? const WindowPassed() : const WindowOpen(),
@@ -275,11 +320,13 @@ AuthoredRow Function() _authoredRowOf(JsonFields fields) {
       ? fields.whole('payloadVersion')
       : null;
   final produces = _producesOfKey(fields, 'produces');
+  final movedRow = _movedRowOf(fields);
   return () => AuthoredRow(
     revision: revision,
     digest: digest,
     payloadVersion: payloadVersion,
     produces: produces(),
+    movedRow: movedRow(),
   );
 }
 
@@ -587,6 +634,7 @@ Map<String, Object?> landedToJson(LandedWork work) => {
   'own': work.own,
   'firstSentAt': _millis(work.firstSentAt),
   if (work.produced case final produced?) 'produced': _producedToJson(produced),
+  if (work.movedRow case final moved?) 'movedRow': moved.toJson(),
   if (work.shownWithout) 'shownWithout': true,
 };
 
@@ -611,6 +659,7 @@ CloudRowReading<LandedWork> landedFromText(
       }(),
     };
     final firstSentAt = _timeAt(fields, 'firstSentAt');
+    final movedRow = _movedRowOf(fields);
     final produced = _producesOfKey(fields, 'produced');
     final shownWithout = switch (fields.json['shownWithout']) {
       null => false,
@@ -623,6 +672,7 @@ CloudRowReading<LandedWork> landedFromText(
     return () => LandedWork(
       own: own,
       firstSentAt: firstSentAt,
+      movedRow: movedRow(),
       produced: produced(),
       shownWithout: shownWithout,
       attempt: attempt,

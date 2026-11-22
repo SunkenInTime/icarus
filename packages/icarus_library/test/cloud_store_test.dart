@@ -1278,6 +1278,220 @@ void main() {
       );
     });
 
+    test('a listing that fails once ends a removal as not saved, and the '
+        'queued add survives', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      savedValue(await store.commit(strategyId, elementAdd('add')));
+      await store.close();
+      var armed = false;
+      store = await openCloudStore(
+        WrappingEngine(
+          MemoryEngine(storage),
+          (lease) => ListingFailsOnceLease(lease, (at) => armed && at == area),
+        ),
+      );
+      armed = true;
+      expect(
+        await store.editLibrary([const RemoveStrategy(strategyId)]),
+        isA<NotSaved<LibraryEdited, LibraryRefusal>>(),
+      );
+      await store.close();
+      store = await openCloudStore(MemoryEngine(storage));
+      expect((await syncOf(store)).queue.entries.map((entry) => entry.id), [
+        'add',
+      ]);
+    });
+
+    test(
+      'a stored pending summary that turns out held sends a refresh',
+      () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        savedValue(await store.commit(strategyId, elementAdd('add')));
+        await store.close();
+        final contents = editable(storage.contents);
+        contents[area]![PendingName(5).name] = '{"version":99}';
+        store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+        final refreshed = <StoreChange>[];
+        final listening = store.changes.listen(refreshed.add);
+        await store.readStrategy(strategyId);
+        await Future<void>.delayed(Duration.zero);
+        await listening.cancel();
+        expect(
+          refreshed.whereType<StrategyRefreshed>().map(
+            (change) => change.summary.sync,
+          ),
+          [
+            isA<KeptInCloud>().having(
+              (sync) => sync.tally.standing,
+              'standing',
+              Standing.held,
+            ),
+          ],
+        );
+      },
+    );
+
+    test('discarding a queue while the numbers row is missing still answers '
+        'held', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      await store.close();
+      final contents = editable(storage.contents);
+      contents['library']!.remove('numbers');
+      store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+      expect(
+        savedValue(
+          await store.discardUnreadableQueue(
+            strategyId,
+            const DiscardsUnsentWork(),
+          ),
+        ).sync,
+        isA<KeptInCloud>().having(
+          (sync) => sync.tally.standing,
+          'standing',
+          Standing.held,
+        ),
+      );
+    });
+
+    test('an unverified list entry is not equal to the same summary kept '
+        'here', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      await store.close();
+      store = await openCloudStore(MemoryEngine(storage));
+      final listed = listOf(store).strategies.single;
+      expect(listed.sync, isA<CloudUnverified>());
+      expect(listed == listed.withSync(const KeptHere()), isFalse);
+    });
+
+    group('a move whose source page\'s result arrives first', () {
+      StrategyRowSet seventeen() => strategyRows(
+        elements: [
+          element('e1', sortIndex: 17),
+          element('e2'),
+          element('e3', pageId: 'page-b'),
+        ],
+      );
+
+      for (final (label, op, answered) in <(String, ElementPatchOp, bool)>[
+        (
+          'changing only the page, answered',
+          const ElementPatchOp(
+            opId: 'move',
+            elementPublicId: 'e1',
+            expectedElementRevision: 1,
+            pagePublicId: 'page-b',
+          ),
+          true,
+        ),
+        (
+          'with a payload and no sort index, answered',
+          ElementPatchOp(
+            opId: 'move',
+            elementPublicId: 'e1',
+            expectedElementRevision: 1,
+            pagePublicId: 'page-b',
+            payload: agentPayload('e1', const {
+              'position': {'dx': 5, 'dy': 0},
+            }),
+          ),
+          true,
+        ),
+        (
+          'a complete patch, before its answer',
+          ElementPatchOp(
+            opId: 'move',
+            elementPublicId: 'e1',
+            expectedElementRevision: 1,
+            pagePublicId: 'page-b',
+            payload: agentPayload('e1', const {
+              'position': {'dx': 5, 'dy': 0},
+            }),
+            sortIndex: 17,
+          ),
+          false,
+        ),
+      ]) {
+        test('$label: drawn on its destination at its own place, warm and '
+            'after a reopen', () async {
+          final storage = MemoryStorage();
+          var store = await openCloudStore(MemoryEngine(storage));
+          await addCloud(store, seventeen());
+          savedValue(await store.commit(strategyId, op));
+          final sent = await claimAll(store);
+          final server = withOp(seventeen(), sent.ops.single);
+          if (answered) {
+            await recordAll(store, [
+              OpAnswered(
+                sent.attempt,
+                const AppliedAnswer('move', revision: 2),
+              ),
+            ]);
+          }
+          await recordAll(store, [
+            BaseArrived(
+              pageReadOf(server, 'page-a'),
+              session: await sessionOf(store),
+            ),
+          ]);
+          Future<void> check() async {
+            final b = pageOf(await store.readPage(strategyId, 'page-b'));
+            final drawn = elementOn(b, 'e1');
+            expect(drawn, isA<LiveElement>());
+            expect(
+              (drawn as LiveElement).sortIndex,
+              (server.element('e1')! as LiveElement).sortIndex,
+            );
+          }
+
+          await check();
+          await store.close();
+          store = await openCloudStore(MemoryEngine(storage));
+          await recordAll(store, [const AppRestarted(build: build)]);
+          await check();
+        });
+      }
+    });
+
+    test('a page delete after a teammate added to the page is held, even when '
+        'no page list has shown the page yet', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      savedValue(await store.commit(strategyId, pageAdd('add', 'page-c')));
+      await answer(store, 'add', 2);
+      var server = withOp(initialRows(), pageAdd('add', 'page-c'));
+      await recordAll(store, [
+        BaseArrived(
+          pageReadOf(server, 'page-c'),
+          session: await sessionOf(store),
+        ),
+      ]);
+      savedValue(
+        await store.commit(
+          strategyId,
+          pageDelete('del', 'page-c', expected: 2),
+        ),
+      );
+      server = withOp(
+        server,
+        elementAdd('t', elementId: 'theirs', pageId: 'page-c'),
+      );
+      await recordAll(store, [
+        BaseArrived(
+          pageReadOf(server, 'page-c'),
+          session: await sessionOf(store),
+        ),
+      ]);
+      expect((await syncOf(store)).views['del']!.sendable, isFalse);
+    });
+
     group('the hold\'s edges', () {
       Future<(LibraryStore, MemoryStorage)> withAttempt(
         String name,
@@ -1447,10 +1661,36 @@ Map<String, Object?> entryJson() => {
   'scope': {'page': 'page-a'},
   'authored': {'noRow': true},
   'authoredIn': 1,
+  'authoredAt': 0,
   'retriedAfter': 0,
   'work': 'op',
   'refusal': null,
 };
+
+final class ListingFailsOnceLease extends ForwardingLease {
+  ListingFailsOnceLease(super.inner, this.armed);
+
+  final bool Function(String area) armed;
+  bool failed = false;
+
+  bool _failNow(String area) {
+    if (failed || !armed(area)) return false;
+    failed = true;
+    return true;
+  }
+
+  @override
+  Future<Stored<List<String>>> keys(String area, String prefix) async =>
+      _failNow(area)
+      ? const StorageFailed(DeviceFailure('the listing timed out'))
+      : super.keys(area, prefix);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      _failNow(area)
+      ? const StorageFailed(DeviceFailure('the listing timed out'))
+      : super.entries(area, prefix);
+}
 
 final class RefusingLease extends ForwardingLease {
   RefusingLease(super.inner, this.refuse);

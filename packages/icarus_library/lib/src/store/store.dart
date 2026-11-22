@@ -316,12 +316,19 @@ final class LibraryStore {
   final _strategies = <String, LoadedStrategy>{};
   final _queues = <String, _LoadedQueue>{};
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
-  Counters? _numbersStored;
-  String? _numbersUnreadable;
+  _NumbersRow _numbersRow = const _NoNumbersRow();
 
-  String? get _numbersProblem =>
-      _numbersUnreadable ??
-      (_numbersStored == null ? 'the numbers row is missing' : null);
+  UnreadableQueueRow? get _numbersHold => switch (_numbersRow) {
+    _NumbersRowRead() => null,
+    _NumbersRowUnreadable(:final problem) => UnreadableQueueRow(
+      StoredRowRef(libraryArea, const NumbersName().name),
+      problem,
+    ),
+    _NoNumbersRow() => UnreadableQueueRow(
+      StoredRowRef(libraryArea, const NumbersName().name),
+      'the numbers row is missing',
+    ),
+  };
   final _unsaved = <String>{};
   final _unchecked = <String>{};
   final _changes = StreamController<StoreChange>.broadcast();
@@ -592,9 +599,9 @@ final class LibraryStore {
           switch (countersFromText(value)) {
             case CloudRowRead(value: final numbers):
               _numbers = numbers;
-              _numbersStored = numbers;
+              _numbersRow = _NumbersRowRead(numbers);
             case CloudRowUnreadable(:final problem):
-              _numbersUnreadable = problem;
+              _numbersRow = _NumbersRowUnreadable(problem);
           }
         case _:
           break;
@@ -1922,7 +1929,9 @@ final class _LibraryEdit {
               case _QueueNotRead(:final failure):
                 return _Stop(NotSaved(failure));
             }
-          case _:
+          case NotRead(:final failure):
+            return _Stop(NotSaved(failure));
+          case Found() || NotFound() || InUnreadableStrategy():
             break;
         }
         switch (await _header(strategyPublicId)) {
