@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
-import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:icarus/widgets/role_badge.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -33,18 +31,18 @@ class StrategyTileViewData {
   });
 
   factory StrategyTileViewData.fromStrategy(
-    StrategyData strategy,
+    LocalStrategySummary strategy,
     AppLocalizations l10n,
   ) {
     return StrategyTileViewData(
       name: strategy.name,
       mapName: l10n.mapNameOf(_mapName(strategy.mapData)),
-      attackLabel: _attackLabelText(l10n, _attackLabel(strategy.pages)),
-      attackColor: _attackColor(_attackLabel(strategy.pages)),
+      attackLabel: _attackLabelText(l10n, _attackLabel(strategy.sides)),
+      attackColor: _attackColor(_attackLabel(strategy.sides)),
       thumbnailAsset:
           'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
       lastEditedLabel: timeAgo(l10n, strategy.lastEdited),
-      agentTypes: _collectAgentTypes(strategy.pages),
+      agentTypes: _inRoleOrder(strategy.agentTypes),
     );
   }
 
@@ -94,15 +92,12 @@ class StrategyTileViewData {
     return raw[0].toUpperCase() + raw.substring(1);
   }
 
-  static String _attackLabel(List<StrategyPage> pages) {
-    if (pages.isEmpty) {
-      return 'Unknown';
-    }
-    final first = pages.first.isAttack;
-    final mixed = pages.any((page) => page.isAttack != first);
-    if (mixed) return 'Mixed';
-    return first ? 'Attack' : 'Defend';
-  }
+  static String _attackLabel(LocalSides sides) => switch (sides) {
+        LocalSides.attack => 'Attack',
+        LocalSides.defend => 'Defend',
+        LocalSides.mixed => 'Mixed',
+        LocalSides.unknown => 'Unknown',
+      };
 
   /// The words for an attack label, which is 'Attack', 'Defend', 'Mixed' or
   /// 'Unknown' (the server's names). Anything else is shown as it came.
@@ -124,22 +119,6 @@ class StrategyTileViewData {
       default:
         return Settings.mixedStrategyColor;
     }
-  }
-
-  static List<AgentType> _collectAgentTypes(List<StrategyPage> pages) {
-    final result = <AgentType>{};
-    for (final page in pages) {
-      for (final agent in page.agentData) {
-        result.add(agent.type);
-      }
-      // Lineup origins live in lineUpOrigins, not agentData, so collect
-      // them too or agents added via the lineup tool never show in previews.
-      for (final origin in page.lineUpOrigins) {
-        result.add(origin.agent.type);
-      }
-    }
-
-    return _inRoleOrder(result);
   }
 
   static List<AgentType> _inRoleOrder(Iterable<AgentType> agents) {

@@ -896,14 +896,23 @@ final class StoreModel {
       if (!key.startsWith(pendingPrefix)) key: value,
   };
 
-  void refusedAsEnded(RecordResult result, String label) {
-    if (result case Saved(:final value)) {
-      for (final outcome in value.outcomes) {
-        if (outcome case ReportNotApplicable(why: FromAnEndedSession())) {
-          continue;
-        }
-        throw StateError('$label was not refused as from an ended session');
-      }
+  void refusedAsEnded(RecordResult result, int events, String label) {
+    switch (result) {
+      case NotSaved() || SaveInDoubt():
+        return;
+      case Saved(:final value)
+          when value.outcomes.length == events &&
+              value.outcomes.every(
+                (outcome) =>
+                    outcome is ReportNotApplicable &&
+                    outcome.why is FromAnEndedSession,
+              ):
+        return;
+      case _:
+        throw StateError(
+          '$label was not refused as from an ended session once per event: '
+          '${describeSaving(result)}',
+        );
     }
   }
 
@@ -928,9 +937,8 @@ final class StoreModel {
       return;
     }
     final before = storage.contents;
-    final result = await store.record(strategyId, [
-      BaseArrived(base, session: ended),
-    ]);
+    final stale = [BaseArrived(base, session: ended)];
+    final result = await store.record(strategyId, stale);
     log.add(
       'a $kind from the ended session arrives -> ${describeSaving(result)}',
     );
@@ -938,7 +946,7 @@ final class StoreModel {
       await reopen('the late $kind was in doubt');
       return;
     }
-    refusedAsEnded(result, 'a $kind from the ended session');
+    refusedAsEnded(result, stale.length, 'a $kind from the ended session');
     if (!const MapEquality<String, String>().equals(
       rowsAndResults(before),
       rowsAndResults(storage.contents),
@@ -959,15 +967,16 @@ final class StoreModel {
       throw StateError('a reopen handed out session $session again');
     }
     final before = storage.contents;
-    final result = await store.record(strategyId, [
+    final stale = [
       BaseArrived(pageReadOf(server.rows, openPage), session: session),
-    ]);
+    ];
+    final result = await store.record(strategyId, stale);
     log.add('a result from the unused session -> ${describeSaving(result)}');
     if (result is SaveInDoubt<Recorded, CommitRefusal>) {
       await reopen('the unused session result was in doubt');
       return;
     }
-    refusedAsEnded(result, 'a result from the unused session');
+    refusedAsEnded(result, stale.length, 'a result from the unused session');
     if (!const MapEquality<String, String>().equals(
       rowsAndResults(before),
       rowsAndResults(storage.contents),
@@ -1008,15 +1017,16 @@ final class StoreModel {
       count('imports in several calls');
     }
     final before = storage.contents;
-    final result = await store.record(strategyId, [
+    final stale = [
       BaseArrived(oldBase, session: old),
       if (oldPage is PageRead) BaseArrived(oldPage, session: old),
-    ]);
+    ];
+    final result = await store.record(strategyId, stale);
     log.add(
       'a read from before the strategy was added again -> '
       '${describeSaving(result)}',
     );
-    refusedAsEnded(result, 'a read from the earlier copy');
+    refusedAsEnded(result, stale.length, 'a read from the earlier copy');
     if (!const MapEquality<String, String>().equals(
       rowsAndResults(before),
       rowsAndResults(storage.contents),

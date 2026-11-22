@@ -335,13 +335,10 @@ class FolderItem extends GridItem {
 
 class StrategyItem extends GridItem {
   final String strategyId;
-  final StrategyData? strategy;
-
-  StrategyItem.local(this.strategy) : strategyId = strategy!.id;
-
-  StrategyItem.cloud(this.strategyId) : strategy = null;
-
   @override
-  LibraryWorkspace get store =>
-      strategy == null ? LibraryWorkspace.cloud : LibraryWorkspace.local;
+  final LibraryWorkspace store;
+
+  StrategyItem.local(this.strategyId) : store = LibraryWorkspace.local;
+
+  StrategyItem.cloud(this.strategyId) : store = LibraryWorkspace.cloud;
 }

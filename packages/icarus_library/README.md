@@ -1557,10 +1557,11 @@ either lands whole or not at all. When the engine answers that the outcome
 is unknown (`SaveInDoubt`), the store stops: it releases its lease and
 answers every later call as shut, so the caller reopens the store before it
 retries or reads, and the reopened store reads what actually landed. A
-commit that was refused or not stored is different: the store stays open,
-and memory is exactly as it was before the call (the queue, its session and
-the numbers, with the cached rows read back from disk), so the same event
-delivered again applies.
+commit refused because the lease ended (`LeaseEnded`) stops the store the
+same way. Any other commit that was refused or not stored is different: the
+store stays open, and memory is exactly as it was before the call (the
+queue, its session and the numbers, with the cached rows read back from
+disk), so the same event delivered again applies.
 
 `test/cloud_store_test.dart` pins these rules and the writes each kind of
 call makes. `test/cloud_store_model_test.dart` runs the model through the

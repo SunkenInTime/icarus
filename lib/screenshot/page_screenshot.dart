@@ -3,13 +3,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce/hive.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/l10n/page_names.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -558,8 +557,9 @@ String? _activePageName(WidgetRef ref) {
         null => null,
       },
     StrategySource.local => switch (
-          Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-              .get(strategy.strategyId)
+          ref
+              .read(localLibraryViewProvider)
+              .strategyImage(strategy.strategyId)
               ?.pages
               .where((page) => page.id == pageId)
               .firstOrNull) {

@@ -1,9 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/drawing_element.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -224,9 +222,6 @@ class LocalReplayCaptureStore implements ReplayCaptureStore {
   /// New Strategy does.
   final Future<StrategyData> Function(MapValue map, String name) createStrategy;
 
-  Box<StrategyData> get _box =>
-      Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-
   @override
   Future<CapturedStrategy> create(
     MapValue map,
@@ -263,7 +258,7 @@ class LocalReplayCaptureStore implements ReplayCaptureStore {
   }
 
   StrategyData? _stored(CapturedStrategy strategy) {
-    final stored = _box.get(strategy.id);
+    final stored = const LocalLibrary().storedStrategy(strategy.id);
     return stored?.mapData == strategy.map && stored!.pages.isNotEmpty
         ? stored
         : null;

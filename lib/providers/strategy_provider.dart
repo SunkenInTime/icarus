@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
@@ -19,7 +20,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/open_attempt.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -40,7 +40,6 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:icarus/services/strategy_folders.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
@@ -962,10 +961,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    const library = LocalLibrary();
     final strategyId = state.strategyId;
     if (strategyId == null) return;
-    final strat = box.get(strategyId);
+    final strat = library.storedStrategy(strategyId);
     if (strat == null || strat.pages.isEmpty) return;
 
     final ordered = [...strat.pages]..sortBySortIndex((item) => item.sortIndex);
@@ -1050,11 +1049,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// new strategy in the box.
   _LocalNeighbours? _localNeighbours() {
     final strategyId = state.strategyId;
-    if (strategyId == null || !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
+    final library = ref.read(localLibraryViewProvider);
+    if (strategyId == null || !library.isOpen) {
       return null;
     }
-    final strat =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+    final strat = library.strategyImage(strategyId);
     final pageId = ref.read(strategyPageSessionProvider).activePageId;
     if (strat == null || pageId == null) return null;
     final cached = _cachedLocalNeighbours;
@@ -1087,7 +1086,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         direction: direction,
       );
     }
-    if (!Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
+    if (!LocalLibrary.isOpen) {
       return PageCopyResult.unavailable;
     }
 
@@ -1096,8 +1095,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final strategyId = state.strategyId;
     if (strategyId == null) return PageCopyResult.unavailable;
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strat = box.get(strategyId);
+    const library = LocalLibrary();
+    final strat = library.storedStrategy(strategyId);
     if (strat == null || strat.pages.length < 2) {
       return PageCopyResult.unavailable;
     }
@@ -1485,11 +1484,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   List<StrategyPage> _orderedLocalPages() {
     final strategyId = state.strategyId;
-    if (strategyId == null || !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
+    if (strategyId == null || !LocalLibrary.isOpen) {
       return const [];
     }
-    final strat =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+    final strat = const LocalLibrary().storedStrategy(strategyId);
     if (strat == null) return const [];
     return [...strat.pages]..sortBySortIndex((item) => item.sortIndex);
   }
@@ -1564,8 +1562,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return PageCopyResult.alreadyThere;
     }
 
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strat = box.get(strategyId);
+    const library = LocalLibrary();
+    final strat = library.storedStrategy(strategyId);
     if (strat == null) return PageCopyResult.unavailable;
     final updated = strat.copyWith(
       pages: [
@@ -1592,7 +1590,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
       // Hive can store a write and then fail tidying its file, so what the
       // box holds decides whether the lineups are there.
-      final stored = box.get(strategyId)?.pages.where((p) => p.id == target.id);
+      final stored = library
+          .storedStrategy(strategyId)
+          ?.pages
+          .where((p) => p.id == target.id);
       final landed = stored != null &&
           stored.any((page) => page.lineUpLinks.any(
               (link) => lineUps.links.any((copied) => copied.id == link.id)));
@@ -1930,13 +1931,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       return landed;
     }
 
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    const library = LocalLibrary();
 
     await _saveLocalPageOrThrow();
 
     final strategyId = state.strategyId;
     if (strategyId == null) return none;
-    final strat = box.get(strategyId);
+    final strat = library.storedStrategy(strategyId);
     if (strat == null || strat.pages.isEmpty) return none;
 
     final orderedPages = [...strat.pages]
@@ -2027,8 +2028,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final strategyId = state.strategyId;
     if (strategyId == null) return;
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strat = box.get(strategyId);
+    const library = LocalLibrary();
+    final strat = library.storedStrategy(strategyId);
     if (strat == null) return;
 
     final updatedPages = [
@@ -2104,8 +2105,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final strategyId = state.strategyId;
     if (strategyId == null) return false;
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strat = box.get(strategyId);
+    const library = LocalLibrary();
+    final strat = library.storedStrategy(strategyId);
     if (strat == null || strat.pages.length <= 1) return false;
 
     final remaining = [...strat.pages]
@@ -2139,11 +2140,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     cancelPendingSave();
 
     return _open((opening) async {
-      final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-          .values
-          .where((StrategyData strategy) {
-        return strategy.id == id;
-      }).firstOrNull;
+      final newStrat = const LocalLibrary().firstStoredWithId(id);
 
       if (newStrat == null) {
         return false;
@@ -2233,7 +2230,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     String? name,
     bool local = false,
   }) async {
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    const library = LocalLibrary();
     final isCloud = !local && _selectedWorkspaceIsCloud();
     if (isCloud && _refuseCloudChangeOffline()) {
       throw StateError(cloudNeedsConnectionMessage);
@@ -2242,7 +2239,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final existingNames = isCloud
         ? (ref.read(cloudStrategiesProvider).valueOrNull ?? const [])
             .map((entry) => entry.strategy.name)
-        : box.values.map((strategy) => strategy.name);
+        : library.storedStrategies.map((strategy) => strategy.name);
     final strategyName = name ?? autoStrategyName(map, existingNames);
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
@@ -2394,8 +2391,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strategy = strategyBox.get(strategyID);
+    const library = LocalLibrary();
+    final strategy = library.storedStrategy(strategyID);
 
     if (strategy != null) {
       (await const LocalLibrary().renameStrategy(strategy, newName)).orThrow();
@@ -2481,8 +2478,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final originalStrategy = strategyBox.get(strategyID);
+    const library = LocalLibrary();
+    final originalStrategy = library.storedStrategy(strategyID);
     if (originalStrategy == null) {
       log("Original strategy with ID $strategyID not found.");
       return;
@@ -2638,8 +2635,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         ref.read(strategySaveStateProvider.notifier).dirtyMarks;
     await _saveLocalPageOrThrow();
 
-    final StrategyData? savedStrat =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
+    final StrategyData? savedStrat = const LocalLibrary().storedStrategy(id);
 
     if (savedStrat == null) return;
 
@@ -2757,8 +2753,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strat = box.get(strategyId);
+    const library = LocalLibrary();
+    final strat = library.storedStrategy(strategyId);
     if (strat == null || strat.pages.isEmpty) return;
 
     final resolvedActiveId = activeId ?? strat.pages.first.id;
@@ -2857,10 +2853,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     await _saveLocalPageOrThrow();
 
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    const library = LocalLibrary();
     final strategyId = state.strategyId;
     if (strategyId == null) return;
-    final strat = box.get(strategyId);
+    final strat = library.storedStrategy(strategyId);
     if (strat == null || strat.pages.isEmpty) return;
 
     final newPages = [
@@ -2933,8 +2929,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       ref.invalidate(cloudStrategiesProvider);
       return result;
     }
-    final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strategy = strategyBox.get(strategyID);
+    const library = LocalLibrary();
+    final strategy = library.storedStrategy(strategyID);
 
     if (strategy != null) {
       (await const LocalLibrary().moveStrategy(strategy, parentID)).orThrow();

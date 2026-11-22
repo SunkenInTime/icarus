@@ -1,11 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
-import 'package:hive_ce/hive.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/const/drawing_element.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -101,9 +100,8 @@ class LocalStrategyPageSource implements StrategyPageSource {
 
   @override
   Future<List<String>> listPageIds() async {
-    final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
-      strategyId,
-    );
+    final strategy =
+        await ref.read(localLibraryViewProvider).readStrategy(strategyId);
     if (strategy == null) {
       return const [];
     }
@@ -114,8 +112,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
 
   @override
   Future<StrategyEditorPageData> loadPage(String pageId) async {
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final current = box.get(strategyId);
+    final current = const LocalLibrary().storedStrategy(strategyId);
     if (current == null) {
       throw StateError('Strategy $strategyId not found.');
     }
@@ -156,8 +153,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       );
 
   Future<PageHandover> _writeCurrentPage() async {
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strategy = box.get(strategyId);
+    final strategy = const LocalLibrary().storedStrategy(strategyId);
     if (strategy == null) {
       return const HeldOnCanvas(HeldReason.strategyMissing);
     }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/maps.dart';
@@ -60,7 +61,7 @@ const List<AgentRole> _roleOrder = [
 class FolderCardViewData {
   FolderCardViewData({
     required this.folder,
-    required List<StrategyData> strategies,
+    required List<LocalStrategySummary> strategies,
     required this.folderCount,
   })  : strategyCount = strategies.length,
         mapPeeks = _collectMapPeeks(strategies),
@@ -91,7 +92,8 @@ class FolderCardViewData {
   /// Agents across all strategies in tactical role order, then frequency.
   final List<AgentType> agentTypes;
 
-  static List<String> _collectMapPeeks(List<StrategyData> strategies) {
+  static List<String> _collectMapPeeks(
+      List<LocalStrategySummary> strategies) {
     final counts = <MapValue, int>{};
     for (final strategy in strategies) {
       counts[strategy.mapData] = (counts[strategy.mapData] ?? 0) + 1;
@@ -104,21 +106,11 @@ class FolderCardViewData {
     ];
   }
 
-  static List<AgentType> _collectAgents(List<StrategyData> strategies) {
+  static List<AgentType> _collectAgents(
+      List<LocalStrategySummary> strategies) {
     final counts = <AgentType, int>{};
     for (final strategy in strategies) {
-      final seenInStrategy = <AgentType>{};
-      for (final page in strategy.pages) {
-        for (final agent in page.agentData) {
-          seenInStrategy.add(agent.type);
-        }
-        // Lineup origins live in lineUpOrigins, not agentData, so collect
-        // them too or agents added via the lineup tool never show in previews.
-        for (final origin in page.lineUpOrigins) {
-          seenInStrategy.add(origin.agent.type);
-        }
-      }
-      for (final type in seenInStrategy) {
+      for (final type in strategy.agentTypes) {
         counts[type] = (counts[type] ?? 0) + 1;
       }
     }
@@ -351,7 +343,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
         await ref.read(strategyProvider.notifier).moveToFolder(
               strategyID: item.strategyId,
               parentID: _folder.id,
-              source: item.strategy == null
+              source: item.store == LibraryWorkspace.cloud
                   ? StrategySource.cloud
                   : StrategySource.local,
             );

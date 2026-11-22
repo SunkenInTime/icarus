@@ -163,7 +163,7 @@ class FolderTab extends ConsumerWidget {
             await ref.read(strategyProvider.notifier).moveToFolder(
                   strategyID: item.strategyId,
                   parentID: folder?.id,
-                  source: item.strategy == null
+                  source: item.store == LibraryWorkspace.cloud
                       ? StrategySource.cloud
                       : StrategySource.local,
                 );

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
-import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/config/drive_build.dart';
+import 'package:icarus/dev/drive/drive_screens.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -77,8 +78,6 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   double? _persistedWidthCache;
   final GlobalKey _expandedPanelKey = GlobalKey();
   final GlobalKey _barKey = GlobalKey();
-
-  StrategyData? _strategy(Box<StrategyData> box, String id) => box.get(id);
 
   double _clampExpandedHeight(double height) {
     return height.clamp(_minExpandedHeight, _maxExpandedHeight).toDouble();
@@ -434,11 +433,15 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       if (strategyId == null) {
         return const SizedBox.shrink();
       }
-      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      final library = ref.watch(localLibraryViewProvider);
       return ValueListenableBuilder(
-        valueListenable: box.listenable(keys: [strategyId]),
-        builder: (context, Box<StrategyData> b, _) {
-          final data = _buildLocalData(b, strategyId, activePageId);
+        valueListenable: driveBuild
+            ? countedForDrive(
+                library.strategyImageChanges(strategyId), 'pages-bar')
+            : library.strategyImageChanges(strategyId),
+        builder: (context, LocalStrategyImage image, _) {
+          if (driveBuild) countDriveBuild('pages-bar');
+          final data = _buildLocalData(image.current, activePageId);
           if (data == null || data.pages.isEmpty) {
             return const SizedBox.shrink();
           }
@@ -552,11 +555,9 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   }
 
   _PageBarData? _buildLocalData(
-    Box<StrategyData> box,
-    String strategyId,
+    StrategyData? strategy,
     String? activePageId,
   ) {
-    final strategy = _strategy(box, strategyId);
     if (strategy == null || strategy.pages.isEmpty) {
       return null;
     }
