@@ -103,8 +103,9 @@ final class CloudStoreLog {
       for (final entry in settled) ..._problemLines(entry),
       if (equal.isNotEmpty || skipped.isNotEmpty)
         CloudStoreLine(
-          'CLOUDSTORE ${settled.length} results settled: ${equal.length} '
-          'compared equal${_skips(skipped)}',
+          'CLOUDSTORE ${settled.length} results settled '
+          '(${settled.where((entry) => entry.pageId != null).length} pages): '
+          '${equal.length} compared equal${_skips(skipped)}',
           problem: false,
         ),
     ];
