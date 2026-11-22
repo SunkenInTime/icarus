@@ -20,14 +20,28 @@ final class StoreSwitchMirror extends LibraryStoreSwitch {
   const StoreSwitchMirror();
 }
 
+sealed class CloudStoreSwitch {
+  const CloudStoreSwitch();
+}
+
+final class CloudStoreOff extends CloudStoreSwitch {
+  const CloudStoreOff();
+}
+
+final class CloudStoreShadow extends CloudStoreSwitch {
+  const CloudStoreShadow();
+}
+
 final class LibraryStoreLaunch {
-  const LibraryStoreLaunch._(this.choice, this.otherArgs);
+  const LibraryStoreLaunch._(this.choice, this.cloud, this.otherArgs);
 
   static const shadowFlag = '--library-store=shadow';
   static const mirrorFlag = '--library-store=mirror';
   static const offFlag = '--library-store=off';
+  static const cloudShadowFlag = '--cloud-store=shadow';
 
   final LibraryStoreSwitch choice;
+  final CloudStoreSwitch cloud;
   final List<String> otherArgs;
 
   static LibraryStoreLaunch parse(
@@ -36,6 +50,7 @@ final class LibraryStoreLaunch {
   }) {
     final others = <String>[];
     LibraryStoreSwitch choice = const StoreSwitchOff();
+    CloudStoreSwitch cloud = const CloudStoreOff();
     for (final argument in args) {
       switch (argument) {
         case shadowFlag:
@@ -46,14 +61,20 @@ final class LibraryStoreLaunch {
               mayShadow ? const StoreSwitchMirror() : const StoreSwitchOff();
         case offFlag:
           choice = const StoreSwitchOff();
+        case cloudShadowFlag:
+          cloud = mayShadow ? const CloudStoreShadow() : const CloudStoreOff();
         case _:
           others.add(argument);
       }
     }
-    return LibraryStoreLaunch._(choice, List.unmodifiable(others));
+    return LibraryStoreLaunch._(choice, cloud, List.unmodifiable(others));
   }
 }
 
 final libraryStoreSwitchProvider = Provider<LibraryStoreSwitch>(
   (ref) => const StoreSwitchOff(),
+);
+
+final cloudStoreSwitchProvider = Provider<CloudStoreSwitch>(
+  (ref) => const CloudStoreOff(),
 );

@@ -242,7 +242,7 @@ Future<StoreCheck> checkStoreAgainstHive(
     }
     await breathe();
   }
-  final listed = {for (final summary in list.strategies) summary.publicId};
+  final listed = localStrategyIds(list);
   for (final id in listed.difference(hiveIds)) {
     strategies.add(StrategyNotInHive(id));
   }

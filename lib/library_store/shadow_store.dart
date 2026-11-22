@@ -30,9 +30,9 @@ class LibraryStoreNotifier extends Notifier<LibraryStoreState> {
   @override
   LibraryStoreState build() => const LibraryStoreOff();
 
-  Future<LibraryStoreOpened> open(File file) async {
+  Future<LibraryStoreOpened> open(File file, {String build = ''}) async {
     state = LibraryStoreOpening(file);
-    final opened = await openLibraryStore(file);
+    final opened = await openLibraryStore(file, build: build);
     state = opened;
     return opened;
   }

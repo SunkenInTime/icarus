@@ -169,6 +169,8 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/dev/drive/drive_frames.dart';
+import 'package:icarus/dev/drive/drive_cloud_store.dart';
+import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/interactive_map.dart';
@@ -261,6 +263,15 @@ var _flutterErrors = 0;
 var _failedSteps = 0;
 var _steps = 0;
 final _misplaced = <String>{};
+final _cloudStore = CloudStoreLog();
+
+void _logCloudStore(List<CloudStoreLine> lines) {
+  for (final line in lines) {
+    if (line.problem) _failedSteps++;
+    _log(line.problem ? 'FAIL ${line.text}' : line.text);
+  }
+}
+
 final _frameTimings = <ui.FrameTiming>[];
 
 void _log(String line) =>
@@ -298,6 +309,10 @@ Future<void> _play(String script) async {
   _log('RUN $_runId $script');
   _countLibraryBoxEvents();
   _log(await firstFrameLine(appProviderContainer));
+  if (appProviderContainer.read(cloudStoreSwitchProvider)
+      case final CloudStoreShadow choice) {
+    _log('CLOUDSTORE switch ${cloudSwitchName(choice)}');
+  }
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
       _failedSteps++;
@@ -330,9 +345,11 @@ Future<void> _play(String script) async {
       _log('FAIL checking items: $error');
     }
     _logScreensIfChanged('step $_steps');
+    _logCloudStore(_cloudStore.drain(appProviderContainer));
     await _flush();
   }
   await Future.wait(_pictureWatches);
+  _logCloudStore(await _cloudStore.end(appProviderContainer));
   _log(_runFrames.stop());
   _log(buildsLine());
   try {

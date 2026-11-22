@@ -30,7 +30,8 @@ param(
   [string]$AccountsFile = (Join-Path $HOME '.agents\secrets\icarus\test-accounts.md'),
   [int]$TimeoutSeconds = 900,
   [string]$HiveStore,
-  [ValidateSet('off', 'shadow', 'mirror')] [string]$LibraryStore
+  [ValidateSet('off', 'shadow', 'mirror')] [string]$LibraryStore,
+  [ValidateSet('shadow')] [string]$CloudStore
 )
 $ErrorActionPreference = 'Stop'
 # New every run: the server refuses an item id another strategy holds.
@@ -69,6 +70,7 @@ function Start-Instance([string]$name, [string]$scriptPath, [string]$email) {
   $env:ICARUS_DRIVE_PASSWORD = if ($email) { Get-Password $email } else { $null }
   $appArgs = @('"--hive-store-dir={0}"' -f (Join-Path $Out "store-$name"))
   if ($LibraryStore) { $appArgs += "--library-store=$LibraryStore" }
+  if ($CloudStore) { $appArgs += "--cloud-store=$CloudStore" }
   try {
     $process = Start-Process -FilePath $exePath -PassThru `
       -ArgumentList $appArgs `

@@ -1,0 +1,14 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 6},
+  {"tapWords": "Restart shadow"},
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"wait": 4},
+  {"addAgent": "q1-{run}", "agent": "sova", "at": [820, 360]},
+  {"waitSettled": 60},
+  {"shot": "{out}/after-restart.png"},
+  {"exit": 1}
+]

@@ -6,6 +6,7 @@ import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
+import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/collab/convex_client.dart';
@@ -200,6 +201,25 @@ class ConvexStrategyRepository {
         )
         .watch()
         .map(_strategyShell);
+  }
+
+  Stream<RemotePageList> watchPageList(
+    String strategyPublicId, {
+    String? shareToken,
+  }) {
+    return _api.strategy
+        .getPageList(
+          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+          strategyPublicId: strategyPublicId,
+          shareToken: _optional(shareToken),
+        )
+        .watch()
+        .map(
+          (result) => RemotePageList(
+            header: _strategyHeader(result.header),
+            pages: result.pages.map(_fullPage).toList(growable: false),
+          ),
+        );
   }
 
   /// The pages watched in slices right now (see [watchPageSnapshot]), by
@@ -1367,9 +1387,8 @@ String _pageVersion(PageGetSnapshotResult page) => [
         '${lineup.publicId}:${lineup.revision}:${lineup.deleted}',
     ].join('|');
 
-RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
-  final pages = result.pages.map((page) {
-    return RemoteFullPage(
+RemoteFullPage _fullPage(StrategyGetFullSnapshotResultPagesItem page) =>
+    RemoteFullPage(
       page: RemotePage(
         publicId: page.publicId,
         strategyPublicId: page.strategyPublicId,
@@ -1388,7 +1407,9 @@ RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
         updatedAt: _dateTime(page.contentUpdatedAt),
       ),
     );
-  }).toList(growable: false);
+
+RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
+  final pages = result.pages.map(_fullPage).toList(growable: false);
   final elements = result.elements.map(_element).toList(growable: false);
   final lineups = result.lineups.map(_lineup).toList(growable: false);
   final assets = result.assets.map(_imageAsset).toList(growable: false);

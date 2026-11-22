@@ -33,6 +33,10 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## The cloud store in shadow
+
+`--cloud-store shadow` on Linux, `-CloudStore shadow` on Windows, starts the app with the cloud store in shadow. It uses the same SQLite file as the library store, and either flag works without the other. For the open cloud strategy, the app records into the store the page list (`strategy:getPageList`) and every result of the open page that live sync receives, each in the session the connection it came on belongs to: a session opens when the app starts, the connection comes back or the account changes. Nothing is sent from the store, no edit goes into it, and nothing on screen reads it. After every recorded result the open page as the store shows it is compared with the server's rows, row for row. After every step the driver logs what the shadow did on `CLOUDSTORE` lines. A difference, a store failure or a refused result is logged as `FAIL CLOUDSTORE ...` and fails the run, and so does a run in which no comparison happened. `getPageList` has to be on the deployment the build talks to.
+
 ## The library store in shadow
 
 `--library-store shadow` on Linux, `-LibraryStore shadow` on Windows, starts the app with the library store switched to shadow: as it starts, it copies every local strategy and folder from Hive into a SQLite store beside the Hive boxes (`library_store/library.sqlite`), reads every strategy back out and compares it with Hive. Nothing reads the store yet. `--hive-store DIR` (`-HiveStore`) starts the main instance on a copy of `DIR`, which is never opened itself, so a real library can be checked without touching it.
