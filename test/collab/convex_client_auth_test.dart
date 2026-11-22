@@ -35,108 +35,66 @@ class _Vendored implements native.ConvexClient {
 
 const _config = ConvexConfig(deploymentUrl: 'https://x', clientId: 'test');
 
+Future<List<Object>> _uncaught(Future<void> Function() body) async {
+  final errors = <Object>[];
+  final done = Completer<void>();
+  runZonedGuarded(
+    () => body().whenComplete(done.complete),
+    (error, _) => errors.add(error),
+  );
+  await done.future;
+  await pumpEventQueue();
+  return errors;
+}
+
 void main() {
-  group('clearAuth', () {
-    test(
-        'hands back the vendored future itself, and counts a change that '
-        'settles when it does', () async {
-      final vendored = _Vendored();
-      final client = ConvexClient.over(vendored, _config);
+  test(
+      'clearAuth counts the change at the call and hands back the vendored '
+      'future itself', () {
+    final vendored = _Vendored();
+    final client = ConvexClient.over(vendored, _config);
 
-      final cleared = client.clearAuth();
-      expect(cleared, same(vendored.clearing.future));
-      expect(client.authChanges, 1);
-      expect(client.authSettled, isFalse);
-
-      vendored.clearing.complete();
-      await cleared;
-      expect(client.authSettled, isTrue);
-    });
-
-    test(
-        'a listener already on the vendored future still runs before the caller '
-        'goes on, on success and on failure', () async {
-      for (final fails in [false, true]) {
-        final vendored = _Vendored();
-        final client = ConvexClient.over(vendored, _config);
-        final order = <String>[];
-        unawaited(
-          vendored.clearing.future.then<void>(
-            (_) => order.add('listener'),
-            onError: (Object _) => order.add('listener'),
-          ),
-        );
-        final caller = () async {
-          try {
-            await client.clearAuth();
-          } catch (_) {}
-          order.add('caller');
-        }();
-        if (fails) {
-          vendored.clearing.completeError(StateError('refused'));
-        } else {
-          vendored.clearing.complete();
-        }
-        await caller;
-        expect(order, ['listener', 'caller'], reason: 'fails: $fails');
-        expect(client.authSettled, isTrue);
-      }
-    });
+    expect(client.clearAuth(), same(vendored.clearing.future));
+    expect(client.authChanges, 1);
   });
 
-  group('setAuthWithRefresh', () {
-    test(
-        'a listener already on the vendored future runs before the caller goes on, '
-        'the error reaches the caller unchanged, and the change is counted',
-        () async {
-      for (final fails in [false, true]) {
-        final vendored = _Vendored();
-        final client = ConvexClient.over(vendored, _config);
-        final order = <String>[];
-        final refused = StateError('refused');
-        Object? caught;
-        unawaited(
-          vendored.setting.future.then<void>(
-            (_) => order.add('listener'),
-            onError: (Object _) => order.add('listener'),
-          ),
-        );
-        final caller = () async {
-          try {
-            await client.setAuthWithRefresh(fetchToken: () async => 't');
-          } catch (error) {
-            caught = error;
-          }
-          order.add('caller');
-        }();
-        expect(client.authChanges, 1);
-        expect(client.authSettled, isFalse);
-        if (fails) {
-          vendored.setting.completeError(refused);
-        } else {
-          vendored.setting.complete(_Handle());
-        }
-        await caller;
-        expect(order, ['listener', 'caller'], reason: 'fails: $fails');
-        expect(caught, fails ? same(refused) : isNull);
-        expect(client.authSettled, isTrue);
-      }
-    });
-
-    test(
-        'disposing the handle is a change that stays unsettled until the '
-        'next sign-in call settles', () async {
+  test(
+      'a failed clearAuth whose future is dropped stays uncaught, as with '
+      'nothing attached', () async {
+    final refused = StateError('refused');
+    final errors = await _uncaught(() async {
       final vendored = _Vendored();
-      final client = ConvexClient.over(vendored, _config);
-      final handle = _Handle();
-      final setting = client.setAuthWithRefresh(fetchToken: () async => 't');
-      vendored.setting.complete(handle);
-      final wrapper = await setting;
-
-      wrapper.dispose();
-      expect(handle.disposed, 1);
-      expect(client.authChanges, 2);
-      expect(client.authSettled, isFalse);
+      ConvexClient.over(vendored, _config).clearAuth();
+      vendored.clearing.completeError(refused);
     });
+    expect(errors, [same(refused)]);
+  });
+
+  test(
+      'setAuthWithRefresh counts the change before the vendored call settles, '
+      'and its failure reaches the caller unchanged', () async {
+    final vendored = _Vendored();
+    final client = ConvexClient.over(vendored, _config);
+    final refused = StateError('refused');
+
+    final setting = client.setAuthWithRefresh(fetchToken: () async => 't');
+    expect(client.authChanges, 1);
+    vendored.setting.completeError(refused);
+    await expectLater(setting, throwsA(same(refused)));
+    expect(client.authChanges, 1);
+  });
+
+  test('disposing the handle counts a change and disposes the vendored handle',
+      () async {
+    final vendored = _Vendored();
+    final client = ConvexClient.over(vendored, _config);
+    final handle = _Handle();
+    final setting = client.setAuthWithRefresh(fetchToken: () async => 't');
+    vendored.setting.complete(handle);
+    final wrapper = await setting;
+
+    wrapper.dispose();
+    expect(handle.disposed, 1);
+    expect(client.authChanges, 2);
   });
 }

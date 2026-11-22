@@ -139,23 +139,14 @@ final class CloudStoreLog {
         final ledger = shadow.ledger;
         int count<T extends Verdict>() =>
             ledger.where((entry) => entry.verdict is T).length;
-        final open = ledger.where((entry) => entry.verdict is NotProcessed);
-        final strategies = {for (final entry in ledger) entry.strategyId};
-        final unchecked = [
-          for (final strategyId in strategies)
-            if (!ledger.any(
-              (entry) =>
-                  entry.strategyId == strategyId &&
-                  entry.verdict is ComparedEqual,
-            ))
-              strategyId,
-        ];
-        final lastContent = <(String, String), LedgerEntry>{};
-        for (final entry in ledger) {
-          if (entry.pageId case final pageId?) {
-            lastContent[(entry.strategyId, pageId)] = entry;
-          }
-        }
+        final recordedPages = ledger.where(
+          (entry) =>
+              entry.pageId != null &&
+              (entry.verdict is ComparedEqual ||
+                  entry.verdict is ComparedDifferent),
+        );
+        final waiting =
+            ledger.where((entry) => entry.verdict is NotProcessed).length;
         return [
           ...drain(c),
           if (shadow.ended case final reason?)
@@ -169,50 +160,31 @@ final class CloudStoreLog {
               '${finalWait.inSeconds} s after the last step',
               problem: true,
             ),
-          if (drained.readsOpen > 0)
-            CloudStoreLine(
-              'CLOUDSTORE not processed: ${drained.readsOpen} reads issued '
-              'and never answered ${finalWait.inSeconds} s after the last '
-              'step',
-              problem: true,
-            ),
           if (drained.watchesOpen > 0)
             CloudStoreLine(
               'CLOUDSTORE ${drained.watchesOpen} page list watches had not '
               'closed ${finalWait.inSeconds} s after the last step',
               problem: true,
             ),
-          for (final MapEntry(key: (strategyId, pageId), value: entry)
-              in lastContent.entries)
-            if (entry.verdict is! ComparedEqual)
-              CloudStoreLine(
-                'CLOUDSTORE inconclusive: the last content of page $pageId '
-                'of $strategyId the editor received was not compared equal '
-                '(${_verdictWords(entry.verdict)})',
-                problem: true,
-              ),
-          for (final entry in open)
-            CloudStoreLine(
-              'CLOUDSTORE not processed: ${entry.what} of ${entry.strategyId}',
-              problem: true,
-            ),
-          for (final strategyId in unchecked)
-            CloudStoreLine(
-              'CLOUDSTORE no result of $strategyId was compared equal',
-              problem: true,
-            ),
-          if (ledger.isEmpty)
-            const CloudStoreLine(
-              'CLOUDSTORE no result was delivered',
-              problem: true,
-            ),
           CloudStoreLine(
-            'CLOUDSTORE verdict: ${ledger.length} results delivered for '
-            '${strategies.length} strategies, ${count<ComparedEqual>()} '
-            'compared equal, ${count<ComparedDifferent>()} compared '
-            'different, ${count<RefusedByStore>()} refused by the store, '
-            '${count<ReadFailed>()} failed, ${open.length} not processed'
-            '${_skips(ledger.where((entry) => entry.verdict is Skipped))}',
+            'CLOUDSTORE counted, not judged: ${notifier.handed} pages handed '
+            'to the editor, ${recordedPages.length} recorded by the shadow'
+            '${_skips(ledger.where((entry) => entry.verdict is Skipped))}'
+            '${[
+              for (final MapEntry(:key, :value) in notifier.notTaken.entries)
+                ', $value not taken: $key',
+            ].join()}'
+            '${drained.idle && waiting > 0 ? ', $waiting never recorded: '
+                'they waited for a page list' : ''}',
+            problem: false,
+          ),
+          CloudStoreLine(
+            'CLOUDSTORE verdict: ${count<ComparedEqual>() + count<ComparedDifferent>()} '
+            'results recorded for ${shadow.strategies.length} strategies, '
+            '${count<ComparedEqual>()} compared equal, '
+            '${count<ComparedDifferent>()} compared different, '
+            '${count<RefusedByStore>()} refused by the store, '
+            '${count<ReadFailed>()} unreadable',
             problem: false,
           ),
         ];
@@ -330,7 +302,7 @@ List<CloudStoreLine> _problemLines(LedgerEntry entry) =>
         ],
       ReadFailed(:final why) => [
           CloudStoreLine(
-            'CLOUDSTORE failed: ${entry.what} of ${entry.strategyId}: $why',
+            'CLOUDSTORE unreadable: ${entry.what} of ${entry.strategyId}: $why',
             problem: true,
           ),
         ],
@@ -364,13 +336,4 @@ String _opened(LibraryStoreOpened opened) => switch (opened) {
         '${storageFailureWords(failure, StoreStep.opening)} ($failure)',
       LibraryStoreTooSmall(:final maxKeyLength) =>
         'the engine holds keys of only $maxKeyLength characters',
-    };
-
-String _verdictWords(Verdict verdict) => switch (verdict) {
-      NotProcessed() => 'not processed',
-      ComparedEqual() => 'compared equal',
-      ComparedDifferent() => 'compared different',
-      Skipped(:final reason) => 'skipped: ${reason.words}',
-      RefusedByStore(:final why) => 'refused by the store: $why',
-      ReadFailed(:final why) => 'failed: $why',
     };

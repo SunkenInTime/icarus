@@ -40,23 +40,16 @@ final class CloudShadowRunning extends CloudShadowState {
   final File file;
 }
 
-typedef AuthChanges = ({int changes, bool settled, bool authenticated});
+typedef AuthChanges = ({int changes, bool authenticated});
 
 final authChangesProvider = Provider<AuthChanges Function()>(
   (ref) => () => (
         changes: ConvexClient.instance.authChanges,
-        settled: ConvexClient.instance.authSettled,
         authenticated: ConvexClient.instance.isAuthenticated,
       ),
 );
 
-final class _Issue {
-  _Issue({required this.throughShareLink});
-
-  final bool throughShareLink;
-}
-
-typedef Drained = ({int readsOpen, int watchesOpen, bool idle});
+typedef Drained = ({int watchesOpen, bool idle});
 
 final cloudShadowBreatheProvider = Provider<Future<void> Function()>(
   (ref) => betweenAnimations,
@@ -69,8 +62,8 @@ final cloudShadowProvider =
 
 class CloudShadowNotifier extends Notifier<CloudShadowState>
     implements ResultTap {
-  final _taken = <_Issue>{};
-  final _unanswered = <_Issue>{};
+  final notTaken = <String, int>{};
+  var handed = 0;
   final _closing = <Future<void>>{};
   CloudShadow? _shadow;
   ConvexStrategyRepository? _repository;
@@ -151,9 +144,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
     final auth = ref.read(authChangesProvider)();
     switch (_account) {
       case null:
-        if (!auth.settled || auth.changes == 0 || !auth.authenticated) {
-          return false;
-        }
+        if (auth.changes == 0 || !auth.authenticated) return false;
         _account = auth.changes;
         return true;
       case final account when account != auth.changes:
@@ -205,76 +196,36 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
             if (!_serving()) return;
             shadow.pageList(strategyId, list, _connection());
           }),
-          onError: (Object error) => _guarded(() {
-            if (!_serving()) return;
-            shadow.readFailed(
-              strategyId,
-              'the page list',
-              error,
-              _connection(),
-            );
-          }),
+          onError: (Object _) => _notTaken('a page list read failed'),
         );
   }
 
   int? _connection() => ref.read(strategyOpQueueProvider.notifier).liveStamp;
 
-  @override
-  Object issued({required bool throughShareLink}) {
-    final issue = _Issue(throughShareLink: throughShareLink);
-    if (_serving()) {
-      _taken.add(issue);
-      _unanswered.add(issue);
-    }
-    return issue;
-  }
+  void _notTaken(String why) => notTaken[why] = (notTaken[why] ?? 0) + 1;
 
-  bool _answered(Object issue) {
-    if (!_taken.contains(issue)) return false;
-    final first = _unanswered.remove(issue);
-    if (_cutoff && !first) return false;
+  @override
+  Object? heard() => _connection();
+
+  @override
+  void pageArrived(
+    String strategyId,
+    RemotePageSnapshot page,
+    Object? heard, {
+    required bool throughShareLink,
+  }) {
     final shadow = _shadow;
-    if (shadow == null || shadow.ended != null) return false;
-    final auth = ref.read(authChangesProvider)();
-    if (auth.changes != _account) {
-      shadow.end('the account changed');
-      _closeList();
-      return false;
+    if (shadow == null) return;
+    handed++;
+    if (throughShareLink) {
+      _notTaken('read through a share link');
+    } else if (!_serving()) {
+      _notTaken(shadow.ended == null && !_cutoff
+          ? 'handed over before the first sign-in'
+          : 'handed over after the shadow stopped taking results');
+    } else {
+      shadow.page(strategyId, page, heard as int?);
     }
-    return true;
-  }
-
-  @override
-  void pageArrived(String strategyId, RemotePageSnapshot page, Object issue) {
-    final shadow = _shadow;
-    if (shadow == null || !_answered(issue)) return;
-    if ((issue as _Issue).throughShareLink) {
-      shadow.skipped(
-        strategyId,
-        'page ${page.page.publicId}',
-        SkipReason.throughShareLink,
-      );
-      return;
-    }
-    shadow.page(strategyId, page, _connection());
-  }
-
-  @override
-  void readFailed(String strategyId, String what, Object error, Object issue) {
-    final shadow = _shadow;
-    if (shadow == null || !_answered(issue)) return;
-    if ((issue as _Issue).throughShareLink) {
-      shadow.skipped(
-          strategyId, 'a read of $what', SkipReason.throughShareLink);
-      return;
-    }
-    shadow.readFailed(strategyId, what, error, _connection());
-  }
-
-  @override
-  void readClosed(Object issue) {
-    _taken.remove(issue);
-    _unanswered.remove(issue);
   }
 
   @override
@@ -289,10 +240,6 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
 
   Future<Drained> drained(DateTime deadline) async {
     final shadow = _shadow;
-    bool waiting() => _unanswered.isNotEmpty && shadow?.ended == null;
-    while (waiting() && DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
     final closing = Future.wait([..._closing]);
     await closing.timeout(_left(deadline), onTimeout: () => const []);
     final idle = shadow == null
@@ -300,11 +247,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
         : await shadow.idle
             .then((_) => true)
             .timeout(_left(deadline), onTimeout: () => false);
-    return (
-      readsOpen: shadow?.ended == null ? _unanswered.length : 0,
-      watchesOpen: _closing.length,
-      idle: idle,
-    );
+    return (watchesOpen: _closing.length, idle: idle);
   }
 
   Duration _left(DateTime deadline) {
@@ -317,7 +260,5 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
         when identical(repository.tap, this)) {
       repository.tap = null;
     }
-    _taken.clear();
-    _unanswered.clear();
   }
 }

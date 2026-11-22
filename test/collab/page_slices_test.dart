@@ -368,17 +368,24 @@ void tapTests() {
 
     test(
         'hears of each whole answer after the editor has it, with the '
-        'payload the server sent, under the read it answers', () async {
-      await watch();
-      final issue = tap.issues.single;
+        'payload the server sent and what it heard at delivery', () async {
+      tap.stamp = 'at delivery';
+      watching = repository
+          .watchPageSnapshot(strategyPublicId: 'strategy', pagePublicId: 'p')
+          .listen((page) {
+        order.add(('editor', page));
+        tap.stamp = 'after delivery';
+      });
+      await pumpEventQueue();
       server.publish(agents(3));
       await pumpEventQueue();
 
       expect(order.map((event) => (event as (String, Object)).$1),
           ['editor', 'tap']);
-      final (strategyId, page, answered) = tap.pages.single;
+      final (strategyId, page, heard, throughShareLink) = tap.pages.single;
       expect(strategyId, 'strategy');
-      expect(answered, issue);
+      expect(heard, 'at delivery');
+      expect(throughShareLink, isFalse);
       expect(page, same(editorPages().single));
       final sent = (server.page.toDart()['elements']! as List<Object?>)
           .cast<Map<Object?, Object?>>();
@@ -413,9 +420,8 @@ void tapTests() {
       expect(tap.pages.map((page) => page.$2), shown);
     });
 
-    test(
-        'a read answered from the live slices is not heard of again, and a '
-        'watch that ends closes its reads', () async {
+    test('a read answered from the live slices is not heard of again',
+        () async {
       await watch();
       server.publish(agents(20));
       server.publish(agents(20, moved: _id(1)));
@@ -428,114 +434,66 @@ void tapTests() {
       );
       await pumpEventQueue();
       expect(tap.pages, hasLength(heard));
-
-      await watching!.cancel();
-      watching = null;
-      await pumpEventQueue();
-      expect(tap.closed, containsAll(tap.issues));
     });
 
     test(
-        'hears of a read from the server once, and of a failed read after '
-        'its caller has the error', () async {
-      await repository.fetchPageSnapshot(
+        'hears of a read from the server once, after its caller has it, '
+        'marked when it went through a share link; a failed read reaches '
+        'its caller unchanged and is not heard of', () async {
+      final read = await repository.fetchPageSnapshot(
         strategyPublicId: 'strategy',
         pagePublicId: 'p',
+        shareToken: 'link',
+      );
+      order.add(('caller', read));
+      await pumpEventQueue();
+      expect(order.map((event) => (event as (String, Object)).$1),
+          ['caller', 'tap']);
+      expect(tap.pages.single.$4, isTrue);
+
+      final broke = StateError('the read broke');
+      server.failReads = broke;
+      await expectLater(
+        repository.fetchPageSnapshot(
+          strategyPublicId: 'strategy',
+          pagePublicId: 'p',
+        ),
+        throwsA(same(broke)),
       );
       await pumpEventQueue();
       expect(tap.pages, hasLength(1));
-
-      server.failReads = StateError('the read broke');
-      Object? caught;
-      try {
-        await repository.fetchPageSnapshot(
-          strategyPublicId: 'strategy',
-          pagePublicId: 'p',
-        );
-      } catch (error) {
-        caught = error;
-        order.add(('caller error', error));
-      }
-      await pumpEventQueue();
-
-      expect(caught, isA<StateError>());
-      expect(tap.failures.single.$2, 'page p');
-      expect(
-        order.map((event) => (event as (String, Object)).$1).toList().last2,
-        ['caller error', 'tap failure'],
-      );
     });
 
     group('a tap that throws changes nothing for the editor', () {
-      test('when asked for a read', () async {
-        tap.throwOn = 'issued';
-        await watch();
-        server.publish(agents(3));
-        await pumpEventQueue();
-        await repository.fetchPageSnapshot(
-          strategyPublicId: 'strategy',
-          pagePublicId: 'p',
-        );
-
-        expect(editorPages(), hasLength(1));
-        expect(tap.pages, isEmpty);
-        expect(tap.tapFailures, hasLength(2));
-      });
-
-      test('when told of a page', () async {
-        tap.throwOn = 'pageArrived';
-        await watch();
-        server.publish(agents(3));
-        server.publish(agents(3, moved: _id(1)));
-        await pumpEventQueue();
-
-        expect(editorPages(), hasLength(2));
-        expect(tap.tapFailures, hasLength(2));
-      });
-
-      test('when told of a failure', () async {
-        tap.throwOn = 'readFailed';
-        await watch();
-        server.fail('page:getSnapshot', StateError('the watch broke'));
-        await pumpEventQueue();
-        server.failReads = StateError('the read broke');
-        Object? caught;
-        try {
-          await repository.fetchPageSnapshot(
+      for (final method in ['heard', 'pageArrived']) {
+        test('in $method', () async {
+          tap.throwOn = method;
+          await watch();
+          server.publish(agents(3));
+          server.publish(agents(3, moved: _id(1)));
+          await pumpEventQueue();
+          final read = await repository.fetchPageSnapshot(
             strategyPublicId: 'strategy',
             pagePublicId: 'p',
           );
-        } catch (error) {
-          caught = error;
-        }
-        await pumpEventQueue();
 
-        expect(
-          order.whereType<(String, Object)>().where(
-                (event) => event.$1 == 'editor error',
-              ),
-          hasLength(1),
-        );
-        expect(caught, isA<StateError>());
-        expect(tap.tapFailures, hasLength(2));
-      });
+          expect(editorPages(), hasLength(2));
+          expect(read.elements, hasLength(3));
+          expect(tap.pages, isEmpty);
+          expect(tap.tapFailures, hasLength(method == 'heard' ? 3 : 2));
+        });
+      }
     });
   });
-}
-
-extension<T> on List<T> {
-  List<T> get last2 => sublist(length - 2);
 }
 
 final class _Tap implements ResultTap {
   _Tap(this.order);
 
   final List<Object> order;
-  final issues = <int>[];
-  final pages = <(String, RemotePageSnapshot, Object)>[];
-  final failures = <(String, String, Object)>[];
-  final closed = <Object>[];
+  final pages = <(String, RemotePageSnapshot, Object?, bool)>[];
   final tapFailures = <Object>[];
+  Object? stamp;
   String? throwOn;
 
   void _maybeThrow(String method) {
@@ -543,28 +501,22 @@ final class _Tap implements ResultTap {
   }
 
   @override
-  Object issued({required bool throughShareLink}) {
-    _maybeThrow('issued');
-    issues.add(issues.length);
-    return issues.last;
+  Object? heard() {
+    _maybeThrow('heard');
+    return stamp;
   }
 
   @override
-  void pageArrived(String strategyId, RemotePageSnapshot page, Object issue) {
+  void pageArrived(
+    String strategyId,
+    RemotePageSnapshot page,
+    Object? heard, {
+    required bool throughShareLink,
+  }) {
     _maybeThrow('pageArrived');
     order.add(('tap', page));
-    pages.add((strategyId, page, issue));
+    pages.add((strategyId, page, heard, throughShareLink));
   }
-
-  @override
-  void readFailed(String strategyId, String what, Object error, Object issue) {
-    _maybeThrow('readFailed');
-    order.add(('tap failure', error));
-    failures.add((strategyId, what, error));
-  }
-
-  @override
-  void readClosed(Object issue) => closed.add(issue);
 
   @override
   void tapFailed(Object error) => tapFailures.add(error);

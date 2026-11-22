@@ -625,23 +625,6 @@ void main() {
     });
 
     test(
-        'a failed read is an entry: skipped when offline, failed otherwise, '
-        'and a share link read is skipped with that reason', () async {
-      final shadow = shadowOn(await openStore(MemoryStorage()))
-        ..readFailed('s', 'the page list', 'x', offline)
-        ..readFailed('s', 'the page list', 'x', tag(1))
-        ..skipped('s', 'page p', SkipReason.throughShareLink);
-
-      expect(verdicts(shadow), [
-        isA<Skipped>()
-            .having((v) => v.reason, 'reason', SkipReason.receivedOffline),
-        isA<ReadFailed>(),
-        isA<Skipped>()
-            .having((v) => v.reason, 'reason', SkipReason.throughShareLink),
-      ]);
-    });
-
-    test(
         'a scheduler that throws stops the shadow, and its idle still '
         'completes', () async {
       final store = await openStore(MemoryStorage());

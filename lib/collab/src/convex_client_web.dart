@@ -323,8 +323,6 @@ class ConvexClient implements ConvexClientValueSource {
 
   int get authChanges => _authGeneration;
 
-  bool get authSettled => true;
-
   Future<void> clearAuth() async {
     _authGeneration += 1;
     _client.client.clearAuth();

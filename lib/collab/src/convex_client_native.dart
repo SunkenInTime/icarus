@@ -153,38 +153,24 @@ class ConvexClient implements ConvexClientValueSource {
   }
 
   int _authChanges = 0;
-  int _authSettledAt = 0;
 
   int get authChanges => _authChanges;
-
-  bool get authSettled => _authSettledAt == _authChanges;
-
-  void _countAuthChange(Future<Object?> change) {
-    final mine = ++_authChanges;
-    void settled() {
-      if (_authChanges == mine) _authSettledAt = mine;
-    }
-
-    change.then<void>((_) => settled(), onError: (Object _) => settled());
-  }
 
   Future<AuthHandleWrapper> setAuthWithRefresh({
     required Future<String?> Function() fetchToken,
     void Function(bool isAuthenticated)? onAuthChange,
   }) async {
-    final setting = _client.setAuthWithRefresh(
+    _authChanges++;
+    final handle = await _client.setAuthWithRefresh(
       fetchToken: fetchToken,
       onAuthChange: onAuthChange,
     );
-    _countAuthChange(setting);
-    final handle = await setting;
     return _NativeAuthHandleWrapper(handle, () => _authChanges++);
   }
 
   Future<void> clearAuth() {
-    final clearing = _client.clearAuth();
-    _countAuthChange(clearing);
-    return clearing;
+    _authChanges++;
+    return _client.clearAuth();
   }
 
   Future<bool> reconnect() => _client.reconnect();

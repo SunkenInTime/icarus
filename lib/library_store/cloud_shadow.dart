@@ -9,9 +9,7 @@ import 'package:icarus_library/icarus_library.dart';
 enum SkipReason {
   receivedOffline('received while the app counted itself offline'),
   endedConnection('read on a connection that has since ended'),
-  endedSession('the queue answered that its session had ended'),
-  throughShareLink('read through a share link, which the shadow does not '
-      'follow');
+  endedSession('the queue answered that its session had ended');
 
   const SkipReason(this.words);
 
@@ -261,26 +259,6 @@ final class CloudShadow {
     final entry = LedgerEntry(strategyId, 'the page list');
     ledger.add(entry);
     _add(_ListJob(entry, list, connection));
-  }
-
-  void skipped(String strategyId, String what, SkipReason reason) {
-    if (!_taking) return;
-    ledger.add(LedgerEntry(strategyId, what)..verdict = Skipped(reason));
-  }
-
-  void readFailed(
-    String strategyId,
-    String what,
-    Object error,
-    int? connection,
-  ) {
-    if (!_taking) return;
-    ledger.add(
-      LedgerEntry(strategyId, 'a read of $what')
-        ..verdict = connection == null
-            ? const Skipped(SkipReason.receivedOffline)
-            : ReadFailed('the read failed: $error'),
-    );
   }
 
   void connectionLost() => _add(const _LostJob());

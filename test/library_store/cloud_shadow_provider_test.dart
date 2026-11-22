@@ -173,8 +173,12 @@ void main() {
     ResultTap tap() => repository.tap!;
 
     void deliverPage(RemotePageSnapshot page, {bool throughShareLink = false}) {
-      final issue = tap().issued(throughShareLink: throughShareLink);
-      tap().pageArrived(strategyId, page, issue);
+      tap().pageArrived(
+        strategyId,
+        page,
+        tap().heard(),
+        throughShareLink: throughShareLink,
+      );
     }
 
     Future<CloudShadow> opened() async {
@@ -191,7 +195,7 @@ void main() {
     setUp(() async {
       directory = await Directory.systemTemp.createTemp('icarus-cloud-tap-');
       file = File('${directory.path}/library.sqlite');
-      auth = (changes: 1, settled: true, authenticated: true);
+      auth = (changes: 1, authenticated: true);
       queue = _Queue();
       editor = _Editor();
       lists = _Lists();
@@ -237,8 +241,8 @@ void main() {
       expect(lists.controllers.single.hasListener, isFalse);
     });
 
-    test('nothing is taken before the first settled sign-in', () async {
-      auth = (changes: 0, settled: true, authenticated: false);
+    test('nothing is taken before the first sign-in', () async {
+      auth = (changes: 0, authenticated: false);
       final shadow = await begin();
       deliverPage(pageSnapshot(serverRows()));
       await _settled();
@@ -268,10 +272,18 @@ void main() {
 
     test(
         'a page handed over while the connection is down is skipped as '
-        'received offline', () async {
+        'received offline, though the connection is back when the tap is '
+        'told', () async {
       final shadow = await opened();
       queue.stamp = null;
-      deliverPage(pageSnapshot(serverRows()));
+      final heard = tap().heard();
+      queue.stamp = 1;
+      tap().pageArrived(
+        strategyId,
+        pageSnapshot(serverRows()),
+        heard,
+        throughShareLink: false,
+      );
       await _settled();
       await shadow.idle;
 
@@ -291,9 +303,9 @@ void main() {
         'is recorded', () async {
       final shadow = await opened();
       final recorded = shadow.ledger.length;
-      auth = (changes: 2, settled: false, authenticated: false);
+      auth = (changes: 2, authenticated: false);
       deliverPage(pageSnapshot(serverRows()));
-      auth = (changes: 3, settled: true, authenticated: true);
+      auth = (changes: 3, authenticated: true);
       deliverPage(pageSnapshot(serverRows()));
       await _settled();
 
@@ -304,33 +316,19 @@ void main() {
     });
 
     test(
-        'a page read through a share link is skipped with that reason, and '
-        'never waits for a page list', () async {
-      final shadow = await begin();
-      deliverPage(pageSnapshot(serverRows()), throughShareLink: true);
-      await _settled();
-
-      expect(
-        shadow.ledger.single.verdict,
-        isA<Skipped>().having(
-          (skipped) => skipped.reason,
-          'reason',
-          SkipReason.throughShareLink,
-        ),
-      );
-    });
-
-    test('an error on the page list stream is an entry', () async {
+        'a page read through a share link, and a failed page list read, are '
+        'counted and not taken', () async {
       final shadow = await opened();
+      final recorded = shadow.ledger.length;
+      deliverPage(pageSnapshot(serverRows()), throughShareLink: true);
       lists.controllers.single.addError(StateError('the watch broke'));
       await _settled();
 
-      expect(
-        shadow.ledger.last,
-        isA<LedgerEntry>()
-            .having((entry) => entry.what, 'what', 'a read of the page list')
-            .having((entry) => entry.verdict, 'verdict', isA<ReadFailed>()),
-      );
+      expect(shadow.ledger, hasLength(recorded));
+      expect(container.read(cloudShadowProvider.notifier).notTaken, {
+        'read through a share link': 1,
+        'a page list read failed': 1,
+      });
     });
 
     test('a tap failure stops the shadow', () async {
@@ -339,28 +337,19 @@ void main() {
       expect(shadow.stopped, contains('the tap broke'));
     });
 
-    test(
-        'at the cutoff, a read in flight is still taken, a watch already '
-        'answered takes nothing more, and a read never answered is counted',
+    test('after the cutoff nothing more is taken, and what came is counted',
         () async {
       final shadow = await opened();
-      final answered = tap().issued(throughShareLink: false);
-      tap().pageArrived(strategyId, pageSnapshot(serverRows()), answered);
-      final inFlight = tap().issued(throughShareLink: false);
-      tap().issued(throughShareLink: false);
-      await _settled();
       final before = shadow.ledger.length;
 
-      final notifier = container.read(cloudShadowProvider.notifier)..cutoff();
-      tap().pageArrived(strategyId, pageSnapshot(serverRows()), answered);
-      tap().pageArrived(strategyId, pageSnapshot(serverRows()), inFlight);
-      final drained = await notifier.drained(
-        DateTime.now().add(const Duration(milliseconds: 300)),
-      );
+      container.read(cloudShadowProvider.notifier).cutoff();
+      deliverPage(pageSnapshot(serverRows()));
+      await _settled();
 
-      expect(shadow.ledger, hasLength(before + 1));
-      expect(drained.readsOpen, 1);
-      expect(drained.idle, isTrue);
+      expect(shadow.ledger, hasLength(before));
+      expect(container.read(cloudShadowProvider.notifier).notTaken, {
+        'handed over after the shadow stopped taking results': 1,
+      });
     });
 
     test(
@@ -455,15 +444,24 @@ void main() {
       });
 
       test(
-          'a run that never recorded a strategy fails its verdict and its '
-          'read back', () async {
+          'a run that recorded no strategy fails its read back, and a page '
+          'whose page list never came is counted, not judged', () async {
         await begin();
+        deliverPage(pageSnapshot(serverRows()));
+        await _settled();
         final log = CloudStoreLog();
         final verdict = await log.end(container, lastStep: DateTime.now());
         await closeStore();
 
+        expect(problems(verdict), isEmpty);
         expect(
-            problems(verdict), contains('CLOUDSTORE no result was delivered'));
+          verdict.map((line) => line.text),
+          contains(
+            'CLOUDSTORE counted, not judged: 1 pages handed to the editor, '
+            '0 recorded by the shadow, 1 never recorded: they waited for a '
+            'page list',
+          ),
+        );
         expect(
           problems(await log.readBack(container)),
           contains('CLOUDSTORE read back had no strategy to compare'),
@@ -471,33 +469,26 @@ void main() {
       });
 
       test(
-          'when the last content of a page was skipped, the run is '
-          'inconclusive', () async {
+          'the counts name what was handed over, recorded, skipped and not '
+          'taken, and judge none of it', () async {
         await opened();
         queue.stamp = null;
         deliverPage(pageSnapshot(serverRows()));
+        deliverPage(pageSnapshot(serverRows()), throughShareLink: true);
         await _settled();
-        final log = CloudStoreLog();
-
-        expect(
-          problems(await log.end(container, lastStep: DateTime.now())),
-          contains(startsWith('CLOUDSTORE inconclusive: the last content of '
-              'page p1')),
+        final lines = await CloudStoreLog().end(
+          container,
+          lastStep: DateTime.now(),
         );
-      });
 
-      test('a page whose page list never came fails the verdict', () async {
-        await begin();
-        deliverPage(pageSnapshot(serverRows()));
-        await _settled();
-        final log = CloudStoreLog();
-
-        final found =
-            problems(await log.end(container, lastStep: DateTime.now()));
-        expect(found, contains(startsWith('CLOUDSTORE not processed:')));
+        expect(problems(lines), isEmpty);
         expect(
-          found,
-          contains('CLOUDSTORE no result of $strategyId was compared equal'),
+          lines.map((line) => line.text),
+          contains(
+            'CLOUDSTORE counted, not judged: 3 pages handed to the editor, '
+            '1 recorded by the shadow, 1 skipped: received while the app '
+            'counted itself offline, 1 not taken: read through a share link',
+          ),
         );
       });
 
@@ -518,7 +509,7 @@ void main() {
           ]);
         });
 
-        Future<List<String>> endWithPicturesLater() async {
+        Future<List<String>> endWithPicturesLater(Duration shadowDone) async {
           final shadow = await begin();
           deliverPage(pageSnapshot(serverRows()));
           await _settled();
@@ -527,6 +518,7 @@ void main() {
             finalWait: const Duration(milliseconds: 300),
           );
           final ending = log.end(container, lastStep: DateTime.now());
+          unawaited(Future<void>.delayed(shadowDone, frame.complete));
           return [
             for (final line in await Future.delayed(
               const Duration(milliseconds: 600),
@@ -539,13 +531,9 @@ void main() {
         test(
             'a shadow that finished in time passes, though the picture '
             'watches finish later', () async {
-          unawaited(
-            Future<void>.delayed(
-              const Duration(milliseconds: 100),
-              () => frame.complete(),
-            ),
+          final found = await endWithPicturesLater(
+            const Duration(milliseconds: 100),
           );
-          final found = await endWithPicturesLater();
           expect(
             found,
             isNot(contains(startsWith('CLOUDSTORE the shadow had work left'))),
@@ -555,13 +543,9 @@ void main() {
         test(
             'a shadow that finished only after the deadline fails, though '
             'it was done before the picture watches', () async {
-          unawaited(
-            Future<void>.delayed(
-              const Duration(milliseconds: 450),
-              () => frame.complete(),
-            ),
+          final found = await endWithPicturesLater(
+            const Duration(milliseconds: 450),
           );
-          final found = await endWithPicturesLater();
           expect(
             found,
             contains(startsWith('CLOUDSTORE the shadow had work left')),
