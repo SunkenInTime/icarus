@@ -398,13 +398,12 @@ final class StoreModel {
       final content = pageOf(
         await reading(() => store.readPage(strategyId, page.publicId)),
       );
-      var tally = PageTally.empty
-          .plusDamaged(content.unplaced.length)
-          .plusNewer(content.unknownKinds.length);
-      for (final row in content.elements) {
-        tally = tally.plus(row, 1);
-      }
-      reported[page.publicId] = tally;
+      reported[page.publicId] = PageTally.count(
+        elements: content.elements,
+        lineupGroups: content.lineupGroups,
+        damaged: content.unplaced.length,
+        newer: content.unknownKinds.length,
+      );
     }
     final after = listOf(store).strategies.single;
     for (final (moment, summary) in [

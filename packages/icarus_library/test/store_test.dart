@@ -881,6 +881,199 @@ void main() {
       expect(summary.sides, Sides.mixed);
     });
 
+    test(
+      'agents in order are each page\'s placed agents by place, then its lineup origins, pages by sort index, each agent once',
+      () async {
+        LiveLineupGroup group(String id, String page, int place, String type) =>
+            LiveLineupGroup(
+              strategyPublicId: 'ordered',
+              publicId: id,
+              pagePublicId: page,
+              payload: LineupGroupPayload(
+                payloadVersion: 1,
+                data: {
+                  'id': id,
+                  'origins': [
+                    {
+                      'id': '$id-o',
+                      'agent': {'type': type, 'lineUpID': id},
+                    },
+                  ],
+                  'landings': [landing('$id-l')],
+                  'links': [
+                    {'id': '$id-k', 'originId': '$id-o', 'landingId': '$id-l'},
+                  ],
+                },
+              ),
+              sortIndex: place,
+              revision: 1,
+            );
+        LivePage page(String id, int place, {required bool attack}) => LivePage(
+          publicId: id,
+          strategyPublicId: 'ordered',
+          name: id,
+          sortIndex: place,
+          isAttack: attack,
+          revision: 1,
+        );
+        final rows = StrategyRowSet(
+          strategy: strategyRow(publicId: 'ordered'),
+          pages: [
+            page('later', 1, attack: true),
+            page('first', 0, attack: false),
+          ],
+          settings: [settings('later'), settings('first')],
+          elements: [
+            agent('omen', type: 'omen', pageId: 'first', sortIndex: 3),
+            agent('jett', pageId: 'first', sortIndex: 1),
+            agent('sova', type: 'sova', pageId: 'first', sortIndex: 2),
+            DeletedElement(
+              publicId: 'breach',
+              pagePublicId: 'first',
+              payload: agent('breach', type: 'breach').payload,
+              sortIndex: 0,
+              revision: 1,
+            ),
+            agent('jett-again', pageId: 'later', sortIndex: 0),
+            agent('kayo', type: 'kayo', pageId: 'later', sortIndex: 1),
+          ],
+          lineupGroups: [
+            group('late', 'first', 1, 'killjoy'),
+            group('early', 'first', 0, 'viper'),
+            group('next', 'later', 0, 'fade'),
+          ],
+        );
+        final store = await openOn(await seededClean());
+        savedValue(await store.editLibrary([AddStrategy(rows)]));
+        final summary = listOf(
+          store,
+        ).strategies.singleWhere((s) => s.publicId == 'ordered');
+        expect(summary.agentsInOrder, [
+          'jett',
+          'sova',
+          'omen',
+          'viper',
+          'killjoy',
+          'kayo',
+          'fade',
+        ]);
+        expect(summary.firstPageIsAttack, isFalse);
+      },
+    );
+
+    test(
+      'agents at the same place are in the order the page is read in, by row id',
+      () async {
+        final rows = StrategyRowSet(
+          strategy: strategyRow(publicId: 'tied'),
+          pages: [
+            LivePage(
+              publicId: 'only',
+              strategyPublicId: 'tied',
+              name: 'only',
+              sortIndex: 0,
+              isAttack: true,
+              revision: 1,
+            ),
+          ],
+          settings: [settings('only')],
+          elements: [
+            agent('b-jett', pageId: 'only'),
+            agent('a-raze', type: 'raze', pageId: 'only'),
+            agent('c-sova', type: 'sova', pageId: 'only', sortIndex: 1),
+          ],
+          lineupGroups: const [],
+        );
+        final store = await openOn(await seededClean());
+        savedValue(await store.editLibrary([AddStrategy(rows)]));
+        expect(
+          listOf(
+            store,
+          ).strategies.singleWhere((s) => s.publicId == 'tied').agentsInOrder,
+          ['raze', 'jett', 'sova'],
+        );
+      },
+    );
+
+    test(
+      'a page tally keeps each agent type once, however many agents are placed',
+      () async {
+        final rows = StrategyRowSet(
+          strategy: strategyRow(publicId: 'crowded'),
+          pages: [
+            LivePage(
+              publicId: 'busy',
+              strategyPublicId: 'crowded',
+              name: 'busy',
+              sortIndex: 0,
+              isAttack: true,
+              revision: 1,
+            ),
+          ],
+          settings: [settings('busy')],
+          elements: [
+            for (var n = 0; n < 30; n++)
+              agent(
+                'agent-$n',
+                type: const ['jett', 'sova', 'omen'][n % 3],
+                pageId: 'busy',
+                sortIndex: n,
+              ),
+          ],
+          lineupGroups: const [],
+        );
+        final store = await openOn(await seededClean());
+        savedValue(await store.editLibrary([AddStrategy(rows)]));
+        final summary = listOf(
+          store,
+        ).strategies.singleWhere((s) => s.publicId == 'crowded');
+        final tally = summary.tallies['busy']!.toJson();
+        expect(summary.agentsInOrder, ['jett', 'sova', 'omen']);
+        expect(
+          tally.keys,
+          unorderedEquals(['items', 'agents', 'damaged', 'newer', 'order']),
+        );
+        expect(tally['order'], ['jett', 'sova', 'omen']);
+      },
+    );
+
+    test(
+      'a summary written by the build before this one is rebuilt on open with the tile\'s fields',
+      () async {
+        final current = listOf(await openOn(seeded)).strategies.single;
+        final written =
+            jsonDecode(seeded['library']![summaryName(strategyId)]!)
+                as Map<String, Object?>;
+        final older = {
+          for (final MapEntry(:key, :value) in written.entries)
+            if (key != 'agentsInOrder' && key != 'firstPageIsAttack')
+              key: switch (key) {
+                'summaryVersion' => 5,
+                'tallies' => {
+                  for (final MapEntry(:key, :value)
+                      in (value! as Map<String, Object?>).entries)
+                    key: {
+                      for (final MapEntry(:key, value: field)
+                          in (value! as Map<String, Object?>).entries)
+                        if (key != 'placed' && key != 'origins') key: field,
+                    },
+                },
+                _ => value,
+              },
+        };
+        final store = await openOn({
+          ...seeded,
+          'library': {
+            ...seeded['library']!,
+            summaryName(strategyId): jsonEncode(older),
+          },
+        });
+        expect(listOf(store).strategies.single, current);
+        expect(current.agentsInOrder, ['jett', 'sova', 'omen', 'kayo']);
+        expect(current.firstPageIsAttack, isTrue);
+      },
+    );
+
     test('a summary this build cannot read is rebuilt from the rows', () async {
       final store = await openOn({
         ...seeded,

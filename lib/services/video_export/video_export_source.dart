@@ -41,10 +41,11 @@ List<VideoExportPageChoice> videoExportPageChoices(WidgetRef ref) {
       ],
     StrategySource.local => [
         for (final page in [
-          ...?ref
-              .read(localLibraryViewProvider)
-              .strategyImage(strategy.strategyId)
-              ?.pages,
+          ...?switch (strategy.strategyId) {
+            final id? =>
+              ref.read(localLibraryViewProvider).strategyImage(id)?.pages,
+            null => null,
+          },
         ]..sortBySortIndex((page) => page.sortIndex))
           (id: page.id, name: shown(page.name, page.isAutoNamed)),
       ],

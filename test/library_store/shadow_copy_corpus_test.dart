@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,8 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/library_rows/folder_as_row.dart';
+import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
@@ -27,6 +30,7 @@ import 'package:uuid/uuid.dart';
 
 import '../library_rows/library_sources.dart';
 import 'hive_scratch.dart';
+import 'tile_parity.dart';
 
 const corpusVariable = 'ICARUS_LIBRARY_CORPUS';
 const scratchVariable = 'ICARUS_LIBRARY_SCRATCH';
@@ -255,6 +259,92 @@ Future<void> _writeHiveLibrary(
   await Hive.close();
 }
 
+Map<String, Object?> _summaryAsTheBuildBeforeWroteIt(
+  Map<String, Object?> summary,
+) =>
+    {
+      for (final MapEntry(:key, :value) in summary.entries)
+        if (key != 'agentsInOrder' && key != 'firstPageIsAttack')
+          key: switch (key) {
+            'summaryVersion' => 5,
+            'tallies' => {
+                for (final MapEntry(:key, :value)
+                    in (value! as Map<String, Object?>).entries)
+                  key: _tallyAsTheBuildBeforeWroteIt(value),
+              },
+            'elsewhere' => _tallyAsTheBuildBeforeWroteIt(value),
+            _ => value,
+          },
+    };
+
+Map<String, Object?> _tallyAsTheBuildBeforeWroteIt(Object? tally) => {
+      for (final MapEntry(:key, :value)
+          in (tally! as Map<String, Object?>).entries)
+        if (key != 'order') key: value,
+    };
+
+Future<int> _ageSummaries(SqliteEngine engine) async {
+  final lease = switch (await engine.lease()) {
+    Leased(:final lease) => lease,
+    final other => fail('$other'),
+  };
+  final entries = switch (await lease.entries('library', 'summary/')) {
+    Done(:final value) => value,
+    final other => fail('$other'),
+  };
+  expect(
+    await lease.commit([
+      for (final (:key, :value) in entries)
+        Put(
+          'library',
+          key,
+          jsonEncode(
+            _summaryAsTheBuildBeforeWroteIt(
+              jsonDecode(value) as Map<String, Object?>,
+            ),
+          ),
+        ),
+    ]),
+    isA<CommitApplied>(),
+  );
+  await lease.release();
+  return entries.length;
+}
+
+Future<Set<Object?>> _storedSummaryVersions(File file) async {
+  final engine = SqliteEngine(file.path);
+  final lease = switch (await engine.lease()) {
+    Leased(:final lease) => lease,
+    final other => fail('$other'),
+  };
+  final entries = switch (await lease.entries('library', 'summary/')) {
+    Done(:final value) => value,
+    final other => fail('$other'),
+  };
+  await lease.release();
+  await engine.close();
+  return {
+    for (final (key: _, :value) in entries)
+      (jsonDecode(value) as Map<String, Object?>)['summaryVersion'],
+  };
+}
+
+Future<(Duration, int)> _timedOpen(File file) async {
+  final engine = SqliteEngine(file.path);
+  final clock = Stopwatch()..start();
+  final store = await openStoreOn(engine);
+  final took = clock.elapsed;
+  final listed = switch (store.library) {
+    LibraryOpen(:final list) => list.strategies
+        .where((summary) => summary.agentsInOrder.isNotEmpty)
+        .length,
+    LibraryShut(:final failure) => fail('$failure'),
+  };
+  await store.close();
+  await engine.close();
+  return (took, listed);
+}
+
 Future<String> _copyCost(
   int size,
   List<StrategyData> strategies,
@@ -438,6 +528,137 @@ void main() {
       debugPrint('stores edited through the mirror: $stores; problems: '
           '${problems.isEmpty ? 'none' : problems.join('\n')}');
       expect(problems, isEmpty);
+    },
+  );
+
+  test(
+    'every corpus strategy\'s store summary shows what main\'s tile shows',
+    skip: corpus == null
+        ? '$corpusVariable names a folder of Hive stores'
+        : false,
+    timeout: const Timeout(Duration(hours: 1)),
+    () async {
+      final (strategies, folders) = await _corpusLibrary(
+        hiveStoresUnder(Directory(corpus!)),
+        scratchRoot,
+      );
+      final store = await openStoreOn(MemoryEngine(MemoryStorage()));
+      final folderRows = [for (final folder in folders) folderToRow(folder)];
+      final unplaced = [...folderRows];
+      while (unplaced.isNotEmpty) {
+        final placed = {
+          for (final row in folderRows)
+            if (!unplaced.contains(row)) row.publicId,
+        };
+        final ready = [
+          for (final row in unplaced)
+            if (row.parentFolderPublicId == null ||
+                placed.contains(row.parentFolderPublicId))
+              row,
+        ];
+        expect(ready, isNotEmpty, reason: 'folders that loop');
+        expect(
+          await store.editLibrary([for (final row in ready) PutFolder(row)]),
+          isA<Saved<LibraryEdited, LibraryRefusal>>(),
+        );
+        unplaced.removeWhere(ready.contains);
+      }
+      final refused = <String>[];
+      final kept = <StrategyData>[];
+      for (final strategy in strategies) {
+        switch (strategyToRows(strategyAsHiveHoldsIt(strategy))) {
+          case StrategyRowsRefused(:final problems):
+            refused.add('${strategy.id}: $problems');
+          case StrategyRowsMade(:final rows):
+            expect(
+              await store.putStrategy(rows),
+              isA<Saved<LibraryEdited, LibraryRefusal>>(),
+              reason: strategy.id,
+            );
+            kept.add(strategy);
+        }
+      }
+      final summaries = switch (store.library) {
+        LibraryOpen(:final list) => {
+            for (final summary in list.strategies) summary.publicId: summary,
+          },
+        LibraryShut(:final failure) => fail('$failure'),
+      };
+      var same = 0;
+      var groupOrder = 0;
+      var pageOrder = 0;
+      final differing = <String>[];
+      for (final strategy in kept) {
+        switch (tileParity(summaries[strategy.id]!, strategy)) {
+          case TileSame():
+            same++;
+          case TileInGroupOrder():
+            groupOrder++;
+          case TileInPageOrder():
+            pageOrder++;
+          case final TileDiffers differs:
+            differing.add('${strategy.id}: $differs');
+        }
+      }
+      await store.close();
+      debugPrint('${strategies.length} corpus strategies, '
+          '${kept.length} compared: $same show what main\'s tile shows, '
+          '$groupOrder differ only in lineup group order, $pageOrder only '
+          'because their saved page list is out of sort order; '
+          '${refused.length} refused by the converter: $refused');
+      expect(differing, isEmpty, reason: differing.take(3).join('\n'));
+      expect(refused, isEmpty);
+      expect(same + groupOrder + pageOrder, strategies.length);
+    },
+  );
+
+  test(
+    'opening 700 strategies whose summaries an older build wrote rebuilds them all, and how long it takes',
+    skip: corpus == null || Platform.environment[costVariable] == null
+        ? '$corpusVariable names the corpus and $costVariable asks for this'
+        : false,
+    timeout: const Timeout(Duration(hours: 1)),
+    () async {
+      final (strategies, folders) = await _corpusLibrary(
+        hiveStoresUnder(Directory(corpus!)),
+        scratchRoot,
+      );
+      final scratch = await scratchRoot.createTemp('summary-rebuild-');
+      try {
+        await _writeHiveLibrary(scratch, strategies.take(700), folders);
+        await openScratchHive(scratch);
+        final file = libraryStoreFile(scratch.path);
+        await file.parent.create(recursive: true);
+        final engine = SqliteEngine(file.path);
+        final store = await _openSqlite(engine);
+        await copyFromHive(store);
+        await store.close();
+        await engine.close();
+        final (current, _) = await _timedOpen(file);
+        final aging = SqliteEngine(file.path);
+        final aged = await _ageSummaries(aging);
+        await aging.close();
+        final (rebuilding, withAgents) = await _timedOpen(file);
+        final (again, _) = await _timedOpen(file);
+        final copying = SqliteEngine(file.path);
+        final copied = await _openSqlite(copying);
+        await copyFromHive(copied);
+        await copied.close();
+        await copying.close();
+        final storedAfterCopy = await _storedSummaryVersions(file);
+        final (afterCopy, _) = await _timedOpen(file);
+        debugPrint('700 strategies: open with current summaries '
+            '${current.inMilliseconds} ms; with $aged summaries from the '
+            'build before, ${rebuilding.inMilliseconds} ms '
+            '($withAgents now list agents in order); the open after that, '
+            'with nothing written in between, ${again.inMilliseconds} ms; '
+            'the open after a start-up copy, ${afterCopy.inMilliseconds} ms');
+        expect(aged, 700);
+        expect(storedAfterCopy, {6});
+      } finally {
+        await Hive.close();
+        await scratch.delete(recursive: true);
+      }
     },
   );
 }
