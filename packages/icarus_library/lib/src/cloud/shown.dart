@@ -30,7 +30,7 @@ final class ShownRow {
 
 final class Shown {
   Shown({
-    required this.strategyRevision,
+    required this.strategy,
     required Map<String, ShownRow> pages,
     required Map<String, ShownRow> settings,
     required Map<String, Map<SeenPart, String>> content,
@@ -48,7 +48,7 @@ final class Shown {
        rows = Map.unmodifiable(rows);
 
   static final nothing = Shown(
-    strategyRevision: null,
+    strategy: null,
     pages: const {},
     settings: const {},
     content: const {},
@@ -60,7 +60,7 @@ final class Shown {
     return Shown(
       headerThisSession: true,
       pagesThisSession: read,
-      strategyRevision: revisionOfRow(rows.strategy),
+      strategy: _strategyRow(rows.strategy, rows.pages),
       pages: {
         for (final page in rows.pages)
           if (page is! TrashedPage) page.publicId: _rowOf(page, page),
@@ -101,7 +101,16 @@ final class Shown {
     );
   }
 
-  final int? strategyRevision;
+  final ShownRow? strategy;
+
+  int? get strategyRevision => strategy?.revision;
+
+  static ShownRow _strategyRow(StrategyRow row, Iterable<PageRow> pages) =>
+      ShownRow(
+        page: '',
+        revision: revisionOfRow(row),
+        digest: strategyDigest(row, pages),
+      );
   final bool headerThisSession;
   final Set<String> pagesThisSession;
   final Set<String> goneThisSession;
@@ -138,7 +147,7 @@ final class Shown {
         for (final row in settings)
           SettingsTarget(row.pagePublicId): ?revisionOfRow(row),
       }),
-      strategyRevision: revisionOfRow(strategy),
+      strategy: _strategyRow(strategy, pages),
       pages: {
         for (final page in pages)
           if (page is! TrashedPage) page.publicId: _rowOf(page, page),
@@ -169,7 +178,7 @@ final class Shown {
       pagesThisSession: {...pagesThisSession}..remove(pagePublicId),
       goneThisSession: {...goneThisSession, pagePublicId},
       highest: highest,
-      strategyRevision: strategyRevision,
+      strategy: strategy,
       pages: {...pages}..remove(pagePublicId),
       settings: {...settings}..remove(pagePublicId),
       content: {...content}..remove(pagePublicId),
@@ -195,7 +204,7 @@ final class Shown {
     pagesThisSession: pagesThisSession,
     goneThisSession: {...goneThisSession, page},
     highest: highest,
-    strategyRevision: strategyRevision,
+    strategy: strategy,
     pages: pages,
     settings: settings,
     content: content,
@@ -204,7 +213,7 @@ final class Shown {
 
   Shown inNewSession() => Shown(
     highest: highest,
-    strategyRevision: strategyRevision,
+    strategy: strategy,
     pages: pages,
     settings: settings,
     content: content,
@@ -241,7 +250,7 @@ final class Shown {
       pagesThisSession: {...pagesThisSession, page},
       goneThisSession: {...goneThisSession}..remove(page),
       highest: raised,
-      strategyRevision: strategyRevision,
+      strategy: strategy,
       pages: switch ((pageRow, pages[page]?.revision)) {
         (TrashedPage(), _) => {...pages}..remove(page),
         (_, final known?) when (revisionOfRow(pageRow) ?? 0) < known => pages,
@@ -256,7 +265,7 @@ final class Shown {
   @override
   bool operator ==(Object other) =>
       other is Shown &&
-      other.strategyRevision == strategyRevision &&
+      other.strategy == strategy &&
       other.headerThisSession == headerThisSession &&
       const SetEquality<String>().equals(
         other.goneThisSession,
@@ -274,5 +283,5 @@ final class Shown {
 
   @override
   int get hashCode =>
-      Object.hash(strategyRevision, pages.length, content.length, rows.length);
+      Object.hash(strategy, pages.length, content.length, rows.length);
 }

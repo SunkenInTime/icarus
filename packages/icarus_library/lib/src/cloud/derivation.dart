@@ -766,9 +766,9 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
   }
   if (entry.window is WindowPassed) {
     return NeedsUser(
-      attempts.any((attempt) => attempt.outcome is! AttemptRefusedWhole)
-          ? const WindowClosed()
-          : const WrittenLongAgo(),
+      expectedOf(entry.op) != null
+          ? const WrittenLongAgo()
+          : const WindowClosed(),
     );
   }
   final failed = [
@@ -940,11 +940,10 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
         _ => null,
       };
       switch ((part, landed.produced)) {
-        case (final part?, ProducedRow(page: final at, :final digest))
-            when !_deletes(landed.op):
-          at == page ? known[part] = digest : known.remove(part);
-        case (final part?, ProducedRow()):
+        case (final part?, _) when _deletes(landed.op):
           known.remove(part);
+        case (final part?, ProducedRow(page: final at, :final digest)):
+          at == page ? known[part] = digest : known.remove(part);
         case _:
           landedOnPage = true;
       }

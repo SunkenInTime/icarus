@@ -12,12 +12,14 @@ Each section builds a queue by real events until op `x` is in that state, then a
 
 ## Which revision an op names
 
-An op names the revision the user's edit was made against. The device keeps, per row, a justified row: a revision with the content at that revision. It gets one from a result, or when its own op on that row is answered applied at exactly the revision `applyOp` gives for it (the entry records that produced row when it is made). An answer at any other revision means someone else wrote in between, and the row is not justified until a result shows it. A result never changes the revision an op names. `_judge` in `lib/src/cloud/queue.dart` is the only place an outgoing revision is chosen.
+An op names the revision the user's edit was made against. The device keeps, per row, a justified row: a revision with the content at that revision, compared by content for every row, the strategy included. Nothing is justified when a session opens. A row becomes justified when a result of this session shows it, or when this device's own op on it is answered at exactly the revision `applyOp` predicted over a base that was already justified when the edit was made: either the row a queued edit ahead of it predicted, or the justified row itself. An answer of nothing to do at the justified revision of an op that changes nothing keeps the row justified. Any other answer, nothing to do at another revision included, means someone else wrote in between: the row is not justified until a result shows it, and every later edit of that row loses its justification too. A result never changes the revision an op names. `_judge` in `lib/src/cloud/queue.dart` is the only place an outgoing revision is chosen.
 
 - An op made with nothing of this device's ahead of it on its row goes at its authored revision, and the server decides.
-- An op made behind this device's own queued or landed work on its row goes only once that row is justified at the revision it names, with the content the user saw (or already holding what the op writes). Otherwise it waits for the row's result, and needs the user when a result of this session shows the row otherwise, when a result of its page no longer holds a row that results showed or this device added, or when its page is gone.
+- A field merge names its fields and always goes; the server merges it field by field.
+- Any other op made behind this device's queued or landed work on its row, a nothing-to-do answer included, goes only once that row is justified at the revision it names, with the content the user saw (or already holding what the op writes). Otherwise it waits for the row's result, and needs the user when a result of this session shows the row otherwise, when a result of its page no longer holds a row that results showed or this device added, or when its page is gone.
 - A page add, reorder or delete answers only the strategy revision, so the pages it renumbers are not justified by the answer: a page rename behind one waits for a page list.
 - An undo of a delete goes without asking only over this device's delete answered at the revision it predicted, with the tombstone as the user saw it, within 29 days of first sending that delete.
+- An entry that carries a revision check and was written more than 29 days ago needs the user before it is sent, sent before or not, because a purged tombstone can come back at revision 1.
 - Keep mine names the revision the user chose theirs over.
 
 ## The resend window and the sender
@@ -180,7 +182,7 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 
 | Event | Result |
 | --- | --- |
 | user edits another item | z: waiting |
-| user edits the same item | w: waiting, behind x (sameRow) |
+| user edits the same item | w: waiting |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
 | applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
@@ -222,7 +224,7 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z).
 | Event | Result |
 | --- | --- |
 | user edits another item | z: waiting |
-| user edits the same item | w: waiting, behind x (sameRow) |
+| user edits the same item | w: waiting |
 | claimed | x: sending in 2; sends attempt 2 (x) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
@@ -313,7 +315,7 @@ Starts as: needs user: the server may have forgotten whether it landed.
 | Event | Result |
 | --- | --- |
 | user edits another item | z: waiting |
-| user edits the same item | w: waiting, behind x (sameRow) |
+| user edits the same item | w: waiting |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
 | applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
@@ -331,16 +333,15 @@ Starts as: needs user: the server may have forgotten whether it landed.
 | rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
 | rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
 | failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | x: needs user: written too long ago to check against the server; standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | x: needs user: written too long ago to check against the server; reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | x: needs user: written too long ago to check against the server; standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | x: needs user: written too long ago to check against the server; standing deletedOnServer |
+| attempt 1 refused whole: upgradeRequired | standing upgradeRequired; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
+| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
 | connection lost | unchanged |
 | connection returned | opens session 2 |
 | account changed | opens session 2 |
-| user: keep mine, same item | x: gone; x2: waiting; removes x (RemovedByUser(replacedByKeepMine, mayHaveLanded)) |
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, mayHaveLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, mayHaveLanded)) |
 | result: header as it is | unchanged |
@@ -349,11 +350,11 @@ Starts as: needs user: the server may have forgotten whether it landed.
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
-Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended.
+Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: delete anyway; result: page-a from a session that ended.
 
 ## needs user: written 29 days ago against a revision, never sent
 
-Starts as: needs user: written too long ago to check against the server.
+Starts as: needs user: written more than 29 days ago, too long to check against the server.
 
 | Event | Result |
 | --- | --- |

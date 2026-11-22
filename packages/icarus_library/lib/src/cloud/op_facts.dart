@@ -446,15 +446,7 @@ String strategyDigest(StrategyRow strategy, Iterable<PageRow> pages) {
       final ReadableStrategy readable => _strategyPart(readable),
       UnreadableStrategy(:final stored) => {'unreadable': plainJson(stored)},
     },
-    'pages': [
-      for (final page in live)
-        {
-          'id': page.publicId,
-          'name': page.name,
-          'isAutoNamed': page.isAutoNamed ?? false,
-          'isAttack': page.isAttack,
-        },
-    ],
+    'pages': [for (final page in live) page.publicId],
   });
 }
 
@@ -526,20 +518,29 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
 
 ProducedRow? producedBy(StrategyRows rows, StrategyOp op) {
   final target = targetOf(op);
-  final applied = switch (applyOp(rows, op)) {
-    final OpApplied done => done,
+  final List<Row>? after = switch (applyOp(rows, op)) {
+    final OpApplied done => done.rows.toList(),
+    OpUnchanged() => [?_rowAt(rows, target)],
     _ => null,
   };
-  if (applied == null) return null;
+  if (after == null) return null;
   if (target is StrategyTarget) {
-    for (final row in applied.rows) {
-      if (row case final ReadableStrategy strategy) {
-        return ProducedRow(page: null, revision: strategy.revision, digest: '');
-      }
-    }
-    return null;
+    final strategy = after.whereType<ReadableStrategy>().firstOrNull;
+    if (strategy == null) return null;
+    final changed = {
+      for (final row in after)
+        if (row is PageRow) row.publicId: row,
+    };
+    return ProducedRow(
+      page: null,
+      revision: strategy.revision,
+      digest: strategyDigest(strategy, [
+        for (final page in rows.pages) changed.remove(page.publicId) ?? page,
+        ...changed.values,
+      ]),
+    );
   }
-  for (final row in applied.rows) {
+  for (final row in after) {
     final rowTarget = switch (row) {
       PageRow(:final publicId) => PageTarget(publicId) as Target,
       PageSettingsRow(:final pagePublicId) => SettingsTarget(pagePublicId),
@@ -564,6 +565,14 @@ ProducedRow? producedBy(StrategyRows rows, StrategyOp op) {
   }
   return null;
 }
+
+Row? _rowAt(StrategyRows rows, Target target) => switch (target) {
+  StrategyTarget() => rows.strategy,
+  PageTarget(:final pagePublicId) => rows.page(pagePublicId),
+  SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
+  ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+  LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+};
 
 Map<SeenPart, String> liveContentOn(Iterable<Row> rows, String pagePublicId) =>
     {

@@ -366,7 +366,8 @@ final class WrittenLongAgo extends UserReason {
   int get hashCode => (WrittenLongAgo).hashCode;
 
   @override
-  String toString() => 'written too long ago to check against the server';
+  String toString() =>
+      'written more than 29 days ago, too long to check against the server';
 }
 
 final class RetriesExhausted extends UserReason {
@@ -956,6 +957,23 @@ final class _Edit {
       number: nextSession++,
     );
     shown = shown.inNewSession();
+    for (final (at, work) in [...landed.indexed]) {
+      if (work.produced != null) landed[at] = work.withoutProduced();
+    }
+    for (final entry in [...entries]) {
+      if (entry case PendingOp(
+        :final authored,
+      ) when _producesOf(authored)?.justifies ?? false) {
+        put(
+          entry.copyWith(
+            authored: _withProduces(
+              authored,
+              _producesOf(authored)!.unjustified(),
+            ),
+          ),
+        );
+      }
+    }
     change.everything = true;
     effects.add(SessionOpened(session.number));
   }
@@ -1215,6 +1233,12 @@ Step _arrived(_Edit edit, ArrivedBase base) {
   return edit.done();
 }
 
+bool _unchangedPrediction(Authored authored) => switch (authored) {
+  AuthoredRow(:final revision, :final produces?) =>
+    produces.revision == revision,
+  _ => false,
+};
+
 void _laterUnjustified(_Edit edit, PendingOp entry, LandedWork work) {
   final row = targetOf(entry.op);
   for (final later in [...edit.entries]) {
@@ -1370,14 +1394,13 @@ Authored _justifiedOrNot(
       .whereType<PendingOp>()
       .where((entry) => targetOf(entry.op) == row)
       .lastOrNull;
-  final strategy = row is StrategyTarget;
   final justified = switch ((authored, ahead)) {
     (AuthoredRow(:final revision, :final digest), final ahead?) =>
       switch (_producesOf(ahead.authored)) {
         final produced? =>
           produced.justifies &&
               produced.revision == revision &&
-              (strategy || produced.digest == digest),
+              produced.digest == digest,
         null => false,
       },
     (_, null) => _baseJustified(queue, row, authored),
@@ -1393,7 +1416,7 @@ bool _baseJustified(CloudQueue queue, Target row, Authored authored) =>
     switch ((authored, _knownRow(queue, row))) {
       (
         AuthoredRow(:final revision, :final digest),
-        _KnownRow(revision: final known, digest: final shown),
+        _KnownRow(revision: final known, digest: final shown, current: true),
       ) =>
         known == revision && (shown == null || shown == digest),
       (AuthoredNoRow(), null) => true,
@@ -1401,7 +1424,7 @@ bool _baseJustified(CloudQueue queue, Target row, Authored authored) =>
     };
 
 ShownRow? _shownRow(Shown shown, Target target) => switch (target) {
-  StrategyTarget() => null,
+  StrategyTarget() => shown.strategy,
   PageTarget(:final pagePublicId) => shown.pages[pagePublicId],
   SettingsTarget(:final pagePublicId) => shown.settings[pagePublicId],
   ElementTarget() || LineupTarget() => shown.rows[target],
@@ -1438,7 +1461,7 @@ final class _AskUser extends _Verdict {
   final UserReason reason;
 }
 
-enum _Writes { wholeRow, putBack, other }
+enum _Writes { wholeRow, putBack, fields, other }
 
 _Writes _writesOf(StrategyOp op) => switch (op) {
   ElementPatchOp(merge: null, payload: _?) ||
@@ -1447,6 +1470,8 @@ _Writes _writesOf(StrategyOp op) => switch (op) {
   PageSettingsPatchOp() => _Writes.wholeRow,
   ElementAddOp(expectedElementRevision: _?) ||
   LineupGroupAddOp(expectedLineupRevision: _?) => _Writes.putBack,
+  ElementPatchOp(merge: _?, pagePublicId: null) ||
+  LineupGroupPatchOp(merge: _?, pagePublicId: null) => _Writes.fields,
   _ => _Writes.other,
 };
 
@@ -1482,14 +1507,14 @@ _Known? _knownRow(CloudQueue queue, Target row) {
     _ => result != null && shown.pagesThisSession.contains(result.page),
   };
   _Known? best = switch ((row, result)) {
-    (StrategyTarget(), _) => switch (shown.strategyRevision) {
-      final revision? => _KnownRow(
+    (StrategyTarget(), _) => switch (shown.strategy) {
+      ShownRow(revision: final revision?, :final digest) => _KnownRow(
         null,
         revision,
-        null,
+        digest,
         current: shown.headerThisSession,
       ),
-      null => null,
+      _ => null,
     },
     (_, ShownRow(:final page, revision: final revision?, :final digest)) =>
       _KnownRow(page, revision, digest, current: current),
@@ -1506,7 +1531,7 @@ _Known? _knownRow(CloudQueue queue, Target row) {
       ProducedRow(:final page, :final revision, :final digest) => _KnownRow(
         page,
         revision,
-        row is StrategyTarget ? null : digest,
+        digest,
         current: true,
       ),
       null => _NotKnown(work.revision),
@@ -1524,6 +1549,8 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
   }
   final row = targetOf(op);
   switch (_writesOf(op)) {
+    case _Writes.fields:
+      return _NameAt(authored);
     case _Writes.other:
       if (!entry.behindOwn) return _NameAt(authored);
       return _wholeBehindOwn(queue, entry, row, authored);
@@ -1535,20 +1562,23 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
                 work.own &&
                 _deletes(work.op) &&
                 targetOf(work.op) == row &&
-                work.produced?.revision == authored,
+                work.revision == authored,
           )
           .lastOrNull;
-      final known = _knownRow(queue, row);
-      final asSeen =
-          seen is AuthoredRow &&
-          known is _KnownRow &&
-          known.revision == authored &&
-          known.digest == seen.digest;
-      if (delete == null || !asSeen) return const _AskUser();
+      if (delete == null || seen is! AuthoredRow) return const _AskUser();
       final until = delete.firstSentAt.add(resendWindow);
-      return now.isBefore(until)
-          ? _NameAt(authored, until: until)
-          : const _AskUser();
+      if (!now.isBefore(until)) return const _AskUser();
+      return switch (_knownRow(queue, row)) {
+        _KnownRow(:final revision, :final digest, current: true)
+            when revision == authored && digest == seen.digest =>
+          _NameAt(authored, until: until),
+        _KnownRow(current: true) => const _AskUser(),
+        _KnownRow(:final page) => _AwaitRow(page),
+        _ => _AwaitRow(switch (entry.scope) {
+          OnPage(:final pagePublicId) => pagePublicId,
+          _ => null,
+        }),
+      };
     case _Writes.wholeRow:
       if (!entry.behindOwn) return _NameAt(authored);
       return _wholeBehindOwn(queue, entry, row, authored);
@@ -1567,7 +1597,12 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
       ? null
       : ProducedRow(
           page: last.page,
-          revision: first.revision,
+          revision: switch (earlier) {
+            AuthoredRow(:final revision, :final digest)
+                when digest == last.digest =>
+              revision,
+            _ => first.revision,
+          },
           digest: last.digest,
           justifies: first.justifies,
         );
@@ -1637,7 +1672,7 @@ _Verdict _wholeBehindOwn(
               (revision == authored && digest == seen.digest),
         _ => false,
       };
-      if (asSeen) return _NameAt(authored);
+      if (asSeen && current) return _NameAt(authored);
       return current ? const _AskUser() : _AwaitRow(page);
     case _NotKnown():
       final left = queue.landed.any(
@@ -1829,7 +1864,9 @@ void _landed(
   final sent = carried.op;
   final produced = switch (entry.authored) {
     AuthoredRow(:final produces?) || AuthoredNoRow(:final produces?)
-        when ours && produces.justifies && produces.revision == revision =>
+        when produces.justifies &&
+            produces.revision == revision &&
+            (ours || _unchangedPrediction(entry.authored)) =>
       produces,
     _ => null,
   };

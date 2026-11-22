@@ -104,12 +104,7 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
       AuthoredRow(:final movedRow?) => movedRow,
       _ => null,
     };
-    rows = onTop(
-      moved == null
-          ? rows
-          : _withMovedRow(rows, op, moved, revisionOfRow(moved) ?? 0),
-      op,
-    );
+    rows = onTop(moved == null ? rows : _beforeMove(rows, op, moved), op);
   }
   return rows;
 }
@@ -145,6 +140,24 @@ StrategyRowSet _strategyAtLeast(StrategyRowSet rows, LandedWork work) =>
         rows.withRows([rows.strategy.rewritten(revision: work.revision)]),
       _ => rows,
     };
+
+StrategyRowSet _beforeMove(StrategyRowSet rows, StrategyOp op, Row moved) {
+  final missing = switch (moved) {
+    LiveElement(:final publicId) => rows.element(publicId) == null,
+    LiveLineupGroup(:final publicId) => rows.lineupGroup(publicId) == null,
+    _ => false,
+  };
+  if (!missing) return rows;
+  final source = switch (moved) {
+    LiveElement(:final pagePublicId) ||
+    LiveLineupGroup(:final pagePublicId) => pagePublicId,
+    _ => null,
+  };
+  if (source != null && rows.page(source) is LivePage) {
+    return rows.withRows([moved]);
+  }
+  return _withMovedRow(rows, op, moved, (revisionOfRow(moved) ?? 0) + 1);
+}
 
 StrategyRowSet _withMovedRow(
   StrategyRowSet rows,

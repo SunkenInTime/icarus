@@ -74,7 +74,7 @@ final class Row {
 }
 
 Client sentAndLost() {
-  final client = Client()..edit(movePatch('x'));
+  final client = Client()..edit(elementAdd('x'));
   final attempt = client.claim(['x']);
   return client
     ..must(TransportFailed(attempt, TransportFailure.network, at: now));
@@ -417,13 +417,19 @@ String renderTable() {
     ..writeln(
       'An op names the revision the user\'s edit was made against. The device '
       'keeps, per row, a justified row: a revision with the content at that '
-      'revision. It gets one from a result, or when its own op on that row is '
-      'answered applied at exactly the revision `applyOp` gives for it (the '
-      'entry records that produced row when it is made). An answer at any '
-      'other revision means someone else wrote in between, and the row is not '
-      'justified until a result shows it. A result never changes the revision '
-      'an op names. `_judge` in `lib/src/cloud/queue.dart` is the only place '
-      'an outgoing revision is chosen.',
+      'revision, compared by content for every row, the strategy included. '
+      'Nothing is justified when a session opens. A row becomes justified when '
+      'a result of this session shows it, or when this device\'s own op on it '
+      'is answered at exactly the revision `applyOp` predicted over a base '
+      'that was already justified when the edit was made: either the row a '
+      'queued edit ahead of it predicted, or the justified row itself. An '
+      'answer of nothing to do at the justified revision of an op that '
+      'changes nothing keeps the row justified. Any other answer, nothing to '
+      'do at another revision included, means someone else wrote in between: '
+      'the row is not justified until a result shows it, and every later edit '
+      'of that row loses its justification too. A result never changes the '
+      'revision an op names. `_judge` in `lib/src/cloud/queue.dart` is the '
+      'only place an outgoing revision is chosen.',
     )
     ..writeln()
     ..writeln(
@@ -431,13 +437,17 @@ String renderTable() {
       'at its authored revision, and the server decides.',
     )
     ..writeln(
-      '- An op made behind this device\'s own queued or landed work on its '
-      'row goes only once that row is justified at the revision it names, '
-      'with the content the user saw (or already holding what the op '
-      'writes). Otherwise it waits for the row\'s result, and needs the user '
-      'when a result of this session shows the row otherwise, when a result '
-      'of its page no longer holds a row that results showed or this device '
-      'added, or when its page is gone.',
+      '- A field merge names its fields and always goes; the server merges '
+      'it field by field.',
+    )
+    ..writeln(
+      '- Any other op made behind this device\'s queued or landed work on its '
+      'row, a nothing-to-do answer included, goes only once that row is '
+      'justified at the revision it names, with the content the user saw (or '
+      'already holding what the op writes). Otherwise it waits for the '
+      'row\'s result, and needs the user when a result of this session shows '
+      'the row otherwise, when a result of its page no longer holds a row '
+      'that results showed or this device added, or when its page is gone.',
     )
     ..writeln(
       '- A page add, reorder or delete answers only the strategy revision, so '
@@ -448,6 +458,11 @@ String renderTable() {
       '- An undo of a delete goes without asking only over this device\'s '
       'delete answered at the revision it predicted, with the tombstone as '
       'the user saw it, within 29 days of first sending that delete.',
+    )
+    ..writeln(
+      '- An entry that carries a revision check and was written more than 29 '
+      'days ago needs the user before it is sent, sent before or not, '
+      'because a purged tombstone can come back at revision 1.',
     )
     ..writeln('- Keep mine names the revision the user chose theirs over.')
     ..writeln()

@@ -306,7 +306,7 @@ void main() {
       );
       client.clock = now.add(const Duration(hours: 1));
       client.must(const AppRestarted(build: build));
-      expect(stateOf(client, 'move'), const NeedsUser(WindowClosed()));
+      expect(stateOf(client, 'move'), const NeedsUser(WrittenLongAgo()));
       expect(client.view('move').sendable, isFalse);
     });
 
@@ -368,7 +368,7 @@ void main() {
       server.purgeAfterThirtyDays();
       client.clock = now.add(const Duration(days: 31));
       client.must(const ConnectionReturned());
-      expect(stateOf(client, 'mine'), const NeedsUser(WindowClosed()));
+      expect(stateOf(client, 'mine'), const NeedsUser(WrittenLongAgo()));
       expect(
         (server.rows.element('e1')! as LiveElement).payload.data
             .toJson()['position'],
@@ -421,8 +421,7 @@ void main() {
         if (teammate) {
           server.rows = withOp(initialRows(), movePatch('t', rotation: 90));
         }
-        final client = Client(base: initialRows());
-        client.must(const ConnectionReturned());
+        final client = online();
         client.edit(elementDelete('drop'));
         client.edit(putBackOf('back', initialRows(), 'e1'));
         sendAndAnswer(client, server, ['drop']);
@@ -957,7 +956,7 @@ void main() {
     client.must(TransportFailed(attempt, TransportFailure.network, at: now));
     client.clock = now.add(resendWindow);
     client.queue = look(client.queue, client.at).queue;
-    expect(stateOf(client, 'del'), const NeedsUser(WindowClosed()));
+    expect(stateOf(client, 'del'), const NeedsUser(WrittenLongAgo()));
     expect(stateOf(client, 'back'), const NeedsUser(WrittenLongAgo()));
   });
 
@@ -1336,8 +1335,9 @@ void main() {
       );
     });
 
-    test('a delete does not wait behind a landed field merge, and a checked '
-        'delete names the latest revision the device knows', () {
+    test('a delete does not wait behind a landed field merge, and after a '
+        'reconnect a checked delete names the latest revision the device '
+        'knows once a result of the new session shows the row', () {
       final server = Server();
       final client = online();
       client.edit(
@@ -1348,6 +1348,8 @@ void main() {
       expect(client.view('drop').sendable, isTrue);
       client.must(const ConnectionLost());
       client.must(const ConnectionReturned());
+      expect(client.view('drop').sendable, isFalse);
+      client.read(server.rows);
       client.claim(['drop']);
       expect(expectedOf(client.lastSent().single), 2);
     });
@@ -2116,6 +2118,27 @@ void main() {
       });
     }
 
+    test('a queued move whose source page\'s result arrives first is drawn '
+        'at the revision after the move', () {
+      final server = Server();
+      final client = online();
+      const move = ElementPatchOp(
+        opId: 'move',
+        elementPublicId: 'e1',
+        expectedElementRevision: 1,
+        pagePublicId: 'page-b',
+      );
+      client.edit(move);
+      client.claim(['move']);
+      server.apply(clientId, client.lastSent().single);
+      client.base = withoutE1(client.base);
+      client.arrive(pageReadOf(server.rows, 'page-a'));
+      expect(
+        (client.visible.element('e1')! as LiveElement).revision,
+        (server.rows.element('e1')! as LiveElement).revision,
+      );
+    });
+
     test('a page whose result showed it, deleted after a teammate added to '
         'it, is held rather than taken as already gone', () {
       final server = Server();
@@ -2133,5 +2156,253 @@ void main() {
       client.arrive(pageReadOf(server.rows, 'page-c'));
       expect(client.view('del').sendable, isFalse);
     });
+  });
+
+  group('fifth review', () {
+    Object? rotationOf(StrategyRows rows) =>
+        (rows.element('e1')! as LiveElement).payload.data.toJson()['rotation'];
+
+    void settle(Client client, Server server) {
+      for (var round = 0; round < 6; round++) {
+        final ids = [
+          for (final entry in client.queue.entries)
+            if (client.view(entry.id).sendable) entry.id,
+        ];
+        if (ids.isNotEmpty) sendAndAnswer(client, server, ids);
+        client.read(server.rows);
+      }
+    }
+
+    StrategyRowSet withoutE1(StrategyRowSet rows) => StrategyRowSet(
+      strategy: rows.strategy,
+      pages: rows.pages,
+      settings: rows.settings,
+      elements: [
+        for (final row in rows.elements)
+          if (row.publicId != 'e1') row,
+      ],
+      lineupGroups: rows.lineupGroups,
+    );
+
+    test('a row cached from an earlier session justifies nothing, so a put '
+        'back under the same id at revision 1 is never overwritten', () {
+      final server = Server();
+      final client = online();
+      server.rows = withOp(server.rows, movePatch('t', rotation: 90));
+      final rotated = server.rows.element('e1')! as LiveElement;
+      server.rows = withOp(server.rows, elementDelete('gone', expected: 2));
+      server.rows = withOp(
+        withoutE1(server.rows),
+        ElementAddOp(
+          opId: 'back',
+          elementPublicId: 'e1',
+          pagePublicId: 'page-a',
+          payload: rotated.payload,
+          sortIndex: rotated.sortIndex,
+        ),
+      );
+      client.must(const AppRestarted(build: build));
+      client.must(const ConnectionReturned());
+      client.edit(
+        movePatch('move', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      sendAndAnswer(client, server, ['move']);
+      client.edit(onVisible(client.visible, movePatch('whole', x: 80)));
+      settle(client, server);
+      expect(rotationOf(server.rows), 90);
+    });
+
+    test('the strategy row is compared by content, so a teammate\'s theme is '
+        'never overwritten behind a rename both chose', () {
+      final server = Server();
+      final client = online();
+      server.rows = withOp(
+        server.rows,
+        const StrategyPatchOp(
+          opId: 'theme',
+          expectedStrategyRevision: 1,
+          themeProfile: SetValue('night'),
+        ),
+      );
+      server.rows = withOp(
+        server.rows,
+        const StrategyPatchOp(
+          opId: 'name',
+          expectedStrategyRevision: 2,
+          name: 'Same',
+        ),
+      );
+      client.edit(
+        const StrategyPatchOp(
+          opId: 'mine',
+          expectedStrategyRevision: 1,
+          name: 'Same',
+        ),
+      );
+      sendAndAnswer(client, server, ['mine']);
+      client.edit(
+        onVisible(
+          client.visible,
+          const StrategyPatchOp(
+            opId: 'my-theme',
+            expectedStrategyRevision: 1,
+            themeProfile: SetValue('day'),
+          ),
+        ),
+      );
+      settle(client, server);
+      expect(server.rows.strategy.themeProfileId, 'night');
+    });
+
+    test('nothing to do at the justified revision keeps the predictions '
+        'queued behind it', () {
+      final start = strategyRows(
+        elements: [
+          element(
+            'e1',
+            fields: const {
+              'position': {'dx': 0, 'dy': 0},
+            },
+          ),
+          element('e2'),
+          element('e3', pageId: 'page-b'),
+        ],
+      );
+      final server = Server()..rows = start;
+      final client = online(base: start);
+      client.edit(
+        movePatch('d1', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      client.edit(
+        onVisible(
+          client.visible,
+          movePatch('d2', x: 0, merge: FieldMerge(fields: ['position'])),
+        ),
+      );
+      final folded = client.queue.entries.single.id;
+      final attempt = client.claim([folded]);
+      client.edit(onVisible(client.visible, movePatch('w1', x: 70)));
+      client.edit(onVisible(client.visible, movePatch('w2', x: 90)));
+      client.must(
+        OpAnswered(attempt, server.apply(clientId, client.lastSent().single)),
+      );
+      sendAndAnswer(client, server, ['w1']);
+      expect(client.view('w2').sendable, isTrue);
+    });
+
+    test('a live field edit after nothing to do goes at once', () {
+      final server = Server();
+      final client = online();
+      server.rows = withOp(server.rows, movePatch('t', x: 40, rotation: 90));
+      client.edit(
+        movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      sendAndAnswer(client, server, ['drag']);
+      client.edit(
+        onVisible(
+          client.visible,
+          movePatch('again', x: 60, merge: FieldMerge(fields: ['position'])),
+        ),
+      );
+      expect(client.view('again').sendable, isTrue);
+    });
+
+    for (final (label, move) in [
+      (
+        'changing only the page',
+        const ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+        ),
+      ),
+      (
+        'with a merged position',
+        ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+          payload: agentPayload('e1', const {
+            'position': {'dx': 5, 'dy': 0},
+          }),
+          merge: FieldMerge(fields: ['position']),
+        ),
+      ),
+    ]) {
+      test('a pending move $label shows a teammate\'s newer change on the '
+          'destination before its answer', () {
+        final server = Server();
+        final client = online();
+        client.edit(onVisible(client.visible, move));
+        client.claim(['move']);
+        server.apply(clientId, client.lastSent().single);
+        server.rows = withOp(
+          server.rows,
+          movePatch('t', expected: 2, rotation: 90),
+        );
+        client.read(server.rows);
+        expect(rotationOf(client.visible), 90);
+        expect(client.visible.element('e1')!.pagePublicId, 'page-b');
+      });
+    }
+
+    final orders = [
+      ['source', 'destination', 'answer'],
+      ['source', 'answer', 'destination'],
+      ['destination', 'source', 'answer'],
+      ['destination', 'answer', 'source'],
+      ['answer', 'source', 'destination'],
+      ['answer', 'destination', 'source'],
+    ];
+    for (final order in orders) {
+      test('a move keeps its own place in the order: ${order.join(', ')}', () {
+        final start = strategyRows(
+          elements: [
+            element('e1', sortIndex: 7),
+            element('e2'),
+            element('e3', pageId: 'page-b'),
+          ],
+        );
+        final server = Server()..rows = start;
+        final client = online(base: start);
+        const move = ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+        );
+        client.edit(move);
+        final attempt = client.claim(['move']);
+        final answer = server.apply(clientId, client.lastSent().single);
+        final moved = server.rows.element('e1')! as LiveElement;
+        for (final step in order) {
+          switch (step) {
+            case 'source':
+              if (client.base.element('e1')?.pagePublicId == 'page-a') {
+                client.base = withoutE1(client.base);
+              }
+              client.arrive(pageReadOf(server.rows, 'page-a'));
+            case 'destination':
+              client.base = withoutE1(client.base).withRows([moved]);
+              client.arrive(pageReadOf(server.rows, 'page-b'));
+            case _:
+              client.must(OpAnswered(attempt, answer));
+          }
+          final drawn = [
+            for (final row in client.visible.elements)
+              if (row is LiveElement && row.publicId == 'e1') row,
+          ];
+          expect(drawn, hasLength(1), reason: 'after $step');
+          expect(drawn.single.pagePublicId, 'page-b', reason: 'after $step');
+          expect(
+            drawn.single.sortIndex,
+            moved.sortIndex,
+            reason: 'after $step',
+          );
+        }
+      });
+    }
   });
 }

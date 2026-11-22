@@ -50,10 +50,9 @@ final class Model {
     ).entries) {
       final row = rowOf(server.rows, target);
       if (row == null) continue;
-      history.putIfAbsent((
-        target,
-        revision,
-      ), () => target is StrategyTarget ? '' : rowDigest(row));
+      history[(target, revision)] = target is StrategyTarget
+          ? strategyDigest(server.rows.strategy, server.rows.pages)
+          : rowDigest(row);
     }
   }
 
@@ -744,6 +743,49 @@ final class Model {
     log.add('teammate acts');
   }
 
+  void purgeAndPutBack() {
+    for (final (attempt, owner, ops) in [...inFlight]) {
+      if (random.nextBool()) {
+        for (final op in ops) {
+          applyOwn(owner, op);
+        }
+      }
+      apply(
+        TransportFailed(attempt, TransportFailure.network, at: clock),
+        'given up across 30 days $attempt',
+      );
+    }
+    inFlight.clear();
+    recordHistory();
+    final purged = [
+      for (final row in server.rows.elements)
+        if (row is DeletedElement) row,
+    ];
+    if (purged.isEmpty) return;
+    server.purgeAfterThirtyDays();
+    count('tombstones purged');
+    for (final row in purged) {
+      if (!teammates || random.nextBool()) continue;
+      if (server.rows.page(row.pagePublicId) is! LivePage) continue;
+      final back = ElementAddOp(
+        opId: fresh('t'),
+        elementPublicId: row.publicId,
+        pagePublicId: row.pagePublicId,
+        payload: agentPayload(row.publicId, {
+          ...row.payload.data.toJson(),
+          'rotation': 135,
+        }),
+        sortIndex: row.sortIndex,
+      );
+      if (applyOp(server.rows, back) case final OpApplied done) {
+        server.rows = server.rows.withRows(done.rows);
+        teammateEdited = true;
+        count('teammate puts a purged element back at revision 1');
+      }
+    }
+    recordHistory();
+  }
+
   StrategyOp sameAsMine(ElementPatchOp mine, bool alsoRotated) {
     final row = server.rows.element(mine.elementPublicId)! as LiveElement;
     final payload = mine.payload ?? row.payload;
@@ -819,7 +861,10 @@ final class Model {
 
   void stepOnce() {
     final jump = random.nextInt(400) == 0;
-    if (jump) jumped = true;
+    if (jump) {
+      jumped = true;
+      purgeAndPutBack();
+    }
     clock = clock.add(
       jump
           ? serverRemembersAnswersFor + const Duration(hours: 1)
@@ -935,6 +980,7 @@ const minimums = {
   'justified rows checked against the server': 100,
   'teammate makes this device\'s change': 20,
   'teammate makes this device\'s change and rotates': 20,
+  'teammate puts a purged element back at revision 1': 10,
 };
 
 void main() {

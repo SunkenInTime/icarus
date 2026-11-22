@@ -54,9 +54,15 @@ final class Server {
     ..recorded.addAll(recorded)
     ..firstClient.addAll(firstClient)
     ..received = received
-    ..sends = sends;
+    ..sends = sends
+    ..appliedBeforePurge.addAll(appliedBeforePurge);
+
+  final appliedBeforePurge = <String>{};
 
   void purgeAfterThirtyDays() {
+    for (final opId in firstClient.keys) {
+      if (landed(opId)) appliedBeforePurge.add(opId);
+    }
     recorded.clear();
     firstClient.clear();
     rows = StrategyRowSet(
@@ -123,7 +129,10 @@ final class Server {
     return answer;
   }
 
-  bool landed(String opId) => switch (firstClient[opId]) {
+  bool landed(String opId) =>
+      appliedBeforePurge.contains(opId) || _landedNow(opId);
+
+  bool _landedNow(String opId) => switch (firstClient[opId]) {
     final client? => switch (recorded['$client|$opId']) {
       RecordedAnswer(:final applied) => applied,
       null => false,
