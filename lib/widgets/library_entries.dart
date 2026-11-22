@@ -1,9 +1,9 @@
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 
 /// One folder in the library grid, tagged with the store it lives in so the
 /// pill knows which provider path to use for moves, edits, and opening.
@@ -32,7 +32,7 @@ class LibraryFolderRow {
 }
 
 class LibraryStrategyRow {
-  LibraryStrategyRow.local(StrategyData strategy,
+  LibraryStrategyRow.local(LocalStrategySummary strategy,
       {required this.showDeviceBadge})
       : local = strategy,
         cloud = null;
@@ -42,7 +42,7 @@ class LibraryStrategyRow {
         local = null,
         showDeviceBadge = false;
 
-  final StrategyData? local;
+  final LocalStrategySummary? local;
   final CloudStrategyEntry? cloud;
 
   /// True for local strategies while the cloud is reachable, so the tile can

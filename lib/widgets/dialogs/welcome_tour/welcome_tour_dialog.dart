@@ -2,11 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/config/platform_policy.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/domain/folder.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
@@ -14,7 +12,6 @@ import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/welcome_tour_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/welcome_tour/welcome_tour_pictures.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -88,9 +85,9 @@ class WelcomeTourDialog extends ConsumerStatefulWidget {
           .read(appPreferencesProvider.notifier)
           .markWelcomeTourSeen(),
     );
-    final hasLocalWork =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).isNotEmpty ||
-            Hive.box<Folder>(HiveBoxNames.foldersBox).isNotEmpty;
+    final hasLocalWork = ProviderScope.containerOf(context, listen: false)
+        .read(localLibraryViewProvider)
+        .holdsAnything;
     return showShadDialog<void>(
       context: context,
       builder: (context) => WelcomeTourDialog(showLibraryStep: hasLocalWork),

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/folder_icons.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -137,10 +136,7 @@ class FolderProvider extends Notifier<String?> {
   }
 
   List<Folder> findFolderChildren(String id) {
-    return Hive.box<Folder>(HiveBoxNames.foldersBox)
-        .values
-        .where((f) => f.parentID == id)
-        .toList();
+    return ref.read(localLibraryViewProvider).folderChildren(id);
   }
 
   Folder? findFolderByID(String id) {
@@ -150,7 +146,7 @@ class FolderProvider extends Notifier<String?> {
   }
 
   Folder? findLocalFolderByID(String id) {
-    return Hive.box<Folder>(HiveBoxNames.foldersBox).get(id);
+    return ref.read(localLibraryViewProvider).folder(id);
   }
 
   Folder? findCloudFolderByID(
@@ -238,13 +234,12 @@ class FolderProvider extends Notifier<String?> {
   /// the delete finishes (the dialog can close) is caught in it. The files
   /// and pins of what went are removed afterwards.
   Future<CloudLibraryActionResult> _deleteLocalFolder(String folderID) async {
-    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
-    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    const library = LocalLibrary();
     final folderIds = folderAndDescendantIds(folderID, {
-      for (final folder in folders.values) folder.id: folder.parentID,
+      for (final folder in library.storedFolders) folder.id: folder.parentID,
     });
     final strategyIds = [
-      for (final strategy in strategies.values)
+      for (final strategy in library.storedStrategies)
         if (folderIds.contains(strategy.folderID)) strategy.id,
     ];
 
@@ -352,7 +347,7 @@ class FolderProvider extends Notifier<String?> {
       return result;
     }
 
-    final folder = findLocalFolderByID(folderID);
+    final folder = const LocalLibrary().storedFolder(folderID);
 
     if (folder != null) {
       (await const LocalLibrary().moveFolder(folder, parentID)).orThrow();

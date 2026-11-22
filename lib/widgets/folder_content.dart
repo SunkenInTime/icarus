@@ -1,14 +1,12 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/config/platform_policy.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -20,7 +18,6 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/services/cloud_needs_connection.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:icarus/widgets/community/community_tab.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
@@ -40,15 +37,15 @@ import 'package:icarus/widgets/loading_spinner.dart';
 
 @visibleForTesting
 bool strategyBelongsToVisibleFolder({
-  required StrategyData strategy,
+  required LocalStrategySummary strategy,
   required String? currentFolderId,
   required Set<String> existingFolderIds,
 }) {
   if (currentFolderId != null) {
-    return strategy.folderID == currentFolderId;
+    return strategy.folderId == currentFolderId;
   }
 
-  final strategyFolderId = strategy.folderID;
+  final strategyFolderId = strategy.folderId;
   return strategyFolderId == null ||
       !existingFolderIds.contains(strategyFolderId);
 }
@@ -67,7 +64,7 @@ bool folderBelongsToVisibleParent({
 class LocalFolderIndex {
   LocalFolderIndex({
     required Iterable<Folder> folders,
-    required Iterable<StrategyData> strategies,
+    required Iterable<LocalStrategySummary> strategies,
   }) {
     for (final folder in folders) {
       final parentID = folder.parentID;
@@ -76,7 +73,7 @@ class LocalFolderIndex {
     }
     var position = 0;
     for (final strategy in strategies) {
-      final folderID = strategy.folderID;
+      final folderID = strategy.folderId;
       if (folderID != null) {
         (_strategiesByFolder[folderID] ??= []).add((position, strategy));
       }
@@ -88,15 +85,15 @@ class LocalFolderIndex {
 
   /// Each strategy with its position in the library, so a subtree can be
   /// handed back in library order.
-  final _strategiesByFolder = <String, List<(int, StrategyData)>>{};
+  final _strategiesByFolder = <String, List<(int, LocalStrategySummary)>>{};
 
   int childFolderCount(String folderId) =>
       _foldersByParent[folderId]?.length ?? 0;
 
   /// Strategies in [root] and every folder below it, in library order.
-  List<StrategyData> strategiesInTree(Folder root) {
+  List<LocalStrategySummary> strategiesInTree(Folder root) {
     final visited = <String>{};
-    final found = <(int, StrategyData)>[];
+    final found = <(int, LocalStrategySummary)>[];
     final pending = <Folder>[root];
     while (pending.isNotEmpty) {
       final current = pending.removeLast();
@@ -112,7 +109,8 @@ class LocalFolderIndex {
 /// The newest edit among [strategies], or the folder's creation date when
 /// none is newer.
 @visibleForTesting
-DateTime folderLastUpdated(Folder folder, List<StrategyData> strategies) {
+DateTime folderLastUpdated(
+    Folder folder, List<LocalStrategySummary> strategies) {
   var latest = folder.dateCreated;
   for (final strategy in strategies) {
     if (strategy.lastEdited.isAfter(latest)) {
@@ -132,16 +130,6 @@ class FolderContent extends ConsumerWidget {
   /// The open folder, or null at a tab's root.
   final Folder? folder;
   final VoidCallback onCreateStrategy;
-
-  static final strategiesListenable =
-      Provider<ValueListenable<Box<StrategyData>>>((ref) {
-    return Hive.box<StrategyData>(HiveBoxNames.strategiesBox).listenable();
-  });
-
-  static final foldersListenable =
-      Provider<ValueListenable<Box<Folder>>>((ref) {
-    return Hive.box<Folder>(HiveBoxNames.foldersBox).listenable();
-  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -193,22 +181,21 @@ class FolderContent extends ConsumerWidget {
       return builder(const [], const []);
     }
     final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
-    final strategiesBoxListenable = ref.watch(strategiesListenable);
-    final foldersBoxListenable = ref.watch(foldersListenable);
-    return ValueListenableBuilder<Box<StrategyData>>(
+    final library = ref.watch(localLibraryViewProvider);
+    return ValueListenableBuilder<Iterable<LocalStrategySummary>>(
       valueListenable: driveBuild
-          ? countedForDrive(strategiesBoxListenable, 'library-strategies')
-          : strategiesBoxListenable,
-      builder: (context, strategyBox, _) {
+          ? countedForDrive(library.strategies, 'library-strategies')
+          : library.strategies,
+      builder: (context, storedStrategies, _) {
         if (driveBuild) countDriveBuild('library-strategies');
-        return ValueListenableBuilder<Box<Folder>>(
+        return ValueListenableBuilder<Iterable<Folder>>(
           valueListenable: driveBuild
-              ? countedForDrive(foldersBoxListenable, 'library-folders')
-              : foldersBoxListenable,
-          builder: (context, folderBox, _) {
+              ? countedForDrive(library.folders, 'library-folders')
+              : library.folders,
+          builder: (context, storedFolders, _) {
             if (driveBuild) countDriveBuild('library-folders');
-            final allFolders = folderBox.values.toList();
-            final allStrategies = strategyBox.values.toList();
+            final allFolders = storedFolders.toList();
+            final allStrategies = storedStrategies.toList();
             final existingFolderIds = allFolders.map((item) => item.id).toSet();
             final index = LocalFolderIndex(
               folders: allFolders,
@@ -708,7 +695,7 @@ class FolderContent extends ConsumerWidget {
                         if (row.local case final local?)
                           StrategyTile.local(
                             key: ValueKey(row.id),
-                            strategyData: local,
+                            localStrategy: local,
                             showDeviceBadge: row.showDeviceBadge,
                           )
                         else

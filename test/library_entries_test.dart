@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -78,7 +79,7 @@ void main() {
   });
 }
 
-StrategyData _localStrategy(String id, String name, {DateTime? created}) {
+StrategyData _strategy(String id, String name, {DateTime? created}) {
   final at = created ?? DateTime(2024, 1, 1);
   return StrategyData(
     id: id,
@@ -92,9 +93,16 @@ StrategyData _localStrategy(String id, String name, {DateTime? created}) {
   );
 }
 
+LocalStrategySummary _localStrategy(
+  String id,
+  String name, {
+  DateTime? created,
+}) =>
+    LocalStrategySummary.fromHive(_strategy(id, name, created: created));
+
 CloudStrategyEntry _cloudStrategy(String id, String name, {DateTime? created}) {
   return (
-    strategy: _localStrategy(id, name, created: created),
+    strategy: _strategy(id, name, created: created),
     revision: 1,
     role: 'owner',
     attackLabel: 'Attack',

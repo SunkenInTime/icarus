@@ -1,11 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce/hive.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/l10n/page_names.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/sort_index_order.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -42,8 +41,9 @@ List<VideoExportPageChoice> videoExportPageChoices(WidgetRef ref) {
       ],
     StrategySource.local => [
         for (final page in [
-          ...?Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-              .get(strategy.strategyId)
+          ...?ref
+              .read(localLibraryViewProvider)
+              .strategyImage(strategy.strategyId)
               ?.pages,
         ]..sortBySortIndex((page) => page.sortIndex))
           (id: page.id, name: shown(page.name, page.isAutoNamed)),
@@ -188,7 +188,7 @@ Future<SavedStrategyRead> readSavedStrategy(
         checkCancelled();
       }
       final saved =
-          Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+          await ref.read(localLibraryViewProvider).readStrategy(strategyId);
       if (saved == null) {
         throw StateError('Strategy $strategyId is not in the library.');
       }

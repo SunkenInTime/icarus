@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/const/custom_icons.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -293,13 +292,12 @@ class _SideToggle extends ConsumerWidget {
     final isAttack = ref.watch(mapProvider.select((state) => state.isAttack));
     final strategyId =
         ref.watch(strategyProvider.select((state) => state.strategyId));
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final library = ref.watch(localLibraryViewProvider);
 
     return ValueListenableBuilder(
-      valueListenable: box.listenable(keys: [strategyId]),
-      builder: (context, Box<StrategyData> b, _) {
-        final pages =
-            (strategyId == null ? null : b.get(strategyId))?.pages ?? const [];
+      valueListenable: library.strategyImageChanges(strategyId),
+      builder: (context, LocalStrategyImage image, _) {
+        final pages = image.current?.pages ?? const [];
         final mixed =
             pages.any((page) => page.isAttack != pages.first.isAttack);
         final l10n = context.l10n;

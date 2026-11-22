@@ -3,14 +3,13 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -425,9 +424,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         return ref.read(platformPolicyProvider).allowsLocalLibrary &&
             // Moving to the cloud, it can't be opened until the move ends.
             !ref.read(movingToCloudProvider).contains(strategyId) &&
-            Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-                    .get(strategyId) !=
-                null;
+            ref.read(localLibraryViewProvider).strategy(strategyId) != null;
       case _StrategyLocation(source: StrategySource.cloud):
         return ref.read(isCloudWorkspaceAvailableProvider);
       case _PostLocation():
@@ -511,7 +508,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
           return true;
         }
         final strategy =
-            Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+            ref.read(localLibraryViewProvider).strategy(strategyId);
         if (strategy == null) return false;
         unawaited(
           navigator.push(
@@ -520,8 +517,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
               initialStrategyName: strategy.name,
               initialStrategySource: StrategySource.local,
               initialMapValue: strategy.mapData,
-              initialIsAttack:
-                  strategy.pages.isEmpty || strategy.pages.first.isAttack,
+              initialIsAttack: strategy.opensOnAttack,
             ),
           ),
         );

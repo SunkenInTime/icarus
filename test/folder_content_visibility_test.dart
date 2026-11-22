@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -12,15 +13,15 @@ import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/folder_content.dart';
 
 void main() {
-  StrategyData strategyWithFolder(String? folderId) {
-    return StrategyData(
+  LocalStrategySummary strategyWithFolder(String? folderId) {
+    return LocalStrategySummary.fromHive(StrategyData(
       id: 'strategy-id',
       name: 'Strategy',
       mapData: MapValue.ascent,
       versionNumber: 1,
       lastEdited: DateTime(2026),
       folderID: folderId,
-    );
+    ));
   }
 
   Folder folder({
@@ -37,14 +38,14 @@ void main() {
     );
   }
 
-  StrategyData strategy({
+  LocalStrategySummary strategy({
     required String id,
     required String name,
     required String? folderID,
     required DateTime lastEdited,
     DateTime? createdAt,
   }) {
-    return StrategyData(
+    return LocalStrategySummary.fromHive(StrategyData(
       id: id,
       name: name,
       mapData: MapValue.ascent,
@@ -52,7 +53,7 @@ void main() {
       lastEdited: lastEdited,
       createdAt: createdAt,
       folderID: folderID,
-    );
+    ));
   }
 
   test('root includes strategies without a folder', () {
@@ -319,7 +320,7 @@ void main() {
 
     final viewData = FolderCardViewData(
       folder: previewFolder,
-      strategies: [previewStrategy],
+      strategies: [LocalStrategySummary.fromHive(previewStrategy)],
       folderCount: 0,
     );
 
@@ -406,7 +407,7 @@ void main() {
       // The same object twice keeps both of its places.
       ..insert(
         0,
-        strategies.lastWhere((item) => item.folderID?.startsWith('f') ?? false),
+        strategies.lastWhere((item) => item.folderId?.startsWith('f') ?? false),
       );
 
     List<String> fullScan(Folder root) {
@@ -419,7 +420,7 @@ void main() {
       }
       return [
         for (final item in strategies)
-          if (ids.contains(item.folderID)) item.id,
+          if (ids.contains(item.folderId)) item.id,
       ];
     }
 

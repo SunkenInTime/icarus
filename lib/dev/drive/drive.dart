@@ -374,15 +374,15 @@ void _logPagesBar(String label, List<String> bar) {
 var _buildsLogged = '';
 
 void _countLibraryBoxEvents() {
-  Hive.box<StrategyData>(HiveBoxNames.strategiesBox).watch().listen((event) {
+  final [strategies, folders] = const LocalLibrary().boxEvents();
+  strategies.listen((event) {
     countLibraryBoxEvent('strategies-box');
-    if (event.key == appProviderContainer.read(strategyProvider).strategyId) {
+    if (event case BoxEvent(:final key)
+        when key == appProviderContainer.read(strategyProvider).strategyId) {
       countLibraryBoxEvent('open-strategy-box');
     }
   });
-  Hive.box<Folder>(HiveBoxNames.foldersBox)
-      .watch()
-      .listen((_) => countLibraryBoxEvent('folders-box'));
+  folders.listen((_) => countLibraryBoxEvent('folders-box'));
 }
 
 void _logScreensIfChanged(String label) {
@@ -1969,8 +1969,8 @@ Future<void> _run(Map<String, dynamic> step) async {
         await Hive.box<dynamic>(HiveBoxNames.strategyOutboxBox).close();
       }
     case 'dropOpenPage':
-      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-      final strategy = box.get(c.read(strategyProvider).strategyId)!;
+      final strategy = const LocalLibrary()
+          .storedStrategy(c.read(strategyProvider).strategyId!)!;
       final pageId = c.read(strategyPageSessionProvider).activePageId;
       (await const LocalLibrary().changePages(
         strategy.copyWith(

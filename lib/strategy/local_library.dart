@@ -92,6 +92,26 @@ final class LocalLibrary {
 
   Box<Folder> get _folders => Hive.box<Folder>(HiveBoxNames.foldersBox);
 
+  static bool get isOpen => Hive.isBoxOpen(HiveBoxNames.strategiesBox);
+
+  StrategyData? storedStrategy(String id) => _strategies.get(id);
+
+  StrategyData? firstStoredWithId(String id) =>
+      _strategies.values.where((strategy) => strategy.id == id).firstOrNull;
+
+  bool holdsStrategy(String id) => _strategies.containsKey(id);
+
+  Iterable<StrategyData> get storedStrategies => _strategies.values;
+
+  Folder? storedFolder(String id) => _folders.get(id);
+
+  Iterable<Folder> get storedFolders => _folders.values;
+
+  List<Stream<Object?>> boxEvents() => [_strategies.watch(), _folders.watch()];
+
+  Set<String> boxFileNames() =>
+      {'${_strategies.name}.hive', '${_folders.name}.hive'};
+
   Future<LibraryWrite> savePageOnScreen(StrategyData strategy) =>
       _put(strategy);
 
