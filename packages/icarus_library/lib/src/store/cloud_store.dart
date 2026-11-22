@@ -146,10 +146,7 @@ final class _CloudUnread extends _CloudOpen {
 RowKey? _outOfPlace(String strategyPublicId, ArrivedBase base) =>
     switch (base) {
       HeaderRead(:final strategy, :final pages, :final settings) => [
-        if (strategy case ReadableStrategy(
-          :final publicId,
-        ) when publicId != strategyPublicId)
-          strategy.key,
+        if (strategy.publicId != strategyPublicId) strategy.key,
         for (final page in pages)
           if (page.strategyPublicId != strategyPublicId) page.key,
         for (final row in settings)
@@ -166,6 +163,12 @@ RowKey? _outOfPlace(String strategyPublicId, ArrivedBase base) =>
       ].firstOrNull,
       PageGone() || StrategyGone() => null,
     };
+
+RowKey? _firstOutOfPlace(String strategyPublicId, List<QueueEvent> events) => [
+  for (final event in events)
+    if (event case BaseArrived(:final base))
+      ?_outOfPlace(strategyPublicId, base),
+].firstOrNull;
 
 String _groupName(String? page) => switch (page) {
   null => const HeaderReadName().name,
@@ -838,7 +841,7 @@ extension _CloudStore on LibraryStore {
         case StorageFailed(:final failure)) {
       return StorageFailed(failure);
     }
-    final before = <String, (StoreName, Row?)>{};
+    final before = <String, (StoreName, Held)>{};
     final gone = <String>{};
     final pages = <String>{};
     final rows = <Target>{};
@@ -847,7 +850,7 @@ extension _CloudStore on LibraryStore {
       HeldNothing() || HeldUnplaced() => null,
     };
     void remember(StoreName name) =>
-        before.putIfAbsent(name.name, () => (name, held(name)));
+        before.putIfAbsent(name.name, () => (name, strategy.heldUnder(name)));
     void drop(StoreName name) {
       remember(name);
       switch (held(name)) {
@@ -1030,9 +1033,10 @@ extension _CloudStore on LibraryStore {
       for (final name in gone) _DeleteName(area, name),
       for (final (name, was) in before.values)
         ...switch ((was, held(name))) {
-          (_, final now?) when now != was => [_PutRow(area, now)],
-          (_?, null) => [_DeleteName(area, name.name)],
-          _ => const <_Write>[],
+          (HeldRow(:final row), final now?) when now == row => const <_Write>[],
+          (_, final now?) => [_PutRow(area, now)],
+          (HeldRow() || HeldUnplaced(), null) => [_DeleteName(area, name.name)],
+          (HeldNothing(), null) => const <_Write>[],
         },
     ];
     return Done((writes: writes, pages: pages, rows: rows));
@@ -1335,6 +1339,9 @@ extension _CloudStore on LibraryStore {
     String strategyPublicId,
     List<QueueEvent> events,
   ) async {
+    if (_firstOutOfPlace(strategyPublicId, events) case final key?) {
+      return Refused(ResultOutOfPlace(key));
+    }
     final _CloudReady cloud;
     switch (await _openCloud(strategyPublicId)) {
       case _CloudRefused(:final refusal):
@@ -1354,12 +1361,8 @@ extension _CloudStore on LibraryStore {
     List<QueueEvent> events,
   ) async {
     final strategyPublicId = cloud.header.publicId;
-    for (final event in events) {
-      if (event case BaseArrived(:final base)) {
-        if (_outOfPlace(strategyPublicId, base) case final key?) {
-          return Refused(ResultOutOfPlace(key));
-        }
-      }
+    if (_firstOutOfPlace(strategyPublicId, events) case final key?) {
+      return Refused(ResultOutOfPlace(key));
     }
     final now = _cloudNow();
     final outcomes = <ReportOutcome>[];

@@ -1683,8 +1683,108 @@ void main() {
               session: await sessionOf(store),
             ),
           ]),
-          isA<Refused<Recorded, CommitRefusal>>(),
+          isA<Refused<Recorded, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            ResultOutOfPlace(rows.settingsOf('page-b')!.key),
+          ),
         );
+      });
+
+      test('an unreadable strategy header naming another strategy is '
+          'refused as out of place', () async {
+        final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+        await addCloud(store, initialRows());
+        final rows = initialRows();
+        final stray = UnreadableStrategy(
+          publicId: 'another-strategy',
+          stored: const {'publicId': 'another-strategy'},
+          problem: 'unreadable',
+        );
+        expect(
+          await store.record(strategyId, [
+            BaseArrived(
+              HeaderRead(
+                strategy: stray,
+                pages: rows.pages.toList(),
+                settings: rows.settings.toList(),
+              ),
+              session: await sessionOf(store),
+            ),
+          ]),
+          isA<Refused<Recorded, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            ResultOutOfPlace(stray.key),
+          ),
+        );
+      });
+
+      test(
+        'a refused result does not load the queue or refresh the list',
+        () async {
+          final storage = MemoryStorage();
+          var store = await openCloudStore(MemoryEngine(storage));
+          await addCloud(store, initialRows());
+          final session = await sessionOf(store);
+          await store.close();
+          store = await openCloudStore(MemoryEngine(storage));
+          expect(listOf(store).strategies.single.sync, isA<CloudUnverified>());
+          final changes = <StoreChange>[];
+          final listening = store.changes.listen(changes.add);
+          final result = await store.record(strategyId, [
+            BaseArrived(
+              PageRead(
+                page: initialRows().page('page-a')!,
+                elements: [
+                  LiveElement(
+                    publicId: 'stray',
+                    pagePublicId: 'page-b',
+                    payload: agentPayload('stray', const {}),
+                    sortIndex: 0,
+                    revision: 1,
+                  ),
+                ],
+                lineupGroups: const [],
+              ),
+              session: session,
+            ),
+          ]);
+          await Future<void>.delayed(Duration.zero);
+          await listening.cancel();
+          expect(result, isA<Refused<Recorded, CommitRefusal>>());
+          expect(changes, isEmpty);
+          expect(listOf(store).strategies.single.sync, isA<CloudUnverified>());
+        },
+      );
+
+      test('a damaged row repaired and then removed in one call leaves '
+          'nothing on disk', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        final key = elementName('page-a', 'e9');
+        contents[area]![key] = '{"broken":true}';
+        final disk = MemoryStorage(contents);
+        store = await openCloudStore(MemoryEngine(disk));
+        await recordAll(store, [const AppRestarted(build: build)]);
+        final session = await sessionOf(store);
+        final repaired = initialRows().withRows([
+          LiveElement(
+            publicId: 'e9',
+            pagePublicId: 'page-a',
+            payload: agentPayload('e9', const {}),
+            sortIndex: 0,
+            revision: 1,
+          ),
+        ]);
+        await recordAll(store, [
+          BaseArrived(pageReadOf(repaired, 'page-a'), session: session),
+          BaseArrived(pageReadOf(initialRows(), 'page-a'), session: session),
+        ]);
+        expect(disk.contents[area]!.containsKey(key), isFalse);
       });
 
       for (final (label, damage) in <(String, void Function(Contents))>[
