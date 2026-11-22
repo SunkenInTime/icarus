@@ -352,6 +352,16 @@ void main() {
       });
     });
 
+    test('a connection lost after the cutoff is not recorded', () async {
+      final shadow = await opened();
+
+      container.read(cloudShadowProvider.notifier).cutoff();
+      container.read(_connected.notifier).state = false;
+      await _settled();
+
+      expect(shadow.reports.whereType<ShadowConnectionLost>(), isEmpty);
+    });
+
     test(
         'a watch that never closes is counted at the deadline, and one that '
         'fails later still stops the shadow', () async {

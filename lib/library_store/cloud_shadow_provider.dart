@@ -109,6 +109,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
           ref.listen<bool>(
             convexConnectionSnapshotProvider,
             (previous, next) => _guarded(() {
+              if (_cutoff) return;
               if (previous == true && !next) shadow.connectionLost();
             }),
           );
