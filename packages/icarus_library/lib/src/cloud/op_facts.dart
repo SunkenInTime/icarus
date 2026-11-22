@@ -507,6 +507,17 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
         _ => null,
       },
       produces: producedBy(rows, op),
+      movedRow: switch ((op, row)) {
+        (
+          ElementPatchOp(pagePublicId: final to?),
+          LiveElement(:final pagePublicId),
+        ) ||
+        (
+          LineupGroupPatchOp(pagePublicId: final to?),
+          LiveLineupGroup(:final pagePublicId),
+        ) when to != pagePublicId => row,
+        _ => null,
+      },
     ),
     (_?, null) => const AuthoredUnreadable(),
     (null, _) => AuthoredNoRow(produces: producedBy(rows, op)),

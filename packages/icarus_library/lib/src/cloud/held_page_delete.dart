@@ -30,6 +30,7 @@ PageDeleteVerdict pageDeleteVerdict(
   CheckedDelete work, {
   required bool ownWorkLandedOnPage,
   Map<SeenPart, String>? known,
+  String? knownPageDigest,
 }) {
   final page = work.op.pagePublicId;
   final seen = work.seen;
@@ -49,11 +50,13 @@ PageDeleteVerdict pageDeleteVerdict(
       : null;
   if (content == null || pageRow == null) return const PageResultAwaited();
   final current = {
-    ...content,
     if (shown.settings[page] case final settings?)
       const SeenSettings(): settings.digest,
+    ...content,
   };
-  final same = sameMap(current, digests) && pageRow.digest == seen.pageDigest;
+  final same =
+      sameMap(current, digests) &&
+      (knownPageDigest ?? pageRow.digest) == seen.pageDigest;
   return same
       ? const PageAsTheUserSawIt()
       : const PageHeld(HeldDeleteCause.pageChanged);

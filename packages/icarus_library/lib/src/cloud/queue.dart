@@ -356,6 +356,19 @@ final class WindowClosed extends UserReason {
   String toString() => 'the server may have forgotten whether it landed';
 }
 
+final class WrittenLongAgo extends UserReason {
+  const WrittenLongAgo();
+
+  @override
+  bool operator ==(Object other) => other is WrittenLongAgo;
+
+  @override
+  int get hashCode => (WrittenLongAgo).hashCode;
+
+  @override
+  String toString() => 'written too long ago to check against the server';
+}
+
 final class RetriesExhausted extends UserReason {
   const RetriesExhausted();
 
@@ -1090,7 +1103,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       }
       return NotApplicable(queue, NotInThatState(opId, '${view?.state}'));
     case BaseArrived(:final base, :final session):
-      if (session != edit.session.number) {
+      if (session == 0 || session != edit.session.number) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       return _arrived(edit, base);
@@ -1191,14 +1204,66 @@ Step _arrived(_Edit edit, ArrivedBase base) {
       edit.change.targets.addAll([
         for (final row in elements) ElementTarget(row.publicId),
         for (final row in lineupGroups) LineupTarget(row.publicId),
+        ..._shownOn(before, page.publicId),
       ]);
     case PageGone(:final pagePublicId):
       edit.change.pages.add(pagePublicId);
+      edit.change.targets.addAll(_shownOn(before, pagePublicId));
     case StrategyGone():
       break;
   }
   return edit.done();
 }
+
+void _laterUnjustified(_Edit edit, PendingOp entry, LandedWork work) {
+  final row = targetOf(entry.op);
+  for (final later in [...edit.entries]) {
+    if (later case PendingOp(
+      :final place,
+      :final authored,
+    ) when place > entry.place && targetOf(later.op) == row) {
+      if (_producesOf(authored) case final produces? when produces.justifies) {
+        edit.put(
+          later.copyWith(
+            authored: _withProduces(authored, produces.unjustified()),
+          ),
+        );
+      }
+    }
+  }
+  for (final (at, other) in [...edit.landed.indexed]) {
+    if (other.produced != null &&
+        targetOf(other.op) == row &&
+        other.compareTo(work) > 0) {
+      edit.landed[at] = other.withoutProduced();
+      edit.change.targets.add(row);
+    }
+  }
+}
+
+Authored _withProduces(Authored authored, ProducedRow produces) =>
+    switch (authored) {
+      AuthoredRow(
+        :final revision,
+        :final digest,
+        :final payloadVersion,
+        :final movedRow,
+      ) =>
+        AuthoredRow(
+          revision: revision,
+          digest: digest,
+          payloadVersion: payloadVersion,
+          produces: produces,
+          movedRow: movedRow,
+        ),
+      AuthoredNoRow() => AuthoredNoRow(produces: produces),
+      final other => other,
+    };
+
+Iterable<Target> _shownOn(Shown shown, String page) => [
+  for (final MapEntry(:key, :value) in shown.rows.entries)
+    if (value.page == page) key,
+];
 
 bool _alreadyShown(Shown shown, LandedWork work) {
   final revision = shown.highest[checkTargetOf(work.op)];
@@ -1255,8 +1320,8 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
     }
   }
   final placed = op;
-  final authored = change.authored;
   final row = targetOf(op);
+  final authored = _justifiedOrNot(queue, edit.entries, row, change.authored);
   final behindOwn =
       edit.index.checkedUnder(checkTargetOf(op)).isNotEmpty ||
       (row is PageTarget &&
@@ -1268,7 +1333,6 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
               null) ||
       queue.landed.any(
         (work) =>
-            work.own &&
             !_alreadyShown(queue.shown, work) &&
             (targetOf(work.op) == row ||
                 (row is PageTarget && renumbersPages(work.op))),
@@ -1286,6 +1350,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       scope: change.scope,
       authored: authored,
       authoredIn: edit.session.number,
+      authoredAt: now,
       refusal: const NotRefused(),
       retriedAfter: edit.lastAttempt,
       behindOwn: behindOwn,
@@ -1293,6 +1358,47 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
   );
   return edit.done();
 }
+
+Authored _justifiedOrNot(
+  CloudQueue queue,
+  List<QueueEntry> entries,
+  Target row,
+  Authored authored,
+) {
+  if (_producesOf(authored) == null) return authored;
+  final ahead = entries
+      .whereType<PendingOp>()
+      .where((entry) => targetOf(entry.op) == row)
+      .lastOrNull;
+  final strategy = row is StrategyTarget;
+  final justified = switch ((authored, ahead)) {
+    (AuthoredRow(:final revision, :final digest), final ahead?) =>
+      switch (_producesOf(ahead.authored)) {
+        final produced? =>
+          produced.justifies &&
+              produced.revision == revision &&
+              (strategy || produced.digest == digest),
+        null => false,
+      },
+    (_, null) => _baseJustified(queue, row, authored),
+    (AuthoredNoRow(), final ahead?) =>
+      _producesOf(ahead.authored)?.justifies ?? false,
+    _ => false,
+  };
+  if (justified) return authored;
+  return _withProduces(authored, _producesOf(authored)!.unjustified());
+}
+
+bool _baseJustified(CloudQueue queue, Target row, Authored authored) =>
+    switch ((authored, _knownRow(queue, row))) {
+      (
+        AuthoredRow(:final revision, :final digest),
+        _KnownRow(revision: final known, digest: final shown),
+      ) =>
+        known == revision && (shown == null || shown == digest),
+      (AuthoredNoRow(), null) => true,
+      _ => false,
+    };
 
 ShownRow? _shownRow(Shown shown, Target target) => switch (target) {
   StrategyTarget() => null,
@@ -1463,14 +1569,26 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
           page: last.page,
           revision: first.revision,
           digest: last.digest,
+          justifies: first.justifies,
         );
   return switch (earlier) {
-    AuthoredRow(:final revision, :final digest, :final payloadVersion) =>
+    AuthoredRow(
+      :final revision,
+      :final digest,
+      :final payloadVersion,
+      :final movedRow,
+    ) =>
       AuthoredRow(
         revision: revision,
         digest: digest,
         payloadVersion: payloadVersion,
         produces: produces,
+        movedRow:
+            movedRow ??
+            switch (later) {
+              AuthoredRow(:final movedRow) => movedRow,
+              _ => null,
+            },
       ),
     AuthoredNoRow() => AuthoredNoRow(produces: produces),
     final other => other,
@@ -1711,7 +1829,7 @@ void _landed(
   final sent = carried.op;
   final produced = switch (entry.authored) {
     AuthoredRow(:final produces?) || AuthoredNoRow(:final produces?)
-        when ours && produces.revision == revision =>
+        when ours && produces.justifies && produces.revision == revision =>
       produces,
     _ => null,
   };
@@ -1734,12 +1852,17 @@ void _landed(
     own: ours,
     firstSentAt: firstSent ?? edit.attempts[carried.attempt]!.at,
     produced: produced,
+    movedRow: switch (entry.authored) {
+      AuthoredRow(:final movedRow) => movedRow,
+      _ => null,
+    },
   );
   if (!_alreadyShown(edit.shown, work)) {
     edit.landed
       ..add(work)
       ..sort((a, b) => a.compareTo(b));
   }
+  if (produced == null) _laterUnjustified(edit, entry, work);
   edit.change.targets
     ..add(checkTargetOf(sent))
     ..add(targetOf(sent));
@@ -1755,6 +1878,7 @@ bool _userMayReplace(EntryView view) => switch (view.state) {
     reason: RefusedByServer() ||
         ChangedUnseen() ||
         WindowClosed() ||
+        WrittenLongAgo() ||
         RowPageGone(),
   ) =>
     true,
@@ -1800,6 +1924,7 @@ Step _keepMine(
         null => authored,
       },
       authoredIn: edit.session.number,
+      authoredAt: now,
       refusal: const NotRefused(),
       retriedAfter: edit.lastAttempt,
     ),

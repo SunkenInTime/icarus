@@ -125,7 +125,11 @@ final class Shown {
     HeaderRead(:final strategy, :final pages, :final settings) => Shown(
       headerThisSession: true,
       pagesThisSession: pagesThisSession,
-      goneThisSession: goneThisSession,
+      goneThisSession: {
+        for (final page in goneThisSession)
+          if (!pages.any((row) => row.publicId == page && row is! TrashedPage))
+            page,
+      },
       highest: _raised(highest, {
         const StrategyTarget(): ?revisionOfRow(strategy),
         for (final page in pages)
@@ -157,7 +161,7 @@ final class Shown {
       },
     ),
     PageRead(:final page, :final elements, :final lineupGroups) => _withPage(
-      page.publicId,
+      page,
       [...elements, ...lineupGroups],
     ),
     PageGone(:final pagePublicId) => Shown(
@@ -207,7 +211,8 @@ final class Shown {
     rows: rows,
   );
 
-  Shown _withPage(String page, List<Row> found) {
+  Shown _withPage(PageRow pageRow, List<Row> found) {
+    final page = pageRow.publicId;
     final next = {
       for (final MapEntry(:key, :value) in rows.entries)
         if (value.page != page) key: value,
@@ -237,7 +242,11 @@ final class Shown {
       goneThisSession: {...goneThisSession}..remove(page),
       highest: raised,
       strategyRevision: strategyRevision,
-      pages: pages,
+      pages: switch ((pageRow, pages[page]?.revision)) {
+        (TrashedPage(), _) => {...pages}..remove(page),
+        (_, final known?) when (revisionOfRow(pageRow) ?? 0) < known => pages,
+        _ => {...pages, page: _rowOf(pageRow, pageRow)},
+      },
       settings: settings,
       content: {...content, page: liveContentOn(found, page)},
       rows: next,

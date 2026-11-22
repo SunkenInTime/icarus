@@ -929,6 +929,7 @@ void main() {
       scope: entry.scope,
       authored: entry.authored,
       authoredIn: entry.authoredIn,
+      authoredAt: entry.authoredAt,
       refusal: entry.refusal,
       retriedAfter: entry.retriedAfter,
     );
@@ -957,9 +958,7 @@ void main() {
     client.clock = now.add(resendWindow);
     client.queue = look(client.queue, client.at).queue;
     expect(stateOf(client, 'del'), const NeedsUser(WindowClosed()));
-    expect(client.view('back').holds, [
-      const BehindEntry('del', Dependency.sameRow),
-    ]);
+    expect(stateOf(client, 'back'), const NeedsUser(WrittenLongAgo()));
   });
 
   test('a page copy reaches the queue as ordinary adds under ids derived on '
@@ -1320,7 +1319,7 @@ void main() {
 
     test('a batch refused whole does not start the resend window', () {
       final client = online();
-      client.edit(movePatch('move'));
+      client.edit(elementAdd('move'));
       final attempt = client.claim(['move']);
       client.must(BatchRefused(attempt, BatchRefusal.upgradeRequired));
       client.must(const AppRestarted(build: 'build-2'));
@@ -1609,7 +1608,7 @@ void main() {
     test('a whole-batch refusal after the attempt was given up still means '
         'the server never tried it', () {
       final client = online();
-      client.edit(movePatch('move'));
+      client.edit(elementAdd('move'));
       final attempt = client.claim(['move']);
       client.must(TransportFailed(attempt, TransportFailure.network, at: now));
       client.must(BatchRefused(attempt, BatchRefusal.upgradeRequired));
@@ -1961,6 +1960,178 @@ void main() {
       );
       sendAndAnswer(client, server, ['move']);
       expect(stateOf(client, 'drop'), isNot(isA<NeedsUser>()));
+    });
+  });
+
+  group('fourth review', () {
+    Object? rotationOf(StrategyRows rows) =>
+        (rows.element('e1')! as LiveElement).payload.data.toJson()['rotation'];
+
+    void settle(Client client, Server server) {
+      for (var round = 0; round < 6; round++) {
+        final ids = [
+          for (final entry in client.queue.entries)
+            if (client.view(entry.id).sendable) entry.id,
+        ];
+        if (ids.isNotEmpty) sendAndAnswer(client, server, ids);
+        client.read(server.rows);
+      }
+    }
+
+    test('an answer of nothing to do over a teammate\'s write justifies '
+        'nothing, so a later whole edit never erases their rotation', () {
+      final server = Server();
+      final client = online();
+      server.rows = withOp(server.rows, movePatch('t', x: 40, rotation: 90));
+      client.edit(
+        movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+      );
+      sendAndAnswer(client, server, ['drag']);
+      client.edit(
+        onVisible(
+          client.visible,
+          movePatch('again', x: 60, merge: FieldMerge(fields: ['position'])),
+        ),
+      );
+      if (client.view('again').sendable) {
+        sendAndAnswer(client, server, ['again']);
+      }
+      client.edit(onVisible(client.visible, movePatch('whole', x: 80)));
+      settle(client, server);
+      expect(rotationOf(server.rows), 90);
+    });
+
+    test('a revision-checked edit written more than 29 days ago needs the '
+        'user before it is ever sent', () {
+      final client = Client()..read(initialRows());
+      client.edit(movePatch('old', x: 80));
+      client.clock = now.add(resendWindow);
+      client.must(const ConnectionReturned());
+      expect(client.view('old').sendable, isFalse);
+      expect(stateOf(client, 'old'), const NeedsUser(WrittenLongAgo()));
+    });
+
+    test('solo: renaming a page and then deleting it asks nothing', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        const PagePatchOp(
+          opId: 'rename',
+          pagePublicId: 'page-b',
+          expectedPageRevision: 1,
+          name: 'Mine',
+        ),
+      );
+      client.edit(pageDelete('del', 'page-b'));
+      sendAndAnswer(client, server, ['rename']);
+      expect(client.view('del').sendable, isTrue);
+    });
+
+    test('solo: changing a page\'s settings and then deleting it goes once '
+        'the settings are answered', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        const PageSettingsPatchOp(
+          opId: 'settings',
+          pagePublicId: 'page-b',
+          settings: PageSettings(
+            agentSize: 2,
+            abilitySize: 1,
+            useNeutralTeamColors: true,
+          ),
+          expectedPageSettingsRevision: 1,
+        ),
+      );
+      client.edit(pageDelete('del', 'page-b'));
+      sendAndAnswer(client, server, ['settings']);
+      expect(client.view('del').sendable, isTrue);
+    });
+
+    test('a page a page list shows live again no longer reads as gone', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        const PageReorderOp(
+          opId: 'order',
+          pagePublicId: 'page-a',
+          sortIndex: 1,
+          expectedStrategyRevision: 1,
+        ),
+      );
+      sendAndAnswer(client, server, ['order']);
+      client.edit(
+        onVisible(
+          client.visible,
+          const PagePatchOp(
+            opId: 'rename',
+            pagePublicId: 'page-a',
+            expectedPageRevision: 1,
+            name: 'Mine',
+          ),
+        ),
+      );
+      client.arrive(const PageGone('page-a'));
+      client.arrive(headerReadOf(server.rows));
+      expect(stateOf(client, 'rename'), isNot(const NeedsUser(RowPageGone())));
+    });
+
+    StrategyRowSet withoutE1(StrategyRowSet rows) => StrategyRowSet(
+      strategy: rows.strategy,
+      pages: rows.pages,
+      settings: rows.settings,
+      elements: [
+        for (final row in rows.elements)
+          if (row.publicId != 'e1') row,
+      ],
+      lineupGroups: rows.lineupGroups,
+    );
+
+    for (final (label, answered) in [
+      ('answered', true),
+      ('unanswered', false),
+    ]) {
+      test('a move without a payload stays drawn on its destination when the '
+          'source page\'s result arrives first, $label', () {
+        final server = Server();
+        final client = online();
+        const move = ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+        );
+        client.edit(move);
+        final attempt = client.claim(['move']);
+        final answer = server.apply(clientId, client.lastSent().single);
+        if (answered) client.must(OpAnswered(attempt, answer));
+        client.base = withoutE1(client.base);
+        client.arrive(pageReadOf(server.rows, 'page-a'));
+        final drawn = client.visible.element('e1');
+        expect(drawn?.pagePublicId, 'page-b');
+        expect(
+          (drawn! as LiveElement).sortIndex,
+          (server.rows.element('e1')! as LiveElement).sortIndex,
+        );
+      });
+    }
+
+    test('a page whose result showed it, deleted after a teammate added to '
+        'it, is held rather than taken as already gone', () {
+      final server = Server();
+      final client = online();
+      client.edit(pageAdd('add', 'page-c'));
+      sendAndAnswer(client, server, ['add']);
+      client.arrive(pageReadOf(server.rows, 'page-c'));
+      client.edit(
+        onVisible(client.visible, pageDelete('del', 'page-c', expected: 2)),
+      );
+      server.rows = withOp(
+        server.rows,
+        elementAdd('t', elementId: 'theirs', pageId: 'page-c'),
+      );
+      client.arrive(pageReadOf(server.rows, 'page-c'));
+      expect(client.view('del').sendable, isFalse);
     });
   });
 }

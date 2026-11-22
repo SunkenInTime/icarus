@@ -74,6 +74,7 @@ final class Burst {
             scope: edit.scope,
             authored: edit.authored,
             authoredIn: before.session.number,
+            authoredAt: now,
             refusal: const NotRefused(),
             retriedAfter: before.nextAttempt - 1,
           ),

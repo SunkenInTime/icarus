@@ -331,10 +331,10 @@ Starts as: needs user: the server may have forgotten whether it landed.
 | rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
 | rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
 | failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
+| attempt 1 refused whole: upgradeRequired | x: needs user: written too long ago to check against the server; standing upgradeRequired; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | x: needs user: written too long ago to check against the server; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | x: needs user: written too long ago to check against the server; standing editAccessLost |
+| attempt 1 refused whole: strategyDeleted | x: needs user: written too long ago to check against the server; standing deletedOnServer |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
 | connection lost | unchanged |
@@ -350,6 +350,30 @@ Starts as: needs user: the server may have forgotten whether it landed.
 | result: strategy gone | standing deletedOnServer |
 
 Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended.
+
+## needs user: written 29 days ago against a revision, never sent
+
+Starts as: needs user: written too long ago to check against the server.
+
+| Event | Result |
+| --- | --- |
+| user edits another item | z: waiting |
+| user edits the same item | w: waiting, behind x (sameRow) |
+| app restarted, same build | opens session 2 |
+| app restarted, new build | opens session 2 |
+| connection lost | unchanged |
+| connection returned | opens session 2 |
+| account changed | opens session 2 |
+| user: keep mine, same item | x: gone; x2: waiting; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
+| user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
+| user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
+| result: header as it is | unchanged |
+| result: page-a with the item at revision 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: page-b gone | unchanged |
+| result: strategy gone | standing deletedOnServer |
+
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended.
 
 ## needs user: retries exhausted
 
@@ -480,9 +504,9 @@ Starts as: needs user: its page is gone.
 | user: keep mine, same item | x: gone; x2: waiting; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
-| result: header as it is | unchanged |
-| result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: header as it is | x: waiting, awaiting a result for ElementTarget(e1) |
+| result: page-a with the item at revision 2 | x: waiting, awaiting a result for ElementTarget(e1) |
+| result: page-a with the item as this device wrote it at 2 | x: waiting, awaiting a result for ElementTarget(e1) |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 

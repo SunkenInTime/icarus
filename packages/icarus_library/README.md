@@ -1458,8 +1458,13 @@ for that strategy, and the page delete, until
 [#670](https://github.com/SunkenInTime/icarus/issues/670): the server guards a
 page delete by the strategy's revision only, so a page delete waits for a
 result of its page and needs the user when the page no longer holds what the
-user saw. It goes as soon as a page list or the page's own result says the
-page is gone. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
+user saw. The page as this device knows it is its latest result with this
+device's own predicted landed work on top: elements, lineup groups, the page
+name and the settings; a row a result shows on another page is not on it.
+Whether the page exists is one answer from everything shown: a page list, a
+page result or a page-gone result, the latest of them; a page list showing
+the page live again clears a page-gone mark. It goes as soon as that answer
+is that the page is gone. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
 out in one piece when the server checks the page.
 
 **Entry states.** An entry is in one of four states, derived from the facts
@@ -1518,10 +1523,14 @@ An open attempt shows as sending until it does.
 was made against. The device keeps, per row, a justified row: a revision
 together with the content at that revision. It gets one in two ways: a
 result shows the row, or its own op on that row is answered applied at
-exactly the revision `applyOp` gives for that op over the row the user saw.
-Every entry records that produced row when it is made, and landed work keeps
-it only when the answer matched. Any other answered revision means someone
+exactly the revision `applyOp` gives for that op over a row that was itself
+justified when the edit was made. Every entry records the row it predicts
+when it is made, and whether the row it was made against was justified (the
+row a queued edit ahead of it predicted, or the justified row itself); landed
+work keeps the prediction only when both hold and the answer matched. Any
+other answered revision, including a "nothing to do" answer, means someone
 else wrote in between, and the row is not justified until a result shows it.
+A justified row is stored state, never read off what is drawn.
 This rests on two facts about `convex/ops.ts`: every applied write raises its
 row's revision by exactly one, and no queued write changes a row without
 raising it. Three paths outside the op loop break the second fact, and none
@@ -1535,7 +1544,8 @@ and `_judge` is the only place an outgoing revision is chosen.
 
 - An op made with nothing of this device's ahead of it on its row goes at
   its authored revision, and the server decides.
-- An op made behind this device's own queued or landed work on its row goes
+- An op made behind this device's own queued or landed work on its row,
+  including work answered "nothing to do", goes
   only once that row is justified at the revision it names, with the content
   the user saw (or already holding what the op writes, so the server's answer
   settles it). Otherwise it waits for the row's result (`AwaitingResult`).
@@ -1551,6 +1561,11 @@ and `_judge` is the only place an outgoing revision is chosen.
   revision it predicted, with the tombstone as the user saw it, within 29
   days of first sending that delete. Anything else needs the user.
 - Keep mine names the revision the user chose theirs over.
+- A revision means something only within a row's lifetime, and a purged
+  tombstone can come back at revision 1. So an entry that carries a revision
+  check and was written more than 29 days ago needs the user before it is
+  sent (`WrittenLongAgo`); one that was sent and lost needs the user as
+  before (`WindowClosed`). Keep mine starts the 29 days again.
 - Live sends: a delete sent live is last writer wins, as in the shipped app.
 
 **Landed work.** An answered op is drawn on top of the latest results until
@@ -1562,7 +1577,11 @@ the answer just added. Landed work is drawn in the order the server applied
 it: by the attempt that carried it and its place in that attempt. A landed
 move is drawn off its source page and on its destination in every page view,
 even when the source page's result has already removed the row, and asks for
-the page its row comes from. A queued edit of a row a teammate
+the page its row comes from. A move records the row it acts on as the device
+knew it (content and sort index), so the element is drawn on its destination
+from the moment of the edit, before and after its answer, until a result of
+the destination replaces it; a source result removes it from the source page
+and nothing else. A queued edit of a row a teammate
 moved is drawn wherever the row now is.
 Field merges, page adds, page reorders and page deletes land as partial (the
 server may have merged or renumbered rows the device has not seen);

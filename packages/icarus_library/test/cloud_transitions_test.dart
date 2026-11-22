@@ -19,6 +19,7 @@ enum Kind {
   rejected,
   failed,
   windowClosed,
+  writtenLongAgo,
   retriesExhausted,
   deleteHeld,
   oversized,
@@ -36,6 +37,7 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
       RefusedByServer(refusal: RejectedByServer()) => Kind.rejected,
       RefusedByServer(refusal: FailedOnServer()) => Kind.failed,
       WindowClosed() => Kind.windowClosed,
+      WrittenLongAgo() => Kind.writtenLongAgo,
       RetriesExhausted() => Kind.retriesExhausted,
       DeleteHeld() => Kind.deleteHeld,
       Oversized() => Kind.oversized,
@@ -150,6 +152,11 @@ final rows = <Row>[
   ),
   Row('needs user: unanswered for 29 days', () {
     final client = sentAndLost()..clock = now.add(resendWindow);
+    return client..queue = look(client.queue, client.at).queue;
+  }),
+  Row('needs user: written 29 days ago against a revision, never sent', () {
+    final client = Client()..edit(movePatch('x'));
+    client.clock = now.add(resendWindow);
     return client..queue = look(client.queue, client.at).queue;
   }),
   Row('needs user: retries exhausted', () {

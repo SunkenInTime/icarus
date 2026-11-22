@@ -3,6 +3,7 @@ import 'package:collection/collection.dart';
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
+import '../rows.dart';
 
 const retriesBeforePause = 8;
 
@@ -31,6 +32,7 @@ final class PendingOp extends QueueEntry {
     required this.scope,
     required this.authored,
     required this.authoredIn,
+    required this.authoredAt,
     required this.refusal,
     required this.retriedAfter,
     this.window = const WindowOpen(),
@@ -41,6 +43,7 @@ final class PendingOp extends QueueEntry {
   final Scope scope;
   final Authored authored;
   final int authoredIn;
+  final DateTime authoredAt;
   final RefusalRecord refusal;
   final int retriedAfter;
   final ResendWindow window;
@@ -65,6 +68,7 @@ final class PendingOp extends QueueEntry {
     scope: scope,
     authored: authored ?? this.authored,
     authoredIn: authoredIn,
+    authoredAt: authoredAt,
     refusal: refusal ?? this.refusal,
     retriedAfter: retriedAfter ?? this.retriedAfter,
     window: window ?? this.window,
@@ -79,6 +83,7 @@ final class PendingOp extends QueueEntry {
       other.scope == scope &&
       other.authored == authored &&
       other.authoredIn == authoredIn &&
+      other.authoredAt == authoredAt &&
       other.refusal == refusal &&
       other.retriedAfter == retriedAfter &&
       other.window == window &&
@@ -341,21 +346,32 @@ final class ProducedRow {
     required this.page,
     required this.revision,
     required this.digest,
+    this.justifies = true,
   });
 
   final String? page;
   final int revision;
   final String digest;
+  final bool justifies;
+
+  ProducedRow unjustified() => ProducedRow(
+    page: page,
+    revision: revision,
+    digest: digest,
+    justifies: false,
+  );
 
   @override
   bool operator ==(Object other) =>
       other is ProducedRow &&
       other.page == page &&
       other.revision == revision &&
-      other.digest == digest;
+      other.digest == digest &&
+      other.justifies == justifies;
 
   @override
-  int get hashCode => Object.hash(ProducedRow, page, revision, digest);
+  int get hashCode =>
+      Object.hash(ProducedRow, page, revision, digest, justifies);
 
   @override
   String toString() => 'ProducedRow($page, $revision)';
@@ -367,12 +383,14 @@ final class AuthoredRow extends Authored {
     required this.digest,
     this.payloadVersion,
     this.produces,
+    this.movedRow,
   });
 
   final int revision;
   final String digest;
   final int? payloadVersion;
   final ProducedRow? produces;
+  final Row? movedRow;
 
   @override
   bool operator ==(Object other) =>
@@ -380,11 +398,18 @@ final class AuthoredRow extends Authored {
       other.revision == revision &&
       other.digest == digest &&
       other.payloadVersion == payloadVersion &&
-      other.produces == produces;
+      other.produces == produces &&
+      other.movedRow == movedRow;
 
   @override
-  int get hashCode =>
-      Object.hash(AuthoredRow, revision, digest, payloadVersion, produces);
+  int get hashCode => Object.hash(
+    AuthoredRow,
+    revision,
+    digest,
+    payloadVersion,
+    produces,
+    movedRow,
+  );
 
   @override
   String toString() => 'AuthoredRow($revision, $digest)';
@@ -746,6 +771,7 @@ final class LandedWork {
     required this.own,
     required this.firstSentAt,
     this.produced,
+    this.movedRow,
     this.shownWithout = false,
   });
 
@@ -757,7 +783,20 @@ final class LandedWork {
   final bool own;
   final DateTime firstSentAt;
   final ProducedRow? produced;
+  final Row? movedRow;
   final bool shownWithout;
+
+  LandedWork withoutProduced() => LandedWork(
+    attempt: attempt,
+    position: position,
+    op: op,
+    revision: revision,
+    shape: shape,
+    own: own,
+    firstSentAt: firstSentAt,
+    movedRow: movedRow,
+    shownWithout: shownWithout,
+  );
 
   LandedWork seenWithout() => LandedWork(
     attempt: attempt,
@@ -768,6 +807,7 @@ final class LandedWork {
     own: own,
     firstSentAt: firstSentAt,
     produced: produced,
+    movedRow: movedRow,
     shownWithout: true,
   );
 
@@ -782,6 +822,7 @@ final class LandedWork {
       other.own == own &&
       other.firstSentAt == firstSentAt &&
       other.produced == produced &&
+      other.movedRow == movedRow &&
       other.shownWithout == shownWithout;
 
   @override

@@ -173,6 +173,7 @@ final class Model {
               scope: edit.scope,
               authored: edit.authored,
               authoredIn: before.session.number,
+              authoredAt: clock,
               refusal: const NotRefused(),
               retriedAfter: before.nextAttempt - 1,
             ),
@@ -686,8 +687,16 @@ final class Model {
         for (final page in server.rows.pages)
           if (page is LivePage) page.publicId,
       ];
-      final kind = random.nextInt(10);
+      final kind = random.nextInt(12);
+      final mine = [
+        for (final entry in client.queue.entries)
+          if (entry case PendingOp(
+            op: final ElementPatchOp op,
+          ) when server.rows.element(op.elementPublicId) is LiveElement)
+            op,
+      ];
       final StrategyOp op = switch (kind) {
+        10 || 11 when mine.isNotEmpty => sameAsMine(pick(mine), kind == 11),
         0 || 1 => ElementReorderOp(
           opId: fresh('t'),
           elementPublicId: target.publicId,
@@ -735,6 +744,29 @@ final class Model {
     log.add('teammate acts');
   }
 
+  StrategyOp sameAsMine(ElementPatchOp mine, bool alsoRotated) {
+    final row = server.rows.element(mine.elementPublicId)! as LiveElement;
+    final payload = mine.payload ?? row.payload;
+    count(
+      alsoRotated
+          ? 'teammate makes this device\'s change and rotates'
+          : 'teammate makes this device\'s change',
+    );
+    return ElementPatchOp(
+      opId: fresh('t'),
+      elementPublicId: row.publicId,
+      expectedElementRevision: row.revision,
+      pagePublicId: mine.pagePublicId,
+      payload: alsoRotated
+          ? agentPayload(row.publicId, {
+              ...payload.data.toJson(),
+              'rotation': 45,
+            })
+          : payload,
+      sortIndex: mine.sortIndex,
+    );
+  }
+
   void userActs({required bool draining}) {
     final seen = look(client.queue, clock);
     client.queue = seen.queue;
@@ -758,7 +790,7 @@ final class Model {
       };
       if (action == null) continue;
       final forgotten = switch ((view?.state, entry)) {
-        (NeedsUser(reason: WindowClosed()), _) => true,
+        (NeedsUser(reason: WindowClosed() || WrittenLongAgo()), _) => true,
         (
           NeedsUser(reason: ChangedUnseen()),
           PendingOp(op: ElementAddOp(expectedElementRevision: _?)),
@@ -901,6 +933,8 @@ const minimums = {
   'given up with its chain': 5,
   'nothing to do at another revision': 20,
   'justified rows checked against the server': 100,
+  'teammate makes this device\'s change': 20,
+  'teammate makes this device\'s change and rotates': 20,
 };
 
 void main() {

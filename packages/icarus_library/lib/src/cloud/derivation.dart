@@ -346,6 +346,7 @@ final class _IndexEdit {
   void add(QueueEntry entry) {
     _ownById[entry.id] = entry;
     if (entry is! PendingOp) return;
+    _checkedLifetime(entry);
     final slot = (entry.place, entry.id);
     final keys = _keysOf(entry);
     for (final key in keys.under) {
@@ -407,6 +408,12 @@ final class _IndexEdit {
     }
   }
 
+  void _checkedLifetime(PendingOp entry) {
+    if (entry.window is WindowOpen && expectedOf(entry.op) != null) {
+      forgetBy(entry.id, entry.authoredAt);
+    }
+  }
+
   void unsent(AttemptFact refused, Map<int, AttemptFact> attempts) {
     for (final opId in refused.opIds) {
       stopForgetting(opId);
@@ -414,6 +421,7 @@ final class _IndexEdit {
           (byId[opId]! as PendingOp).window is! WindowOpen) {
         continue;
       }
+      _checkedLifetime(byId[opId]! as PendingOp);
       for (final number in attemptsByOp[opId] ?? const <int>[]) {
         final attempt = attempts[number];
         if (attempt == null || attempt.outcome is AttemptRefusedWhole) continue;
@@ -723,6 +731,7 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
           Attention.rejectedByServer,
         RefusedByServer(refusal: FailedOnServer()) => Attention.failedOnServer,
         WindowClosed() => Attention.serverForgotAnswer,
+        WrittenLongAgo() => Attention.writtenLongAgo,
         RetriesExhausted() => Attention.retriesExhausted,
         DeleteHeld() => Attention.heldPageDelete,
         Oversized() => Attention.oversized,
@@ -755,7 +764,13 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
   for (final attempt in attempts) {
     if (attempt.outcome is AttemptOpen) return Sending(attempt.number);
   }
-  if (entry.window is WindowPassed) return const NeedsUser(WindowClosed());
+  if (entry.window is WindowPassed) {
+    return NeedsUser(
+      attempts.any((attempt) => attempt.outcome is! AttemptRefusedWhole)
+          ? const WindowClosed()
+          : const WrittenLongAgo(),
+    );
+  }
   final failed = [
     for (final attempt in attempts)
       if (attempt.outcome case AttemptFailed(:final at)) (attempt, at),
@@ -881,13 +896,38 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   if (entry.work case final CheckedDelete work) {
     final page = work.op.pagePublicId;
     var landedOnPage = false;
-    final known = {...?queue.shown.content[page]};
+    String? pageDigest;
+    final known = {...?queue.shown.content[page]}
+      ..removeWhere(
+        (part, _) => switch (part) {
+          SeenElement(:final id) => _shownElsewhere(
+            queue,
+            ElementTarget(id),
+            page,
+          ),
+          SeenLineupGroup(:final id) => _shownElsewhere(
+            queue,
+            LineupTarget(id),
+            page,
+          ),
+          SeenSettings() => false,
+        },
+      );
     for (final landed in queue.landed) {
       if ((queue.shown.highest[checkTargetOf(landed.op)] ?? 0) >=
           landed.revision) {
         continue;
       }
       final row = targetOf(landed.op);
+      if (row == PageTarget(page)) {
+        switch (landed.produced) {
+          case ProducedRow(:final digest):
+            pageDigest = digest;
+          case null:
+            landedOnPage = true;
+        }
+        continue;
+      }
       final touches =
           _landedPage(landed.op) == page || queue.shown.rows[row]?.page == page;
       if (!touches) continue;
@@ -895,6 +935,8 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
         ElementTarget(:final elementPublicId) =>
           SeenElement(elementPublicId) as SeenPart?,
         LineupTarget(:final lineupPublicId) => SeenLineupGroup(lineupPublicId),
+        SettingsTarget(:final pagePublicId) when pagePublicId == page =>
+          const SeenSettings(),
         _ => null,
       };
       switch ((part, landed.produced)) {
@@ -912,6 +954,7 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
       work,
       ownWorkLandedOnPage: landedOnPage,
       known: known,
+      knownPageDigest: pageDigest,
     )) {
       case PageAsTheUserSawIt() || PageAlreadyGone():
         break;
@@ -985,3 +1028,9 @@ List<PendingOp> entriesOnRows(CloudQueue queue, Iterable<Target> targets) => [
   }
   return (picked.values.toList(), wanted);
 }
+
+bool _shownElsewhere(CloudQueue queue, Target target, String page) =>
+    switch (queue.shown.rows[target]?.page) {
+      final at? => at != page,
+      null => false,
+    };
