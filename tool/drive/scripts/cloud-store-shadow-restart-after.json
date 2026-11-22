@@ -3,6 +3,8 @@
   {"tapIcon": "x", "optional": true},
   {"signIn": true},
   {"wait": 6},
+  {"tapWords": "Restart folder"},
+  {"wait": 3},
   {"tapWords": "Restart shadow"},
   {"wait": 8},
   {"tapIcon": "x", "optional": true},
