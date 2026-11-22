@@ -9,7 +9,7 @@ import '../cloud/codec.dart';
 import '../cloud/queue.dart';
 import '../cloud/sync.dart';
 
-const summaryVersion = 5;
+const summaryVersion = 6;
 
 enum Sides { attack, defend, mixed }
 
@@ -46,13 +46,45 @@ final class SomeUnreadable extends Readability {
   final int newer;
 }
 
+typedef AgentPlace = ({int at, String type});
+
+typedef OriginPlace = ({int group, int at, String type});
+
+int _byAgentPlace(AgentPlace a, AgentPlace b) =>
+    a.at != b.at ? a.at.compareTo(b.at) : a.type.compareTo(b.type);
+
+int _byOriginPlace(OriginPlace a, OriginPlace b) => a.group != b.group
+    ? a.group.compareTo(b.group)
+    : a.at != b.at
+    ? a.at.compareTo(b.at)
+    : a.type.compareTo(b.type);
+
+List<T> _counted<T>(List<T> places, T place, int sign, Comparator<T> order) {
+  final next = [...places];
+  if (sign > 0) {
+    next.add(place);
+  } else {
+    next.remove(place);
+  }
+  return next..sort(order);
+}
+
+String? _originType(Object? origin) => switch (origin) {
+  {'agent': {'type': final String type}} => type,
+  _ => null,
+};
+
 final class PageTally {
   PageTally({
     required this.items,
     required Map<String, int> agents,
     required this.damaged,
     required this.newer,
-  }) : agents = Map.unmodifiable(agents);
+    List<AgentPlace> placed = const [],
+    List<OriginPlace> origins = const [],
+  }) : agents = Map.unmodifiable(agents),
+       placed = List.unmodifiable(placed),
+       origins = List.unmodifiable(origins);
 
   static final empty = PageTally(
     items: 0,
@@ -65,17 +97,28 @@ final class PageTally {
   final Map<String, int> agents;
   final int damaged;
   final int newer;
+  final List<AgentPlace> placed;
+  final List<OriginPlace> origins;
+
+  List<String> get agentsInOrder => [
+    for (final place in placed) place.type,
+    for (final origin in origins) origin.type,
+  ];
 
   PageTally _with({
     int? items,
     Map<String, int>? agents,
     int damaged = 0,
     int newer = 0,
+    List<AgentPlace>? placed,
+    List<OriginPlace>? origins,
   }) => PageTally(
     items: items ?? this.items,
     agents: agents ?? this.agents,
     damaged: this.damaged + damaged,
     newer: this.newer + newer,
+    placed: placed ?? this.placed,
+    origins: origins ?? this.origins,
   );
 
   PageTally plusDamaged(int count) => _with(damaged: count);
@@ -84,7 +127,23 @@ final class PageTally {
 
   PageTally plusGroup(LineupGroupRow row, int sign) => switch (row) {
     UnreadableLineupGroup() => _with(damaged: sign),
-    ReadableLineupGroupRow() => this,
+    DeletedLineupGroup() => this,
+    LiveLineupGroup(:final payload, :final sortIndex) =>
+      switch (payload.data.raw['origins']) {
+        final List<Object?> listed => _with(
+          origins:
+              [
+                for (final (at, origin) in listed.indexed)
+                  if (_originType(origin) case final type?)
+                    (group: sortIndex, at: at, type: type),
+              ].fold<List<OriginPlace>>(
+                origins,
+                (places, place) =>
+                    _counted(places, place, sign, _byOriginPlace),
+              ),
+        ),
+        _ => this,
+      },
   };
 
   PageTally plus(ElementRow row, int sign) {
@@ -99,24 +158,27 @@ final class PageTally {
       UnreadableElement(:final deleted) => deleted == false,
     };
     if (!live) return counted;
-    final agent = switch (row) {
-      LiveElement(:final payload) when payload.kind == ElementKind.agent =>
+    final AgentPlace? agent = switch (row) {
+      LiveElement(:final payload, :final sortIndex)
+          when payload.kind == ElementKind.agent =>
         switch (payload.data.raw['type']) {
-          final String type => type,
+          final String type => (at: sortIndex, type: type),
           _ => null,
         },
       _ => null,
     };
     final counts = {...agents};
+    var places = placed;
     if (agent != null) {
-      final count = (counts[agent] ?? 0) + sign;
+      final count = (counts[agent.type] ?? 0) + sign;
       if (count == 0) {
-        counts.remove(agent);
+        counts.remove(agent.type);
       } else {
-        counts[agent] = count;
+        counts[agent.type] = count;
       }
+      places = _counted(placed, agent, sign, _byAgentPlace);
     }
-    return counted._with(items: items + sign, agents: counts);
+    return counted._with(items: items + sign, agents: counts, placed: places);
   }
 
   Map<String, Object?> toJson() => {
@@ -124,27 +186,67 @@ final class PageTally {
     'agents': {for (final key in agents.keys.sorted()) key: agents[key]},
     'damaged': damaged,
     'newer': newer,
+    'placed': [
+      for (final place in placed) [place.at, place.type],
+    ],
+    'origins': [
+      for (final origin in origins) [origin.group, origin.at, origin.type],
+    ],
   };
 
-  static Decoded<PageTally> decode(Object? json) =>
-      JsonFields.read(json, 'page tally', (fields) {
-        final items = fields.whole('items');
-        final damaged = fields.whole('damaged');
-        final newer = fields.whole('newer');
-        final agents = fields.object('agents').raw;
-        if (!agents.values.every(isSafeWhole)) {
-          fields.reject('expected agent counts');
-        }
-        return () => PageTally(
-          items: items,
-          agents: {
-            for (final MapEntry(:key, :value) in agents.entries)
-              key: (value as num).toInt(),
-          },
-          damaged: damaged,
-          newer: newer,
-        );
-      });
+  static Decoded<PageTally> decode(Object? json) => JsonFields.read(
+    json,
+    'page tally',
+    (fields) {
+      final items = fields.whole('items');
+      final damaged = fields.whole('damaged');
+      final newer = fields.whole('newer');
+      final agents = fields.object('agents').raw;
+      if (!agents.values.every(isSafeWhole)) {
+        fields.reject('expected agent counts');
+      }
+      final placed = <AgentPlace>[];
+      switch (fields.json['placed']) {
+        case final List<Object?> listed:
+          for (final place in listed) {
+            switch (place) {
+              case [final num at, final String type] when isSafeWhole(at):
+                placed.add((at: at.toInt(), type: type));
+              case _:
+                fields.reject('expected agent places');
+            }
+          }
+        case _:
+          fields.reject('expected agent places');
+      }
+      final origins = <OriginPlace>[];
+      switch (fields.json['origins']) {
+        case final List<Object?> listed:
+          for (final origin in listed) {
+            switch (origin) {
+              case [final num group, final num at, final String type]
+                  when isSafeWhole(group) && isSafeWhole(at):
+                origins.add((group: group.toInt(), at: at.toInt(), type: type));
+              case _:
+                fields.reject('expected origin places');
+            }
+          }
+        case _:
+          fields.reject('expected origin places');
+      }
+      return () => PageTally(
+        items: items,
+        agents: {
+          for (final MapEntry(:key, :value) in agents.entries)
+            key: (value as num).toInt(),
+        },
+        damaged: damaged,
+        newer: newer,
+        placed: placed..sort(_byAgentPlace),
+        origins: origins..sort(_byOriginPlace),
+      );
+    },
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -164,13 +266,16 @@ final class StrategySummary {
     required this.updatedAt,
     required this.pageCount,
     required this.sides,
+    required this.firstPageIsAttack,
     required List<String> agents,
+    required List<String> agentsInOrder,
     required this.itemCount,
     required this.readability,
     required this.elsewhere,
     required Map<String, PageTally> tallies,
     required this.sync,
   }) : agents = List.unmodifiable(agents),
+       agentsInOrder = List.unmodifiable(agentsInOrder),
        tallies = Map.unmodifiable(tallies);
 
   factory StrategySummary.of({
@@ -199,6 +304,12 @@ final class StrategySummary {
       for (final page in live) tallies[page.publicId] ?? PageTally.empty,
     ];
     final attack = live.where((page) => page.isAttack).length;
+    final inOrder = [...live]
+      ..sort(
+        (a, b) => a.sortIndex != b.sortIndex
+            ? a.sortIndex.compareTo(b.sortIndex)
+            : a.publicId.compareTo(b.publicId),
+      );
     return StrategySummary._(
       publicId: strategy.publicId,
       name: strategy.name,
@@ -212,7 +323,11 @@ final class StrategySummary {
         _ when attack == live.length => Sides.attack,
         _ => Sides.mixed,
       },
+      firstPageIsAttack: inOrder.firstOrNull?.isAttack,
       agents: {for (final tally in liveTallies) ...tally.agents.keys}.sorted(),
+      agentsInOrder: {
+        for (final page in inOrder) ...?tallies[page.publicId]?.agentsInOrder,
+      }.toList(),
       itemCount: liveTallies.fold(0, (sum, tally) => sum + tally.items),
       readability: damaged == 0 && newer == 0
           ? const AllReadable()
@@ -231,7 +346,9 @@ final class StrategySummary {
   final DateTime updatedAt;
   final int pageCount;
   final Sides sides;
+  final bool? firstPageIsAttack;
   final List<String> agents;
+  final List<String> agentsInOrder;
   final int itemCount;
   final Readability readability;
   final PageTally elsewhere;
@@ -247,7 +364,9 @@ final class StrategySummary {
     updatedAt: updatedAt,
     pageCount: pageCount,
     sides: sides,
+    firstPageIsAttack: firstPageIsAttack,
     agents: agents,
+    agentsInOrder: agentsInOrder,
     itemCount: itemCount,
     readability: readability,
     elsewhere: elsewhere,
@@ -307,7 +426,9 @@ final class StrategySummary {
     updatedAt: strategy.updatedAt,
     pageCount: pageCount,
     sides: sides,
+    firstPageIsAttack: firstPageIsAttack,
     agents: agents,
+    agentsInOrder: agentsInOrder,
     itemCount: itemCount,
     readability: readability,
     elsewhere: elsewhere,
@@ -325,7 +446,9 @@ final class StrategySummary {
     'updatedAt': updatedAt.millisecondsSinceEpoch,
     'pageCount': pageCount,
     'sides': sides.name,
+    'firstPageIsAttack': ?firstPageIsAttack,
     'agents': agents,
+    'agentsInOrder': agentsInOrder,
     'itemCount': itemCount,
     'damagedRows': switch (readability) {
       AllReadable() => 0,
@@ -363,6 +486,16 @@ final class StrategySummary {
         if (agents is! List<Object?> || agents.any((a) => a is! String)) {
           fields.reject('expected agents');
         }
+        final agentsInOrder = fields.json['agentsInOrder'];
+        if (agentsInOrder is! List<Object?> ||
+            agentsInOrder.any((a) => a is! String)) {
+          fields.reject('expected agents in order');
+        }
+        final firstPageIsAttack = fields.json['firstPageIsAttack'];
+        if (fields.json.containsKey('firstPageIsAttack') &&
+            firstPageIsAttack is! bool) {
+          fields.reject('expected the first page\'s side');
+        }
         final itemCount = fields.whole('itemCount');
         final damaged = fields.whole('damagedRows');
         final newer = fields.whole('newerRows');
@@ -387,7 +520,9 @@ final class StrategySummary {
           updatedAt: updatedAt,
           pageCount: pageCount,
           sides: sides!,
+          firstPageIsAttack: firstPageIsAttack as bool?,
           agents: (agents! as List<Object?>).cast<String>(),
+          agentsInOrder: (agentsInOrder! as List<Object?>).cast<String>(),
           itemCount: itemCount,
           readability: damaged == 0 && newer == 0
               ? const AllReadable()

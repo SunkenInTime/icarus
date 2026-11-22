@@ -265,11 +265,26 @@ bool _isTally(Object? json) =>
     json['agents'] is Map<String, Object?> &&
     (json['agents']! as Map<String, Object?>).values.every(
       (count) => _fits(Field.whole, count),
+    ) &&
+    json['placed'] is List<Object?> &&
+    (json['placed']! as List<Object?>).every(
+      (place) => switch (place) {
+        [final at, String()] => _fits(Field.whole, at),
+        _ => false,
+      },
+    ) &&
+    json['origins'] is List<Object?> &&
+    (json['origins']! as List<Object?>).every(
+      (origin) => switch (origin) {
+        [final group, final at, String()] =>
+          _fits(Field.whole, group) && _fits(Field.whole, at),
+        _ => false,
+      },
     );
 
 bool _readsAsSummaryOf(Object? json, Object? id) =>
     json is Map<String, Object?> &&
-    json['summaryVersion'] == 5 &&
+    json['summaryVersion'] == 6 &&
     json['publicId'] == id &&
     json['name'] is String &&
     json['mapData'] is String &&
@@ -280,6 +295,12 @@ bool _readsAsSummaryOf(Object? json, Object? id) =>
     const ['attack', 'defend', 'mixed'].contains(json['sides']) &&
     json['agents'] is List<Object?> &&
     (json['agents']! as List<Object?>).every((agent) => agent is String) &&
+    json['agentsInOrder'] is List<Object?> &&
+    (json['agentsInOrder']! as List<Object?>).every(
+      (agent) => agent is String,
+    ) &&
+    (!json.containsKey('firstPageIsAttack') ||
+        json['firstPageIsAttack'] is bool) &&
     _fits(Field.whole, json['itemCount']) &&
     _fits(Field.whole, json['damagedRows']) &&
     _fits(Field.whole, json['newerRows']) &&
