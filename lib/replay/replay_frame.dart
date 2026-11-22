@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:collection/collection.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/map_doors.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
@@ -655,9 +656,9 @@ class ReplayFrameBuilder {
             )
           : ability;
       final radius = _radiusOf(entry, mapScale);
-      final faint =
-          (entry.kind == ReplayUtilityKind.area && entry.blocks == null) ||
-              entry.kind == ReplayUtilityKind.rectangle;
+      final blocks = blocksSight(entry.ability);
+      final faint = (entry.kind == ReplayUtilityKind.area && !blocks) ||
+          entry.kind == ReplayUtilityKind.rectangle;
       if (!active) {
         effects.add(ReplayExit(
           ability: placed,
@@ -671,11 +672,9 @@ class ReplayFrameBuilder {
       }
       abilities.add(placed);
       if (faint) dimmed.add(placed.id);
-      if (entry.kind == ReplayUtilityKind.guidedWall) {
-        occluders.addAll([for (final run in wallRuns) LineOccluder(run)]);
-      } else if (_occluderOf(entry, utility, timeMs, centre, radius)
-          case final occluder?) {
-        occluders.add(occluder);
+      if (blocks) {
+        occluders.addAll(
+            _occludersOf(entry.kind, utility, centre, radius, wallRuns));
       }
       final age = timeMs - utility.spawnMs;
       if (age < activationMs) {
@@ -738,25 +737,23 @@ class ReplayFrameBuilder {
     return CoordinateSystem.virtualLengthInWorld(virtual);
   }
 
-  /// What [utility] hides from sight now, when it is a smoke or a wall of
-  /// smoke or fire.
-  VisionOccluder? _occluderOf(
-    ReplayAbilityEntry entry,
+  List<VisionOccluder> _occludersOf(
+    ReplayUtilityKind kind,
     ReplayUtility utility,
-    int timeMs,
     Offset centre,
     double radius,
-  ) {
-    switch (entry.blocks) {
-      case null:
-        return null;
-      case ReplayVisionBlock.sphere:
-        return CircleOccluder(centre, radius);
-      case ReplayVisionBlock.line:
-        final points = _linePoints(utility);
-        return points == null ? null : LineOccluder(points);
-    }
-  }
+    List<List<Offset>> wallRuns,
+  ) =>
+      switch (kind) {
+        ReplayUtilityKind.area => [CircleOccluder(centre, radius)],
+        ReplayUtilityKind.wall => [
+            if (_linePoints(utility) case final points?) LineOccluder(points),
+          ],
+        ReplayUtilityKind.guidedWall => [
+            for (final run in wallRuns) LineOccluder(run),
+          ],
+        _ => const [],
+      };
 
   /// The line a wall raised point by point stands along, in world units.
   /// Null while it is too short to be a line.

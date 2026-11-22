@@ -276,16 +276,20 @@ class WallDraftNotifier extends Notifier<WallDraft?> {
   void set(WallDraft? draft) => state = draft;
 }
 
-/// The ability whose icon is being dragged. Its wall rides the drag's
-/// feedback, so the one on the canvas steps aside.
+/// The abilities whose icons are being dragged. Their walls ride the drags'
+/// feedback, so the ones on the canvas step aside.
 final wallCarriedProvider =
-    NotifierProvider<WallCarriedNotifier, String?>(WallCarriedNotifier.new);
+    NotifierProvider<WallCarriedNotifier, Set<String>>(WallCarriedNotifier.new);
 
-class WallCarriedNotifier extends Notifier<String?> {
+class WallCarriedNotifier extends Notifier<Set<String>> {
   @override
-  String? build() => null;
+  Set<String> build() => const {};
 
-  void set(String? id) => state = id;
+  void carry(String id) => state = {...state, id};
+
+  void drop(String id) {
+    if (state.contains(id)) state = {...state}..remove(id);
+  }
 }
 
 /// Every wall on the page, under the abilities.
@@ -368,7 +372,7 @@ class _PlacedWallState extends ConsumerState<PlacedWall>
   Widget build(BuildContext context) {
     final ability = widget.ability;
     final path = _draftPathOf(ref, ability.id) ?? ability.wallPath;
-    final carried = ref.watch(wallCarriedProvider) == ability.id;
+    final carried = ref.watch(wallCarriedProvider).contains(ability.id);
     if (path == null || path.isEmpty || carried) {
       _releaseAfterFrame();
       return const SizedBox.shrink();
@@ -649,7 +653,7 @@ class _PlacedWallHandlesState extends ConsumerState<PlacedWallHandles>
         (selection) => selection.length == 1 && selection.single.id == _id,
       ),
     );
-    final carried = ref.watch(wallCarriedProvider) == _id;
+    final carried = ref.watch(wallCarriedProvider).contains(_id);
     final path = _draftPathOf(ref, _id) ?? widget.ability.wallPath;
     // A dot being dragged has to stay: taking it away would end the drag.
     if ((!hovered && !selected && _dragged == null) ||

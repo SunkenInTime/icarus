@@ -26,6 +26,7 @@ import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/detach_from_agent.dart';
+import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/sightline_report_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
@@ -372,6 +373,7 @@ class AgentWidget extends ConsumerWidget {
               UtilityData.getViewConeAngle(viewConeAgent.presetType),
           lengthVirtual: viewConeAgent.length,
           visionElevationCm: viewConeAgent.visionElevation,
+          blockers: SightBlockersScope.of(context),
         ),
       if (canInteract && viewConeAgent != null)
         ShadContextMenuItem(

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:icarus/const/coordinate_system.dart';
 
@@ -35,6 +37,21 @@ class ViewConeDragOrigin extends ValueNotifier<Offset?> {
         _coordinates.screenHeightToWorld(delta.dy));
     value = _origin + worldDelta * (_isAttack ? 1 : -1);
   }
+
+  Offset? anchorSeenFrom({required bool isAttack}) {
+    if (value == null) return null;
+    Offset side(Offset point, bool isAttack) => _coordinates.positionForSide(
+          canonicalPosition: point,
+          reflectionOffset: Offset.zero,
+          isAttack: isAttack,
+        );
+    final grabbed = _coordinates.coordinateToScreen(side(_origin, _isAttack));
+    final held = _coordinates.screenToCoordinate(grabbed + _screenDelta / _zoom);
+    return side(held, isAttack);
+  }
+
+  double turnSeenFrom({required bool isAttack}) =>
+      isAttack == _isAttack ? 0 : math.pi;
 
   void end() => value = null;
 }

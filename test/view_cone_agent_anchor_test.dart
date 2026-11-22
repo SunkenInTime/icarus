@@ -120,7 +120,7 @@ void main() {
         expectAligned();
         final finder = find.byWidgetPredicate((widget) =>
             widget is CustomPaint &&
-            widget.painter is SvgHeightViewConePainter);
+            widget.painter is ShadowedConePainter);
         final box = tester.renderObject<RenderBox>(finder);
         final painter = tester.widget<CustomPaint>(finder).painter!;
         final pixels = (await tester.runAsync(() async {

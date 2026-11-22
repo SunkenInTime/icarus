@@ -69,3 +69,21 @@ class AbilityVisionConeSpec {
     return maxRangeMeters == null ? clamped : clamped / mapScale;
   }
 }
+
+const Set<(AgentType, int)> _sightBlockers = {
+  (AgentType.astra, 2),
+  (AgentType.brimstone, 2),
+  (AgentType.clove, 2),
+  (AgentType.cypher, 1),
+  (AgentType.harbor, 1),
+  (AgentType.harbor, 2),
+  (AgentType.jett, 0),
+  (AgentType.miks, 2),
+  (AgentType.omen, 2),
+  (AgentType.pheonix, 0),
+  (AgentType.viper, 1),
+  (AgentType.viper, 2),
+};
+
+bool blocksSight(AbilityInfo ability) =>
+    _sightBlockers.contains((ability.type, ability.index));
