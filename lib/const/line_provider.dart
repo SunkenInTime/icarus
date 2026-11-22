@@ -7,10 +7,16 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
+import 'package:icarus/const/lineup_group_order.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -385,7 +391,7 @@ class LineUpGraph {
     final newIds = <String, String>{};
     String renamed(String id) => newIds[id] ??= newId(id);
     final part = linksWithSpots(linkIds);
-    return LineUpGraph(
+    return lineUpsInGroupOrder(LineUpGraph(
       origins: [
         for (final origin in part.origins)
           LineUpOrigin(
@@ -412,7 +418,7 @@ class LineUpGraph {
                 landingId: renamed(link.landingId),
               ),
       ],
-    );
+    ));
   }
 
   LineUpGraph linksWithSpots(Set<String> linkIds) {
@@ -1264,28 +1270,24 @@ class LineUpProvider extends Notifier<LineUpState> {
     final linkId = _uuid.v4();
     final originId = placement.pinnedOriginId ?? _uuid.v4();
     final landingId = placement.pinnedLandingId ?? _uuid.v4();
-    final origins = [...state.origins];
-    final landings = [...state.landings];
-    if (placement.pinnedOriginId == null) {
-      origins.add(
-        LineUpOrigin(
+    final origin = switch (placement.pinnedOriginId) {
+      final pinned? => state.originById(pinned)!,
+      null => LineUpOrigin(
           id: originId,
           // A lineup has notes of its own, and items in a lineup take no
           // caption.
           agent: placement.draftAgent!.copyWith(lineUpID: originId)
             ..caption = null,
         ),
-      );
-    }
-    if (placement.pinnedLandingId == null) {
-      landings.add(
-        LineUpLanding(
+    };
+    final landing = switch (placement.pinnedLandingId) {
+      final pinned? => state.landingById(pinned)!,
+      null => LineUpLanding(
           id: landingId,
           ability: placement.draftAbility!.copyWith(lineUpID: landingId)
             ..caption = null,
         ),
-      );
-    }
+    };
     final link = LineUpLink(
       id: linkId,
       originId: originId,
@@ -1298,14 +1300,15 @@ class LineUpProvider extends Notifier<LineUpState> {
     // Both endpoints are recorded even when pinned, so redo can recreate
     // one that was removed in between (by a teammate, or an undo).
     final added = LineUpGraph(
-      origins: [origins.firstWhere((origin) => origin.id == originId)],
-      landings: [landings.firstWhere((landing) => landing.id == landingId)],
+      origins: [origin],
+      landings: [landing],
       links: [link],
     );
+    final placed = state.graph.withLineUpsPlaced(added, memory: _groupMemory);
     state = state.copyWith(
-      origins: origins,
-      landings: landings,
-      links: [...state.links, link],
+      origins: placed.origins,
+      landings: placed.landings,
+      links: placed.links,
       placement: null,
     );
     _record(
@@ -1522,49 +1525,46 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  LineupGroupMemory get _groupMemory {
+    final source = ref.container.read(strategyProvider).source;
+    final pageId = ref.container.read(strategyPageSessionProvider).activePageId;
+    if (source != StrategySource.cloud || pageId == null) {
+      return LineupGroupMemory.none;
+    }
+    return ref.container
+        .read(activePageLiveSyncProvider.notifier)
+        .lineupGroupMemory(pageId);
+  }
+
   void _record(UserAction action) {
     ref.read(actionProvider.notifier).addAction(action);
   }
 
-  /// Moves the graph from [from] to [to] for the entries they name, leaving
-  /// every other origin, landing and link as it currently is. Links only in
-  /// [from] are removed. Entries in [to] are put back only where missing: one
-  /// that exists now keeps its current state (edits since are kept, and a
-  /// restored link joins the surviving shared landing). An origin or landing
-  /// exists only while some link uses it, so any node left without a link
-  /// is dropped.
-  void _apply({required LineUpGraph from, required LineUpGraph to}) {
-    List<T> upsert<T>(
-      List<T> current,
-      List<T> incoming,
-      String Function(T) idOf,
-    ) {
-      final present = current.map(idOf).toSet();
-      return [
-        ...current,
-        for (final entry in incoming)
-          if (!present.contains(idOf(entry))) entry,
-      ];
-    }
-
+  void _apply({
+    required LineUpGraph from,
+    required LineUpGraph to,
+  }) {
     final droppedLinks = from.links.map((link) => link.id).toSet()
       ..removeAll(to.links.map((link) => link.id));
-    final links = upsert(
-      state.links.where((link) => !droppedLinks.contains(link.id)).toList(),
-      to.links,
-      (link) => link.id,
-    );
-    final usedOrigins = links.map((link) => link.originId).toSet();
-    final usedLandings = links.map((link) => link.landingId).toSet();
+    final placed = LineUpGraph(
+      origins: state.origins,
+      landings: state.landings,
+      links: [
+        for (final link in state.links)
+          if (!droppedLinks.contains(link.id)) link,
+      ],
+    ).withLineUpsPlaced(to, memory: _groupMemory);
+    final usedOrigins = placed.links.map((link) => link.originId).toSet();
+    final usedLandings = placed.links.map((link) => link.landingId).toSet();
 
     state = state.copyWith(
-      origins: upsert(state.origins, to.origins, (origin) => origin.id)
+      origins: placed.origins
           .where((origin) => usedOrigins.contains(origin.id))
           .toList(),
-      landings: upsert(state.landings, to.landings, (landing) => landing.id)
+      landings: placed.landings
           .where((landing) => usedLandings.contains(landing.id))
           .toList(),
-      links: links,
+      links: placed.links,
     );
   }
 
@@ -1744,11 +1744,22 @@ class LineUpProvider extends Notifier<LineUpState> {
   /// forkLineUpGraph). A recovery step rather than an edit, so it is not
   /// undoable, as taking the cloud's version is not.
   void addRecovered(LineUpGraph graph) {
-    final copy = graph.deepCopy();
+    final placed = state.graph.withLineUpsPlaced(
+      graph.deepCopy(),
+      memory: _groupMemory,
+    );
     state = state.copyWith(
-      origins: [...state.origins, ...copy.origins],
-      landings: [...state.landings, ...copy.landings],
-      links: [...state.links, ...copy.links],
+      origins: placed.origins,
+      landings: placed.landings,
+      links: placed.links,
+    );
+  }
+
+  void takeOrder(LineUpGraph ordered) {
+    state = state.copyWith(
+      origins: ordered.origins,
+      landings: ordered.landings,
+      links: ordered.links,
     );
   }
 
