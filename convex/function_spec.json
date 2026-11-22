@@ -219327,6 +219327,270 @@
         }
       },
       "functionType": "Query",
+      "identifier": "strategy.js:getPageList",
+      "returns": {
+        "type": "object",
+        "value": {
+          "header": {
+            "fieldType": {
+              "type": "object",
+              "value": {
+                "createdAt": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "mapData": {
+                  "fieldType": {
+                    "type": "string"
+                  },
+                  "optional": false
+                },
+                "name": {
+                  "fieldType": {
+                    "type": "string"
+                  },
+                  "optional": false
+                },
+                "publicId": {
+                  "fieldType": {
+                    "type": "string"
+                  },
+                  "optional": false
+                },
+                "revision": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                },
+                "role": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [
+                      {
+                        "type": "literal",
+                        "value": "owner"
+                      },
+                      {
+                        "type": "literal",
+                        "value": "editor"
+                      },
+                      {
+                        "type": "literal",
+                        "value": "viewer"
+                      }
+                    ]
+                  },
+                  "optional": false
+                },
+                "themeOverridePalette": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [
+                      {
+                        "type": "object",
+                        "value": {
+                          "base": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          },
+                          "detail": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          },
+                          "highlight": {
+                            "fieldType": {
+                              "type": "string"
+                            },
+                            "optional": false
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optional": false
+                },
+                "themeProfileId": {
+                  "fieldType": {
+                    "type": "union",
+                    "value": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "optional": false
+                },
+                "updatedAt": {
+                  "fieldType": {
+                    "type": "number"
+                  },
+                  "optional": false
+                }
+              }
+            },
+            "optional": false
+          },
+          "pages": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "object",
+                "value": {
+                  "contentCreatedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "contentRevision": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "contentUpdatedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "createdAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "isAttack": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": false
+                  },
+                  "isAutoNamed": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": true
+                  },
+                  "name": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "publicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "revision": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "settings": {
+                    "fieldType": {
+                      "type": "union",
+                      "value": [
+                        {
+                          "type": "object",
+                          "value": {
+                            "abilitySize": {
+                              "fieldType": {
+                                "type": "number"
+                              },
+                              "optional": false
+                            },
+                            "agentSize": {
+                              "fieldType": {
+                                "type": "number"
+                              },
+                              "optional": false
+                            },
+                            "useNeutralTeamColors": {
+                              "fieldType": {
+                                "type": "boolean"
+                              },
+                              "optional": false
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "optional": false
+                  },
+                  "sortIndex": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  },
+                  "strategyPublicId": {
+                    "fieldType": {
+                      "type": "string"
+                    },
+                    "optional": false
+                  },
+                  "updatedAt": {
+                    "fieldType": {
+                      "type": "number"
+                    },
+                    "optional": false
+                  }
+                }
+              }
+            },
+            "optional": false
+          }
+        }
+      },
+      "visibility": {
+        "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
+          "shareToken": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
+          "strategyPublicId": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
       "identifier": "strategy.js:getShell",
       "returns": {
         "type": "object",
