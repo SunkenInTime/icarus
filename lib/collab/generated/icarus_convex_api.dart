@@ -2142,6 +2142,11 @@ abstract interface class StrategyModule {
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
+  ConvexQuery<StrategyGetPageListResult> getPageList({
+    required double clientProtocolVersion,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  });
   ConvexQuery<StrategyGetShellResult> getShell({
     required double clientProtocolVersion,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
@@ -2181,6 +2186,25 @@ final class _StrategyModule implements StrategyModule {
       name: 'strategy:getFullSnapshot',
       args: args,
       decode: decodeStrategyGetFullSnapshotResult,
+    );
+  }
+
+  @override
+  ConvexQuery<StrategyGetPageListResult> getPageList({
+    required double clientProtocolVersion,
+    ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  }) {
+    final args = encodeStrategyGetPageListArgs(
+      clientProtocolVersion: clientProtocolVersion,
+      shareToken: shareToken,
+      strategyPublicId: strategyPublicId,
+    );
+    return ConvexQuery(
+      transport: _transport,
+      name: 'strategy:getPageList',
+      args: args,
+      decode: decodeStrategyGetPageListResult,
     );
   }
 

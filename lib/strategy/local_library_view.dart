@@ -141,7 +141,7 @@ final class LocalLibraryView {
 
   bool get isOpen => Hive.isBoxOpen(HiveBoxNames.strategiesBox);
 
-  StrategyData? strategyImage(String? id) => _strategyBox.get(id);
+  StrategyData? strategyImage(String id) => _strategyBox.get(id);
 
   ValueListenable<LocalStrategyImage> strategyImageChanges(String? id) =>
       _Mapped(

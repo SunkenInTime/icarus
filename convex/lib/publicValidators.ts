@@ -191,6 +191,11 @@ export const strategyShellValidator = v.object({
   pages: v.array(pageDescriptorValidator),
 });
 
+export const pageListValidator = v.object({
+  header: strategyHeaderValidator,
+  pages: v.array(fullPageValidator),
+});
+
 export const pageSnapshotValidator = v.object({
   page: pageDescriptorValidator,
   content: pageContentValidator,

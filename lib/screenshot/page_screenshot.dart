@@ -556,13 +556,15 @@ String? _activePageName(WidgetRef ref) {
         final page? => (page.name, page.isAutoNamed),
         null => null,
       },
-    StrategySource.local => switch (
-          ref
-              .read(localLibraryViewProvider)
-              .strategyImage(strategy.strategyId)
-              ?.pages
-              .where((page) => page.id == pageId)
-              .firstOrNull) {
+    StrategySource.local => switch (switch (strategy.strategyId) {
+        final id? => ref
+            .read(localLibraryViewProvider)
+            .strategyImage(id)
+            ?.pages
+            .where((page) => page.id == pageId)
+            .firstOrNull,
+        null => null,
+      }) {
         final page? => (page.name, page.isAutoNamed),
         null => null,
       },
