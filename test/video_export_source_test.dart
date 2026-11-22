@@ -110,7 +110,6 @@ class _Canvas extends StrategyPageSessionNotifier {
   StrategyPageSessionState build() => const StrategyPageSessionState(
         activePageId: 'a',
         availablePageIds: ['a'],
-        transitionState: PageTransitionState.idle,
         isApplyingPage: false,
       );
 

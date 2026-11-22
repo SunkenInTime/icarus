@@ -12,8 +12,7 @@ import 'package:icarus/providers/collab/drawn_cloud_pages_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/trashed_pages_provider.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart'
-    hide PageTransitionState;
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -921,13 +920,15 @@ class _ExpandedPanel extends ConsumerWidget {
     );
   }
 
-  double? _rowTransitionProgress(PageTransitionState state, String pageId) {
-    if (state.phase != PageTransitionPhase.preparing &&
-        state.phase != PageTransitionPhase.animating) {
-      return null;
-    }
-    if (state.sourcePageId == pageId) return (1 - state.progress).toDouble();
-    if (state.targetPageId == pageId) return state.progress.toDouble();
+  double? _rowTransitionProgress(PageTransition state, String pageId) {
+    final owner = state.owner;
+    if (owner == null) return null;
+    final progress = switch (state) {
+      AnimatingPageTransition(:final progress) => progress,
+      _ => 0.0,
+    };
+    if (owner.sourcePageId == pageId) return 1 - progress;
+    if (owner.targetPageId == pageId) return progress;
     return null;
   }
 }

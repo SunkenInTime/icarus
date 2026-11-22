@@ -174,9 +174,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
     final transitionPresentation = ref.watch(
       transitionProvider.select(
         (state) => (
-          hideView: state.hideView,
-          active: state.active,
-          phase: state.phase,
+          hideView: state is! NoPageTransition,
+          active: state is AnimatingPageTransition,
+          preparing: state is PreparingPageTransition,
         ),
       ),
     );
@@ -368,7 +368,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                               child: AssetSvg(
                                                 assetName,
                                                 colorMapper: mapColorMapper,
-                                                semanticsLabel: context.l10n.strategyViewMapSemanticLabel,
+                                                semanticsLabel: context.l10n
+                                                    .strategyViewMapSemanticLabel,
                                                 fit: BoxFit.contain,
                                               ),
                                             ),
@@ -433,7 +434,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                             flipY: !isAttack,
                                             child: AssetSvg(
                                               barrierAssetName,
-                                              semanticsLabel: context.l10n.strategyViewBarrierSemanticLabel,
+                                              semanticsLabel: context.l10n
+                                                  .strategyViewBarrierSemanticLabel,
                                               fit: BoxFit.contain,
                                             ),
                                           ),
@@ -448,7 +450,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                           height: height,
                                           child: AssetSvg(
                                             calloutsAssetName,
-                                            semanticsLabel: context.l10n.strategyViewCalloutsSemanticLabel,
+                                            semanticsLabel: context.l10n
+                                                .strategyViewCalloutsSemanticLabel,
                                             fit: BoxFit.contain,
                                           ),
                                         ),
@@ -463,7 +466,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                             flipY: !isAttack,
                                             child: AssetSvg(
                                               ultOrbsAssetName,
-                                              semanticsLabel: context.l10n.strategyViewUltOrbsSemanticLabel,
+                                              semanticsLabel: context.l10n
+                                                  .strategyViewUltOrbsSemanticLabel,
                                               fit: BoxFit.contain,
                                             ),
                                           ),
@@ -523,11 +527,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                             : SizedBox.shrink(),
                                       ),
                                       Positioned.fill(
-                                        child: transitionPresentation
-                                                    .hideView &&
-                                                transitionPresentation.phase ==
-                                                    PageTransitionPhase
-                                                        .preparing
+                                        child: transitionPresentation.preparing
                                             ? ConeCoverageScope(
                                                 coverage: _cones,
                                                 child: TemporaryWidgetBuilder())
@@ -551,7 +551,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap>
                                               key: const ValueKey(
                                                 'strategy-canvas-drawing-editor',
                                               ),
-                                              ignoring: !canEditPages,
+                                              ignoring: !canEditPages ||
+                                                  transitionPresentation
+                                                      .preparing,
                                               child: Opacity(
                                                 opacity: transitionOpacity *
                                                     lineUpOpacity,

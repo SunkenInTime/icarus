@@ -659,7 +659,7 @@ class PageTransitionOverlay extends ConsumerStatefulWidget {
 class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     with TickerProviderStateMixin {
   AnimationController? _controller;
-  int? _activeTransitionId;
+  PageSwitch? _animating;
 
   @override
   void initState() {
@@ -671,17 +671,20 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     if (_controller == null) {
       _controller = AnimationController(vsync: this, duration: duration)
         ..addListener(() {
-          ref
-              .read(transitionProvider.notifier)
-              .setProgress(kPageTransitionCurve.transform(_controller!.value));
+          final owner = _animating;
+          if (owner != null) {
+            ref.read(transitionProvider.notifier).setProgress(
+                  owner,
+                  kPageTransitionCurve.transform(_controller!.value),
+                );
+          }
           setState(() {});
         })
         ..addStatusListener((status) {
-          if (status == AnimationStatus.completed) {
+          final owner = _animating;
+          if (status == AnimationStatus.completed && owner != null) {
             final notifier = ref.read(transitionProvider.notifier);
-            Future.microtask(() {
-              notifier.complete();
-            });
+            Future.microtask(() => notifier.finish(owner));
           }
         });
       return;
@@ -697,19 +700,15 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     super.dispose();
   }
 
-  void _syncAnimation(PageTransitionState state) {
+  void _syncAnimation(AnimatingPageTransition state) {
     _ensureController(state.duration);
-    if (!state.active) {
-      return;
-    }
-    if (_activeTransitionId == state.transitionId) {
-      return;
-    }
-    _activeTransitionId = state.transitionId;
+    final owner = state.owner;
+    if (identical(_animating, owner)) return;
+    _animating = owner;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final latest = ref.read(transitionProvider);
-      if (!latest.active || latest.transitionId != _activeTransitionId) return;
+      if (!mounted || !identical(ref.read(transitionProvider).owner, owner)) {
+        return;
+      }
       _controller!.forward(from: 0);
     });
   }
@@ -717,11 +716,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(transitionProvider);
-    _syncAnimation(state);
-
-    if (!state.active) {
+    if (state is! AnimatingPageTransition) {
       return const SizedBox.shrink();
     }
+    _syncAnimation(state);
 
     final t = kPageTransitionCurve.transform(_controller!.value);
     final agentSize = _lerpRequired(
@@ -996,11 +994,12 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(transitionProvider);
+    if (state is! PreparingPageTransition) return const SizedBox.shrink();
     final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
     final isAttack = ref.watch(mapProvider).isAttack;
-    final abilitySize = state.startAbilitySize;
-    final agentSize = state.startAgentSize;
-    final orderedWidgets = [...state.allWidgets]
+    final abilitySize = state.abilitySize;
+    final agentSize = state.agentSize;
+    final orderedWidgets = [...state.leaving]
       ..sort(PageLayering.comparePlacedWidgets);
     final neutralTeamColors = ref.watch(
       strategySettingsProvider.select((s) => s.useNeutralTeamColors),
@@ -1093,7 +1092,7 @@ Widget staticPlacedWidgetView({
       displayRotation != null &&
       displayRotation != 0) {
     return Positioned(
-    key: ValueKey(widget.id),
+      key: ValueKey(widget.id),
       left: scaledPosition.dx,
       top: scaledPosition.dy,
       child: Transform.rotate(
@@ -1126,7 +1125,7 @@ Widget staticPlacedWidgetView({
           AbilityVisionConeSpec.forAbility(widget.data) != null) &&
       isRotatable(widget.data.abilityData!)) {
     return Positioned(
-    key: ValueKey(widget.id),
+      key: ValueKey(widget.id),
       left: scaledPosition.dx,
       top: scaledPosition.dy,
       child: Transform.rotate(
@@ -1150,7 +1149,7 @@ Widget staticPlacedWidgetView({
     );
   } else if (widget is PlacedText || widget is PlacedImage) {
     return CanonicalPositionedBox(
-    key: ValueKey(widget.id),
+      key: ValueKey(widget.id),
       attackScreenPosition: scaledPosition,
       isAttack: isAttack,
       child: PlacedWidgetPreview.build(
@@ -1166,7 +1165,7 @@ Widget staticPlacedWidgetView({
     );
   } else {
     return Positioned(
-    key: ValueKey(widget.id),
+      key: ValueKey(widget.id),
       left: scaledPosition.dx,
       top: scaledPosition.dy,
       child: PlacedWidgetPreview.build(

@@ -51,7 +51,7 @@ class _CanvasPasteState extends ConsumerState<CanvasPaste> {
       !ref.read(writingCaptionProvider) &&
       ref.read(currentStrategyCapabilitiesProvider).canEditPages &&
       !ref.read(interactionStateProvider).isLineUpMode &&
-      !ref.read(transitionProvider).active;
+      ref.read(transitionProvider) is! AnimatingPageTransition;
 
   Future<void> _paste() async {
     if (_pasting) return;
