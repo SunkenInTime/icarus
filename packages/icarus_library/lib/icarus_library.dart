@@ -58,6 +58,7 @@ export 'src/store/summary.dart'
         AllReadable,
         KeptHere,
         KeptInCloud,
+        CloudUnverified,
         Readability,
         Sides,
         SomeUnreadable,

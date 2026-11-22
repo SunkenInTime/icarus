@@ -157,6 +157,9 @@ const placeDigits = 16;
 
 final _place = RegExp(r'^[0-9]{16}$');
 
+bool _isPlace(String text) =>
+    _place.hasMatch(text) && text.compareTo('9007199254740991') <= 0;
+
 String _numbered(int number) => number.toString().padLeft(placeDigits, '0');
 
 const pendingPrefix = 'pending/';
@@ -252,13 +255,12 @@ StoreName readName(StoreArea area, String name) =>
       (LibraryArea(), ['numbers']) => const NumbersName(),
       (StrategyArea(), ['strategy']) => const HeaderName(),
       (StrategyArea(), ['cloud']) => const CloudName(),
-      (StrategyArea(), ['pending', final place]) when _place.hasMatch(place) =>
+      (StrategyArea(), ['pending', final place]) when _isPlace(place) =>
         PendingName(int.parse(place)),
-      (StrategyArea(), ['attempt', final number])
-          when _place.hasMatch(number) =>
+      (StrategyArea(), ['attempt', final number]) when _isPlace(number) =>
         AttemptName(int.parse(number)),
       (StrategyArea(), ['landed', final attempt, final position])
-          when _place.hasMatch(attempt) && _place.hasMatch(position) =>
+          when _isPlace(attempt) && _isPlace(position) =>
         LandedName(int.parse(attempt), int.parse(position)),
       (StrategyArea(), ['read', 'header']) => const HeaderReadName(),
       (StrategyArea(), ['read', 'page', final digest]) when _isDigest(digest) =>
@@ -302,6 +304,7 @@ bool isCloudName(StoreName name) => switch (name) {
   LandedName() ||
   HeaderReadName() ||
   PageReadName() => true,
+  ForeignName(:final name) => isCloudKey(name),
   _ => false,
 };
 

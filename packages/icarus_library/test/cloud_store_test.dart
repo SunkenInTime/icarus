@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/json.dart' show canonicalJson;
 import 'package:icarus_library/src/store/layout.dart'
@@ -918,6 +920,452 @@ void main() {
         );
       },
     );
+  });
+
+  group('second storage review', () {
+    StrategyRowSet threePages() => strategyRows(
+      pages: [
+        page('page-a', sortIndex: 0),
+        page('page-b', sortIndex: 1),
+        page('page-c', sortIndex: 2),
+      ],
+      elements: [
+        element('e1'),
+        element('e2'),
+        element('e3', pageId: 'page-b'),
+      ],
+    );
+
+    Future<Map<String, List<String>>> drawn(LibraryStore store) async {
+      final content = strategyOf(await store.readStrategy(strategyId));
+      return {
+        for (final page in content.pages)
+          page.publicId: [
+            for (final row in pageOf(
+              await store.readPage(strategyId, page.publicId),
+            ).elements)
+              if (row is LiveElement) row.publicId,
+          ],
+      };
+    }
+
+    Future<void> expectListMatchesPages(LibraryStore store) async {
+      final pages = await drawn(store);
+      final summary = listOf(store).strategies.single;
+      expect(
+        {
+          for (final page in pages.keys)
+            page: summary.tallies[page]?.items ?? 0,
+        },
+        {for (final MapEntry(:key, :value) in pages.entries) key: value.length},
+      );
+    }
+
+    Future<void> answer(LibraryStore store, String opId, int revision) async {
+      final sent = await claimAll(store);
+      await recordAll(store, [
+        OpAnswered(sent.attempt, AppliedAnswer(opId, revision: revision)),
+      ]);
+    }
+
+    test('two accepted moves of one row draw it once, where the second '
+        'put it, warm and after a reopen', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, threePages());
+      savedValue(
+        await store.commit(strategyId, movePatch('ab', pageId: 'page-b')),
+      );
+      await answer(store, 'ab', 2);
+      savedValue(
+        await store.commit(
+          strategyId,
+          movePatch('bc', pageId: 'page-c', expected: 2),
+        ),
+      );
+      await answer(store, 'bc', 3);
+      Future<void> check() async {
+        final pages = await drawn(store);
+        expect(pages['page-a'], ['e2']);
+        expect(pages['page-b'], ['e3']);
+        expect(pages['page-c'], ['e1']);
+        await expectListMatchesPages(store);
+      }
+
+      await check();
+      await store.close();
+      store = await openCloudStore(MemoryEngine(storage));
+      await check();
+    });
+
+    test('an element that exists only as accepted work can be dragged on its '
+        'page and to another page', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      savedValue(
+        await store.commit(
+          strategyId,
+          elementAdd('add', elementId: 'e9', pageId: 'page-b'),
+        ),
+      );
+      await answer(store, 'add', 1);
+      savedValue(
+        await store.commit(
+          strategyId,
+          movePatch('drag', elementId: 'e9', x: 5),
+        ),
+      );
+      savedValue(
+        await store.commit(
+          strategyId,
+          movePatch('away', elementId: 'e9', expected: 2, pageId: 'page-a'),
+        ),
+      );
+      final pages = await drawn(store);
+      expect(pages['page-a'], containsAll(['e9']));
+      expect(pages['page-b'], isNot(contains('e9')));
+      await expectListMatchesPages(store);
+    });
+
+    test('a commit that was not stored leaves memory as it was: the same '
+        'result applies when delivered again, and a refused edit does not end '
+        'the session', () async {
+      final storage = MemoryStorage();
+      var refuse = false;
+      final store = await openCloudStore(
+        WrappingEngine(
+          MemoryEngine(storage),
+          (lease) => RefusingLease(lease, (_) => refuse),
+        ),
+      );
+      await addCloud(store, initialRows());
+      final session = await sessionOf(store);
+      final server = withOp(initialRows(), movePatch('t', x: 9));
+      final result = BaseArrived(
+        pageReadOf(server, 'page-a'),
+        session: session,
+      );
+      refuse = true;
+      expect(
+        await store.record(strategyId, [result]),
+        isA<NotSaved<Recorded, CommitRefusal>>(),
+      );
+      expect(
+        await store.commit(strategyId, movePatch('mine', elementId: 'e2')),
+        isA<NotSaved<Committed, CommitRefusal>>(),
+      );
+      refuse = false;
+      expect(await sessionOf(store), session);
+      expect(
+        (await recordAll(store, [result])).outcomes.single,
+        isA<ReportApplied>(),
+      );
+      expect(
+        elementOn(pageOf(await store.readPage(strategyId, 'page-a')), 'e1'),
+        server.element('e1'),
+      );
+    });
+
+    test('a queued move whose source page a result removes is counted where '
+        'it is drawn', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      savedValue(
+        await store.commit(strategyId, movePatch('m', pageId: 'page-b')),
+      );
+      await recordAll(store, [
+        BaseArrived(const PageGone('page-a'), session: await sessionOf(store)),
+      ]);
+      await expectListMatchesPages(store);
+      await store.close();
+      store = await openCloudStore(MemoryEngine(storage));
+      await expectListMatchesPages(store);
+    });
+
+    test('a held queue: the list counts what the held page draws, and a page '
+        'whose content never arrived still reads as not read', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      savedValue(
+        await store.addCloudStrategy(headerReadOf(initialRows()), [
+          pageReadOf(initialRows(), 'page-a') as PageRead,
+        ]),
+      );
+      savedValue(await store.commit(strategyId, elementAdd('add')));
+      await store.close();
+      final contents = editable(storage.contents);
+      contents[area]![PendingName(5).name] = '{"version":2}';
+      store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+      expect(
+        strategyOf(await store.readStrategy(strategyId)).sync,
+        isA<CloudHeld>(),
+      );
+      await expectListMatchesPages(store);
+      expect(
+        pageOf(await store.readPage(strategyId, 'page-b')).content,
+        isA<ContentNotRead>(),
+      );
+    });
+
+    test('no result applies before a session is opened after a reopen, not '
+        'even one labelled with session 0', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      await store.close();
+      store = await openCloudStore(MemoryEngine(storage));
+      final before = storage.contents;
+      final late = await recordAll(store, [
+        BaseArrived(
+          pageReadOf(withOp(initialRows(), movePatch('t', x: 9)), 'page-a'),
+          session: 0,
+        ),
+      ]);
+      expect(late.outcomes.single, isA<ReportNotApplicable>());
+      expect(sameContents(before, storage.contents), isTrue);
+    });
+
+    test('a missing numbers row beside a cloud strategy holds it and refuses '
+        'import, as an unreadable one does', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      await store.close();
+      final contents = editable(storage.contents);
+      contents['library']!.remove('numbers');
+      store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+      expect(
+        strategyOf(await store.readStrategy(strategyId)).sync,
+        isA<CloudHeld>().having(
+          (held) => held.rows.map((row) => row.ref.name),
+          'rows',
+          ['numbers'],
+        ),
+      );
+      final other = strategyRows(elements: [element('x1')]);
+      expect(
+        await store.addCloudStrategy(
+          HeaderRead(
+            strategy: strategyRow(publicId: 'other'),
+            pages: other.pages.toList(),
+            settings: other.settings.toList(),
+          ),
+          const [],
+        ),
+        isA<Refused<StrategySummary, LibraryRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          const NumbersUnreadable(),
+        ),
+      );
+    });
+
+    test('a name under a cloud prefix that this build cannot decode makes the '
+        'strategy a held cloud one, which removal does not erase', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      savedValue(await store.commit(strategyId, elementAdd('add')));
+      await store.close();
+      final contents = editable(storage.contents);
+      final rows = contents[area]!;
+      final pending = rows.keys.singleWhere(
+        (key) => key.startsWith('pending/'),
+      );
+      rows['pending/by-id'] = rows.remove(pending)!;
+      rows.removeWhere((key, _) => key == 'cloud' || key.startsWith('read/'));
+      store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+      expect(
+        strategyOf(await store.readStrategy(strategyId)).sync,
+        isA<CloudHeld>(),
+      );
+      expect(
+        await store.editLibrary([const RemoveStrategy(strategyId)]),
+        isA<Refused<LibraryEdited, LibraryRefusal>>(),
+      );
+    });
+
+    test('an accepted page add shown first by its page\'s result still '
+        'raises the strategy revision a later page edit names', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      savedValue(await store.commit(strategyId, pageAdd('add', 'page-c')));
+      await answer(store, 'add', 2);
+      final server = withOp(initialRows(), pageAdd('add', 'page-c'));
+      await recordAll(store, [
+        BaseArrived(
+          pageReadOf(server, 'page-c'),
+          session: await sessionOf(store),
+        ),
+      ]);
+      expect(
+        (strategyOf(await store.readStrategy(strategyId)).strategy
+                as ReadableStrategy)
+            .revision,
+        2,
+      );
+    });
+
+    group('the hold\'s edges', () {
+      Future<(LibraryStore, MemoryStorage)> withAttempt(
+        String name,
+        Object? outcomeAt,
+      ) async {
+        final storage = MemoryStorage();
+        final store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        contents[area]![name] = canonicalJson({
+          'version': 1,
+          'clientId': clientId,
+          'build': build,
+          'at': 0,
+          'ops': [movePatch('late', elementId: 'e2').toJson()],
+          'outcome': {'failed': 'network', 'at': outcomeAt},
+        });
+        final disk = MemoryStorage(contents);
+        return (await openCloudStore(MemoryEngine(disk)), disk);
+      }
+
+      test('an attempt failed at the last moment a date can hold', () async {
+        final (store, _) = await withAttempt(
+          AttemptName(9).name,
+          8640000000000000,
+        );
+        expect(
+          strategyOf(await store.readStrategy(strategyId)).sync,
+          isA<CloudHeld>(),
+        );
+      });
+
+      test('an attempt number too large to be a safe integer', () async {
+        final (store, _) = await withAttempt('attempt/9999999999999999', 0);
+        expect(
+          strategyOf(await store.readStrategy(strategyId)).sync,
+          isA<CloudHeld>(),
+        );
+      });
+
+      test(
+        'rebuilding the summary of a held strategy writes nothing',
+        () async {
+          final (store, disk) = await withAttempt(
+            AttemptName(9).name,
+            8640000000000000,
+          );
+          final before = disk.contents;
+          expect(
+            await store.rebuildSummary(strategyId),
+            isA<Refused<StrategySummary, CommitRefusal>>(),
+          );
+          expect(sameContents(before, disk.contents), isTrue);
+        },
+      );
+
+      test('a cloud strategy whose stored summary lacks its cloud field is '
+          'still not filed into a folder', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        final name = summaryName(strategyId);
+        final json =
+            (jsonDecode(contents['library']![name]!) as Map<String, Object?>)
+              ..remove('cloud');
+        contents['library']![name] = canonicalJson(json);
+        final disk = MemoryStorage(contents);
+        store = await openCloudStore(MemoryEngine(disk));
+        savedValue(
+          await store.editLibrary([
+            PutFolder(ReadableFolder(publicId: 'f1', name: 'f1')),
+          ]),
+        );
+        final before = disk.contents;
+        expect(
+          await store.editLibrary([const MoveStrategy(strategyId, 'f1')]),
+          isA<Refused<LibraryEdited, LibraryRefusal>>(),
+        );
+        expect(sameContents(before, disk.contents), isTrue);
+      });
+    });
+
+    test('import takes a page read the header does not list, as a later '
+        'record does', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      final rows = initialRows();
+      final more = strategyRows(
+        pages: [...rows.pages, page('page-z', sortIndex: 2)],
+        elements: [
+          ...rows.elements,
+          element('z1', pageId: 'page-z'),
+        ],
+      );
+      expect(
+        await store.addCloudStrategy(headerReadOf(rows), [
+          ...pageReadsOf(rows),
+          pageReadOf(more, 'page-z') as PageRead,
+        ]),
+        isA<Saved<StrategySummary, LibraryRefusal>>(),
+      );
+    });
+
+    group('the list before a queue is opened', () {
+      test('a clean stored cloud summary is unverified until its queue is '
+          'opened, then it is good', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        store = await openCloudStore(MemoryEngine(storage));
+        expect(listOf(store).strategies.single.sync, isA<CloudUnverified>());
+        await store.readStrategy(strategyId);
+        expect(
+          listOf(store).strategies.single.sync,
+          isA<KeptInCloud>().having(
+            (sync) => sync.tally.standing,
+            'standing',
+            Standing.good,
+          ),
+        );
+      });
+
+      test('stored pending work shows at once', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        savedValue(await store.commit(strategyId, movePatch('m')));
+        await store.close();
+        store = await openCloudStore(MemoryEngine(storage));
+        expect(
+          listOf(store).strategies.single.sync,
+          isA<KeptInCloud>().having((sync) => sync.tally.total, 'total', 1),
+        );
+      });
+
+      test('a clean summary over a queue row from a newer build goes from '
+          'unverified to held, never to good', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        contents[area]![PendingName(5).name] = '{"version":99}';
+        store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+        expect(listOf(store).strategies.single.sync, isA<CloudUnverified>());
+        await store.readStrategy(strategyId);
+        expect(
+          listOf(store).strategies.single.sync,
+          isA<KeptInCloud>().having(
+            (sync) => sync.tally.standing,
+            'standing',
+            Standing.held,
+          ),
+        );
+      });
+    });
   });
 }
 

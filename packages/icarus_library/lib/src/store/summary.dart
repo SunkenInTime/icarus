@@ -27,6 +27,10 @@ final class KeptInCloud extends SummarySync {
   final Tally tally;
 }
 
+final class CloudUnverified extends SummarySync {
+  const CloudUnverified();
+}
+
 sealed class Readability {
   const Readability();
 }

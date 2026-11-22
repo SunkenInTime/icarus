@@ -23,8 +23,18 @@ void _versioned(JsonFields fields, String what) {
 
 int _millis(DateTime time) => time.millisecondsSinceEpoch;
 
+const _latestStoredTime = latestTime - 366 * Duration.millisecondsPerDay;
+
 bool _isTime(Object? raw) =>
-    raw is num && isSafeWhole(raw) && raw.abs() <= latestTime;
+    raw is num && isSafeWhole(raw) && raw.abs() <= _latestStoredTime;
+
+DateTime _timeAt(JsonFields fields, String key) => switch (fields.json[key]) {
+  final num raw when _isTime(raw) => _time(raw),
+  _ => () {
+    fields.reject('a time out of range for "$key"');
+    return DateTime.utc(1970);
+  }(),
+};
 
 DateTime _time(num value) =>
     DateTime.fromMillisecondsSinceEpoch(value.toInt(), isUtc: true);
@@ -465,7 +475,7 @@ CloudRowReading<AttemptFact> attemptFromText(int number, String text) =>
         if (number < 1) fields.reject('attempts are numbered from 1');
         final clientId = fields.string('clientId');
         final build = fields.string('build');
-        final at = fields.time('at');
+        final at = _timeAt(fields, 'at');
         final ops = <StrategyOp>[];
         final ids = <String>{};
         if (fields.json['ops'] case final List<Object?> list
@@ -600,7 +610,7 @@ CloudRowReading<LandedWork> landedFromText(
         return false;
       }(),
     };
-    final firstSentAt = fields.time('firstSentAt');
+    final firstSentAt = _timeAt(fields, 'firstSentAt');
     final produced = _producesOfKey(fields, 'produced');
     final shownWithout = switch (fields.json['shownWithout']) {
       null => false,

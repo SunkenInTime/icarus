@@ -123,6 +123,10 @@ final class StoreModel {
   bool userRemoved = false;
   bool teammateEdited = false;
   String openPage = 'page-a';
+  int live = 0;
+
+  Future<void> liveIsCurrent() async =>
+      live = (await sync()).queue.session.number;
 
   String fresh(String prefix) => '$prefix${nextId++}';
 
@@ -157,6 +161,7 @@ final class StoreModel {
       }
       if (await settled(result, 'add the cloud strategy')) {
         await diskEqualsMemory('add the cloud strategy');
+        await liveIsCurrent();
         break;
       }
       count('add tried again');
@@ -183,6 +188,9 @@ final class StoreModel {
           await open();
         case NotSaved():
           continue;
+        case Saved():
+          await liveIsCurrent();
+          return;
         case _:
           return;
       }
@@ -276,28 +284,29 @@ final class StoreModel {
         '${disk.groups.keys} vs ${memory.shown.content.keys}',
       );
     }
-    final mine = await visible();
+    final mine = await listMatchesPages(label);
     final summary = listOf(store).strategies.single;
-    for (final page in mine.pages) {
-      if (page is! LivePage) continue;
-      var tally = PageTally.empty;
-      for (final row in mine.elementsOn(page.publicId)) {
-        tally = tally.plus(row, 1);
-      }
-      if (summary.tallies[page.publicId] ?? PageTally.empty case final listed
-          when listed != tally) {
-        throw StateError(
-          'after $label the list counts ${listed.toJson()} on ${page.publicId}, '
-          'the page draws ${tally.toJson()}',
-        );
-      }
-    }
     final reopened = await openCloudStore(
       MemoryEngine(MemoryStorage(storage.contents)),
       build: build,
       clock: () => clock,
     );
-    final listed = listOf(reopened).strategies.single;
+    final listedAsShown = listOf(reopened).strategies.single;
+    final listed = switch (listedAsShown.sync) {
+      CloudUnverified() => () {
+        if (summary.sync case KeptInCloud(
+          :final tally,
+        ) when tally.standing != Standing.good || tally.total > 0) {
+          throw StateError(
+            'after $label a reopen lists unverified work that memory '
+            'counts as $tally',
+          );
+        }
+        count('reopened lists shown unverified');
+        return listedAsShown.withSync(summary.sync);
+      }(),
+      _ => listedAsShown,
+    };
     if (listed != summary) {
       throw StateError(
         'after $label the stored summary is ${listed.toJson()}, '
@@ -323,7 +332,27 @@ final class StoreModel {
     count('disk checked against memory');
   }
 
-  Future<Recorded?> record(List<QueueEvent> events, String label) async {
+  Future<void> memoryAsBefore((CloudQueue, Object) before, String label) async {
+    final (queue, rows) = before;
+    if ((await sync()).queue != queue ||
+        !const DeepCollectionEquality().equals(
+          rowsWithRevisions(await visible()),
+          rows,
+        )) {
+      throw StateError('after $label was not stored, memory changed');
+    }
+    count('memory checked after a call that was not stored');
+  }
+
+  Future<(CloudQueue, Object)> snapshot() async =>
+      ((await sync()).queue, rowsWithRevisions(await visible()));
+
+  Future<Recorded?> record(
+    List<QueueEvent> events,
+    String label, {
+    bool again = true,
+  }) async {
+    final before = await snapshot();
     final result = await store.record(strategyId, events);
     log.add(
       '$label -> ${switch (result) {
@@ -335,13 +364,45 @@ final class StoreModel {
         final other => describeSaving(other),
       }}',
     );
+    if (result case NotSaved() || Refused()) {
+      await memoryAsBefore(before, label);
+    }
+    if (result case NotSaved() when again) {
+      count('events delivered again after a commit that was not stored');
+      return record(events, '$label again', again: false);
+    }
     if (!await settled(result, label)) return null;
     await diskEqualsMemory(label);
     final recorded = (result as Saved<Recorded, CommitRefusal>).value;
+    if (events.any(
+      (event) => event is AppRestarted || event is ConnectionReturned,
+    )) {
+      live = (await sync()).queue.session.number;
+    }
     for (final outcome in recorded.outcomes) {
       if (outcome case ReportApplied()) count('recorded');
     }
     return recorded;
+  }
+
+  Future<StrategyRowSet> listMatchesPages(String label) async {
+    final mine = await visible();
+    final summary = listOf(store).strategies.single;
+    for (final page in mine.pages) {
+      if (page is! LivePage) continue;
+      var tally = PageTally.empty;
+      for (final row in mine.elementsOn(page.publicId)) {
+        tally = tally.plus(row, 1);
+      }
+      if (summary.tallies[page.publicId] ?? PageTally.empty case final listed
+          when listed != tally) {
+        throw StateError(
+          'after $label the list counts ${listed.toJson()} on ${page.publicId}, '
+          'the page draws ${tally.toJson()}',
+        );
+      }
+    }
+    return mine;
   }
 
   Future<StrategyRowSet> visible() async {
@@ -349,12 +410,21 @@ final class StoreModel {
       await reading(() => store.readStrategy(strategyId)),
     );
     final elements = <ElementRow>[];
+    final drawnOn = <String, String>{};
     for (final page in content.pages) {
-      elements.addAll(
-        pageOf(
-          await reading(() => store.readPage(strategyId, page.publicId)),
-        ).elements,
-      );
+      for (final row in pageOf(
+        await reading(() => store.readPage(strategyId, page.publicId)),
+      ).elements) {
+        if (row is LiveElement) {
+          if (drawnOn[row.publicId] case final other?) {
+            throw StateError(
+              '${row.publicId} is drawn on $other and ${page.publicId}',
+            );
+          }
+          drawnOn[row.publicId] = page.publicId;
+        }
+        elements.add(row);
+      }
     }
     return StrategyRowSet(
       strategy: headerOf(content),
@@ -430,6 +500,8 @@ final class StoreModel {
         expectedPageRevision: page.revision,
         name: 'Renamed ${random.nextInt(100)}',
       );
+    } else if (roll == 12 && live.isNotEmpty && pages.length > 1) {
+      op = moveToAnotherPage(opId, pick(live), pages);
     } else if (roll != 11 && pages.length < 4) {
       op = pageAdd(
         opId,
@@ -440,7 +512,32 @@ final class StoreModel {
     } else {
       return;
     }
+    await commitOp(op);
+  }
+
+  ElementPatchOp moveToAnotherPage(
+    String opId,
+    LiveElement target,
+    List<String> pages,
+  ) {
+    count('moves to another page');
+    return ElementPatchOp(
+      opId: opId,
+      elementPublicId: target.publicId,
+      expectedElementRevision: target.revision,
+      pagePublicId: pick([
+        for (final page in pages)
+          if (page != target.pagePublicId) page,
+      ]),
+      payload: target.payload,
+      sortIndex: 0,
+    );
+  }
+
+  Future<bool> commitOp(StrategyOp op) async {
+    final opId = op.opId;
     final before = {for (final entry in (await sync()).queue.entries) entry.id};
+    final unchanged = await snapshot();
     final result = await store.commit(strategyId, op);
     log.add(
       'edit $opId ${op.type.wireName} ${targetOf(op)} -> ${describeSaving(result)}',
@@ -449,6 +546,7 @@ final class StoreModel {
       case Saved():
         reference.add(op);
         await diskEqualsMemory('edit $opId');
+        return true;
       case SaveInDoubt():
         count('save in doubt');
         await reopen('edit $opId was in doubt');
@@ -461,8 +559,98 @@ final class StoreModel {
         log.add('edit $opId ${landed ? 'landed' : 'did not land'}');
         count(landed ? 'doubtful edit landed' : 'doubtful edit lost');
         if (landed) reference.add(op);
-      case NothingToSave() || Refused() || NotSaved():
-        break;
+        return landed;
+      case Refused() || NotSaved():
+        await memoryAsBefore(unchanged, 'edit $opId');
+        return false;
+      case NothingToSave():
+        return false;
+    }
+  }
+
+  Future<void> landNow() async {
+    await claim();
+    while (inFlight.isNotEmpty) {
+      final (attempt, owner, ops) = inFlight.removeAt(0);
+      await record([
+        for (final op in ops) OpAnswered(attempt, server.apply(owner, op)),
+      ], 'answers for $attempt');
+    }
+  }
+
+  Future<(List<String>, List<LiveElement>)> livePagesAndElements() async {
+    final rows = await visible();
+    final pages = [
+      for (final page in rows.pages)
+        if (page is LivePage) page.publicId,
+    ];
+    return (
+      pages,
+      [
+        for (final row in rows.elements)
+          if (row case LiveElement(
+            :final pagePublicId,
+          ) when pages.contains(pagePublicId))
+            row,
+      ],
+    );
+  }
+
+  Future<void> twoAcceptedMoves() async {
+    final (pages, live) = await livePagesAndElements();
+    if (pages.length < 2 || live.isEmpty) return;
+    final target = pick(live);
+    if (!await commitOp(moveToAnotherPage(fresh('op'), target, pages))) return;
+    await landNow();
+    if ((await visible()).element(target.publicId) case final LiveElement row) {
+      if (!await commitOp(moveToAnotherPage(fresh('op'), row, pages))) return;
+      await landNow();
+      count('two accepted moves of one row');
+    }
+  }
+
+  Future<void> editOfAcceptedAdd() async {
+    final (pages, _) = await livePagesAndElements();
+    if (pages.isEmpty) return;
+    final id = fresh('e');
+    if (!await commitOp(
+      elementAdd(fresh('op'), elementId: id, pageId: pick(pages)),
+    )) {
+      return;
+    }
+    await landNow();
+    if ((await visible()).element(id) case final LiveElement row) {
+      if (await commitOp(
+        movePatch(
+          fresh('op'),
+          elementId: id,
+          expected: row.revision,
+          x: random.nextInt(1000).toDouble(),
+        ),
+      )) {
+        count('edits of a row shown only by accepted work');
+      }
+    }
+  }
+
+  Future<void> pageGoneUnderQueuedMove() async {
+    if (!teammates) return;
+    final (pages, live) = await livePagesAndElements();
+    if (pages.length < 2 || live.isEmpty) return;
+    final target = pick(live);
+    if (!await commitOp(moveToAnotherPage(fresh('op'), target, pages))) return;
+    final source = target.pagePublicId;
+    final delete = pageDelete(
+      fresh('t'),
+      source,
+      expected: server.rows.strategy.revision,
+    );
+    if (applyOp(server.rows, delete) case final OpApplied done) {
+      server.rows = server.rows.withRows(done.rows);
+      teammateEdited = true;
+      log.add('teammate deletes $source under a queued move');
+      await readOne(PageGone(source), 'page $source is gone');
+      count('pages gone under a queued move');
     }
   }
 
@@ -522,10 +710,9 @@ final class StoreModel {
     }
     final answers = [for (final op in ops) server.apply(owner, op)];
     if (random.nextInt(4) == 0) {
-      final session = (await sync()).queue.session.number;
       await record([
         for (final answer in answers) OpAnswered(attempt, answer),
-        BaseArrived(headerReadOf(server.rows), session: session),
+        BaseArrived(headerReadOf(server.rows), session: live),
         const ConnectionReturned(),
       ], 'answers for $attempt with a header read in one call');
       count('mixed event lists');
@@ -551,8 +738,7 @@ final class StoreModel {
   }
 
   Future<void> readOne(ArrivedBase base, String label) async {
-    final session = (await sync()).queue.session.number;
-    await record([BaseArrived(base, session: session)], label);
+    await record([BaseArrived(base, session: live)], label);
   }
 
   Future<void> lane() async {
@@ -595,10 +781,9 @@ final class StoreModel {
       ],
     }.where((page) => server.rows.page(page) != null).toSet();
     if (random.nextInt(3) == 0 && pages.isNotEmpty) {
-      final session = queue.session.number;
       await record([
         for (final page in pages)
-          BaseArrived(pageReadOf(server.rows, page), session: session),
+          BaseArrived(pageReadOf(server.rows, page), session: live),
       ], 'read ${pages.length} pages in one call');
       count('page reads in one call');
     } else {
@@ -704,11 +889,11 @@ final class StoreModel {
     if (added is! Saved<StrategySummary, LibraryRefusal>) {
       throw StateError('adding the strategy again: $added');
     }
+    await liveIsCurrent();
     final later = reads.skip(now.length).toList();
     if (later.isNotEmpty) {
-      final session = (await sync()).queue.session.number;
       await record([
-        for (final read in later) BaseArrived(read, session: session),
+        for (final read in later) BaseArrived(read, session: live),
       ], 'the rest of the import in a later call');
       count('imports in several calls');
     }
@@ -733,6 +918,12 @@ final class StoreModel {
 
   Future<void> newerRowArrives() async {
     faults = false;
+    final (pages, _) = await livePagesAndElements();
+    if (pages.isNotEmpty) {
+      await commitOp(
+        elementAdd(fresh('op'), elementId: fresh('e'), pageId: pick(pages)),
+      );
+    }
     await store.close();
     final contents = editable(storage.contents);
     final area = strategyArea(strategyId);
@@ -744,6 +935,8 @@ final class StoreModel {
     if (content.sync is! CloudHeld) {
       throw StateError('a newer queue row did not hold the strategy');
     }
+    await listMatchesPages('a newer row held the queue');
+    count('held queues compared against the list');
     final before = storage.contents;
     final refused = await store.commit(
       strategyId,
@@ -909,6 +1102,12 @@ final class StoreModel {
         await addedAgainWithAReadInFlight();
       case 18 when random.nextInt(3) == 0:
         await sessionOpenedThenReopened();
+      case 18 when random.nextInt(2) == 0:
+        await switch (random.nextInt(3)) {
+          0 => twoAcceptedMoves(),
+          1 => editOfAcceptedAdd(),
+          _ => pageGoneUnderQueuedMove(),
+        };
       case 18:
         final pages = [
           for (final page in (await visible()).pages) page.publicId,
@@ -1059,6 +1258,13 @@ void main() {
       'page reads in one call',
       'added again with a read in flight',
       'held by a newer row',
+      'moves to another page',
+      'two accepted moves of one row',
+      'edits of a row shown only by accepted work',
+      'pages gone under a queued move',
+      'held queues compared against the list',
+      'events delivered again after a commit that was not stored',
+      'memory checked after a call that was not stored',
       'strategies gone',
     ]) {
       expect(counted[what] ?? 0, greaterThan(0), reason: what);

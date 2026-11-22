@@ -316,9 +316,14 @@ final class LibraryStore {
   final _strategies = <String, LoadedStrategy>{};
   final _queues = <String, _LoadedQueue>{};
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
-  var _numbersStored = const Counters(nextAttempt: 1, nextSession: 1);
+  Counters? _numbersStored;
   String? _numbersUnreadable;
+
+  String? get _numbersProblem =>
+      _numbersUnreadable ??
+      (_numbersStored == null ? 'the numbers row is missing' : null);
   final _unsaved = <String>{};
+  final _unchecked = <String>{};
   final _changes = StreamController<StoreChange>.broadcast();
 
   Stream<StoreChange> get changes => _changes.stream;
@@ -329,7 +334,13 @@ final class LibraryStore {
       _Shut(:final failure) => LibraryShut(failure),
       _Ready() => LibraryOpen(
         LibraryList(
-          strategies: _summaries.values.toList(),
+          strategies: [
+            for (final MapEntry(key: digest, value: summary)
+                in _summaries.entries)
+              _unchecked.contains(digest)
+                  ? summary.withSync(const CloudUnverified())
+                  : summary,
+          ],
           unreadableStrategies: _unreadable.values.toList(),
           folders: _folders.values.toList(),
           unplaced: _unplaced.values.toList(),
@@ -553,6 +564,11 @@ final class LibraryStore {
                 case Read(value: final summary)
                     when namesId(digest, summary.publicId):
                   _summaries[digest] = summary;
+                  if (summary.sync case KeptInCloud(
+                    :final tally,
+                  ) when tally.standing == Standing.good && tally.total == 0) {
+                    _unchecked.add(digest);
+                  }
                 case Read() || CouldNotRead():
                   toRebuild.add(digest);
               }
@@ -1532,6 +1548,15 @@ final class LibraryStore {
           return NotSaved(failure);
         }
         switch (await _strategy(strategyPublicId)) {
+          case Found(:final value) when value.keeping == Keeping.cloud:
+            switch (await _queueOf(value)) {
+              case _QueueHeld(:final rows):
+                return Refused(QueueHeld(rows));
+              case _QueueNotRead(:final failure):
+                return NotSaved(failure);
+              case _QueueLoaded():
+                break;
+            }
           case Found():
             break;
           case NotFound():
@@ -1938,10 +1963,13 @@ final class _LibraryEdit {
             _removedUnreadable.containsKey(digest)) {
           return _Stop(Refused(NoSuchStrategy(strategyPublicId)));
         }
-        if (_summaryWithId(strategyPublicId) case StrategySummary(
-          sync: KeptInCloud(),
-        )) {
-          return _Stop(Refused(KeptInTheCloud(strategyPublicId)));
+        switch (await _store._strategy(strategyPublicId)) {
+          case Found(:final value) when value.keeping == Keeping.cloud:
+            return _Stop(Refused(KeptInTheCloud(strategyPublicId)));
+          case NotRead(:final failure):
+            return _Stop(NotSaved(failure));
+          case Found() || NotFound() || InUnreadableStrategy():
+            break;
         }
         if (folderPublicId != null) {
           if (_filingRefusal(folderPublicId, _folders) case final refusal?) {
