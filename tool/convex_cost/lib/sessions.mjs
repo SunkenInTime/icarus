@@ -460,6 +460,27 @@ function openScenario(key, title, about) {
   };
 }
 
+function pageListScenario(key, title, about) {
+  return {
+    title,
+    about,
+    world: "team",
+    async run({ env, world }) {
+      const strategy = world[key];
+      const args = { strategyPublicId: strategy.publicId };
+      await rename(strategy);
+      const shell = await metered([world.coach], env, () => world.coach.query("strategy:getShell", args));
+      await rename(strategy);
+      const result = await metered([world.coach], env, () => world.coach.query("strategy:getPageList", args));
+      result.notes = [
+        `strategy:getShell on the same strategy read ${shell.metrics.readBytes} B and returned ` +
+          `${shell.metrics.returnBytes} B in ${shell.metrics.functionCalls} call (not budgeted here)`,
+      ];
+      return result;
+    },
+  };
+}
+
 function reopenScenario(desktop) {
   return {
     world: "team",
@@ -629,6 +650,20 @@ export const SESSIONS = {
     "large",
     "Open a large strategy cold",
     "The same open on a strategy of 20 pages and 300 items a page, one item in ten a freehand drawing of 250 points.",
+  ),
+
+  pageListTypical: pageListScenario(
+    "typical",
+    "Read a typical strategy's page list",
+    "One strategy:getPageList of a strategy of 4 pages after it changed: the strategy row, its live pages in order and " +
+      "each page's settings, read together. No shipped client calls it; the cloud queue will read it where today's " +
+      "editor reads strategy:getShell. The note gives getShell's cost on the same strategy.",
+  ),
+
+  pageListLarge: pageListScenario(
+    "large",
+    "Read a large strategy's page list",
+    "The same read on a strategy of 20 pages.",
   ),
 
   pageSwitchNew: {
