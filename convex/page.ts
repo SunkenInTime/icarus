@@ -1,7 +1,7 @@
 import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { assertStrategyReadable } from "./lib/auth";
+import { assertCallerIsAccount, assertStrategyReadable } from "./lib/auth";
 import { elementFieldLevelArg } from "./lib/elementFields";
 import { getPageByPublicId, getStrategyByPublicId } from "./lib/entities";
 import { errorWithCode, internalError } from "./lib/errors";
@@ -32,6 +32,7 @@ const pageArgs = {
   strategyPublicId: v.string(),
   pagePublicId: v.string(),
   shareToken: v.optional(v.string()),
+  accountSubject: v.optional(v.string()),
 };
 
 /// The page [args] names, once the caller may read its strategy.
@@ -42,9 +43,13 @@ async function readablePage(
     strategyPublicId: string;
     pagePublicId: string;
     shareToken?: string;
+    accountSubject?: string;
   },
 ) {
   assertSupportedCloudProtocol(args.clientProtocolVersion);
+  if (args.accountSubject !== undefined) {
+    await assertCallerIsAccount(ctx, args.accountSubject);
+  }
   const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
   await assertStrategyReadable(ctx, strategy, args.shareToken);
   const page = await getPageByPublicId(ctx, args.pagePublicId);

@@ -1182,7 +1182,7 @@ class _HeldRefusalRepository extends _RecordingRepository {
     throw const ConvexFunctionException(
       code: ConvexErrorCode.forbidden,
       rawCode: 'FORBIDDEN',
-      message: 'Forbidden: these changes belong to a different account',
+      message: 'Forbidden: signed in as a different account',
     );
   }
 }

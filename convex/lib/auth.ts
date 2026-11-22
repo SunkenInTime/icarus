@@ -99,7 +99,7 @@ export async function assertCallerIsAccount(
   if (identity.subject !== accountSubject) {
     throw errorWithCode(
       "FORBIDDEN",
-      "Forbidden: these changes belong to a different account",
+      "Forbidden: signed in as a different account",
     );
   }
 }
