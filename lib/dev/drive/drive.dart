@@ -170,6 +170,8 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
@@ -1507,6 +1509,15 @@ Future<void> _run(Map<String, dynamic> step) async {
             role: value as String,
           );
       await File(step['file'] as String).writeAsString(code);
+    case 'openStoredCloudStrategy':
+      unawaited(
+        Navigator.of(appNavigatorKey.currentContext!).push(
+          StrategyView.route(
+            initialStrategyId: storedCloudStrategy(c),
+            initialStrategySource: StrategySource.cloud,
+          ),
+        ),
+      );
     case 'openShareLink':
       final code = (await File(value as String).readAsString()).trim();
       await c.read(shareLinkControllerProvider.notifier).handleIncomingUri(

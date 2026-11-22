@@ -4,6 +4,25 @@ import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
+import 'package:icarus_library/icarus_library.dart';
+
+String storedCloudStrategy(ProviderContainer c) {
+  final state = c.read(cloudShadowProvider);
+  if (state is! CloudShadowRunning) {
+    throw StateError('the cloud store shadow is not running');
+  }
+  final library = state.shadow.store.library;
+  if (library is! LibraryOpen) throw StateError('the store is shut');
+  final cloud = [
+    for (final summary in library.list.strategies)
+      if (summary.sync is KeptInCloud || summary.sync is CloudUnverified)
+        summary.publicId,
+  ];
+  if (cloud.length != 1) {
+    throw StateError('the store holds ${cloud.length} cloud strategies');
+  }
+  return cloud.single;
+}
 
 String cloudSwitchName(CloudStoreSwitch choice) => switch (choice) {
       CloudStoreOff() => 'off',
