@@ -148,18 +148,35 @@ class ConvexClient implements ConvexClientValueSource {
     return _NativeSubscriptionHandle(handle);
   }
 
+  int _authChanges = 0;
+  int _authSettledAt = 0;
+
+  int get authChanges => _authChanges;
+
+  bool get authSettled => _authSettledAt == _authChanges;
+
+  Future<T> _changingAuth<T>(Future<T> Function() change) async {
+    final mine = ++_authChanges;
+    try {
+      return await change();
+    } finally {
+      if (_authChanges == mine) _authSettledAt = mine;
+    }
+  }
+
   Future<AuthHandleWrapper> setAuthWithRefresh({
     required Future<String?> Function() fetchToken,
     void Function(bool isAuthenticated)? onAuthChange,
-  }) async {
-    final handle = await _client.setAuthWithRefresh(
-      fetchToken: fetchToken,
-      onAuthChange: onAuthChange,
-    );
-    return _NativeAuthHandleWrapper(handle);
-  }
+  }) =>
+      _changingAuth(() async {
+        final handle = await _client.setAuthWithRefresh(
+          fetchToken: fetchToken,
+          onAuthChange: onAuthChange,
+        );
+        return _NativeAuthHandleWrapper(handle, () => _authChanges++);
+      });
 
-  Future<void> clearAuth() => _client.clearAuth();
+  Future<void> clearAuth() => _changingAuth(_client.clearAuth);
 
   Future<bool> reconnect() => _client.reconnect();
 
@@ -275,10 +292,14 @@ class _NativeSubscriptionHandle implements SubscriptionHandle {
 }
 
 class _NativeAuthHandleWrapper implements AuthHandleWrapper {
-  _NativeAuthHandleWrapper(this._handle);
+  _NativeAuthHandleWrapper(this._handle, this._disposing);
 
   final native.AuthHandleWrapper _handle;
+  final void Function() _disposing;
 
   @override
-  void dispose() => _handle.dispose();
+  void dispose() {
+    _disposing();
+    _handle.dispose();
+  }
 }

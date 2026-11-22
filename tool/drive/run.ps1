@@ -68,13 +68,13 @@ function Start-Instance([string]$name, [string]$scriptPath, [string]$email, [str
   $env:ICARUS_DRIVE_SESSION = Join-Path $Out "session-$name.json"
   $env:ICARUS_DRIVE_SET_CLIPBOARD = Join-Path $PSScriptRoot 'set-clipboard.ps1'
   $env:ICARUS_DRIVE_EMAIL = $email
-  $env:ICARUS_DRIVE_PASSWORD = if ($email) { Get-Password $email } else { $null }
   $env:ICARUS_DRIVE_EMAIL_2 = $second
-  $env:ICARUS_DRIVE_PASSWORD_2 = if ($second) { Get-Password $second } else { $null }
   $appArgs = @('"--hive-store-dir={0}"' -f (Join-Path $Out "store-$name"))
   if ($LibraryStore) { $appArgs += "--library-store=$LibraryStore" }
   if ($CloudStore) { $appArgs += "--cloud-store=$CloudStore" }
   try {
+    $env:ICARUS_DRIVE_PASSWORD = if ($email) { Get-Password $email } else { $null }
+    $env:ICARUS_DRIVE_PASSWORD_2 = if ($second) { Get-Password $second } else { $null }
     $process = Start-Process -FilePath $exePath -PassThru `
       -ArgumentList $appArgs `
       -RedirectStandardOutput (Join-Path $Out "$name-app.out") `

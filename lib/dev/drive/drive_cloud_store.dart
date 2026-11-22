@@ -7,7 +7,7 @@ import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-String storedCloudStrategy(ProviderContainer c) {
+CloudShadow _running(ProviderContainer c) {
   if (!c.exists(cloudShadowProvider)) {
     throw StateError('the cloud store shadow is off');
   }
@@ -15,17 +15,57 @@ String storedCloudStrategy(ProviderContainer c) {
   if (state is! CloudShadowRunning) {
     throw StateError('the cloud store shadow is not running');
   }
-  final library = state.shadow.store.library;
+  return state.shadow;
+}
+
+List<String> _storedCloudStrategies(LibraryStore store) {
+  final library = store.library;
   if (library is! LibraryOpen) throw StateError('the store is shut');
-  final cloud = [
+  return [
     for (final summary in library.list.strategies)
       if (summary.sync is KeptInCloud || summary.sync is CloudUnverified)
         summary.publicId,
   ];
+}
+
+String storedCloudStrategy(ProviderContainer c) {
+  final cloud = _storedCloudStrategies(_running(c).store);
   if (cloud.length != 1) {
     throw StateError('the store holds ${cloud.length} cloud strategies');
   }
   return cloud.single;
+}
+
+Future<String> storedPayloadVersion(
+  ProviderContainer c,
+  String itemId,
+  int version,
+) async {
+  final shadow = _running(c);
+  await shadow.idle;
+  final store = shadow.store;
+  for (final strategyId in _storedCloudStrategies(store)) {
+    final read = await store.readStrategy(strategyId);
+    if (read is! Found<StrategyContent>) continue;
+    for (final page in read.value.pages) {
+      final content = await store.readPage(strategyId, page.publicId);
+      if (content is! Found<PageContent>) continue;
+      for (final element in content.value.elements) {
+        if (element case LiveElement(:final publicId, :final payload)
+            when publicId == itemId) {
+          if (payload.payloadVersion != version) {
+            throw StateError(
+              'the store holds $itemId at payload version '
+              '${payload.payloadVersion}, not $version',
+            );
+          }
+          return 'CLOUDSTORE the store holds $itemId at payload version '
+              '${payload.payloadVersion}, as the server sent it';
+        }
+      }
+    }
+  }
+  throw StateError('the store holds no item $itemId');
 }
 
 final class CloudStoreLine {
@@ -56,20 +96,8 @@ final class CloudStoreLog {
     ];
     final equal = settled.where((entry) => entry.verdict is ComparedEqual);
     final skipped = settled.where((entry) => entry.verdict is Skipped);
-    final failedReads = <String, int>{};
-    for (final report in reports.whereType<ShadowReadFailed>()) {
-      final line = 'the page list watch of ${report.strategyId} failed: '
-          '${report.error}';
-      failedReads[line] = (failedReads[line] ?? 0) + 1;
-    }
     return [
-      for (final report in reports)
-        if (report is! ShadowReadFailed) _reportLine(report),
-      for (final MapEntry(:key, :value) in failedReads.entries)
-        CloudStoreLine(
-          'CLOUDSTORE $key${value > 1 ? ' ($value times)' : ''}',
-          problem: false,
-        ),
+      for (final report in reports) _reportLine(report),
       for (final entry in settled) ..._problemLines(entry),
       if (equal.isNotEmpty || skipped.isNotEmpty)
         CloudStoreLine(
@@ -80,12 +108,19 @@ final class CloudStoreLog {
     ];
   }
 
-  Future<List<CloudStoreLine>> end(ProviderContainer c) async {
+  Future<List<CloudStoreLine>> end(
+    ProviderContainer c, {
+    required DateTime lastStep,
+  }) async {
     if (!isOn(c)) return const [];
     switch (c.read(cloudShadowProvider)) {
       case CloudShadowIdle():
         return const [
           CloudStoreLine('CLOUDSTORE never started', problem: true),
+        ];
+      case CloudShadowFailed(:final reason):
+        return [
+          CloudStoreLine('CLOUDSTORE could not start: $reason', problem: true),
         ];
       case CloudShadowNotOpened(:final opened):
         return [
@@ -95,42 +130,58 @@ final class CloudStoreLog {
           ),
         ];
       case CloudShadowRunning(:final shadow):
-        final finished = await shadow.idle
-            .then((_) => true)
-            .timeout(_finalWait, onTimeout: () => false);
+        await c.read(cloudShadowProvider.notifier).stopSubscriptions();
+        final left = _finalWait - DateTime.now().difference(lastStep);
+        final finished = await shadow.idle.then((_) => true).timeout(
+              left.isNegative ? Duration.zero : left,
+              onTimeout: () => false,
+            );
         final ledger = shadow.ledger;
-        final equal = ledger.where((entry) => entry.verdict is ComparedEqual);
-        final skipped = ledger.where((entry) => entry.verdict is Skipped);
-        final different =
-            ledger.where((entry) => entry.verdict is ComparedDifferent);
-        final notRecorded =
-            ledger.where((entry) => entry.verdict is NotRecorded);
-        final waiting = ledger.where((entry) => entry.verdict is NotProcessed);
+        int count<T extends Verdict>() =>
+            ledger.where((entry) => entry.verdict is T).length;
+        final open = ledger.where((entry) => entry.verdict is NotProcessed);
+        final strategies = {for (final entry in ledger) entry.strategyId};
+        final unchecked = [
+          for (final strategyId in strategies)
+            if (!ledger.any(
+              (entry) =>
+                  entry.strategyId == strategyId &&
+                  entry.verdict is ComparedEqual,
+            ))
+              strategyId,
+        ];
         return [
           ...drain(c),
           if (!finished)
             CloudStoreLine(
-              'CLOUDSTORE the shadow had work left after '
-              '${_finalWait.inSeconds} s',
+              'CLOUDSTORE the shadow had work left '
+              '${_finalWait.inSeconds} s after the last step',
               problem: true,
             ),
-          for (final entry in waiting)
+          for (final entry in open)
             CloudStoreLine(
               'CLOUDSTORE not processed: ${entry.what} of ${entry.strategyId}',
               problem: true,
             ),
-          CloudStoreLine(
-            'CLOUDSTORE verdict: ${ledger.length} results delivered, '
-            '${equal.length} compared equal, ${different.length} compared '
-            'different, ${notRecorded.length} not recorded, ${waiting.length} '
-            'not processed${_skips(skipped)}',
-            problem: false,
-          ),
-          if (equal.isEmpty)
-            const CloudStoreLine(
-              'CLOUDSTORE no result was compared',
+          for (final strategyId in unchecked)
+            CloudStoreLine(
+              'CLOUDSTORE no result of $strategyId was compared equal',
               problem: true,
             ),
+          if (ledger.isEmpty)
+            const CloudStoreLine(
+              'CLOUDSTORE no result was delivered',
+              problem: true,
+            ),
+          CloudStoreLine(
+            'CLOUDSTORE verdict: ${ledger.length} results delivered for '
+            '${strategies.length} strategies, ${count<ComparedEqual>()} '
+            'compared equal, ${count<ComparedDifferent>()} compared '
+            'different, ${count<RefusedByStore>()} refused by the store, '
+            '${count<ReadFailed>()} failed, ${open.length} not processed'
+            '${_skips(ledger.where((entry) => entry.verdict is Skipped))}',
+            problem: false,
+          ),
         ];
     }
   }
@@ -149,20 +200,30 @@ final class CloudStoreLog {
     }
     switch (await openLibraryStore(state.file, build: state.shadow.build)) {
       case LibraryStoreReady(:final store, :final closeEngine):
-        final differences = await state.shadow.differencesIn(store);
+        final compared = await state.shadow.readBack(store);
         await store.close();
         await closeEngine();
         return [
-          if (differences.isEmpty)
+          if (compared.isEmpty)
             const CloudStoreLine(
-              'CLOUDSTORE read back after reopening the store: equal',
-              problem: false,
-            ),
-          for (final difference in differences)
-            CloudStoreLine(
-              'CLOUDSTORE read back after reopening the store: $difference',
+              'CLOUDSTORE read back had no strategy to compare',
               problem: true,
             ),
+          for (final MapEntry(key: strategyId, value: differences)
+              in compared.entries) ...[
+            if (differences.isEmpty)
+              CloudStoreLine(
+                'CLOUDSTORE read back after reopening the store: $strategyId '
+                'equal, whole',
+                problem: false,
+              ),
+            for (final difference in differences)
+              CloudStoreLine(
+                'CLOUDSTORE read back after reopening the store: $strategyId: '
+                '$difference',
+                problem: true,
+              ),
+          ],
         ];
       case final other:
         return [
@@ -198,10 +259,16 @@ List<CloudStoreLine> _problemLines(LedgerEntry entry) =>
               problem: true,
             ),
         ],
-      NotRecorded(:final why) => [
+      RefusedByStore(:final why) => [
           CloudStoreLine(
-            'CLOUDSTORE not recorded: ${entry.what} of ${entry.strategyId}: '
-            '$why',
+            'CLOUDSTORE refused by the store: ${entry.what} of '
+            '${entry.strategyId}: $why',
+            problem: true,
+          ),
+        ],
+      ReadFailed(:final why) => [
+          CloudStoreLine(
+            'CLOUDSTORE failed: ${entry.what} of ${entry.strategyId}: $why',
             problem: true,
           ),
         ],
@@ -218,7 +285,6 @@ CloudStoreLine _reportLine(CloudShadowReport report) => switch (report) {
           'CLOUDSTORE connection dropped for $strategyId',
           problem: false,
         ),
-      ShadowReadFailed() => throw StateError('read failures are counted'),
       ShadowStopped(:final reason) => CloudStoreLine(
           'CLOUDSTORE stopped: $reason',
           problem: true,

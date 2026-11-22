@@ -347,8 +347,11 @@ Future<void> _play(String script) async {
     _logCloudStore(_cloudStore.drain(appProviderContainer));
     await _flush();
   }
+  final lastStep = DateTime.now();
   await Future.wait(_pictureWatches);
-  _logCloudStore(await _cloudStore.end(appProviderContainer));
+  _logCloudStore(
+    await _cloudStore.end(appProviderContainer, lastStep: lastStep),
+  );
   _log(_runFrames.stop());
   _log(buildsLine());
   try {
@@ -1527,6 +1530,14 @@ Future<void> _run(Map<String, dynamic> step) async {
             initialStrategyId: storedCloudStrategy(c),
             initialStrategySource: StrategySource.cloud,
           ),
+        ),
+      );
+    case 'expectStoredPayloadVersion':
+      _log(
+        await storedPayloadVersion(
+          c,
+          value as String,
+          (step['version'] as num).toInt(),
         ),
       );
     case 'openShareLink':

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ $# -ne 3 ]; then
+  echo "usage: $0 <exe dir> <new out dir> <account email>" >&2
+  exit 2
+fi
+exe=$(realpath "$1")
+out=$(realpath -m "$2")
+account=$3
+repo=$(realpath "$(dirname "$0")/../..")
+script=$repo/tool/drive/scripts/cloud-store-shadow-offline.json
+unit=icarus-cloud-store-offline-$$
+table=icarus_cloud_store_offline_$$
+parent=$(dirname "$out")
+mkdir -p "$parent"
+log=$parent/$(basename "$out")-harness.log
+: > "$log"
+say() { echo "$(date +%T.%3N) $*" | tee -a "$log"; }
+
+cleanup() {
+  set +e
+  sudo -n nft delete table inet "$table" 2>/dev/null
+  say "cleanup done; tables left: $(sudo -n nft list tables | grep -c "$table")"
+}
+trap cleanup EXIT
+
+systemd-run --user --scope --unit="$unit" --quiet \
+  dart "$repo/tool/drive/linux.dart" run --exe "$exe" --script "$script" \
+  --cloud-store shadow --account "$account" --out "$out" \
+  > "$parent/$(basename "$out")-run.log" 2>&1 &
+run_pid=$!
+
+signal() { cat "$out/run-id" > "$out/signals/$1"; }
+wait_for() {
+  until [ -f "$out/signals/$1" ]; do
+    kill -0 $run_pid 2>/dev/null || { say "run ended before $1"; wait $run_pid; exit 1; }
+    sleep 0.5
+  done
+}
+
+wait_for ready
+cg=$(systemctl --user show -p ControlGroup --value "$unit.scope")
+cg=${cg#/}
+sudo -n nft add table inet "$table"
+sudo -n nft add chain inet "$table" input '{ type filter hook input priority -10; policy accept; }'
+sudo -n nft add rule inet "$table" input socket cgroupv2 level 5 "\"$cg\"" drop
+say "cut: nothing comes back to $unit"
+signal cut
+
+wait_for edited-offline
+sleep 5
+sudo -n nft delete table inet "$table"
+say "restored"
+signal restored
+
+status=0
+wait $run_pid || status=$?
+say "run exited $status"
+exit $status

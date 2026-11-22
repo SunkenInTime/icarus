@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -124,11 +125,16 @@ const offline = (connection: null, account: 0);
 
 Future<void> none() async {}
 
-CloudShadow shadowOn(LibraryStore store, {CanRead? canRead}) => CloudShadow(
+CloudShadow shadowOn(
+  LibraryStore store, {
+  CanRead? canRead,
+  Future<void> Function()? breathe,
+}) =>
+    CloudShadow(
       store,
       build: 'b',
       canRead: canRead ?? appCanRead,
-      breathe: none,
+      breathe: breathe ?? none,
     );
 
 List<Verdict> verdicts(CloudShadow shadow) =>
@@ -348,22 +354,14 @@ void main() {
     });
 
     test(
-        'a strategy closed with page results still waiting for its page list '
-        'skips them with that reason', () async {
+        'a page result whose page list never comes stays not processed, '
+        'never counted as anything else', () async {
       final store = await openStore(MemoryStorage());
       final shadow = shadowOn(store)
-        ..page(strategyId, pageSnapshot(serverRows()), tag(0))
-        ..strategyClosed();
+        ..page(strategyId, pageSnapshot(serverRows()), tag(0));
       await shadow.idle;
 
-      expect(
-        verdicts(shadow).single,
-        isA<Skipped>().having(
-          (skipped) => skipped.reason,
-          'reason',
-          SkipReason.strategyClosed,
-        ),
-      );
+      expect(verdicts(shadow).single, isA<NotProcessed>());
     });
   });
 
@@ -455,9 +453,9 @@ void main() {
       await store.close();
 
       final reopened = await openStore(storage);
-      expect(await shadow.differencesIn(reopened), isEmpty);
+      expect(await shadow.readBack(reopened), {strategyId: isEmpty});
       expect(
-        await shadow.differencesIn(await openStore(MemoryStorage())),
+        (await shadow.readBack(await openStore(MemoryStorage())))[strategyId],
         contains('the store does not hold the strategy'),
       );
     });
@@ -493,7 +491,7 @@ void main() {
       await otherShadow.idle;
 
       expect(
-        await shadow.differencesIn(other),
+        (await shadow.readBack(other))[strategyId],
         contains(startsWith('page list:')),
       );
     });
@@ -571,6 +569,150 @@ void main() {
       isA<NotProcessed>(),
       isA<NotProcessed>(),
     ]);
+  });
+
+  group('the second review', () {
+    test(
+        'a result read on a connection that has since dropped is skipped, '
+        'not compared', () async {
+      final store = await openStore(MemoryStorage());
+      final rows = serverRows();
+      final shadow = shadowOn(store)
+        ..pageList(strategyId, pageList(rows), tag(0))
+        ..connectionLost()
+        ..page(strategyId, pageSnapshot(rows), tag(0));
+      await shadow.idle;
+
+      expect(
+        shadow.ledger.last.verdict,
+        isA<Skipped>().having(
+          (skipped) => skipped.reason,
+          'reason',
+          SkipReason.endedConnection,
+        ),
+      );
+      expect(shadow.reports.whereType<ShadowConnectionLost>(), hasLength(1));
+    });
+
+    test(
+        'a result whose account the transport cannot name is skipped with '
+        'that reason', () async {
+      final store = await openStore(MemoryStorage());
+      final rows = serverRows();
+      final shadow = shadowOn(store)
+        ..pageList(strategyId, pageList(rows), tag(0))
+        ..page(strategyId, pageSnapshot(rows), (connection: 0, account: null));
+      await shadow.idle;
+
+      expect(
+        shadow.ledger.last.verdict,
+        isA<Skipped>().having(
+          (skipped) => skipped.reason,
+          'reason',
+          SkipReason.accountUnknown,
+        ),
+      );
+    });
+
+    test(
+        'a failed read is an entry: skipped when offline, when its account '
+        'is unknown or when the server refused it, failed otherwise', () async {
+      final shadow = shadowOn(await openStore(MemoryStorage()))
+        ..readFailed('s', 'the page list', 'x', offline, refusedByServer: false)
+        ..readFailed('s', 'the page list', 'x', (connection: 1, account: null),
+            refusedByServer: false)
+        ..readFailed('s', 'the page list', 'x', tag(1), refusedByServer: true)
+        ..readFailed('s', 'the page list', 'x', tag(1), refusedByServer: false);
+
+      expect(verdicts(shadow), [
+        isA<Skipped>()
+            .having((v) => v.reason, 'reason', SkipReason.receivedOffline),
+        isA<Skipped>()
+            .having((v) => v.reason, 'reason', SkipReason.accountUnknown),
+        isA<Skipped>()
+            .having((v) => v.reason, 'reason', SkipReason.refusedByServer),
+        isA<ReadFailed>(),
+      ]);
+    });
+
+    test(
+        'a scheduler that throws stops the shadow, and its idle still '
+        'completes', () async {
+      final store = await openStore(MemoryStorage());
+      final shadow = shadowOn(
+        store,
+        breathe: () => Future<void>.error(StateError('no frames')),
+      )..pageList(strategyId, pageList(serverRows()), tag(0));
+      await shadow.idle;
+
+      expect(shadow.stopped, contains('no frames'));
+      expect(verdicts(shadow).single, isA<NotProcessed>());
+    });
+
+    test(
+        'a job waiting on the scheduler writes nothing once the shadow has '
+        'stopped', () async {
+      final store = await openStore(MemoryStorage());
+      final frame = Completer<void>();
+      final shadow = shadowOn(store, breathe: () => frame.future)
+        ..pageList(strategyId, pageList(serverRows()), tag(0));
+      await pumpEventQueue();
+      shadow.stop('stopped by the test');
+      frame.complete();
+      await shadow.idle;
+
+      expect((store.library as LibraryOpen).list.strategies, isEmpty);
+      expect(verdicts(shadow).single, isA<NotProcessed>());
+    });
+
+    test(
+        'page results backed up before the first page list are replayed one '
+        'scheduled job each', () async {
+      final store = await openStore(MemoryStorage());
+      var frames = 0;
+      final rows = serverRows();
+      final shadow = shadowOn(store, breathe: () async => frames++);
+      for (var index = 0; index < 24; index++) {
+        shadow.page(strategyId, pageSnapshot(rows), tag(0));
+      }
+      await shadow.idle;
+      final before = frames;
+      shadow.pageList(strategyId, pageList(rows), tag(0));
+      await shadow.idle;
+
+      expect(frames - before, greaterThanOrEqualTo(25));
+      expect(verdicts(shadow), allEqual);
+    });
+
+    test(
+        'the read back compares every page whole: an extra row on a page '
+        'that was not the last one read is a difference', () async {
+      final storage = MemoryStorage();
+      final rows = serverRows();
+      final store = await openStore(storage);
+      final shadow = shadowOn(store)
+        ..pageList(strategyId, pageList(rows, more: [secondPage()]), tag(0))
+        ..page(strategyId, pageSnapshot(rows), tag(0));
+      await shadow.idle;
+      await store.close();
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents[strategyArea(strategyId)]![
+          'content/${digestOf('p2')}/z/${digestOf('stray')}'] = '{}';
+
+      final differences = (await shadow
+          .readBack(await openStore(MemoryStorage(contents))))[strategyId]!;
+      expect(differences, [contains('page p2: a kind this build skips')]);
+    });
+
+    test(
+        'with no strategy ever recorded, the read back has nothing to '
+        'compare', () async {
+      final shadow = shadowOn(await openStore(MemoryStorage()));
+      expect(await shadow.readBack(await openStore(MemoryStorage())), isEmpty);
+    });
   });
 
   group('with the local shadow on the same store', () {

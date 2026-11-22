@@ -1,0 +1,21 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 4},
+  {"newCloudFolder": "Folder {run}"},
+  {"openCloudFolder": "Folder {run}"},
+  {"wait": 3},
+  {"newCloud": "Old payload {run}", "map": "bind"},
+  {"wait": 4},
+  {"tapText": "Old payload {run}"},
+  {"wait": 12},
+  {"tapIcon": "x", "optional": true},
+  {"sendRow": "circle-{run}", "kind": "utility", "version": 1, "data": {"isDeleted": false, "position": {"dx": 700.0, "dy": 450.0}, "type": "customCircle", "rotation": 0.0, "length": 0.0, "angle": 0.0, "isAlly": true, "customDiameter": 40.0}},
+  {"wait": 8},
+  {"expectItem": "circle-{run}"},
+  {"waitSettled": 60},
+  {"expectStoredPayloadVersion": "circle-{run}", "version": 1},
+  {"shot": "{out}/old-payload.png"},
+  {"exit": 1}
+]
