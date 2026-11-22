@@ -506,6 +506,66 @@
           "budget": 0
         }
       }
+    },
+    "pageListTypical": {
+      "title": "Read a typical strategy's page list",
+      "about": "One strategy:getPageList of a strategy of 4 pages after it changed: the strategy row, its live pages in order and each page's settings, read together. No shipped client calls it; the cloud queue will read it where today's editor reads strategy:getShell. The note gives getShell's cost on the same strategy.",
+      "metrics": {
+        "functionCalls": {
+          "today": 1,
+          "budget": 3
+        },
+        "readBytes": {
+          "today": 2893,
+          "budget": 3617
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 85,
+          "budget": 107
+        },
+        "returnBytes": {
+          "today": 1672,
+          "budget": 2090
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "pageListLarge": {
+      "title": "Read a large strategy's page list",
+      "about": "The same read on a strategy of 20 pages.",
+      "metrics": {
+        "functionCalls": {
+          "today": 1,
+          "budget": 3
+        },
+        "readBytes": {
+          "today": 12198,
+          "budget": 15248
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 85,
+          "budget": 107
+        },
+        "returnBytes": {
+          "today": 7396,
+          "budget": 9245
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
     }
   }
 }

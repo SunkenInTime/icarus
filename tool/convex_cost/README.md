@@ -83,6 +83,7 @@ in here.
 | `launchOneChanged` | The same with one 4-page strategy changed, which is then read whole. | the everyday set |
 | `launchWeekly` | The same once every copy is a week old: every strategy read whole. | the everyday set |
 | `openTypical`, `openLarge` | A cold open on desktop, copy read included. | the everyday set |
+| `pageListTypical`, `pageListLarge` | One `strategy:getPageList` of the 4-page and the 20-page strategy after a change, with `strategy:getShell` on the same strategy as a note. No shipped client calls it yet. | the everyday set |
 | `pageSwitchNew`, `pageSwitchBack` | Switching to a page not read yet, and back to one just read. | the everyday set |
 | `reopenDesktop`, `reopenWeb` | Opening an unchanged strategy again, within seconds. | the everyday set |
 | `soloSession` | 50 single moves with the editor's and library's live queries held. | the everyday set, library list re-runs |

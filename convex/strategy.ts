@@ -37,6 +37,7 @@ import { internalError } from "./lib/errors";
 import { readContentVersion } from "./lib/contentVersions";
 import {
   fullStrategySnapshotValidator,
+  pageListValidator,
   strategyHeaderValidator,
   strategyShellValidator,
 } from "./lib/publicValidators";
@@ -74,6 +75,42 @@ export const getShell = query({
       header: serializeStrategyHeader(strategy, role),
       pages: sortByNumberField(pages, "sortIndex").map((page) =>
         serializePageDescriptor(strategy.publicId, page),
+      ),
+    };
+  },
+});
+
+export const getPageList = query({
+  args: {
+    ...cloudProtocolArgs,
+    strategyPublicId: v.string(),
+    shareToken: v.optional(v.string()),
+  },
+  returns: pageListValidator,
+  handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
+    const pages = sortByNumberField(
+      await listLivePages(ctx, strategy._id),
+      "sortIndex",
+    );
+
+    return {
+      header: serializeStrategyHeader(strategy, role),
+      pages: await Promise.all(
+        pages.map(async (page) => {
+          const content = serializePageContent(
+            await getPageContent(ctx, page._id),
+          );
+          return {
+            ...serializePageDescriptor(strategy.publicId, page),
+            settings: content.settings,
+            contentRevision: content.revision,
+            contentCreatedAt: content.createdAt,
+            contentUpdatedAt: content.updatedAt,
+          };
+        }),
       ),
     };
   },
