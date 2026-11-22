@@ -385,24 +385,59 @@ final class StoreModel {
     return recorded;
   }
 
-  Future<StrategyRowSet> listMatchesPages(String label) async {
+  Future<StrategyRowSet> listMatchesPages(
+    String label, {
+    bool beforeReads = true,
+  }) async {
+    await reading(() => store.readStrategy(strategyId));
+    final before = listOf(store).strategies.single;
     final mine = await visible();
-    final summary = listOf(store).strategies.single;
-    for (final page in mine.pages) {
-      if (page is! LivePage) continue;
-      var tally = PageTally.empty;
-      for (final row in mine.elementsOn(page.publicId)) {
-        tally = tally.plus(row, 1);
-      }
-      if (summary.tallies[page.publicId] ?? PageTally.empty case final listed
-          when listed != tally) {
-        throw StateError(
-          'after $label the list counts ${listed.toJson()} on ${page.publicId}, '
-          'the page draws ${tally.toJson()}',
-        );
+    final after = listOf(store).strategies.single;
+    for (final (moment, summary) in [
+      if (beforeReads) ('before the pages were read', before),
+      ('after the pages were read', after),
+    ]) {
+      for (final page in mine.pages) {
+        if (page is! LivePage) continue;
+        var tally = PageTally.empty;
+        for (final row in mine.elementsOn(page.publicId)) {
+          tally = tally.plus(row, 1);
+        }
+        if (summary.tallies[page.publicId] ?? PageTally.empty case final listed
+            when listed != tally) {
+          throw StateError(
+            'after $label, $moment, the list counts ${listed.toJson()} on '
+            '${page.publicId}, the page draws ${tally.toJson()}',
+          );
+        }
       }
     }
     return mine;
+  }
+
+  Future<void> readerLearnsAgents() async {
+    faults = false;
+    await store.close();
+    final blind = switch (await LibraryStore.open(
+      MemoryEngine(storage),
+      canRead: CanRead(element: (_) => false, lineupGroup: (_) => true),
+      clock: () => clock,
+      build: build,
+    )) {
+      StoreOpened(:final store) => store,
+      StoreNotOpened(:final problem) => throw StateError('$problem'),
+    };
+    final rebuilt = await blind.rebuildSummary(strategyId);
+    log.add('a reader that cannot read agents rebuilt the summary -> $rebuilt');
+    await blind.close();
+    await open();
+    await restartSession();
+    await listMatchesPages(
+      'a reader learned to read agents',
+      beforeReads: false,
+    );
+    faults = true;
+    count('readers that learned a payload');
   }
 
   Future<StrategyRowSet> visible() async {
@@ -1103,9 +1138,10 @@ final class StoreModel {
       case 18 when random.nextInt(3) == 0:
         await sessionOpenedThenReopened();
       case 18 when random.nextInt(2) == 0:
-        await switch (random.nextInt(3)) {
+        await switch (random.nextInt(4)) {
           0 => twoAcceptedMoves(),
           1 => editOfAcceptedAdd(),
+          2 => readerLearnsAgents(),
           _ => pageGoneUnderQueuedMove(),
         };
       case 18:
@@ -1263,6 +1299,7 @@ void main() {
       'edits of a row shown only by accepted work',
       'pages gone under a queued move',
       'held queues compared against the list',
+      'readers that learned a payload',
       'events delivered again after a commit that was not stored',
       'memory checked after a call that was not stored',
       'strategies gone',

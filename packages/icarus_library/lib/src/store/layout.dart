@@ -8,7 +8,7 @@ const libraryArea = 'library';
 
 const formatKey = 'format';
 
-const storeFormat = 1;
+const storeFormat = 2;
 
 const strategyAreaPrefix = 's/';
 

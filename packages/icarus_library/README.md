@@ -872,9 +872,15 @@ opened:
 
 The engine format is 2 on IndexedDB (format 1 had no `last` store; opening
 a format 1 database runs the browser's upgrade, which adds the store and
-changes no row) and 1 on SQLite; the store format is 1. Nothing earlier
-shipped. A build that raises a number must also say how it moves a library
-from the lower one. A
+changes no row) and 1 on SQLite; the store format is 2. Format 2 adds cloud
+strategies: a store that knows only format 1 would list a cloud strategy as an
+ordinary one, leave out its unsent work and let an ordinary removal erase it,
+so it must refuse the library instead. A format 1 library opens under format 2
+unchanged; nothing is written by opening it. The first commit this build makes
+to it, whatever that commit saves, writes `format` = `2` in the same engine
+commit, and from then on a format 1 build refuses it with `NewerFormat`.
+Nothing earlier shipped. A build that raises a number must also say how it
+moves a library from the lower one. A
 `format` row is read only when it is a plain decimal of one to nine digits
 with no sign, no leading zero and no spaces (`1`, `2`, `17`); anything else,
 including a longer number, is `DamagedLibrary`, never a newer format.
@@ -1465,7 +1471,10 @@ content no stored result covers, and every page of a held strategy, says
 refused (`CopyNeedsContent`). `commit` and `commitAll` add edits. `record`
 takes a list of events and first records any passed resend window, so
 `record(id, [])` is the store's `look`: it writes the expiry, and a view can
-never show one that is not on disk. The sender calls `record(id, [])` on its
+never show one that is not on disk. A strategy's current session is kept at
+the library level, so unloading the strategy, or a call that reads its queue
+back from disk, does not end it: a strategy loaded again in the same run takes
+results issued under its session. The sender calls `record(id, [])` on its
 timer and before it shows the sync state. Loading a queue opens no session: until
 a call records `AppRestarted` or `ConnectionReturned` (which commits the new
 session number and returns it), the queue is in session 0, which is never
@@ -1481,10 +1490,15 @@ because only the queue can say nothing is waiting; loading it on the normal
 lazy read promotes it and sends `StrategyRefreshed`. The status is on the
 list entry itself, so it never compares equal to a summary kept here. Stored
 pending and held counts show at once, and any time loading a queue changes a
-strategy's entry, held included, the store sends `StrategyRefreshed`. No
-queue is loaded just to draw the list. Reading one page lists the
-strategy's keys on a cold read, and drawing walks every loaded page; both
-are measured (3,303 keys at 100 pages) and not yet addressed.
+strategy's entry, held included, the store sends `StrategyRefreshed`. Reading
+a page also counts that page as drawn, so after any page load the list and the
+page agree (a reader that learned a payload kind stops listing it as newer). No
+queue is loaded just to draw the list. Drawing builds rows only from the
+pages it was asked for and the pages the rows' queued and landed work point
+at, and a call re-encodes the stored results only when it changed what they
+show, so one queued edit does the same work on a strategy of 10 pages and of
+100. A cold read of one page still lists every key of the strategy (3,303 at
+100 pages); that is measured and not yet addressed.
 Loading a strategy's queue is four listings (`pending/`, `attempt/`,
 `landed/`, `read/`) and one read (`cloud`).
 

@@ -28,6 +28,31 @@ import '../cloud/visible.dart';
 
 part 'cloud_store.dart';
 
+final class StoreWork {
+  int rowsDrawn = 0;
+  int resultGroupsEncoded = 0;
+
+  void reset() {
+    rowsDrawn = 0;
+    resultGroupsEncoded = 0;
+  }
+}
+
+final storeWork = StoreWork();
+
+final _plainDecimal = RegExp(r'^[1-9][0-9]{0,8}$');
+
+StorageFailure? storeFormatProblem(String stored, {int known = storeFormat}) {
+  if (!_plainDecimal.hasMatch(stored)) {
+    return DamagedLibrary('the store format is not a plain number: $stored');
+  }
+  final format = int.parse(stored);
+  if (format > known) {
+    return NewerFormat(FormatLayer.store, found: format, known: known);
+  }
+  return null;
+}
+
 final class CanRead {
   const CanRead({required this.element, required this.lineupGroup});
 
@@ -272,19 +297,6 @@ final class LibraryStore {
     }
   }
 
-  static final _plainDecimal = RegExp(r'^[1-9][0-9]{0,8}$');
-
-  static StorageFailure? _formatProblem(String stored) {
-    if (!_plainDecimal.hasMatch(stored)) {
-      return DamagedLibrary('the store format is not a plain number: $stored');
-    }
-    final format = int.parse(stored);
-    if (format > storeFormat) {
-      return NewerFormat(FormatLayer.store, found: format, known: storeFormat);
-    }
-    return null;
-  }
-
   Future<Stored<StorageOrigin>> _originWithoutMarker(
     List<StoredEntry> libraryRows,
   ) async {
@@ -331,6 +343,7 @@ final class LibraryStore {
   };
   final _unsaved = <String>{};
   final _unchecked = <String>{};
+  final _sessions = <String, QueueSession>{};
   final _changes = StreamController<StoreChange>.broadcast();
 
   Stream<StoreChange> get changes => _changes.stream;
@@ -548,9 +561,10 @@ final class LibraryStore {
     ].firstOrNull;
     final StorageOrigin origin;
     if (format != null) {
-      if (_formatProblem(format) case final problem?) {
+      if (storeFormatProblem(format) case final problem?) {
         return StorageFailed(problem);
       }
+      if (int.parse(format) < storeFormat) _markerOwed = true;
       origin = const StorageExisted();
     } else {
       switch (await _originWithoutMarker(entries)) {

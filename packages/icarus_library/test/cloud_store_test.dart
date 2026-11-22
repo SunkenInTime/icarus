@@ -612,14 +612,14 @@ void main() {
     await recordAll(store, const []);
     expect(
       (await syncOf(store)).views['move']!.state,
-      const NeedsUser(WindowClosed()),
+      const NeedsUser(WrittenLongAgo()),
     );
     await store.close();
     clock = fixedClock();
     store = await openCloudStore(MemoryEngine(storage), clock: () => clock);
     expect(
       (await syncOf(store)).views['move']!.state,
-      const NeedsUser(WindowClosed()),
+      const NeedsUser(WrittenLongAgo()),
     );
   });
 
@@ -1490,6 +1490,64 @@ void main() {
         ),
       ]);
       expect((await syncOf(store)).views['del']!.sendable, isFalse);
+    });
+
+    test('a page that a newer reader can now read brings the list in line '
+        'with the page', () async {
+      final storage = MemoryStorage();
+      final first = await openCloudStore(MemoryEngine(storage));
+      await addCloud(first, initialRows());
+      await first.close();
+      final blind = switch (await LibraryStore.open(
+        MemoryEngine(storage),
+        canRead: CanRead(element: (_) => false, lineupGroup: (_) => true),
+        clock: fixedClock,
+        build: build,
+      )) {
+        StoreOpened(:final store) => store,
+        StoreNotOpened(:final problem) => fail('$problem'),
+      };
+      savedValue(await blind.rebuildSummary(strategyId));
+      expect(listOf(blind).strategies.single.tallies['page-a']!.newer, 2);
+      await blind.close();
+      final store = await openCloudStore(MemoryEngine(storage));
+      final page = pageOf(await store.readPage(strategyId, 'page-a'));
+      final listed = listOf(store).strategies.single.tallies['page-a']!;
+      expect(listed.newer, 0);
+      expect(listed.items, page.elements.whereType<LiveElement>().length);
+    });
+
+    test('unloading a strategy keeps its session: results issued under it '
+        'still apply when it is loaded again', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      final session = await sessionOf(store);
+      expect(await store.unload(strategyId), isA<Unloaded>());
+      final server = withOp(
+        initialRows(),
+        elementAdd('t', elementId: 'theirs', pageId: 'page-a'),
+      );
+      final applied = await recordAll(store, [
+        BaseArrived(pageReadOf(server, 'page-a'), session: session),
+        BaseArrived(const StrategyGone(), session: session),
+      ]);
+      expect(applied.outcomes, everyElement(isA<ReportApplied>()));
+      expect(
+        elementOn(pageOf(await store.readPage(strategyId, 'page-a')), 'theirs'),
+        isNotNull,
+      );
+      expect((await syncOf(store)).tally.standing, Standing.deletedOnServer);
+    });
+
+    test('a refused discard of a healthy queue keeps its session', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      final session = await sessionOf(store);
+      await store.discardUnreadableQueue(
+        strategyId,
+        const DiscardsUnsentWork(),
+      );
+      expect(await sessionOf(store), session);
     });
 
     group('the hold\'s edges', () {

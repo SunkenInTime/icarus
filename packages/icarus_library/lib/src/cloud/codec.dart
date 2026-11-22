@@ -743,7 +743,10 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
   return {
     null: {
       'version': cloudRowVersion,
-      'strategyRevision': shown.strategyRevision,
+      'strategy': [
+        if (shown.strategy case final strategy?)
+          _shownRow('strategy', strategy),
+      ],
       'pages': [
         for (final MapEntry(:key, :value) in shown.pages.entries)
           _shownRow(key, value),
@@ -794,7 +797,7 @@ final class ShownUnreadable extends ShownReading {
 }
 
 ShownReading shownFromGroups(Map<String?, String> texts) {
-  int? strategyRevision;
+  ShownRow? strategy;
   final pages = <String, ShownRow>{};
   final settings = <String, ShownRow>{};
   final highest = <Target, int>{};
@@ -806,10 +809,10 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
       (json) => JsonFields.read(json, 'shown results', (fields) {
         _versioned(fields, 'shown results');
         if (group == null) {
-          final revision = fields.json['strategyRevision'];
-          if (revision != null &&
-              (revision is! num || !isSafeWhole(revision))) {
-            fields.reject('an unreadable strategy revision');
+          final strategyRows = _shownRows(fields.json['strategy']);
+          if (strategyRows == null ||
+              strategyRows.keys.any((key) => key != 'strategy')) {
+            fields.reject('an unreadable strategy row');
           }
           final pageRows = _shownRows(fields.json['pages']);
           final settingsRows = _shownRows(fields.json['settings']);
@@ -818,7 +821,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
             fields.reject('unreadable shown rows');
           }
           return () {
-            strategyRevision = (revision as num?)?.toInt();
+            strategy = strategyRows!['strategy'];
             pages.addAll(pageRows!);
             settings.addAll(settingsRows!);
             highest.addAll(tops!);
@@ -859,7 +862,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
   }
   return ShownRead(
     Shown(
-      strategyRevision: strategyRevision,
+      strategy: strategy,
       pages: pages,
       settings: settings,
       content: content,

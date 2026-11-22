@@ -721,7 +721,7 @@ void main() {
       'the store, and nothing in it changes', () async {
     final store = await openStore(IndexedDbEngine(name));
     await store.close();
-    await putRaw(name, 'library', 'format', 'text:2');
+    await putRaw(name, 'library', 'format', 'text:${storeFormat + 1}');
     final reading = await openIndexedDb(name);
     final before = stored(await reading.entries('library', ''));
     await reading.release();

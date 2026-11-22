@@ -7,6 +7,7 @@ final class _OnDisk {
     required this.facts,
     required this.landed,
     required this.groups,
+    required this.shown,
   });
 
   final Map<int, QueueEntry> entries;
@@ -14,6 +15,7 @@ final class _OnDisk {
   StrategyFacts? facts;
   final Map<(int, int), LandedWork> landed;
   final Map<String?, String> groups;
+  Shown shown;
 }
 
 final class _LoadedQueue {
@@ -181,13 +183,19 @@ Set<String> _pagesShowingRow(
   _ => const {},
 };
 
-Map<String?, String> _groupTexts(Shown shown) => {
-  for (final MapEntry(:key, :value) in shownToGroups(shown).entries)
-    key: switch (encodeJson(value)) {
-      Encoded(:final text) => text,
-      NotEncoded(:final problem) => throw StateError(problem),
-    },
-};
+Map<String?, String> _groupTexts(Shown shown) {
+  final texts = <String?, String>{};
+  for (final MapEntry(:key, :value) in shownToGroups(shown).entries) {
+    switch (encodeJson(value)) {
+      case Encoded(:final text):
+        texts[key] = text;
+        storeWork.resultGroupsEncoded++;
+      case NotEncoded(:final problem):
+        throw StateError(problem);
+    }
+  }
+  return texts;
+}
 
 String? _groupPage(StoreName name, String text) => switch (name) {
   PageReadName(:final digest) => switch (admit(text)) {
@@ -467,7 +475,9 @@ extension _CloudStore on LibraryStore {
       nextSession: _numbers.nextSession,
       shown: shown,
       strategy: facts,
-      session: QueueSession(connected: false, build: _build, number: 0),
+      session:
+          _sessions[strategy.digest] ??
+          QueueSession(connected: false, build: _build, number: 0),
     );
     final current = onDisk;
     final loaded = _LoadedQueue(
@@ -479,6 +489,7 @@ extension _CloudStore on LibraryStore {
           for (final work in landed) (work.attempt, work.position): work,
         },
         groups: groups,
+        shown: shown,
       ),
       current,
     );
@@ -539,13 +550,19 @@ extension _CloudStore on LibraryStore {
     _queues.remove(digest);
   }
 
-  StrategyRowSet _baseRows(LoadedStrategy strategy, ReadableStrategy header) {
+  StrategyRowSet _baseRows(
+    LoadedStrategy strategy,
+    ReadableStrategy header,
+    Iterable<String> digests,
+  ) {
     final elements = <ElementRow>[];
     final groups = <LineupGroupRow>[];
-    for (final page in strategy.pages) {
-      if (strategy.loadedPage(digestOf(page.publicId)) case final loaded?) {
+    for (final digest in digests) {
+      if (strategy.loadedPage(digest) case final loaded?) {
         elements.addAll(loaded.elements.values);
         groups.addAll(loaded.lineupGroups.values);
+        storeWork.rowsDrawn +=
+            loaded.elements.length + loaded.lineupGroups.length;
       }
     }
     return StrategyRowSet(
@@ -594,7 +611,7 @@ extension _CloudStore on LibraryStore {
     )) {
       return StorageFailed(failure);
     }
-    final base = _baseRows(strategy, header);
+    final base = _baseRows(strategy, header, digests);
     return Done(queue == null ? base : visibleOver(base, queue, pages));
   }
 
@@ -687,6 +704,7 @@ extension _CloudStore on LibraryStore {
     disk.groups
       ..clear()
       ..addAll(groups);
+    disk.shown = next.shown;
   }
 
   Future<Stored<StrategySummary>> _cloudSummaryAll(
@@ -964,7 +982,9 @@ extension _CloudStore on LibraryStore {
         base = value;
     }
     final queued = _queueWrites(strategy, disk, next);
-    final groups = _groupTexts(next.shown);
+    final groups = identical(next.shown, disk.shown)
+        ? {...disk.groups}
+        : _groupTexts(next.shown);
     final header = _baseHeader(strategy, cloud.header);
     final previous = _summaries[digest];
     final StrategySummary summary;
@@ -1066,11 +1086,13 @@ extension _CloudStore on LibraryStore {
     _numbers = numbers;
     if (writes.isEmpty) {
       cloud.queue.current = next;
+      _sessions[digest] = next.session;
       return Saved(take(summary));
     }
     final result = await _commit<T, CommitRefusal>(writes, () {
       _written(disk, next, groups);
       cloud.queue.current = next;
+      _sessions[digest] = next.session;
       _summaries[digest] = summary;
       _unsaved.remove(digest);
       _numbersRow = _NumbersRowRead(numbers);
@@ -1387,6 +1409,7 @@ extension _CloudStore on LibraryStore {
     }
     final page = rows.page(pagePublicId);
     if (page == null) return const NotFound();
+    _countedAsDrawn(strategy, rows, pagePublicId);
     final loaded = strategy.loadedPage(digestOf(pagePublicId));
     return Found(
       PageContent(
@@ -1403,6 +1426,29 @@ extension _CloudStore on LibraryStore {
         sync: sync,
         content: content,
       ),
+    );
+  }
+
+  void _countedAsDrawn(
+    LoadedStrategy strategy,
+    StrategyRowSet rows,
+    String pagePublicId,
+  ) {
+    final listed = _summaries[strategy.digest];
+    if (listed == null) return;
+    final drawn = _tallyOn(rows, pagePublicId);
+    if ((listed.tallies[pagePublicId] ?? PageTally.empty) == drawn) return;
+    final summary = StrategySummary.of(
+      strategy: rows.strategy,
+      pages: rows.pages,
+      settings: rows.settings,
+      tallies: {...listed.tallies, pagePublicId: drawn},
+      elsewhere: strategy.elsewhere,
+      sync: listed.sync,
+    );
+    _keepInMemory(strategy.digest, summary);
+    _emit(
+      StrategyRefreshed(strategyPublicId: summary.publicId, summary: summary),
     );
   }
 
@@ -1459,7 +1505,14 @@ extension _CloudStore on LibraryStore {
     _forgetCloud(digest);
     _strategies[digest] = strategy;
     final loaded = _LoadedQueue(
-      _OnDisk(entries: {}, attempts: {}, facts: null, landed: {}, groups: {}),
+      _OnDisk(
+        entries: {},
+        attempts: {},
+        facts: null,
+        landed: {},
+        groups: {},
+        shown: Shown.nothing,
+      ),
       queue,
     );
     _queues[digest] = loaded;
