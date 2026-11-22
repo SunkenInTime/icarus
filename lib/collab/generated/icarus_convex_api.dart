@@ -1194,6 +1194,7 @@ final class _OpsModule implements OpsModule {
 
 abstract interface class PageModule {
   ConvexQuery<PageGetElementSliceResult> getElementSlice({
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String fromPublicId,
@@ -1203,6 +1204,7 @@ abstract interface class PageModule {
     ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
   });
   ConvexQuery<PageGetFrameResult> getFrame({
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
@@ -1210,6 +1212,7 @@ abstract interface class PageModule {
   });
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
     ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String pagePublicId,
@@ -1223,6 +1226,7 @@ final class _PageModule implements PageModule {
   final ConvexTransport _transport;
   @override
   ConvexQuery<PageGetElementSliceResult> getElementSlice({
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String fromPublicId,
@@ -1232,6 +1236,7 @@ final class _PageModule implements PageModule {
     ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
   }) {
     final args = encodePageGetElementSliceArgs(
+      accountSubject: accountSubject,
       clientProtocolVersion: clientProtocolVersion,
       elementFieldLevel: elementFieldLevel,
       fromPublicId: fromPublicId,
@@ -1250,12 +1255,14 @@ final class _PageModule implements PageModule {
 
   @override
   ConvexQuery<PageGetFrameResult> getFrame({
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     required String pagePublicId,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodePageGetFrameArgs(
+      accountSubject: accountSubject,
       clientProtocolVersion: clientProtocolVersion,
       pagePublicId: pagePublicId,
       shareToken: shareToken,
@@ -1272,6 +1279,7 @@ final class _PageModule implements PageModule {
   @override
   ConvexQuery<PageGetSnapshotResult> getSnapshot({
     ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     required String pagePublicId,
@@ -1280,6 +1288,7 @@ final class _PageModule implements PageModule {
   }) {
     final args = encodePageGetSnapshotArgs(
       acceptsPictureIds: acceptsPictureIds,
+      accountSubject: accountSubject,
       clientProtocolVersion: clientProtocolVersion,
       elementFieldLevel: elementFieldLevel,
       pagePublicId: pagePublicId,
@@ -2143,6 +2152,7 @@ abstract interface class StrategyModule {
     required String strategyPublicId,
   });
   ConvexQuery<StrategyGetPageListResult> getPageList({
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -2191,11 +2201,13 @@ final class _StrategyModule implements StrategyModule {
 
   @override
   ConvexQuery<StrategyGetPageListResult> getPageList({
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     required double clientProtocolVersion,
     ConvexOptional<String> shareToken = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeStrategyGetPageListArgs(
+      accountSubject: accountSubject,
       clientProtocolVersion: clientProtocolVersion,
       shareToken: shareToken,
       strategyPublicId: strategyPublicId,

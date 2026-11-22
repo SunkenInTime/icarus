@@ -7216,6 +7216,7 @@ OpsApplyBatchResult decodeOpsApplyBatchResult(ConvexValue value) =>
     OpsApplyBatchResult.decode(value, 'ops.js:applyBatch.returns');
 
 ConvexObject encodePageGetElementSliceArgs({
+  ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
   required double clientProtocolVersion,
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required String fromPublicId,
@@ -7224,6 +7225,8 @@ ConvexObject encodePageGetElementSliceArgs({
   required String strategyPublicId,
   ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
 }) => ConvexObject({
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'page.js:getElementSlice.args.clientProtocolVersion',
@@ -7244,11 +7247,14 @@ PageGetElementSliceResult decodePageGetElementSliceResult(ConvexValue value) =>
     PageGetElementSliceResult.decode(value, 'page.js:getElementSlice.returns');
 
 ConvexObject encodePageGetFrameArgs({
+  ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
   required double clientProtocolVersion,
   required String pagePublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'page.js:getFrame.args.clientProtocolVersion',
@@ -7263,6 +7269,7 @@ PageGetFrameResult decodePageGetFrameResult(ConvexValue value) =>
 
 ConvexObject encodePageGetSnapshotArgs({
   ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
+  ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
   required double clientProtocolVersion,
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required String pagePublicId,
@@ -7271,6 +7278,8 @@ ConvexObject encodePageGetSnapshotArgs({
 }) => ConvexObject({
   if (acceptsPictureIds.isPresent)
     'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'page.js:getSnapshot.args.clientProtocolVersion',
@@ -7981,10 +7990,13 @@ StrategyGetFullSnapshotResult decodeStrategyGetFullSnapshotResult(
 );
 
 ConvexObject encodeStrategyGetPageListArgs({
+  ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
   required double clientProtocolVersion,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
   'clientProtocolVersion': _encodeNumber(
     clientProtocolVersion,
     'strategy.js:getPageList.args.clientProtocolVersion',

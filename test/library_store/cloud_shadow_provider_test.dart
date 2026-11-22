@@ -58,6 +58,7 @@ class _Editor extends RemoteEditorSnapshotNotifier {
 
 final class _Lists {
   final controllers = <StreamController<RemotePageList>>[];
+  final subjects = <String>[];
   Future<void> Function()? onCancel;
 
   Stream<RemotePageList> watch() {
@@ -80,9 +81,11 @@ class _Repository implements ConvexStrategyRepository {
   @override
   Stream<RemotePageList> watchPageList(
     String strategyPublicId, {
-    String? shareToken,
-  }) =>
-      lists.watch();
+    required String accountSubject,
+  }) {
+    lists.subjects.add(accountSubject);
+    return lists.watch();
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -195,7 +198,7 @@ void main() {
     setUp(() async {
       directory = await Directory.systemTemp.createTemp('icarus-cloud-tap-');
       file = File('${directory.path}/library.sqlite');
-      auth = (changes: 1, authenticated: true);
+      auth = (changes: 1, authenticated: true, subject: 'account-a');
       queue = _Queue();
       editor = _Editor();
       lists = _Lists();
@@ -229,12 +232,13 @@ void main() {
 
     test(
         'the page list is watched only while the editor has the strategy '
-        'open', () async {
+        'open, naming the account the shadow serves', () async {
       await begin();
       expect(lists.controllers, isEmpty);
       editor.open(strategyId);
       await _settled();
       expect(lists.controllers, hasLength(1));
+      expect(lists.subjects, ['account-a']);
 
       editor.open(null);
       await _settled();
@@ -242,7 +246,7 @@ void main() {
     });
 
     test('nothing is taken before the first sign-in', () async {
-      auth = (changes: 0, authenticated: false);
+      auth = (changes: 0, authenticated: false, subject: null);
       final shadow = await begin();
       deliverPage(pageSnapshot(serverRows()));
       await _settled();
@@ -303,9 +307,9 @@ void main() {
         'is recorded', () async {
       final shadow = await opened();
       final recorded = shadow.ledger.length;
-      auth = (changes: 2, authenticated: false);
+      auth = (changes: 2, authenticated: false, subject: null);
       deliverPage(pageSnapshot(serverRows()));
-      auth = (changes: 3, authenticated: true);
+      auth = (changes: 3, authenticated: true, subject: 'account-b');
       deliverPage(pageSnapshot(serverRows()));
       await _settled();
 

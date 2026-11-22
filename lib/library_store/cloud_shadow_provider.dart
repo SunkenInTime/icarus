@@ -9,6 +9,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_store.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -40,12 +41,13 @@ final class CloudShadowRunning extends CloudShadowState {
   final File file;
 }
 
-typedef AuthChanges = ({int changes, bool authenticated});
+typedef AuthChanges = ({int changes, bool authenticated, String? subject});
 
 final authChangesProvider = Provider<AuthChanges Function()>(
   (ref) => () => (
         changes: ConvexClient.instance.authChanges,
         authenticated: ConvexClient.instance.isAuthenticated,
+        subject: ref.read(authProvider).user?.id,
       ),
 );
 
@@ -70,6 +72,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
   StreamSubscription<RemotePageList>? _list;
   String? _listed;
   int? _account;
+  String? subject;
   var _cutoff = false;
 
   @override
@@ -146,7 +149,10 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
     switch (_account) {
       case null:
         if (auth.changes == 0 || !auth.authenticated) return false;
+        final named = auth.subject;
+        if (named == null) return false;
         _account = auth.changes;
+        subject = named;
         return true;
       case final account when account != auth.changes:
         shadow.end('the account changed');
@@ -191,7 +197,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
     if (_listed != strategyId || _list != null || !_serving()) return;
     _list = ref
         .read(convexStrategyRepositoryProvider)
-        .watchPageList(strategyId)
+        .watchPageList(strategyId, accountSubject: subject!)
         .listen(
           (list) => _guarded(() {
             if (!_serving()) return;
