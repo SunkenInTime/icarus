@@ -9,7 +9,7 @@
   {"newCloud": "Restart shadow {run}", "map": "bind"},
   {"wait": 4},
   {"tapText": "Restart shadow {run}"},
-  {"wait": 8},
+  {"wait": 12},
   {"tapIcon": "x", "optional": true},
   {"addAgent": "r1-{run}", "at": [600, 400]},
   {"addSmoke": "r2-{run}", "at": [760, 520]},

@@ -56,8 +56,20 @@ final class CloudStoreLog {
     ];
     final equal = settled.where((entry) => entry.verdict is ComparedEqual);
     final skipped = settled.where((entry) => entry.verdict is Skipped);
+    final failedReads = <String, int>{};
+    for (final report in reports.whereType<ShadowReadFailed>()) {
+      final line = 'the page list watch of ${report.strategyId} failed: '
+          '${report.error}';
+      failedReads[line] = (failedReads[line] ?? 0) + 1;
+    }
     return [
-      for (final report in reports) _reportLine(report),
+      for (final report in reports)
+        if (report is! ShadowReadFailed) _reportLine(report),
+      for (final MapEntry(:key, :value) in failedReads.entries)
+        CloudStoreLine(
+          'CLOUDSTORE $key${value > 1 ? ' ($value times)' : ''}',
+          problem: false,
+        ),
       for (final entry in settled) ..._problemLines(entry),
       if (equal.isNotEmpty || skipped.isNotEmpty)
         CloudStoreLine(
@@ -206,10 +218,7 @@ CloudStoreLine _reportLine(CloudShadowReport report) => switch (report) {
           'CLOUDSTORE connection dropped for $strategyId',
           problem: false,
         ),
-      ShadowReadFailed(:final strategyId, :final error) => CloudStoreLine(
-          'CLOUDSTORE the page list watch of $strategyId failed: $error',
-          problem: false,
-        ),
+      ShadowReadFailed() => throw StateError('read failures are counted'),
       ShadowStopped(:final reason) => CloudStoreLine(
           'CLOUDSTORE stopped: $reason',
           problem: true,

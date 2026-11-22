@@ -170,6 +170,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
@@ -1446,7 +1447,12 @@ Future<void> _run(Map<String, dynamic> step) async {
         _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id)),
       );
     case 'signOut':
-      await c.read(authProvider.notifier).signOut();
+      final signingOut = c.read(guardedSignOutRequestProvider)(
+        appNavigatorKey.currentContext!,
+      );
+      await _waitFor(() => _countOf((w) => _isText(w, 'Sign out?')) > 0, 30);
+      await _tap(_centerOf((w) => _isText(w, 'Sign Out')));
+      if (!await signingOut) throw StateError('the sign-out was not done');
       await _waitFor(() => c.read(authProvider).user == null, 60);
     case 'signIn':
       final second = value == 'second';

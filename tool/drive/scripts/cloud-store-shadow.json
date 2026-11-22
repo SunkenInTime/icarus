@@ -9,7 +9,7 @@
   {"newCloud": "Shadow {run}", "map": "bind"},
   {"wait": 4},
   {"tapText": "Shadow {run}"},
-  {"wait": 8},
+  {"wait": 12},
   {"tapIcon": "x", "optional": true},
   {"addAgent": "a1-{run}", "at": [600, 400]},
   {"addAgent": "a2-{run}", "agent": "sova", "at": [820, 460]},

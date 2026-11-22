@@ -4,7 +4,7 @@
   {"signIn": true},
   {"wait": 6},
   {"openStoredCloudStrategy": true},
-  {"wait": 8},
+  {"wait": 12},
   {"tapIcon": "x", "optional": true},
   {"wait": 4},
   {"addAgent": "q1-{run}", "agent": "sova", "at": [820, 360]},
