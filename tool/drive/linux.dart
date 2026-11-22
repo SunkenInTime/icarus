@@ -13,6 +13,8 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
   dart tool/drive/linux.dart run --script FILE [--account EMAIL]
       [--companion FILE] [--companion-account EMAIL] [--exe DIR] [--out DIR]
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
+      [--hive-store DIR] [--library-store off|shadow|mirror]
+      [--kill-after-seconds S]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
         --convex it talks to the dev deployment; production is refused.
@@ -26,6 +28,15 @@ run     Runs --script, and --companion beside it when given, against the
         ~/.agents/secrets/icarus/test-accounts.md), otherwise over ssh from
         that file on --accounts-host (default windows). They only reach the
         app's environment.
+        --hive-store starts the main instance on a copy of DIR, which is
+        never opened itself. --library-store passes --library-store=VALUE to
+        every instance; shadow copies the library into the store as it
+        starts, and mirror also writes the store after every save.
+        --kill-after-seconds kills the main instance with SIGKILL S seconds
+        after it starts, the way a crash stops it, and counts that as a
+        pass; an app that finished first is judged as usual. Start the next
+        run with --hive-store <this run's out>/store-main to see what it
+        left.
 
 run exits 0 when every instance finished its script with SUMMARY ... CLEAN
 and quit before the timeout (default 900 s), 1 when anything else happened,
@@ -168,6 +179,9 @@ Future<void> main(List<String> args) async {
           'accounts-file',
           'accounts-host',
           'timeout-seconds',
+          'hive-store',
+          'library-store',
+          'kill-after-seconds',
         })));
       default:
         throw UsageError('no command called "${args.first}"; see --help');
@@ -237,6 +251,7 @@ class _Instance {
   final String? email;
   Process? process;
   var timedOut = false;
+  var killed = false;
   final exited = Completer<int>();
 }
 
@@ -245,6 +260,11 @@ Future<int> _run(Map<String, String> options) async {
       options['script'] ?? (throw UsageError('run needs --script; see --help'));
   final timeout = int.tryParse(options['timeout-seconds'] ?? '900') ??
       (throw UsageError('--timeout-seconds takes a whole number'));
+  final killAfter = switch (options['kill-after-seconds']) {
+    null => null,
+    final text => double.tryParse(text) ??
+        (throw UsageError('--kill-after-seconds takes a number')),
+  };
   final exeOption = options['exe'] ?? '${_repo.path}/build/drive-linux';
   final exe = FileSystemEntity.isDirectorySync(exeOption)
       ? '${_absolute(exeOption)}/icarus'
@@ -323,6 +343,27 @@ Future<int> _run(Map<String, String> options) async {
     throw UsageError('${out.path} is not empty; give each run a new --out');
   }
   Directory('${out.path}/signals').createSync();
+  final libraryStore = options['library-store'];
+  if (libraryStore != null &&
+      !const {'off', 'shadow', 'mirror'}.contains(libraryStore)) {
+    throw UsageError(
+      '--library-store is off, shadow or mirror, not "$libraryStore"',
+    );
+  }
+  if (options['hive-store'] case final String seed) {
+    if (!Directory(seed).existsSync()) {
+      throw UsageError('No Hive store at $seed');
+    }
+    final copy = await Process.run('cp', [
+      '-r',
+      '--reflink=auto',
+      '${_absolute(seed)}/.',
+      '${out.path}/store-main',
+    ]);
+    if (copy.exitCode != 0) {
+      throw UsageError('Could not copy $seed: ${copy.stderr}');
+    }
+  }
 
   _Screen? screen;
   Future<void> stopAll() async {
@@ -343,7 +384,28 @@ Future<int> _run(Map<String, String> options) async {
     screen = await _Screen.launch(out.path);
     final display = await screen.display();
     for (final instance in instances) {
-      await _start(instance, exe, out.path, run, display, passwords);
+      await _start(
+        instance,
+        exe,
+        out.path,
+        run,
+        display,
+        passwords,
+        [if (libraryStore != null) '--library-store=$libraryStore'],
+      );
+    }
+    if (killAfter != null) {
+      final main = instances.first;
+      unawaited(
+        Future<void>.delayed(
+          Duration(milliseconds: (killAfter * 1000).round()),
+          () {
+            if (main.exited.isCompleted) return;
+            main.killed = true;
+            Process.killPid(-main.process!.pid, ProcessSignal.sigkill);
+          },
+        ),
+      );
     }
     await Future.wait([
       for (final instance in instances)
@@ -463,13 +525,14 @@ Future<void> _start(
   String run,
   String display,
   Map<String, String> passwords,
+  List<String> appArgs,
 ) async {
   final name = instance.name;
   final home = '$out/home-$name';
   final email = instance.email;
   final process = await Process.start(
     'setsid',
-    [exe, '--hive-store-dir=$out/store-$name'],
+    [exe, '--hive-store-dir=$out/store-$name', ...appArgs],
     workingDirectory: out,
     environment: {
       'DISPLAY': display,
@@ -509,6 +572,10 @@ Future<int> _stop(_Instance instance) async {
 
 Future<bool> _report(_Instance instance, String out, int timeout) async {
   final name = instance.name;
+  if (instance.killed) {
+    stdout.writeln('$name: killed with SIGKILL as asked');
+    return true;
+  }
   final log = File('$out/$name.log');
   final lines = log.existsSync() ? log.readAsLinesSync() : const <String>[];
   for (final line in lines) {

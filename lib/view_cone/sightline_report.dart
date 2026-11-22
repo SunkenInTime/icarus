@@ -1,14 +1,20 @@
 import 'dart:convert';
-import 'dart:ui' show Offset, Path;
+import 'dart:ui' show Offset, Path, PathOperation;
 
 import 'package:icarus/view_cone/svg_height_visibility.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 
 /// What one view cone computed, small enough to paste into a message and
 /// complete enough to recompute the same cone away from the app. The builder
 /// takes the exact inputs the cone was drawn from, so a report always
 /// describes the cone the user is looking at.
 class SightlineReport {
-  const SightlineReport._(this.json, this.cone, this.eyeElevationMeters);
+  const SightlineReport._(
+    this.json,
+    this.cone,
+    this.eyeElevationMeters, {
+    this.sight = const ReportSight.clear(),
+  });
 
   /// The report body. Ordinary JSON values only, ready for [jsonEncode].
   final Map<String, Object?> json;
@@ -20,6 +26,8 @@ class SightlineReport {
   /// The eye the cone and every ray were cast from, in source meters.
   final double? eyeElevationMeters;
 
+  final ReportSight sight;
+
   String encode() => const JsonEncoder.withIndent('  ').convert(json);
 
   /// What the user sees as the lit area, in source SVG coordinates. Measured
@@ -28,11 +36,38 @@ class SightlineReport {
   Path? get visibleArea {
     final result = cone;
     if (result == null) return null;
-    final path = result.visibilityPath;
-    if (path != null) return path;
-    if (result.polygon.length < 3) return null;
-    return Path()..addPolygon(result.polygon, true);
+    final path = result.visibilityPath ??
+        (result.polygon.length < 3
+            ? null
+            : (Path()..addPolygon(result.polygon, true)));
+    if (path == null) return null;
+    return switch (sight) {
+      ReportSightClear() => path,
+      ReportSightBlind() => null,
+      ReportSightHidden(:final shadows) =>
+        Path.combine(PathOperation.difference, path, shadows),
+    };
   }
+}
+
+sealed class ReportSight {
+  const ReportSight();
+
+  const factory ReportSight.clear() = ReportSightClear;
+}
+
+class ReportSightClear extends ReportSight {
+  const ReportSightClear();
+}
+
+class ReportSightBlind extends ReportSight {
+  const ReportSightBlind();
+}
+
+class ReportSightHidden extends ReportSight {
+  const ReportSightHidden(this.shadows);
+
+  final Path shadows;
 }
 
 /// Rays cast across the aperture, plus the centre ray.
@@ -50,6 +85,7 @@ SightlineReport buildSightlineReport({
   Set<String> changedDoors = const {},
   Offset? svgOrigin,
   SvgHeightVisibility? model,
+  List<SightBlock> blockersSvg = const [],
 }) {
   final side = isAttack ? 'attack' : 'defense';
   final report = <String, Object?>{
@@ -73,6 +109,19 @@ SightlineReport buildSightlineReport({
     report['note'] = '';
     return SightlineReport._(report, null, null);
   }
+
+  final near = [
+    for (final block in blockersSvg)
+      if (block.shape.reaches(origin, rangeSvg)) block,
+  ];
+  final standsIn = near
+      .where((block) => standsInsideSmoke(origin, [block.shape]))
+      .map((block) => block.name)
+      .firstOrNull;
+  report['blockers'] = [
+    for (final block in near) _block(block),
+  ];
+  if (standsIn != null) report['insideSmoke'] = standsIn;
 
   final groundMeters = model.ground?.heightAt(origin);
   // The cone widget draws nothing from here, so there is no cone to describe.
@@ -118,8 +167,39 @@ SightlineReport buildSightlineReport({
     eyeElevationMeters: eye,
   );
   report['note'] = '';
-  return SightlineReport._(report, cone, eye);
+  final shadows = standsIn == null
+      ? occluderShadows(
+          origin,
+          rangeSvg,
+          [for (final block in near) block.shape],
+          view: (heading: facingRadians, spread: apertureRadians / 2),
+        )
+      : null;
+  return SightlineReport._(
+    report,
+    cone,
+    eye,
+    sight: standsIn != null
+        ? const ReportSightBlind()
+        : shadows == null
+            ? const ReportSightClear()
+            : ReportSightHidden(shadows),
+  );
 }
+
+Map<String, Object?> _block(SightBlock block) => switch (block.shape) {
+      CircleOccluder(:final centre, :final radius) => {
+          'name': block.name,
+          'kind': 'smoke',
+          'centreSvg': _point(centre),
+          'radiusSvg': _round(radius),
+        },
+      LineOccluder(:final points) => {
+          'name': block.name,
+          'kind': 'wall',
+          'pointsSvg': [for (final point in points) _point(point)],
+        },
+    };
 
 /// True when the saved height no longer picks out a level here, so the cone
 /// fell back to the automatic standing choice.

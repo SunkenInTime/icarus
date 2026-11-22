@@ -4,23 +4,14 @@ import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-final class FolderAsRow {
-  const FolderAsRow({required this.row, required this.dateCreated});
-
-  final ReadableFolder row;
-  final DateTime dateCreated;
-}
-
-FolderAsRow folderToRow(Folder folder) => FolderAsRow(
-      row: ReadableFolder(
-        publicId: folder.id,
-        name: folder.name,
-        parentFolderPublicId: folder.parentID,
-        iconId: folder.iconId,
-        color: folder.color.name,
-        customColorValue: folder.customColor?.toARGB32(),
-      ),
-      dateCreated: folder.dateCreated,
+ReadableFolder folderToRow(Folder folder) => ReadableFolder(
+      publicId: folder.id,
+      name: folder.name,
+      parentFolderPublicId: folder.parentID,
+      iconId: folder.iconId,
+      color: folder.color.name,
+      customColorValue: folder.customColor?.toARGB32(),
+      createdAt: folder.dateCreated,
     );
 
 sealed class FolderFromRow {
@@ -56,6 +47,10 @@ final class UnknownFolderIcon extends FolderProblem {
   final int? iconId;
 }
 
+final class FolderCreatedAtMissing extends FolderProblem {
+  const FolderCreatedAtMissing();
+}
+
 FolderColor? _colorNamed(String? name) {
   for (final color in FolderColor.values) {
     if (color.name == name) return color;
@@ -76,21 +71,23 @@ int? _iconIdOf(ReadableFolder row) => switch (row) {
       ReadableFolder(:final iconId) => iconId,
     };
 
-FolderFromRow folderFromRow(ReadableFolder row, DateTime dateCreated) {
+FolderFromRow folderFromRow(ReadableFolder row) {
   final color = _colorNamed(row.color);
   final iconId = _iconIdOf(row);
+  final dateCreated = row.createdAt;
   final problems = [
     if (color == null) UnknownFolderColor(row.color),
     if (iconId == null) UnknownFolderIcon(row.iconId),
+    if (dateCreated == null) const FolderCreatedAtMissing(),
   ];
-  if (color == null || iconId == null) {
+  if (color == null || iconId == null || dateCreated == null) {
     return FolderRefused(row.publicId, problems);
   }
   return FolderMade(
     Folder(
       name: row.name,
       id: row.publicId,
-      dateCreated: dateCreated,
+      dateCreated: dateCreated.toLocal(),
       parentID: row.parentFolderPublicId,
       iconId: iconId,
       color: color,

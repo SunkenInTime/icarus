@@ -49,7 +49,7 @@
 //   {"resize": [w, h]}                 the window
 //   {"typeText": t}                    replaces the text in the last text field
 // Editor content
-//   {"addAgent": id, "at": [x, y], "agent": "jett"?}
+//   {"addAgent": id, "at": [x, y], "agent": "jett"?, "cone": "viewCone90"?, "facing": degrees?, "length": n?, "enemy": b?}
 //   {"addHighTide": id, "at": [x, y], "wall": [[dx, dy], ...]?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
 //   {"setCaption": id, "text": t}      what the caption dialog's Done does
@@ -57,8 +57,8 @@
 //                                      spike, customRectangle, customCircle
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
 //                                      lo1{n}, lo2{n}; legacy ones share one id per lineup
-//   {"addAbility": id, "agent": name, "slot": n, "at": [x, y]}
-//   {"dragAgent": id, "by": [dx, dy]}  {"hoverAgent": id}
+//   {"addAbility": id, "agent": name, "slot": n, "at": [x, y], "facing": degrees?}
+//   {"dragAgent": id, "by": [dx, dy], "steps": n?}  {"hoverAgent": id}
 //   {"dragAgent": id, "toWorld": [x, y], "held": shot?}  shot: saved before letting go
 //                                      drops the middle of any placed item at this
 //                                      point of the canvas as drawn, 1778 by 1000;
@@ -137,6 +137,7 @@
 //   {"exit": 1}
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -167,6 +168,8 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
+import 'package:icarus/dev/drive/drive_frames.dart';
+import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -241,8 +244,11 @@ void startDrive() {
     );
     previous?.call(details);
   };
+  _runFrames.start();
   unawaited(_play(script));
 }
+
+final _runFrames = RunFrames();
 
 String? _logPath;
 String _runId = '';
@@ -289,6 +295,7 @@ Future<void> _play(String script) async {
     exit(0);
   }
   _log('RUN $_runId $script');
+  _log(await firstFrameLine(appProviderContainer));
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
       _failedSteps++;
@@ -323,6 +330,17 @@ Future<void> _play(String script) async {
     await _flush();
   }
   await Future.wait(_pictureWatches);
+  _log(_runFrames.stop());
+  try {
+    (await mirrorEndLines(appProviderContainer)).forEach(_log);
+  } on StoreStepFailed catch (failed) {
+    _failedSteps++;
+    failed.problems.forEach(_log);
+  }
+  if (await closeStoreLine(appProviderContainer) case final line?) {
+    if (line.startsWith('FAIL')) _failedSteps++;
+    _log(line);
+  }
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
   _log(
     'SUMMARY steps=$_steps failed=$_failedSteps '
@@ -393,6 +411,9 @@ Future<void> _waitFor(bool Function() condition, num seconds) async {
 
 Future<void> _seconds(num seconds) =>
     Future<void>.delayed(Duration(milliseconds: (seconds * 1000).round()));
+
+double _radians(Object? degrees) =>
+    degrees == null ? 0 : (degrees as num) * math.pi / 180;
 
 Offset _point(Map<String, dynamic> step, String key, [int at = 0]) {
   final xy = (step[key] as List).cast<num>();
@@ -985,6 +1006,15 @@ Future<void> _place(
   await _frames();
 }
 
+Future<List<String>> _storeLines(Future<List<String>> lines) async {
+  try {
+    return await lines;
+  } on StoreStepFailed catch (failed) {
+    failed.problems.forEach(_log);
+    throw StateError('the library store step failed');
+  }
+}
+
 File _signal(String name) {
   final dir = _signals;
   if (dir == null) throw StateError('ICARUS_DRIVE_SIGNALS is not set');
@@ -999,6 +1029,20 @@ Future<void> _run(Map<String, dynamic> step) async {
   switch (name) {
     case 'wait':
       await _seconds(value as num);
+    case 'libraryStore':
+      final lines = await _storeLines(
+        waitForShadowStore(
+          c,
+          patience: Duration(seconds: (step['seconds'] ?? 600) as int),
+          expected: {...?(step['expect'] as Map<String, dynamic>?)},
+          hidden: step['hidden'] == true,
+        ),
+      );
+      lines.forEach(_log);
+    case 'holdLibraryStore':
+      _log(holdStore(c));
+    case 'checkLibraryStore':
+      (await _storeLines(checkStoreAgain(c))).forEach(_log);
     case 'soak':
       final until = DateTime.now().add(
         Duration(milliseconds: ((value as num) * 1000).round()),
@@ -1143,13 +1187,26 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'addAgent':
       final id = value as String;
       final agents = c.read(agentProvider.notifier);
+      final type = AgentType.values.byName((step['agent'] ?? 'jett') as String);
+      final isAlly = step['enemy'] != true;
+      final cone = step['cone'] as String?;
       agents.addAgent(
-        PlacedAgent(
-          id: id,
-          type: AgentType.values.byName((step['agent'] ?? 'jett') as String),
-          position: const Offset(500, 500),
-          isAlly: true,
-        ),
+        cone == null
+            ? PlacedAgent(
+                id: id,
+                type: type,
+                position: const Offset(500, 500),
+                isAlly: isAlly,
+              )
+            : PlacedViewConeAgent(
+                id: id,
+                type: type,
+                position: const Offset(500, 500),
+                presetType: UtilityType.values.byName(cone),
+                rotation: _radians(step['facing']),
+                length: ((step['length'] ?? 0) as num).toDouble(),
+                isAlly: isAlly,
+              ),
       );
       await _place(id, _point(step, 'at'), (p) => agents.updatePosition(p, id));
     case 'addSmoke':
@@ -1178,6 +1235,7 @@ Future<void> _run(Map<String, dynamic> step) async {
           position: const Offset(500, 500),
           id: id,
           isAlly: true,
+          rotation: _radians(step['facing']),
         ),
       );
       await _place(
@@ -1310,12 +1368,16 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'dragAgent':
       final id = _itemId(value as String);
       final from = _itemCenter(id);
-      await _drag([
-        from,
-        step['toWorld'] == null
-            ? from + _point(step, 'by')
-            : _canvasPointOnScreen(_point(step, 'toWorld')),
-      ], shotWhileHeld: step['held'] as String?);
+      await _drag(
+        [
+          from,
+          step['toWorld'] == null
+              ? from + _point(step, 'by')
+              : _canvasPointOnScreen(_point(step, 'toWorld')),
+        ],
+        stepsPerLeg: ((step['steps'] ?? 30) as num).toInt(),
+        shotWhileHeld: step['held'] as String?,
+      );
     case 'hoverAgent':
       final id = value as String;
       await _hover(
@@ -1511,6 +1573,23 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (await during case final Object failure) throw failure;
     case 'slowMotion':
       timeDilation = (value as num).toDouble();
+    case 'logLineups' when step['frames'] is int:
+      final frames = step['frames'] as int;
+      var frame = 0;
+      void logFrame(Duration _) {
+        final links = [
+          for (final link in c.read(lineUpProvider).links) link.id,
+        ];
+        _log('LINEUPS $value frame ${frame++} $links');
+        if (frame >= frames) return;
+        SchedulerBinding.instance
+          ..addPostFrameCallback(logFrame)
+          ..scheduleFrame();
+      }
+
+      SchedulerBinding.instance
+        ..addPostFrameCallback(logFrame)
+        ..scheduleFrame();
     case 'logLineups':
       final lineUps = c.read(lineUpProvider);
       String at(Offset? p) => p == null

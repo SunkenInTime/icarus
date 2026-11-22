@@ -1086,6 +1086,9 @@ wholly there or wholly absent, and no other row changed.
 | `library` | `summary/<s>`, `folder/<f>` |
 | `s/<s>` | `strategy`, `page/<p>`, `settings/<p>`, `content/<p>/e/<e>`, `content/<p>/l/<l>` |
 
+A folder row keeps `createdAt` in milliseconds when it has one, as the
+server's folder row does.
+
 **Names.** Each `<x>` is `digestOf(id)`: the SHA-256 of the id's UTF-16
 code units (little-endian), cut to its first 32 hex characters (128 bits).
 Any id can be stored, including an empty one or one holding a lone

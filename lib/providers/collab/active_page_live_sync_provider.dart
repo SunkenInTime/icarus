@@ -112,6 +112,11 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   /// (after a restart, or a trip to another strategy). See [_drawQueuedWork].
   final Map<EntitySyncKey, _DrawnWork> _drawnWorkByKey = {};
 
+  final Map<EntitySyncKey, List<({int revision, StrategyOp op})>>
+      _landedLineupOps = {};
+
+  final Map<EntitySyncKey, Map<String, StrategyOp>> _sentLineupOps = {};
+
   /// What the page's last projection drew from the outbox, over the page
   /// answer [page]: taken as drawn when the canvas is hydrated from it.
   ({
@@ -169,6 +174,38 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   String? lineupGroupOf(String pageId, String itemId) =>
       _lineupGroupOfByPage[pageId]?[itemId];
 
+  LineupGroupMemory lineupGroupMemory(String pageId) {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final serverOrder = {
+      for (final (index, row)
+          in (snapshot?.lineupsByPage[pageId] ?? const <RemoteLineup>[])
+              .indexed)
+        row.publicId: index,
+    };
+    final known = [
+      for (final key in {
+        ..._hydratedBaseByEntityKey.keys,
+        ...state.overlayByEntityKey.keys,
+        ..._drawnWorkByKey.keys,
+      })
+        if (key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup)
+          if (_knownSortIndex(key) case final sortIndex?)
+            (id: key.entityId!, sortIndex: sortIndex),
+    ]..sort((a, b) => a.sortIndex != b.sortIndex
+        ? a.sortIndex.compareTo(b.sortIndex)
+        : (serverOrder[a.id] ?? 1 << 30)
+            .compareTo(serverOrder[b.id] ?? 1 << 30));
+    return LineupGroupMemory(
+      groupOf: Map.unmodifiable(_lineupGroupOfByPage[pageId] ?? const {}),
+      places: {for (final (rank, row) in known.indexed) row.id: rank},
+    );
+  }
+
+  int? _knownSortIndex(EntitySyncKey key) =>
+      state.overlayByEntityKey[key]?.desiredSortIndex ??
+      _drawnWorkByKey[key]?.drawn.sortIndex ??
+      _hydratedBaseByEntityKey[key]?.sortIndex;
+
   @override
   ActivePageLiveSyncState build() {
     return const ActivePageLiveSyncState();
@@ -188,6 +225,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     _hydratedPositionByKey.clear();
     _heldDeletedKeys.clear();
     _drawnWorkByKey.clear();
+    _landedLineupOps.clear();
+    _sentLineupOps.clear();
     _projectedWork = null;
     _pageAnsweredOn.clear();
     if (ref.exists(strategyOpQueueProvider)) {
@@ -557,6 +596,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final intent in intents) {
       final revision = intent.ack.appliedRevision;
       final key = intent.entityKey;
+      _sentLineupOps[key]?.remove(intent.op.opId);
       if (revision == null) {
         continue;
       }
@@ -618,6 +658,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       // conflicts instead of replacing the recovered work. Work it drew
       // from the outbox is on screen, and is no such change.
       if (intent.restored && drawnLayer == null) continue;
+      if (key.kind == EntitySyncKeyKind.lineup) {
+        (_landedLineupOps[key] ??= []).add((revision: revision, op: intent.op));
+      }
       _hydratedBaseByEntityKey[key] = accepted;
       remoteRevisions[key] = revision;
     }
@@ -1151,6 +1194,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       }
     }
 
+    final received = _normalizedRemoteEntities(snapshot, page.publicId);
     final pageOverlays = state.overlayByEntityKey.entries.where(
       (entry) =>
           entry.key.pageId == page.publicId &&
@@ -1208,9 +1252,17 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           if (lineupId == null || overlay.desiredPayload == null) {
             continue;
           }
+          final willHold = _lineupAsServerWillHold(
+            entry.key,
+            received[entry.key],
+            mapData: snapshot.header.mapData,
+          );
           remoteLineups[entry.key] = ProjectedPageLineup(
             publicId: lineupId,
-            payload: Map<String, dynamic>.from(overlay.desiredPayload! as Map),
+            payload: _inOrderOf(
+              Map<String, dynamic>.from(overlay.desiredPayload! as Map),
+              willHold?.payload,
+            ),
             sortIndex: overlay.desiredSortIndex ?? 0,
           );
           continue;
@@ -1297,19 +1349,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       }
       if (ops.any(isRetiredCloudLineupOp)) continue;
       final over = remote[key];
-      _DrawnWork? drawnFrom(Iterable<StrategyOp> ops) {
-        var onto = over;
-        _NormalizedEntity? base;
-        final layers = <({String opId, _NormalizedEntity entity})>[];
-        for (final op in ops) {
-          final drawn = _drawQueuedOp(key, op, onto, mapData: mapData);
-          if (drawn == null) return null;
-          layers.add((opId: op.opId, entity: drawn.entity));
-          base = drawn.base;
-          onto = drawn.entity;
-        }
-        return _DrawnWork(over: over, layers: layers, base: base);
-      }
+      _DrawnWork? drawnFrom(Iterable<StrategyOp> ops) =>
+          _drawnOver(key, ops, over, mapData: mapData);
 
       final drawn = drawnFrom(ops);
       if (drawn == null) continue;
@@ -1339,6 +1380,219 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       unawaited(queueNotifier.holdWorkThatNoLongerFits(noLongerFits));
     }
     return work;
+  }
+
+  _DrawnWork? _drawnOver(
+    EntitySyncKey key,
+    Iterable<StrategyOp> ops,
+    _NormalizedEntity? over, {
+    required String mapData,
+  }) {
+    var onto = over;
+    _NormalizedEntity? base;
+    final layers = <({String opId, _NormalizedEntity entity})>[];
+    for (final op in ops) {
+      final drawn = _drawQueuedOp(key, op, onto, mapData: mapData);
+      if (drawn == null) return null;
+      layers.add((opId: op.opId, entity: drawn.entity));
+      base = drawn.base;
+      onto = drawn.entity;
+    }
+    return _DrawnWork(over: over, layers: layers, base: base);
+  }
+
+  _NormalizedEntity? _lineupAsServerWillHold(
+    EntitySyncKey key,
+    _NormalizedEntity? row, {
+    required String mapData,
+  }) {
+    final queue = ref.read(strategyOpQueueProvider);
+    if (queue.attentionByEntityKey.containsKey(key)) return null;
+    final landed = <StrategyOp>[
+      for (final landed
+          in _landedLineupOps[key] ?? const <({int revision, StrategyOp op})>[])
+        if (row == null || landed.revision > row.revision) landed.op,
+    ];
+    if (row != null && landed.isEmpty) _landedLineupOps.remove(key);
+    final inFlight = queue.inFlightByEntityKey[key]?.pending.op;
+    final next = (queue.successorByEntityKey[key] ??
+            queue.queuedByEntityKey[key] ??
+            queue.pausedByEntityKey[key])
+        ?.pending
+        .op;
+    final sent = _sentLineupOps[key] ??= {};
+    if (!queue.isFlushing) sent.clear();
+    if (inFlight != null) sent[inFlight.opId] = inFlight;
+    final waitingIds = {inFlight?.opId, next?.opId};
+    final unanswered = [
+      for (final op in sent.values)
+        if (!waitingIds.contains(op.opId)) op,
+    ];
+    final waiting = <StrategyOp>[
+      ...landed,
+      ...unanswered,
+      if (inFlight != null) inFlight,
+      if (next != null && next.opId != inFlight?.opId) next,
+    ];
+    if (waiting.isEmpty) return row;
+    return _drawnOver(key, waiting, row, mapData: mapData)?.drawn;
+  }
+
+  static Map<String, dynamic> _inOrderOf(
+    Map<String, dynamic> payload,
+    Object? order,
+  ) {
+    if (order == null) return payload;
+    final orderData = cloudPayloadData(order);
+    final data = Map<String, dynamic>.from(cloudPayloadData(payload));
+    for (final collection in const ['origins', 'landings', 'links']) {
+      final place = <Object?, int>{};
+      for (final (index, item)
+          in (orderData[collection] as List? ?? const []).indexed) {
+        if (item is Map) place.putIfAbsent(item['id'], () => index);
+      }
+      final items = [...data[collection] as List? ?? const []];
+      final placed = [
+        for (final item in items)
+          if (item is Map && place.containsKey(item['id'])) item,
+      ]..sort((a, b) => place[a['id']]!.compareTo(place[b['id']]!));
+      data[collection] = [
+        ...placed,
+        for (final item in items)
+          if (item is! Map || !place.containsKey(item['id'])) item,
+      ];
+    }
+    return {...payload, 'data': data};
+  }
+
+  LineUpGraph? lineupsAsServerWillHold(String pageId, LineUpGraph editor) {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (state.hydratedPageId != pageId ||
+        snapshot == null ||
+        snapshot.activePage?.page.publicId != pageId) {
+      return null;
+    }
+    final mapData = snapshot.header.mapData;
+    final queue = ref.read(strategyOpQueueProvider);
+    final received = _normalizedRemoteEntities(snapshot, pageId);
+    final serverOrder = {
+      for (final (index, row)
+          in (snapshot.lineupsByPage[pageId] ?? const <RemoteLineup>[]).indexed)
+        EntitySyncKey.lineup(pageId, row.publicId): index,
+    };
+    bool onPage(EntitySyncKey key) =>
+        key.pageId == pageId && key.kind == EntitySyncKeyKind.lineup;
+    final keys = {
+      ...received.keys.where(onPage),
+      for (final intents in [
+        queue.inFlightByEntityKey,
+        queue.queuedByEntityKey,
+        queue.successorByEntityKey,
+        queue.pausedByEntityKey,
+        queue.attentionByEntityKey,
+      ])
+        ...intents.keys.where(onPage),
+      ..._landedLineupOps.keys.where(onPage),
+    };
+
+    final rows = <({
+      String id,
+      List<String>? items,
+      int sortIndex,
+      int serverIndex,
+    })>[];
+    for (final key in keys) {
+      final row = received[key];
+      final projected = _lineupAsServerWillHold(key, row, mapData: mapData);
+      if (projected?.deleted ?? false) continue;
+      rows.add((
+        id: key.entityId!,
+        items: projected == null
+            ? null
+            : [
+                for (final collection in const ['origins', 'landings', 'links'])
+                  for (final item
+                      in cloudPayloadData(projected.payload)[collection]
+                              as List? ??
+                          const [])
+                    if (item is Map && item['id'] is String)
+                      '$collection/${item['id']}',
+              ],
+        sortIndex: projected?.sortIndex ?? row?.sortIndex ?? 1 << 30,
+        serverIndex: serverOrder[key] ?? 1 << 30,
+      ));
+    }
+    final made = {for (final (index, row) in rows.indexed) row.id: index};
+    rows.sort((a, b) => a.sortIndex != b.sortIndex
+        ? a.sortIndex.compareTo(b.sortIndex)
+        : a.serverIndex != b.serverIndex
+            ? a.serverIndex.compareTo(b.serverIndex)
+            : made[a.id]!.compareTo(made[b.id]!));
+
+    final groupOf = _lineupGroupOfByPage[pageId] ?? const <String, String>{};
+    String? groupOfLink(LineUpLink link) =>
+        groupOf[link.id] ?? groupOf[link.originId] ?? groupOf[link.landingId];
+    final editorItems = <String, List<String>>{};
+    final linkGroups = {
+      for (final link in editor.links)
+        if (groupOfLink(link) case final group?) link.id: group,
+    };
+    for (final link in editor.links) {
+      final group = linkGroups[link.id];
+      if (group == null) continue;
+      editorItems.putIfAbsent(group, () => []).add('links/${link.id}');
+    }
+    for (final origin in editor.origins) {
+      final group = groupOf[origin.id] ??
+          editor.links
+              .where((link) => link.originId == origin.id)
+              .map((link) => linkGroups[link.id])
+              .nonNulls
+              .firstOrNull;
+      if (group != null) {
+        editorItems.putIfAbsent(group, () => []).add('origins/${origin.id}');
+      }
+    }
+    for (final landing in editor.landings) {
+      final group = groupOf[landing.id] ??
+          editor.links
+              .where((link) => link.landingId == landing.id)
+              .map((link) => linkGroups[link.id])
+              .nonNulls
+              .firstOrNull;
+      if (group != null) {
+        editorItems.putIfAbsent(group, () => []).add('landings/${landing.id}');
+      }
+    }
+    final order = <String>[
+      for (final row in rows) ...[
+        ...?row.items,
+        ...?editorItems[row.id],
+      ],
+    ];
+    List<T> ordered<T>(
+        List<T> items, String collection, String Function(T) id) {
+      final place = <String, int>{};
+      for (final (index, item) in order.indexed) {
+        place.putIfAbsent(item, () => index);
+      }
+      final placed = [
+        for (final item in items)
+          if (place.containsKey('$collection/${id(item)}')) item,
+      ]..sort((a, b) => place['$collection/${id(a)}']!
+          .compareTo(place['$collection/${id(b)}']!));
+      return [
+        ...placed,
+        for (final item in items)
+          if (!place.containsKey('$collection/${id(item)}')) item,
+      ];
+    }
+
+    return LineUpGraph(
+      origins: ordered(editor.origins, 'origins', (origin) => origin.id),
+      landings: ordered(editor.landings, 'landings', (landing) => landing.id),
+      links: ordered(editor.links, 'links', (link) => link.id),
+    );
   }
 
   /// Whether hydration can read [drawn] as the page would draw it: an
@@ -1632,22 +1886,17 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     // the page's highest. Removing an element or lineup (here or by a
     // teammate) then rewrites no row after it, which would collide with a
     // teammate editing one of them; the server never renumbers either.
-    int? knownSortIndex(EntitySyncKey key) =>
-        state.overlayByEntityKey[key]?.desiredSortIndex ??
-        _drawnWorkByKey[key]?.drawn.sortIndex ??
-        _hydratedBaseByEntityKey[key]?.sortIndex;
-
     int Function() freshSortIndexes(EntitySyncKeyKind kind) {
       bool onPage(EntitySyncKey key) =>
           key.pageId == pageId && key.kind == kind;
       var next = 1 +
           [
             for (final key in _hydratedBaseByEntityKey.keys)
-              if (onPage(key)) knownSortIndex(key) ?? 0,
+              if (onPage(key)) _knownSortIndex(key) ?? 0,
             for (final key in state.overlayByEntityKey.keys)
-              if (onPage(key)) knownSortIndex(key) ?? 0,
+              if (onPage(key)) _knownSortIndex(key) ?? 0,
             for (final key in _drawnWorkByKey.keys)
-              if (onPage(key)) knownSortIndex(key) ?? 0,
+              if (onPage(key)) _knownSortIndex(key) ?? 0,
           ].fold<int>(-1, max);
       return () => next++;
     }
@@ -1667,7 +1916,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
 
     int stackedSortIndex(EntitySyncKey key, _CollabElementKind kind) {
-      final known = knownSortIndex(key);
+      final known = _knownSortIndex(key);
       if (_heldDeletedKeys.contains(key) && known != null) return known;
       final previous = previousByKind[kind];
       final keep = known != null &&
@@ -1730,7 +1979,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
         payload: row.payload,
-        sortIndex: knownSortIndex(key) ?? freshLineupSortIndex(),
+        sortIndex: _knownSortIndex(key) ?? freshLineupSortIndex(),
         revision: 0,
         deleted: false,
       );

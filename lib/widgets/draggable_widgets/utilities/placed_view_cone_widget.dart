@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -231,7 +232,9 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
           },
           // The cone paints its own preview opacity, so the drag feedback
           // needs no offscreen layer per frame.
-          feedback: Transform.rotate(
+          feedback: SightBlockersScope(
+            blockers: SightBlockersScope.of(context),
+            child: Transform.rotate(
             angle: displayRotation,
             alignment: Alignment.topLeft,
             origin: anchorPoint.scale(
@@ -254,7 +257,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
                 ),
               ),
             ),
-          ),
+          )),
           childWhenDragging: const SizedBox.shrink(),
           onDragUpdate: _dragOrigin.update,
           onDragStarted: () {

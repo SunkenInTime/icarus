@@ -33,6 +33,31 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## The library store in shadow
+
+`--library-store shadow` on Linux, `-LibraryStore shadow` on Windows, starts the app with the library store switched to shadow: as it starts, it copies every local strategy and folder from Hive into a SQLite store beside the Hive boxes (`library_store/library.sqlite`), reads every strategy back out and compares it with Hive. Nothing reads the store yet. `--hive-store DIR` (`-HiveStore`) starts the main instance on a copy of `DIR`, which is never opened itself, so a real library can be checked without touching it.
+
+```sh
+dart tool/drive/linux.dart run --script tool/drive/scripts/library-store-shadow.json \
+  --library-store shadow --hive-store ~/Code/<scratch>/store
+```
+
+Every run logs `FIRSTFRAME <ms> ms store=<off|shadow|mirror>`, the time from the start of `main` to the first frame on screen; `scripts/first-frame.json` does nothing else. The steps:
+
+- `{"libraryStore": "shadow", "seconds": n?, "expect": {...}?}` waits up to n seconds (600 by default) for the copy and the comparison, logs them as `STORE` lines, and fails unless the store opened, the copy finished with nothing left out, every strategy and folder reads back the same as Hive, and neither library box (`strategy_box.hive`, `folder_box.hive`) changed while it ran. Other boxes the app writes on its own in that time are listed, not failed; `test/library_store/shadow_copy_test.dart` hashes every Hive file around the copy alone. `expect` can name counts that must match: `copied`, `unchanged`, `tookHiveVersion`, `removedWithHive`.
+- With `"hidden": true`, the step first tells the app it is hidden, as the system does when its window is minimized, so no frame is drawn while it waits, then shows it again. `scripts/library-store-shadow-hidden.json` uses it: the copy and the check must finish without a frame.
+- `{"checkLibraryStore": 1}` reads every strategy back again and fails on any difference.
+
+With `--library-store mirror` (`-LibraryStore mirror`) the app does the same copy at start, and after it every save of a local strategy or folder that Hive accepts is followed by the matching store write, through one queue. At the end of every script the driver waits for that queue to drain, checks the store against Hive, logs the `STORE` lines and fails unless it is exact; `{"holdLibraryStore": true}` stops the queue, so a run can end with saves Hive holds and the store does not (`scripts/library-store-mirror-hold.json`), for the next start to bring up to date.
+
+Every run logs `FRAMES whole run`: the frames drawn, the worst one from the start of its build to the end of its raster, how many took over 50 ms, and the longest the main isolate was busy, measured passively from the start of the script to its end.
+
+`test/library_store/drive_runs_test.dart` compares two runs' saved libraries (`ICARUS_COMPARE_RUNS=a:b;c:d`, run ids, generated ids and times set aside) and checks the store a run left against its Hive library without copying first (`ICARUS_CHECK_RUNS=a;b`).
+
+At the end of a run the driver closes the store and logs `STORE closed`.
+
+`--kill-after-seconds S` (Linux only) kills the main instance with SIGKILL S seconds after it starts, as a crash would. Start the next run with `--hive-store <that run's out>/store-main` and `scripts/library-store-shadow.json` to see the copy pick up where it stopped.
+
 ## Keeping the two in step
 
 `run.ps1` and `linux.dart` are two launchers for the same driver. The driver decides pass or fail and writes the `SUMMARY` line; the launchers only set it up and read the log. `test/drive_linux_runner_test.dart` fails when the driver reads an `ICARUS_DRIVE_*` variable one launcher doesn't set, when Linux refuses a step the driver no longer has, or when either build stops refusing production. A change to what an instance gets goes into both launchers in the same commit.

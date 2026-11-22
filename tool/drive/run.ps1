@@ -23,12 +23,14 @@
 param(
   [Parameter(Mandatory)] [string]$Exe,
   [Parameter(Mandatory)] [string]$Script,
-  [Parameter(Mandatory)] [string]$Account,
+  [string]$Account,
   [string]$Companion,
   [string]$CompanionAccount,
   [string]$Out,
   [string]$AccountsFile = (Join-Path $HOME '.agents\secrets\icarus\test-accounts.md'),
-  [int]$TimeoutSeconds = 900
+  [int]$TimeoutSeconds = 900,
+  [string]$HiveStore,
+  [ValidateSet('off', 'shadow', 'mirror')] [string]$LibraryStore
 )
 $ErrorActionPreference = 'Stop'
 # New every run: the server refuses an item id another strategy holds.
@@ -41,6 +43,10 @@ if ((Test-Path -LiteralPath $Out) -and (Get-ChildItem -LiteralPath $Out -Force |
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $Out 'signals') | Out-Null
 $exePath = if ((Get-Item -LiteralPath $Exe).PSIsContainer) { Join-Path $Exe 'icarus.exe' } else { $Exe }
+if ($HiveStore) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $Out 'store-main') | Out-Null
+  Copy-Item -Path (Join-Path (Resolve-Path -LiteralPath $HiveStore) '*') -Destination (Join-Path $Out 'store-main') -Recurse
+}
 
 function Get-Password([string]$email) {
   $row = Get-Content -LiteralPath $AccountsFile |
@@ -60,10 +66,12 @@ function Start-Instance([string]$name, [string]$scriptPath, [string]$email) {
   $env:ICARUS_DRIVE_SESSION = Join-Path $Out "session-$name.json"
   $env:ICARUS_DRIVE_SET_CLIPBOARD = Join-Path $PSScriptRoot 'set-clipboard.ps1'
   $env:ICARUS_DRIVE_EMAIL = $email
-  $env:ICARUS_DRIVE_PASSWORD = Get-Password $email
+  $env:ICARUS_DRIVE_PASSWORD = if ($email) { Get-Password $email } else { $null }
+  $appArgs = @('"--hive-store-dir={0}"' -f (Join-Path $Out "store-$name"))
+  if ($LibraryStore) { $appArgs += "--library-store=$LibraryStore" }
   try {
     $process = Start-Process -FilePath $exePath -PassThru `
-      -ArgumentList ('"--hive-store-dir={0}"' -f (Join-Path $Out "store-$name")) `
+      -ArgumentList $appArgs `
       -RedirectStandardOutput (Join-Path $Out "$name-app.out") `
       -RedirectStandardError (Join-Path $Out "$name-app.err")
     $process

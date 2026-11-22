@@ -13,6 +13,7 @@ import 'package:icarus/providers/map_doors_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/svg_height_runtime_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/view_cone/page_occluders.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/caption_menu.dart';
@@ -125,19 +126,27 @@ class ViewConeWidget extends ConsumerWidget {
           sideWorldOrigin,
           isAttack: mapState.isAttack,
         );
-        heightCone = SvgHeightViewCone(
-          runtime: runtime,
-          canonicalOrigin: resolvedWorldOrigin,
-          rotation: rotation ??
-              coord.rotationForSide(placedUtility?.rotation ?? 0,
-                  isAttack: mapState.isAttack),
-          range: coord.virtualLengthToWorld(currentLength),
-          angle: angle * pi / 180,
-          isAttack: mapState.isAttack,
-          elevation: resolvedElevation,
-          opacity: opacity,
-          changedDoors: ref.watch(changedMapDoorsProvider),
-        );
+        final changedDoors = ref.watch(changedMapDoorsProvider);
+        heightCone = Builder(builder: (context) {
+          final carried = carriedBySelection(context);
+          return SvgHeightViewCone(
+            runtime: runtime,
+            canonicalOrigin: resolvedWorldOrigin,
+            rotation: rotation ??
+                coord.rotationForSide(placedUtility?.rotation ?? 0,
+                    isAttack: mapState.isAttack),
+            range: coord.virtualLengthToWorld(currentLength),
+            angle: angle * pi / 180,
+            isAttack: mapState.isAttack,
+            elevation: resolvedElevation,
+            opacity: opacity,
+            changedDoors: changedDoors,
+            blockers: SightBlockersScope.of(context),
+            carriedBy: carried == null
+                ? Offset.zero
+                : selectionDragInWorld(carried, isAttack: mapState.isAttack),
+          );
+        });
       }
       // Only a placed cone carries a context menu; a drag preview has none.
       if (placedUtility != null) {
@@ -153,6 +162,7 @@ class ViewConeWidget extends ConsumerWidget {
           coneAngleDegrees: angle,
           lengthVirtual: currentLength,
           visionElevationCm: resolvedElevation,
+          blockers: SightBlockersScope.of(context),
         );
       }
     }

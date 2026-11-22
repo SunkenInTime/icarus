@@ -28,6 +28,8 @@ import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/view_cone/cone_coverage.dart';
+import 'package:icarus/view_cone/page_occluders.dart';
+import 'package:icarus/view_cone/vision_occluders.dart';
 
 Offset _overlayScreenPosition({
   required PlacedWidget widget,
@@ -131,7 +133,7 @@ class TransitionEntriesLayer extends ConsumerWidget {
             if (renderer.buildWall(entry, neutralTeamColors: neutralTeamColors)
                 case final wall?)
               wall,
-          for (final entry in orderedEntries) renderer.buildEntry(entry),
+          for (final entry in orderedEntries) renderer.drawnEntry(entry),
         ],
       ),
     );
@@ -253,6 +255,63 @@ class _EntryRenderer {
         ),
       ),
     );
+  }
+
+  bool get _pastHalfway => t >= 0.5;
+
+  Widget drawnEntry(PageTransitionEntry entry) {
+    final shown = entry.to ?? entry.from;
+    if (shown is! PlacedAbility || !blocksSight(shown.data)) {
+      return buildEntry(entry);
+    }
+    return SightBlocker(
+      key: ValueKey('sight_${entry.id}'),
+      block: switch (_blockerAt(entry, shown)) {
+        final shape? => SightBlock(
+            name: sightBlockName(shown.data),
+            shape: shape,
+          ),
+        null => null,
+      },
+      child: buildEntry(entry),
+    );
+  }
+
+  VisionOccluder? _blockerAt(PageTransitionEntry entry, PlacedAbility shown) {
+    final directionalOffset = coordinateSystem.scale(28) *
+        (direction == PageTransitionDirection.forward ? 1.0 : -1.0);
+    Offset slid(Offset position, double screenX) =>
+        position + Offset(_canonicalHorizontalTranslation(screenX), 0);
+    final from = PageTransitionEntry.wallPathOf(entry.from);
+    final to = PageTransitionEntry.wallPathOf(entry.to);
+    final drawn = switch (entry.kind) {
+      TransitionKind.none => shown,
+      TransitionKind.appear when _pastHalfway => shown.copyWith(
+          position: slid(entry.endPos, directionalOffset * (1 - t)),
+        ),
+      TransitionKind.disappear when !_pastHalfway => shown.copyWith(
+          position: slid(entry.startPos, -directionalOffset * t),
+        ),
+      TransitionKind.move => shown.copyWith(
+          position: Offset.lerp(entry.startPos, entry.endPos, t),
+          rotation: _lerpRotation(
+            shown,
+            PageTransitionEntry.rotationOf(entry.from!),
+            shown.rotation,
+            t,
+          ),
+          wallPath: (_pastHalfway ? to : from) ?? const [],
+        ),
+      _ => null,
+    };
+    if (drawn == null) return null;
+    if (entry.kind == TransitionKind.move && from != null && to != null) {
+      final middle = placedAbilityMiddle(drawn, mapScale: mapScale);
+      return LineOccluder([
+        for (final point in _morphedWall(from, to)!) middle + point,
+      ]);
+    }
+    return occluderOf(drawn, mapScale: mapScale);
   }
 
   /// The two walls blended by [t], as a drawn line; just the one when only
@@ -976,13 +1035,26 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
                 ),
               ),
           for (final widget in orderedWidgets)
-            staticPlacedWidgetView(
-              widget: widget,
-              mapScale: mapScale,
-              abilitySize: abilitySize,
-              agentSize: agentSize,
-              isAttack: isAttack,
-            ),
+            if (widget is PlacedAbility && blocksSight(widget.data))
+              SightBlocker(
+                key: ValueKey('sight_${widget.id}'),
+                block: sightBlockOf(widget, mapScale: mapScale),
+                child: staticPlacedWidgetView(
+                  widget: widget,
+                  mapScale: mapScale,
+                  abilitySize: abilitySize,
+                  agentSize: agentSize,
+                  isAttack: isAttack,
+                ),
+              )
+            else
+              staticPlacedWidgetView(
+                widget: widget,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+                agentSize: agentSize,
+                isAttack: isAttack,
+              ),
         ],
       ),
     );
