@@ -250,13 +250,13 @@ class ConvexStrategyRepository {
 
   Stream<RemotePageList> watchPageList(
     String strategyPublicId, {
-    String? shareToken,
+    required String accountSubject,
   }) {
     return _api.strategy
         .getPageList(
           clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
           strategyPublicId: strategyPublicId,
-          shareToken: _optional(shareToken),
+          accountSubject: ConvexOptional.present(accountSubject),
         )
         .watch()
         .map(

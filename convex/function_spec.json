@@ -145961,6 +145961,12 @@
       "args": {
         "type": "object",
         "value": {
+          "accountSubject": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
           "clientProtocolVersion": {
             "fieldType": {
               "type": "number"
@@ -165840,6 +165846,12 @@
       "args": {
         "type": "object",
         "value": {
+          "accountSubject": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
           "clientProtocolVersion": {
             "fieldType": {
               "type": "number"
@@ -169489,6 +169501,12 @@
           "acceptsPictureIds": {
             "fieldType": {
               "type": "boolean"
+            },
+            "optional": true
+          },
+          "accountSubject": {
+            "fieldType": {
+              "type": "string"
             },
             "optional": true
           },
@@ -219306,6 +219324,12 @@
       "args": {
         "type": "object",
         "value": {
+          "accountSubject": {
+            "fieldType": {
+              "type": "string"
+            },
+            "optional": true
+          },
           "clientProtocolVersion": {
             "fieldType": {
               "type": "number"

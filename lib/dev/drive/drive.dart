@@ -1523,6 +1523,8 @@ Future<void> _run(Map<String, dynamic> step) async {
           ),
         ),
       );
+    case 'expectPageListRefusedNaming':
+      _log(await pageListRefusal(c, value as String));
     case 'expectStoredPayloadVersion':
       _log(
         await storedPayloadVersion(

@@ -2,6 +2,7 @@ import { query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  assertCallerIsAccount,
   assertStrategyReadable,
   getEffectiveStrategyRoleForUser,
   requireCurrentUser,
@@ -85,10 +86,14 @@ export const getPageList = query({
     ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     shareToken: v.optional(v.string()),
+    accountSubject: v.optional(v.string()),
   },
   returns: pageListValidator,
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
+    if (args.accountSubject !== undefined) {
+      await assertCallerIsAccount(ctx, args.accountSubject);
+    }
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const role = await assertStrategyReadable(ctx, strategy, args.shareToken);
     const pages = sortByNumberField(

@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_sqlite.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 CloudShadow _running(ProviderContainer c) {
@@ -66,6 +71,37 @@ Future<String> storedPayloadVersion(
     }
   }
   throw StateError('the store holds no item $itemId');
+}
+
+Future<String> pageListRefusal(
+  ProviderContainer c,
+  String accountSubject,
+) async {
+  final strategyId =
+      c.read(remoteEditorSnapshotProvider).valueOrNull?.shell.header.publicId;
+  if (strategyId == null) throw StateError('no cloud strategy is open');
+  final signedIn = c.read(authProvider).user?.id;
+  if (signedIn == null || signedIn == accountSubject) {
+    throw StateError(
+      'a refusal needs a sign-in other than $accountSubject, and this one '
+      'is $signedIn',
+    );
+  }
+  try {
+    await c
+        .read(convexStrategyRepositoryProvider)
+        .watchPageList(strategyId, accountSubject: accountSubject)
+        .first
+        .timeout(const Duration(seconds: 20));
+  } catch (error) {
+    if (!isTypedConvexForbiddenError(error)) rethrow;
+    return 'CLOUDSTORE a page list read naming $accountSubject, signed in as '
+        '$signedIn, was refused: $error';
+  }
+  throw StateError(
+    'a page list read naming $accountSubject was answered while signed in '
+    'as $signedIn',
+  );
 }
 
 final class CloudStoreLine {
@@ -165,6 +201,11 @@ final class CloudStoreLog {
               'CLOUDSTORE ${drained.watchesOpen} page list watches had not '
               'closed ${finalWait.inSeconds} s after the last step',
               problem: true,
+            ),
+          if (notifier.subject case final subject?)
+            CloudStoreLine(
+              'CLOUDSTORE page lists were read naming account $subject',
+              problem: false,
             ),
           CloudStoreLine(
             'CLOUDSTORE counted, not judged: ${notifier.handed} pages handed '
