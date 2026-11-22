@@ -272,9 +272,10 @@ final class Model {
       if (bad) throw StateError('${entry.id} is $state against the server');
     }
     final sync = syncStateOf(
+      OwnedBy(testAccount),
       Tally.of(client.queue, clock),
       network: Network.online,
-      signedIn: SignedIn.thisAccount,
+      signedIn: testAccount,
     );
     final quiet =
         client.queue.entries.isEmpty &&

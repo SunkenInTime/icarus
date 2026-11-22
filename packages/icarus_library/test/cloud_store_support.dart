@@ -25,7 +25,11 @@ List<PageRead> pageReadsOf(StrategyRowSet rows) => [
 
 Future<void> addCloud(LibraryStore store, StrategyRowSet rows) async =>
     savedValue(
-      await store.addCloudStrategy(headerReadOf(rows), pageReadsOf(rows)),
+      await store.addCloudStrategy(
+        testAccount,
+        headerReadOf(rows),
+        pageReadsOf(rows),
+      ),
     );
 
 CloudStrategy cloudOf(StrategySync sync) => switch (sync) {
@@ -37,7 +41,7 @@ Future<CloudStrategy> syncOf(LibraryStore store) async =>
     cloudOf(strategyOf(await store.readStrategy(strategyId)).sync);
 
 Future<Recorded> recordAll(LibraryStore store, List<QueueEvent> events) async =>
-    savedValue(await store.record(strategyId, events));
+    savedValue(await store.record(testAccount, strategyId, events));
 
 List<QueueEffect> effectsOf(Recorded recorded) => [
   for (final outcome in recorded.outcomes)

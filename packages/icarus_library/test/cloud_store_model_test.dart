@@ -82,9 +82,11 @@ final class DiskQueue {
       EntriesUnreadable(:final problem) => throw StateError(problem),
     };
     facts = switch (rows['cloud']) {
-      final text? => factsToJson(
-        (factsFromText(text) as CloudRowRead<StrategyFacts>).value,
-      ),
+      final text? => switch (factsFromText(text)) {
+        CloudRowRead(value: CloudFacts(:final owner, :final facts)) =>
+          factsToJson(owner, facts),
+        CloudRowUnreadable(:final problem) => throw StateError(problem),
+      },
       null => null,
     };
   }
@@ -148,6 +150,7 @@ final class StoreModel {
     while (true) {
       final rows = initialRows();
       final result = await store.addCloudStrategy(
+        testAccount,
         headerReadOf(rows),
         pageReadsOf(rows),
       );
@@ -178,7 +181,7 @@ final class StoreModel {
 
   Future<void> restartSession() async {
     for (var tries = 0; tries < 20; tries++) {
-      final result = await store.record(strategyId, [
+      final result = await store.record(testAccount, strategyId, [
         AppRestarted(build: build),
       ]);
       log.add('session after reopen -> ${describeSaving(result)}');
@@ -230,7 +233,8 @@ final class StoreModel {
   }
 
   Future<void> diskEqualsMemory(String label) async {
-    final memory = (await sync()).queue;
+    final cloud = await sync();
+    final memory = cloud.queue;
     final disk = DiskQueue(storage.contents[strategyArea(strategyId)] ?? {});
     final want = {
       'entries': [for (final entry in memory.entries) entryToJson(entry)],
@@ -238,7 +242,7 @@ final class StoreModel {
         for (final attempt in memory.attempts.values)
           '${attempt.number}': attemptToJson(attempt),
       },
-      'facts': factsToJson(memory.strategy),
+      'facts': factsToJson(cloud.owner, memory.strategy),
       'landed': [for (final work in memory.landed) landedToJson(work)],
       'counters': memory.nextAttempt,
     };
@@ -353,7 +357,7 @@ final class StoreModel {
     bool again = true,
   }) async {
     final before = await snapshot();
-    final result = await store.record(strategyId, events);
+    final result = await store.record(testAccount, strategyId, events);
     log.add(
       '$label -> ${switch (result) {
         Saved(:final value) => [for (final outcome in value.outcomes) switch (outcome) {
@@ -375,7 +379,10 @@ final class StoreModel {
     await diskEqualsMemory(label);
     final recorded = (result as Saved<Recorded, CommitRefusal>).value;
     if (events.any(
-      (event) => event is AppRestarted || event is ConnectionReturned,
+      (event) =>
+          event is AppRestarted ||
+          event is ConnectionReturned ||
+          event is AccountChanged,
     )) {
       live = (await sync()).queue.session.number;
     }
@@ -633,7 +640,7 @@ final class StoreModel {
     final opId = op.opId;
     final before = {for (final entry in (await sync()).queue.entries) entry.id};
     final unchanged = await snapshot();
-    final result = await store.commit(strategyId, op);
+    final result = await store.commitAs(testAccount, strategyId, op);
     log.add(
       'edit $opId ${op.type.wireName} ${targetOf(op)} -> ${describeSaving(result)}',
     );
@@ -937,7 +944,7 @@ final class StoreModel {
     }
     final before = storage.contents;
     final stale = [BaseArrived(base, session: ended)];
-    final result = await store.record(strategyId, stale);
+    final result = await store.record(testAccount, strategyId, stale);
     log.add(
       'a $kind from the ended session arrives -> ${describeSaving(result)}',
     );
@@ -969,7 +976,7 @@ final class StoreModel {
     final stale = [
       BaseArrived(pageReadOf(server.rows, openPage), session: session),
     ];
-    final result = await store.record(strategyId, stale);
+    final result = await store.record(testAccount, strategyId, stale);
     log.add('a result from the unused session -> ${describeSaving(result)}');
     if (result is SaveInDoubt<Recorded, CommitRefusal>) {
       await reopen('the unused session result was in doubt');
@@ -1003,7 +1010,11 @@ final class StoreModel {
         if (page is LivePage) pageReadOf(rows, page.publicId) as PageRead,
     ]..shuffle(random);
     final now = reads.take(random.nextInt(reads.length + 1)).toList();
-    final added = await store.addCloudStrategy(headerReadOf(rows), now);
+    final added = await store.addCloudStrategy(
+      testAccount,
+      headerReadOf(rows),
+      now,
+    );
     if (added is! Saved<StrategySummary, LibraryRefusal>) {
       throw StateError('adding the strategy again: $added');
     }
@@ -1020,7 +1031,7 @@ final class StoreModel {
       BaseArrived(oldBase, session: old),
       if (oldPage is PageRead) BaseArrived(oldPage, session: old),
     ];
-    final result = await store.record(strategyId, stale);
+    final result = await store.record(testAccount, strategyId, stale);
     log.add(
       'a read from before the strategy was added again -> '
       '${describeSaving(result)}',
@@ -1058,7 +1069,8 @@ final class StoreModel {
     await listMatchesPages('a newer row held the queue');
     count('held queues compared against the list');
     final before = storage.contents;
-    final refused = await store.commit(
+    final refused = await store.commitAs(
+      testAccount,
       strategyId,
       pageAdd(fresh('op'), fresh('page-')),
     );
@@ -1173,6 +1185,124 @@ final class StoreModel {
     }
   }
 
+  Future<void> anotherAccountTries() async {
+    final cloud = await sync();
+    final before = await snapshot();
+    final disk = const DeepCollectionEquality().equals;
+    final stored = {
+      for (final MapEntry(:key, :value) in storage.contents.entries)
+        key: {...value},
+    };
+    final commitsBefore = commits;
+    final (_, live) = await livePagesAndElements();
+    final sendable = [
+      for (final entry in cloud.queue.entries)
+        if (cloud.views[entry.id]?.sendable ?? false) entry.id,
+    ];
+    final StrategyOp? op = live.isEmpty
+        ? null
+        : movePatch(
+            fresh('b'),
+            elementId: pick(live).publicId,
+            expected: pick(live).revision,
+            rotation: 45,
+          );
+    final String label;
+    final Saving<Object?, CommitRefusal> result;
+    switch (random.nextInt(op == null ? 4 : 6)) {
+      case 0:
+        label = 'another account records that the account changed';
+        result = await store.record(otherAccount, strategyId, [
+          const AccountChanged(),
+        ]);
+      case 1:
+        label = 'another account records a connection';
+        result = await store.record(otherAccount, strategyId, [
+          const ConnectionReturned(),
+        ]);
+      case 2 when sendable.isNotEmpty:
+        label = 'another account claims $sendable';
+        result = await store.record(otherAccount, strategyId, [
+          BatchClaimed(clientId: clientId, opIds: sendable, at: clock),
+        ]);
+      case 2 || 3:
+        label = 'another account records a header read';
+        result = await store.record(otherAccount, strategyId, [
+          BaseArrived(headerReadOf(server.rows), session: this.live),
+        ]);
+      case 4:
+        label = 'another account edits';
+        result = await store.commitAs(otherAccount, strategyId, op!);
+      case _:
+        label = 'an edit naming no account';
+        result = await store.commit(strategyId, op!);
+    }
+    log.add('$label -> ${describeSaving(result)}');
+    switch (result) {
+      case Refused(reason: WorkOfAnotherAccount(:final owner))
+          when owner == OwnedBy(testAccount):
+        count('refused for another account');
+      case Refused(reason: AccountNeeded()):
+        count('refused for naming no account');
+      case Refused(reason: QueueHeld()):
+        count('refused for another account while held');
+      case _:
+        throw StateError('$label was not refused: ${describeSaving(result)}');
+    }
+    if (commits != commitsBefore) throw StateError('$label made a commit');
+    if (!disk(storage.contents, stored)) {
+      throw StateError('$label changed what is stored');
+    }
+    await memoryAsBefore(before, label);
+  }
+
+  void accountsCountedApart() {
+    final strategies = [
+      for (final summary in listOf(store).strategies)
+        switch (summary.sync) {
+          KeptInCloud(:final owner, :final tally) => (
+            owner: owner,
+            tally: tally,
+          ),
+          CloudUnverified(:final owner) => (owner: owner, tally: Tally.empty),
+          KeptHere() => throw StateError('the cloud strategy is listed here'),
+        },
+    ];
+    final (:owner, :tally) = strategies.single;
+    if (owner != OwnedBy(testAccount)) {
+      throw StateError('the strategy is listed as $owner');
+    }
+    final asMine = accountSyncState(
+      strategies,
+      network: Network.online,
+      signedIn: testAccount,
+    );
+    final asOther = accountSyncState(
+      strategies,
+      network: Network.online,
+      signedIn: otherAccount,
+    );
+    if (asMine.others.isNotEmpty ||
+        !sameState(
+          asMine.mine,
+          syncStateOf(
+            OwnedBy(testAccount),
+            tally,
+            network: Network.online,
+            signedIn: testAccount,
+          ),
+        ) ||
+        asOther.mine is! AllSaved ||
+        (tally.total == 0
+            ? asOther.others.isNotEmpty
+            : asOther.others[testAccount] != tally)) {
+      throw StateError(
+        'one account counted as the other: $tally as $asMine and $asOther',
+      );
+    }
+    count('accounts counted apart');
+  }
+
   Future<void> check() async {
     final cloud = await sync();
     for (final entry in cloud.queue.entries) {
@@ -1184,6 +1314,10 @@ final class StoreModel {
         _ => false,
       };
       if (bad) throw StateError('${entry.id} is $state against the server');
+    }
+    accountsCountedApart();
+    if (cloud.owner != testAccount) {
+      throw StateError('the strategy reads as ${cloud.owner}\'s');
     }
     final listed = listOf(store).strategies.single.sync;
     if (listed case KeptInCloud(
@@ -1210,6 +1344,8 @@ final class StoreModel {
         await lane();
       case 15:
         if (teammates) teammate();
+      case 16 when random.nextInt(4) == 0:
+        await anotherAccountTries();
       case 16 when random.nextInt(3) == 0:
         await unloadChangesNothing();
       case 16:
@@ -1239,9 +1375,11 @@ final class StoreModel {
         if (pages.isNotEmpty) openPage = pick(pages);
       case _:
         await record([
-          random.nextBool()
-              ? const ConnectionLost()
-              : const ConnectionReturned(),
+          switch (random.nextInt(5)) {
+            0 => const AccountChanged(),
+            1 || 2 => const ConnectionLost(),
+            _ => const ConnectionReturned(),
+          },
         ], 'connection');
     }
     await check();
@@ -1329,6 +1467,16 @@ StrategyRowSet liveOnly(StrategyRowSet rows) => StrategyRowSet(
   ],
 );
 
+bool sameState(SyncState a, SyncState b) => switch ((a, b)) {
+  (AllSaved(), AllSaved()) => true,
+  (
+    Outstanding(face: final x, tally: final t),
+    Outstanding(:final face, :final tally),
+  ) =>
+    x == face && t == tally,
+  _ => false,
+};
+
 Future<void> runSeed(int seed, int steps) async {
   final model = StoreModel(seed, teammates: seed.isOdd);
   try {
@@ -1397,6 +1545,9 @@ void main() {
       'events delivered again after a commit that was not stored',
       'memory checked after a call that was not stored',
       'strategies gone',
+      'refused for another account',
+      'refused for naming no account',
+      'accounts counted apart',
     ]) {
       expect(counted[what] ?? 0, greaterThan(0), reason: what);
     }

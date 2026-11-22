@@ -4,6 +4,7 @@ final class _OnDisk {
   _OnDisk({
     required this.entries,
     required this.attempts,
+    required this.owner,
     required this.facts,
     required this.landed,
     required this.groups,
@@ -12,6 +13,7 @@ final class _OnDisk {
 
   final Map<int, QueueEntry> entries;
   final Map<int, AttemptFact> attempts;
+  Account? owner;
   StrategyFacts? facts;
   final Map<(int, int), LandedWork> landed;
   final Map<String?, String> groups;
@@ -19,10 +21,11 @@ final class _OnDisk {
 }
 
 final class _LoadedQueue {
-  _LoadedQueue(this.disk, this.current);
+  _LoadedQueue(this.disk, this.current, this.owner);
 
   final _OnDisk disk;
   CloudQueue current;
+  final Account owner;
 }
 
 final class _PutEntry extends _Write {
@@ -38,8 +41,9 @@ final class _PutAttempt extends _Write {
 }
 
 final class _PutFacts extends _Write {
-  const _PutFacts(super.area, this.facts);
+  const _PutFacts(super.area, this.owner, this.facts);
 
+  final Account owner;
   final StrategyFacts facts;
 }
 
@@ -100,9 +104,10 @@ final class _QueueLoaded extends _QueueLoad {
 }
 
 final class _QueueHeld extends _QueueLoad {
-  const _QueueHeld(this.rows);
+  const _QueueHeld(this.rows, this.owner);
 
   final List<UnreadableQueueRow> rows;
+  final CloudOwner owner;
 }
 
 final class _QueueNotRead extends _QueueLoad {
@@ -124,11 +129,12 @@ final class _CloudReady extends _CloudOpen {
 }
 
 final class _CloudHeld extends _CloudOpen {
-  const _CloudHeld(this.strategy, this.header, this.rows);
+  const _CloudHeld(this.strategy, this.header, this.rows, this.owner);
 
   final LoadedStrategy strategy;
   final ReadableStrategy header;
   final List<UnreadableQueueRow> rows;
+  final CloudOwner owner;
 }
 
 final class _CloudRefused extends _CloudOpen {
@@ -249,11 +255,11 @@ PageTally _tallyOn(
   );
 }
 
-KeptInCloud _syncOf(CloudQueue queue, DateTime now) =>
-    KeptInCloud(Tally.of(queue, now));
+KeptInCloud _syncOf(Account owner, CloudQueue queue, DateTime now) =>
+    KeptInCloud(OwnedBy(owner), Tally.of(queue, now));
 
-KeptInCloud _heldSync(List<UnreadableQueueRow> rows) =>
-    KeptInCloud(Tally(standing: Standing.held, unreadable: rows.length));
+KeptInCloud _heldSync(CloudOwner owner, List<UnreadableQueueRow> rows) =>
+    KeptInCloud(owner, Tally(standing: Standing.held, unreadable: rows.length));
 
 DateTime _storedPrecision(DateTime time) => DateTime.fromMillisecondsSinceEpoch(
   time.millisecondsSinceEpoch,
@@ -323,10 +329,10 @@ extension _CloudStore on LibraryStore {
         attemptToJson(attempt),
         (text) => same(attemptFromText(attempt.number, text), attempt),
       ),
-      _PutFacts(:final facts) => checked(
+      _PutFacts(:final owner, :final facts) => checked(
         const CloudName().name,
-        factsToJson(facts),
-        (text) => same(factsFromText(text), facts),
+        factsToJson(owner, facts),
+        (text) => same(factsFromText(text), CloudFacts(owner, facts)),
       ),
       _PutNumbers(:final numbers) => checked(
         const NumbersName().name,
@@ -357,6 +363,7 @@ extension _CloudStore on LibraryStore {
     void cannotRead(String name, String problem) =>
         unreadable.add(UnreadableQueueRow(strategy.refOf(name), problem));
     var facts = StrategyFacts.fresh;
+    CloudOwner owner = const OwnerUnreadable();
     switch (await _lease.read(area, const CloudName().name)) {
       case KeyNotRead(:final failure):
         return _QueueNotRead(failure);
@@ -365,7 +372,8 @@ extension _CloudStore on LibraryStore {
       case KeyHeld(:final value):
         switch (factsFromText(value)) {
           case CloudRowRead(:final value):
-            facts = value;
+            facts = value.facts;
+            owner = OwnedBy(value.owner);
           case CloudRowUnreadable(:final problem):
             cannotRead(const CloudName().name, problem);
         }
@@ -475,12 +483,16 @@ extension _CloudStore on LibraryStore {
             strategy,
             header,
             const {},
-          ).withSync(_heldSync(unreadable)),
+          ).withSync(_heldSync(owner, unreadable)),
         );
       }
       _checked(strategy.digest, listed);
-      return _QueueHeld(unreadable);
+      return _QueueHeld(unreadable, owner);
     }
+    final account = switch (owner) {
+      OwnedBy(:final account) => account,
+      OwnerUnreadable() => throw StateError('an unread owner was not held'),
+    };
     final pending = entries.whereType<PendingOp>();
     final mentioned = Counters(
       nextAttempt: [
@@ -519,6 +531,7 @@ extension _CloudStore on LibraryStore {
       _OnDisk(
         entries: {for (final entry in entries) entry.place: entry},
         attempts: {...attempts},
+        owner: account,
         facts: facts,
         landed: {
           for (final work in landed) (work.attempt, work.position): work,
@@ -527,12 +540,13 @@ extension _CloudStore on LibraryStore {
         shown: shown,
       ),
       current,
+      account,
     );
     _queues[strategy.digest] = loaded;
     if (_summaries[strategy.digest] case final summary?) {
       _keepInMemory(
         strategy.digest,
-        summary.withSync(_syncOf(current, _cloudNow())),
+        summary.withSync(_syncOf(account, current, _cloudNow())),
       );
     }
     _checked(strategy.digest, listed);
@@ -575,7 +589,12 @@ extension _CloudStore on LibraryStore {
     }
     return switch (await _queueOf(strategy)) {
       _QueueLoaded(:final queue) => _CloudReady(strategy, header, queue),
-      _QueueHeld(:final rows) => _CloudHeld(strategy, header, rows),
+      _QueueHeld(:final rows, :final owner) => _CloudHeld(
+        strategy,
+        header,
+        rows,
+        owner,
+      ),
       _QueueNotRead(:final failure) => _CloudUnread(failure),
     };
   }
@@ -687,6 +706,7 @@ extension _CloudStore on LibraryStore {
   ({List<_Write> writes, Set<String> pages}) _queueWrites(
     LoadedStrategy strategy,
     _OnDisk disk,
+    Account owner,
     CloudQueue next,
   ) {
     final area = strategy.area;
@@ -721,7 +741,9 @@ extension _CloudStore on LibraryStore {
         writes.add(_DeleteName(area, AttemptName(number).name));
       }
     }
-    if (next.strategy != disk.facts) writes.add(_PutFacts(area, next.strategy));
+    if (next.strategy != disk.facts || owner != disk.owner) {
+      writes.add(_PutFacts(area, owner, next.strategy));
+    }
     final landed = {
       for (final work in next.landed) (work.attempt, work.position): work,
     };
@@ -757,13 +779,19 @@ extension _CloudStore on LibraryStore {
       if (!groups.containsKey(page)) _DeleteName(area, _groupName(page)),
   ];
 
-  void _written(_OnDisk disk, CloudQueue next, Map<String?, String> groups) {
+  void _written(
+    _OnDisk disk,
+    Account owner,
+    CloudQueue next,
+    Map<String?, String> groups,
+  ) {
     disk.entries
       ..clear()
       ..addAll({for (final entry in next.entries) entry.place: entry});
     disk.attempts
       ..clear()
       ..addAll(next.attempts);
+    disk.owner = owner;
     disk.facts = next.strategy;
     disk.landed
       ..clear()
@@ -779,6 +807,7 @@ extension _CloudStore on LibraryStore {
   Future<Stored<StrategySummary>> _cloudSummaryAll(
     LoadedStrategy strategy,
     ReadableStrategy header,
+    Account owner,
     CloudQueue queue,
   ) async {
     final StrategyRowSet rows;
@@ -798,7 +827,7 @@ extension _CloudStore on LibraryStore {
             page.publicId: _tallyOn(strategy, rows, page.publicId),
         },
         elsewhere: strategy.elsewhere,
-        sync: _syncOf(queue, _cloudNow()),
+        sync: _syncOf(owner, queue, _cloudNow()),
       ),
     );
   }
@@ -1063,7 +1092,8 @@ extension _CloudStore on LibraryStore {
       case Done(:final value):
         base = value;
     }
-    final queued = _queueWrites(strategy, disk, next);
+    final owner = cloud.queue.owner;
+    final queued = _queueWrites(strategy, disk, owner, next);
     final groups = identical(next.shown, disk.shown)
         ? {...disk.groups}
         : _groupTexts(next.shown);
@@ -1071,7 +1101,7 @@ extension _CloudStore on LibraryStore {
     final previous = _summaries[digest];
     final StrategySummary summary;
     if (previous == null) {
-      switch (await _cloudSummaryAll(strategy, header, next)) {
+      switch (await _cloudSummaryAll(strategy, header, owner, next)) {
         case StorageFailed(:final failure):
           asBefore();
           return NotSaved(failure);
@@ -1153,7 +1183,7 @@ extension _CloudStore on LibraryStore {
                 : previous.tallies[page.publicId]!,
         },
         elsewhere: strategy.elsewhere,
-        sync: _syncOf(next, _cloudNow()),
+        sync: _syncOf(owner, next, _cloudNow()),
       );
     }
     final numbers = _higher(_numbers, _numbersOf(next));
@@ -1172,7 +1202,7 @@ extension _CloudStore on LibraryStore {
       return Saved(take(summary));
     }
     final result = await _commit<T, CommitRefusal>(writes, () {
-      _written(disk, next, groups);
+      _written(disk, owner, next, groups);
       cloud.queue.current = next;
       _sessions[digest] = (session: next.session, shown: next.shown);
       _summaries[digest] = summary;
@@ -1331,7 +1361,16 @@ extension _CloudStore on LibraryStore {
     return result;
   }
 
+  CommitRefusal? _notOwnedBy(_CloudReady cloud, Account asking) =>
+      cloud.queue.owner == asking
+      ? null
+      : WorkOfAnotherAccount(
+          cloud.header.publicId,
+          OwnedBy(cloud.queue.owner),
+        );
+
   Future<RecordResult> _recordCloud(
+    Account asking,
     String strategyPublicId,
     List<QueueEvent> events,
   ) async {
@@ -1349,6 +1388,7 @@ extension _CloudStore on LibraryStore {
       case final _CloudReady ready:
         cloud = ready;
     }
+    if (_notOwnedBy(cloud, asking) case final refusal?) return Refused(refusal);
     return _recordOn(cloud, events);
   }
 
@@ -1403,10 +1443,11 @@ extension _CloudStore on LibraryStore {
     return result;
   }
 
-  CloudStrategy _syncView(CloudQueue queue) => CloudStrategy(
-    queue: queue,
-    views: entryViews(queue, _cloudNow()),
-    tally: Tally.of(queue, _cloudNow()),
+  CloudStrategy _syncView(_LoadedQueue loaded) => CloudStrategy(
+    owner: loaded.owner,
+    queue: loaded.current,
+    views: entryViews(loaded.current, _cloudNow()),
+    tally: Tally.of(loaded.current, _cloudNow()),
   );
 
   Future<Reading<StrategyContent>> _readCloudStrategy(_CloudOpen cloud) =>
@@ -1416,10 +1457,10 @@ extension _CloudStore on LibraryStore {
             strategy,
             header,
             queue.current,
-            _syncView(queue.current),
+            _syncView(queue),
           ),
-        _CloudHeld(:final strategy, :final header, :final rows) =>
-          _cloudStrategyContent(strategy, header, null, CloudHeld(rows)),
+        _CloudHeld(:final strategy, :final header, :final rows, :final owner) =>
+          _cloudStrategyContent(strategy, header, null, CloudHeld(owner, rows)),
         _CloudRefused() || _CloudUnread() => throw StateError('not open'),
       };
 
@@ -1458,18 +1499,18 @@ extension _CloudStore on LibraryStore {
         header,
         queue.current,
         pagePublicId,
-        sync: _syncView(queue.current),
+        sync: _syncView(queue),
         content: queue.current.shown.content.containsKey(pagePublicId)
             ? const ContentShown()
             : const ContentNotRead(),
       ),
-    _CloudHeld(:final strategy, :final header, :final rows) =>
+    _CloudHeld(:final strategy, :final header, :final rows, :final owner) =>
       _cloudPageContent(
         strategy,
         header,
         null,
         pagePublicId,
-        sync: CloudHeld(rows),
+        sync: CloudHeld(owner, rows),
         content: const ContentNotRead(),
       ),
     _CloudRefused() || _CloudUnread() => throw StateError('not open'),
@@ -1562,6 +1603,7 @@ extension _CloudStore on LibraryStore {
   }
 
   Future<Saving<StrategySummary, LibraryRefusal>> _addCloud(
+    Account account,
     HeaderRead header,
     List<PageRead> pages,
   ) async {
@@ -1619,12 +1661,14 @@ extension _CloudStore on LibraryStore {
       _OnDisk(
         entries: {},
         attempts: {},
+        owner: null,
         facts: null,
         landed: {},
         groups: {},
         shown: Shown.nothing,
       ),
       queue,
+      account,
     );
     _queues[digest] = loaded;
     final result = await _recordOn(
@@ -1649,6 +1693,7 @@ extension _CloudStore on LibraryStore {
   }
 
   Future<Saving<StrategySummary, CommitRefusal>> _discardHeld(
+    Account account,
     String strategyPublicId,
   ) async {
     final digest = digestOf(strategyPublicId);
@@ -1688,6 +1733,8 @@ extension _CloudStore on LibraryStore {
         return Refused(QueueNotHeld(strategyPublicId));
       case _QueueNotRead(:final failure):
         return NotSaved(failure);
+      case _QueueHeld(owner: final OwnedBy owner) when owner.account != account:
+        return Refused(WorkOfAnotherAccount(strategyPublicId, owner));
       case _QueueHeld():
         break;
     }
@@ -1698,14 +1745,18 @@ extension _CloudStore on LibraryStore {
     }
     final summary = LibraryStore._summaryOf(strategy, header, const {})
         .withSync(switch (_numbersHold) {
-          final row? => _heldSync([row]),
-          null => _syncOf(CloudQueue.start(build: _build), _cloudNow()),
+          final row? => _heldSync(OwnedBy(account), [row]),
+          null => _syncOf(
+            account,
+            CloudQueue.start(build: _build),
+            _cloudNow(),
+          ),
         });
     final result = await _commit<StrategySummary, CommitRefusal>(
       [
         for (final key in keys)
           if (_queueName(key)) _DeleteName(area, key),
-        _PutFacts(area, StrategyFacts.fresh),
+        _PutFacts(area, account, StrategyFacts.fresh),
         _PutSummary(digest, summary),
       ],
       () {

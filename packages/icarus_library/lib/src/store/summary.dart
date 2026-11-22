@@ -5,6 +5,7 @@ import '../outcome.dart';
 import '../payloads.dart';
 import '../rows.dart';
 import '../wire.dart';
+import '../cloud/account.dart';
 import '../cloud/codec.dart';
 import '../cloud/queue.dart';
 import '../cloud/sync.dart';
@@ -22,13 +23,16 @@ final class KeptHere extends SummarySync {
 }
 
 final class KeptInCloud extends SummarySync {
-  const KeptInCloud(this.tally);
+  const KeptInCloud(this.owner, this.tally);
 
+  final CloudOwner owner;
   final Tally tally;
 }
 
 final class CloudUnverified extends SummarySync {
-  const CloudUnverified();
+  const CloudUnverified(this.owner);
+
+  final CloudOwner owner;
 }
 
 sealed class Readability {
@@ -395,10 +399,18 @@ final class StrategySummary {
     'tallies': {
       for (final page in tallies.keys.sorted()) page: tallies[page]!.toJson(),
     },
-    if (sync case KeptInCloud(:final tally))
-      'cloud': {'tally': tally.toJson(), 'rowsVersion': cloudRowVersion},
-    if (sync case CloudUnverified())
-      'cloud': {'unverified': true, 'rowsVersion': cloudRowVersion},
+    if (sync case KeptInCloud(:final owner, :final tally))
+      'cloud': {
+        'tally': tally.toJson(),
+        'rowsVersion': cloudRowVersion,
+        ..._ownerJson(owner),
+      },
+    if (sync case CloudUnverified(:final owner))
+      'cloud': {
+        'unverified': true,
+        'rowsVersion': cloudRowVersion,
+        ..._ownerJson(owner),
+      },
   };
 
   static Decoded<StrategySummary> decode(Object? json) =>
@@ -466,15 +478,34 @@ final class StrategySummary {
         );
       });
 
+  static Map<String, Object?> _ownerJson(CloudOwner owner) => switch (owner) {
+    OwnedBy(:final account) => {'account': account.subject},
+    OwnerUnreadable() => const {},
+  };
+
   static Decoded<KeptInCloud> _cloudSync(Object? json) =>
       JsonFields.read(json, 'cloud sync', (fields) {
         final version = fields.whole('rowsVersion');
         if (version > cloudRowVersion) {
-          return () =>
-              KeptInCloud(Tally(standing: Standing.held, unreadable: 1));
+          return () => KeptInCloud(
+            const OwnerUnreadable(),
+            Tally(standing: Standing.held, unreadable: 1),
+          );
         }
         final tally = fields.decoded('tally', Tally.decode);
-        return () => KeptInCloud(tally!);
+        final account = fields.optionalString('account');
+        if (account != null && account.isEmpty) {
+          fields.reject('expected the account the work is for');
+        }
+        if (account == null && tally?.standing != Standing.held) {
+          fields.reject('a cloud strategy whose account is not held');
+        }
+        return () => KeptInCloud(
+          account == null || account.isEmpty
+              ? const OwnerUnreadable()
+              : OwnedBy(Account(account)),
+          tally!,
+        );
       });
 
   @override

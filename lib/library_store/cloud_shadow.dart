@@ -222,6 +222,9 @@ final class CloudShadow {
   final ledger = <LedgerEntry>[];
   String? stopped;
   String? ended;
+  Account? _account;
+
+  Account? get account => _account;
 
   final _jobs = ListQueue<_Job>();
   final _strategies = <String, _Strategy>{};
@@ -245,6 +248,20 @@ final class CloudShadow {
   }
 
   bool get _taking => stopped == null && ended == null;
+
+  void serve(Account served) {
+    switch (_account) {
+      case null:
+        _account = served;
+      case final serving when serving != served:
+        stop('asked to serve $served while serving $serving');
+      case _:
+        break;
+    }
+  }
+
+  Account _serving() =>
+      _account ?? (throw StateError('the shadow serves no account yet'));
 
   void page(String strategyId, RemotePageSnapshot snapshot, int? connection) {
     if (!_taking) return;
@@ -466,7 +483,7 @@ final class CloudShadow {
         _openedThisRun.add(strategyId);
         state.newest = connection;
         final added = await _write(
-          () => store.addCloudStrategy(header, const []),
+          () => store.addCloudStrategy(_serving(), header, const []),
         );
         switch (added) {
           case Saved():
@@ -556,7 +573,9 @@ final class CloudShadow {
       }
     }
 
-    switch (await _write(() => store.record(strategyId, events))) {
+    switch (await _write(
+      () => store.record(_serving(), strategyId, events),
+    )) {
       case Saved(:final value):
         return value;
       case NothingToSave():
@@ -626,12 +645,21 @@ final class CloudShadow {
               '${storageFailureWords(failure, StoreStep.read)}',
         ];
     }
+    final owner = switch (content.sync) {
+      CloudStrategy(:final owner) => OwnedBy(owner),
+      CloudHeld(:final owner) => owner,
+      LocalStrategy() => null,
+    };
     final shownPages = [for (final page in content.pages) page.publicId];
     final sentPages = [
       for (final page in _ordered(expected.pages.values)) page.publicId,
     ];
     final compared = pages ?? expected.elements.keys.toSet();
     return [
+      if (account case final served? when owner != OwnedBy(served))
+        'account: the store holds the work for '
+            '${owner ?? 'nobody, as a strategy kept here'}, the shadow '
+            'serves ${served.subject}',
       if (expected.strategy case final row? when content.strategy != row)
         'strategy row: ${_rowWords(content.strategy, row)}',
       if (shownPages.join(',') != sentPages.join(','))

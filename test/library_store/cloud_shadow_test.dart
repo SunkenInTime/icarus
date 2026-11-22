@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -124,6 +125,8 @@ const int? offline = null;
 
 Future<void> none() async {}
 
+final servedAccount = Account('account-a');
+
 CloudShadow shadowOn(
   LibraryStore store, {
   CanRead? canRead,
@@ -134,7 +137,7 @@ CloudShadow shadowOn(
       build: 'b',
       canRead: canRead ?? appCanRead,
       breathe: breathe ?? none,
-    );
+    )..serve(servedAccount);
 
 List<Verdict> verdicts(CloudShadow shadow) =>
     [for (final entry in shadow.ledger) entry.verdict];
@@ -487,6 +490,64 @@ void main() {
       expect(
         (await shadow.readBack(await openStore(MemoryStorage())))[strategyId],
         contains('the store does not hold the strategy'),
+      );
+    });
+
+    test(
+        'the store keeps the strategy as the work of the account the shadow '
+        'serves, and a read back under another account names the difference',
+        () async {
+      final storage = MemoryStorage();
+      final rows = serverRows();
+      final store = await openStore(storage);
+      final shadow = shadowOn(store)
+        ..pageList(strategyId, pageList(rows), tag(0));
+      await shadow.idle;
+      expect(
+        store.library,
+        isA<LibraryOpen>().having(
+          (open) => open.list.strategies.single.sync,
+          'sync',
+          isA<KeptInCloud>().having(
+            (sync) => sync.owner,
+            'owner',
+            OwnedBy(servedAccount),
+          ),
+        ),
+      );
+      await store.close();
+
+      final reopened = await openStore(storage);
+      final other = CloudShadow(
+        reopened,
+        build: 'b',
+        canRead: appCanRead,
+        breathe: none,
+      )..serve(Account('account-b'));
+      other.pageList(strategyId, pageList(rows), tag(0));
+      await other.idle;
+      expect(
+        other.ledger.single.verdict,
+        isA<RefusedByStore>().having(
+          (refused) => refused.why,
+          'why',
+          contains('WorkOfAnotherAccount'),
+        ),
+      );
+      expect(await shadow.readBack(reopened), {strategyId: isEmpty});
+      await reopened.close();
+
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      final area = strategyArea(strategyId);
+      final row = jsonDecode(contents[area]!['cloud']!) as Map<String, Object?>;
+      contents[area]!['cloud'] = jsonEncode({...row, 'account': 'account-b'});
+      expect(
+        (await shadow
+            .readBack(await openStore(MemoryStorage(contents))))[strategyId],
+        contains(startsWith('account: the store holds the work for')),
       );
     });
 

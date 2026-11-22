@@ -10,6 +10,10 @@ const clientId = 'client-1';
 
 const build = 'build-1';
 
+final testAccount = Account('account-a');
+
+final otherAccount = Account('account-b');
+
 final now = DateTime.utc(2026, 11, 20, 12);
 
 ElementPatchOp movePatch(

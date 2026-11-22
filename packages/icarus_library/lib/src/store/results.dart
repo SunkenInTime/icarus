@@ -1,6 +1,7 @@
 import '../outcome.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
+import '../cloud/account.dart';
 import '../cloud/queue.dart';
 import '../cloud/sync.dart';
 import '../undo.dart';
@@ -226,6 +227,25 @@ final class NotACloudStrategy extends CommitRefusal {
 
   @override
   String toString() => 'NotACloudStrategy($strategyPublicId)';
+}
+
+final class WorkOfAnotherAccount implements CommitRefusal, LibraryRefusal {
+  const WorkOfAnotherAccount(this.strategyPublicId, this.owner);
+
+  final String strategyPublicId;
+  final CloudOwner owner;
+
+  @override
+  String toString() => 'WorkOfAnotherAccount($strategyPublicId, $owner)';
+}
+
+final class AccountNeeded extends CommitRefusal {
+  const AccountNeeded(this.strategyPublicId);
+
+  final String strategyPublicId;
+
+  @override
+  String toString() => 'AccountNeeded($strategyPublicId)';
 }
 
 final class KeptInTheCloud extends LibraryRefusal {
@@ -516,18 +536,22 @@ final class LocalStrategy extends StrategySync {
 }
 
 final class CloudHeld extends StrategySync {
-  CloudHeld(List<UnreadableQueueRow> rows) : rows = List.unmodifiable(rows);
+  CloudHeld(this.owner, List<UnreadableQueueRow> rows)
+    : rows = List.unmodifiable(rows);
 
+  final CloudOwner owner;
   final List<UnreadableQueueRow> rows;
 }
 
 final class CloudStrategy extends StrategySync {
   CloudStrategy({
+    required this.owner,
     required this.queue,
     required Map<String, EntryView> views,
     required this.tally,
   }) : views = Map.unmodifiable(views);
 
+  final Account owner;
   final CloudQueue queue;
   final Map<String, EntryView> views;
   final Tally tally;

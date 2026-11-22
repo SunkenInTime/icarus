@@ -23,9 +23,15 @@ void main() {
       listOf(store).strategies.single.sync,
       isA<KeptInCloud>().having((sync) => sync.tally.total, 'total', 0),
     );
-    savedValue(await store.commit(strategyId, movePatch('move', x: 40)));
     savedValue(
-      await store.commit(strategyId, elementAdd('add', pageId: 'page-b')),
+      await store.commitAs(testAccount, strategyId, movePatch('move', x: 40)),
+    );
+    savedValue(
+      await store.commitAs(
+        testAccount,
+        strategyId,
+        elementAdd('add', pageId: 'page-b'),
+      ),
     );
     final sent = await claimAll(store);
     expect(sent.ops.map((op) => op.opId), ['move', 'add']);
@@ -60,7 +66,9 @@ void main() {
       final storage = MemoryStorage();
       final store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, movePatch('move', x: 40)));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('move', x: 40)),
+      );
       final sent = await claimAll(store);
       final server = withOp(initialRows(), sent.ops.single);
       await recordAll(store, [
@@ -97,7 +105,8 @@ void main() {
       await addCloud(store, initialRows());
       for (var i = 0; i < 200; i++) {
         savedValue(
-          await store.commit(
+          await store.commitAs(
+            testAccount,
             strategyId,
             elementAdd('add$i', elementId: 'n$i', pageId: 'page-b'),
           ),
@@ -118,7 +127,9 @@ void main() {
     test('an edit writes its own entry row and the summary, and opening the '
         'store writes nothing', () async {
       final (store, counts) = await opened();
-      savedValue(await store.commit(strategyId, movePatch('move', x: 7)));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('move', x: 7)),
+      );
       expect(counts.commits, 1);
       expect(
         counts.written,
@@ -129,7 +140,11 @@ void main() {
       );
       counts.reset();
       savedValue(
-        await store.commit(strategyId, movePatch('again', x: 9, expected: 2)),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('again', x: 9, expected: 2),
+        ),
       );
       expect(
         counts.written,
@@ -275,8 +290,16 @@ void main() {
         'own pending edits included', () async {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, movePatch('move', x: 40)));
-      savedValue(await store.commit(strategyId, pageDelete('drop', 'page-a')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('move', x: 40)),
+      );
+      savedValue(
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          pageDelete('drop', 'page-a'),
+        ),
+      );
       final queue = (await syncOf(store)).queue;
       final delete = queue.entry('drop')! as PendingOp;
       final seen = (delete.work as CheckedDelete).seen.content as ContentSeen;
@@ -295,7 +318,8 @@ void main() {
       await recordAll(store, [const ConnectionReturned()]);
       await readServer(store, initialRows());
       savedValue(
-        await store.commit(
+        await store.commitAs(
+          testAccount,
           strategyId,
           pageAdd('copy', 'page-c', copyFrom: 'page-a'),
         ),
@@ -310,7 +334,8 @@ void main() {
       expect(drawn.elements, hasLength(2));
       final copiedId = drawn.elements.first.publicId;
       savedValue(
-        await store.commit(
+        await store.commitAs(
+          testAccount,
           strategyId,
           elementDelete('drop', elementId: copiedId, pageId: 'page-c'),
         ),
@@ -345,7 +370,9 @@ void main() {
       final storage = MemoryStorage();
       final store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, movePatch('good')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('good')),
+      );
       await claimAll(store);
       await store.close();
       final contents = editable(storage.contents);
@@ -366,7 +393,11 @@ void main() {
         ),
       );
       expect(
-        await store.commit(strategyId, movePatch('next', elementId: 'e2')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('next', elementId: 'e2'),
+        ),
         isA<Refused<Committed, CommitRefusal>>().having(
           (refused) => refused.reason,
           'reason',
@@ -374,7 +405,7 @@ void main() {
         ),
       );
       expect(
-        await store.record(strategyId, [const ConnectionLost()]),
+        await store.record(testAccount, strategyId, [const ConnectionLost()]),
         isA<Refused<Recorded, CommitRefusal>>(),
       );
       expect(
@@ -464,7 +495,9 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, movePatch('good')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('good')),
+      );
       await store.close();
       final contents = editable(storage.contents);
       contents[area]!.remove('cloud');
@@ -508,6 +541,7 @@ void main() {
       final (store, disk, _) = await withRow('cloud', '{"version":2}');
       await store.readStrategy(strategyId);
       final discarded = await store.discardUnreadableQueue(
+        testAccount,
         strategyId,
         const DiscardsUnsentWork(),
       );
@@ -535,7 +569,11 @@ void main() {
       ),
     );
     savedValue(
-      await store.addCloudStrategy(headerReadOf(rows), pageReadsOf(renamed)),
+      await store.addCloudStrategy(
+        testAccount,
+        headerReadOf(rows),
+        pageReadsOf(renamed),
+      ),
     );
     final page = pageOf(await store.readPage(strategyId, 'page-a'));
     expect((page.page as LivePage).name, 'Renamed');
@@ -552,7 +590,9 @@ void main() {
     final storage = MemoryStorage();
     var store = await openCloudStore(MemoryEngine(storage));
     await addCloud(store, initialRows());
-    savedValue(await store.commit(strategyId, movePatch('move')));
+    savedValue(
+      await store.commitAs(testAccount, strategyId, movePatch('move')),
+    );
     await claimAll(store);
     await store.close();
     final contents = editable(storage.contents);
@@ -568,7 +608,9 @@ void main() {
       ),
     );
     expect(
-      await store.record(strategyId, [const AppRestarted(build: build)]),
+      await store.record(testAccount, strategyId, [
+        const AppRestarted(build: build),
+      ]),
       isA<Refused<Recorded, CommitRefusal>>(),
     );
     StrategyRowSet bare(String id) => StrategyRowSet(
@@ -580,7 +622,11 @@ void main() {
     );
     final other = bare('strategy-2');
     expect(
-      await store.addCloudStrategy(headerReadOf(other), pageReadsOf(other)),
+      await store.addCloudStrategy(
+        testAccount,
+        headerReadOf(other),
+        pageReadsOf(other),
+      ),
       isA<Refused<StrategySummary, LibraryRefusal>>().having(
         (refused) => refused.reason,
         'reason',
@@ -598,7 +644,9 @@ void main() {
     final (engine, counts) = counting(MemoryEngine(storage));
     var store = await openCloudStore(engine, clock: () => clock);
     await addCloud(store, initialRows());
-    savedValue(await store.commit(strategyId, movePatch('move')));
+    savedValue(
+      await store.commitAs(testAccount, strategyId, movePatch('move')),
+    );
     final sent = await claimAll(store);
     await recordAll(store, [
       TransportFailed(sent.attempt, TransportFailure.network, at: clock),
@@ -627,7 +675,9 @@ void main() {
     final storage = MemoryStorage();
     var store = await openCloudStore(MemoryEngine(storage));
     await addCloud(store, initialRows());
-    savedValue(await store.commit(strategyId, movePatch('move')));
+    savedValue(
+      await store.commitAs(testAccount, strategyId, movePatch('move')),
+    );
     final sent = await claimAll(store);
     await recordAll(store, [
       BatchRefused(sent.attempt, BatchRefusal.editAccessRemoved),
@@ -647,7 +697,9 @@ void main() {
     final storage = MemoryStorage();
     var store = await openCloudStore(MemoryEngine(storage));
     await addCloud(store, initialRows());
-    savedValue(await store.commit(strategyId, movePatch('move')));
+    savedValue(
+      await store.commitAs(testAccount, strategyId, movePatch('move')),
+    );
     await store.close();
     final (engine, counts) = counting(MemoryEngine(storage));
     store = await openCloudStore(engine);
@@ -676,7 +728,9 @@ void main() {
       'can be filed into a folder', () async {
     final store = await openCloudStore(MemoryEngine(MemoryStorage()));
     await addCloud(store, initialRows());
-    savedValue(await store.commit(strategyId, movePatch('move')));
+    savedValue(
+      await store.commitAs(testAccount, strategyId, movePatch('move')),
+    );
     expect(
       await store.editLibrary([const RemoveStrategy(strategyId)]),
       isA<Refused<LibraryEdited, LibraryRefusal>>().having(
@@ -717,7 +771,7 @@ void main() {
       final moved = rows.withRows([e1At('page-b', revision: 2)]);
       final withoutE2 = withOp(rows, elementDelete('gone', elementId: 'e2'));
       savedValue(
-        await store.addCloudStrategy(headerReadOf(rows), [
+        await store.addCloudStrategy(testAccount, headerReadOf(rows), [
           pageReadOf(moved, 'page-b') as PageRead,
           pageReadOf(rows, 'page-a') as PageRead,
           pageReadOf(withoutE2, 'page-a') as PageRead,
@@ -809,6 +863,7 @@ void main() {
       );
       expect(
         await store.discardUnreadableQueue(
+          testAccount,
           strategyId,
           const DiscardsUnsentWork(),
         ),
@@ -820,7 +875,9 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, movePatch('move')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('move')),
+      );
       await store.close();
       final contents = editable(storage.contents);
       contents[area]![PendingName(5).name] = '{"version":2}';
@@ -845,6 +902,7 @@ void main() {
       refuse = true;
       expect(
         await store.discardUnreadableQueue(
+          testAccount,
           strategyId,
           const DiscardsUnsentWork(),
         ),
@@ -905,10 +963,15 @@ void main() {
       () async {
         final store = await openCloudStore(MemoryEngine(MemoryStorage()));
         savedValue(
-          await store.addCloudStrategy(headerReadOf(initialRows()), const []),
+          await store.addCloudStrategy(
+            testAccount,
+            headerReadOf(initialRows()),
+            const [],
+          ),
         );
         expect(
-          await store.commit(
+          await store.commitAs(
+            testAccount,
             strategyId,
             pageAdd('copy', 'page-c', copyFrom: 'page-a', sortIndex: 2),
           ),
@@ -974,11 +1037,16 @@ void main() {
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, threePages());
       savedValue(
-        await store.commit(strategyId, movePatch('ab', pageId: 'page-b')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('ab', pageId: 'page-b'),
+        ),
       );
       await answer(store, 'ab', 2);
       savedValue(
-        await store.commit(
+        await store.commitAs(
+          testAccount,
           strategyId,
           movePatch('bc', pageId: 'page-c', expected: 2),
         ),
@@ -1003,20 +1071,23 @@ void main() {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
       savedValue(
-        await store.commit(
+        await store.commitAs(
+          testAccount,
           strategyId,
           elementAdd('add', elementId: 'e9', pageId: 'page-b'),
         ),
       );
       await answer(store, 'add', 1);
       savedValue(
-        await store.commit(
+        await store.commitAs(
+          testAccount,
           strategyId,
           movePatch('drag', elementId: 'e9', x: 5),
         ),
       );
       savedValue(
-        await store.commit(
+        await store.commitAs(
+          testAccount,
           strategyId,
           movePatch('away', elementId: 'e9', expected: 2, pageId: 'page-a'),
         ),
@@ -1047,11 +1118,15 @@ void main() {
       );
       refuse = true;
       expect(
-        await store.record(strategyId, [result]),
+        await store.record(testAccount, strategyId, [result]),
         isA<NotSaved<Recorded, CommitRefusal>>(),
       );
       expect(
-        await store.commit(strategyId, movePatch('mine', elementId: 'e2')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('mine', elementId: 'e2'),
+        ),
         isA<NotSaved<Committed, CommitRefusal>>(),
       );
       refuse = false;
@@ -1072,7 +1147,11 @@ void main() {
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
       savedValue(
-        await store.commit(strategyId, movePatch('m', pageId: 'page-b')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('m', pageId: 'page-b'),
+        ),
       );
       await recordAll(store, [
         BaseArrived(const PageGone('page-a'), session: await sessionOf(store)),
@@ -1088,11 +1167,13 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       savedValue(
-        await store.addCloudStrategy(headerReadOf(initialRows()), [
+        await store.addCloudStrategy(testAccount, headerReadOf(initialRows()), [
           pageReadOf(initialRows(), 'page-a') as PageRead,
         ]),
       );
-      savedValue(await store.commit(strategyId, elementAdd('add')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, elementAdd('add')),
+      );
       await store.close();
       final contents = editable(storage.contents);
       contents[area]![PendingName(5).name] = '{"version":2}';
@@ -1146,6 +1227,7 @@ void main() {
       final other = strategyRows(elements: [element('x1')]);
       expect(
         await store.addCloudStrategy(
+          testAccount,
           HeaderRead(
             strategy: strategyRow(publicId: 'other'),
             pages: other.pages.toList(),
@@ -1166,7 +1248,9 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, elementAdd('add')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, elementAdd('add')),
+      );
       await store.close();
       final contents = editable(storage.contents);
       final rows = contents[area]!;
@@ -1190,7 +1274,9 @@ void main() {
         'raises the strategy revision a later page edit names', () async {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, pageAdd('add', 'page-c')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, pageAdd('add', 'page-c')),
+      );
       await answer(store, 'add', 2);
       final server = withOp(initialRows(), pageAdd('add', 'page-c'));
       await recordAll(store, [
@@ -1212,7 +1298,7 @@ void main() {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
       final move = movePatch('m', pageId: 'page-b');
-      savedValue(await store.commit(strategyId, move));
+      savedValue(await store.commitAs(testAccount, strategyId, move));
       await answer(store, 'm', 2);
       await recordAll(store, [
         BaseArrived(
@@ -1220,7 +1306,13 @@ void main() {
           session: await sessionOf(store),
         ),
       ]);
-      savedValue(await store.commit(strategyId, pageDelete('del', 'page-a')));
+      savedValue(
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          pageDelete('del', 'page-a'),
+        ),
+      );
       expect(
         (await syncOf(store)).views['del']!.state,
         isNot(isA<NeedsUser>()),
@@ -1234,14 +1326,16 @@ void main() {
         final store = await openCloudStore(MemoryEngine(MemoryStorage()));
         await addCloud(store, threePages());
         savedValue(
-          await store.commit(
+          await store.commitAs(
+            testAccount,
             strategyId,
             elementAdd('add', elementId: 'e9', pageId: 'page-c'),
           ),
         );
         await answer(store, 'add', 1);
         savedValue(
-          await store.commit(
+          await store.commitAs(
+            testAccount,
             strategyId,
             movePatch('move', elementId: 'e9', pageId: 'page-a'),
           ),
@@ -1264,7 +1358,7 @@ void main() {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
       final move = movePatch('m', pageId: 'page-b');
-      savedValue(await store.commit(strategyId, move));
+      savedValue(await store.commitAs(testAccount, strategyId, move));
       await answer(store, 'm', 2);
       await recordAll(store, [
         BaseArrived(
@@ -1283,7 +1377,9 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, elementAdd('add')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, elementAdd('add')),
+      );
       await store.close();
       var armed = false;
       store = await openCloudStore(
@@ -1310,7 +1406,9 @@ void main() {
         final storage = MemoryStorage();
         var store = await openCloudStore(MemoryEngine(storage));
         await addCloud(store, initialRows());
-        savedValue(await store.commit(strategyId, elementAdd('add')));
+        savedValue(
+          await store.commitAs(testAccount, strategyId, elementAdd('add')),
+        );
         await store.close();
         final contents = editable(storage.contents);
         contents[area]![PendingName(5).name] = '{"version":99}';
@@ -1347,6 +1445,7 @@ void main() {
       expect(
         savedValue(
           await store.discardUnreadableQueue(
+            testAccount,
             strategyId,
             const DiscardsUnsentWork(),
           ),
@@ -1424,7 +1523,7 @@ void main() {
           final storage = MemoryStorage();
           var store = await openCloudStore(MemoryEngine(storage));
           await addCloud(store, seventeen());
-          savedValue(await store.commit(strategyId, op));
+          savedValue(await store.commitAs(testAccount, strategyId, op));
           final sent = await claimAll(store);
           final server = withOp(seventeen(), sent.ops.single);
           if (answered) {
@@ -1464,7 +1563,9 @@ void main() {
         'no page list has shown the page yet', () async {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, pageAdd('add', 'page-c')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, pageAdd('add', 'page-c')),
+      );
       await answer(store, 'add', 2);
       var server = withOp(initialRows(), pageAdd('add', 'page-c'));
       await recordAll(store, [
@@ -1474,7 +1575,8 @@ void main() {
         ),
       ]);
       savedValue(
-        await store.commit(
+        await store.commitAs(
+          testAccount,
           strategyId,
           pageDelete('del', 'page-c', expected: 2),
         ),
@@ -1544,6 +1646,7 @@ void main() {
       await addCloud(store, initialRows());
       final session = await sessionOf(store);
       await store.discardUnreadableQueue(
+        testAccount,
         strategyId,
         const DiscardsUnsentWork(),
       );
@@ -1554,7 +1657,13 @@ void main() {
         'ready page delete ready', () async {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, pageDelete('del', 'page-b')));
+      savedValue(
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          pageDelete('del', 'page-b'),
+        ),
+      );
       expect((await syncOf(store)).views['del']!.sendable, isTrue);
       expect(await store.unload(strategyId), isA<Unloaded>());
       expect((await syncOf(store)).views['del']!.sendable, isTrue);
@@ -1567,10 +1676,13 @@ void main() {
       final storage = MemoryStorage();
       final store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      savedValue(await store.commit(strategyId, movePatch('drag')));
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('drag')),
+      );
       final before = storage.contents;
       expect(
         await store.discardUnreadableQueue(
+          testAccount,
           strategyId,
           const DiscardsUnsentWork(),
         ),
@@ -1596,7 +1708,7 @@ void main() {
           expectedElementRevision: 1,
           pagePublicId: 'page-b',
         );
-        savedValue(await first.commit(strategyId, move));
+        savedValue(await first.commitAs(testAccount, strategyId, move));
         await recordAll(first, [
           BaseArrived(
             pageReadOf(withOp(initialRows(), move), 'page-a'),
@@ -1644,7 +1756,7 @@ void main() {
         store = await openCloudStore(MemoryEngine(storage));
         await recordAll(store, [const AppRestarted(build: build)]);
         final before = storage.contents;
-        final result = await store.record(strategyId, [
+        final result = await store.record(testAccount, strategyId, [
           BaseArrived(
             PageRead(
               page: initialRows().page('page-a')!,
@@ -1673,7 +1785,7 @@ void main() {
         await addCloud(store, initialRows());
         final rows = initialRows();
         expect(
-          await store.record(strategyId, [
+          await store.record(testAccount, strategyId, [
             BaseArrived(
               HeaderRead(
                 strategy: rows.strategy,
@@ -1702,7 +1814,7 @@ void main() {
           problem: 'unreadable',
         );
         expect(
-          await store.record(strategyId, [
+          await store.record(testAccount, strategyId, [
             BaseArrived(
               HeaderRead(
                 strategy: stray,
@@ -1732,7 +1844,7 @@ void main() {
           expect(listOf(store).strategies.single.sync, isA<CloudUnverified>());
           final changes = <StoreChange>[];
           final listening = store.changes.listen(changes.add);
-          final result = await store.record(strategyId, [
+          final result = await store.record(testAccount, strategyId, [
             BaseArrived(
               PageRead(
                 page: initialRows().page('page-a')!,
@@ -1811,6 +1923,7 @@ void main() {
           final other = strategyRows(elements: [element('x1')]);
           expect(
             await store.addCloudStrategy(
+              testAccount,
               HeaderRead(
                 strategy: strategyRow(publicId: 'other'),
                 pages: other.pages.toList(),
@@ -1940,6 +2053,7 @@ void main() {
           final listening = store.changes.listen(changes.add);
           savedValue(
             await store.discardUnreadableQueue(
+              testAccount,
               strategyId,
               const DiscardsUnsentWork(),
             ),
@@ -2048,7 +2162,7 @@ void main() {
         ],
       );
       expect(
-        await store.addCloudStrategy(headerReadOf(rows), [
+        await store.addCloudStrategy(testAccount, headerReadOf(rows), [
           ...pageReadsOf(rows),
           pageReadOf(more, 'page-z') as PageRead,
         ]),
@@ -2080,7 +2194,9 @@ void main() {
         final storage = MemoryStorage();
         var store = await openCloudStore(MemoryEngine(storage));
         await addCloud(store, initialRows());
-        savedValue(await store.commit(strategyId, movePatch('m')));
+        savedValue(
+          await store.commitAs(testAccount, strategyId, movePatch('m')),
+        );
         await store.close();
         store = await openCloudStore(MemoryEngine(storage));
         expect(

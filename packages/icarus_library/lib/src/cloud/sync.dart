@@ -1,5 +1,6 @@
 import '../json.dart';
 import '../wire.dart';
+import 'account.dart';
 import 'pending.dart';
 import 'queue.dart';
 
@@ -134,8 +135,6 @@ final class Tally {
 
 enum Network { online, offline }
 
-enum SignedIn { thisAccount, notThisAccount }
-
 sealed class SyncState {
   const SyncState();
 }
@@ -171,9 +170,10 @@ enum Face {
 }
 
 SyncState syncStateOf(
+  CloudOwner owner,
   Tally tally, {
   required Network network,
-  required SignedIn signedIn,
+  required Account? signedIn,
 }) {
   final face = switch (tally) {
     Tally(standing: Standing.deletedOnServer) => Face.deletedOnServer,
@@ -184,7 +184,8 @@ SyncState syncStateOf(
     Tally(total: 0) => null,
     Tally(standing: Standing.upgradeRequired) => Face.upgradeRequired,
     _ when network == Network.offline => Face.offline,
-    _ when signedIn == SignedIn.notThisAccount => Face.notThisAccount,
+    _ when signedIn == null || owner != OwnedBy(signedIn) =>
+      Face.notThisAccount,
     Tally(:final waiting) when waiting.containsKey(Underway.answerUnknown) =>
       Face.answerUnknown,
     Tally(:final waiting)
@@ -196,15 +197,59 @@ SyncState syncStateOf(
   return face == null ? const AllSaved() : Outstanding(face, tally);
 }
 
-SyncState accountSyncState(
-  Iterable<Tally> strategies, {
+typedef OwnedTally = ({CloudOwner owner, Tally tally});
+
+final class AccountSync {
+  AccountSync({
+    required this.mine,
+    required Map<Account, Tally> others,
+    required this.ownerUnreadable,
+  }) : others = Map.unmodifiable(others);
+
+  final SyncState mine;
+  final Map<Account, Tally> others;
+  final Tally ownerUnreadable;
+
+  @override
+  String toString() =>
+      'AccountSync(mine: $mine, others: $others, '
+      'ownerUnreadable: $ownerUnreadable)';
+}
+
+AccountSync accountSyncState(
+  Iterable<OwnedTally> strategies, {
   required Network network,
-  required SignedIn signedIn,
-}) => syncStateOf(
-  strategies.fold(Tally.empty, (sum, tally) => sum.plus(tally)),
-  network: network,
-  signedIn: signedIn,
-);
+  required Account? signedIn,
+}) {
+  var mine = Tally.empty;
+  var ownerUnreadable = Tally.empty;
+  final others = <Account, Tally>{};
+  for (final (:owner, :tally) in strategies) {
+    switch (owner) {
+      case OwnedBy(:final account) when account == signedIn:
+        mine = mine.plus(tally);
+      case OwnedBy(:final account) when tally.total > 0:
+        others[account] = (others[account] ?? Tally.empty).plus(tally);
+      case OwnedBy():
+        break;
+      case OwnerUnreadable():
+        ownerUnreadable = ownerUnreadable.plus(tally);
+    }
+  }
+  return AccountSync(
+    mine: switch (signedIn) {
+      final account? => syncStateOf(
+        OwnedBy(account),
+        mine,
+        network: network,
+        signedIn: account,
+      ),
+      null => const AllSaved(),
+    },
+    others: others,
+    ownerUnreadable: ownerUnreadable,
+  );
+}
 
 final class QueueLook {
   QueueLook(this.queue, this.now)
