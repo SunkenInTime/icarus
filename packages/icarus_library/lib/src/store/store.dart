@@ -1317,7 +1317,8 @@ final class LibraryStore {
           return Refused(NoSuchStrategy(strategyPublicId));
       }
       final pending = PendingRows(strategy, header);
-      final applied = <(StrategyOp, List<RowWrite>, Undo)>[];
+      final applied =
+          <(StrategyOp, List<RowWrite>, Undo, Map<String, PageTally>)>[];
       final now = _clock();
       for (final op in asked) {
         if (_blocked(strategy, op) case final refusal?) {
@@ -1331,7 +1332,15 @@ final class LibraryStore {
           case OpApplied(:final writes, :final undo):
             final stamped = _stamped(pending.strategy, writes, now);
             pending.take(stamped);
-            applied.add((op, stamped, undo));
+            applied.add((
+              op,
+              stamped,
+              undo,
+              {
+                for (final page in StrategySummary.pagesCounted(stamped))
+                  page: pending.tallyOn(page),
+              },
+            ));
         }
       }
       if (applied.isEmpty) return const NothingToSave();
@@ -1345,7 +1354,7 @@ final class LibraryStore {
       final settingsById = {
         for (final row in settingsAfter) row.pagePublicId: row,
       };
-      for (final (op, writes, undo) in applied) {
+      for (final (op, writes, undo, recounted) in applied) {
         for (final write in writes) {
           if (_inTheWay(strategy.heldUnder(nameOf(write.after)), write.after)
               case final refusal?) {
@@ -1373,7 +1382,7 @@ final class LibraryStore {
           after,
           pagesById.values,
           settingsById.values,
-          writes,
+          recounted,
         );
         committed.add(
           Committed(
@@ -1740,15 +1749,21 @@ RowKey? _rowOutside(StrategyRowSet rows) {
 }
 
 StrategySummary _summaryOfRows(StrategyRowSet rows) {
-  final tallies = <String, PageTally>{};
+  final elements = <String, List<ElementRow>>{};
   for (final row in rows.elements) {
-    tallies[row.pagePublicId] = (tallies[row.pagePublicId] ?? PageTally.empty)
-        .plus(row, 1);
+    (elements[row.pagePublicId] ??= []).add(row);
   }
+  final groups = <String, List<LineupGroupRow>>{};
   for (final row in rows.lineupGroups) {
-    tallies[row.pagePublicId] = (tallies[row.pagePublicId] ?? PageTally.empty)
-        .plusGroup(row, 1);
+    (groups[row.pagePublicId] ??= []).add(row);
   }
+  final tallies = {
+    for (final page in {...elements.keys, ...groups.keys})
+      page: PageTally.count(
+        elements: elements[page] ?? const [],
+        lineupGroups: groups[page] ?? const [],
+      ),
+  };
   return StrategySummary.of(
     strategy: rows.strategy,
     pages: rows.pages,
