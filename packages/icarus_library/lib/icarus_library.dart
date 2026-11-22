@@ -58,7 +58,16 @@ export 'src/store/results.dart';
 export 'src/store/store.dart'
     show CanRead, LibraryStore, StoreNotOpened, StoreOpened, StoreOpening;
 export 'src/store/summary.dart'
-    show AllReadable, Readability, Sides, SomeUnreadable, StrategySummary;
+    show
+        AllReadable,
+        KeptHere,
+        KeptInCloud,
+        CloudUnverified,
+        Readability,
+        Sides,
+        SomeUnreadable,
+        StrategySummary,
+        SummarySync;
 export 'src/cloud/events.dart';
 export 'src/cloud/held_page_delete.dart';
 export 'src/cloud/shown.dart';

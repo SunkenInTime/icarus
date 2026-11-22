@@ -238,10 +238,10 @@ void main() {
       );
     });
 
-    test('names this build does not know, as a cloud strategy holds', () async {
+    test('the rows of a cloud strategy', () async {
       await expectRefused(
         await withRaw('cloud', '{"base":1}'),
-        dropping(Dropped.foreignName),
+        isA<KeptInTheCloud>(),
       );
     });
 
