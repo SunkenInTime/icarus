@@ -1207,6 +1207,77 @@ void main() {
       );
     });
 
+    test('deleting a page after moving an element off it asks nothing once '
+        'the destination\'s result shows the element', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      final move = movePatch('m', pageId: 'page-b');
+      savedValue(await store.commit(strategyId, move));
+      await answer(store, 'm', 2);
+      await recordAll(store, [
+        BaseArrived(
+          pageReadOf(withOp(initialRows(), move), 'page-b'),
+          session: await sessionOf(store),
+        ),
+      ]);
+      savedValue(await store.commit(strategyId, pageDelete('del', 'page-a')));
+      expect(
+        (await syncOf(store)).views['del']!.state,
+        isNot(isA<NeedsUser>()),
+      );
+    });
+
+    test(
+      'an element added and moved by accepted work onto a page a result shows '
+      'deleted is drawn in one place',
+      () async {
+        final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+        await addCloud(store, threePages());
+        savedValue(
+          await store.commit(
+            strategyId,
+            elementAdd('add', elementId: 'e9', pageId: 'page-c'),
+          ),
+        );
+        await answer(store, 'add', 1);
+        savedValue(
+          await store.commit(
+            strategyId,
+            movePatch('move', elementId: 'e9', pageId: 'page-a'),
+          ),
+        );
+        await answer(store, 'move', 2);
+        final server = withOp(threePages(), pageDelete('del', 'page-a'));
+        await recordAll(store, [
+          BaseArrived(headerReadOf(server), session: await sessionOf(store)),
+        ]);
+        final pages = await drawn(store);
+        expect([
+          for (final MapEntry(:key, :value) in pages.entries)
+            if (value.contains('e9')) key,
+        ], hasLength(lessThan(2)));
+      },
+    );
+
+    test('an accepted move whose source page\'s result arrives first is '
+        'drawn at the revision it was answered at', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      final move = movePatch('m', pageId: 'page-b');
+      savedValue(await store.commit(strategyId, move));
+      await answer(store, 'm', 2);
+      await recordAll(store, [
+        BaseArrived(
+          pageReadOf(withOp(initialRows(), move), 'page-a'),
+          session: await sessionOf(store),
+        ),
+      ]);
+      expect(
+        elementOn(pageOf(await store.readPage(strategyId, 'page-b')), 'e1'),
+        isA<LiveElement>().having((row) => row.revision, 'revision', 2),
+      );
+    });
+
     group('the hold\'s edges', () {
       Future<(LibraryStore, MemoryStorage)> withAttempt(
         String name,

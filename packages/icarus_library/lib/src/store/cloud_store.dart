@@ -956,8 +956,25 @@ extension _CloudStore on LibraryStore {
       }
     } else {
       final changedPages = {...base.pages, ...queued.pages, ...edited};
+      final cachedOnChanged = [
+        for (final page in changedPages)
+          if (strategy.hasPageRow(digestOf(page))) digestOf(page),
+      ];
+      if (await _loadPages(strategy, cachedOnChanged) case StorageFailed(
+        :final failure,
+      )) {
+        asBefore();
+        return NotSaved(failure);
+      }
       final changedRows = {
         ...base.rows,
+        for (final digest in cachedOnChanged)
+          if (strategy.loadedPage(digest) case final loaded?) ...[
+            for (final row in loaded.elements.values)
+              ElementTarget(row.publicId),
+            for (final row in loaded.lineupGroups.values)
+              LineupTarget(row.publicId),
+          ],
         for (final entry in next.entries)
           if (entry is PendingOp && pagesOf(entry).any(changedPages.contains))
             targetOf(entry.op),
