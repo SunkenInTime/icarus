@@ -205,6 +205,30 @@ class _FakeRemoteEditorNotifier extends RemoteEditorSnapshotNotifier {
       page != null && !page.fromCopy && !_staleAnswers.contains(page);
 }
 
+class _GatedOutboxStore extends MemoryDurableStrategyOutboxStore {
+  Completer<void>? gate;
+  int waited = 0;
+
+  Future<void> _pass() async {
+    final held = gate;
+    if (held == null) return;
+    waited++;
+    await held.future;
+  }
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    await _pass();
+    await super.put(record);
+  }
+
+  @override
+  Future<void> putAll(List<DurableOutboxRecord> records) async {
+    await _pass();
+    await super.putAll(records);
+  }
+}
+
 class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   _FakeStrategyOpQueueNotifier({this.blockFlush = false});
 
@@ -7629,7 +7653,11 @@ void main() {
           lineupOrder(container.read(lineUpProvider))['links'], [a.id, b.id]);
       expect(changes, 2, reason: 'the undo, then the one step that settles it');
       expect(queue.pageSyncCount - syncsBefore, 1);
-      expect(mergeFieldsOf(lineupOps(queuedOps()).values), isEmpty);
+      final queued = lineupOps(queuedOps()).values;
+      expect(queued, hasLength(1));
+      expect(queued.single, isA<LineupPatchOp>());
+      expect((queued.single as LineupPatchOp).merge, isNotNull);
+      expect(mergeFieldsOf(queued), isEmpty);
       final drawn = lineupOrder(container.read(lineUpProvider));
       await land(container, remote, page, contentRevision: 3);
       expect(serverOrder(), drawn['links']);
@@ -9713,6 +9741,64 @@ void main() {
         expect(linkIds(container), ['link-b', 'link-a']);
       });
 
+      test(
+          'a delete undone while it is sent keeps its settled order while '
+          'its answer is read and written', () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId, lineups: [fanIn(page.publicId)])
+          ..mergesByField = true;
+        final hold = Completer<void>();
+        final store = _GatedOutboxStore();
+        final (container, _) = await openOnRealQueue(page,
+            store: store,
+            hold: hold,
+            themeProfileId: 'immutable-default-map-theme');
+        final key = _lineupKey(page.publicId, 'a');
+        StrategyOpQueueState queueState() =>
+            container.read(strategyOpQueueProvider);
+
+        container.read(lineUpProvider.notifier).deleteLink('link-a');
+        await _until(() => queueState().inFlightByEntityKey.containsKey(key));
+        container.read(actionProvider.notifier).undoAction();
+        await _until(() => queueState().successorByEntityKey.containsKey(key));
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(linkIds(container), ['link-b', 'link-a']);
+
+        final seen = <List<String>>[];
+        final listening = container.listen(
+          lineUpProvider.select((s) => [for (final link in s.links) link.id]),
+          (_, next) => seen.add(next),
+        );
+        addTearDown(listening.close);
+        final read = liveRead.refreshGate = Completer<void>();
+        hold.complete();
+        await _until(() => !queueState().inFlightByEntityKey.containsKey(key));
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(linkIds(container), ['link-b', 'link-a'],
+            reason: 'answered, before the server is read');
+
+        final write = store.gate = Completer<void>();
+        read.complete();
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(linkIds(container), ['link-b', 'link-a'],
+            reason: 'read, with any outbox write held');
+        store.gate = null;
+        write.complete();
+        await drained(container);
+        showServer();
+        await drained(container);
+
+        expect(serverLinkIds(), ['link-b', 'link-a']);
+        expect(linkIds(container), ['link-b', 'link-a']);
+        expect(seen, everyElement(['link-b', 'link-a']));
+      });
+
       test('undoing a delete while offline settles where the server puts it',
           () async {
         final page = _page('page-1', 0);
@@ -9758,11 +9844,18 @@ void main() {
         final added = lineUps.commitPlacement()!;
         final drawn = linkIds(container);
         expect(drawn, ['link-a', 'link-b', added.id, 'link-c']);
+        final seen = <List<String>>[];
+        final listening = container.listen(
+          lineUpProvider.select((s) => [for (final link in s.links) link.id]),
+          (_, next) => seen.add(next),
+        );
+        addTearDown(listening.close);
 
         await refusedAsDeleted(
             container, batches, _lineupKey(page.publicId, 'a'));
 
         expect(linkIds(container), drawn);
+        expect(seen, everyElement(drawn));
       });
 
       test(

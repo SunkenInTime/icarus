@@ -280,15 +280,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         editorHeldEntitiesProvider, (_, __) => editorChanged());
 
     ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
-      _settleLineupOrder();
       final previousAckBatch =
           previous?.lastAckBatch ?? const <AckedEntityIntent>[];
-      if (next.lastAckBatch.isEmpty ||
-          identical(previousAckBatch, next.lastAckBatch)) {
-        return;
+      if (next.lastAckBatch.isNotEmpty &&
+          !identical(previousAckBatch, next.lastAckBatch)) {
+        _notePagesDeletedHere(next);
+        unawaited(_reconcileAcks(next.lastAcks, next.lastAckBatch));
       }
-      _notePagesDeletedHere(next);
-      unawaited(_reconcileAcks(next.lastAcks, next.lastAckBatch));
+      _settleLineupOrder();
     });
 
     return const StrategyPageSessionState(

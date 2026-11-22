@@ -1950,11 +1950,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     final insertionIndex = sourceIndex + 1;
     final isAutoNamed = name == null;
     name ??= 'Page ${insertionIndex + 1}';
-    final newPage = orderedPages[sourceIndex].copyWith(
+    final source = orderedPages[sourceIndex];
+    final newPage = source.copyWith(
       id: const Uuid().v4(),
       name: name,
       isAutoNamed: isAutoNamed,
       sortIndex: insertionIndex,
+      lineUpGraph: lineUpsInGroupOrder(source.lineUpGraph),
     );
 
     orderedPages.insert(insertionIndex, newPage);

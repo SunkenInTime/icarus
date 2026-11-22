@@ -115,6 +115,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   final Map<EntitySyncKey, List<({int revision, StrategyOp op})>>
       _landedLineupOps = {};
 
+  final Map<EntitySyncKey, Map<String, StrategyOp>> _sentLineupOps = {};
+
   /// What the page's last projection drew from the outbox, over the page
   /// answer [page]: taken as drawn when the canvas is hydrated from it.
   ({
@@ -224,6 +226,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     _heldDeletedKeys.clear();
     _drawnWorkByKey.clear();
     _landedLineupOps.clear();
+    _sentLineupOps.clear();
     _projectedWork = null;
     _pageAnsweredOn.clear();
     if (ref.exists(strategyOpQueueProvider)) {
@@ -593,6 +596,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final intent in intents) {
       final revision = intent.ack.appliedRevision;
       final key = intent.entityKey;
+      _sentLineupOps[key]?.remove(intent.op.opId);
       if (revision == null) {
         continue;
       }
@@ -1410,16 +1414,25 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         if (row == null || landed.revision > row.revision) landed.op,
     ];
     if (row != null && landed.isEmpty) _landedLineupOps.remove(key);
+    final inFlight = queue.inFlightByEntityKey[key]?.pending.op;
+    final next = (queue.successorByEntityKey[key] ??
+            queue.queuedByEntityKey[key] ??
+            queue.pausedByEntityKey[key])
+        ?.pending
+        .op;
+    final sent = _sentLineupOps[key] ??= {};
+    if (!queue.isFlushing) sent.clear();
+    if (inFlight != null) sent[inFlight.opId] = inFlight;
+    final waitingIds = {inFlight?.opId, next?.opId};
+    final unanswered = [
+      for (final op in sent.values)
+        if (!waitingIds.contains(op.opId)) op,
+    ];
     final waiting = <StrategyOp>[
       ...landed,
-      if (queue.inFlightByEntityKey[key]?.pending.op case final op?) op,
-      if ((queue.successorByEntityKey[key] ??
-                  queue.queuedByEntityKey[key] ??
-                  queue.pausedByEntityKey[key])
-              ?.pending
-              .op
-          case final op?)
-        op,
+      ...unanswered,
+      if (inFlight != null) inFlight,
+      if (next != null && next.opId != inFlight?.opId) next,
     ];
     if (waiting.isEmpty) return row;
     return _drawnOver(key, waiting, row, mapData: mapData)?.drawn;
@@ -1442,8 +1455,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       final placed = [
         for (final item in items)
           if (item is Map && place.containsKey(item['id'])) item,
-      ]..sort((a, b) =>
-          place[(a as Map)['id']]!.compareTo(place[(b as Map)['id']]!));
+      ]..sort((a, b) => place[a['id']]!.compareTo(place[b['id']]!));
       data[collection] = [
         ...placed,
         for (final item in items)

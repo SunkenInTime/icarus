@@ -371,6 +371,27 @@ void main() {
       expect(_orderOf(saved('one')), restored);
     });
 
+    test('a copy of a page saved interleaved is written in group order',
+        () async {
+      final graph = sharedSpotLineups('one');
+      final interleaved = LineUpGraph(
+        origins: graph.origins,
+        landings: graph.landings,
+        links: [graph.links[3], ...graph.links.take(3)],
+      );
+      expect(_orderOf(interleaved), isNot(_orderOf(_readBack(interleaved))));
+      final editor = await open([page('one', 0, interleaved)]);
+
+      await editor.container.read(strategyProvider.notifier).addPage();
+
+      final copyId = editor.container.read(strategyProvider).activePageId!;
+      expect(copyId, isNot('one'));
+      final copy = saved(copyId);
+      expect(_orderOf(copy), _orderOf(_readBack(copy)));
+      expect(_orderOf(editor.state.graph), _orderOf(copy));
+      expect(_orderOf(saved('one')), _orderOf(interleaved));
+    });
+
     test('lineups copied onto a page saved interleaved leave it grouped',
         () async {
       final graph = sharedSpotLineups('next');
