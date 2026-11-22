@@ -467,16 +467,21 @@ extension _CloudStore on LibraryStore {
       ].fold(1, (most, next) => next > most ? next : most),
     );
     _numbers = _higher(_numbers, mentioned);
+    final kept = _sessions[strategy.digest];
     final onDisk = CloudQueue(
       entries: entries,
       attempts: attempts,
       landed: landed,
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
-      shown: shown,
+      shown: switch (kept) {
+        (shown: final memory, session: _) when memory.inNewSession() == shown =>
+          memory,
+        _ => shown,
+      },
       strategy: facts,
       session:
-          _sessions[strategy.digest] ??
+          kept?.session ??
           QueueSession(connected: false, build: _build, number: 0),
     );
     final current = onDisk;
@@ -612,7 +617,41 @@ extension _CloudStore on LibraryStore {
       return StorageFailed(failure);
     }
     final base = _baseRows(strategy, header, digests);
-    return Done(queue == null ? base : visibleOver(base, queue, pages));
+    if (queue == null) return Done(base);
+    return Done(_throughReader(base, visibleOver(base, queue, pages)));
+  }
+
+  StrategyRowSet _throughReader(StrategyRowSet base, StrategyRowSet drawn) {
+    final everywhere = RowSpot(names: (_) => true);
+    Admission stored(Row row) => admit(canonicalJson(row.toJson()));
+    final checked = <Row>[
+      for (final row in drawn.elements)
+        if (row case final LiveElement live
+            when !identical(base.element(live.publicId), live) &&
+                !_canRead.element(live.payload))
+          if (ElementRow.parse(
+                stored(live),
+                spot: everywhere,
+                page: everywhere,
+                canRead: _canRead.element,
+              )
+              case Placed(:final row))
+            row,
+      for (final row in drawn.lineupGroups)
+        if (row case final LiveLineupGroup live
+            when !identical(base.lineupGroup(live.publicId), live) &&
+                !_canRead.lineupGroup(live.payload))
+          if (LineupGroupRow.parse(
+                stored(live),
+                spot: everywhere,
+                page: everywhere,
+                strategy: everywhere,
+                canRead: _canRead.lineupGroup,
+              )
+              case Placed(:final row))
+            row,
+    ];
+    return checked.isEmpty ? drawn : drawn.withRows(checked);
   }
 
   ({List<_Write> writes, Set<String> pages}) _queueWrites(
@@ -1086,13 +1125,13 @@ extension _CloudStore on LibraryStore {
     _numbers = numbers;
     if (writes.isEmpty) {
       cloud.queue.current = next;
-      _sessions[digest] = next.session;
+      _sessions[digest] = (session: next.session, shown: next.shown);
       return Saved(take(summary));
     }
     final result = await _commit<T, CommitRefusal>(writes, () {
       _written(disk, next, groups);
       cloud.queue.current = next;
-      _sessions[digest] = next.session;
+      _sessions[digest] = (session: next.session, shown: next.shown);
       _summaries[digest] = summary;
       _unsaved.remove(digest);
       _numbersRow = _NumbersRowRead(numbers);
@@ -1571,6 +1610,14 @@ extension _CloudStore on LibraryStore {
         return Refused(UnreadableRowInTheWay(row));
       case HeaderUnplaced() || HeaderAbsent():
         return Refused(StrategyNotReadable(StrategyRef(strategy.area)));
+    }
+    switch (await _queueOf(strategy)) {
+      case _QueueLoaded():
+        return Refused(QueueNotHeld(strategyPublicId));
+      case _QueueNotRead(:final failure):
+        return NotSaved(failure);
+      case _QueueHeld():
+        break;
     }
     if (await _loadPages(strategy, strategy.pageDigests) case StorageFailed(
       :final failure,

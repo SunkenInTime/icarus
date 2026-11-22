@@ -1471,10 +1471,13 @@ content no stored result covers, and every page of a held strategy, says
 refused (`CopyNeedsContent`). `commit` and `commitAll` add edits. `record`
 takes a list of events and first records any passed resend window, so
 `record(id, [])` is the store's `look`: it writes the expiry, and a view can
-never show one that is not on disk. A strategy's current session is kept at
-the library level, so unloading the strategy, or a call that reads its queue
-back from disk, does not end it: a strategy loaded again in the same run takes
-results issued under its session. The sender calls `record(id, [])` on its
+never show one that is not on disk. A strategy's current session, and what
+that session has been shown (including the freshness the page-delete rule
+reads), are kept at the library level in memory, so unloading the strategy,
+or a call that reads its queue back from disk, does not end them: a strategy
+loaded again in the same run takes results issued under its session and keeps
+what it was shown. A full reopen starts a new session, where nothing stored
+counts, so none of this is persisted. The sender calls `record(id, [])` on its
 timer and before it shows the sync state. Loading a queue opens no session: until
 a call records `AppRestarted` or `ConnectionReturned` (which commits the new
 session number and returns it), the queue is in session 0, which is never
@@ -1493,7 +1496,10 @@ pending and held counts show at once, and any time loading a queue changes a
 strategy's entry, held included, the store sends `StrategyRefreshed`. Reading
 a page also counts that page as drawn, so after any page load the list and the
 page agree (a reader that learned a payload kind stops listing it as newer). No
-queue is loaded just to draw the list. Drawing builds rows only from the
+queue is loaded just to draw the list. Every row the drawing rebuilt from
+stored work, rather than taking it from the cached rows, goes through the
+same parse and reader check as a row read from storage, so a moved row this
+reader cannot read draws as unreadable. Drawing builds rows only from the
 pages it was asked for and the pages the rows' queued and landed work point
 at, and a call re-encodes the stored results only when it changed what they
 show, so one queued edit does the same work on a strategy of 10 pages and of
@@ -1525,7 +1531,9 @@ the summary, kept in memory when the store finds it and saved with the next
 commit; a summary from a newer build also reads as held. A newer build reads
 the queue; otherwise the only way out is `discardUnreadableQueue(id, const
 DiscardsUnsentWork())`, which deletes the queue rows and writes fresh facts
-and the rebuilt summary in one commit, or changes nothing; while the numbers
+and the rebuilt summary in one commit, or changes nothing. On a queue that is
+not held it refuses with `QueueNotHeld` and changes nothing; discarding one's
+own readable work is the queue's own discard. While the numbers
 row holds the library, the summary it writes still says held. Removal reads
 the strategy's queue from disk and refuses a held queue or outstanding work.
 A read that fails ends a removal, a discard, a folder move or the

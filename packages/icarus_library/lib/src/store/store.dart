@@ -343,7 +343,7 @@ final class LibraryStore {
   };
   final _unsaved = <String>{};
   final _unchecked = <String>{};
-  final _sessions = <String, QueueSession>{};
+  final _sessions = <String, ({QueueSession session, Shown shown})>{};
   final _changes = StreamController<StoreChange>.broadcast();
 
   Stream<StoreChange> get changes => _changes.stream;

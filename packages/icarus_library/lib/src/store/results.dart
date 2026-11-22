@@ -145,6 +145,22 @@ final class QueueHeld implements CommitRefusal, LibraryRefusal {
   String toString() => 'QueueHeld($rows)';
 }
 
+final class QueueNotHeld implements CommitRefusal {
+  const QueueNotHeld(this.strategyPublicId);
+
+  final String strategyPublicId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is QueueNotHeld && other.strategyPublicId == strategyPublicId;
+
+  @override
+  int get hashCode => Object.hash(QueueNotHeld, strategyPublicId);
+
+  @override
+  String toString() => 'QueueNotHeld($strategyPublicId)';
+}
+
 final class NumbersUnreadable implements CommitRefusal, LibraryRefusal {
   const NumbersUnreadable();
 

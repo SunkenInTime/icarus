@@ -415,6 +415,33 @@ final class StoreModel {
     return mine;
   }
 
+  Future<List<Object>> observed() async {
+    final cloud = await sync();
+    return [
+      rowsWithRevisions(await visible()),
+      {
+        for (final MapEntry(:key, :value) in cloud.views.entries)
+          key: '${value.state} ${value.sendable} ${value.holds}',
+      },
+      {for (final subject in resultsNeeded(cloud.queue, clock)) '$subject'},
+    ];
+  }
+
+  Future<void> unloadChangesNothing() async {
+    final before = await observed();
+    if (await store.unload(strategyId) is! Unloaded) {
+      throw StateError('the strategy did not unload');
+    }
+    final after = await observed();
+    if (!const DeepCollectionEquality.unordered().equals(before, after)) {
+      throw StateError(
+        'unloading and reloading changed what an observer sees:\n'
+        '$before\nvs\n$after',
+      );
+    }
+    count('unloads that changed nothing');
+  }
+
   Future<void> readerLearnsAgents() async {
     faults = false;
     await store.close();
@@ -809,6 +836,7 @@ final class StoreModel {
           RowResult(:final page?) => page,
           RowResult(:final target) => holding(target),
           PageResult(:final page) => page,
+          PageListResult() => null,
         },
       for (final work in queue.landed) ...[
         ...pagesNeeded(work.op),
@@ -1125,6 +1153,8 @@ final class StoreModel {
         await lane();
       case 15:
         if (teammates) teammate();
+      case 16 when random.nextInt(3) == 0:
+        await unloadChangesNothing();
       case 16:
         await userActs(draining: false);
       case 17:
@@ -1138,11 +1168,12 @@ final class StoreModel {
       case 18 when random.nextInt(3) == 0:
         await sessionOpenedThenReopened();
       case 18 when random.nextInt(2) == 0:
-        await switch (random.nextInt(4)) {
+        await switch (random.nextInt(5)) {
           0 => twoAcceptedMoves(),
           1 => editOfAcceptedAdd(),
           2 => readerLearnsAgents(),
-          _ => pageGoneUnderQueuedMove(),
+          _ when teammates => pageGoneUnderQueuedMove(),
+          _ => twoAcceptedMoves(),
         };
       case 18:
         final pages = [
@@ -1300,6 +1331,7 @@ void main() {
       'pages gone under a queued move',
       'held queues compared against the list',
       'readers that learned a payload',
+      'unloads that changed nothing',
       'events delivered again after a commit that was not stored',
       'memory checked after a call that was not stored',
       'strategies gone',

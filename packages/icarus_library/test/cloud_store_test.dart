@@ -1550,6 +1550,82 @@ void main() {
       expect(await sessionOf(store), session);
     });
 
+    test('unloading and reloading a strategy in the same session keeps a '
+        'ready page delete ready', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      savedValue(await store.commit(strategyId, pageDelete('del', 'page-b')));
+      expect((await syncOf(store)).views['del']!.sendable, isTrue);
+      expect(await store.unload(strategyId), isA<Unloaded>());
+      expect((await syncOf(store)).views['del']!.sendable, isTrue);
+      final sent = await claimAll(store);
+      expect(sent.ops.map((op) => op.opId), ['del']);
+    });
+
+    test('the unreadable-queue discard refuses a healthy queue and changes '
+        'nothing', () async {
+      final storage = MemoryStorage();
+      final store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      savedValue(await store.commit(strategyId, movePatch('drag')));
+      final before = storage.contents;
+      expect(
+        await store.discardUnreadableQueue(
+          strategyId,
+          const DiscardsUnsentWork(),
+        ),
+        isA<Refused<StrategySummary, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<QueueNotHeld>(),
+        ),
+      );
+      expect(sameContents(before, storage.contents), isTrue);
+      expect((await syncOf(store)).queue.entries.map((e) => e.id), ['drag']);
+    });
+
+    test(
+      'a row rebuilt from a stored move goes through the reader\'s check',
+      () async {
+        final storage = MemoryStorage();
+        final first = await openCloudStore(MemoryEngine(storage));
+        await addCloud(first, initialRows());
+        const move = ElementPatchOp(
+          opId: 'move',
+          elementPublicId: 'e1',
+          expectedElementRevision: 1,
+          pagePublicId: 'page-b',
+        );
+        savedValue(await first.commit(strategyId, move));
+        await recordAll(first, [
+          BaseArrived(
+            pageReadOf(withOp(initialRows(), move), 'page-a'),
+            session: await sessionOf(first),
+          ),
+        ]);
+        await first.close();
+        final blind = switch (await LibraryStore.open(
+          MemoryEngine(storage),
+          canRead: CanRead(element: (_) => false, lineupGroup: (_) => true),
+          clock: fixedClock,
+          build: build,
+        )) {
+          StoreOpened(:final store) => store,
+          StoreNotOpened(:final problem) => fail('$problem'),
+        };
+        final page = pageOf(await blind.readPage(strategyId, 'page-b'));
+        expect(
+          page.elements.where((row) => row.publicId == 'e1'),
+          everyElement(isA<UnreadableElement>()),
+        );
+        expect(
+          listOf(blind).strategies.single.tallies['page-b']!.newer,
+          page.elements.whereType<UnreadableElement>().length,
+        );
+        expect(page.elements.whereType<UnreadableElement>(), hasLength(2));
+      },
+    );
+
     group('the hold\'s edges', () {
       Future<(LibraryStore, MemoryStorage)> withAttempt(
         String name,
