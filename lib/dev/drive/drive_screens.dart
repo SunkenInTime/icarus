@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/pages_bar.dart';
@@ -34,38 +35,69 @@ final class _Counted<T> implements ValueListenable<T> {
 
   final ValueListenable<T> _source;
   final String _what;
-  final _wrapped = <VoidCallback, VoidCallback>{};
+  final _wrapped = <VoidCallback, ({VoidCallback counting, int added})>{};
 
   @override
   T get value => _source.value;
 
   @override
   void addListener(VoidCallback listener) {
-    final counting = _wrapped[listener] ??= () {
-      _notified.update(_what, (count) => count + 1, ifAbsent: () => 1);
-      listener();
-    };
-    _source.addListener(counting);
+    final wrapped = _wrapped[listener] ??
+        (
+          counting: () {
+            _notified.update(_what, (count) => count + 1, ifAbsent: () => 1);
+            listener();
+          },
+          added: 0,
+        );
+    _wrapped[listener] = (counting: wrapped.counting, added: wrapped.added + 1);
+    _source.addListener(wrapped.counting);
   }
 
   @override
   void removeListener(VoidCallback listener) {
-    if (_wrapped.remove(listener) case final counting?) {
-      _source.removeListener(counting);
+    switch (_wrapped[listener]) {
+      case null:
+        return;
+      case (:final counting, added: 1):
+        _wrapped.remove(listener);
+        _source.removeListener(counting);
+      case (:final counting, :final added):
+        _wrapped[listener] = (counting: counting, added: added - 1);
+        _source.removeListener(counting);
     }
   }
 }
 
-bool _laidOut(Element element) => switch (element.findRenderObject()) {
-      final RenderBox box => box.attached && box.hasSize,
-      _ => false,
-    };
+Rect _onScreenRect(RenderBox box) => MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      Offset.zero & box.size,
+    );
+
+bool _onScreen(Element element) {
+  final box = element.findRenderObject();
+  if (box is! RenderBox || !box.attached || !box.hasSize) return false;
+  final drawn = _onScreenRect(box);
+  for (var above = box.parent; above != null; above = above.parent) {
+    if (above case final RenderBox viewport
+        when viewport is RenderAbstractViewport) {
+      if (!drawn.overlaps(_onScreenRect(viewport))) return false;
+    }
+  }
+  return true;
+}
 
 String _drawn(Element root) {
   final parts = <String>[];
   void visit(Element element, bool insideText) {
     final widget = element.widget;
     var inside = insideText;
+    if (widget is Text ||
+        widget is RichText ||
+        widget is Image ||
+        widget is Icon) {
+      if (!_onScreen(element)) return;
+    }
     switch (widget) {
       case Text(:final data, :final textSpan) when !insideText:
         parts.add('"${data ?? textSpan?.toPlainText() ?? ''}"');
@@ -91,17 +123,16 @@ String _drawn(Element root) {
   return parts.join(' ');
 }
 
-List<String> libraryOnScreen() {
-  final lines = <String>[];
+typedef DrawnItem = ({String kind, Key? key, String drawn});
+
+@visibleForTesting
+List<DrawnItem> drawnOnScreen(String? Function(Widget widget) kindOf) {
+  final items = <DrawnItem>[];
   void visit(Element element) {
-    final kind = switch (element.widget) {
-      StrategyTile() => 'strategy',
-      FolderCard() => 'folder',
-      _ => null,
-    };
-    if (kind != null) {
-      if (_laidOut(element)) {
-        lines.add('$kind ${element.widget.key} ${_drawn(element)}');
+    if (kindOf(element.widget) case final kind?) {
+      if (_onScreen(element)) {
+        items
+            .add((kind: kind, key: element.widget.key, drawn: _drawn(element)));
       }
       return;
     }
@@ -109,19 +140,23 @@ List<String> libraryOnScreen() {
   }
 
   WidgetsBinding.instance.rootElement?.visitChildElements(visit);
-  return lines;
+  return items;
 }
 
-List<String> pagesBarOnScreen() {
-  final lines = <String>[];
-  void visit(Element element) {
-    if (element.widget is PagesBar) {
-      if (_laidOut(element)) lines.add(_drawn(element));
-      return;
-    }
-    element.visitChildElements(visit);
-  }
+List<String> libraryOnScreen() => [
+      for (final item in drawnOnScreen(
+        (widget) => switch (widget) {
+          StrategyTile() => 'strategy',
+          FolderCard() => 'folder',
+          _ => null,
+        },
+      ))
+        '${item.kind} ${item.key} ${item.drawn}',
+    ];
 
-  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
-  return lines;
-}
+List<String> pagesBarOnScreen() => [
+      for (final item in drawnOnScreen(
+        (widget) => widget is PagesBar ? 'pages bar' : null,
+      ))
+        item.drawn,
+    ];

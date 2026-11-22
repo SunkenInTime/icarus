@@ -25,3 +25,11 @@ int countOf(Box<StrategyData> strategies) => strategies.length;
 
 ValueListenable<Box<Folder>> watchFolders(Box<Folder> folders) =>
     folders.listenable();
+
+void readsThroughNamesAndValuesTheTypesDoNotShow(dynamic heldBox) {
+  Hive.box<dynamic>(aliasForTheName).length;
+  Hive.box<dynamic>('strategy' '_box').length;
+  Hive.box<dynamic>('folder' + '_box').length;
+  Hive.box<dynamic>('STRATEGY_BOX').length;
+  heldBox.get('some-id');
+}
