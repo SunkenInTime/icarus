@@ -1344,7 +1344,7 @@ final class StoreModel {
         await lane();
       case 15:
         if (teammates) teammate();
-      case 16 when random.nextInt(4) == 0:
+      case 16 when random.nextBool():
         await anotherAccountTries();
       case 16 when random.nextInt(3) == 0:
         await unloadChangesNothing();
