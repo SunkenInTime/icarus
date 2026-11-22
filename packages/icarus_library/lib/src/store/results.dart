@@ -145,6 +145,22 @@ final class QueueHeld implements CommitRefusal, LibraryRefusal {
   String toString() => 'QueueHeld($rows)';
 }
 
+final class ResultOutOfPlace implements CommitRefusal, LibraryRefusal {
+  const ResultOutOfPlace(this.key);
+
+  final RowKey key;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ResultOutOfPlace && other.key == key;
+
+  @override
+  int get hashCode => Object.hash(ResultOutOfPlace, key);
+
+  @override
+  String toString() => 'ResultOutOfPlace($key)';
+}
+
 final class QueueNotHeld implements CommitRefusal {
   const QueueNotHeld(this.strategyPublicId);
 

@@ -845,6 +845,9 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
             targets.values.any((row) => row.page != group)) {
           fields.reject('unreadable shown rows');
         }
+        if (targets != null && targets.keys.any(rows.containsKey)) {
+          fields.reject('a shown row stored in two page groups');
+        }
         return () {
           if (digests != null) content[group] = digests;
           rows.addAll({

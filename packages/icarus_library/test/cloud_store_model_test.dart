@@ -7,7 +7,7 @@ import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/cloud/codec.dart';
 import 'package:icarus_library/src/store/summary.dart' show PageTally;
 import 'package:icarus_library/src/store/layout.dart'
-    show PendingName, strategyArea;
+    show PendingName, pendingPrefix, strategyArea;
 import 'package:test/test.dart';
 
 import 'cloud_server.dart';
@@ -392,22 +392,31 @@ final class StoreModel {
     await reading(() => store.readStrategy(strategyId));
     final before = listOf(store).strategies.single;
     final mine = await visible();
+    final reported = <String, PageTally>{};
+    for (final page in mine.pages) {
+      if (page is! LivePage) continue;
+      final content = pageOf(
+        await reading(() => store.readPage(strategyId, page.publicId)),
+      );
+      var tally = PageTally.empty
+          .plusDamaged(content.unplaced.length)
+          .plusNewer(content.unknownKinds.length);
+      for (final row in content.elements) {
+        tally = tally.plus(row, 1);
+      }
+      reported[page.publicId] = tally;
+    }
     final after = listOf(store).strategies.single;
     for (final (moment, summary) in [
       if (beforeReads) ('before the pages were read', before),
       ('after the pages were read', after),
     ]) {
-      for (final page in mine.pages) {
-        if (page is! LivePage) continue;
-        var tally = PageTally.empty;
-        for (final row in mine.elementsOn(page.publicId)) {
-          tally = tally.plus(row, 1);
-        }
-        if (summary.tallies[page.publicId] ?? PageTally.empty case final listed
+      for (final MapEntry(key: page, value: tally) in reported.entries) {
+        if (summary.tallies[page] ?? PageTally.empty case final listed
             when listed != tally) {
           throw StateError(
             'after $label, $moment, the list counts ${listed.toJson()} on '
-            '${page.publicId}, the page draws ${tally.toJson()}',
+            '$page, the page reports ${tally.toJson()}',
           );
         }
       }
@@ -440,6 +449,31 @@ final class StoreModel {
       );
     }
     count('unloads that changed nothing');
+  }
+
+  Future<void> damagedRowsArrive() async {
+    final (pages, _) = await livePagesAndElements();
+    if (pages.isEmpty) return;
+    faults = false;
+    await store.close();
+    final contents = editable(storage.contents);
+    final page = pick(pages);
+    final id = fresh('damaged');
+    contents[strategyArea(strategyId)]![elementName(page, id)] =
+        '{"broken":true}';
+    contents[strategyArea(
+          strategyId,
+        )]!['content/${digestOf(page)}/z/${digestOf(id)}'] =
+        '{"kind":"from a newer build"}';
+    storage = MemoryStorage(contents);
+    await open();
+    await restartSession();
+    await listMatchesPages(
+      'a damaged row and an unknown kind arrived',
+      beforeReads: false,
+    );
+    faults = true;
+    count('damaged and unknown rows compared against the list');
   }
 
   Future<void> readerLearnsAgents() async {
@@ -856,11 +890,22 @@ final class StoreModel {
     }
   }
 
-  Map<String, String> baseRows(Contents contents) => {
+  Map<String, String> rowsAndResults(Contents contents) => {
     for (final MapEntry(:key, :value)
         in (contents[strategyArea(strategyId)] ?? const {}).entries)
-      if (!key.startsWith('read/')) key: value,
+      if (!key.startsWith(pendingPrefix)) key: value,
   };
+
+  void refusedAsEnded(RecordResult result, String label) {
+    if (result case Saved(:final value)) {
+      for (final outcome in value.outcomes) {
+        if (outcome case ReportNotApplicable(why: FromAnEndedSession())) {
+          continue;
+        }
+        throw StateError('$label was not refused as from an ended session');
+      }
+    }
+  }
 
   Future<void> endedSessionRead() async {
     final ended = (await sync()).queue.session.number;
@@ -893,9 +938,10 @@ final class StoreModel {
       await reopen('the late $kind was in doubt');
       return;
     }
+    refusedAsEnded(result, 'a $kind from the ended session');
     if (!const MapEquality<String, String>().equals(
-      baseRows(before),
-      baseRows(storage.contents),
+      rowsAndResults(before),
+      rowsAndResults(storage.contents),
     )) {
       throw StateError('a $kind from a session that ended changed rows');
     }
@@ -921,9 +967,10 @@ final class StoreModel {
       await reopen('the unused session result was in doubt');
       return;
     }
+    refusedAsEnded(result, 'a result from the unused session');
     if (!const MapEquality<String, String>().equals(
-      baseRows(before),
-      baseRows(storage.contents),
+      rowsAndResults(before),
+      rowsAndResults(storage.contents),
     )) {
       throw StateError('a result from an unused session changed rows');
     }
@@ -969,9 +1016,10 @@ final class StoreModel {
       'a read from before the strategy was added again -> '
       '${describeSaving(result)}',
     );
+    refusedAsEnded(result, 'a read from the earlier copy');
     if (!const MapEquality<String, String>().equals(
-      baseRows(before),
-      baseRows(storage.contents),
+      rowsAndResults(before),
+      rowsAndResults(storage.contents),
     )) {
       throw StateError('a read from the strategy\'s earlier copy changed rows');
     }
@@ -1171,7 +1219,7 @@ final class StoreModel {
         await switch (random.nextInt(5)) {
           0 => twoAcceptedMoves(),
           1 => editOfAcceptedAdd(),
-          2 => readerLearnsAgents(),
+          2 => random.nextBool() ? readerLearnsAgents() : damagedRowsArrive(),
           _ when teammates => pageGoneUnderQueuedMove(),
           _ => twoAcceptedMoves(),
         };
@@ -1287,7 +1335,7 @@ Future<void> runSeed(int seed, int steps) async {
   } on StateError catch (error) {
     fail(
       'seed $seed failed: ${error.message}\n'
-      'rerun with CLOUD_STORE_MODEL_SEED=$seed\n'
+      'rerun with CLOUD_STORE_MODEL_SEED=$seed CLOUD_STORE_MODEL_STEPS=$steps\n'
       'steps:\n${model.log.join('\n')}',
     );
   }
@@ -1310,7 +1358,11 @@ void main() {
     if (environment['CLOUD_STORE_MODEL_COUNTS'] == '1') {
       stdout.writeln(counted);
     }
-    if (one != null) return;
+    final fullSweep = seeds >= 40 && steps >= 120;
+    if (one != null ||
+        !(fullSweep || environment['CLOUD_STORE_MODEL_COVERAGE'] == '1')) {
+      return;
+    }
     for (final what in [
       'commits answered unknown',
       'commits refused',
@@ -1331,6 +1383,7 @@ void main() {
       'pages gone under a queued move',
       'held queues compared against the list',
       'readers that learned a payload',
+      'damaged and unknown rows compared against the list',
       'unloads that changed nothing',
       'events delivered again after a commit that was not stored',
       'memory checked after a call that was not stored',

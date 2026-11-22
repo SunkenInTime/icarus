@@ -1626,6 +1626,230 @@ void main() {
       },
     );
 
+    group('the review bot', () {
+      LiveElement onPage(String id, String page) => LiveElement(
+        publicId: id,
+        pagePublicId: page,
+        payload: agentPayload(id, const {}),
+        sortIndex: 0,
+        revision: 1,
+      );
+
+      test('a page result carrying a row of another page is refused, and '
+          'memory and disk stay as they were', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        store = await openCloudStore(MemoryEngine(storage));
+        await recordAll(store, [const AppRestarted(build: build)]);
+        final before = storage.contents;
+        final result = await store.record(strategyId, [
+          BaseArrived(
+            PageRead(
+              page: initialRows().page('page-a')!,
+              elements: [onPage('stray', 'page-b')],
+              lineupGroups: const [],
+            ),
+            session: await sessionOf(store),
+          ),
+        ]);
+        expect(
+          result,
+          isA<Refused<Recorded, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<ResultOutOfPlace>(),
+          ),
+        );
+        expect(sameContents(before, storage.contents), isTrue);
+        final a = pageOf(await store.readPage(strategyId, 'page-a'));
+        expect(a.elements.map((row) => row.publicId), ['e1', 'e2']);
+      });
+
+      test('a page list with settings for a page it does not list is '
+          'refused, never thrown', () async {
+        final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+        await addCloud(store, initialRows());
+        final rows = initialRows();
+        expect(
+          await store.record(strategyId, [
+            BaseArrived(
+              HeaderRead(
+                strategy: rows.strategy,
+                pages: [rows.page('page-a')!],
+                settings: rows.settings.toList(),
+              ),
+              session: await sessionOf(store),
+            ),
+          ]),
+          isA<Refused<Recorded, CommitRefusal>>(),
+        );
+      });
+
+      for (final (label, damage) in <(String, void Function(Contents))>[
+        (
+          'its summary is also missing',
+          (contents) => contents['library']!.remove(summaryName(strategyId)),
+        ),
+        (
+          'it is listed as unreadable',
+          (contents) => contents[area]!['strategy'] = '{"broken":true}',
+        ),
+      ]) {
+        test('with the numbers row missing, import is refused while a cloud '
+            'strategy exists and $label', () async {
+          final storage = MemoryStorage();
+          var store = await openCloudStore(MemoryEngine(storage));
+          await addCloud(store, initialRows());
+          await store.close();
+          final contents = editable(storage.contents);
+          contents['library']!.remove('numbers');
+          damage(contents);
+          store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+          final other = strategyRows(elements: [element('x1')]);
+          expect(
+            await store.addCloudStrategy(
+              HeaderRead(
+                strategy: strategyRow(publicId: 'other'),
+                pages: other.pages.toList(),
+                settings: other.settings.toList(),
+              ),
+              const [],
+            ),
+            isA<Refused<StrategySummary, LibraryRefusal>>().having(
+              (refused) => refused.reason,
+              'reason',
+              const NumbersUnreadable(),
+            ),
+          );
+        });
+      }
+
+      test('the list counts the unplaced rows a page reports', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        contents[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+        store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+        final page = pageOf(await store.readPage(strategyId, 'page-a'));
+        expect(page.unplaced, hasLength(1));
+        expect(
+          listOf(store).strategies.single.tallies['page-a']!.damaged,
+          page.unplaced.length,
+        );
+      });
+
+      test(
+        'a page that goes takes its unreadable settings row with it',
+        () async {
+          final storage = MemoryStorage();
+          var store = await openCloudStore(MemoryEngine(storage));
+          await addCloud(store, initialRows());
+          await store.close();
+          final contents = editable(storage.contents);
+          final settingsKey = contents[area]!.keys.singleWhere(
+            (key) =>
+                key.startsWith('settings/') &&
+                contents[area]![key]!.contains('page-b'),
+          );
+          contents[area]![settingsKey] = '{"broken":true}';
+          final disk = MemoryStorage(contents);
+          store = await openCloudStore(MemoryEngine(disk));
+          await recordAll(store, [const AppRestarted(build: build)]);
+          await recordAll(store, [
+            BaseArrived(
+              const PageGone('page-b'),
+              session: await sessionOf(store),
+            ),
+          ]);
+          expect(disk.contents[area]!.containsKey(settingsKey), isFalse);
+        },
+      );
+
+      test('a full page result removes an unplaced row the server no longer '
+          'has', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        final key = elementName('page-a', 'gone');
+        contents[area]![key] = '{"broken":true}';
+        final disk = MemoryStorage(contents);
+        store = await openCloudStore(MemoryEngine(disk));
+        await recordAll(store, [const AppRestarted(build: build)]);
+        await recordAll(store, [
+          BaseArrived(
+            pageReadOf(initialRows(), 'page-a'),
+            session: await sessionOf(store),
+          ),
+        ]);
+        expect(
+          pageOf(await store.readPage(strategyId, 'page-a')).unplaced,
+          isEmpty,
+        );
+        expect(disk.contents[area]!.containsKey(key), isFalse);
+      });
+
+      test('a shown row stored in two page groups holds the queue', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        final groups = <String, Map<String, Object?>>{
+          for (final key in contents[area]!.keys)
+            if (key.startsWith('read/page/'))
+              key: jsonDecode(contents[area]![key]!) as Map<String, Object?>,
+        };
+        final a = groups.values.firstWhere((g) => g['page'] == 'page-a');
+        final bKey = groups.keys.firstWhere(
+          (k) => groups[k]!['page'] == 'page-b',
+        );
+        final b = groups[bKey]!;
+        final e1 = (a['rows']! as List<Object?>)
+            .cast<List<Object?>>()
+            .firstWhere((row) => row[0] == 'element:e1');
+        b['rows'] = [
+          ...b['rows']! as List<Object?>,
+          ['element:e1', 'page-b', e1[2], e1[3]],
+        ];
+        contents[area]![bKey] = canonicalJson(b);
+        store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+        expect(
+          strategyOf(await store.readStrategy(strategyId)).sync,
+          isA<CloudHeld>(),
+        );
+      });
+
+      test(
+        'a successful discard of an unreadable queue sends a change',
+        () async {
+          final storage = MemoryStorage();
+          var store = await openCloudStore(MemoryEngine(storage));
+          await addCloud(store, initialRows());
+          await store.close();
+          final contents = editable(storage.contents);
+          contents[area]![PendingName(5).name] = '{"version":99}';
+          store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+          final changes = <StoreChange>[];
+          final listening = store.changes.listen(changes.add);
+          savedValue(
+            await store.discardUnreadableQueue(
+              strategyId,
+              const DiscardsUnsentWork(),
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+          await listening.cancel();
+          expect(changes.whereType<LibraryEdited>(), isNotEmpty);
+        },
+      );
+    });
+
     group('the hold\'s edges', () {
       Future<(LibraryStore, MemoryStorage)> withAttempt(
         String name,

@@ -1553,11 +1553,14 @@ every queue row that differs, the stored results that differ, the library's
 numbers and the summary. The queue a step hands back is kept even when the
 event did not apply, so a resend window that passed is written down by the
 call that found it. A call in which nothing applied writes nothing. A commit
-either lands whole or, when the engine answers unknown, the store forgets its
-cached state of that strategy and reads it back before the next call. A
-commit that was refused or not stored leaves memory exactly as it was before
-the call: the queue, its session and the numbers, with the cached rows read
-back from disk, so the same event delivered again applies.
+either lands whole or not at all. When the engine answers that the outcome
+is unknown (`SaveInDoubt`), the store stops: it releases its lease and
+answers every later call as shut, so the caller reopens the store before it
+retries or reads, and the reopened store reads what actually landed. A
+commit that was refused or not stored is different: the store stays open,
+and memory is exactly as it was before the call (the queue, its session and
+the numbers, with the cached rows read back from disk), so the same event
+delivered again applies.
 
 `test/cloud_store_test.dart` pins these rules and the writes each kind of
 call makes. `test/cloud_store_model_test.dart` runs the model through the

@@ -1562,7 +1562,19 @@ final class LibraryStore {
     DiscardsUnsentWork acknowledged,
   ) => _inTurn(() async {
     if (_settle() case StorageFailed(:final failure)) return NotSaved(failure);
-    return _discardHeld(strategyPublicId);
+    final result = await _discardHeld(strategyPublicId);
+    if (result case Saved(:final value)) {
+      _emit(
+        LibraryEdited(
+          summaries: [value],
+          removedStrategies: const [],
+          removedUnreadableStrategies: const [],
+          folders: const [],
+          removedFolders: const [],
+        ),
+      );
+    }
+    return result;
   });
 
   Future<RebuildResult> rebuildSummary(String strategyPublicId) =>

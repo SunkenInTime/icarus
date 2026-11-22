@@ -143,6 +143,30 @@ final class _CloudUnread extends _CloudOpen {
   final StorageFailure failure;
 }
 
+RowKey? _outOfPlace(String strategyPublicId, ArrivedBase base) =>
+    switch (base) {
+      HeaderRead(:final strategy, :final pages, :final settings) => [
+        if (strategy case ReadableStrategy(
+          :final publicId,
+        ) when publicId != strategyPublicId)
+          strategy.key,
+        for (final page in pages)
+          if (page.strategyPublicId != strategyPublicId) page.key,
+        for (final row in settings)
+          if (!pages.any((page) => page.publicId == row.pagePublicId)) row.key,
+      ].firstOrNull,
+      PageRead(:final page, :final elements, :final lineupGroups) => [
+        if (page.strategyPublicId != strategyPublicId) page.key,
+        for (final row in elements)
+          if (row.pagePublicId != page.publicId) row.key,
+        for (final row in lineupGroups)
+          if (row.pagePublicId != page.publicId ||
+              row.strategyPublicId != strategyPublicId)
+            row.key,
+      ].firstOrNull,
+      PageGone() || StrategyGone() => null,
+    };
+
 String _groupName(String? page) => switch (page) {
   null => const HeaderReadName().name,
   final page => PageReadName(digestOf(page)).name,
@@ -208,8 +232,15 @@ String? _groupPage(StoreName name, String text) => switch (name) {
   _ => null,
 };
 
-PageTally _tallyOn(StrategyRowSet rows, String pageId) {
-  var tally = PageTally.empty;
+PageTally _tallyOn(
+  LoadedStrategy strategy,
+  StrategyRowSet rows,
+  String pageId,
+) {
+  final loaded = strategy.loadedPage(digestOf(pageId));
+  var tally = PageTally.empty
+      .plusDamaged(loaded?.unplaced.length ?? 0)
+      .plusNewer(loaded?.unknownKinds.length ?? 0);
   for (final row in rows.elementsOn(pageId)) {
     tally = tally.plus(row, 1);
   }
@@ -765,7 +796,7 @@ extension _CloudStore on LibraryStore {
         settings: rows.settings,
         tallies: {
           for (final page in rows.pages)
-            page.publicId: _tallyOn(rows, page.publicId),
+            page.publicId: _tallyOn(strategy, rows, page.publicId),
         },
         elsewhere: strategy.elsewhere,
         sync: _syncOf(queue, _cloudNow()),
@@ -853,6 +884,9 @@ extension _CloudStore on LibraryStore {
         for (final row in loaded.unknownKinds) {
           gone.add(row.key);
         }
+      }
+      if (strategy.heldUnder(SettingsName(digest)) is HeldUnplaced) {
+        gone.add(SettingsName(digest).name);
       }
       strategy.forgetPage(digest);
     }
@@ -973,6 +1007,15 @@ extension _CloudStore on LibraryStore {
             ]) {
               if (!found.contains(nameOf(row).name)) drop(nameOf(row));
             }
+            for (final name in [...loaded.unplaced.keys]) {
+              if (found.contains(name)) continue;
+              gone.add(name);
+              loaded.unplaced.remove(name);
+            }
+            for (final row in loaded.unknownKinds) {
+              gone.add(row.key);
+            }
+            loaded.unknownKinds.clear();
           }
           pages.add(page.publicId);
         case PageGone(:final pagePublicId):
@@ -1106,7 +1149,7 @@ extension _CloudStore on LibraryStore {
             page.publicId:
                 touched.contains(page.publicId) ||
                     missing.contains(page.publicId)
-                ? _tallyOn(all, page.publicId)
+                ? _tallyOn(strategy, all, page.publicId)
                 : previous.tallies[page.publicId]!,
         },
         elsewhere: strategy.elsewhere,
@@ -1311,6 +1354,13 @@ extension _CloudStore on LibraryStore {
     List<QueueEvent> events,
   ) async {
     final strategyPublicId = cloud.header.publicId;
+    for (final event in events) {
+      if (event case BaseArrived(:final base)) {
+        if (_outOfPlace(strategyPublicId, base) case final key?) {
+          return Refused(ResultOutOfPlace(key));
+        }
+      }
+    }
     final now = _cloudNow();
     final outcomes = <ReportOutcome>[];
     final arrivals = <ArrivedBase>[];
@@ -1475,7 +1525,7 @@ extension _CloudStore on LibraryStore {
   ) {
     final listed = _summaries[strategy.digest];
     if (listed == null) return;
-    final drawn = _tallyOn(rows, pagePublicId);
+    final drawn = _tallyOn(strategy, rows, pagePublicId);
     if ((listed.tallies[pagePublicId] ?? PageTally.empty) == drawn) return;
     final summary = StrategySummary.of(
       strategy: rows.strategy,
@@ -1489,6 +1539,27 @@ extension _CloudStore on LibraryStore {
     _emit(
       StrategyRefreshed(strategyPublicId: summary.publicId, summary: summary),
     );
+  }
+
+  Future<bool> _noCloudAreaStored() async {
+    final List<String> areas;
+    switch (await _lease.areas(strategyAreaPrefix)) {
+      case StorageFailed():
+        return false;
+      case Done(:final value):
+        areas = value;
+    }
+    for (final area in areas) {
+      switch (await _lease.keys(area, '')) {
+        case StorageFailed():
+          return false;
+        case Done(:final value) when value.any(isCloudKey):
+          return false;
+        case Done():
+          break;
+      }
+    }
+    return true;
   }
 
   Future<Saving<StrategySummary, LibraryRefusal>> _addCloud(
@@ -1516,10 +1587,11 @@ extension _CloudStore on LibraryStore {
     switch (_numbersRow) {
       case _NumbersRowUnreadable():
         return const Refused(NumbersUnreadable());
-      case _NoNumbersRow()
-          when _summaries.values.any((summary) => summary.sync is! KeptHere):
-        return const Refused(NumbersUnreadable());
-      case _NumbersRowRead() || _NoNumbersRow():
+      case _NoNumbersRow():
+        if (!await _noCloudAreaStored()) {
+          return const Refused(NumbersUnreadable());
+        }
+      case _NumbersRowRead():
         break;
     }
     final strategy = LoadedStrategy(
