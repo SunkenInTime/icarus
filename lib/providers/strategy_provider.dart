@@ -235,6 +235,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         _currentStrategyCanEditPages();
   }
 
+  T withoutMarkingUnsaved<T>(T Function() callback) =>
+      _withoutPersistenceTracking(callback);
+
   T _withoutPersistenceTracking<T>(T Function() callback) {
     _persistenceTrackingSuspensionCount += 1;
     try {

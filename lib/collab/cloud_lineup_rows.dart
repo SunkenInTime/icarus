@@ -123,7 +123,6 @@ CloudLineupRows cloudLineupRows(
     for (final link in lineUps.links) {
       assigned[link.id] = id;
     }
-    // A spot carried by two rows stays with the group it was in.
     for (final spot in [
       for (final origin in lineUps.origins) origin.id,
       for (final landing in lineUps.landings) landing.id,
@@ -168,7 +167,7 @@ LineUpGraph lineUpsInGroupOrder(
     final placeA = memory.places[a.id];
     final placeB = memory.places[b.id];
     if (placeA != null && placeB != null) {
-      return placeA != placeB ? placeA.compareTo(placeB) : a.id.compareTo(b.id);
+      return placeA.compareTo(placeB);
     }
     if (placeA != null) return -1;
     if (placeB != null) return 1;
@@ -255,13 +254,24 @@ List<({String id, LineUpGraph lineUps})> lineupGroups(
   }
   return [
     for (final MapEntry(key: id, value: groupLinks) in linksByGroup.entries)
-      (
-        id: id,
-        lineUps: graph.linksWithSpots(
-          {for (final link in groupLinks) link.id},
-        ),
-      ),
+      (id: id, lineUps: _groupOf(graph, groupLinks)),
   ];
+}
+
+LineUpGraph _groupOf(LineUpGraph graph, List<LineUpLink> links) {
+  final originIds = {for (final link in links) link.originId};
+  final landingIds = {for (final link in links) link.landingId};
+  return LineUpGraph(
+    origins: [
+      for (final origin in graph.origins)
+        if (originIds.contains(origin.id)) origin,
+    ],
+    landings: [
+      for (final landing in graph.landings)
+        if (landingIds.contains(landing.id)) landing,
+    ],
+    links: links,
+  );
 }
 
 Map<String, String> sharedSpotGroups(Iterable<LineUpLink> links) {

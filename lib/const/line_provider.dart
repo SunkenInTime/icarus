@@ -1755,6 +1755,14 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  void takeOrder(LineUpGraph ordered) {
+    state = state.copyWith(
+      origins: ordered.origins,
+      landings: ordered.landings,
+      links: ordered.links,
+    );
+  }
+
   static String objectToJson(LineUpGraph graph) {
     return jsonEncode(graph.toJson());
   }

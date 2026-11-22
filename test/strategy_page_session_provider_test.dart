@@ -215,6 +215,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   /// queue's durable write.
   Completer<void>? writeGate;
   int flushNowCount = 0;
+  int pageSyncCount = 0;
 
   /// Plays the server for one flush, like acking what it accepts.
   FutureOr<void> Function()? onFlush;
@@ -272,6 +273,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     bool flushImmediately = false,
     int? madeLive,
   }) async {
+    pageSyncCount++;
     final gate = writeGate;
     if (gate != null) await gate.future;
     final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
@@ -1500,11 +1502,13 @@ class _FakeServer {
   void teammateDeleteElement(String id) =>
       _elements[id] = _elements[id]!.next(deleted: true);
 
-  static Iterable<MapEntry<String, _Row>> _sorted(Map<String, _Row> rows) =>
-      rows.entries.toList()
-        ..sort((a, b) => a.value.sortIndex != b.value.sortIndex
-            ? a.value.sortIndex.compareTo(b.value.sortIndex)
-            : a.key.compareTo(b.key));
+  static Iterable<MapEntry<String, _Row>> _sorted(Map<String, _Row> rows) {
+    final made = [...rows.entries.indexed]..sort((a, b) =>
+        a.$2.value.sortIndex != b.$2.value.sortIndex
+            ? a.$2.value.sortIndex.compareTo(b.$2.value.sortIndex)
+            : a.$1.compareTo(b.$1));
+    return [for (final (_, row) in made) row];
+  }
 
   static bool _sameJson(Object? left, Object? right) =>
       canonicalCloudJsonEncode(jsonDecode(jsonEncode(left))) ==
@@ -7489,6 +7493,206 @@ void main() {
       await _settle();
     });
 
+    List<String> serverOrder() => [
+          for (final link
+              in lineUpGraphFromRemoteLineups(server.liveRows).links)
+            link.id,
+        ];
+
+    test('two rows with one sort index keep the order the server reads them in',
+        () async {
+      final (container, remote, page) = await openEmpty([
+        _groupRow('page-1', 'zz',
+            origins: [_originJson('oz')],
+            landings: [_landingJson('lz')],
+            links: [_linkJson('zz', originId: 'oz', landingId: 'lz')]),
+        _groupRow('page-1', 'aa',
+            origins: [_originJson('oa')],
+            landings: [_landingJson('la')],
+            links: [_linkJson('aa', originId: 'oa', landingId: 'la')]),
+      ]);
+      server.mergesByField = true;
+      expect(
+          lineupOrder(container.read(lineUpProvider))['links'], ['zz', 'aa']);
+
+      final added = placeFrom(container, 'oz');
+      await _settle();
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      expect(drawn['links'], ['zz', added.id, 'aa']);
+      await land(container, remote, page, contentRevision: 2);
+      expect(serverOrder(), drawn['links']);
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
+    test('undoing the delete of a standing spot lands as the editor shows it',
+        () async {
+      final (container, remote, page) = await openEmpty([
+        _groupRow('page-1', 'keep', origins: [
+          _originJson('o-keep'),
+          _originJson('o-gone')
+        ], landings: [
+          _landingJson('l1'),
+          _landingJson('l2')
+        ], links: [
+          _linkJson('keep', originId: 'o-keep', landingId: 'l1'),
+          _linkJson('z', originId: 'o-gone', landingId: 'l1'),
+          _linkJson('a', originId: 'o-gone', landingId: 'l2'),
+        ]),
+      ]);
+      server.mergesByField = true;
+      container.read(lineUpProvider.notifier).deleteOrigin('o-gone');
+      await land(container, remote, page, contentRevision: 2);
+      container.read(actionProvider.notifier).undoAction();
+      await _settle();
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      await land(container, remote, page, contentRevision: 3);
+      expect(serverOrder(), drawn['links']);
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
+    test('undoing a delete before it is sent lands as the editor shows it',
+        () async {
+      final (container, remote, page) = await openMerging();
+      final a = place(container);
+      final b = placeFrom(container, a.originId);
+      await land(container, remote, page, contentRevision: 2);
+
+      container.read(lineUpProvider.notifier).deleteLink(a.id);
+      await _settle();
+      container.read(actionProvider.notifier).undoAction();
+      await _settle();
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      await land(container, remote, page, contentRevision: 3);
+
+      expect(serverOrder(), drawn['links']);
+      expect(serverOrder(), [a.id, b.id]);
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
+    Iterable<String> mergeFieldsOf(Iterable<StrategyOp> ops) => [
+          for (final op in ops)
+            if (op is LineupPatchOp) ...?op.merge?.fields,
+        ];
+
+    test('a group made here is written whole, in the order the editor shows',
+        () async {
+      final (container, remote, page) = await openMerging();
+      final a = place(container);
+      final b = placeFrom(container, a.originId);
+      await _settle();
+
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      final add = lineupOps(queuedOps()).values.single as LineupAddOp;
+      expect(
+        _entries(cloudPayloadData(add.payload), 'links').map((l) => l['id']),
+        drawn['links'],
+      );
+      expect(drawn['links'], [a.id, b.id]);
+      await land(container, remote, page, contentRevision: 2);
+      expect(serverOrder(), drawn['links']);
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
+    test(
+        'the order settles in one step after the queue takes the work, which '
+        'queues nothing and sends no order', () async {
+      final (container, remote, page) = await openMerging();
+      final a = place(container);
+      final b = placeFrom(container, a.originId);
+      await land(container, remote, page, contentRevision: 2);
+      container.read(lineUpProvider.notifier).deleteLink(a.id);
+      await _settle();
+
+      var changes = 0;
+      final listening = container.listen(
+        lineUpProvider.select((s) => [for (final link in s.links) link.id]),
+        (_, __) => changes++,
+      );
+      addTearDown(listening.close);
+      final syncsBefore = queue.pageSyncCount;
+      queue.writeGate = Completer<void>();
+      container.read(actionProvider.notifier).undoAction();
+      expect(
+          lineupOrder(container.read(lineUpProvider))['links'], [b.id, a.id]);
+      await _settle();
+      expect(lineupOrder(container.read(lineUpProvider))['links'], [b.id, a.id],
+          reason: 'the outbox write has not finished');
+      queue.writeGate!.complete();
+      queue.writeGate = null;
+      await _settle();
+
+      expect(
+          lineupOrder(container.read(lineUpProvider))['links'], [a.id, b.id]);
+      expect(changes, 2, reason: 'the undo, then the one step that settles it');
+      expect(queue.pageSyncCount - syncsBefore, 1);
+      expect(mergeFieldsOf(lineupOps(queuedOps()).values), isEmpty);
+      final drawn = lineupOrder(container.read(lineUpProvider));
+      await land(container, remote, page, contentRevision: 3);
+      expect(serverOrder(), drawn['links']);
+      expect(lineupOrder(container.read(lineUpProvider)), drawn);
+      await _settle();
+    });
+
+    for (var seed = 0; seed < 12; seed++) {
+      test('generated cloud edits settle where the server puts them ($seed)',
+          () async {
+        final random = Random(seed);
+        final (container, remote, page) = await openMerging();
+        final history = container.read(actionProvider.notifier);
+        final steps = <String>[];
+        T pick<T>(List<T> from) => from[random.nextInt(from.length)];
+        var revision = 2;
+        place(container);
+        for (var step = 0; step < 18; step++) {
+          final state = container.read(lineUpProvider);
+          final lineUps = container.read(lineUpProvider.notifier);
+          switch (state.links.isEmpty ? 0 : random.nextInt(8)) {
+            case 0:
+              place(container);
+              steps.add('fresh');
+            case 1 || 2:
+              placeFrom(container, pick(state.origins).id);
+              steps.add('from origin');
+            case 3:
+              placeInto(container, pick(state.landings).id);
+              steps.add('into landing');
+            case 4:
+              lineUps.deleteLink(pick(state.links).id);
+              steps.add('delete lineup');
+            case 5:
+              lineUps.deleteOrigin(pick(state.origins).id);
+              steps.add('delete standing spot');
+            case 6:
+              history.undoAction();
+              steps.add('undo');
+            case _:
+              history.redoAction();
+              steps.add('redo');
+          }
+          await _settle();
+          final reason = 'seed $seed: ${steps.join(', ')}';
+          final drawn = lineupOrder(container.read(lineUpProvider));
+          if (random.nextInt(3) == 0 && queuedOps().isNotEmpty) {
+            await land(container, remote, page, contentRevision: revision++);
+            steps.add('landed');
+            expect(serverOrder(), drawn['links'], reason: reason);
+            expect(lineupOrder(container.read(lineUpProvider)), drawn,
+                reason: '$reason, reloaded');
+          }
+        }
+        if (queuedOps().isNotEmpty) {
+          await land(container, remote, page, contentRevision: revision++);
+        }
+        final drawn = lineupOrder(container.read(lineUpProvider));
+        expect(serverOrder(), drawn['links'], reason: steps.join(', '));
+        await _settle();
+      });
+    }
+
     test('a fan-out lineup keeps its shared origin, ids and names', () async {
       final (container, remote, page) = await openEmpty();
       final (a, b) = placeFanOut(container);
@@ -9472,6 +9676,94 @@ void main() {
           await _settle();
         }
       }
+
+      List<String> linkIds(ProviderContainer container) => [
+            for (final link in container.read(lineUpProvider).links) link.id,
+          ];
+      List<String> serverLinkIds() => [
+            for (final link
+                in lineUpGraphFromRemoteLineups(server.liveRows).links)
+              link.id,
+          ];
+
+      test('undoing a delete while it is sent settles where the server puts it',
+          () async {
+        final page = _page('page-1', 0);
+        final hold = Completer<void>();
+        final (container, _) = await openMerging(page, hold: hold);
+        final key = _lineupKey(page.publicId, 'a');
+        StrategyOpQueueState queueState() =>
+            container.read(strategyOpQueueProvider);
+        expect(linkIds(container), ['link-a', 'link-b']);
+
+        container.read(lineUpProvider.notifier).deleteLink('link-a');
+        await _until(() => queueState().inFlightByEntityKey.containsKey(key));
+        container.read(actionProvider.notifier).undoAction();
+        await _until(() => queueState().successorByEntityKey.containsKey(key));
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(linkIds(container), ['link-b', 'link-a']);
+
+        hold.complete();
+        await drained(container);
+        expect(serverLinkIds(), ['link-b', 'link-a']);
+        showServer();
+        await drained(container);
+        expect(linkIds(container), ['link-b', 'link-a']);
+      });
+
+      test('undoing a delete while offline settles where the server puts it',
+          () async {
+        final page = _page('page-1', 0);
+        final (container, _) = await openMerging(page);
+        container.read(_online.notifier).state = false;
+
+        container.read(lineUpProvider.notifier).deleteLink('link-a');
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        container.read(actionProvider.notifier).undoAction();
+        for (var i = 0; i < 10; i++) {
+          await _settle();
+        }
+        expect(linkIds(container), ['link-a', 'link-b']);
+
+        container.read(_online.notifier).state = true;
+        await container.read(strategyOpQueueProvider.notifier).flushNow();
+        await drained(container);
+        expect(serverLinkIds(), ['link-a', 'link-b']);
+        showServer();
+        await drained(container);
+        expect(linkIds(container), ['link-a', 'link-b']);
+      });
+
+      test('a group whose work waits for a choice keeps the editor order',
+          () async {
+        final page = _page('page-1', 0);
+        server = _FakeServer(page.publicId, lineups: [
+          fanIn(page.publicId),
+          _lineup(page.publicId, 'c', sortIndex: 1),
+        ])
+          ..mergesByField = true;
+        final (container, batches) = await openOnRealQueue(page);
+        server.teammateDelete('link-a');
+        final lineUps = container.read(lineUpProvider.notifier)
+          ..startToLanding('landing');
+        lineUps.setDraftAgent(PlacedAgent(
+          id: 'agent-waits',
+          type: AgentType.sova,
+          position: const Offset(150, 150),
+        ));
+        final added = lineUps.commitPlacement()!;
+        final drawn = linkIds(container);
+        expect(drawn, ['link-a', 'link-b', added.id, 'link-c']);
+
+        await refusedAsDeleted(
+            container, batches, _lineupKey(page.publicId, 'a'));
+
+        expect(linkIds(container), drawn);
+      });
 
       test(
           'two editors changing different lineups of one group both land, '

@@ -72,7 +72,7 @@
   "integration_test/view_cone_drag_timeline_test.dart": 10,
   "lib/collab/cloud_library_copy.dart": 81,
   "lib/collab/cloud_library_models.dart": 9,
-  "lib/collab/cloud_lineup_rows.dart": 59,
+  "lib/collab/cloud_lineup_rows.dart": 58,
   "lib/collab/cloud_payload_upgrade.dart": 34,
   "lib/collab/cloud_strategy_copy_box.dart": 70,
   "lib/collab/cloud_sync_error_message.dart": 35,

@@ -280,6 +280,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         editorHeldEntitiesProvider, (_, __) => editorChanged());
 
     ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
+      _settleLineupOrder();
       final previousAckBatch =
           previous?.lastAckBatch ?? const <AckedEntityIntent>[];
       if (next.lastAckBatch.isEmpty ||
@@ -297,6 +298,32 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       isApplyingPage: false,
     );
   }
+
+  void _settleLineupOrder() {
+    final pageId = state.activePageId;
+    if (_disposed ||
+        pageId == null ||
+        state.isApplyingPage ||
+        ref.read(strategyProvider).source != StrategySource.cloud) {
+      return;
+    }
+    final lineUps = ref.read(lineUpProvider);
+    final ordered = ref
+        .read(activePageLiveSyncProvider.notifier)
+        .lineupsAsServerWillHold(pageId, lineUps.graph);
+    if (ordered == null || _sameLineupOrder(ordered, lineUps.graph)) return;
+    ref.read(strategyProvider.notifier).withoutMarkingUnsaved(
+          () => ref.read(lineUpProvider.notifier).takeOrder(ordered),
+        );
+  }
+
+  static bool _sameLineupOrder(LineUpGraph a, LineUpGraph b) =>
+      listEquals([for (final origin in a.origins) origin.id],
+          [for (final origin in b.origins) origin.id]) &&
+      listEquals([for (final landing in a.landings) landing.id],
+          [for (final landing in b.landings) landing.id]) &&
+      listEquals([for (final link in a.links) link.id],
+          [for (final link in b.links) link.id]);
 
   /// Edits the server refused because their page was deleted go out again
   /// once the page is live: restored here, by a teammate, or while this

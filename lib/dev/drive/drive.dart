@@ -1511,6 +1511,23 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (await during case final Object failure) throw failure;
     case 'slowMotion':
       timeDilation = (value as num).toDouble();
+    case 'logLineups' when step['frames'] is int:
+      final frames = step['frames'] as int;
+      var frame = 0;
+      void logFrame(Duration _) {
+        final links = [
+          for (final link in c.read(lineUpProvider).links) link.id,
+        ];
+        _log('LINEUPS $value frame ${frame++} $links');
+        if (frame >= frames) return;
+        SchedulerBinding.instance
+          ..addPostFrameCallback(logFrame)
+          ..scheduleFrame();
+      }
+
+      SchedulerBinding.instance
+        ..addPostFrameCallback(logFrame)
+        ..scheduleFrame();
     case 'logLineups':
       final lineUps = c.read(lineUpProvider);
       String at(Offset? p) => p == null

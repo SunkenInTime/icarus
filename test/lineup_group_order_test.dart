@@ -19,12 +19,21 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 
 import 'library_rows/generated_strategies.dart';
+
+class _QueueThatChanges extends StrategyOpQueueNotifier {
+  @override
+  StrategyOpQueueState build() => const StrategyOpQueueState();
+
+  void change() => state = state.copyWith(lastError: 'changed');
+}
 
 class _TestActionProvider extends ActionProvider {
   @override
@@ -306,7 +315,12 @@ void main() {
         pages: pages,
       );
       await strategies.put(strategy.id, strategy);
-      final container = ProviderContainer();
+      final container = ProviderContainer(
+        overrides: [
+          strategyOpQueueProvider.overrideWith(_QueueThatChanges.new)
+        ],
+      );
+      container.read(strategyPageSessionProvider);
       container.read(strategyProvider.notifier)
         ..setFromState(
           StrategyState(
@@ -335,6 +349,27 @@ void main() {
         .pages
         .singleWhere((page) => page.id == pageId)
         .lineUpGraph;
+
+    test(
+        'a local strategy keeps a restored lineup last in its group whatever '
+        'the cloud queue does', () async {
+      final editor = await open([page('one', 0)]);
+      final a1 = editor.fresh();
+      final a2 = editor.fromOrigin(a1.originId);
+      editor.lineUps.deleteLink(a1.id);
+      editor.history.undoAction();
+      final restored = _orderOf(editor.state.graph);
+      expect(restored['links'], [a2.id, a1.id]);
+
+      (editor.container.read(strategyOpQueueProvider.notifier)
+              as _QueueThatChanges)
+          .change();
+      await pumpEventQueue();
+
+      expect(_orderOf(editor.state.graph), restored);
+      await editor.container.read(strategyProvider.notifier).addPage();
+      expect(_orderOf(saved('one')), restored);
+    });
 
     test('lineups copied onto a page saved interleaved leave it grouped',
         () async {
