@@ -31,6 +31,7 @@ part 'cloud_store.dart';
 final class StoreWork {
   int rowsDrawn = 0;
   int resultGroupsEncoded = 0;
+  int Function() sessionRecords = () => 0;
 
   void reset() {
     rowsDrawn = 0;
@@ -262,6 +263,7 @@ final class _RebuildNotRead extends _Rebuilt {
 
 final class LibraryStore {
   LibraryStore._(StorageLease lease, this._canRead, this._clock, this._build) {
+    storeWork.sessionRecords = () => _sessions.length;
     _lease = _WatchedLease(
       lease,
       () => _shut(const StoreStopped(LeaseEnded())),
@@ -2146,6 +2148,7 @@ final class _LibraryEdit {
       _store._summaries.remove(digest);
       _store._strategies.remove(digest);
       _store._queues.remove(digest);
+      _store._sessions.remove(digest);
       _store._unreadable.remove(digest);
     }
     _store._summaries.addAll(_putSummaries);

@@ -52,4 +52,39 @@ void main() {
     expect(small.groups, 0);
     expect(small.rows, lessThanOrEqualTo(60));
   });
+
+  test('removing strategies releases their session records', () async {
+    final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+    for (var i = 0; i < 24; i++) {
+      final id = 'strategy-$i';
+      savedValue(
+        await store.addCloudStrategy(
+          HeaderRead(
+            strategy: strategyRow(publicId: id),
+            pages: [
+              LivePage(
+                publicId: 'page-a',
+                strategyPublicId: id,
+                name: 'Page 1',
+                sortIndex: 0,
+                isAttack: true,
+                revision: 1,
+              ),
+            ],
+            settings: [settings('page-a')],
+          ),
+          const [],
+        ),
+      );
+      expect(await store.unload(id), isA<Unloaded>());
+    }
+    expect(storeWork.sessionRecords(), 24);
+    savedValue(
+      await store.editLibrary([
+        for (var i = 0; i < 24; i++) RemoveStrategy('strategy-$i'),
+      ]),
+    );
+    expect(listOf(store).strategies, isEmpty);
+    expect(storeWork.sessionRecords(), 0);
+  });
 }

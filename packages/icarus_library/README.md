@@ -1532,7 +1532,10 @@ commit; a summary from a newer build also reads as held. A newer build reads
 the queue; otherwise the only way out is `discardUnreadableQueue(id, const
 DiscardsUnsentWork())`, which deletes the queue rows and writes fresh facts
 and the rebuilt summary in one commit, or changes nothing. On a queue that is
-not held it refuses with `QueueNotHeld` and changes nothing; discarding one's
+not held it refuses with `QueueNotHeld` and writes nothing; it does load the
+queue to find that out, so a strategy listed as unverified is promoted and
+the store sends `StrategyRefreshed`, as any first read of the queue does.
+Removing a strategy releases its session record. Discarding one's
 own readable work is the queue's own discard. While the numbers
 row holds the library, the summary it writes still says held. Removal reads
 the strategy's queue from disk and refuses a held queue or outstanding work.
