@@ -4,6 +4,7 @@ import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 sealed class StrategyCopy {
@@ -208,19 +209,122 @@ Future<ShadowCopy> copyHiveIntoStore(
   };
 }
 
-Future<ShadowCopy> mirrorChanges(
-  HiveLibrary Function() readHive,
-  LibraryStore store, {
+abstract interface class LibraryReads {
+  StrategyData? strategy(String id);
+
+  Folder? folder(String id);
+}
+
+final class StoreHolds {
+  StoreHolds({required this.strategies, required this.folders});
+
+  StoreHolds.of(LibraryList list)
+      : strategies = {for (final summary in list.strategies) summary.publicId},
+        folders = {for (final row in list.folders) row.publicId: row};
+
+  final Set<String> strategies;
+  final Map<String, FolderRow> folders;
+}
+
+Future<ShadowCopy> mirrorIds(
+  LibraryReads reads,
+  LibraryStore store,
+  StoreHolds holds, {
   required Set<String> strategies,
   required Set<String> folders,
-  required Future<void> Function() breathe,
-}) =>
-    _bringUpToDate(
-      readHive,
-      store,
-      _Only(strategies: strategies, folders: folders),
-      breathe: breathe,
-    );
+}) async {
+  final strategyResults = <StrategyCopy>[];
+  final folderResults = <FolderCopy>[];
+  ShadowCopy stopped(CopyStop stop) =>
+      ShadowCopyStopped(strategyResults, folderResults, stop);
+
+  final present = <String, Folder>{};
+  final absent = <String>{};
+  for (final id in folders) {
+    switch (reads.folder(id)) {
+      case final folder?:
+        present[id] = folderAsHiveHoldsIt(folder);
+      case null:
+        absent.add(id);
+    }
+  }
+  for (final folder in _parentsFirst(present.values.toList())) {
+    final row = _folderRow(folder, holds.folders[folder.id]);
+    switch (_saving(await store.editLibrary([PutFolder(row)]))) {
+      case _Wrote():
+        holds.folders[folder.id] = row;
+        folderResults.add(FolderCopied(folder.id));
+      case _NothingToWrite():
+        holds.folders[folder.id] = row;
+        folderResults.add(FolderUnchanged(folder.id));
+      case _NotWritten(:final reason):
+        folderResults.add(FolderNotCopied(folder.id, reason));
+      case _Stop(:final stop):
+        return stopped(stop);
+    }
+  }
+
+  for (final id in strategies) {
+    switch (reads.strategy(id)) {
+      case final strategy?:
+        switch (strategyToRows(strategyAsHiveHoldsIt(strategy))) {
+          case StrategyRowsRefused(:final problems):
+            strategyResults
+                .add(StrategyNotMirrored(id, ConverterRefused(problems)));
+          case StrategyRowsMade(:final rows):
+            switch (_saving(await store.putStrategy(rows))) {
+              case _Wrote():
+                strategyResults.add(
+                  holds.strategies.contains(id)
+                      ? StrategyTookHiveVersion(id)
+                      : StrategyCopied(id),
+                );
+                holds.strategies.add(id);
+              case _NothingToWrite():
+                holds.strategies.add(id);
+                strategyResults.add(StrategyUnchanged(id));
+              case _NotWritten(:final reason):
+                strategyResults.add(StrategyNotMirrored(id, reason));
+              case _Stop(:final stop):
+                return stopped(stop);
+            }
+        }
+      case null when holds.strategies.contains(id):
+        final removal = switch (await store.editLibrary([RemoveStrategy(id)])) {
+          Refused(reason: NoSuchStrategy()) => const _NothingToWrite(),
+          final result => _saving(result),
+        };
+        switch (removal) {
+          case _Wrote() || _NothingToWrite():
+            holds.strategies.remove(id);
+            strategyResults.add(StrategyRemovedWithHive(id));
+          case _NotWritten(:final reason):
+            strategyResults.add(StrategyNotMirrored(id, reason));
+          case _Stop(:final stop):
+            return stopped(stop);
+        }
+      case null:
+        break;
+    }
+  }
+
+  final leaving = [
+    for (final id in absent)
+      if (holds.folders[id] case final row?) row,
+  ];
+  for (final row in _childrenFirst(leaving)) {
+    switch (_saving(await store.editLibrary([RemoveFolder(row.publicId)]))) {
+      case _Wrote() || _NothingToWrite():
+        holds.folders.remove(row.publicId);
+        folderResults.add(FolderRemovedWithHive(row.publicId));
+      case _NotWritten(:final reason):
+        folderResults.add(FolderNotCopied(row.publicId, reason));
+      case _Stop(:final stop):
+        return stopped(stop);
+    }
+  }
+  return ShadowCopyFinished(strategyResults, folderResults);
+}
 
 sealed class _Scope {
   const _Scope();
@@ -250,27 +354,6 @@ final class _Everything extends _Scope {
   @override
   Set<String> foldersToRemove(Set<String> stored, Set<String> inHive) =>
       stored.difference(inHive);
-}
-
-final class _Only extends _Scope {
-  const _Only({required this.strategies, required this.folders});
-
-  final Set<String> strategies;
-  final Set<String> folders;
-
-  @override
-  bool strategy(String id) => strategies.contains(id);
-
-  @override
-  bool folder(String id) => folders.contains(id);
-
-  @override
-  Set<String> strategiesToRemove(Set<String> stored, Set<String> inHive) =>
-      strategies.intersection(stored).difference(inHive);
-
-  @override
-  Set<String> foldersToRemove(Set<String> stored, Set<String> inHive) =>
-      folders.intersection(stored).difference(inHive);
 }
 
 Future<ShadowCopy> _bringUpToDate(

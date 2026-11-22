@@ -84,6 +84,10 @@ String _sizes(File store) {
 int _count<T>(List<Object> items) => items.whereType<T>().length;
 
 List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
+      StoreChangedDuringCheck(:final checked, :final notices) => [
+          'STORE check not exact: Hive changed during it ($notices notices)',
+          ...describeCheck(checked, took),
+        ],
       StoreNotChecked(:final failure) => [
           'STORE check could not read: '
               '${storageFailureWords(failure, StoreStep.read)} ($failure)',
@@ -264,6 +268,7 @@ Future<List<String>> waitForShadowStore(
     switch (run.check) {
       StoreChecked(isExact: true) => null,
       StoreChecked() => 'the store differs from Hive',
+      StoreChangedDuringCheck() => 'Hive changed during the check',
       StoreNotChecked(:final failure) => 'the check failed: '
           '${storageFailureWords(failure, StoreStep.read)} ($failure)',
     },

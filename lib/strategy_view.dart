@@ -843,7 +843,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       source: 'StrategyView.onWindowClose',
       onContinue: () async {
         _isClosingWindow = true;
-        await storeCatchesUpBeforeExit(appProviderContainer);
+        if (storeIsMirroring()) {
+          await storeCatchesUpBeforeExit(appProviderContainer);
+        }
         await windowManager.setPreventClose(false);
         await windowManager.close();
       },

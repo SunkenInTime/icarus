@@ -12,6 +12,7 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
+import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
@@ -155,6 +156,8 @@ Future<void> _checkOne(
       switch (result) {
         case StoreNotChecked(:final failure):
           problem('$round check failed: $failure');
+        case StoreChangedDuringCheck():
+          problem('$round check: Hive changed during it');
         case final StoreChecked checked:
           if (round == 'first') {
             totals
@@ -302,7 +305,11 @@ Future<List<String>> _editEachThroughMirror(
     await file.parent.create(recursive: true);
     final engine = SqliteEngine(file.path);
     final opened = await _openSqlite(engine);
-    final mirror = StoreMirror(readHive: hiveLibraryNow, breathe: () async {});
+    final mirror = StoreMirror(
+      readHive: hiveLibraryNow,
+      reads: const HiveLibraryReads(),
+      betweenAnimations: () async {},
+    );
     LocalLibrary.follower = mirror;
     final writes = LibraryBoxWrites();
     await mirror.copyThenFollow(opened, writes: writes);
@@ -313,18 +320,21 @@ Future<List<String>> _editEachThroughMirror(
           .renameStrategy(stored, '${stored.name} edited');
       if (saved is! LibraryWritten) problems.add('$label: not saved $saved');
     }
-    await mirror.drained();
-    final check = await checkStoreAgainstHive(
-      hiveLibraryNow(),
-      opened,
-      foreignNames: const [],
-      breathe: () async {},
-      strategiesRefused: mirror.refusedStrategies,
-      foldersRefused: mirror.refusedFolders,
+    final check = await mirror.check(
+      () => checkStoreAgainstHive(
+        hiveLibraryNow(),
+        opened,
+        foreignNames: const [],
+        breathe: () async {},
+        strategiesRefused: mirror.refusedStrategies,
+        foldersRefused: mirror.refusedFolders,
+      ),
     );
     switch (check) {
       case StoreNotChecked(:final failure):
         problems.add('$label: check failed $failure');
+      case StoreChangedDuringCheck():
+        problems.add('$label: Hive changed during the check');
       case final StoreChecked checked when !checked.isExact:
         problems.add(
           '$label: ${checked.strategyProblems} ${checked.folderProblems}',

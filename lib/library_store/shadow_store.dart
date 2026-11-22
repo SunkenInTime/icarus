@@ -18,6 +18,7 @@ import 'package:icarus/library_store/library_store_sqlite.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -131,8 +132,23 @@ final class Mirroring extends ShadowMode {
   final StoreMirror mirror;
 }
 
-StoreMirror storeMirror() =>
-    StoreMirror(readHive: _hiveLibrary, breathe: _betweenAnimations);
+final class HiveLibraryReads implements LibraryReads {
+  const HiveLibraryReads();
+
+  @override
+  StrategyData? strategy(String id) =>
+      Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
+
+  @override
+  Folder? folder(String id) =>
+      Hive.box<Folder>(HiveBoxNames.foldersBox).get(id);
+}
+
+StoreMirror storeMirror() => StoreMirror(
+      readHive: _hiveLibrary,
+      reads: const HiveLibraryReads(),
+      betweenAnimations: _betweenAnimations,
+    );
 
 Future<void> _betweenAnimations() => Future.any([
       SchedulerBinding.instance.scheduleTask<void>(() {}, Priority.idle),
@@ -217,7 +233,6 @@ class ShadowNotifier extends Notifier<ShadowState> {
             progress: progress,
           ),
       };
-      if (mode case Mirroring(:final mirror)) await mirror.drained();
       final copyTook = copyClock.elapsed;
       final uiDuringCopy = copyWatch.stop();
       state = const ShadowChecking();
@@ -255,33 +270,38 @@ class ShadowNotifier extends Notifier<ShadowState> {
     }
   }
 
-  Future<StoreCheck> checkAgain(LibraryStoreReady ready) async {
-    if (mode case Mirroring(:final mirror)) await mirror.drained();
-    return _check(ready.store, ready.foreignNames);
-  }
+  Future<StoreCheck> checkAgain(LibraryStoreReady ready) =>
+      _check(ready.store, ready.foreignNames);
 
   Future<StoreCheck> _check(
     LibraryStore store,
     List<ForeignName> foreignNames,
-  ) =>
-      checkStoreAgainstHive(
-        _hiveLibrary(),
-        store,
-        foreignNames: foreignNames,
-        breathe: _breathe,
-        strategiesRefused: switch (mode) {
-          ShadowOnly() => const {},
-          Mirroring(:final mirror) => mirror.refusedStrategies,
-        },
-        foldersRefused: switch (mode) {
-          ShadowOnly() => const {},
-          Mirroring(:final mirror) => mirror.refusedFolders,
-        },
-      );
+  ) {
+    Future<StoreCheck> run(
+      Map<String, CopyRefusal> strategiesRefused,
+      Map<String, CopyRefusal> foldersRefused,
+    ) =>
+        checkStoreAgainstHive(
+          _hiveLibrary(),
+          store,
+          foreignNames: foreignNames,
+          breathe: _breathe,
+          strategiesRefused: strategiesRefused,
+          foldersRefused: foldersRefused,
+        );
+    return switch (mode) {
+      ShadowOnly() => run(const {}, const {}),
+      Mirroring(:final mirror) => mirror.check(
+          () => run(mirror.refusedStrategies, mirror.refusedFolders),
+        ),
+    };
+  }
 }
 
+bool storeIsMirroring() =>
+    shadowReachable && LocalLibrary.follower is StoreMirror;
+
 Future<void> storeCatchesUpBeforeExit(ProviderContainer container) async {
-  if (!shadowReachable) return;
   if (container.read(shadowProvider.notifier).mode
       case Mirroring(:final mirror)) {
     await mirror.drained().timeout(
@@ -291,11 +311,18 @@ Future<void> storeCatchesUpBeforeExit(ProviderContainer container) async {
   }
 }
 
+Future<void> storeClosesBeforeExit(ProviderContainer container) async {
+  await storeCatchesUpBeforeExit(container);
+  await container.read(libraryStoreProvider.notifier).close().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
+}
+
 void closeLibraryStoreOnExit(ProviderContainer container) {
   AppLifecycleListener(
     onExitRequested: () async {
-      await storeCatchesUpBeforeExit(container);
-      await container.read(libraryStoreProvider.notifier).close();
+      await storeClosesBeforeExit(container);
       return ui.AppExitResponse.exit;
     },
   );

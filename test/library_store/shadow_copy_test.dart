@@ -110,6 +110,7 @@ Future<StoreChecked> checkNow(LibraryStore store) async =>
     switch (await checkFromHive(store)) {
       final StoreChecked checked => checked,
       StoreNotChecked(:final failure) => throw StateError('$failure'),
+      StoreChangedDuringCheck() => throw StateError('Hive changed'),
     };
 
 Map<Type, int> kinds(List<Object> results) {

@@ -187,6 +187,13 @@ final class StoreChecked extends StoreCheck {
       unplaced.isEmpty;
 }
 
+final class StoreChangedDuringCheck extends StoreCheck {
+  const StoreChangedDuringCheck(this.checked, this.notices);
+
+  final StoreCheck checked;
+  final int notices;
+}
+
 final class StoreNotChecked extends StoreCheck {
   const StoreNotChecked(this.failure);
 

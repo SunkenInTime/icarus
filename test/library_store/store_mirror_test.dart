@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -120,30 +122,107 @@ Box<StrategyData> get _strategies =>
 
 Box<Folder> get _folders => Hive.box<Folder>(HiveBoxNames.foldersBox);
 
-Future<StoreChecked> _exact(LibraryStore store, StoreMirror mirror) async {
-  await mirror.drained();
-  final check = await checkStoreAgainstHive(
-    hiveLibraryNow(),
-    store,
-    foreignNames: const [],
-    breathe: _still,
-    strategiesRefused: mirror.refusedStrategies,
-    foldersRefused: mirror.refusedFolders,
-  );
-  return switch (check) {
-    final StoreChecked checked => checked,
-    StoreNotChecked(:final failure) => throw StateError('$failure'),
-  };
+final class _Reads implements LibraryReads {
+  var strategies = 0;
+  var folders = 0;
+
+  @override
+  StrategyData? strategy(String id) {
+    strategies++;
+    return _strategies.get(id);
+  }
+
+  @override
+  Folder? folder(String id) {
+    folders++;
+    return _folders.get(id);
+  }
 }
 
-Future<StoreMirror> _mirroring(LibraryStore store) async {
-  final mirror = StoreMirror(readHive: hiveLibraryNow, breathe: _still);
+final class _Thrown implements LibraryReads {
+  @override
+  StrategyData? strategy(String id) => throw StateError('a read that fails');
+
+  @override
+  Folder? folder(String id) => throw StateError('a read that fails');
+}
+
+final class _Recorder extends LocalLibraryFollower {
+  final told = <String>[];
+
+  @override
+  void onWriting(LibraryTouch touch) => told.add('writing ${touch.strategies}');
+
+  @override
+  void onAnswered(LibraryTouch touch) =>
+      told.add('answered ${touch.strategies}');
+
+  @override
+  void onFault(Object error, StackTrace stackTrace) => told.add('fault');
+}
+
+final class _Throwing extends LocalLibraryFollower {
+  final faults = <Object>[];
+
+  @override
+  void onWriting(LibraryTouch touch) => throw StateError('follower broke');
+
+  @override
+  void onAnswered(LibraryTouch touch) => throw StateError('follower broke');
+
+  @override
+  void onFault(Object error, StackTrace stackTrace) => faults.add(error);
+}
+
+Future<StoreCheck> _checkThrough(
+  LibraryStore store,
+  StoreMirror mirror, {
+  Future<void> Function()? during,
+}) =>
+    mirror.check(() async {
+      final check = await checkStoreAgainstHive(
+        hiveLibraryNow(),
+        store,
+        foreignNames: const [],
+        breathe: _still,
+        strategiesRefused: mirror.refusedStrategies,
+        foldersRefused: mirror.refusedFolders,
+      );
+      if (during != null) await during();
+      return check;
+    });
+
+Future<StoreChecked> _exact(LibraryStore store, StoreMirror mirror) async =>
+    switch (await _checkThrough(store, mirror)) {
+      final StoreChecked checked => checked,
+      final other => throw StateError('$other'),
+    };
+
+Future<StoreMirror> _mirroring(
+  LibraryStore store, {
+  LibraryReads? reads,
+  Future<void> Function() betweenAnimations = _still,
+}) async {
+  final mirror = StoreMirror(
+    readHive: hiveLibraryNow,
+    reads: reads ?? _Reads(),
+    betweenAnimations: betweenAnimations,
+  );
   LocalLibrary.follower = mirror;
   final writes = LibraryBoxWrites();
   await mirror.copyThenFollow(store, writes: writes);
   await writes.stop();
   return mirror;
 }
+
+Future<String> _storedName(LibraryStore store, String id) async =>
+    switch (await store.readStrategy(id)) {
+      Found(:final value) => (value.strategy as ReadableStrategy).name,
+      final other => throw StateError('$other'),
+    };
+
+StrategyData _current(String id) =>
+    StrategyMigrator.migrateToCurrentVersion(_legacy(id));
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -309,6 +388,7 @@ void main() {
     final hold = storage.holdNextWrite();
     final stored = _strategies.get('fast')!;
     await const LocalLibrary().renameStrategy(stored, 'rename 0');
+    await hold.reached;
     for (var n = 1; n <= 30; n++) {
       expect(
         await const LocalLibrary().renameStrategy(stored, 'rename $n'),
@@ -418,18 +498,246 @@ void main() {
     await second.close();
   });
 
-  test('with no follower a save writes Hive and nothing else', () async {
-    LocalLibrary.follower = null;
+  test(
+      'with no follower a save writes Hive and tells nothing, and the store stays empty',
+      () async {
     final storage = MemoryStorage();
     final store = await openStoreOn(MemoryEngine(storage));
-    final mirror = StoreMirror(readHive: hiveLibraryNow, breathe: _still);
-    expect(
-      await const LocalLibrary().addStrategy(
-          StrategyMigrator.migrateToCurrentVersion(_legacy('alone'))),
-      isA<LibraryWritten>(),
-    );
-    expect(mirror.pending, 0);
+    final recorder = _Recorder();
+    LocalLibrary.follower = recorder;
+    await const LocalLibrary().addStrategy(_current('told'));
+    expect(recorder.told, ['writing [told]', 'answered [told]']);
+    LocalLibrary.follower = null;
+    expect(await const LocalLibrary().addStrategy(_current('alone')),
+        isA<LibraryWritten>());
+    expect(_strategies.containsKey('alone'), isTrue);
+    expect(recorder.told, hasLength(2));
     expect(storage.contents, isEmpty);
     await store.close();
   });
+
+  test(
+      'a lazy list that throws a Hive error is a failed write, with and without a follower',
+      () async {
+    Iterable<String> throwing() sync* {
+      throw HiveError('a lazy list that fails');
+    }
+
+    LocalLibrary.follower = null;
+    expect(
+      await const LocalLibrary().deleteFoldersWithStrategies(
+          folderIds: throwing(), strategyIds: const []),
+      isA<LibraryWriteFailed>(),
+    );
+    LocalLibrary.follower = _Recorder();
+    expect(
+      await const LocalLibrary().deleteFoldersWithStrategies(
+          folderIds: throwing(), strategyIds: const []),
+      isA<LibraryWriteFailed>(),
+    );
+  });
+
+  test('a follower that throws cannot change the answer of a save', () async {
+    final throwing = _Throwing();
+    LocalLibrary.follower = throwing;
+    expect(await const LocalLibrary().addStrategy(_current('kept')),
+        isA<LibraryWritten>());
+    expect(_strategies.containsKey('kept'), isTrue);
+    expect(throwing.faults, hasLength(2));
+  });
+
+  test(
+      'a strategy whose second write is in flight is not read until it answers, and a failed write leaves the store where it was',
+      () async {
+    final store = await openStoreOn(MemoryEngine(MemoryStorage()));
+    var gate = Completer<void>()..complete();
+    final mirror =
+        await _mirroring(store, betweenAnimations: () => gate.future);
+    await const LocalLibrary().addStrategy(_current('held'));
+    await mirror.drained();
+    gate = Completer<void>();
+    await const LocalLibrary()
+        .renameStrategy(_strategies.get('held')!, 'second save');
+    final answered = _strategies.get('held')!;
+    const touch = LibraryTouch(strategies: ['held'], folders: []);
+    mirror.onWriting(touch);
+    await _strategies.put('held', answered.copyWith(name: 'in flight'));
+    gate.complete();
+    await mirror.drained();
+    expect(await _storedName(store, 'held'), 'Legacy held');
+    await _strategies.put('held', answered.copyWith());
+    mirror.onAnswered(touch);
+    final check = await _exact(store, mirror);
+    expect(check.isExact, isTrue, reason: '${check.strategyProblems}');
+    expect(await _storedName(store, 'held'), 'second save');
+    await store.close();
+  });
+
+  test(
+      'a strategy saved into a folder whose write is in flight is tried again when the folder lands',
+      () async {
+    final store = await openStoreOn(MemoryEngine(MemoryStorage()));
+    final mirror = await _mirroring(store);
+    const folderTouch = LibraryTouch(strategies: [], folders: ['late']);
+    mirror.onWriting(folderTouch);
+    await _folders.put(
+        'late', Folder(name: 'Late', id: 'late', dateCreated: DateTime(2025)));
+    await const LocalLibrary()
+        .addStrategy(_current('filed').copyWith(folderID: 'late'));
+    await mirror.drained();
+    expect(
+        mirror.refusedStrategies['filed'],
+        isA<StoreRefusedIt>()
+            .having((r) => r.refusal, 'refusal', isA<NoSuchFolder>()));
+    mirror.onAnswered(folderTouch);
+    final check = await _exact(store, mirror);
+    expect(check.isExact, isTrue,
+        reason: '${check.strategyProblems} ${check.folderProblems}');
+    expect(mirror.refusedStrategies, isEmpty);
+    await store.close();
+  });
+
+  test(
+      'a bulk delete whose folder part fails still tells the follower the strategy it deleted',
+      () async {
+    final store = await openStoreOn(MemoryEngine(MemoryStorage()));
+    await const LocalLibrary().addFolder(
+        Folder(name: 'Plans', id: 'plans', dateCreated: DateTime(2025)));
+    await const LocalLibrary()
+        .addStrategy(_current('inside').copyWith(folderID: 'plans'));
+    final wait = Completer<void>()..complete();
+    var gate = wait;
+    final mirror =
+        await _mirroring(store, betweenAnimations: () => gate.future);
+    await mirror.drained();
+    gate = Completer<void>();
+    await _folders.close();
+    final deleted = await const LocalLibrary().deleteFoldersWithStrategies(
+        folderIds: ['plans'], strategyIds: ['inside']);
+    expect(deleted, isA<LibraryWriteFailed>());
+    expect(_strategies.containsKey('inside'), isFalse);
+    await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+    gate.complete();
+    final check = await _exact(store, mirror);
+    expect(check.isExact, isTrue,
+        reason: '${check.strategyProblems} ${check.folderProblems}');
+    await store.close();
+  });
+
+  test(
+      'a folder the store refused and Hive then deleted has its not-mirrored record cleared',
+      () async {
+    final store = await openStoreOn(MemoryEngine(MemoryStorage()));
+    final mirror = await _mirroring(store);
+    await const LocalLibrary().addFolder(Folder(
+        name: 'Lost',
+        id: 'lost',
+        dateCreated: DateTime(2025),
+        parentID: 'gone'));
+    await mirror.drained();
+    expect(mirror.refusedFolders.keys, ['lost']);
+    await const LocalLibrary().deleteFolder('lost');
+    final check = await _exact(store, mirror);
+    expect(mirror.refusedFolders, isEmpty);
+    expect(check.isExact, isTrue, reason: '${check.folderProblems}');
+    await store.close();
+  });
+
+  test(
+      'a save noticed while the check compares makes its answer "changed during the check", never exact',
+      () async {
+    final store = await openStoreOn(MemoryEngine(MemoryStorage()));
+    await _strategies.put('watched', _current('watched'));
+    final mirror = await _mirroring(store);
+    final check = await _checkThrough(
+      store,
+      mirror,
+      during: () async {
+        await const LocalLibrary().renameStrategy(
+            _strategies.get('watched')!, 'renamed during the check');
+      },
+    );
+    expect(check, isA<StoreChangedDuringCheck>());
+    expect(await _exact(store, mirror),
+        isA<StoreChecked>().having((c) => c.isExact, 'exact', isTrue));
+    await store.close();
+  });
+
+  test(
+      'an error inside a batch stops the mirror with its reason, and waiting for it answers at once',
+      () async {
+    final store = await openStoreOn(MemoryEngine(MemoryStorage()));
+    final mirror = await _mirroring(store, reads: _Thrown());
+    await const LocalLibrary().addStrategy(_current('broken'));
+    await mirror.drained().timeout(const Duration(seconds: 2));
+    expect(
+      mirror.phase,
+      isA<MirrorStopped>().having((p) => p.stop, 'stop', isA<MirrorFaulted>()),
+    );
+    expect(_strategies.containsKey('broken'), isTrue);
+    await store.close();
+  });
+
+  test(
+      'a hold that arrives while a batch waits for its moment stops that batch from writing',
+      () async {
+    final storage = MemoryStorage();
+    final counted = _Counted(MemoryEngine(storage));
+    final store = await openStoreOn(counted);
+    var gate = Completer<void>()..complete();
+    final mirror =
+        await _mirroring(store, betweenAnimations: () => gate.future);
+    await mirror.drained();
+    final before = counted.commits;
+    gate = Completer<void>();
+    await const LocalLibrary().addStrategy(_current('held back'));
+    await Future<void>.delayed(Duration.zero);
+    mirror.hold();
+    gate.complete();
+    await mirror.drained();
+    expect(counted.commits, before);
+    expect(mirror.batches, 0);
+    await store.close();
+  });
+
+  test(
+      'one save costs the same reads whether the library holds 10 strategies or 700',
+      () async {
+    Future<({int strategies, int folders, int commits, Duration took})> oneSave(
+        int size) async {
+      await _strategies.clear();
+      for (var n = 0; n < size; n++) {
+        await _strategies.put('s$n', _current('s$n'));
+      }
+      final counted = _Counted(MemoryEngine(MemoryStorage()));
+      final store = await openStoreOn(counted);
+      final reads = _Reads();
+      final mirror = await _mirroring(store, reads: reads);
+      await mirror.drained();
+      reads
+        ..strategies = 0
+        ..folders = 0;
+      final commits = counted.commits;
+      final clock = Stopwatch()..start();
+      await const LocalLibrary()
+          .renameStrategy(_strategies.get('s0')!, 'edited');
+      await mirror.drained();
+      final took = clock.elapsed;
+      await store.close();
+      return (
+        strategies: reads.strategies,
+        folders: reads.folders,
+        commits: counted.commits - commits,
+        took: took
+      );
+    }
+
+    final small = await oneSave(10);
+    final large = await oneSave(700);
+    debugPrint('one save, 10 strategies: $small; 700 strategies: $large');
+    expect((large.strategies, large.folders, large.commits),
+        (small.strategies, small.folders, small.commits));
+    expect(large.strategies, 1);
+    expect(large.commits, 1);
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }
