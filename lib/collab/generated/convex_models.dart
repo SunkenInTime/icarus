@@ -5592,6 +5592,47 @@ final class StrategyGetFullSnapshotResultPagesItem {
   }
 }
 
+final class StrategyGetPageListResult {
+  const StrategyGetPageListResult({required this.header, required this.pages});
+  final StrategiesGetHeaderResult header;
+  final List<StrategyGetFullSnapshotResultPagesItem> pages;
+
+  factory StrategyGetPageListResult.decode(ConvexValue value, String path) {
+    final object = _decodeObject(value, path);
+    return StrategyGetPageListResult(
+      header: StrategiesGetHeaderResult.decode(
+        object.value['header'] ?? _missing(path, 'header'),
+        '$path.header',
+      ),
+      pages:
+          _decodeArray(
+                object.value['pages'] ?? _missing(path, 'pages'),
+                '$path.pages',
+              ).value.indexed
+              .map(
+                (entry) => StrategyGetFullSnapshotResultPagesItem.decode(
+                  entry.$2,
+                  _indexPath('$path.pages', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+    );
+  }
+
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'header': header.encode('$path.header'),
+      'pages': ConvexArray(
+        pages.indexed
+            .map(
+              (entry) => entry.$2.encode(_indexPath('$path.pages', entry.$1)),
+            )
+            .toList(growable: false),
+      ),
+    });
+  }
+}
+
 final class StrategyGetShellResult {
   const StrategyGetShellResult({required this.header, required this.pages});
   final StrategiesGetHeaderResult header;
@@ -7938,6 +7979,22 @@ StrategyGetFullSnapshotResult decodeStrategyGetFullSnapshotResult(
   value,
   'strategy.js:getFullSnapshot.returns',
 );
+
+ConvexObject encodeStrategyGetPageListArgs({
+  required double clientProtocolVersion,
+  ConvexOptional<String> shareToken = const ConvexOptional.absent(),
+  required String strategyPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategy.js:getPageList.args.clientProtocolVersion',
+  ),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
+
+StrategyGetPageListResult decodeStrategyGetPageListResult(ConvexValue value) =>
+    StrategyGetPageListResult.decode(value, 'strategy.js:getPageList.returns');
 
 ConvexObject encodeStrategyGetShellArgs({
   required double clientProtocolVersion,
