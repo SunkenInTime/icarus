@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -94,8 +93,8 @@ Future<String> pageListRefusal(
         .watchPageList(strategyId, accountSubject: accountSubject)
         .first
         .timeout(const Duration(seconds: 20));
-  } on ConvexFunctionException catch (error) {
-    if (error.code != ConvexErrorCode.forbidden) rethrow;
+  } catch (error) {
+    if (!isTypedConvexForbiddenError(error)) rethrow;
     return 'CLOUDSTORE a page list read naming $accountSubject, signed in as '
         '$signedIn, was refused: $error';
   }
