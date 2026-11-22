@@ -51,18 +51,12 @@ final class LoadedPage {
       unknownKinds.isEmpty &&
       unplaced.isEmpty;
 
-  PageTally tally() {
-    var tally = PageTally.empty
-        .plusDamaged(unplaced.length)
-        .plusNewer(unknownKinds.length);
-    for (final row in elements.values) {
-      tally = tally.plus(row, 1);
-    }
-    for (final row in lineupGroups.values) {
-      tally = tally.plusGroup(row, 1);
-    }
-    return tally;
-  }
+  PageTally tally() => PageTally.count(
+    elements: elements.values,
+    lineupGroups: lineupGroups.values,
+    damaged: unplaced.length,
+    newer: unknownKinds.length,
+  );
 }
 
 final class LoadedStrategy {
@@ -552,4 +546,14 @@ final class PendingRows implements StrategyRows {
     for (final row in _groups.values)
       if (row.pagePublicId == pagePublicId) row,
   ];
+
+  PageTally tallyOn(String pagePublicId) {
+    final loaded = _loaded.loadedPage(digestOf(pagePublicId));
+    return PageTally.count(
+      elements: elementsOn(pagePublicId),
+      lineupGroups: lineupGroupsOn(pagePublicId),
+      damaged: loaded?.unplaced.length ?? 0,
+      newer: loaded?.unknownKinds.length ?? 0,
+    );
+  }
 }

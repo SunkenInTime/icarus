@@ -241,16 +241,12 @@ PageTally _tallyOn(
   String pageId,
 ) {
   final loaded = strategy.loadedPage(digestOf(pageId));
-  var tally = PageTally.empty
-      .plusDamaged(loaded?.unplaced.length ?? 0)
-      .plusNewer(loaded?.unknownKinds.length ?? 0);
-  for (final row in rows.elementsOn(pageId)) {
-    tally = tally.plus(row, 1);
-  }
-  for (final row in rows.lineupGroupsOn(pageId)) {
-    tally = tally.plusGroup(row, 1);
-  }
-  return tally;
+  return PageTally.count(
+    elements: rows.elementsOn(pageId),
+    lineupGroups: rows.lineupGroupsOn(pageId),
+    damaged: loaded?.unplaced.length ?? 0,
+    newer: loaded?.unknownKinds.length ?? 0,
+  );
 }
 
 KeptInCloud _syncOf(CloudQueue queue, DateTime now) =>

@@ -962,6 +962,82 @@ void main() {
     );
 
     test(
+      'agents at the same place are in the order the page is read in, by row id',
+      () async {
+        final rows = StrategyRowSet(
+          strategy: strategyRow(publicId: 'tied'),
+          pages: [
+            LivePage(
+              publicId: 'only',
+              strategyPublicId: 'tied',
+              name: 'only',
+              sortIndex: 0,
+              isAttack: true,
+              revision: 1,
+            ),
+          ],
+          settings: [settings('only')],
+          elements: [
+            agent('b-jett', pageId: 'only'),
+            agent('a-raze', type: 'raze', pageId: 'only'),
+            agent('c-sova', type: 'sova', pageId: 'only', sortIndex: 1),
+          ],
+          lineupGroups: const [],
+        );
+        final store = await openOn(await seededClean());
+        savedValue(await store.editLibrary([AddStrategy(rows)]));
+        expect(
+          listOf(
+            store,
+          ).strategies.singleWhere((s) => s.publicId == 'tied').agentsInOrder,
+          ['raze', 'jett', 'sova'],
+        );
+      },
+    );
+
+    test(
+      'a page tally keeps each agent type once, however many agents are placed',
+      () async {
+        final rows = StrategyRowSet(
+          strategy: strategyRow(publicId: 'crowded'),
+          pages: [
+            LivePage(
+              publicId: 'busy',
+              strategyPublicId: 'crowded',
+              name: 'busy',
+              sortIndex: 0,
+              isAttack: true,
+              revision: 1,
+            ),
+          ],
+          settings: [settings('busy')],
+          elements: [
+            for (var n = 0; n < 30; n++)
+              agent(
+                'agent-$n',
+                type: const ['jett', 'sova', 'omen'][n % 3],
+                pageId: 'busy',
+                sortIndex: n,
+              ),
+          ],
+          lineupGroups: const [],
+        );
+        final store = await openOn(await seededClean());
+        savedValue(await store.editLibrary([AddStrategy(rows)]));
+        final summary = listOf(
+          store,
+        ).strategies.singleWhere((s) => s.publicId == 'crowded');
+        final tally = summary.tallies['busy']!.toJson();
+        expect(summary.agentsInOrder, ['jett', 'sova', 'omen']);
+        expect(
+          tally.keys,
+          unorderedEquals(['items', 'agents', 'damaged', 'newer', 'order']),
+        );
+        expect(tally['order'], ['jett', 'sova', 'omen']);
+      },
+    );
+
+    test(
       'a summary written by the build before this one is rebuilt on open with the tile\'s fields',
       () async {
         final current = listOf(await openOn(seeded)).strategies.single;

@@ -120,7 +120,7 @@ StrategyData randomStrategy(int seed) {
 StrategyData edited(StrategyData strategy, int seed) {
   final random = Random(seed);
   final pages = [...strategy.pages];
-  switch (random.nextInt(4)) {
+  switch (random.nextInt(6)) {
     case 0 when pages.isNotEmpty:
       final at = random.nextInt(pages.length);
       pages[at] = pages[at].copyWith(
@@ -131,6 +131,10 @@ StrategyData edited(StrategyData strategy, int seed) {
     case 2 when pages.isNotEmpty:
       final at = random.nextInt(pages.length);
       pages[at] = pages[at].copyWith(isAttack: !pages[at].isAttack);
+    case 4 when pages.length > 1:
+      pages.add(pages.removeAt(0));
+    case 5 when pages.length > 1:
+      pages[1] = pages[1].copyWith(sortIndex: pages[0].sortIndex);
     case _ when pages.length > 1:
       pages.removeAt(0);
       for (final (index, page) in pages.indexed) {
@@ -196,6 +200,7 @@ void main() {
     );
     final differing = <String>[];
     var groupOrderOnly = 0;
+    var pageOrderOnly = 0;
     var compared = 0;
     for (final strategy in strategies) {
       var current = strategy;
@@ -206,6 +211,8 @@ void main() {
             break;
           case TileInGroupOrder():
             groupOrderOnly++;
+          case TileInPageOrder():
+            pageOrderOnly++;
           case final TileDiffers differs:
             differing.add('${current.id} step $step: $differs');
         }
@@ -214,7 +221,89 @@ void main() {
     }
     await store.close();
     debugPrint('$compared summaries compared; $groupOrderOnly differ only '
-        'because their lineup origins are not in group order');
+        'because their lineup origins are not in group order, '
+        '$pageOrderOnly only because their saved page list is out of sort '
+        'order or has two pages at one sort index');
+    expect(differing, isEmpty, reason: differing.take(3).join('\n'));
+  });
+
+  test(
+      'with agents and lineup groups at shared places, the summary shows the order the store reads the page in',
+      () async {
+    final store = await _store();
+    final differing = <String>[];
+    var tied = 0;
+    for (var seed = 0; seed < 150; seed++) {
+      final random = Random(seed);
+      final rows = switch (strategyToRows(
+        strategyAsHiveHoldsIt(randomStrategy(seed)),
+      )) {
+        StrategyRowsMade(:final rows) => rows,
+        StrategyRowsRefused(:final problems) => fail('$problems'),
+      };
+      final elements = [...rows.elements];
+      final groups = [...rows.lineupGroups];
+      if (elements.length > 1) {
+        final from = random.nextInt(elements.length);
+        final to = random.nextInt(elements.length);
+        if (elements[from] case final LiveElement moved
+            when elements[to].pagePublicId == moved.pagePublicId) {
+          elements[from] = LiveElement(
+            publicId: moved.publicId,
+            pagePublicId: moved.pagePublicId,
+            payload: moved.payload,
+            sortIndex: (elements[to] as LiveElement).sortIndex,
+            revision: moved.revision,
+          );
+          tied++;
+        }
+      }
+      if (groups.length > 1) {
+        final from = random.nextInt(groups.length);
+        final to = random.nextInt(groups.length);
+        if (groups[from] case final LiveLineupGroup moved
+            when groups[to].pagePublicId == moved.pagePublicId) {
+          groups[from] = LiveLineupGroup(
+            strategyPublicId: moved.strategyPublicId,
+            publicId: moved.publicId,
+            pagePublicId: moved.pagePublicId,
+            payload: moved.payload,
+            sortIndex: (groups[to] as LiveLineupGroup).sortIndex,
+            revision: moved.revision,
+          );
+          tied++;
+        }
+      }
+      final perturbed = StrategyRowSet(
+        strategy: rows.strategy,
+        pages: rows.pages,
+        settings: rows.settings,
+        elements: elements,
+        lineupGroups: groups,
+      );
+      final readBack = switch (strategyFromRows(perturbed)) {
+        StrategyDataMade(:final strategy) => strategy,
+        StrategyDataRefused(:final problems) => fail('$problems'),
+      };
+      switch (await store.putStrategy(perturbed)) {
+        case Saved() || NothingToSave():
+          break;
+        case final other:
+          fail('$other');
+      }
+      final summary = switch (store.library) {
+        LibraryOpen(:final list) =>
+          list.strategies.singleWhere((s) => s.publicId == readBack.id),
+        LibraryShut(:final failure) => fail('$failure'),
+      };
+      if (tileParity(summary, readBack) case final TileDiffers differs) {
+        differing.add('seed $seed: $differs');
+      }
+    }
+    await store.close();
+    debugPrint('150 strategies read back from rows with $tied rows moved to '
+        'a place another row holds');
+    expect(tied, greaterThan(50));
     expect(differing, isEmpty, reason: differing.take(3).join('\n'));
   });
 }

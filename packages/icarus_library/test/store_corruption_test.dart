@@ -266,21 +266,8 @@ bool _isTally(Object? json) =>
     (json['agents']! as Map<String, Object?>).values.every(
       (count) => _fits(Field.whole, count),
     ) &&
-    json['placed'] is List<Object?> &&
-    (json['placed']! as List<Object?>).every(
-      (place) => switch (place) {
-        [final at, String()] => _fits(Field.whole, at),
-        _ => false,
-      },
-    ) &&
-    json['origins'] is List<Object?> &&
-    (json['origins']! as List<Object?>).every(
-      (origin) => switch (origin) {
-        [final group, final at, String()] =>
-          _fits(Field.whole, group) && _fits(Field.whole, at),
-        _ => false,
-      },
-    );
+    json['order'] is List<Object?> &&
+    (json['order']! as List<Object?>).every((agent) => agent is String);
 
 bool _readsAsSummaryOf(Object? json, Object? id) =>
     json is Map<String, Object?> &&

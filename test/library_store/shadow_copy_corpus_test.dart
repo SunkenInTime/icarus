@@ -280,7 +280,7 @@ Map<String, Object?> _summaryAsTheBuildBeforeWroteIt(
 Map<String, Object?> _tallyAsTheBuildBeforeWroteIt(Object? tally) => {
       for (final MapEntry(:key, :value)
           in (tally! as Map<String, Object?>).entries)
-        if (key != 'placed' && key != 'origins') key: value,
+        if (key != 'order') key: value,
     };
 
 Future<int> _ageSummaries(SqliteEngine engine) async {
@@ -309,6 +309,24 @@ Future<int> _ageSummaries(SqliteEngine engine) async {
   );
   await lease.release();
   return entries.length;
+}
+
+Future<Set<Object?>> _storedSummaryVersions(File file) async {
+  final engine = SqliteEngine(file.path);
+  final lease = switch (await engine.lease()) {
+    Leased(:final lease) => lease,
+    final other => fail('$other'),
+  };
+  final entries = switch (await lease.entries('library', 'summary/')) {
+    Done(:final value) => value,
+    final other => fail('$other'),
+  };
+  await lease.release();
+  await engine.close();
+  return {
+    for (final (key: _, :value) in entries)
+      (jsonDecode(value) as Map<String, Object?>)['summaryVersion'],
+  };
 }
 
 Future<(Duration, int)> _timedOpen(File file) async {
@@ -545,12 +563,12 @@ void main() {
         );
         unplaced.removeWhere(ready.contains);
       }
-      var refused = 0;
+      final refused = <String>[];
       final kept = <StrategyData>[];
       for (final strategy in strategies) {
         switch (strategyToRows(strategyAsHiveHoldsIt(strategy))) {
-          case StrategyRowsRefused():
-            refused++;
+          case StrategyRowsRefused(:final problems):
+            refused.add('${strategy.id}: $problems');
           case StrategyRowsMade(:final rows):
             expect(
               await store.putStrategy(rows),
@@ -568,6 +586,7 @@ void main() {
       };
       var same = 0;
       var groupOrder = 0;
+      var pageOrder = 0;
       final differing = <String>[];
       for (final strategy in kept) {
         switch (tileParity(summaries[strategy.id]!, strategy)) {
@@ -575,15 +594,21 @@ void main() {
             same++;
           case TileInGroupOrder():
             groupOrder++;
+          case TileInPageOrder():
+            pageOrder++;
           case final TileDiffers differs:
             differing.add('${strategy.id}: $differs');
         }
       }
       await store.close();
-      debugPrint('${strategies.length} corpus strategies: $same show what '
-          'main\'s tile shows, $groupOrder differ only in lineup group order, '
-          '$refused are refused by the converter and stay listed from Hive');
+      debugPrint('${strategies.length} corpus strategies, '
+          '${kept.length} compared: $same show what main\'s tile shows, '
+          '$groupOrder differ only in lineup group order, $pageOrder only '
+          'because their saved page list is out of sort order; '
+          '${refused.length} refused by the converter: $refused');
       expect(differing, isEmpty, reason: differing.take(3).join('\n'));
+      expect(refused, isEmpty);
+      expect(same + groupOrder + pageOrder, strategies.length);
     },
   );
 
@@ -620,6 +645,7 @@ void main() {
         await copyFromHive(copied);
         await copied.close();
         await copying.close();
+        final storedAfterCopy = await _storedSummaryVersions(file);
         final (afterCopy, _) = await _timedOpen(file);
         debugPrint('700 strategies: open with current summaries '
             '${current.inMilliseconds} ms; with $aged summaries from the '
@@ -628,6 +654,7 @@ void main() {
             'with nothing written in between, ${again.inMilliseconds} ms; '
             'the open after a start-up copy, ${afterCopy.inMilliseconds} ms');
         expect(aged, 700);
+        expect(storedAfterCopy, {6});
       } finally {
         await Hive.close();
         await scratch.delete(recursive: true);

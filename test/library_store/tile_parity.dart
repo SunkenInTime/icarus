@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -75,6 +76,10 @@ final class TileInGroupOrder extends TileParity {
   const TileInGroupOrder();
 }
 
+final class TileInPageOrder extends TileParity {
+  const TileInPageOrder();
+}
+
 final class TileDiffers extends TileParity {
   const TileDiffers(this.stored, this.hive);
 
@@ -85,12 +90,31 @@ final class TileDiffers extends TileParity {
   String toString() => 'store $stored, Hive $hive';
 }
 
+bool pagesOutOfSortOrder(StrategyData strategy) {
+  final indexes = [for (final page in strategy.pages) page.sortIndex];
+  return indexes.toSet().length != indexes.length ||
+      !const ListEquality<int>().equals(indexes, [...indexes]..sort());
+}
+
+StrategyData inPageOrder(StrategyData strategy) => strategy.copyWith(
+      pages: [...strategy.pages]..sort(
+          (a, b) => a.sortIndex != b.sortIndex
+              ? a.sortIndex.compareTo(b.sortIndex)
+              : a.id.compareTo(b.id),
+        ),
+    );
+
 TileParity tileParity(StrategySummary summary, StrategyData strategy) {
   final stored = fromStore(summary);
   final hive = fromHive(strategy);
   if (stored == hive) return const TileSame();
   if (stored == fromHive(inGroupOrder(strategy))) {
     return const TileInGroupOrder();
+  }
+  if (pagesOutOfSortOrder(strategy) &&
+      (stored == fromHive(inPageOrder(strategy)) ||
+          stored == fromHive(inGroupOrder(inPageOrder(strategy))))) {
+    return const TileInPageOrder();
   }
   return TileDiffers(stored, hive);
 }
