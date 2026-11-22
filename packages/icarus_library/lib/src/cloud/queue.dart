@@ -532,6 +532,19 @@ final class RowResult extends ResultSubject {
   String toString() => '$target';
 }
 
+final class PageListResult extends ResultSubject {
+  const PageListResult();
+
+  @override
+  bool operator ==(Object other) => other is PageListResult;
+
+  @override
+  int get hashCode => (PageListResult).hashCode;
+
+  @override
+  String toString() => 'the page list';
+}
+
 final class PageResult extends ResultSubject {
   const PageResult(this.page);
 
@@ -1568,6 +1581,11 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
       if (delete == null || seen is! AuthoredRow) return const _AskUser();
       final until = delete.firstSentAt.add(resendWindow);
       if (!now.isBefore(until)) return const _AskUser();
+      if (entry.scope case OnPage(
+        :final pagePublicId,
+      ) when _pageGone(queue.shown, pagePublicId)) {
+        return const _AskUser(RowPageGone());
+      }
       return switch (_knownRow(queue, row)) {
         _KnownRow(:final revision, :final digest, current: true)
             when revision == authored && digest == seen.digest =>
@@ -1598,9 +1616,8 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
       : ProducedRow(
           page: last.page,
           revision: switch (earlier) {
-            AuthoredRow(:final revision, :final digest)
-                when digest == last.digest =>
-              revision,
+            AuthoredRow(:final revision, :final digest) =>
+              digest == last.digest ? revision : revision + 1,
             _ => first.revision,
           },
           digest: last.digest,
@@ -1630,6 +1647,12 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
   };
 }
 
+bool _pageGone(Shown shown, String page) =>
+    shown.goneThisSession.contains(page) ||
+    (shown.headerThisSession &&
+        !shown.pages.containsKey(page) &&
+        shown.highest.containsKey(PageTarget(page)));
+
 bool _deletes(StrategyOp op) =>
     op is ElementDeleteOp || op is LineupGroupDeleteOp;
 
@@ -1650,13 +1673,9 @@ _Verdict _wholeBehindOwn(
     (_, _, Moving(:final from)) => from,
     _ => null,
   };
-  final pageGone =
-      page != null &&
-      (shown.goneThisSession.contains(page) ||
-          (shown.headerThisSession &&
-              !shown.pages.containsKey(page) &&
-              shown.highest.containsKey(PageTarget(page))));
-  if (pageGone) return const _AskUser(RowPageGone());
+  if (page != null && _pageGone(shown, page)) {
+    return const _AskUser(RowPageGone());
+  }
   final renumbering =
       row is PageTarget &&
       queue.landed.any(
@@ -1900,6 +1919,20 @@ void _landed(
       ..sort((a, b) => a.compareTo(b));
   }
   if (produced == null) _laterUnjustified(edit, entry, work);
+  final row = targetOf(sent);
+  edit.shown = edit.shown.touched(
+    {
+      ...pagesNeeded(sent),
+      ?edit.shown.rows[row]?.page,
+      if (row case PageTarget(:final pagePublicId)) pagePublicId,
+      if (row case SettingsTarget(:final pagePublicId)) pagePublicId,
+    },
+    list:
+        row is StrategyTarget ||
+        row is PageTarget ||
+        row is SettingsTarget ||
+        renumbersPages(sent),
+  );
   edit.change.targets
     ..add(checkTargetOf(sent))
     ..add(targetOf(sent));

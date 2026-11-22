@@ -895,70 +895,12 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   }
   if (entry.work case final CheckedDelete work) {
     final page = work.op.pagePublicId;
-    var landedOnPage = false;
-    String? pageDigest;
-    final known = {...?queue.shown.content[page]}
-      ..removeWhere(
-        (part, _) => switch (part) {
-          SeenElement(:final id) => _shownElsewhere(
-            queue,
-            ElementTarget(id),
-            page,
-          ),
-          SeenLineupGroup(:final id) => _shownElsewhere(
-            queue,
-            LineupTarget(id),
-            page,
-          ),
-          SeenSettings() => false,
-        },
-      );
-    for (final landed in queue.landed) {
-      if ((queue.shown.highest[checkTargetOf(landed.op)] ?? 0) >=
-          landed.revision) {
-        continue;
-      }
-      final row = targetOf(landed.op);
-      if (row == PageTarget(page)) {
-        switch (landed.produced) {
-          case ProducedRow(:final digest):
-            pageDigest = digest;
-          case null:
-            landedOnPage = true;
-        }
-        continue;
-      }
-      final touches =
-          _landedPage(landed.op) == page || queue.shown.rows[row]?.page == page;
-      if (!touches) continue;
-      final part = switch (row) {
-        ElementTarget(:final elementPublicId) =>
-          SeenElement(elementPublicId) as SeenPart?,
-        LineupTarget(:final lineupPublicId) => SeenLineupGroup(lineupPublicId),
-        SettingsTarget(:final pagePublicId) when pagePublicId == page =>
-          const SeenSettings(),
-        _ => null,
-      };
-      switch ((part, landed.produced)) {
-        case (final part?, _) when _deletes(landed.op):
-          known.remove(part);
-        case (final part?, ProducedRow(page: final at, :final digest)):
-          at == page ? known[part] = digest : known.remove(part);
-        case _:
-          landedOnPage = true;
-      }
-    }
-    switch (pageDeleteVerdict(
-      queue.shown,
-      work,
-      ownWorkLandedOnPage: landedOnPage,
-      known: known,
-      knownPageDigest: pageDigest,
-    )) {
+    switch (pageDeleteVerdict(queue.shown, work)) {
       case PageAsTheUserSawIt() || PageAlreadyGone():
         break;
-      case PageResultAwaited():
-        holds.add(AwaitingResult(PageResult(page)));
+      case PageResultAwaited(list: final needsList, page: final needsPage):
+        if (needsList) holds.add(const AwaitingResult(PageListResult()));
+        if (needsPage) holds.add(AwaitingResult(PageResult(page)));
       case PageHeld(:final cause):
         if (holds.isEmpty) {
           return (EntryView(NeedsUser(DeleteHeld(cause)), const []), null);
@@ -971,19 +913,6 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
 Target _rowTarget(StrategyOp op) => switch (checkTargetOf(op)) {
   StrategyTarget() => targetOf(op),
   final target => target,
-};
-
-String? _landedPage(StrategyOp op) => switch (op) {
-  ElementAddOp(:final pagePublicId) ||
-  ElementDeleteOp(:final pagePublicId) ||
-  ElementReorderOp(:final pagePublicId) ||
-  LineupGroupAddOp(:final pagePublicId) ||
-  LineupGroupDeleteOp(:final pagePublicId) ||
-  LineupGroupReorderOp(:final pagePublicId) ||
-  PageSettingsPatchOp(:final pagePublicId) => pagePublicId,
-  ElementPatchOp(:final pagePublicId) ||
-  LineupGroupPatchOp(:final pagePublicId) => pagePublicId,
-  _ => null,
 };
 
 List<PendingOp> entriesOnRows(CloudQueue queue, Iterable<Target> targets) => [
@@ -1027,9 +956,3 @@ List<PendingOp> entriesOnRows(CloudQueue queue, Iterable<Target> targets) => [
   }
   return (picked.values.toList(), wanted);
 }
-
-bool _shownElsewhere(CloudQueue queue, Target target, String page) =>
-    switch (queue.shown.rows[target]?.page) {
-      final at? => at != page,
-      null => false,
-    };

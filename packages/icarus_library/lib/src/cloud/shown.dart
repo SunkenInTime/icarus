@@ -28,6 +28,81 @@ final class ShownRow {
   int get hashCode => Object.hash(page, revision, digest);
 }
 
+final class Freshness {
+  Freshness._({
+    required this.listSinceTouch,
+    required Set<String> listed,
+    required Set<String> touchedSinceList,
+    required Set<String> pagesSinceTouch,
+  }) : listed = Set.unmodifiable(listed),
+       touchedSinceList = Set.unmodifiable(touchedSinceList),
+       pagesSinceTouch = Set.unmodifiable(pagesSinceTouch);
+
+  static final none = Freshness._(
+    listSinceTouch: false,
+    listed: const {},
+    touchedSinceList: const {},
+    pagesSinceTouch: const {},
+  );
+
+  final bool listSinceTouch;
+  final Set<String> listed;
+  final Set<String> touchedSinceList;
+  final Set<String> pagesSinceTouch;
+
+  Freshness afterList(Iterable<String> live) {
+    final listedNow = {...live};
+    return Freshness._(
+      listSinceTouch: true,
+      listed: listedNow,
+      touchedSinceList: const {},
+      pagesSinceTouch: pagesSinceTouch.intersection(listedNow),
+    );
+  }
+
+  Freshness afterPage(String page) => Freshness._(
+    listSinceTouch: listSinceTouch,
+    listed: listed,
+    touchedSinceList: touchedSinceList,
+    pagesSinceTouch: {...pagesSinceTouch, page},
+  );
+
+  Freshness touched(Iterable<String> pages, {required bool list}) =>
+      Freshness._(
+        listSinceTouch: listSinceTouch && !list,
+        listed: listed,
+        touchedSinceList: {...touchedSinceList, ...pages},
+        pagesSinceTouch: list
+            ? const {}
+            : ({...pagesSinceTouch}..removeAll(pages)),
+      );
+
+  bool listFreshFor(String page) =>
+      listSinceTouch && !touchedSinceList.contains(page);
+
+  bool pageFreshFor(String page) => pagesSinceTouch.contains(page);
+
+  bool freshFor(String page) =>
+      listFreshFor(page) && (pageFreshFor(page) || !listed.contains(page));
+
+  @override
+  bool operator ==(Object other) =>
+      other is Freshness &&
+      other.listSinceTouch == listSinceTouch &&
+      const SetEquality<String>().equals(other.listed, listed) &&
+      const SetEquality<String>().equals(
+        other.touchedSinceList,
+        touchedSinceList,
+      ) &&
+      const SetEquality<String>().equals(
+        other.pagesSinceTouch,
+        pagesSinceTouch,
+      );
+
+  @override
+  int get hashCode => Object.hash(listSinceTouch, listed.length);
+}
+
 final class Shown {
   Shown({
     required this.strategy,
@@ -39,7 +114,9 @@ final class Shown {
     Set<String> pagesThisSession = const {},
     Set<String> goneThisSession = const {},
     Map<Target, int> highest = const {},
-  }) : pagesThisSession = Set.unmodifiable(pagesThisSession),
+    Freshness? fresh,
+  }) : fresh = fresh ?? Freshness.none,
+       pagesThisSession = Set.unmodifiable(pagesThisSession),
        goneThisSession = Set.unmodifiable(goneThisSession),
        highest = Map.unmodifiable(highest),
        pages = Map.unmodifiable(pages),
@@ -57,7 +134,15 @@ final class Shown {
 
   factory Shown.of(StrategyRowSet rows, {required Iterable<String> readPages}) {
     final read = {...readPages};
+    var fresh = Freshness.none.afterList([
+      for (final page in rows.pages)
+        if (page is! TrashedPage) page.publicId,
+    ]);
+    for (final page in read) {
+      fresh = fresh.afterPage(page);
+    }
     return Shown(
+      fresh: fresh,
       headerThisSession: true,
       pagesThisSession: read,
       strategy: _strategyRow(rows.strategy, rows.pages),
@@ -102,6 +187,7 @@ final class Shown {
   }
 
   final ShownRow? strategy;
+  final Freshness fresh;
 
   int? get strategyRevision => strategy?.revision;
 
@@ -132,6 +218,10 @@ final class Shown {
 
   Shown take(ArrivedBase result) => switch (result) {
     HeaderRead(:final strategy, :final pages, :final settings) => Shown(
+      fresh: fresh.afterList([
+        for (final page in pages)
+          if (page is! TrashedPage) page.publicId,
+      ]),
       headerThisSession: true,
       pagesThisSession: pagesThisSession,
       goneThisSession: {
@@ -174,6 +264,7 @@ final class Shown {
       [...elements, ...lineupGroups],
     ),
     PageGone(:final pagePublicId) => Shown(
+      fresh: fresh.afterPage(pagePublicId),
       headerThisSession: headerThisSession,
       pagesThisSession: {...pagesThisSession}..remove(pagePublicId),
       goneThisSession: {...goneThisSession, pagePublicId},
@@ -200,12 +291,26 @@ final class Shown {
   };
 
   Shown withGone(String page) => Shown(
+    fresh: fresh,
     headerThisSession: headerThisSession,
     pagesThisSession: pagesThisSession,
     goneThisSession: {...goneThisSession, page},
     highest: highest,
     strategy: strategy,
     pages: pages,
+    settings: settings,
+    content: content,
+    rows: rows,
+  );
+
+  Shown touched(Iterable<String> pages, {required bool list}) => Shown(
+    fresh: fresh.touched(pages, list: list),
+    headerThisSession: headerThisSession,
+    pagesThisSession: pagesThisSession,
+    goneThisSession: goneThisSession,
+    highest: highest,
+    strategy: strategy,
+    pages: this.pages,
     settings: settings,
     content: content,
     rows: rows,
@@ -246,6 +351,7 @@ final class Shown {
       next[target] = shown;
     }
     return Shown(
+      fresh: fresh.afterPage(page),
       headerThisSession: headerThisSession,
       pagesThisSession: {...pagesThisSession, page},
       goneThisSession: {...goneThisSession}..remove(page),
@@ -266,6 +372,7 @@ final class Shown {
   bool operator ==(Object other) =>
       other is Shown &&
       other.strategy == strategy &&
+      other.fresh == fresh &&
       other.headerThisSession == headerThisSession &&
       const SetEquality<String>().equals(
         other.goneThisSession,

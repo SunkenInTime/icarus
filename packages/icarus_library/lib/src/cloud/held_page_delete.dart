@@ -1,3 +1,4 @@
+import 'op_facts.dart';
 import 'pending.dart';
 import 'shown.dart';
 
@@ -10,7 +11,10 @@ final class PageAsTheUserSawIt extends PageDeleteVerdict {
 }
 
 final class PageResultAwaited extends PageDeleteVerdict {
-  const PageResultAwaited();
+  const PageResultAwaited({required this.list, required this.page});
+
+  final bool list;
+  final bool page;
 }
 
 final class PageAlreadyGone extends PageDeleteVerdict {
@@ -25,39 +29,49 @@ final class PageHeld extends PageDeleteVerdict {
 
 enum HeldDeleteCause { pageChanged, contentNeverRead }
 
-PageDeleteVerdict pageDeleteVerdict(
-  Shown shown,
-  CheckedDelete work, {
-  required bool ownWorkLandedOnPage,
-  Map<SeenPart, String>? known,
-  String? knownPageDigest,
-}) {
+PageDeleteVerdict pageDeleteVerdict(Shown shown, CheckedDelete work) {
   final page = work.op.pagePublicId;
+  final fresh = shown.fresh;
+  if (!fresh.freshFor(page)) {
+    return PageResultAwaited(
+      list: !fresh.listFreshFor(page),
+      page:
+          !fresh.pageFreshFor(page) &&
+          (!fresh.listFreshFor(page) || fresh.listed.contains(page)),
+    );
+  }
+  if (!fresh.listed.contains(page)) return const PageAlreadyGone();
   final seen = work.seen;
   final digests = switch (seen.content) {
     ContentSeen(:final digests) => digests,
     ContentNeverRead() => null,
   };
-  final pageRow = shown.pages[page];
-  if ((pageRow == null && shown.headerThisSession) ||
-      shown.goneThisSession.contains(page)) {
-    return const PageAlreadyGone();
-  }
   if (digests == null) return const PageHeld(HeldDeleteCause.contentNeverRead);
-  if (ownWorkLandedOnPage) return const PageResultAwaited();
-  final content = shown.pagesThisSession.contains(page)
-      ? (known ?? shown.content[page])
-      : null;
-  if (content == null || pageRow == null) return const PageResultAwaited();
+  final pageRow = shown.pages[page];
+  final content = shown.content[page];
+  if (pageRow == null || content == null) {
+    return const PageHeld(HeldDeleteCause.pageChanged);
+  }
   final current = {
     if (shown.settings[page] case final settings?)
       const SeenSettings(): settings.digest,
-    ...content,
+    for (final MapEntry(:key, :value) in content.entries)
+      if (!_shownElsewhere(shown, key, page)) key: value,
   };
-  final same =
-      sameMap(current, digests) &&
-      (knownPageDigest ?? pageRow.digest) == seen.pageDigest;
-  return same
+  return sameMap(current, digests) && pageRow.digest == seen.pageDigest
       ? const PageAsTheUserSawIt()
       : const PageHeld(HeldDeleteCause.pageChanged);
+}
+
+bool _shownElsewhere(Shown shown, SeenPart part, String page) {
+  final target = switch (part) {
+    SeenElement(:final id) => ElementTarget(id) as Target,
+    SeenLineupGroup(:final id) => LineupTarget(id),
+    SeenSettings() => null,
+  };
+  if (target == null) return false;
+  return switch (shown.rows[target]?.page) {
+    final at? => at != page,
+    null => false,
+  };
 }

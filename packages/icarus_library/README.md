@@ -1456,15 +1456,23 @@ they tell a whole-row write whether its row is as the user saw it. Two
 results also stop sending: one saying the strategy is gone stops every claim
 for that strategy, and the page delete, until
 [#670](https://github.com/SunkenInTime/icarus/issues/670): the server guards a
-page delete by the strategy's revision only, so a page delete waits for a
-result of its page and needs the user when the page no longer holds what the
-user saw. The page as this device knows it is its latest result with this
-device's own predicted landed work on top: elements, lineup groups, the page
-name and the settings, and its own landed deletes whether predicted or not; a row a result shows on another page is not on it.
-Whether the page exists is one answer from everything shown: a page list, a
-page result or a page-gone result, the latest of them; a page list showing
-the page live again clears a page-gone mark. It goes as soon as that answer
-is that the page is gone. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
+page delete by the strategy's revision only, so one rule decides a page
+delete, with no partial cases. It is decided only when the device holds a
+page list and a result of that page, both from the current session and both
+received after this device's last answered op that touches that page or the
+page list; until then it waits, and `resultsNeeded` asks for whichever of
+the two is missing (`PageListResult`, `PageResult`). Then: if the page list
+says the page is gone, the delete goes and the server answers (the page's
+own result is not needed then, since it cannot change the outcome). Otherwise the
+page (its name, its settings, and the rows on it by id and content, leaving
+out a row a result shows on another page) is compared with what the user
+saw; equal means the delete goes, anything else means the user is asked.
+Both results arrive after every answered op of this device's that touches
+the page, so they already include its landed work. A delete with nothing
+ahead of it on a page already read this session goes at once; one queued
+behind this device's own work on that page waits for the page list and the
+page to come round once more after the last answer, which is deliberate and
+goes away with #670. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
 out in one piece when the server checks the page.
 
 **Entry states.** An entry is in one of four states, derived from the facts
@@ -1551,8 +1559,11 @@ and `_judge` is the only place an outgoing revision is chosen.
 
 - An op made with nothing of this device's ahead of it on its row goes at
   its authored revision, and the server decides.
-- A field merge names its fields and always goes; the server merges it
-  field by field.
+- A field merge that stays on its page names its fields and goes at its
+  authored revision once no earlier edit of this device on that row is still
+  unanswered; landed work never holds it, and the server merges it field by
+  field. A merge that names another page is written whole by the server, so
+  it is gated like a whole-row write.
 - Any other op made behind this device's own queued or landed work on its
   row, including work answered "nothing to do", goes
   only once that row is justified at the revision it names, with the content

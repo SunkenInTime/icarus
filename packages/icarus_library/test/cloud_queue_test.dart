@@ -590,7 +590,8 @@ void main() {
       expect(client.view('drop').sendable, isTrue);
     });
 
-    test('a page delete made without its page ever read needs the user', () {
+    test('a page delete made without its page ever read needs the user once '
+        'its page list and page come round', () {
       final client = Client(base: initialRows());
       client.edit(pageDelete('drop', 'page-b'));
       final base = initialRows();
@@ -611,6 +612,9 @@ void main() {
           now: now,
         ),
       ).queue;
+      expect(client.view('blind').sendable, isFalse);
+      client.arrive(headerReadOf(base));
+      client.arrive(pageReadOf(base, 'page-b'));
       expect(
         stateOf(client, 'blind'),
         const NeedsUser(DeleteHeld(HeldDeleteCause.contentNeverRead)),
@@ -1223,6 +1227,7 @@ void main() {
     client.edit(onVisible(client.visible, pageDelete('drop', 'page-b')));
     final attempt = client.claim(['add']);
     client.must(OpAnswered(attempt, const AppliedAnswer('add', revision: 2)));
+    client.read(withOp(initialRows(), pageAdd('add', 'page-c', expected: 1)));
     client.claim(['drop']);
     expect(expectedOf(client.lastSent().single), 2);
   });
@@ -1449,6 +1454,7 @@ void main() {
       client.must(OpAnswered(attempt, const AppliedAnswer('add', revision: 2)));
       client.edit(pageDelete('drop', 'page-b'));
       expect(client.view('drop').holds, [
+        awaitingResult(const PageListResult()),
         awaitingResult(const PageResult('page-b')),
       ]);
       final gone = withOp(server.rows, pageDelete('t', 'page-b'));
@@ -1620,8 +1626,8 @@ void main() {
       expect(stateOf(client, 'move'), const Waiting());
     });
 
-    test('a page-gone result releases a waiting page delete without a '
-        'header', () {
+    test('a page-gone result alone does not release a waiting page delete; '
+        'with a page list after it, the delete goes', () {
       final server = Server();
       final client = online();
       client.edit(elementAdd('add', elementId: 'n', pageId: 'page-b'));
@@ -1630,6 +1636,10 @@ void main() {
       client.must(const ConnectionLost());
       client.must(const ConnectionReturned());
       client.arrive(const PageGone('page-b'));
+      expect(client.view('drop').sendable, isFalse);
+      client.arrive(
+        headerReadOf(withOp(server.rows, pageDelete('t', 'page-b'))),
+      );
       expect(client.view('drop').sendable, isTrue);
     });
 
@@ -2013,7 +2023,8 @@ void main() {
       expect(stateOf(client, 'old'), const NeedsUser(WrittenLongAgo()));
     });
 
-    test('solo: renaming a page and then deleting it asks nothing', () {
+    test('solo: renaming a page and then deleting it asks nothing, once the '
+        'page list and page come round after the answer', () {
       final server = Server();
       final client = online();
       client.edit(
@@ -2026,11 +2037,13 @@ void main() {
       );
       client.edit(pageDelete('del', 'page-b'));
       sendAndAnswer(client, server, ['rename']);
+      expect(client.view('del').sendable, isFalse);
+      client.read(server.rows);
       expect(client.view('del').sendable, isTrue);
     });
 
     test('solo: changing a page\'s settings and then deleting it goes once '
-        'the settings are answered', () {
+        'the settings are answered and the page list and page come round', () {
       final server = Server();
       final client = online();
       client.edit(
@@ -2047,6 +2060,8 @@ void main() {
       );
       client.edit(pageDelete('del', 'page-b'));
       sendAndAnswer(client, server, ['settings']);
+      expect(client.view('del').sendable, isFalse);
+      client.read(server.rows);
       expect(client.view('del').sendable, isTrue);
     });
 
@@ -2404,5 +2419,145 @@ void main() {
         }
       });
     }
+  });
+
+  group('the page-delete hold', () {
+    void bothResults(
+      Client client,
+      Server server,
+      String page,
+      bool listFirst,
+    ) {
+      if (listFirst) client.arrive(headerReadOf(server.rows));
+      client.arrive(pageReadOf(server.rows, page));
+      if (!listFirst) client.arrive(headerReadOf(server.rows));
+    }
+
+    test('a delete with nothing ahead of it on a page read this session goes '
+        'at once', () {
+      final client = online();
+      client.edit(pageDelete('del', 'page-b'));
+      expect(client.view('del').sendable, isTrue);
+    });
+
+    for (final listFirst in [true, false]) {
+      final order = listFirst ? 'page list first' : 'page result first';
+
+      test('a delete queued offline asks after a teammate changed the page\'s '
+          'settings ($order)', () {
+        final server = Server();
+        final client = Client()..read(initialRows());
+        client.edit(pageDelete('del', 'page-b'));
+        server.rows = withOp(
+          server.rows,
+          const PageSettingsPatchOp(
+            opId: 't',
+            pagePublicId: 'page-b',
+            settings: PageSettings(
+              agentSize: 2,
+              abilitySize: 1,
+              useNeutralTeamColors: true,
+            ),
+            expectedPageSettingsRevision: 1,
+          ),
+        );
+        client.must(const ConnectionReturned());
+        if (listFirst) {
+          client.arrive(headerReadOf(server.rows));
+        } else {
+          client.arrive(pageReadOf(server.rows, 'page-b'));
+        }
+        expect(client.view('del').sendable, isFalse);
+        bothResults(client, server, 'page-b', listFirst);
+        expect(stateOf(client, 'del'), isA<NeedsUser>());
+      });
+
+      test('a delete asks once fresh results show a row it saw moved to '
+          'another page ($order)', () {
+        final server = Server();
+        final client = online();
+        client.edit(elementAdd('add', elementId: 'n', pageId: 'page-a'));
+        sendAndAnswer(client, server, ['add']);
+        client.edit(onVisible(client.visible, pageDelete('del', 'page-a')));
+        client.must(const ConnectionLost());
+        client.must(const ConnectionReturned());
+        final placed = server.rows.element('n')! as LiveElement;
+        server.rows = withOp(
+          server.rows,
+          ElementPatchOp(
+            opId: 't',
+            elementPublicId: 'n',
+            expectedElementRevision: placed.revision,
+            pagePublicId: 'page-b',
+          ),
+        );
+        bothResults(client, server, 'page-a', listFirst);
+        expect(stateOf(client, 'del'), isA<NeedsUser>());
+      });
+
+      test('a page list from before this device added the page never counts '
+          'as proof it is gone ($order)', () {
+        final server = Server();
+        final client = online();
+        client.edit(pageAdd('add', 'page-c'));
+        sendAndAnswer(client, server, ['add']);
+        server.rows = withOp(
+          server.rows,
+          elementAdd('t', elementId: 'theirs', pageId: 'page-c'),
+        );
+        client.edit(
+          onVisible(client.visible, pageDelete('del', 'page-c', expected: 2)),
+        );
+        expect(client.view('del').sendable, isFalse);
+        bothResults(client, server, 'page-c', listFirst);
+        expect(stateOf(client, 'del'), isA<NeedsUser>());
+      });
+    }
+  });
+
+  test('a drag to the same place folded with a real drag predicts the op '
+      'that is sent, so the next whole edit goes at once', () {
+    final start = strategyRows(
+      elements: [
+        element(
+          'e1',
+          fields: const {
+            'position': {'dx': 0, 'dy': 0},
+          },
+        ),
+        element('e2'),
+        element('e3', pageId: 'page-b'),
+      ],
+    );
+    final server = Server()..rows = start;
+    final client = online(base: start);
+    client.edit(movePatch('d1', x: 0, merge: FieldMerge(fields: ['position'])));
+    client.edit(
+      onVisible(
+        client.visible,
+        movePatch('d2', x: 40, merge: FieldMerge(fields: ['position'])),
+      ),
+    );
+    final folded = client.queue.entries.single.id;
+    sendAndAnswer(client, server, [folded]);
+    client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
+    expect(client.view('whole').sendable, isTrue);
+  });
+
+  test('an undo whose page a teammate deleted asks, with that reason', () {
+    final server = Server();
+    final client = online();
+    final drawn = client.visible;
+    client.edit(elementDelete('del'));
+    client.edit(putBackOf('back', drawn, 'e1'));
+    client.must(const ConnectionLost());
+    client.must(const ConnectionReturned());
+    sendAndAnswer(client, server, ['del']);
+    server.rows = withoutPage(
+      withOp(server.rows, pageDelete('t', 'page-a', expected: 1)),
+      'page-a',
+    );
+    client.read(server.rows);
+    expect(stateOf(client, 'back'), const NeedsUser(RowPageGone()));
   });
 }

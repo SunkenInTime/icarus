@@ -428,6 +428,13 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
         }
     }
   }
+  for (final base in [
+    headerReadOf(server.rows),
+    for (final page in server.rows.pages)
+      if (page is LivePage) pageReadOf(server.rows, page.publicId),
+  ]) {
+    step(BaseArrived(base, session: queue.session.number));
+  }
   step(const ConnectionLost());
   return Delivered(queue, at, effects..sort(), server);
 }

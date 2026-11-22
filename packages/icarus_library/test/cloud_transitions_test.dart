@@ -437,8 +437,12 @@ String renderTable() {
       'at its authored revision, and the server decides.',
     )
     ..writeln(
-      '- A field merge names its fields and always goes; the server merges '
-      'it field by field.',
+      '- A field merge that stays on its page names its fields and goes at '
+      'its authored revision once no earlier edit of this device on that row '
+      'is still unanswered; this device\'s landed work on the row never holds '
+      'it, and the server merges it field by field. A merge that names '
+      'another page is written whole by the server, so it is gated like a '
+      'whole-row write.',
     )
     ..writeln(
       '- Any other op made behind this device\'s queued or landed work on its '
@@ -525,14 +529,27 @@ String renderTable() {
     ..writeln()
     ..writeln(
       'The server guards a page delete by the strategy\'s revision only, so a '
-      'page delete can land after a teammate added an element to the page '
+      'page delete can land after a teammate changed the page '
       '([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the '
-      'server checks the page itself, a page delete waits for a result of its '
-      'page and needs the user when that page no longer holds what the user '
-      'saw, or when its content was never read. It goes as soon as a result '
-      '(a page list or the page\'s own result) says the page is gone, since '
-      'there is nothing left to protect. All of '
-      'this lives in '
+      'server checks the page itself, one rule decides a page delete, with no '
+      'partial cases. It is decided only when the device holds a page list '
+      'and a result of that page, both from the current session and both '
+      'received after this device\'s last answered op that touches that page '
+      'or the page list; until then it waits, and `resultsNeeded` asks for '
+      'whichever of the two is missing. Then: if the page list says the page '
+      'is gone, the delete goes and the server answers; the page\'s own result '
+      'is not needed then, since it cannot change the outcome. Otherwise the '
+      'page '
+      '(its name, its settings, and the rows on it by id and content, '
+      'leaving out a row a result shows on another page) is compared with '
+      'what the user saw: equal means the delete goes, anything else means '
+      'the user is asked. Both results arrive after every answered op of '
+      'this device\'s that touches the page, so they already include its '
+      'landed work. A delete with nothing ahead of it on a page already read '
+      'this session goes at once; a delete queued behind this device\'s own '
+      'work on that page waits for the page list and the page to come round '
+      'once more after the last answer. That wait is deliberate and goes away '
+      'with #670. All of this lives in '
       '`lib/src/cloud/held_page_delete.dart` and comes out in one piece when '
       '#670 lands.',
     );

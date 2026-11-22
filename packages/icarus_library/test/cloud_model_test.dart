@@ -637,6 +637,7 @@ final class Model {
         RowResult(:final page?) => page,
         RowResult(:final target) => pageHolding(target),
         PageResult(:final page) => page,
+        PageListResult() => null,
       },
     for (final work in client.queue.landed) ...[
       ...pagesNeeded(work.op),
@@ -686,7 +687,23 @@ final class Model {
         for (final page in server.rows.pages)
           if (page is LivePage) page.publicId,
       ];
-      final kind = random.nextInt(12);
+      final kind = random.nextInt(14);
+      final deleting = [
+        for (final entry in client.queue.entries)
+          if (entry case PendingOp(
+            op: PageDeleteOp(:final pagePublicId),
+          ) when server.rows.page(pagePublicId) is LivePage)
+            pagePublicId,
+      ];
+      final madeHere = [
+        for (final page in livePages)
+          if (page.startsWith('page-')) page,
+      ];
+      final aimed = deleting.isNotEmpty
+          ? pick(deleting)
+          : madeHere.isNotEmpty
+          ? pick(madeHere)
+          : pick(livePages);
       final mine = [
         for (final entry in client.queue.entries)
           if (entry case PendingOp(
@@ -696,6 +713,8 @@ final class Model {
       ];
       final StrategyOp op = switch (kind) {
         10 || 11 when mine.isNotEmpty => sameAsMine(pick(mine), kind == 11),
+        12 => settingsOn(aimed),
+        13 => elementAdd(fresh('t'), elementId: fresh('t'), pageId: aimed),
         0 || 1 => ElementReorderOp(
           opId: fresh('t'),
           elementPublicId: target.publicId,
@@ -784,6 +803,21 @@ final class Model {
       }
     }
     recordHistory();
+  }
+
+  StrategyOp settingsOn(String page) {
+    final current = server.rows.settingsOf(page)! as ReadablePageSettings;
+    count('teammate changes a page\'s settings');
+    return PageSettingsPatchOp(
+      opId: fresh('t'),
+      pagePublicId: page,
+      settings: PageSettings(
+        agentSize: 1.0 + random.nextInt(3),
+        abilitySize: 1.0 + random.nextInt(3),
+        useNeutralTeamColors: random.nextBool(),
+      ),
+      expectedPageSettingsRevision: current.revision,
+    );
   }
 
   StrategyOp sameAsMine(ElementPatchOp mine, bool alsoRotated) {
@@ -981,6 +1015,7 @@ const minimums = {
   'teammate makes this device\'s change': 20,
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
+  'teammate changes a page\'s settings': 50,
 };
 
 void main() {

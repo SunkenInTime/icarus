@@ -15,7 +15,7 @@ Each section builds a queue by real events until op `x` is in that state, then a
 An op names the revision the user's edit was made against. The device keeps, per row, a justified row: a revision with the content at that revision, compared by content for every row, the strategy included. Nothing is justified when a session opens. A row becomes justified when a result of this session shows it, or when this device's own op on it is answered at exactly the revision `applyOp` predicted over a base that was already justified when the edit was made: either the row a queued edit ahead of it predicted, or the justified row itself. An answer of nothing to do at the justified revision of an op that changes nothing keeps the row justified. Any other answer, nothing to do at another revision included, means someone else wrote in between: the row is not justified until a result shows it, and every later edit of that row loses its justification too. A result never changes the revision an op names. `_judge` in `lib/src/cloud/queue.dart` is the only place an outgoing revision is chosen.
 
 - An op made with nothing of this device's ahead of it on its row goes at its authored revision, and the server decides.
-- A field merge names its fields and always goes; the server merges it field by field.
+- A field merge that stays on its page names its fields and goes at its authored revision once no earlier edit of this device on that row is still unanswered; this device's landed work on the row never holds it, and the server merges it field by field. A merge that names another page is written whole by the server, so it is gated like a whole-row write.
 - Any other op made behind this device's queued or landed work on its row, a nothing-to-do answer included, goes only once that row is justified at the revision it names, with the content the user saw (or already holding what the op writes). Otherwise it waits for the row's result, and needs the user when a result of this session shows the row otherwise, when a result of its page no longer holds a row that results showed or this device added, or when its page is gone.
 - A page add, reorder or delete answers only the strategy revision, so the pages it renumbers are not justified by the answer: a page rename behind one waits for a page list.
 - An undo of a delete goes without asking only over this device's delete answered at the revision it predicted, with the tombstone as the user saw it, within 29 days of first sending that delete.
@@ -39,7 +39,7 @@ A field edit folds into an earlier field edit of the same row only when the earl
 
 ## The page delete exception, until #670
 
-The server guards a page delete by the strategy's revision only, so a page delete can land after a teammate added an element to the page ([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the server checks the page itself, a page delete waits for a result of its page and needs the user when that page no longer holds what the user saw, or when its content was never read. It goes as soon as a result (a page list or the page's own result) says the page is gone, since there is nothing left to protect. All of this lives in `lib/src/cloud/held_page_delete.dart` and comes out in one piece when #670 lands.
+The server guards a page delete by the strategy's revision only, so a page delete can land after a teammate changed the page ([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the server checks the page itself, one rule decides a page delete, with no partial cases. It is decided only when the device holds a page list and a result of that page, both from the current session and both received after this device's last answered op that touches that page or the page list; until then it waits, and `resultsNeeded` asks for whichever of the two is missing. Then: if the page list says the page is gone, the delete goes and the server answers; the page's own result is not needed then, since it cannot change the outcome. Otherwise the page (its name, its settings, and the rows on it by id and content, leaving out a row a result shows on another page) is compared with what the user saw: equal means the delete goes, anything else means the user is asked. Both results arrive after every answered op of this device's that touches the page, so they already include its landed work. A delete with nothing ahead of it on a page already read this session goes at once; a delete queued behind this device's own work on that page waits for the page list and the page to come round once more after the last answer. That wait is deliberate and goes away with #670. All of this lives in `lib/src/cloud/held_page_delete.dart` and comes out in one piece when #670 lands.
 
 ## waiting, nothing ahead of it
 
@@ -114,7 +114,7 @@ Does not apply: claimed; claimed under another client id; attempt 1 released; at
 
 ## page delete waiting for its page after this device's work landed where it did not predict
 
-Starts as: waiting, awaiting a result for page page-a.
+Starts as: waiting, awaiting a result for the page list, awaiting a result for page page-a.
 
 | Event | Result |
 | --- | --- |
@@ -125,9 +125,9 @@ Starts as: waiting, awaiting a result for page page-a.
 | connection lost | unchanged |
 | connection returned | opens session 2 |
 | account changed | opens session 2 |
-| result: header as it is | unchanged |
-| result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: header as it is | x: waiting, awaiting a result for page page-a |
+| result: page-a with the item at revision 2 | x: waiting, awaiting a result for the page list |
+| result: page-a with the item as this device wrote it at 2 | x: waiting, awaiting a result for the page list |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
@@ -429,11 +429,11 @@ Starts as: needs user: page delete held (pageChanged).
 | --- | --- |
 | user edits another item | z: waiting, behind x (pageDelete) |
 | user edits the same item | w: waiting, behind x (pageDelete) |
-| app restarted, same build | x: waiting, awaiting a result for page page-a; opens session 2 |
-| app restarted, new build | x: waiting, awaiting a result for page page-a; opens session 2 |
+| app restarted, same build | x: waiting, awaiting a result for the page list, awaiting a result for page page-a; opens session 2 |
+| app restarted, new build | x: waiting, awaiting a result for the page list, awaiting a result for page page-a; opens session 2 |
 | connection lost | unchanged |
-| connection returned | x: waiting, awaiting a result for page page-a; opens session 2 |
-| account changed | x: waiting, awaiting a result for page page-a; opens session 2 |
+| connection returned | x: waiting, awaiting a result for the page list, awaiting a result for page page-a; opens session 2 |
+| account changed | x: waiting, awaiting a result for the page list, awaiting a result for page page-a; opens session 2 |
 | user: delete anyway | x: waiting |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | unchanged |
