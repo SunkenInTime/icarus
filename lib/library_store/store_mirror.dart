@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
@@ -56,21 +57,14 @@ final class MirrorStopped extends MirrorPhase {
 }
 
 final class StoreMirror extends LocalLibraryFollower {
-  StoreMirror({
-    required this.readHive,
-    required this.reads,
-    required this.betweenAnimations,
-  });
+  StoreMirror({required this.reads, required this.betweenAnimations});
 
-  final HiveLibrary Function() readHive;
-  final LibraryReads reads;
+  final HiveReads reads;
   final Future<void> Function() betweenAnimations;
 
   MirrorPhase _phase = const MirrorWaitingForStore();
   final _strategies = <String>{};
   final _folders = <String>{};
-  final _strategiesWriting = <String, int>{};
-  final _foldersWriting = <String, int>{};
   final _refusedStrategies = <String, CopyRefusal>{};
   final _refusedFolders = <String, CopyRefusal>{};
   var _working = false;
@@ -93,19 +87,13 @@ final class StoreMirror extends LocalLibraryFollower {
   @override
   void onWriting(LibraryTouch touch) {
     _noticed++;
-    for (final id in touch.strategies) {
-      _strategiesWriting[id] = (_strategiesWriting[id] ?? 0) + 1;
-    }
-    for (final id in touch.folders) {
-      _foldersWriting[id] = (_foldersWriting[id] ?? 0) + 1;
-    }
+    reads.writing(touch);
   }
 
   @override
   void onAnswered(LibraryTouch touch) {
     _noticed++;
-    _settle(_strategiesWriting, touch.strategies);
-    _settle(_foldersWriting, touch.folders);
+    reads.answered(touch);
     _strategies.addAll(touch.strategies);
     _folders.addAll(touch.folders);
     _kick();
@@ -114,17 +102,6 @@ final class StoreMirror extends LocalLibraryFollower {
   @override
   void onFault(Object error, StackTrace stackTrace) =>
       _stop(MirrorFaulted(error, stackTrace));
-
-  static void _settle(Map<String, int> writing, List<String> ids) {
-    for (final id in ids) {
-      switch (writing[id]) {
-        case null || 1:
-          writing.remove(id);
-        case final count:
-          writing[id] = count - 1;
-      }
-    }
-  }
 
   void _stop(MirrorStop stop) {
     _phase = MirrorStopped(stop);
@@ -139,18 +116,26 @@ final class StoreMirror extends LocalLibraryFollower {
   }) async {
     _working = true;
     _idle = Completer<void>();
-    final copy = await copyHiveIntoStore(
-      readHive,
-      store,
-      writes: writes,
-      breathe: betweenAnimations,
-      progress: progress,
-    );
+    final ShadowCopy copy;
+    try {
+      copy = await copyHiveIntoStore(
+        reads,
+        store,
+        writes: writes,
+        breathe: betweenAnimations,
+        progress: progress,
+      );
+    } on Object catch (error, stackTrace) {
+      _stop(MirrorFaulted(error, stackTrace));
+      return ShadowCopyFaulted(error, stackTrace);
+    }
     _record(copy, const {}, const {});
     _working = false;
     switch ((copy, store.library)) {
       case (ShadowCopyStopped(:final stop), _):
         _stop(MirrorStoreStopped(stop));
+      case (ShadowCopyFaulted(:final error, :final stackTrace), _):
+        _stop(MirrorFaulted(error, stackTrace));
       case (_, LibraryShut(:final failure)):
         _stop(MirrorStoreStopped(StoreDidNotRead(failure)));
       case (
@@ -169,7 +154,9 @@ final class StoreMirror extends LocalLibraryFollower {
 
   Future<void> drained() => _idle.future;
 
-  Future<StoreCheck> check(Future<StoreCheck> Function() run) async {
+  Future<StoreCheck> check(
+    Future<StoreCheck> Function(HiveLibrary hive) compare,
+  ) async {
     while (_working || _hasWork) {
       if (!_working) _kick();
       if (_idle.isCompleted) break;
@@ -178,31 +165,31 @@ final class StoreMirror extends LocalLibraryFollower {
     _working = true;
     if (_idle.isCompleted) _idle = Completer<void>();
     final before = _noticed;
+    final snapshot = reads.library();
     final StoreCheck checked;
     try {
-      checked = await run();
+      checked = await compare(snapshot.library);
     } finally {
       _working = false;
       _kick();
     }
-    return _noticed == before
-        ? checked
-        : StoreChangedDuringCheck(checked, _noticed - before);
+    final changes = snapshot.writes + _noticed - before;
+    return changes == 0 ? checked : StoreChangedDuringCheck(checked, changes);
   }
 
   bool get _hasWork =>
       _phase is MirrorFollowing &&
-      (_strategies.any((id) => !_strategiesWriting.containsKey(id)) ||
-          _folders.any((id) => !_foldersWriting.containsKey(id)));
+      (_strategies.any((id) => !reads.strategyWriting(id)) ||
+          _folders.any((id) => !reads.folderWriting(id)));
 
   ({Set<String> strategies, Set<String> folders}) _choose() => (
         strategies: {
           for (final id in {..._strategies, ..._refusedStrategies.keys})
-            if (!_strategiesWriting.containsKey(id)) id,
+            if (!reads.strategyWriting(id)) id,
         },
         folders: {
           for (final id in {..._folders, ..._refusedFolders.keys})
-            if (!_foldersWriting.containsKey(id)) id,
+            if (!reads.folderWriting(id)) id,
         },
       );
 
@@ -263,10 +250,24 @@ final class StoreMirror extends LocalLibraryFollower {
   }
 
   void _record(ShadowCopy copy, Set<String> strategies, Set<String> folders) {
-    _refusedStrategies.removeWhere((id, _) => strategies.contains(id));
-    _refusedFolders.removeWhere((id, _) => folders.contains(id));
+    final strategiesWaiting = {
+      for (final strategy in copy.strategies)
+        if (strategy case StrategyWaitsForHive(:final strategyId)) strategyId,
+    };
+    final foldersWaiting = {
+      for (final folder in copy.folders)
+        if (folder case FolderWaitsForHive(:final folderId)) folderId,
+    };
+    _refusedStrategies.removeWhere(
+      (id, _) => strategies.contains(id) && !strategiesWaiting.contains(id),
+    );
+    _refusedFolders.removeWhere(
+      (id, _) => folders.contains(id) && !foldersWaiting.contains(id),
+    );
     for (final strategy in copy.strategies) {
       switch (strategy) {
+        case StrategyWaitsForHive():
+          break;
         case StrategyNotMirrored(:final strategyId, :final reason):
           _refusedStrategies[strategyId] = reason;
         case StrategyCopied(:final strategyId) ||
@@ -278,6 +279,8 @@ final class StoreMirror extends LocalLibraryFollower {
     }
     for (final folder in copy.folders) {
       switch (folder) {
+        case FolderWaitsForHive():
+          break;
         case FolderNotCopied(:final folderId, :final reason):
           _refusedFolders[folderId] = reason;
         case FolderCopied(:final folderId) ||

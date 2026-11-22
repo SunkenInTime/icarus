@@ -1,10 +1,9 @@
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
-import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 sealed class StrategyCopy {
@@ -27,6 +26,10 @@ final class StrategyTookHiveVersion extends StrategyCopy {
 
 final class StrategyRemovedWithHive extends StrategyCopy {
   const StrategyRemovedWithHive(super.strategyId);
+}
+
+final class StrategyWaitsForHive extends StrategyCopy {
+  const StrategyWaitsForHive(super.strategyId);
 }
 
 final class StrategyNotMirrored extends StrategyCopy {
@@ -88,6 +91,10 @@ final class FolderUnchanged extends FolderCopy {
 
 final class FolderRemovedWithHive extends FolderCopy {
   const FolderRemovedWithHive(super.folderId);
+}
+
+final class FolderWaitsForHive extends FolderCopy {
+  const FolderWaitsForHive(super.folderId);
 }
 
 final class FolderNotCopied extends FolderCopy {
@@ -153,6 +160,13 @@ final class ShadowCopyStopped extends ShadowCopy {
   final CopyStop stop;
 }
 
+final class ShadowCopyFaulted extends ShadowCopy {
+  ShadowCopyFaulted(this.error, this.stackTrace) : super(const [], const []);
+
+  final Object error;
+  final StackTrace stackTrace;
+}
+
 sealed class _Saving {
   const _Saving();
 }
@@ -188,16 +202,15 @@ _Saving _saving(LibraryEditResult result) => switch (result) {
     };
 
 Future<ShadowCopy> copyHiveIntoStore(
-  HiveLibrary Function() readHive,
+  HiveReads reads,
   LibraryStore store, {
   required LibraryBoxWrites writes,
   required Future<void> Function() breathe,
   void Function(int done, int total)? progress,
 }) async {
   final copy = await _bringUpToDate(
-    readHive,
+    reads,
     store,
-    const _Everything(),
     breathe: breathe,
     progress: progress,
   );
@@ -207,12 +220,6 @@ Future<ShadowCopy> copyHiveIntoStore(
       ShadowCopyRaced(strategies, folders, writes.count),
     _ => copy,
   };
-}
-
-abstract interface class LibraryReads {
-  StrategyData? strategy(String id);
-
-  Folder? folder(String id);
 }
 
 final class StoreHolds {
@@ -227,7 +234,7 @@ final class StoreHolds {
 }
 
 Future<ShadowCopy> mirrorIds(
-  LibraryReads reads,
+  HiveReads reads,
   LibraryStore store,
   StoreHolds holds, {
   required Set<String> strategies,
@@ -242,10 +249,12 @@ Future<ShadowCopy> mirrorIds(
   final absent = <String>{};
   for (final id in folders) {
     switch (reads.folder(id)) {
-      case final folder?:
-        present[id] = folderAsHiveHoldsIt(folder);
-      case null:
+      case InHive(value: final folder):
+        present[id] = folder;
+      case NotInHive():
         absent.add(id);
+      case HiveStillWriting():
+        folderResults.add(FolderWaitsForHive(id));
     }
   }
   for (final folder in _parentsFirst(present.values.toList())) {
@@ -266,8 +275,8 @@ Future<ShadowCopy> mirrorIds(
 
   for (final id in strategies) {
     switch (reads.strategy(id)) {
-      case final strategy?:
-        switch (strategyToRows(strategyAsHiveHoldsIt(strategy))) {
+      case InHive(value: final strategy):
+        switch (strategyToRows(strategy)) {
           case StrategyRowsRefused(:final problems):
             strategyResults
                 .add(StrategyNotMirrored(id, ConverterRefused(problems)));
@@ -289,7 +298,7 @@ Future<ShadowCopy> mirrorIds(
                 return stopped(stop);
             }
         }
-      case null when holds.strategies.contains(id):
+      case NotInHive() when holds.strategies.contains(id):
         final removal = switch (await store.editLibrary([RemoveStrategy(id)])) {
           Refused(reason: NoSuchStrategy()) => const _NothingToWrite(),
           final result => _saving(result),
@@ -303,8 +312,10 @@ Future<ShadowCopy> mirrorIds(
           case _Stop(:final stop):
             return stopped(stop);
         }
-      case null:
+      case NotInHive():
         break;
+      case HiveStillWriting():
+        strategyResults.add(StrategyWaitsForHive(id));
     }
   }
 
@@ -313,6 +324,15 @@ Future<ShadowCopy> mirrorIds(
       if (holds.folders[id] case final row?) row,
   ];
   for (final row in _childrenFirst(leaving)) {
+    switch (reads.folder(row.publicId)) {
+      case NotInHive():
+        break;
+      case HiveStillWriting():
+        folderResults.add(FolderWaitsForHive(row.publicId));
+        continue;
+      case InHive():
+        continue;
+    }
     switch (_saving(await store.editLibrary([RemoveFolder(row.publicId)]))) {
       case _Wrote() || _NothingToWrite():
         holds.folders.remove(row.publicId);
@@ -326,46 +346,20 @@ Future<ShadowCopy> mirrorIds(
   return ShadowCopyFinished(strategyResults, folderResults);
 }
 
-sealed class _Scope {
-  const _Scope();
-
-  bool strategy(String id);
-
-  bool folder(String id);
-
-  Set<String> strategiesToRemove(Set<String> stored, Set<String> inHive);
-
-  Set<String> foldersToRemove(Set<String> stored, Set<String> inHive);
-}
-
-final class _Everything extends _Scope {
-  const _Everything();
-
-  @override
-  bool strategy(String id) => true;
-
-  @override
-  bool folder(String id) => true;
-
-  @override
-  Set<String> strategiesToRemove(Set<String> stored, Set<String> inHive) =>
-      stored.difference(inHive);
-
-  @override
-  Set<String> foldersToRemove(Set<String> stored, Set<String> inHive) =>
-      stored.difference(inHive);
-}
-
 Future<ShadowCopy> _bringUpToDate(
-  HiveLibrary Function() readHive,
-  LibraryStore store,
-  _Scope scope, {
+  HiveReads reads,
+  LibraryStore store, {
   required Future<void> Function() breathe,
   void Function(int done, int total)? progress,
 }) async {
-  final hive = readHive();
-  final strategies = <StrategyCopy>[];
-  final folders = <FolderCopy>[];
+  final snapshot = reads.library();
+  final hive = snapshot.library;
+  final strategies = <StrategyCopy>[
+    for (final id in snapshot.strategiesWriting) StrategyWaitsForHive(id),
+  ];
+  final folders = <FolderCopy>[
+    for (final id in snapshot.foldersWriting) FolderWaitsForHive(id),
+  ];
   ShadowCopy stopped(CopyStop stop) =>
       ShadowCopyStopped(strategies, folders, stop);
 
@@ -378,7 +372,6 @@ Future<ShadowCopy> _bringUpToDate(
   }
   final storedFolders = {for (final row in list.folders) row.publicId: row};
   for (final folder in _parentsFirst(hive.folders)) {
-    if (!scope.folder(folder.id)) continue;
     final row = _folderRow(folder, storedFolders[folder.id]);
     switch (_saving(await store.editLibrary([PutFolder(row)]))) {
       case _Wrote():
@@ -393,10 +386,7 @@ Future<ShadowCopy> _bringUpToDate(
   }
 
   final stored = {for (final summary in list.strategies) summary.publicId};
-  final chosen = [
-    for (final strategy in hive.strategies)
-      if (scope.strategy(strategy.id)) strategy,
-  ];
+  final chosen = hive.strategies;
   for (final (index, strategy) in chosen.indexed) {
     final id = strategy.id;
     switch (strategyToRows(strategy)) {
@@ -422,9 +412,12 @@ Future<ShadowCopy> _bringUpToDate(
     await breathe();
   }
 
-  final hiveNow = readHive();
-  final hiveIds = {for (final strategy in hiveNow.strategies) strategy.id};
-  for (final id in scope.strategiesToRemove(stored, hiveIds)) {
+  final now = reads.library();
+  final hiveIds = {
+    for (final strategy in now.library.strategies) strategy.id,
+    ...now.strategiesWriting,
+  };
+  for (final id in stored.difference(hiveIds)) {
     switch (_saving(await store.editLibrary([RemoveStrategy(id)]))) {
       case _Wrote() || _NothingToWrite():
         strategies.add(StrategyRemovedWithHive(id));
@@ -435,11 +428,11 @@ Future<ShadowCopy> _bringUpToDate(
     }
   }
 
-  final hiveFolderIds = {for (final folder in hiveNow.folders) folder.id};
-  final leaving = scope.foldersToRemove(
-    storedFolders.keys.toSet(),
-    hiveFolderIds,
-  );
+  final hiveFolderIds = {
+    for (final folder in now.library.folders) folder.id,
+    ...now.foldersWriting,
+  };
+  final leaving = storedFolders.keys.toSet().difference(hiveFolderIds);
   for (final row in _childrenFirst([
     for (final row in list.folders)
       if (leaving.contains(row.publicId)) row,

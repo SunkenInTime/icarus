@@ -12,7 +12,7 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
-import 'package:icarus/library_store/shadow_store.dart';
+import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
@@ -306,8 +306,7 @@ Future<List<String>> _editEachThroughMirror(
     final engine = SqliteEngine(file.path);
     final opened = await _openSqlite(engine);
     final mirror = StoreMirror(
-      readHive: hiveLibraryNow,
-      reads: const HiveLibraryReads(),
+      reads: HiveReads(),
       betweenAnimations: () async {},
     );
     LocalLibrary.follower = mirror;
@@ -321,8 +320,8 @@ Future<List<String>> _editEachThroughMirror(
       if (saved is! LibraryWritten) problems.add('$label: not saved $saved');
     }
     final check = await mirror.check(
-      () => checkStoreAgainstHive(
-        hiveLibraryNow(),
+      (hive) => checkStoreAgainstHive(
+        hive,
         opened,
         foreignNames: const [],
         breathe: () async {},

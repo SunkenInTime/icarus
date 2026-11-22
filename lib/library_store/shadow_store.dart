@@ -5,11 +5,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce/hive.dart';
-import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_store/hive_files.dart';
 import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/ui_watch.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -19,7 +17,6 @@ import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/strategy/local_library.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 final libraryStoreProvider =
@@ -132,21 +129,8 @@ final class Mirroring extends ShadowMode {
   final StoreMirror mirror;
 }
 
-final class HiveLibraryReads implements LibraryReads {
-  const HiveLibraryReads();
-
-  @override
-  StrategyData? strategy(String id) =>
-      Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
-
-  @override
-  Folder? folder(String id) =>
-      Hive.box<Folder>(HiveBoxNames.foldersBox).get(id);
-}
-
 StoreMirror storeMirror() => StoreMirror(
-      readHive: _hiveLibrary,
-      reads: const HiveLibraryReads(),
+      reads: HiveReads(),
       betweenAnimations: _betweenAnimations,
     );
 
@@ -161,16 +145,6 @@ final shadowProvider = NotifierProvider<ShadowNotifier, ShadowState>(
 
 Future<void> _breathe() => Future<void>.delayed(Duration.zero);
 
-Set<String> _libraryBoxFiles() => {
-      '${Hive.box<StrategyData>(HiveBoxNames.strategiesBox).name}.hive',
-      '${Hive.box<Folder>(HiveBoxNames.foldersBox).name}.hive',
-    };
-
-HiveLibrary _hiveLibrary() => HiveLibrary(
-      strategies: Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values,
-      folders: Hive.box<Folder>(HiveBoxNames.foldersBox).values,
-    );
-
 class ShadowNotifier extends Notifier<ShadowState> {
   Future<void>? running;
 
@@ -178,6 +152,8 @@ class ShadowNotifier extends Notifier<ShadowState> {
   ShadowState build() => const ShadowIdle();
 
   ShadowMode mode = const ShadowOnly();
+
+  final _shadowReads = HiveReads();
 
   void begin({
     required Future<LibraryStoreOpened> opening,
@@ -221,7 +197,7 @@ class ShadowNotifier extends Notifier<ShadowState> {
       void progress(int done, int total) => state = ShadowCopying(done, total);
       final copy = switch (mode) {
         ShadowOnly() => await copyHiveIntoStore(
-            _hiveLibrary,
+            _shadowReads,
             store,
             writes: writes,
             breathe: _breathe,
@@ -254,11 +230,11 @@ class ShadowNotifier extends Notifier<ShadowState> {
           hiveFiles: after.count,
           libraryBoxesChanged: [
             for (final name in changed)
-              if (_libraryBoxFiles().contains(name)) name,
+              if (libraryBoxFileNames().contains(name)) name,
           ],
           otherHiveFilesChanged: [
             for (final name in changed)
-              if (!_libraryBoxFiles().contains(name)) name,
+              if (!libraryBoxFileNames().contains(name)) name,
           ],
           libraryBoxWrites: writes.count,
         ),
@@ -278,11 +254,12 @@ class ShadowNotifier extends Notifier<ShadowState> {
     List<ForeignName> foreignNames,
   ) {
     Future<StoreCheck> run(
+      HiveLibrary hive,
       Map<String, CopyRefusal> strategiesRefused,
       Map<String, CopyRefusal> foldersRefused,
     ) =>
         checkStoreAgainstHive(
-          _hiveLibrary(),
+          hive,
           store,
           foreignNames: foreignNames,
           breathe: _breathe,
@@ -290,33 +267,34 @@ class ShadowNotifier extends Notifier<ShadowState> {
           foldersRefused: foldersRefused,
         );
     return switch (mode) {
-      ShadowOnly() => run(const {}, const {}),
+      ShadowOnly() => run(_shadowReads.library().library, const {}, const {}),
       Mirroring(:final mirror) => mirror.check(
-          () => run(mirror.refusedStrategies, mirror.refusedFolders),
+          (hive) => run(hive, mirror.refusedStrategies, mirror.refusedFolders),
         ),
     };
   }
 }
 
-bool storeIsMirroring() =>
-    shadowReachable && LocalLibrary.follower is StoreMirror;
-
-Future<void> storeCatchesUpBeforeExit(ProviderContainer container) async {
-  if (container.read(shadowProvider.notifier).mode
-      case Mirroring(:final mirror)) {
-    await mirror.drained().timeout(
-          const Duration(seconds: 2),
-          onTimeout: () {},
-        );
-  }
-}
+Future<void>? storeCatchUpBeforeClose() => switch (LocalLibrary.follower) {
+      final StoreMirror mirror when shadowReachable => mirror.drained().timeout(
+            const Duration(seconds: 2),
+            onTimeout: () {},
+          ),
+      _ => null,
+    };
 
 Future<void> storeClosesBeforeExit(ProviderContainer container) async {
-  await storeCatchesUpBeforeExit(container);
-  await container.read(libraryStoreProvider.notifier).close().timeout(
-        const Duration(seconds: 2),
-        onTimeout: () {},
-      );
+  final store = container.read(libraryStoreProvider.notifier);
+  switch (storeCatchUpBeforeClose()) {
+    case null:
+      await store.close();
+    case final catchingUp:
+      await catchingUp;
+      await store.close().timeout(
+            const Duration(seconds: 2),
+            onTimeout: () {},
+          );
+  }
 }
 
 void closeLibraryStoreOnExit(ProviderContainer container) {

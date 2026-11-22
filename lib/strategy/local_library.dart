@@ -50,12 +50,34 @@ abstract base class LocalLibraryFollower {
     try {
       notice(touch);
     } on Object catch (error, stackTrace) {
-      onFault(error, stackTrace);
+      _faulted(error, stackTrace);
     }
   }
-}
 
-Iterable<String> _noIds() => const [];
+  void _faulted(Object error, StackTrace stackTrace) {
+    try {
+      onFault(error, stackTrace);
+    } on Object {
+      if (identical(LocalLibrary.follower, this)) LocalLibrary.follower = null;
+    }
+  }
+
+  Future<void> _tracked(LibraryTouch touch, Future<void> Function() write) {
+    _told(onWriting, touch);
+    final Future<void> writing;
+    try {
+      writing = write();
+    } on Object {
+      _told(onAnswered, touch);
+      rethrow;
+    }
+    writing.then(
+      (_) => _told(onAnswered, touch),
+      onError: (Object _) => _told(onAnswered, touch),
+    );
+    return writing;
+  }
+}
 
 final class LocalLibrary {
   const LocalLibrary();
@@ -85,10 +107,11 @@ final class LocalLibrary {
 
   Future<LibraryWrite> _put(StrategyData strategy) => switch (_following) {
         null => _write(() => _strategies.put(strategy.id, strategy)),
-        final following => _followed(
-            following,
-            () => _strategies.put(strategy.id, strategy),
-            strategies: () => [strategy.id],
+        final following => _write(
+            () => following._tracked(
+              LibraryTouch(strategies: [strategy.id], folders: const []),
+              () => _strategies.put(strategy.id, strategy),
+            ),
           ),
       };
 
@@ -96,8 +119,12 @@ final class LocalLibrary {
     stored.name = name;
     return switch (_following) {
       null => _write(stored.save),
-      final following =>
-        _followed(following, stored.save, strategies: () => [stored.id]),
+      final following => _write(
+          () => following._tracked(
+            LibraryTouch(strategies: [stored.id], folders: const []),
+            stored.save,
+          ),
+        ),
     };
   }
 
@@ -105,27 +132,33 @@ final class LocalLibrary {
     stored.folderID = folderId;
     return switch (_following) {
       null => _write(stored.save),
-      final following =>
-        _followed(following, stored.save, strategies: () => [stored.id]),
+      final following => _write(
+          () => following._tracked(
+            LibraryTouch(strategies: [stored.id], folders: const []),
+            stored.save,
+          ),
+        ),
     };
   }
 
   Future<LibraryWrite> deleteStrategy(String strategyId) =>
       switch (_following) {
         null => _write(() => _strategies.delete(strategyId)),
-        final following => _followed(
-            following,
-            () => _strategies.delete(strategyId),
-            strategies: () => [strategyId],
+        final following => _write(
+            () => following._tracked(
+              LibraryTouch(strategies: [strategyId], folders: const []),
+              () => _strategies.delete(strategyId),
+            ),
           ),
       };
 
   Future<LibraryWrite> addFolder(Folder folder) => switch (_following) {
         null => _write(() => _folders.put(folder.id, folder)),
-        final following => _followed(
-            following,
-            () => _folders.put(folder.id, folder),
-            folders: () => [folder.id],
+        final following => _write(
+            () => following._tracked(
+              LibraryTouch(strategies: const [], folders: [folder.id]),
+              () => _folders.put(folder.id, folder),
+            ),
           ),
       };
 
@@ -143,8 +176,12 @@ final class LocalLibrary {
       ..color = color;
     return switch (_following) {
       null => _write(stored.save),
-      final following =>
-        _followed(following, stored.save, folders: () => [stored.id]),
+      final following => _write(
+          () => following._tracked(
+            LibraryTouch(strategies: const [], folders: [stored.id]),
+            stored.save,
+          ),
+        ),
     };
   }
 
@@ -152,23 +189,28 @@ final class LocalLibrary {
     stored.parentID = parentId;
     return switch (_following) {
       null => _write(stored.save),
-      final following =>
-        _followed(following, stored.save, folders: () => [stored.id]),
+      final following => _write(
+          () => following._tracked(
+            LibraryTouch(strategies: const [], folders: [stored.id]),
+            stored.save,
+          ),
+        ),
     };
   }
 
   Future<LibraryWrite> deleteFolder(String folderId) => switch (_following) {
         null => _write(() => _folders.delete(folderId)),
-        final following => _followed(
-            following,
-            () => _folders.delete(folderId),
-            folders: () => [folderId],
+        final following => _write(
+            () => following._tracked(
+              LibraryTouch(strategies: const [], folders: [folderId]),
+              () => _folders.delete(folderId),
+            ),
           ),
       };
 
   Future<LibraryWrite> deleteFoldersWithStrategies({
-    required Iterable<String> folderIds,
-    required Iterable<String> strategyIds,
+    required List<String> folderIds,
+    required List<String> strategyIds,
   }) =>
       switch (_following) {
         null => _write(
@@ -177,14 +219,17 @@ final class LocalLibrary {
               _folders.deleteAll(folderIds),
             ]),
           ),
-        final following => _followed(
-            following,
+        final following => _write(
             () => Future.wait([
-              _strategies.deleteAll(strategyIds),
-              _folders.deleteAll(folderIds),
+              following._tracked(
+                LibraryTouch(strategies: strategyIds, folders: const []),
+                () => _strategies.deleteAll(strategyIds),
+              ),
+              following._tracked(
+                LibraryTouch(strategies: const [], folders: folderIds),
+                () => _folders.deleteAll(folderIds),
+              ),
             ]),
-            strategies: () => strategyIds,
-            folders: () => folderIds,
           ),
       };
 
@@ -195,30 +240,6 @@ final class LocalLibrary {
       return LibraryWriteFailed(error, stackTrace);
     } on FileSystemException catch (error, stackTrace) {
       return LibraryWriteFailed(error, stackTrace);
-    }
-    return const LibraryWritten();
-  }
-
-  Future<LibraryWrite> _followed(
-    LocalLibraryFollower following,
-    Future<void> Function() write, {
-    Iterable<String> Function() strategies = _noIds,
-    Iterable<String> Function() folders = _noIds,
-  }) async {
-    var touch = const LibraryTouch(strategies: [], folders: []);
-    try {
-      touch = LibraryTouch(
-        strategies: strategies().toList(),
-        folders: folders().toList(),
-      );
-      following._told(following.onWriting, touch);
-      await write();
-    } on HiveError catch (error, stackTrace) {
-      return LibraryWriteFailed(error, stackTrace);
-    } on FileSystemException catch (error, stackTrace) {
-      return LibraryWriteFailed(error, stackTrace);
-    } finally {
-      following._told(following.onAnswered, touch);
     }
     return const LibraryWritten();
   }

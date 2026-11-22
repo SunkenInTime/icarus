@@ -168,10 +168,12 @@ List<String> _describeCopy(ShadowRun run) {
       ShadowCopyRaced(:final hiveWrites) =>
         'finished while Hive changed ($hiveWrites writes), so it may not reflect Hive',
       ShadowCopyStopped(:final stop) => 'stopped: $stop',
+      ShadowCopyFaulted(:final error) => 'met an error: $error',
     }}: copied ${_count<StrategyCopied>(strategies)}, unchanged '
         '${_count<StrategyUnchanged>(strategies)}, took the Hive version '
         '${_count<StrategyTookHiveVersion>(strategies)}, removed with Hive '
-        '${_count<StrategyRemovedWithHive>(strategies)}, not mirrored '
+        '${_count<StrategyRemovedWithHive>(strategies)}, waited for Hive '
+        '${_count<StrategyWaitsForHive>(strategies)}, not mirrored '
         '${_count<StrategyNotMirrored>(strategies)}; folders copied '
         '${_count<FolderCopied>(folders)}, unchanged '
         '${_count<FolderUnchanged>(folders)}, removed '
@@ -255,11 +257,15 @@ Future<List<String>> waitForShadowStore(
   final mirroring = c.read(shadowProvider.notifier).mode is Mirroring;
   final problems = [
     if (run.copy case ShadowCopyStopped(:final stop)) 'the copy stopped: $stop',
+    if (run.copy case ShadowCopyFaulted(:final error))
+      'the copy met an error: $error',
     if (run.copy case ShadowCopyRaced(:final hiveWrites) when !mirroring)
       'Hive changed while the copy ran ($hiveWrites writes)',
     if (origin is StorageCreated &&
         strategies.any((strategy) =>
-            strategy is! StrategyCopied && strategy is! StrategyNotMirrored))
+            strategy is! StrategyCopied &&
+            strategy is! StrategyNotMirrored &&
+            strategy is! StrategyWaitsForHive))
       'the library was created, yet the copy found strategies already in it',
     if (_count<StrategyNotMirrored>(strategies) case final n when n > 0)
       '$n strategies not mirrored',
