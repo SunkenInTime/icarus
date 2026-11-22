@@ -36,6 +36,8 @@ R? rowWithId<R extends Row>(
   _ => null,
 };
 
+enum Keeping { here, cloud }
+
 final class LoadedPage {
   final elements = <String, ElementRow>{};
   final lineupGroups = <String, LineupGroupRow>{};
@@ -86,6 +88,8 @@ final class LoadedStrategy {
           _contentPages.add(page);
         case UnknownKindName(:final page):
           _contentPages.add(page);
+        case final StoreName cloud when isCloudName(cloud):
+          keeping = Keeping.cloud;
         case final ForeignName name:
           foreignNames.add(name);
         case _:
@@ -95,6 +99,7 @@ final class LoadedStrategy {
   }
 
   final String digest;
+  Keeping keeping = Keeping.here;
   StrategyHeader header;
 
   static LoadedStrategy image(String digest, StrategyRowSet rows) {
@@ -364,6 +369,44 @@ final class LoadedStrategy {
       }
       _keep(write.after);
     }
+  }
+
+  void keepRow(Row row) {
+    final name = nameOf(row);
+    switch (name) {
+      case ElementName(:final page) || LineupName(:final page):
+        _loaded[page]?.unplaced.remove(name.name);
+      case _:
+        unplaced.remove(name.name);
+    }
+    _keep(row);
+  }
+
+  void forgetRow(Row row) {
+    switch (row) {
+      case PageRow(:final publicId):
+        forgetPage(digestOf(publicId));
+      case PageSettingsRow(:final pagePublicId):
+        _settings.remove(digestOf(pagePublicId));
+      case ElementRow() || LineupGroupRow():
+        _forget(row);
+      case StrategyRow() || FolderRow():
+        throw StateError('$row is never forgotten alone');
+    }
+  }
+
+  void forgetPage(String pageDigest) {
+    _pages.remove(pageDigest);
+    _settings.remove(pageDigest);
+    _contentPages.remove(pageDigest);
+    final loaded = _loaded.remove(pageDigest);
+    for (final digest in [...?loaded?.elements.keys]) {
+      _elementPages[digest]?.remove(pageDigest);
+    }
+    for (final digest in [...?loaded?.lineupGroups.keys]) {
+      _lineupPages[digest]?.remove(pageDigest);
+    }
+    unplaced.removeWhere((name, _) => name == SettingsName(pageDigest).name);
   }
 
   void _forget(Row row) {

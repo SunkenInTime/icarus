@@ -8,7 +8,7 @@ const libraryArea = 'library';
 
 const formatKey = 'format';
 
-const storeFormat = 1;
+const storeFormat = 2;
 
 const strategyAreaPrefix = 's/';
 
@@ -139,6 +139,82 @@ final class LineupName extends StoreName {
   String get name => 'content/$page/l/$digest';
 }
 
+final class CloudName extends StoreName {
+  const CloudName();
+
+  @override
+  String get name => 'cloud';
+}
+
+final class NumbersName extends StoreName {
+  const NumbersName();
+
+  @override
+  String get name => 'numbers';
+}
+
+const placeDigits = 16;
+
+final _place = RegExp(r'^[0-9]{16}$');
+
+bool _isPlace(String text) =>
+    _place.hasMatch(text) && text.compareTo('9007199254740991') <= 0;
+
+String _numbered(int number) => number.toString().padLeft(placeDigits, '0');
+
+const pendingPrefix = 'pending/';
+
+final class PendingName extends StoreName {
+  const PendingName(this.place);
+
+  final int place;
+
+  @override
+  String get name => '$pendingPrefix${_numbered(place)}';
+}
+
+const attemptPrefix = 'attempt/';
+
+final class AttemptName extends StoreName {
+  const AttemptName(this.number);
+
+  final int number;
+
+  @override
+  String get name => '$attemptPrefix${_numbered(number)}';
+}
+
+const landedPrefix = 'landed/';
+
+final class LandedName extends StoreName {
+  const LandedName(this.attempt, this.position);
+
+  final int attempt;
+  final int position;
+
+  @override
+  String get name =>
+      '$landedPrefix${_numbered(attempt)}/${_numbered(position)}';
+}
+
+const readPrefix = 'read/';
+
+final class HeaderReadName extends StoreName {
+  const HeaderReadName();
+
+  @override
+  String get name => '${readPrefix}header';
+}
+
+final class PageReadName extends StoreName {
+  const PageReadName(this.digest);
+
+  final String digest;
+
+  @override
+  String get name => '${readPrefix}page/$digest';
+}
+
 final class UnknownKindName extends StoreName {
   const UnknownKindName(this.page, this.name);
 
@@ -176,7 +252,19 @@ StoreName readName(StoreArea area, String name) =>
         SummaryName(digest),
       (LibraryArea(), ['folder', final digest]) when _isDigest(digest) =>
         FolderName(digest),
+      (LibraryArea(), ['numbers']) => const NumbersName(),
       (StrategyArea(), ['strategy']) => const HeaderName(),
+      (StrategyArea(), ['cloud']) => const CloudName(),
+      (StrategyArea(), ['pending', final place]) when _isPlace(place) =>
+        PendingName(int.parse(place)),
+      (StrategyArea(), ['attempt', final number]) when _isPlace(number) =>
+        AttemptName(int.parse(number)),
+      (StrategyArea(), ['landed', final attempt, final position])
+          when _isPlace(attempt) && _isPlace(position) =>
+        LandedName(int.parse(attempt), int.parse(position)),
+      (StrategyArea(), ['read', 'header']) => const HeaderReadName(),
+      (StrategyArea(), ['read', 'page', final digest]) when _isDigest(digest) =>
+        PageReadName(digest),
       (StrategyArea(), ['page', final digest]) when _isDigest(digest) =>
         PageName(digest),
       (StrategyArea(), ['settings', final digest]) when _isDigest(digest) =>
@@ -208,3 +296,21 @@ StoreName nameOf(Row row) => switch (row) {
 };
 
 bool namesId(String digest, String id) => digestOf(id) == digest;
+
+bool isCloudName(StoreName name) => switch (name) {
+  CloudName() ||
+  PendingName() ||
+  AttemptName() ||
+  LandedName() ||
+  HeaderReadName() ||
+  PageReadName() => true,
+  ForeignName(:final name) => isCloudKey(name),
+  _ => false,
+};
+
+bool isCloudKey(String key) =>
+    key == const CloudName().name ||
+    key.startsWith(pendingPrefix) ||
+    key.startsWith(attemptPrefix) ||
+    key.startsWith(landedPrefix) ||
+    key.startsWith(readPrefix);

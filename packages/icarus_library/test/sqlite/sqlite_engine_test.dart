@@ -431,7 +431,9 @@ void main() {
     await store.close();
     final engine = SqliteEngine(path);
     final lease = await leaseOf(engine);
-    committed(await lease.commit(const [Put('library', 'format', '2')]));
+    committed(
+      await lease.commit([Put('library', 'format', '${storeFormat + 1}')]),
+    );
     final before = stored(await lease.entries('library', ''));
     await engine.close();
     final opening = await LibraryStore.open(
@@ -449,7 +451,7 @@ void main() {
           'failure',
           isA<NewerFormat>()
               .having((newer) => newer.layer, 'layer', FormatLayer.store)
-              .having((newer) => newer.found, 'found', 2),
+              .having((newer) => newer.found, 'found', storeFormat + 1),
         ),
       ),
     );

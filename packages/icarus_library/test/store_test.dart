@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/store/layout.dart'
     show formatKey, libraryArea;
+import 'package:icarus_library/src/store/store.dart' show storeFormatProblem;
 import 'package:test/test.dart';
 
 import 'store_support.dart';
@@ -128,6 +129,41 @@ void main() {
       await opened.store.close();
       expect(disk.contents[libraryArea]?[formatKey], '$storeFormat');
       expect(await originOn(disk), isA<StorageExisted>());
+    });
+
+    test('a format 1 library opens unchanged and is marked format 2 by the '
+        'first commit this build makes to it', () async {
+      final contents = {
+        ...seeded,
+        libraryArea: {...?seeded[libraryArea], formatKey: '1'},
+      };
+      final disk = MemoryStorage(contents);
+      final opened = await opening(disk) as StoreOpened;
+      expect(listOf(opened.store).strategies, isNotEmpty);
+      expect(disk.contents, contents);
+      savedValue(
+        await opened.store.editLibrary([
+          AddStrategy(sampleStrategy(id: 'more')),
+        ]),
+      );
+      await opened.store.close();
+      expect(disk.contents[libraryArea]?[formatKey], '2');
+    });
+
+    test('a library this build wrote is refused by a reader that knows only '
+        'format 1', () async {
+      final disk = MemoryStorage();
+      final opened = await opening(disk) as StoreOpened;
+      savedValue(
+        await opened.store.editLibrary([AddStrategy(sampleStrategy())]),
+      );
+      await opened.store.close();
+      expect(
+        storeFormatProblem(disk.contents[libraryArea]![formatKey]!, known: 1),
+        isA<NewerFormat>()
+            .having((newer) => newer.found, 'found', 2)
+            .having((newer) => newer.known, 'known', 1),
+      );
     });
 
     test('a library with a newer store format is refused, and the store '
