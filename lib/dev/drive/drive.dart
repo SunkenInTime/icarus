@@ -169,6 +169,9 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/dev/drive/drive_frames.dart';
+import 'package:icarus/dev/drive/drive_cloud_store.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/interactive_map.dart';
@@ -261,6 +264,15 @@ var _flutterErrors = 0;
 var _failedSteps = 0;
 var _steps = 0;
 final _misplaced = <String>{};
+final _cloudStore = CloudStoreLog();
+
+void _logCloudStore(List<CloudStoreLine> lines) {
+  for (final line in lines) {
+    if (line.problem) _failedSteps++;
+    _log(line.problem ? 'FAIL ${line.text}' : line.text);
+  }
+}
+
 final _frameTimings = <ui.FrameTiming>[];
 
 void _log(String line) =>
@@ -298,6 +310,7 @@ Future<void> _play(String script) async {
   _log('RUN $_runId $script');
   _countLibraryBoxEvents();
   _log(await firstFrameLine(appProviderContainer));
+  if (_cloudStore.isOn(appProviderContainer)) _log('CLOUDSTORE switch shadow');
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
       _failedSteps++;
@@ -330,9 +343,13 @@ Future<void> _play(String script) async {
       _log('FAIL checking items: $error');
     }
     _logScreensIfChanged('step $_steps');
+    _logCloudStore(_cloudStore.drain(appProviderContainer));
     await _flush();
   }
+  final cloudEnd =
+      _cloudStore.end(appProviderContainer, lastStep: DateTime.now());
   await Future.wait(_pictureWatches);
+  _logCloudStore(await cloudEnd);
   _log(_runFrames.stop());
   _log(buildsLine());
   try {
@@ -341,10 +358,17 @@ Future<void> _play(String script) async {
     _failedSteps++;
     failed.problems.forEach(_log);
   }
-  if (await closeStoreLine(appProviderContainer) case final line?) {
-    if (line.startsWith('FAIL')) _failedSteps++;
-    _log(line);
+  try {
+    if (await closeStoreLine(appProviderContainer) case final line?) {
+      if (line.startsWith('FAIL')) _failedSteps++;
+      _log(line);
+    }
+  } catch (error) {
+    _failedSteps++;
+    _log('FAIL closing the store: $error');
+    _logCloudStore(_cloudStore.closeFailed(appProviderContainer, error));
   }
+  _logCloudStore(await _cloudStore.readBack(appProviderContainer));
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
   _log(
     'SUMMARY steps=$_steps failed=$_failedSteps '
@@ -1490,6 +1514,23 @@ Future<void> _run(Map<String, dynamic> step) async {
             role: value as String,
           );
       await File(step['file'] as String).writeAsString(code);
+    case 'openStoredCloudStrategy':
+      unawaited(
+        Navigator.of(appNavigatorKey.currentContext!).push(
+          StrategyView.route(
+            initialStrategyId: storedCloudStrategy(c),
+            initialStrategySource: StrategySource.cloud,
+          ),
+        ),
+      );
+    case 'expectStoredPayloadVersion':
+      _log(
+        await storedPayloadVersion(
+          c,
+          value as String,
+          (step['version'] as num).toInt(),
+        ),
+      );
     case 'openShareLink':
       final code = (await File(value as String).readAsString()).trim();
       await c.read(shareLinkControllerProvider.notifier).handleIncomingUri(

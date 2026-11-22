@@ -74,7 +74,7 @@ import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/startup/launch_clock.dart';
-import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/library_store/store_startup.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy_view.dart';
@@ -290,13 +290,16 @@ Future<void> main(List<String> args) async {
         }
       }
 
-      final shadowStore = switch ((storeLaunch.choice, hiveDirectoryPath)) {
-        (StoreSwitchShadow() || StoreSwitchMirror(), final String directory)
-            when PlatformPolicy.current.allowsLocalLibrary =>
-          (
-            opening: appProviderContainer
-                .read(libraryStoreProvider.notifier)
-                .open(libraryStoreFile(directory)),
+      final stores = openStores(
+        appProviderContainer,
+        storeLaunch,
+        hiveDirectory: hiveDirectoryPath,
+        allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
+        build: Settings.versionName,
+      );
+      final shadowStore = switch ((hiveDirectoryPath, stores.opening)) {
+        (final String directory, final opening?) when stores.localShadow => (
+            opening: opening,
             directory: directory,
             mode: switch (storeLaunch.choice) {
               StoreSwitchMirror() => Mirroring(storeMirror()),
@@ -361,8 +364,12 @@ Future<void> main(List<String> args) async {
           ),
         );
       }
-      if (shadowStore case (:final opening, :final directory, :final mode)) {
+      if (stores.opening != null) {
         closeLibraryStoreOnExit(appProviderContainer);
+      }
+      beginCloudShadow(appProviderContainer, stores,
+          build: Settings.versionName);
+      if (shadowStore case (:final opening, :final directory, :final mode)) {
         appProviderContainer.read(shadowProvider.notifier).begin(
               opening: opening,
               firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,

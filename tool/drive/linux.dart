@@ -14,7 +14,7 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
       [--companion FILE] [--companion-account EMAIL] [--exe DIR] [--out DIR]
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
       [--hive-store DIR] [--library-store off|shadow|mirror]
-      [--kill-after-seconds S]
+      [--cloud-store shadow] [--kill-after-seconds S]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
         --convex it talks to the dev deployment; production is refused.
@@ -32,6 +32,9 @@ run     Runs --script, and --companion beside it when given, against the
         never opened itself. --library-store passes --library-store=VALUE to
         every instance; shadow copies the library into the store as it
         starts, and mirror also writes the store after every save.
+        --cloud-store shadow passes --cloud-store=shadow to every instance:
+        the open cloud strategy's results go into the store too, and the
+        driver compares the open page with them.
         --kill-after-seconds kills the main instance with SIGKILL S seconds
         after it starts, the way a crash stops it, and counts that as a
         pass; an app that finished first is judged as usual. Start the next
@@ -181,6 +184,7 @@ Future<void> main(List<String> args) async {
           'timeout-seconds',
           'hive-store',
           'library-store',
+          'cloud-store',
           'kill-after-seconds',
         })));
       default:
@@ -350,6 +354,10 @@ Future<int> _run(Map<String, String> options) async {
       '--library-store is off, shadow or mirror, not "$libraryStore"',
     );
   }
+  final cloudStore = options['cloud-store'];
+  if (cloudStore != null && cloudStore != 'shadow') {
+    throw UsageError('--cloud-store is shadow, not "$cloudStore"');
+  }
   if (options['hive-store'] case final String seed) {
     if (!Directory(seed).existsSync()) {
       throw UsageError('No Hive store at $seed');
@@ -391,7 +399,10 @@ Future<int> _run(Map<String, String> options) async {
         run,
         display,
         passwords,
-        [if (libraryStore != null) '--library-store=$libraryStore'],
+        [
+          if (libraryStore != null) '--library-store=$libraryStore',
+          if (cloudStore != null) '--cloud-store=$cloudStore',
+        ],
       );
     }
     if (killAfter != null) {

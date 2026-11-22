@@ -69,4 +69,44 @@ void main() {
       '/home/me/a.ica',
     ]);
   });
+
+  test(
+      'the cloud store is off when nothing asks for it, whatever the library store is',
+      () {
+    final launch = LibraryStoreLaunch.parse(
+      const ['--library-store=shadow', 'a.ica'],
+      mayShadow: true,
+    );
+    expect(launch.cloud, isA<CloudStoreOff>());
+  });
+
+  test('the cloud shadow is its own flag: either can be on without the other',
+      () {
+    final cloudOnly = LibraryStoreLaunch.parse(
+      const ['--cloud-store=shadow', 'a.ica'],
+      mayShadow: true,
+    );
+    expect(cloudOnly.cloud, isA<CloudStoreShadow>());
+    expect(cloudOnly.choice, isA<StoreSwitchOff>());
+    expect(cloudOnly.otherArgs, ['a.ica']);
+
+    final both = LibraryStoreLaunch.parse(
+      const ['--cloud-store=shadow', '--library-store=mirror'],
+      mayShadow: true,
+    );
+    expect(both.cloud, isA<CloudStoreShadow>());
+    expect(both.choice, isA<StoreSwitchMirror>());
+    expect(both.otherArgs, isEmpty);
+  });
+
+  test(
+      'a build that may not shadow keeps the cloud store off, and still drops the flag',
+      () {
+    final launch = LibraryStoreLaunch.parse(
+      const ['--cloud-store=shadow', 'a.ica'],
+      mayShadow: false,
+    );
+    expect(launch.cloud, isA<CloudStoreOff>());
+    expect(launch.otherArgs, ['a.ica']);
+  });
 }

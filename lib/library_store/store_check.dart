@@ -99,6 +99,10 @@ final class StrategyNotInHive extends StrategyCheck {
   const StrategyNotInHive(super.strategyId);
 }
 
+final class StrategyKeptInCloud extends StrategyCheck {
+  const StrategyKeptInCloud(super.strategyId);
+}
+
 sealed class FolderCheck {
   const FolderCheck(this.folderId);
 
@@ -214,7 +218,9 @@ Future<StoreCheck> checkStoreAgainstHive(
       return StoreNotChecked(failure);
     case StrategiesFound(:final rebuilt):
       for (final summary in rebuilt) {
-        strategies.add(StrategyNotListed(summary.publicId));
+        if (summary.sync is KeptHere) {
+          strategies.add(StrategyNotListed(summary.publicId));
+        }
       }
   }
   final LibraryList list;
@@ -226,8 +232,18 @@ Future<StoreCheck> checkStoreAgainstHive(
   }
   final hiveIds = <String>{};
   final notMirrored = <StrategyCheck>[];
+  final inCloud = {
+    for (final summary in list.strategies)
+      if (summary.sync is! KeptHere) summary.publicId,
+  };
   for (final expected in hive.strategies) {
     hiveIds.add(expected.id);
+    if (inCloud.contains(expected.id)) {
+      final kept = StrategyKeptInCloud(expected.id);
+      strategies.add(kept);
+      notMirrored.add(kept);
+      continue;
+    }
     switch (await _checkOne(store, expected)) {
       case _Checked(:final checks):
         strategies.addAll(checks);
@@ -242,7 +258,7 @@ Future<StoreCheck> checkStoreAgainstHive(
     }
     await breathe();
   }
-  final listed = {for (final summary in list.strategies) summary.publicId};
+  final listed = localStrategyIds(list);
   for (final id in listed.difference(hiveIds)) {
     strategies.add(StrategyNotInHive(id));
   }

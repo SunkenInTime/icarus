@@ -136,6 +136,9 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
               StrategyNotInHive(:final strategyId) => [
                   'STORE not in Hive $strategyId',
                 ],
+              StrategyKeptInCloud(:final strategyId) => [
+                  'STORE kept in the cloud, so not mirrored: $strategyId',
+                ],
             },
           for (final problem in checked.folderProblems)
             switch (problem) {

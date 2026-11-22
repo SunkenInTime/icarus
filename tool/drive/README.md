@@ -33,6 +33,27 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## The cloud store in shadow
+
+`--cloud-store shadow` on Linux, `-CloudStore shadow` on Windows, starts the app with the cloud store in shadow. It uses the same SQLite file as the library store, and either flag works without the other.
+
+The shadow hears of every page the repository hands to the editor, the slices' fallback to the saved whole page included, after the editor has it (`ConvexStrategyRepository.tap`): as the server sent it, before the editor upgrades or merges anything, with the connection the app was on when the page was handed over. Nothing the shadow does can delay, change or stop what the editor gets. For the strategy the editor has open, it also watches the page list (`strategy:getPageList`); settings are taken only from the page list, by the store's rule. The first result on a newer connection opens a session in the store before it is recorded. Nothing is sent from the store, no edit goes into it, and nothing on screen reads it. Its work runs one job at a time between frames, the way the library mirror does.
+
+A shadow serves one account: the one signed in at the first sign-in it sees. Any later change of sign-in ends it for good. What it recorded before the change is still judged; nothing after it is recorded, and nothing new starts in that run. A page read through a share link is not taken.
+
+The shadow proves the store records faithfully what it is given. It does not prove it is given everything the editor was given: that claim belongs to the step where the editor reads from the store, where it holds by construction. After each result it records, the store is compared with what the recorded results say it should hold, in order, by the store's own rules: the strategy row, the page list and its order, every page's row and settings, and the items and lineup groups of the page the result was for, with nothing extra allowed. Each recorded result ends compared equal, compared different, refused by the store or unreadable; a result received offline, on a connection that has since ended, or that the queue answered was from an ended session, is skipped. The driver logs this on `CLOUDSTORE` lines after every step.
+
+At the last step the driver stops the shadow taking results and closes its page list watch, then waits for the shadow's queue to empty and the watch to close, at most 30 s from the last step. The run fails if any recorded result compared different, was refused or unreadable, if work was left, or if the shadow stopped. Then the store is closed, opened again from disk and compared whole against the same expectation: every strategy's row, page list and settings, and the contents of every page it recorded; a strategy missing from the file, anything extra in it, or nothing to compare fails. A counts line, printed and never judged, says how many pages were handed to the editor, how many the shadow recorded, and how many were skipped or not taken and why. With the flag off, nothing of the shadow is created.
+
+The driver steps that go with it:
+
+- `{"openStoredCloudStrategy": true}` opens the one cloud strategy the store holds, so a run started on another run's store with `--hive-store` (`scripts/cloud-store-shadow-restart-after.json`) opens the strategy that run left behind.
+- `{"expectStoredPayloadVersion": id, "version": n}` fails unless the store holds item `id` at payload version `n`, as the server sent it; `scripts/cloud-store-shadow-old-payload.json` sends an item at an older version the way an older build writes it.
+
+`scripts/cloud-store-shadow-offline.json` waits for `cut` and `restored` signals, which `linux-cloud-store-offline.sh <exe dir> <new out dir> <account>` writes: it runs the script inside its own systemd scope, drops that scope's incoming traffic with an nftables rule once the script signals `ready`, and lifts it once the script has edited offline. It needs passwordless `sudo` for `nft`, removes its rule on exit, and stops its run if it exits early. Linux only.
+
+`getPageList` has to be on the deployment the build talks to.
+
 ## The library store in shadow
 
 `--library-store shadow` on Linux, `-LibraryStore shadow` on Windows, starts the app with the library store switched to shadow: as it starts, it copies every local strategy and folder from Hive into a SQLite store beside the Hive boxes (`library_store/library.sqlite`), reads every strategy back out and compares it with Hive. Nothing reads the store yet. `--hive-store DIR` (`-HiveStore`) starts the main instance on a copy of `DIR`, which is never opened itself, so a real library can be checked without touching it.

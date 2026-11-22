@@ -3,10 +3,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:convex_flutter/convex_flutter.dart' as native;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:icarus/collab/src/convex_client_types.dart';
 
 class ConvexClient implements ConvexClientValueSource {
   ConvexClient._(this._client, this.config);
+
+  @visibleForTesting
+  ConvexClient.over(this._client, this.config);
 
   final native.ConvexClient _client;
   final ConvexConfig config;
@@ -148,18 +152,26 @@ class ConvexClient implements ConvexClientValueSource {
     return _NativeSubscriptionHandle(handle);
   }
 
+  int _authChanges = 0;
+
+  int get authChanges => _authChanges;
+
   Future<AuthHandleWrapper> setAuthWithRefresh({
     required Future<String?> Function() fetchToken,
     void Function(bool isAuthenticated)? onAuthChange,
   }) async {
+    _authChanges++;
     final handle = await _client.setAuthWithRefresh(
       fetchToken: fetchToken,
       onAuthChange: onAuthChange,
     );
-    return _NativeAuthHandleWrapper(handle);
+    return _NativeAuthHandleWrapper(handle, () => _authChanges++);
   }
 
-  Future<void> clearAuth() => _client.clearAuth();
+  Future<void> clearAuth() {
+    _authChanges++;
+    return _client.clearAuth();
+  }
 
   Future<bool> reconnect() => _client.reconnect();
 
@@ -275,10 +287,14 @@ class _NativeSubscriptionHandle implements SubscriptionHandle {
 }
 
 class _NativeAuthHandleWrapper implements AuthHandleWrapper {
-  _NativeAuthHandleWrapper(this._handle);
+  _NativeAuthHandleWrapper(this._handle, this._disposing);
 
   final native.AuthHandleWrapper _handle;
+  final void Function() _disposing;
 
   @override
-  void dispose() => _handle.dispose();
+  void dispose() {
+    _disposing();
+    _handle.dispose();
+  }
 }

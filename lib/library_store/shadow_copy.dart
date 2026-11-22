@@ -222,11 +222,16 @@ Future<ShadowCopy> copyHiveIntoStore(
   };
 }
 
+Set<String> localStrategyIds(LibraryList list) => {
+      for (final summary in list.strategies)
+        if (summary.sync is KeptHere) summary.publicId,
+    };
+
 final class StoreHolds {
   StoreHolds({required this.strategies, required this.folders});
 
   StoreHolds.of(LibraryList list)
-      : strategies = {for (final summary in list.strategies) summary.publicId},
+      : strategies = localStrategyIds(list),
         folders = {for (final row in list.folders) row.publicId: row};
 
   final Set<String> strategies;
@@ -385,7 +390,7 @@ Future<ShadowCopy> _bringUpToDate(
     }
   }
 
-  final stored = {for (final summary in list.strategies) summary.publicId};
+  final stored = localStrategyIds(list);
   final chosen = hive.strategies;
   for (final (index, strategy) in chosen.indexed) {
     final id = strategy.id;

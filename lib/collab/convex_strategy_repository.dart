@@ -6,6 +6,7 @@ import 'package:icarus/collab/cloud_payload_upgrade.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
+import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/copied_version.dart';
 import 'package:icarus/collab/convex_client.dart';
@@ -25,8 +26,53 @@ final convexStrategyRepositoryProvider = Provider<ConvexStrategyRepository>(
   (ref) => ConvexStrategyRepository.fromClient(ConvexClient.instance),
 );
 
+abstract interface class ResultTap {
+  Object? heard();
+
+  void pageArrived(
+    String strategyId,
+    RemotePageSnapshot page,
+    Object? heard, {
+    required bool throughShareLink,
+  });
+
+  void tapFailed(Object error);
+}
+
 class ConvexStrategyRepository {
   ConvexStrategyRepository(this._api);
+
+  ResultTap? tap;
+
+  void _tell(String strategyId, RemotePageSnapshot page, String? shareToken) {
+    final tap = this.tap;
+    if (tap == null) return;
+    final Object? heard;
+    try {
+      heard = tap.heard();
+    } catch (error) {
+      _tapFailed(tap, error);
+      return;
+    }
+    Timer.run(() {
+      try {
+        tap.pageArrived(
+          strategyId,
+          page,
+          heard,
+          throughShareLink: shareToken != null,
+        );
+      } catch (error) {
+        _tapFailed(tap, error);
+      }
+    });
+  }
+
+  void _tapFailed(ResultTap tap, Object error) {
+    try {
+      tap.tapFailed(error);
+    } catch (_) {}
+  }
 
   factory ConvexStrategyRepository.fromClient(ConvexClient client) =>
       ConvexStrategyRepository(
@@ -202,6 +248,25 @@ class ConvexStrategyRepository {
         .map(_strategyShell);
   }
 
+  Stream<RemotePageList> watchPageList(
+    String strategyPublicId, {
+    String? shareToken,
+  }) {
+    return _api.strategy
+        .getPageList(
+          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+          strategyPublicId: strategyPublicId,
+          shareToken: _optional(shareToken),
+        )
+        .watch()
+        .map(
+          (result) => RemotePageList(
+            header: _strategyHeader(result.header),
+            pages: result.pages.map(_fullPage).toList(growable: false),
+          ),
+        );
+  }
+
   /// The pages watched in slices right now (see [watchPageSnapshot]), by
   /// [_pageKey]: the page the watch last handed on from its slices, or none
   /// while they fail, and how many watch it.
@@ -227,9 +292,11 @@ class ConvexStrategyRepository {
         _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)] ??
             (null, 0);
     if (live != null) return live;
-    return _pageSnapshot(
+    final page = _pageSnapshot(
       await _wholePage(strategyPublicId, pagePublicId, shareToken).fetch(),
     );
+    _tell(strategyPublicId, page, shareToken);
+    return page;
   }
 
   ConvexQuery<PageGetSnapshotResult> _wholePage(
@@ -301,6 +368,11 @@ class ConvexStrategyRepository {
     String? firstVersion;
     PageGetSnapshotResult? lastWhole;
 
+    void deliver(RemotePageSnapshot page) {
+      controller.add(page);
+      _tell(strategyPublicId, page, shareToken);
+    }
+
     /// Until the slices first answer, the whole page is still watched: when
     /// they fail first, it carries the page again from its latest answer,
     /// and the slices are tried again once the page changes after that.
@@ -311,7 +383,7 @@ class ConvexStrategyRepository {
       if (stopping != null) unawaited(stopping.cancel());
       if (lastWhole case final page?) {
         firstVersion = _pageVersion(page);
-        controller.add(_pageSnapshot(page));
+        deliver(_pageSnapshot(page));
       }
     }
 
@@ -339,7 +411,7 @@ class ConvexStrategyRepository {
           } else {
             _slicedPages[key] = (page, watchers);
           }
-          controller.add(page);
+          deliver(page);
         },
         onError: (Object error, StackTrace stackTrace) {
           if (!registered) {
@@ -366,7 +438,7 @@ class ConvexStrategyRepository {
           (page) {
             lastWhole = page;
             if (slicing) return;
-            controller.add(_pageSnapshot(page));
+            deliver(_pageSnapshot(page));
             // The web client can hand over its cached answer and then the
             // same one from the server: only different rows are a change.
             final version = _pageVersion(page);
@@ -1367,9 +1439,8 @@ String _pageVersion(PageGetSnapshotResult page) => [
         '${lineup.publicId}:${lineup.revision}:${lineup.deleted}',
     ].join('|');
 
-RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
-  final pages = result.pages.map((page) {
-    return RemoteFullPage(
+RemoteFullPage _fullPage(StrategyGetFullSnapshotResultPagesItem page) =>
+    RemoteFullPage(
       page: RemotePage(
         publicId: page.publicId,
         strategyPublicId: page.strategyPublicId,
@@ -1388,7 +1459,9 @@ RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
         updatedAt: _dateTime(page.contentUpdatedAt),
       ),
     );
-  }).toList(growable: false);
+
+RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
+  final pages = result.pages.map(_fullPage).toList(growable: false);
   final elements = result.elements.map(_element).toList(growable: false);
   final lineups = result.lineups.map(_lineup).toList(growable: false);
   final assets = result.assets.map(_imageAsset).toList(growable: false);
