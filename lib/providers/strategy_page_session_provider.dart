@@ -6,8 +6,8 @@ import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:meta/meta.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/strategy/open_attempt.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -24,7 +24,6 @@ import 'package:icarus/page_transition/navigation_geometry_map.dart';
 import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -1407,7 +1406,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           : drawnStrategyHeader(ref, header).themeProfileId;
     }
 
-    final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
+    final strategy = ref.read(localLibraryViewProvider).strategyImage(
       strategyId,
     );
     return strategy?.themeProfileId ??
@@ -1425,8 +1424,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       );
     }
 
-    return Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .get(strategyId)
+    return ref
+        .read(localLibraryViewProvider)
+        .strategyImage(strategyId)
         ?.themeOverridePalette;
   }
 

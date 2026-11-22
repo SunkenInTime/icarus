@@ -159,8 +159,7 @@ class MoveToCloudNotifier extends Notifier<void> {
     String? cloudFolderId,
     bool importing = false,
   }) {
-    final strategy =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(localId);
+    final strategy = const LocalLibrary().storedStrategy(localId);
     final accountId = ref.read(cloudMediaAccountIdProvider);
     if (strategy == null || accountId == null || _isMoving(localId)) {
       return Future.value();
@@ -221,18 +220,18 @@ class MoveToCloudNotifier extends Notifier<void> {
     String? cloudParentId,
     bool importing = false,
   }) {
-    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
-    final root = folders.get(localFolderId);
+    const library = LocalLibrary();
+    final root = library.storedFolder(localFolderId);
     final accountId = ref.read(cloudMediaAccountIdProvider);
     if (root == null || accountId == null) return Future.value();
 
     final tree = <Folder>[root];
     for (var i = 0; i < tree.length; i++) {
-      tree.addAll(folders.values.where((f) => f.parentID == tree[i].id));
+      tree.addAll(
+          library.storedFolders.where((f) => f.parentID == tree[i].id));
     }
     final treeIds = {for (final folder in tree) folder.id};
-    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
+    final strategies = library.storedStrategies
         .where((s) => treeIds.contains(s.folderID))
         .toList()
       // Oldest edit first, so "Date updated" keeps their order in the cloud.
@@ -355,8 +354,7 @@ class MoveToCloudNotifier extends Notifier<void> {
     Map<String, String> cloudFolderIds,
     Set<String> movedInto,
   ) async {
-    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
-    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    const library = LocalLibrary();
     final repository = ref.read(convexStrategyRepositoryProvider);
     final inCloud = {
       for (final entry in await repository.watchAllFolders().first)
@@ -369,8 +367,8 @@ class MoveToCloudNotifier extends Notifier<void> {
         cloudHolds.add(folder.parentID!);
       }
       final emptyHere =
-          !strategies.values.any((s) => s.folderID == folder.id) &&
-              !folders.values.any((f) => f.parentID == folder.id);
+          !library.storedStrategies.any((s) => s.folderID == folder.id) &&
+              !library.storedFolders.any((f) => f.parentID == folder.id);
       final cloudId = cloudFolderIds[folder.id]!;
       if (emptyHere && !inCloud.contains(cloudId)) {
         allWent = false;
@@ -484,8 +482,7 @@ class MoveToCloudNotifier extends Notifier<void> {
         await strategies.forceSaveNow(localId);
         await strategies.clearCurrentStrategy();
       }
-      final found =
-          Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(localId);
+      final found = const LocalLibrary().storedStrategy(localId);
       if (found == null) return _Outcome.notMoved;
       stored = found;
       cloudId = const Uuid().v4();
@@ -502,11 +499,9 @@ class MoveToCloudNotifier extends Notifier<void> {
     }
     final name = stored.name;
     final folderId = stored.folderID;
-    bool originalGone() => !Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .containsKey(localId);
+    bool originalGone() => !const LocalLibrary().holdsStrategy(localId);
     bool unchanged() {
-      final current =
-          Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(localId);
+      final current = const LocalLibrary().storedStrategy(localId);
       // A save puts a new object; a rename or folder move changes this one.
       return identical(current, stored) &&
           current!.name == name &&

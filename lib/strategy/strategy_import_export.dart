@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -985,11 +986,11 @@ class StrategyImportExportService {
     ImportBatchResult contents,
   ) async {
     bool holdsSomething() =>
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-            .values
+        const LocalLibrary()
+            .storedStrategies
             .any((strategy) => strategy.folderID == folder.id) ||
-        Hive.box<Folder>(HiveBoxNames.foldersBox)
-            .values
+        const LocalLibrary()
+            .storedFolders
             .any((child) => child.parentID == folder.id);
     if (contents.issues.isNotEmpty && !holdsSomething()) {
       (await const LocalLibrary().deleteFolder(folder.id)).orThrow();
@@ -2467,14 +2468,14 @@ class StrategyImportExportService {
 
   /// The local library as it is on disk, whichever store the screen shows.
   _ExportLibrary _localLibraryForExport() => _ExportLibrary(
-        folders: Hive.box<Folder>(HiveBoxNames.foldersBox).values,
+        folders: ref.read(localLibraryViewProvider).folders.value,
         strategies: [
           for (final strategy
-              in Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values)
+              in ref.read(localLibraryViewProvider).strategies.value)
             (
               id: strategy.id,
               name: strategy.name,
-              folderId: strategy.folderID,
+              folderId: strategy.folderId,
             ),
         ],
         writeStrategy: (strategy, directory) async => (
@@ -2850,7 +2851,8 @@ class StrategyImportExportService {
     Directory? saveDir,
     String? outputFilePath,
   }) async {
-    final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
+    final StrategyData? strategy =
+        await ref.read(localLibraryViewProvider).readStrategy(id);
     if (strategy == null) {
       log("Couldn't find strategy to export");
       throw StateError("Couldn't find strategy to export");

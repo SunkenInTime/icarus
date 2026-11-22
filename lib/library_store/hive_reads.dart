@@ -1,6 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:hive_ce/hive.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/strategy/local_library.dart';
@@ -52,33 +50,24 @@ abstract interface class LibraryBoxes {
 final class _HiveBoxes implements LibraryBoxes {
   const _HiveBoxes();
 
-  Box<StrategyData> get _strategies =>
-      Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-
-  Box<Folder> get _folders => Hive.box<Folder>(HiveBoxNames.foldersBox);
+  @override
+  StrategyData? strategy(String id) =>
+      const LocalLibrary().storedStrategy(id);
 
   @override
-  StrategyData? strategy(String id) => _strategies.get(id);
+  Folder? folder(String id) => const LocalLibrary().storedFolder(id);
 
   @override
-  Folder? folder(String id) => _folders.get(id);
+  Iterable<StrategyData> get strategies =>
+      const LocalLibrary().storedStrategies;
 
   @override
-  Iterable<StrategyData> get strategies => _strategies.values;
-
-  @override
-  Iterable<Folder> get folders => _folders.values;
+  Iterable<Folder> get folders => const LocalLibrary().storedFolders;
 }
 
-List<Stream<Object?>> libraryBoxEvents() => [
-      const _HiveBoxes()._strategies.watch(),
-      const _HiveBoxes()._folders.watch(),
-    ];
+List<Stream<Object?>> libraryBoxEvents() => const LocalLibrary().boxEvents();
 
-Set<String> libraryBoxFileNames() => {
-      '${const _HiveBoxes()._strategies.name}.hive',
-      '${const _HiveBoxes()._folders.name}.hive',
-    };
+Set<String> libraryBoxFileNames() => const LocalLibrary().boxFileNames();
 
 final class HiveReads {
   HiveReads() : _boxes = const _HiveBoxes();

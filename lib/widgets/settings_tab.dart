@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:hive_ce/hive.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -1861,7 +1860,7 @@ class _PageMarkerSizesSyncBannerState
     final strategyId = stratState.strategyId;
     final strategy = strategyId == null
         ? null
-        : Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+        : ref.read(localLibraryViewProvider).strategyImage(strategyId);
     final showCta = stratState.strategyName != null &&
         markerSizesDifferAcrossPages(
           strategy: strategy,

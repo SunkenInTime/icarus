@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/migrations/ability_vision_cone_migration.dart';
 import 'package:icarus/migrations/agent_weapon_migration.dart';
@@ -36,8 +34,7 @@ class StrategyMigrator {
   }
 
   static Future<void> migrateAllStrategies() async {
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    for (final strat in box.values) {
+    for (final strat in const LocalLibrary().storedStrategies) {
       final legacyMigrated = await migrateLegacyData(strat);
       final migrated = migrateToCurrentVersion(legacyMigrated);
       if (migrated != strat) {

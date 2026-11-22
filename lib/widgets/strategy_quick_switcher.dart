@@ -3,12 +3,11 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/config/platform_policy.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/const/settings.dart';
@@ -217,12 +216,12 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     }
   }
 
-  List<StrategyData> _recentStrategies({
-    required Box<StrategyData> box,
+  List<LocalStrategySummary> _recentStrategies({
+    required Iterable<LocalStrategySummary> stored,
     required String currentStrategyId,
   }) {
     final moving = ref.read(movingToCloudProvider);
-    final strategies = box.values
+    final strategies = stored
         .where((strategy) => strategy.id != currentStrategyId)
         // Moving to the cloud, it can't be opened until the move ends.
         .where((strategy) => !moving.contains(strategy.id))
@@ -231,19 +230,19 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     return strategies;
   }
 
-  String _mapName(StrategyData strategy) {
+  String _mapName(LocalStrategySummary strategy) {
     final raw = Maps.mapNames[strategy.mapData];
     if (raw == null || raw.isEmpty) return 'Unknown';
     return raw[0].toUpperCase() + raw.substring(1);
   }
 
-  String _attackLabel(StrategyData strategy) {
-    if (strategy.pages.isEmpty) return 'Unknown';
-    final first = strategy.pages.first.isAttack;
-    final mixed = strategy.pages.any((page) => page.isAttack != first);
-    if (mixed) return 'Mixed';
-    return first ? 'Attack' : 'Defend';
-  }
+  String _attackLabel(LocalStrategySummary strategy) =>
+      switch (strategy.sides) {
+        LocalSides.attack => 'Attack',
+        LocalSides.defend => 'Defend',
+        LocalSides.mixed => 'Mixed',
+        LocalSides.unknown => 'Unknown',
+      };
 
   String _attackLabelText(AppLocalizations l10n, String attackLabel) =>
       switch (attackLabel) {
@@ -292,7 +291,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
         currentStrategy.strategyName ?? l10n.quickSwitcherUntitled;
     final canRename = currentStrategy.strategyName != null &&
         ref.watch(currentStrategyCapabilitiesProvider).canRenameStrategy;
-    final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final library = ref.watch(localLibraryViewProvider);
     final allowsLocalLibrary =
         ref.watch(platformPolicyProvider).allowsLocalLibrary;
 
@@ -300,17 +299,17 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
       padding: _displayMargin,
       child: CompositedTransformTarget(
         link: _layerLink,
-        child: ValueListenableBuilder<Box<StrategyData>>(
-          valueListenable: strategiesBox.listenable(),
-          builder: (context, box, _) {
+        child: ValueListenableBuilder<Iterable<LocalStrategySummary>>(
+          valueListenable: library.strategies,
+          builder: (context, stored, _) {
             // Recents come from the on-device library, which this platform
             // may keep hidden.
             final recents = allowsLocalLibrary
                 ? _recentStrategies(
-                    box: box,
+                    stored: stored,
                     currentStrategyId: currentStrategyId,
                   )
-                : const <StrategyData>[];
+                : const <LocalStrategySummary>[];
 
             return OverlayPortal.overlayChildLayoutBuilder(
               controller: _controller,

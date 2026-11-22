@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/form_factor.dart';
@@ -45,7 +46,7 @@ const double strategyTileInnerRadius =
 class StrategyTile extends ConsumerStatefulWidget {
   const StrategyTile.local({
     super.key,
-    required this.strategyData,
+    required this.localStrategy,
     this.showDeviceBadge = false,
   })  : cloudStrategy = null,
         canRename = true,
@@ -60,10 +61,10 @@ class StrategyTile extends ConsumerStatefulWidget {
     required this.canDuplicate,
     required this.canDelete,
     required this.canMove,
-  })  : strategyData = null,
+  })  : localStrategy = null,
         showDeviceBadge = false;
 
-  final StrategyData? strategyData;
+  final LocalStrategySummary? localStrategy;
 
   /// Marks a local strategy as not being in the cloud. Only meaningful while
   /// the cloud is reachable; signed out, every strategy is on this device.
@@ -155,21 +156,19 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       ? ref.watch(communityPostByCopyProvider.select((m) => m[_strategyId]))
       : null;
   String get _strategyId =>
-      widget.strategyData?.id ?? widget.cloudStrategy!.strategy.id;
+      widget.localStrategy?.id ?? widget.cloudStrategy!.strategy.id;
   String get _strategyName =>
-      widget.strategyData?.name ?? widget.cloudStrategy!.strategy.name;
+      widget.localStrategy?.name ?? widget.cloudStrategy!.strategy.name;
   MapValue? get _mapValue =>
-      widget.strategyData?.mapData ?? widget.cloudStrategy?.strategy.mapData;
+      widget.localStrategy?.mapData ?? widget.cloudStrategy?.strategy.mapData;
   bool get _isAttack {
-    final strategy = widget.strategyData;
-    if (strategy != null) {
-      return strategy.pages.isEmpty ? true : strategy.pages.first.isAttack;
-    }
+    final strategy = widget.localStrategy;
+    if (strategy != null) return strategy.opensOnAttack;
     return widget.cloudStrategy?.attackLabel != 'Defend';
   }
 
-  StrategyTileViewData get _viewData => widget.strategyData != null
-      ? StrategyTileViewData.fromStrategy(widget.strategyData!, context.l10n)
+  StrategyTileViewData get _viewData => widget.localStrategy != null
+      ? StrategyTileViewData.fromStrategy(widget.localStrategy!, context.l10n)
       : StrategyTileViewData.fromCloudEntry(
           widget.cloudStrategy!,
           context.l10n,
@@ -278,7 +277,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
           child: Draggable<GridItem>(
             data: _isCloud
                 ? StrategyItem.cloud(_strategyId)
-                : StrategyItem.local(widget.strategyData!),
+                : StrategyItem.local(_strategyId),
             // A finger on a card scrolls the library; it never picks the card up.
             maxSimultaneousDrags:
                 widget.canMove && !isMoving && !FormFactor.of(context).isTouch
