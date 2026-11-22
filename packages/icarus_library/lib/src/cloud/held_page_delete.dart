@@ -32,6 +32,9 @@ enum HeldDeleteCause { pageChanged, contentNeverRead }
 PageDeleteVerdict pageDeleteVerdict(Shown shown, CheckedDelete work) {
   final page = work.op.pagePublicId;
   final fresh = shown.fresh;
+  if (fresh.disagreeOn(page)) {
+    return const PageResultAwaited(list: true, page: true);
+  }
   if (!fresh.freshFor(page)) {
     return PageResultAwaited(
       list: !fresh.listFreshFor(page),

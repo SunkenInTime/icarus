@@ -34,7 +34,9 @@ final class Freshness {
     required Set<String> listed,
     required Set<String> touchedSinceList,
     required Set<String> pagesSinceTouch,
+    required Set<String> goneByResult,
   }) : listed = Set.unmodifiable(listed),
+       goneByResult = Set.unmodifiable(goneByResult),
        touchedSinceList = Set.unmodifiable(touchedSinceList),
        pagesSinceTouch = Set.unmodifiable(pagesSinceTouch);
 
@@ -43,9 +45,11 @@ final class Freshness {
     listed: const {},
     touchedSinceList: const {},
     pagesSinceTouch: const {},
+    goneByResult: const {},
   );
 
   final bool listSinceTouch;
+  final Set<String> goneByResult;
   final Set<String> listed;
   final Set<String> touchedSinceList;
   final Set<String> pagesSinceTouch;
@@ -56,15 +60,19 @@ final class Freshness {
       listSinceTouch: true,
       listed: listedNow,
       touchedSinceList: const {},
-      pagesSinceTouch: pagesSinceTouch.intersection(listedNow),
+      pagesSinceTouch: pagesSinceTouch,
+      goneByResult: goneByResult,
     );
   }
 
-  Freshness afterPage(String page) => Freshness._(
+  Freshness afterPage(String page, {required bool gone}) => Freshness._(
     listSinceTouch: listSinceTouch,
     listed: listed,
     touchedSinceList: touchedSinceList,
     pagesSinceTouch: {...pagesSinceTouch, page},
+    goneByResult: gone
+        ? {...goneByResult, page}
+        : ({...goneByResult}..remove(page)),
   );
 
   Freshness touched(Iterable<String> pages, {required bool list}) =>
@@ -75,6 +83,7 @@ final class Freshness {
         pagesSinceTouch: list
             ? const {}
             : ({...pagesSinceTouch}..removeAll(pages)),
+        goneByResult: goneByResult,
       );
 
   bool listFreshFor(String page) =>
@@ -84,6 +93,11 @@ final class Freshness {
 
   bool freshFor(String page) =>
       listFreshFor(page) && (pageFreshFor(page) || !listed.contains(page));
+
+  bool disagreeOn(String page) =>
+      listFreshFor(page) &&
+      pageFreshFor(page) &&
+      listed.contains(page) == goneByResult.contains(page);
 
   @override
   bool operator ==(Object other) =>
@@ -97,7 +111,8 @@ final class Freshness {
       const SetEquality<String>().equals(
         other.pagesSinceTouch,
         pagesSinceTouch,
-      );
+      ) &&
+      const SetEquality<String>().equals(other.goneByResult, goneByResult);
 
   @override
   int get hashCode => Object.hash(listSinceTouch, listed.length);
@@ -139,7 +154,7 @@ final class Shown {
         if (page is! TrashedPage) page.publicId,
     ]);
     for (final page in read) {
-      fresh = fresh.afterPage(page);
+      fresh = fresh.afterPage(page, gone: false);
     }
     return Shown(
       fresh: fresh,
@@ -264,7 +279,7 @@ final class Shown {
       [...elements, ...lineupGroups],
     ),
     PageGone(:final pagePublicId) => Shown(
-      fresh: fresh.afterPage(pagePublicId),
+      fresh: fresh.afterPage(pagePublicId, gone: true),
       headerThisSession: headerThisSession,
       pagesThisSession: {...pagesThisSession}..remove(pagePublicId),
       goneThisSession: {...goneThisSession, pagePublicId},
@@ -351,7 +366,7 @@ final class Shown {
       next[target] = shown;
     }
     return Shown(
-      fresh: fresh.afterPage(page),
+      fresh: fresh.afterPage(page, gone: pageRow is TrashedPage),
       headerThisSession: headerThisSession,
       pagesThisSession: {...pagesThisSession, page},
       goneThisSession: {...goneThisSession}..remove(page),
@@ -363,7 +378,9 @@ final class Shown {
         _ => {...pages, page: _rowOf(pageRow, pageRow)},
       },
       settings: settings,
-      content: {...content, page: liveContentOn(found, page)},
+      content: pageRow is TrashedPage
+          ? ({...content}..remove(page))
+          : {...content, page: liveContentOn(found, page)},
       rows: next,
     );
   }

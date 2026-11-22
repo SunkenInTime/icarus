@@ -1189,11 +1189,12 @@ Step _arrived(_Edit edit, ArrivedBase base) {
   }
   final before = edit.shown;
   edit.shown = edit.shown.take(base);
-  if (base case HeaderRead()) {
+  if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
-      if (work.op case PageAddOp(
-        :final pagePublicId,
-      ) when work.own && !edit.shown.pages.containsKey(pagePublicId)) {
+      if (work.op case PageAddOp(:final pagePublicId)
+          when work.own &&
+              (revisionOfRow(strategy) ?? 0) >= work.revision &&
+              !edit.shown.pages.containsKey(pagePublicId)) {
         edit.shown = edit.shown.withGone(pagePublicId);
       }
     }
@@ -1296,6 +1297,27 @@ Authored _withProduces(Authored authored, ProducedRow produces) =>
       AuthoredNoRow() => AuthoredNoRow(produces: produces),
       final other => other,
     };
+
+void _resultsStale(_Edit edit, PendingOp entry, StrategyOp sent) {
+  final row = targetOf(sent);
+  final pages = {
+    ..._pagesOf(entry),
+    ...pagesNeeded(sent),
+    ?edit.shown.rows[row]?.page,
+    if (row case PageTarget(:final pagePublicId)) pagePublicId,
+    if (row case SettingsTarget(:final pagePublicId)) pagePublicId,
+  };
+  final list =
+      row is StrategyTarget ||
+      row is PageTarget ||
+      row is SettingsTarget ||
+      renumbersPages(sent);
+  edit.shown = edit.shown.touched(pages, list: list);
+  edit.change.lives.addAll({
+    ...pages,
+    if (list) ...{...edit.shown.pages.keys, ...edit.shown.fresh.listed},
+  });
+}
 
 Iterable<Target> _shownOn(Shown shown, String page) => [
   for (final MapEntry(:key, :value) in shown.rows.entries)
@@ -1813,6 +1835,7 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
   if (entry.refusal is! NotRefused) return edit.done();
   final position = fact.ops.indexWhere((op) => op.opId == answer.opId);
   final sent = (attempt: attempt, position: position, op: fact.ops[position]);
+  _resultsStale(edit, entry, sent.op);
   switch (answer) {
     case AppliedAnswer(:final revision):
       _landed(edit, entry, sent, revision, ours: true);
@@ -1919,20 +1942,6 @@ void _landed(
       ..sort((a, b) => a.compareTo(b));
   }
   if (produced == null) _laterUnjustified(edit, entry, work);
-  final row = targetOf(sent);
-  edit.shown = edit.shown.touched(
-    {
-      ...pagesNeeded(sent),
-      ?edit.shown.rows[row]?.page,
-      if (row case PageTarget(:final pagePublicId)) pagePublicId,
-      if (row case SettingsTarget(:final pagePublicId)) pagePublicId,
-    },
-    list:
-        row is StrategyTarget ||
-        row is PageTarget ||
-        row is SettingsTarget ||
-        renumbersPages(sent),
-  );
   edit.change.targets
     ..add(checkTargetOf(sent))
     ..add(targetOf(sent));

@@ -881,7 +881,12 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
     until = at;
   }
   final head = !holds.any((hold) => hold is BehindEntry);
-  if (head && state is Waiting) {
+  final pageGone = switch (entry.work) {
+    final CheckedDelete work =>
+      pageDeleteVerdict(queue.shown, work) is PageAlreadyGone,
+    OpWork() => false,
+  };
+  if (head && state is Waiting && !pageGone) {
     switch (_judge(queue, entry, now)) {
       case _NameAt(until: final deadline?):
         if (until == null || deadline.isBefore(until)) until = deadline;
@@ -889,11 +894,13 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
         break;
       case _AwaitRow(:final page):
         holds.add(AwaitingResult(RowResult(_rowTarget(op), page)));
+      case _AskUser(reason: RowPageGone()) when entry.work is CheckedDelete:
+        break;
       case _AskUser(:final reason):
         return (EntryView(NeedsUser(reason), const []), null);
     }
   }
-  if (entry.work case final CheckedDelete work) {
+  if (entry.work case final CheckedDelete work when head) {
     final page = work.op.pagePublicId;
     switch (pageDeleteVerdict(queue.shown, work)) {
       case PageAsTheUserSawIt() || PageAlreadyGone():

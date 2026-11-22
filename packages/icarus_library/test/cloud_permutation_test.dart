@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'dart:io';
 import 'dart:math';
 
@@ -214,7 +215,19 @@ final class Scenario {
     );
     facts.add(pageRead(page));
     if (random.nextBool()) facts.add(headerRead());
-    server = before;
+    final live = before.page(page)! as LivePage;
+    server = server.withRows([
+      LivePage(
+        publicId: live.publicId,
+        strategyPublicId: live.strategyPublicId,
+        name: live.name,
+        sortIndex: live.sortIndex,
+        isAttack: live.isAttack,
+        isAutoNamed: live.isAutoNamed,
+        revision: revisionOfRow(server.page(page)!)!,
+        unknownFields: live.unknownFields,
+      ),
+    ]);
     facts.add(pageRead(page));
   }
 
@@ -399,11 +412,18 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
     return const [];
   }
 
+  final lastDelivered = <String?, ArrivedBase>{};
+  String? subjectOf(ArrivedBase base) => switch (base) {
+    PageRead(:final page) => page.publicId,
+    PageGone(:final pagePublicId) => pagePublicId,
+    _ => null,
+  };
   for (final fact in order) {
     switch (fact) {
       case EventFact(:final event):
         step(event);
       case ReadFact(:final base, :final session):
+        if (base is! StrategyGone) lastDelivered[subjectOf(base)] = base;
         step(BaseArrived(base, session: session));
       case ClockFact(:final by):
         at = at.add(by);
@@ -428,12 +448,59 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
         }
     }
   }
-  for (final base in [
-    headerReadOf(server.rows),
-    for (final page in server.rows.pages)
-      if (page is LivePage) pageReadOf(server.rows, page.publicId),
-  ]) {
-    step(BaseArrived(base, session: queue.session.number));
+  queue = look(queue, at).queue;
+  for (final entry in lastDelivered.entries.toList()) {
+    final page = entry.key;
+    final ArrivedBase current = page == null
+        ? headerReadOf(server.rows)
+        : pageReadOf(server.rows, page);
+    if (!const DeepCollectionEquality().equals(
+      describeBase(current),
+      describeBase(entry.value),
+    )) {
+      step(BaseArrived(current, session: queue.session.number));
+    }
+  }
+  for (var round = 0; ; round++) {
+    final asked = resultsNeeded(queue, at);
+    if (asked.isEmpty) break;
+    if (round == 5) {
+      throw StateError('still asking for $asked after five fetches');
+    }
+    for (final subject in asked) {
+      final page = switch (subject) {
+        PageListResult() => null,
+        PageResult(:final page) => page,
+        RowResult(
+          target: StrategyTarget() || PageTarget() || SettingsTarget(),
+        ) =>
+          null,
+        RowResult(:final page?) => page,
+        RowResult(:final target) => switch (target) {
+          ElementTarget(:final elementPublicId) =>
+            server.rows.element(elementPublicId)?.pagePublicId,
+          LineupTarget(:final lineupPublicId) =>
+            server.rows.lineupGroup(lineupPublicId)?.pagePublicId,
+          _ => null,
+        },
+      };
+      step(
+        BaseArrived(
+          page == null
+              ? headerReadOf(server.rows)
+              : pageReadOf(server.rows, page),
+          session: queue.session.number,
+        ),
+      );
+    }
+  }
+  final views = entryViews(queue, at);
+  for (final entry in queue.entries) {
+    final view = views[entry.id]!;
+    if (view.state case Waiting() || Unanswered()
+        when view.holds.isEmpty && !view.sendable) {
+      throw StateError('${entry.id} waits with nothing asked for');
+    }
   }
   step(const ConnectionLost());
   return Delivered(queue, at, effects..sort(), server);
@@ -451,6 +518,35 @@ String? disagreement(Delivered end) {
     if (wrong) return '${entry.id} is $state but the server says otherwise';
   }
   return null;
+}
+
+Object describeBase(ArrivedBase base) => switch (base) {
+  HeaderRead(:final strategy, :final pages, :final settings) => [
+    strategy.toJson(),
+    for (final page in pages) page.toJson(),
+    for (final row in settings) row.toJson(),
+  ],
+  PageRead(:final page, :final elements, :final lineupGroups) => [
+    page.toJson(),
+    for (final row in elements) row.toJson(),
+    for (final row in lineupGroups) row.toJson(),
+  ],
+  PageGone(:final pagePublicId) => 'gone $pagePublicId',
+  StrategyGone() => 'strategy gone',
+};
+
+bool sameApartFromResults(CloudQueue a, CloudQueue b) {
+  CloudQueue plain(CloudQueue queue) => CloudQueue(
+    entries: queue.entries,
+    attempts: queue.attempts,
+    landed: queue.landed,
+    nextAttempt: queue.nextAttempt,
+    nextSession: queue.nextSession,
+    shown: Shown.nothing,
+    strategy: queue.strategy,
+    session: queue.session,
+  );
+  return plain(a) == plain(b);
 }
 
 String describe(CloudQueue queue, DateTime at) {
@@ -511,7 +607,7 @@ void main() {
           firstOrder = order;
           continue;
         }
-        if (end.queue != first.queue ||
+        if (!sameApartFromResults(end.queue, first.queue) ||
             describe(end.queue, end.at) != describe(first.queue, first.at) ||
             end.effects.join('\n') != first.effects.join('\n')) {
           fail(

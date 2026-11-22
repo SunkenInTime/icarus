@@ -549,7 +549,14 @@ String renderTable() {
       'this session goes at once; a delete queued behind this device\'s own '
       'work on that page waits for the page list and the page to come round '
       'once more after the last answer. That wait is deliberate and goes away '
-      'with #670. All of this lives in '
+      'with #670. Every answer, whatever it says, resets the results of every '
+      'page its op touches (both ends of a move) and, when it touches the '
+      'page list, the list for every page. A page list and a page result '
+      'that disagree about whether the page exists are no verdict: the delete '
+      'waits and asks for both. For a page delete the hold\'s verdict that the '
+      'page is gone comes before the revision check, and a page delete queued '
+      'behind other entries asks for nothing until it reaches the head. All '
+      'of this lives in '
       '`lib/src/cloud/held_page_delete.dart` and comes out in one piece when '
       '#670 lands.',
     );

@@ -1472,7 +1472,16 @@ the page, so they already include its landed work. A delete with nothing
 ahead of it on a page already read this session goes at once; one queued
 behind this device's own work on that page waits for the page list and the
 page to come round once more after the last answer, which is deliberate and
-goes away with #670. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
+goes away with #670. Every answer, whatever it says, resets the results of
+every page its op touches (both ends of a move) and, when it touches the page
+list, the list for every page, and throws away the views computed from them
+in the same step. A page list and a page result that disagree about whether
+the page exists are no verdict: the hold waits and asks for both. For a page
+delete the hold's verdict that the page is gone comes before the revision
+check, and a page delete queued behind other entries asks for nothing until
+it reaches the head. This is the one part of the queue where what the device
+has read decides anything; every review of it found another edge, and the
+page it protects goes to the trash, from which it can be restored. All of it is in `lib/src/cloud/held_page_delete.dart`, which comes
 out in one piece when the server checks the page.
 
 **Entry states.** An entry is in one of four states, derived from the facts

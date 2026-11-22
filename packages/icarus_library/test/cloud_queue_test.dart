@@ -2560,4 +2560,120 @@ void main() {
     client.read(server.rows);
     expect(stateOf(client, 'back'), const NeedsUser(RowPageGone()));
   });
+
+  group('what makes held results stale', () {
+    test('a move\'s answer resets its source page even when the '
+        'destination\'s result arrived first', () {
+      final server = Server();
+      final client = online();
+      const move = ElementPatchOp(
+        opId: 'move',
+        elementPublicId: 'e1',
+        expectedElementRevision: 1,
+        pagePublicId: 'page-b',
+      );
+      client.edit(move);
+      client.edit(onVisible(client.visible, pageDelete('del', 'page-a')));
+      final attempt = client.claim(['move']);
+      final answer = server.apply(clientId, client.lastSent().single);
+      server.rows = withOp(
+        server.rows,
+        elementAdd('t', elementId: 'theirs', pageId: 'page-a'),
+      );
+      client.arrive(pageReadOf(server.rows, 'page-b'));
+      client.must(OpAnswered(attempt, answer));
+      expect(client.view('del').sendable, isFalse);
+      client.read(server.rows);
+      expect(stateOf(client, 'del'), isA<NeedsUser>());
+    });
+
+    test('an answer of nothing to do without a revision resets the page', () {
+      final client = online();
+      client.edit(elementDelete('gone'));
+      client.edit(pageDelete('del', 'page-a'));
+      final attempt = client.claim(['gone']);
+      client.read(initialRows());
+      client.must(OpAnswered(attempt, const NoopWithoutRevision('gone')));
+      expect(client.view('del').sendable, isFalse);
+      expect(resultsNeeded(client.queue, client.at), {
+        const PageListResult(),
+        const PageResult('page-a'),
+      });
+    });
+
+    test('an answer for another page\'s settings throws away the views that '
+        'counted the page list as fresh', () {
+      final server = Server();
+      final client = online();
+      client.edit(pageDelete('del', 'page-a'));
+      expect(client.view('del').sendable, isTrue);
+      client.edit(
+        const PageSettingsPatchOp(
+          opId: 'settings',
+          pagePublicId: 'page-b',
+          settings: PageSettings(
+            agentSize: 2,
+            abilitySize: 1,
+            useNeutralTeamColors: true,
+          ),
+          expectedPageSettingsRevision: 1,
+        ),
+      );
+      sendAndAnswer(client, server, ['settings']);
+      expect(client.view('del').sendable, isFalse);
+      expect(
+        resultsNeeded(client.queue, client.at),
+        contains(const PageListResult()),
+      );
+    });
+
+    for (final listFirst in [true, false]) {
+      test('a page list and a page result that disagree about whether the '
+          'page exists are no verdict (${listFirst ? 'list' : 'page'} '
+          'first)', () {
+        final client = Client()..read(initialRows());
+        client.must(const ConnectionReturned());
+        client.edit(pageDelete('del', 'page-b'));
+        final gone = withOp(initialRows(), pageDelete('t', 'page-b'));
+        if (listFirst) {
+          client.arrive(headerReadOf(initialRows()));
+          client.arrive(const PageGone('page-b'));
+        } else {
+          client.arrive(const PageGone('page-b'));
+          client.arrive(headerReadOf(initialRows()));
+        }
+        expect(gone.page('page-b'), isA<TrashedPage>());
+        expect(stateOf(client, 'del'), isNot(isA<NeedsUser>()));
+        expect(client.view('del').sendable, isFalse);
+        expect(resultsNeeded(client.queue, client.at), {
+          const PageListResult(),
+          const PageResult('page-b'),
+        });
+      });
+    }
+
+    test('a page delete whose page a fresh page list says is gone goes, even '
+        'behind this device\'s own reorder', () {
+      final server = Server();
+      final client = online();
+      client.edit(
+        const PageReorderOp(
+          opId: 'order',
+          pagePublicId: 'page-a',
+          sortIndex: 1,
+          expectedStrategyRevision: 1,
+        ),
+      );
+      client.edit(
+        onVisible(client.visible, pageDelete('del', 'page-b', expected: 2)),
+      );
+      sendAndAnswer(client, server, ['order']);
+      server.rows = withOp(
+        server.rows,
+        pageDelete('t', 'page-b', expected: server.rows.strategy.revision),
+      );
+      client.arrive(headerReadOf(server.rows));
+      expect(client.view('del').sendable, isTrue);
+    });
+  });
 }
