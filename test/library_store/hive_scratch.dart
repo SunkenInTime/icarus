@@ -7,6 +7,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
@@ -97,7 +98,7 @@ Future<ShadowCopy> copyFromHive(
   final writes = LibraryBoxWrites();
   try {
     return await copyHiveIntoStore(
-      hiveLibraryNow,
+      HiveReads(),
       store,
       writes: writes,
       breathe: breathe,

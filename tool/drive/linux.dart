@@ -13,7 +13,8 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
   dart tool/drive/linux.dart run --script FILE [--account EMAIL]
       [--companion FILE] [--companion-account EMAIL] [--exe DIR] [--out DIR]
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
-      [--hive-store DIR] [--library-store off|shadow] [--kill-after-seconds S]
+      [--hive-store DIR] [--library-store off|shadow|mirror]
+      [--kill-after-seconds S]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
         --convex it talks to the dev deployment; production is refused.
@@ -30,11 +31,12 @@ run     Runs --script, and --companion beside it when given, against the
         --hive-store starts the main instance on a copy of DIR, which is
         never opened itself. --library-store passes --library-store=VALUE to
         every instance; shadow copies the library into the store as it
-        starts. --kill-after-seconds kills the main instance with SIGKILL S
-        seconds after it starts, the way a crash stops it, and counts that
-        as a pass; an app that finished first is judged as usual. Start the
-        next run with --hive-store <this run's out>/store-main to see what
-        it left.
+        starts, and mirror also writes the store after every save.
+        --kill-after-seconds kills the main instance with SIGKILL S seconds
+        after it starts, the way a crash stops it, and counts that as a
+        pass; an app that finished first is judged as usual. Start the next
+        run with --hive-store <this run's out>/store-main to see what it
+        left.
 
 run exits 0 when every instance finished its script with SUMMARY ... CLEAN
 and quit before the timeout (default 900 s), 1 when anything else happened,
@@ -343,9 +345,10 @@ Future<int> _run(Map<String, String> options) async {
   Directory('${out.path}/signals').createSync();
   final libraryStore = options['library-store'];
   if (libraryStore != null &&
-      libraryStore != 'off' &&
-      libraryStore != 'shadow') {
-    throw UsageError('--library-store is off or shadow, not "$libraryStore"');
+      !const {'off', 'shadow', 'mirror'}.contains(libraryStore)) {
+    throw UsageError(
+      '--library-store is off, shadow or mirror, not "$libraryStore"',
+    );
   }
   if (options['hive-store'] case final String seed) {
     if (!Directory(seed).existsSync()) {

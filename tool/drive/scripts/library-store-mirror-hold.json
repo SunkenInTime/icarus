@@ -1,0 +1,6 @@
+[
+  {"libraryStore": "mirror", "seconds": 600},
+  {"holdLibraryStore": true},
+  {"newLocal": "ascent", "name": "Held {run}"},
+  {"exit": 1}
+]

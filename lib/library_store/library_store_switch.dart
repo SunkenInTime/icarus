@@ -16,10 +16,15 @@ final class StoreSwitchShadow extends LibraryStoreSwitch {
   const StoreSwitchShadow();
 }
 
+final class StoreSwitchMirror extends LibraryStoreSwitch {
+  const StoreSwitchMirror();
+}
+
 final class LibraryStoreLaunch {
   const LibraryStoreLaunch._(this.choice, this.otherArgs);
 
   static const shadowFlag = '--library-store=shadow';
+  static const mirrorFlag = '--library-store=mirror';
   static const offFlag = '--library-store=off';
 
   final LibraryStoreSwitch choice;
@@ -36,6 +41,9 @@ final class LibraryStoreLaunch {
         case shadowFlag:
           choice =
               mayShadow ? const StoreSwitchShadow() : const StoreSwitchOff();
+        case mirrorFlag:
+          choice =
+              mayShadow ? const StoreSwitchMirror() : const StoreSwitchOff();
         case offFlag:
           choice = const StoreSwitchOff();
         case _:

@@ -12,6 +12,10 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
+import 'package:icarus/library_store/hive_reads.dart';
+import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/library_store/store_mirror.dart';
+import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
@@ -152,6 +156,8 @@ Future<void> _checkOne(
       switch (result) {
         case StoreNotChecked(:final failure):
           problem('$round check failed: $failure');
+        case StoreChangedDuringCheck():
+          problem('$round check: Hive changed during it');
         case final StoreChecked checked:
           if (round == 'first') {
             totals
@@ -285,6 +291,68 @@ Future<String> _copyCost(
   }
 }
 
+Future<List<String>> _editEachThroughMirror(
+  Directory store,
+  Directory scratchRoot,
+) async {
+  final label =
+      path.relative(store.path, from: Platform.environment[corpusVariable]);
+  final scratch = await _scratchCopyOf(store, scratchRoot);
+  final problems = <String>[];
+  try {
+    await _startAsTheAppDoes(scratch);
+    final file = libraryStoreFile(scratch.path);
+    await file.parent.create(recursive: true);
+    final engine = SqliteEngine(file.path);
+    final opened = await _openSqlite(engine);
+    final mirror = StoreMirror(
+      reads: HiveReads(),
+      betweenAnimations: () async {},
+    );
+    LocalLibrary.follower = mirror;
+    final writes = LibraryBoxWrites();
+    await mirror.copyThenFollow(opened, writes: writes);
+    await writes.stop();
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    for (final stored in box.values.toList()) {
+      final saved = await const LocalLibrary()
+          .renameStrategy(stored, '${stored.name} edited');
+      if (saved is! LibraryWritten) problems.add('$label: not saved $saved');
+    }
+    final check = await mirror.check(
+      (hive) => checkStoreAgainstHive(
+        hive,
+        opened,
+        foreignNames: const [],
+        breathe: () async {},
+        strategiesRefused: mirror.refusedStrategies,
+        foldersRefused: mirror.refusedFolders,
+      ),
+    );
+    switch (check) {
+      case StoreNotChecked(:final failure):
+        problems.add('$label: check failed $failure');
+      case StoreChangedDuringCheck():
+        problems.add('$label: Hive changed during the check');
+      case final StoreChecked checked when !checked.isExact:
+        problems.add(
+          '$label: ${checked.strategyProblems} ${checked.folderProblems}',
+        );
+      case StoreChecked():
+        break;
+    }
+    await opened.close();
+    await engine.close();
+  } finally {
+    LocalLibrary.follower = null;
+    await Hive.close();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, null);
+    await scratch.delete(recursive: true);
+  }
+  return problems;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() {
@@ -351,6 +419,25 @@ void main() {
       for (final size in [100, 350, 700, 1400]) {
         debugPrint(await _copyCost(size, strategies, folders, scratchRoot));
       }
+    },
+  );
+
+  test(
+    'every Hive store in the corpus, with every strategy renamed through LocalLibrary while the store mirrors saves, leaves the store exact',
+    skip: corpus == null
+        ? '$corpusVariable names a folder of Hive stores'
+        : false,
+    timeout: const Timeout(Duration(hours: 2)),
+    () async {
+      final problems = <String>[];
+      var stores = 0;
+      for (final store in hiveStoresUnder(Directory(corpus!))) {
+        stores++;
+        problems.addAll(await _editEachThroughMirror(store, scratchRoot));
+      }
+      debugPrint('stores edited through the mirror: $stores; problems: '
+          '${problems.isEmpty ? 'none' : problems.join('\n')}');
+      expect(problems, isEmpty);
     },
   );
 }

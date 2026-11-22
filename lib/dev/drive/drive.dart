@@ -168,6 +168,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
+import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -243,8 +244,11 @@ void startDrive() {
     );
     previous?.call(details);
   };
+  _runFrames.start();
   unawaited(_play(script));
 }
+
+final _runFrames = RunFrames();
 
 String? _logPath;
 String _runId = '';
@@ -326,6 +330,13 @@ Future<void> _play(String script) async {
     await _flush();
   }
   await Future.wait(_pictureWatches);
+  _log(_runFrames.stop());
+  try {
+    (await mirrorEndLines(appProviderContainer)).forEach(_log);
+  } on StoreStepFailed catch (failed) {
+    _failedSteps++;
+    failed.problems.forEach(_log);
+  }
   if (await closeStoreLine(appProviderContainer) case final line?) {
     if (line.startsWith('FAIL')) _failedSteps++;
     _log(line);
@@ -1028,6 +1039,8 @@ Future<void> _run(Map<String, dynamic> step) async {
         ),
       );
       lines.forEach(_log);
+    case 'holdLibraryStore':
+      _log(holdStore(c));
     case 'checkLibraryStore':
       (await _storeLines(checkStoreAgain(c))).forEach(_log);
     case 'soak':

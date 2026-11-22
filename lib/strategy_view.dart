@@ -26,6 +26,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
+import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/canvas_paste.dart';
 import 'package:icarus/widgets/delete_capture.dart';
@@ -841,6 +842,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       source: 'StrategyView.onWindowClose',
       onContinue: () async {
         _isClosingWindow = true;
+        if (storeCatchUpBeforeClose() case final catchingUp?) {
+          await catchingUp;
+        }
         await windowManager.setPreventClose(false);
         await windowManager.close();
       },
