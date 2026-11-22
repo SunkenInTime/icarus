@@ -131,10 +131,10 @@ final class Mirroring extends ShadowMode {
 
 StoreMirror storeMirror() => StoreMirror(
       reads: HiveReads(),
-      betweenAnimations: _betweenAnimations,
+      betweenAnimations: betweenAnimations,
     );
 
-Future<void> _betweenAnimations() => Future.any([
+Future<void> betweenAnimations() => Future.any([
       SchedulerBinding.instance.scheduleTask<void>(() {}, Priority.idle),
       Future<void>.delayed(const Duration(milliseconds: 500)),
     ]);

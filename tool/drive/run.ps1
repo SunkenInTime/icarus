@@ -31,7 +31,8 @@ param(
   [int]$TimeoutSeconds = 900,
   [string]$HiveStore,
   [ValidateSet('off', 'shadow', 'mirror')] [string]$LibraryStore,
-  [ValidateSet('shadow')] [string]$CloudStore
+  [ValidateSet('shadow')] [string]$CloudStore,
+  [string]$SecondAccount
 )
 $ErrorActionPreference = 'Stop'
 # New every run: the server refuses an item id another strategy holds.
@@ -57,7 +58,7 @@ function Get-Password([string]$email) {
   $row.Split('|')[2].Trim()
 }
 
-function Start-Instance([string]$name, [string]$scriptPath, [string]$email) {
+function Start-Instance([string]$name, [string]$scriptPath, [string]$email, [string]$second) {
   $env:LOCALAPPDATA = Join-Path $Out "appdata-$name"
   $env:ICARUS_DRIVE_SCRIPT = (Resolve-Path $scriptPath).Path
   $env:ICARUS_DRIVE_LOG = Join-Path $Out "$name.log"
@@ -68,6 +69,8 @@ function Start-Instance([string]$name, [string]$scriptPath, [string]$email) {
   $env:ICARUS_DRIVE_SET_CLIPBOARD = Join-Path $PSScriptRoot 'set-clipboard.ps1'
   $env:ICARUS_DRIVE_EMAIL = $email
   $env:ICARUS_DRIVE_PASSWORD = if ($email) { Get-Password $email } else { $null }
+  $env:ICARUS_DRIVE_EMAIL_2 = $second
+  $env:ICARUS_DRIVE_PASSWORD_2 = if ($second) { Get-Password $second } else { $null }
   $appArgs = @('"--hive-store-dir={0}"' -f (Join-Path $Out "store-$name"))
   if ($LibraryStore) { $appArgs += "--library-store=$LibraryStore" }
   if ($CloudStore) { $appArgs += "--cloud-store=$CloudStore" }
@@ -79,11 +82,12 @@ function Start-Instance([string]$name, [string]$scriptPath, [string]$email) {
     $process
   } finally {
     $env:ICARUS_DRIVE_PASSWORD = $null
+    $env:ICARUS_DRIVE_PASSWORD_2 = $null
   }
 }
 
 $originalAppData = $env:LOCALAPPDATA
-$instances = [ordered]@{ main = Start-Instance 'main' $Script $Account }
+$instances = [ordered]@{ main = Start-Instance 'main' $Script $Account $SecondAccount }
 if ($Companion) {
   $email = if ($CompanionAccount) { $CompanionAccount } else { $Account }
   $instances.companion = Start-Instance 'companion' $Companion $email

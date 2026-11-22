@@ -196,8 +196,6 @@ Future<void> main(List<String> args) async {
         ),
         if (storeLaunch.choice case StoreSwitchShadow() || StoreSwitchMirror())
           libraryStoreSwitchProvider.overrideWithValue(storeLaunch.choice),
-        if (storeLaunch.cloud case CloudStoreShadow())
-          cloudStoreSwitchProvider.overrideWithValue(storeLaunch.cloud),
       ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
@@ -298,9 +296,10 @@ Future<void> main(List<String> args) async {
       final cloudShadow = storeLaunch.cloud is CloudStoreShadow;
       final storeOpening = switch (hiveDirectoryPath) {
         final String directory when localShadow || cloudShadow =>
-          appProviderContainer
-              .read(libraryStoreProvider.notifier)
-              .open(libraryStoreFile(directory), build: Settings.versionName),
+          appProviderContainer.read(libraryStoreProvider.notifier).open(
+                libraryStoreFile(directory),
+                build: cloudShadow ? Settings.versionName : '',
+              ),
         _ => null,
       };
       final shadowStore = switch ((hiveDirectoryPath, storeOpening)) {

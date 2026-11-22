@@ -78,10 +78,6 @@ void main() {
       mayShadow: true,
     );
     expect(launch.cloud, isA<CloudStoreOff>());
-    expect(
-      ProviderContainer().read(cloudStoreSwitchProvider),
-      isA<CloudStoreOff>(),
-    );
   });
 
   test('the cloud shadow is its own flag: either can be on without the other',

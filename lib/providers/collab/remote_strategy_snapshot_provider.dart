@@ -100,6 +100,11 @@ class RemoteEditorSnapshotNotifier
     return receivedOn != null && receivedOn == _connectionStamp;
   }
 
+  int? connectionOf(RemotePageSnapshot page) => switch (_receivedOn[page]) {
+        null || _receivedDisconnected => null,
+        final stamp => stamp,
+      };
+
   int? get _connectionStamp =>
       ref.read(strategyOpQueueProvider.notifier).liveStamp;
 

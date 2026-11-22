@@ -5,6 +5,62 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus_library/icarus_library.dart';
 
+typedef ResultTag = ({int? connection, int account});
+
+bool _newer(ResultTag a, ResultTag b) =>
+    a.connection! > b.connection! ||
+    (a.connection == b.connection && a.account > b.account);
+
+enum SkipReason {
+  receivedOffline('received while the app counted itself offline'),
+  endedConnection('read on a connection that has since ended'),
+  earlierAccount('read under an account that has since changed'),
+  strategyClosed('the strategy was closed before it was processed'),
+  endedSession('the queue answered that its session had ended');
+
+  const SkipReason(this.words);
+
+  final String words;
+}
+
+sealed class Verdict {
+  const Verdict();
+}
+
+final class NotProcessed extends Verdict {
+  const NotProcessed();
+}
+
+final class ComparedEqual extends Verdict {
+  const ComparedEqual();
+}
+
+final class ComparedDifferent extends Verdict {
+  const ComparedDifferent(this.differences);
+
+  final List<String> differences;
+}
+
+final class Skipped extends Verdict {
+  const Skipped(this.reason);
+
+  final SkipReason reason;
+}
+
+final class NotRecorded extends Verdict {
+  const NotRecorded(this.why);
+
+  final String why;
+}
+
+final class LedgerEntry {
+  LedgerEntry(this.strategyId, this.what);
+
+  final String strategyId;
+  final String what;
+  Verdict verdict = const NotProcessed();
+}
+
 sealed class CloudShadowReport {
   const CloudShadowReport();
 }
@@ -23,223 +79,284 @@ final class ShadowConnectionLost extends CloudShadowReport {
   final String strategyId;
 }
 
-final class ShadowRecorded extends CloudShadowReport {
-  const ShadowRecorded(this.strategyId, this.what, this.session);
+final class ShadowReadFailed extends CloudShadowReport {
+  const ShadowReadFailed(this.strategyId, this.error);
 
   final String strategyId;
-  final String what;
-  final int session;
+  final String error;
 }
 
-final class ShadowNotApplied extends CloudShadowReport {
-  const ShadowNotApplied(this.strategyId, this.what, this.why);
+final class ShadowStopped extends CloudShadowReport {
+  const ShadowStopped(this.reason);
 
-  final String strategyId;
-  final String what;
-  final String why;
+  final String reason;
 }
-
-final class ShadowSkipped extends CloudShadowReport {
-  const ShadowSkipped(this.strategyId, this.what, this.why);
-
-  final String strategyId;
-  final String what;
-  final String why;
-}
-
-final class ShadowEqual extends CloudShadowReport {
-  const ShadowEqual(this.strategyId, this.pageId, this.rows);
-
-  final String strategyId;
-  final String pageId;
-  final int rows;
-}
-
-final class ShadowDiffers extends CloudShadowReport {
-  const ShadowDiffers(this.strategyId, this.pageId, this.differences);
-
-  final String strategyId;
-  final String pageId;
-  final List<String> differences;
-}
-
-final class ShadowStoreFailed extends CloudShadowReport {
-  const ShadowStoreFailed(this.what, this.failure, this.step);
-
-  final String what;
-  final StorageFailure failure;
-  final StoreStep step;
-
-  String get words => storageFailureWords(failure, step);
-}
-
-final class ShadowRefused extends CloudShadowReport {
-  const ShadowRefused(this.strategyId, this.what, this.refusal);
-
-  final String strategyId;
-  final String what;
-  final Object refusal;
-}
-
-typedef _Binding = ({int stamp, int session});
 
 final class _Expected {
-  _Expected(this.pageId);
+  StrategyRow? strategy;
+  final pages = <String, PageRow>{};
+  final settings = <String, PageSettingsRow>{};
+  final elements = <String, Map<String, ElementRow>>{};
+  final lineupGroups = <String, Map<String, LineupGroupRow>>{};
 
-  final String pageId;
-  PageRow? page;
-  PageSettingsRow? settings;
-  Map<String, ElementRow>? elements;
-  Map<String, LineupGroupRow>? lineupGroups;
+  void header(HeaderRead read) {
+    strategy = read.strategy;
+    final listed = {for (final page in read.pages) page.publicId};
+    for (final id in [...pages.keys]) {
+      if (!listed.contains(id)) {
+        pages.remove(id);
+        settings.remove(id);
+        elements.remove(id);
+        lineupGroups.remove(id);
+      }
+    }
+    for (final page in read.pages) {
+      pages[page.publicId] = page;
+    }
+    final withSettings = {for (final row in read.settings) row.pagePublicId};
+    for (final id in listed) {
+      if (!withSettings.contains(id)) settings.remove(id);
+    }
+    for (final row in read.settings) {
+      settings[row.pagePublicId] = row;
+    }
+  }
 
-  bool get complete =>
-      page != null &&
-      settings != null &&
-      elements != null &&
-      lineupGroups != null;
+  void page(PageRead read) {
+    final pageId = read.page.publicId;
+    pages[pageId] = read.page;
+    elements[pageId] = _placed(elements, pageId, read.elements);
+    lineupGroups[pageId] = _placed(lineupGroups, pageId, read.lineupGroups);
+  }
+
+  static Map<String, T> _placed<T extends Row>(
+    Map<String, Map<String, T>> held,
+    String pageId,
+    List<T> rows,
+  ) {
+    final placed = <String, T>{};
+    for (final row in rows) {
+      final id = _idOf(row);
+      final revision = _revisionOf(row);
+      final newerElsewhere = held.entries.any(
+        (entry) =>
+            entry.key != pageId &&
+            revision != null &&
+            (_revisionOf(entry.value[id] ?? row) ?? -1) > revision,
+      );
+      if (newerElsewhere) continue;
+      for (final MapEntry(:key, :value) in held.entries) {
+        if (key != pageId) value.remove(id);
+      }
+      placed[id] = row;
+    }
+    return placed;
+  }
 }
 
+int? _revisionOf(Row row) => switch (row) {
+      LiveElement(:final revision) ||
+      DeletedElement(:final revision) ||
+      LiveLineupGroup(:final revision) ||
+      DeletedLineupGroup(:final revision) =>
+        revision,
+      _ => null,
+    };
+
+String _idOf(Row row) => switch (row) {
+      ElementRow(:final publicId) => publicId,
+      LineupGroupRow(:final publicId) => publicId,
+      _ => throw StateError('not a page row: $row'),
+    };
+
 final class CloudShadow {
-  CloudShadow(this.store, {required this.build, required this.canRead});
+  CloudShadow(
+    this.store, {
+    required this.build,
+    required this.canRead,
+    required Future<void> Function() breathe,
+  }) : _breathe = breathe;
 
   final LibraryStore store;
   final String build;
   final CanRead canRead;
+  final Future<void> Function() _breathe;
 
   final reports = <CloudShadowReport>[];
+  final ledger = <LedgerEntry>[];
+  String? stopped;
 
   Future<void> _tail = Future<void>.value();
   final _openedThisRun = <String>{};
   String? _strategyId;
   bool _inStore = false;
-  _Binding? _binding;
-  int? _stamp;
-  String? _account;
-  _Expected? _expected;
-  ({RemotePageSnapshot page, int stamp})? _waitingPage;
+  ResultTag? _bound;
+  String? _openPage;
+  var _expected = _Expected();
+  final _waiting =
+      <({LedgerEntry entry, RemotePageSnapshot page, ResultTag tag})>[];
 
   Future<void> get idle => _tail;
 
   void _then(Future<void> Function() work) {
-    _tail = _tail.then((_) => work());
+    _tail = _tail.then((_) async {
+      if (stopped != null) return;
+      await _breathe();
+      try {
+        await work();
+      } catch (error) {
+        stop('$error');
+      }
+    });
   }
 
-  void connection(int? stamp) => _then(() async {
-        _stamp = stamp;
-        final strategyId = _strategyId;
-        if (strategyId == null || !_inStore) return;
-        if (stamp == null) {
-          _binding = null;
-          if (await _record(strategyId, 'the connection dropping', [
-                const ConnectionLost(),
-              ]) !=
-              null) {
-            reports.add(ShadowConnectionLost(strategyId));
-          }
-          return;
-        }
-        await _open(strategyId, stamp, 'the connection came back', [
-          const ConnectionReturned(),
-        ]);
-      });
+  void stop(String reason) {
+    if (stopped != null) return;
+    stopped = reason;
+    reports.add(ShadowStopped(reason));
+  }
 
-  void account(String? accountId) => _then(() async {
-        final before = _account;
-        _account = accountId;
+  void connectionLost() => _then(() async {
         final strategyId = _strategyId;
-        if (before == null || before == accountId) return;
         if (strategyId == null || !_inStore) return;
-        const because = 'the account changed';
-        switch (_stamp) {
-          case final stamp?:
-            await _open(strategyId, stamp, because, [const AccountChanged()]);
-          case null:
-            await _record(strategyId, because, [const AccountChanged()]);
+        if (await _record(strategyId, null, [const ConnectionLost()]) != null) {
+          reports.add(ShadowConnectionLost(strategyId));
         }
       });
 
   void strategyClosed() => _then(() async {
+        for (final waiting in _waiting) {
+          waiting.entry.verdict = const Skipped(SkipReason.strategyClosed);
+        }
         _strategyId = null;
-        _inStore = false;
-        _binding = null;
-        _expected = null;
-        _waitingPage = null;
+        _reset();
       });
 
-  void pageList(String strategyId, RemotePageList list,
-          {required int? stamp}) =>
-      _then(() async {
-        const what = 'the page list';
-        if (stamp == null) {
-          reports.add(ShadowSkipped(strategyId, what, 'received offline'));
-          return;
-        }
-        final HeaderRead header;
-        switch (pageListRead(list)) {
-          case RowsRead(:final value):
-            header = value;
-          case RowsUnreadable(:final problem):
-            reports.add(ShadowSkipped(strategyId, what, problem));
-            return;
-        }
-        if (_strategyId != strategyId || !_inStore) {
-          await _start(strategyId, header, stamp);
-          return;
-        }
-        if (await _arrive(strategyId, what, header, stamp)) {
-          _expectHeader(header);
-          await _check(strategyId);
-        }
-      });
+  void _reset() {
+    _inStore = false;
+    _bound = null;
+    _openPage = null;
+    _expected = _Expected();
+    _waiting.clear();
+  }
 
-  void page(
-    String strategyId,
-    RemotePageSnapshot snapshot, {
-    required int? stamp,
-  }) =>
-      _then(() async {
-        final what = 'page ${snapshot.page.publicId}';
-        if (stamp == null) {
-          reports.add(
-            ShadowSkipped(strategyId, what, 'not received on this connection'),
-          );
+  void pageList(String strategyId, RemotePageList list, ResultTag tag) {
+    final entry = LedgerEntry(strategyId, 'the page list');
+    ledger.add(entry);
+    _then(() async {
+      if (!_admit(entry, tag)) return;
+      final HeaderRead header;
+      switch (pageListRead(list)) {
+        case RowsRead(:final value):
+          header = value;
+        case RowsUnreadable(:final problem):
+          entry.verdict =
+              NotRecorded('the server rows could not be read: $problem');
           return;
+      }
+      if (!_inStore) {
+        await _start(entry, header, tag);
+        if (!_inStore) return;
+        final waiting = [..._waiting];
+        _waiting.clear();
+        for (final page in waiting) {
+          await _pageNow(page.entry, page.page, page.tag);
         }
-        if (_strategyId != strategyId || !_inStore) {
-          _waitingPage = (page: snapshot, stamp: stamp);
-          return;
-        }
-        await _arrivePage(strategyId, snapshot, stamp);
-      });
+        return;
+      }
+      if (!await _bindFor(entry, tag)) return;
+      if (await _arrive(entry, header)) {
+        _expected.header(header);
+        await _compare(entry);
+      }
+    });
+  }
 
-  Future<void> _arrivePage(
-    String strategyId,
+  void page(String strategyId, RemotePageSnapshot snapshot, ResultTag tag) {
+    final entry = LedgerEntry(strategyId, 'page ${snapshot.page.publicId}');
+    ledger.add(entry);
+    _then(() async {
+      if (!_admit(entry, tag)) return;
+      if (!_inStore) {
+        _waiting.add((entry: entry, page: snapshot, tag: tag));
+        return;
+      }
+      await _pageNow(entry, snapshot, tag);
+    });
+  }
+
+  bool _admit(LedgerEntry entry, ResultTag tag) {
+    if (tag.connection == null) {
+      entry.verdict = const Skipped(SkipReason.receivedOffline);
+      return false;
+    }
+    if (_strategyId != entry.strategyId) {
+      _strategyId = entry.strategyId;
+      _reset();
+    }
+    return true;
+  }
+
+  Future<void> _pageNow(
+    LedgerEntry entry,
     RemotePageSnapshot snapshot,
-    int stamp,
+    ResultTag tag,
   ) async {
-    final what = 'page ${snapshot.page.publicId}';
+    if (!await _bindFor(entry, tag)) return;
     final PageRead read;
-    final PageSettingsRow settings;
-    switch ((pageRead(snapshot, canRead), pageSettingsRead(snapshot))) {
-      case (RowsRead(value: final page), RowsRead(value: final pageSettings)):
-        read = page;
-        settings = pageSettings;
-      case (RowsUnreadable(:final problem), _) ||
-            (_, RowsUnreadable(:final problem)):
-        reports.add(ShadowSkipped(strategyId, what, problem));
+    switch (pageRead(snapshot, canRead)) {
+      case RowsRead(:final value):
+        read = value;
+      case RowsUnreadable(:final problem):
+        entry.verdict =
+            NotRecorded('the server rows could not be read: $problem');
         return;
     }
-    if (await _arrive(strategyId, what, read, stamp)) {
-      _expectPage(read, settings);
-      await _check(strategyId);
+    if (await _arrive(entry, read)) {
+      _expected.page(read);
+      _openPage = read.page.publicId;
+      await _compare(entry);
     }
   }
 
-  Future<void> _start(String strategyId, HeaderRead header, int stamp) async {
-    _strategyId = strategyId;
-    _inStore = false;
-    _binding = null;
-    _expected = null;
+  Future<bool> _bindFor(LedgerEntry entry, ResultTag tag) async {
+    final bound = _bound;
+    if (bound == tag) return true;
+    if (bound != null && !_newer(tag, bound)) {
+      entry.verdict = Skipped(
+        tag.connection! < bound.connection!
+            ? SkipReason.endedConnection
+            : SkipReason.earlierAccount,
+      );
+      return false;
+    }
+    final (because, event) = bound == null || tag.connection != bound.connection
+        ? ('the connection came back', const ConnectionReturned())
+        : ('the account changed', const AccountChanged());
+    return _open(entry, tag, because, [event]);
+  }
+
+  Future<bool> _open(
+    LedgerEntry entry,
+    ResultTag tag,
+    String because,
+    List<QueueEvent> events,
+  ) async {
+    _bound = null;
+    if (await _record(entry.strategyId, entry, events) == null) return false;
+    final session = await _sessionOf(entry);
+    if (session == null) return false;
+    _bound = tag;
+    reports.add(ShadowSessionOpened(entry.strategyId, session, because));
+    return true;
+  }
+
+  Future<void> _start(
+    LedgerEntry entry,
+    HeaderRead header,
+    ResultTag tag,
+  ) async {
+    final strategyId = entry.strategyId;
     final StrategySummary? listed;
     switch (store.library) {
       case LibraryOpen(:final list):
@@ -247,239 +364,254 @@ final class CloudShadow {
             .where((summary) => summary.publicId == strategyId)
             .firstOrNull;
       case LibraryShut(:final failure):
-        reports.add(
-          ShadowStoreFailed(
-              'reading the library list', failure, StoreStep.read),
+        entry.verdict = NotRecorded(
+          'the store is shut: ${storageFailureWords(failure, StoreStep.read)}',
         );
         return;
     }
     switch (listed?.sync) {
       case null:
-        await _add(strategyId, header, stamp);
-      case KeptHere():
-        reports.add(ShadowSkipped(
-          strategyId,
-          'the page list',
-          'the store holds it as a local strategy',
-        ));
-        return;
-      case KeptInCloud() || CloudUnverified():
-        final because = _openedThisRun.add(strategyId)
-            ? 'the app started'
-            : 'the strategy was opened again';
-        await _open(strategyId, stamp, because, [
-          if (because == 'the app started') AppRestarted(build: build),
-          const ConnectionReturned(),
-        ]);
-        if (_binding == null) return;
-        if (await _arrive(strategyId, 'the page list', header, stamp)) {
-          _expectHeader(header);
+        _openedThisRun.add(strategyId);
+        switch (await store.addCloudStrategy(header, const [])) {
+          case Saved():
+            final session = await _sessionOf(entry);
+            if (session == null) return;
+            _bound = tag;
+            _inStore = true;
+            reports.add(
+              ShadowSessionOpened(
+                  strategyId, session, 'the strategy was added'),
+            );
+            _expected.header(header);
+            await _compare(entry);
+          case NothingToSave():
+            entry.verdict = const NotRecorded('the store saved nothing');
+          case Refused(:final reason):
+            entry.verdict = NotRecorded(
+              'the store refused it: ${reason.runtimeType} $reason',
+            );
+          case NotSaved(:final failure):
+            entry.verdict = NotRecorded(
+              storageFailureWords(failure, StoreStep.refusedSave),
+            );
+          case SaveInDoubt(:final failure):
+            entry.verdict = NotRecorded(
+              storageFailureWords(failure, StoreStep.saveInDoubt),
+            );
         }
-    }
-    if (_binding == null) return;
-    _inStore = true;
-    switch (_waitingPage) {
-      case (:final page, stamp: final pageStamp) when pageStamp == stamp:
-        _waitingPage = null;
-        await _arrivePage(strategyId, page, pageStamp);
-      case _:
-        await _check(strategyId);
-    }
-  }
-
-  Future<void> _add(String strategyId, HeaderRead header, int stamp) async {
-    const what = 'adding the strategy';
-    _openedThisRun.add(strategyId);
-    final result = await store.addCloudStrategy(header, const []);
-    switch (result) {
-      case Saved():
-        final session = await _sessionOf(strategyId);
-        if (session == null) {
-          reports.add(ShadowSkipped(strategyId, what, 'not added as cloud'));
+      case KeptHere():
+        entry.verdict = const NotRecorded(
+          'the store holds this id as a strategy kept on this device',
+        );
+      case KeptInCloud() || CloudUnverified():
+        final restarted = _openedThisRun.add(strategyId);
+        if (!await _open(
+          entry,
+          tag,
+          restarted ? 'the app started' : 'the strategy was opened again',
+          [
+            if (restarted) AppRestarted(build: build),
+            const ConnectionReturned(),
+          ],
+        )) {
           return;
         }
-        _binding = (stamp: stamp, session: session);
-        reports.add(
-          ShadowSessionOpened(strategyId, session, 'the strategy was added'),
-        );
-        reports.add(ShadowRecorded(strategyId, 'the page list', session));
-        _expectHeader(header);
-      case NothingToSave():
-        reports.add(ShadowSkipped(strategyId, what, 'nothing to save'));
-      case Refused(:final reason):
-        reports.add(ShadowRefused(strategyId, what, reason));
-      case NotSaved(:final failure):
-        reports.add(ShadowStoreFailed(what, failure, StoreStep.refusedSave));
-      case SaveInDoubt(:final failure):
-        reports.add(ShadowStoreFailed(what, failure, StoreStep.saveInDoubt));
+        _inStore = true;
+        if (await _arrive(entry, header)) {
+          _expected.header(header);
+          await _compare(entry);
+        }
     }
   }
 
-  Future<void> _open(
-    String strategyId,
-    int stamp,
-    String because,
-    List<QueueEvent> events,
-  ) async {
-    _binding = null;
-    final recorded = await _record(strategyId, because, events);
-    if (recorded == null) return;
-    final session = await _sessionOf(strategyId);
-    if (session == null) {
-      reports.add(ShadowSkipped(strategyId, because, 'no cloud queue'));
-      return;
-    }
-    _binding = (stamp: stamp, session: session);
-    _expected = null;
-    reports.add(ShadowSessionOpened(strategyId, session, because));
-  }
-
-  Future<bool> _arrive(
-    String strategyId,
-    String what,
-    ArrivedBase base,
-    int stamp,
-  ) async {
-    final binding = _binding;
-    if (binding == null || binding.stamp != stamp || _stamp != stamp) {
-      reports.add(
-        ShadowSkipped(strategyId, what, 'received on a connection that ended'),
-      );
-      return false;
-    }
-    final recorded = await _record(strategyId, what, [
-      BaseArrived(base, session: binding.session),
+  Future<bool> _arrive(LedgerEntry entry, ArrivedBase base) async {
+    final session = await _sessionOf(entry);
+    if (session == null) return false;
+    final recorded = await _record(entry.strategyId, entry, [
+      BaseArrived(base, session: session),
     ]);
     if (recorded == null) return false;
     for (final outcome in recorded.outcomes) {
-      if (outcome case ReportNotApplicable(:final why)) {
-        reports.add(ShadowNotApplied(strategyId, what, '$why'));
-        return false;
+      switch (outcome) {
+        case ReportNotApplicable(why: FromAnEndedSession()):
+          entry.verdict = const Skipped(SkipReason.endedSession);
+          return false;
+        case ReportNotApplicable(:final why):
+          entry.verdict = NotRecorded('the queue did not apply it: $why');
+          return false;
+        case ReportApplied() || EditsGoThroughCommit():
+          break;
       }
     }
-    reports.add(ShadowRecorded(strategyId, what, binding.session));
     return true;
   }
 
   Future<Recorded?> _record(
     String strategyId,
-    String what,
+    LedgerEntry? entry,
     List<QueueEvent> events,
   ) async {
+    void failed(String why) {
+      if (entry != null) {
+        entry.verdict = NotRecorded(why);
+      } else {
+        stop(why);
+      }
+    }
+
     switch (await store.record(strategyId, events)) {
       case Saved(:final value):
         return value;
       case NothingToSave():
-        return null;
+        failed('the store saved nothing');
       case Refused(:final reason):
-        reports.add(ShadowRefused(strategyId, what, reason));
+        failed('the store refused it: ${reason.runtimeType} $reason');
       case NotSaved(:final failure):
-        reports.add(ShadowStoreFailed(what, failure, StoreStep.refusedSave));
+        failed(storageFailureWords(failure, StoreStep.refusedSave));
       case SaveInDoubt(:final failure):
-        reports.add(ShadowStoreFailed(what, failure, StoreStep.saveInDoubt));
+        failed(storageFailureWords(failure, StoreStep.saveInDoubt));
     }
     return null;
   }
 
-  Future<int?> _sessionOf(String strategyId) async =>
-      switch (await store.readStrategy(strategyId)) {
-        Found(value: StrategyContent(sync: CloudStrategy(:final queue))) =>
-          queue.session.number,
-        Found() || NotFound() || InUnreadableStrategy() => null,
-        NotRead(:final failure) => () {
-            reports.add(ShadowStoreFailed(
-              'reading the session back',
-              failure,
-              StoreStep.read,
-            ));
-            return null;
-          }(),
-      };
-
-  _Expected _expectedFor(String pageId) => switch (_expected) {
-        final expected? when expected.pageId == pageId => expected,
-        _ => _expected = _Expected(pageId),
-      };
-
-  void _expectHeader(HeaderRead header) {
-    final expected = _expected;
-    if (expected == null) return;
-    for (final page in header.pages) {
-      if (page.publicId == expected.pageId) expected.page = page;
+  Future<int?> _sessionOf(LedgerEntry entry) async {
+    switch (await store.readStrategy(entry.strategyId)) {
+      case Found(value: StrategyContent(sync: CloudStrategy(:final queue))):
+        return queue.session.number;
+      case Found():
+        entry.verdict = const NotRecorded('the store holds no cloud queue');
+      case NotFound():
+        entry.verdict = const NotRecorded('the store does not hold it');
+      case InUnreadableStrategy():
+        entry.verdict = const NotRecorded('the store lists it as unreadable');
+      case NotRead(:final failure):
+        entry.verdict =
+            NotRecorded(storageFailureWords(failure, StoreStep.read));
     }
-    for (final settings in header.settings) {
-      if (settings.pagePublicId == expected.pageId) {
-        expected.settings = settings;
-      }
+    return null;
+  }
+
+  Future<void> _compare(LedgerEntry entry) async {
+    final differences = await differencesIn(store);
+    entry.verdict = differences.isEmpty
+        ? const ComparedEqual()
+        : ComparedDifferent(differences);
+  }
+
+  Future<List<String>> differencesIn(LibraryStore other) async {
+    final strategyId = _strategyId;
+    if (strategyId == null || !_inStore) return const [];
+    return [
+      ...await _strategyDifferences(other, strategyId),
+      if (_openPage case final pageId?)
+        ...await _pageDifferences(other, strategyId, pageId),
+    ];
+  }
+
+  Future<List<String>> _strategyDifferences(
+    LibraryStore other,
+    String strategyId,
+  ) async {
+    final expected = _expected;
+    switch (await other.readStrategy(strategyId)) {
+      case Found(value: final content):
+        final shownPages = [for (final page in content.pages) page.publicId];
+        final sentPages = [
+          for (final page in _ordered(expected.pages.values)) page.publicId,
+        ];
+        return [
+          if (expected.strategy case final row? when content.strategy != row)
+            'strategy row: ${_rowWords(content.strategy, row)}',
+          if (shownPages.join(',') != sentPages.join(','))
+            'page list: the store holds ${shownPages.join(', ')}, the server '
+                'sent ${sentPages.join(', ')}',
+          for (final page in content.pages)
+            if (expected.pages[page.publicId] case final sent?
+                when sent != page)
+              'page row ${page.publicId}: ${_rowWords(page, sent)}',
+          ..._differences(
+            'page settings',
+            content.settings,
+            expected.settings,
+          ),
+          for (final row in content.unplaced) 'unplaced: ${row.ref}',
+          for (final name in content.foreignNames)
+            'a name this build does not know: ${name.area}/${name.name}',
+        ];
+      case NotFound():
+        return const ['the store does not hold the strategy'];
+      case InUnreadableStrategy():
+        return const ['the store lists the strategy as unreadable'];
+      case NotRead(:final failure):
+        return [
+          'reading the strategy back: '
+              '${storageFailureWords(failure, StoreStep.read)}',
+        ];
     }
   }
 
-  void _expectPage(PageRead read, PageSettingsRow settings) {
-    final expected = _expectedFor(read.page.publicId)
-      ..page = read.page
-      ..settings = settings
-      ..elements = {for (final row in read.elements) row.publicId: row}
-      ..lineupGroups = {
-        for (final row in read.lineupGroups) row.publicId: row,
-      };
-    _expected = expected;
-  }
-
-  Future<void> _check(String strategyId) async {
+  Future<List<String>> _pageDifferences(
+    LibraryStore other,
+    String strategyId,
+    String pageId,
+  ) async {
     final expected = _expected;
-    if (expected == null || !expected.complete) return;
-    switch (await store.readPage(strategyId, expected.pageId)) {
-      case Found(:final value):
-        final differences = pageDifferences(
-          shown: value,
-          page: expected.page!,
-          settings: expected.settings!,
-          elements: expected.elements!,
-          lineupGroups: expected.lineupGroups!,
-        );
-        reports.add(
-          differences.isEmpty
-              ? ShadowEqual(
-                  strategyId,
-                  expected.pageId,
-                  2 + expected.elements!.length + expected.lineupGroups!.length,
-                )
-              : ShadowDiffers(strategyId, expected.pageId, differences),
+    final sentPage = expected.pages[pageId];
+    switch (await other.readPage(strategyId, pageId)) {
+      case Found(value: final shown):
+        if (sentPage == null) {
+          return ['page $pageId: the store holds it, the server dropped it'];
+        }
+        return pageDifferences(
+          shown: shown,
+          page: sentPage,
+          settings: expected.settings[pageId],
+          elements: expected.elements[pageId] ?? const {},
+          lineupGroups: expected.lineupGroups[pageId] ?? const {},
         );
       case NotFound():
-        reports.add(ShadowDiffers(
-          strategyId,
-          expected.pageId,
-          const ['the store does not hold the page'],
-        ));
-      case NotRead(:final failure):
-        reports.add(
-          ShadowStoreFailed('reading the page back', failure, StoreStep.read),
-        );
+        return [
+          if (sentPage != null) 'page $pageId: missing from the store',
+        ];
       case InUnreadableStrategy():
-        reports.add(ShadowDiffers(
-          strategyId,
-          expected.pageId,
-          const ['the store lists the strategy as unreadable'],
-        ));
+        return const ['the store lists the strategy as unreadable'];
+      case NotRead(:final failure):
+        return [
+          'reading page $pageId back: '
+              '${storageFailureWords(failure, StoreStep.read)}',
+        ];
     }
   }
 }
 
+List<PageRow> _ordered(Iterable<PageRow> pages) => [...pages]..sort(
+    (a, b) => switch ((_sortOf(a), _sortOf(b))) {
+      (final x, final y) when x != y => x.compareTo(y),
+      _ => a.publicId.compareTo(b.publicId),
+    },
+  );
+
+int _sortOf(PageRow page) => switch (page) {
+      ReadablePageRow(:final sortIndex) => sortIndex,
+      UnreadablePage(:final sortIndex) => sortIndex ?? 1 << 31,
+    };
+
 List<String> pageDifferences({
   required PageContent shown,
   required PageRow page,
-  required PageSettingsRow settings,
+  required PageSettingsRow? settings,
   required Map<String, ElementRow> elements,
   required Map<String, LineupGroupRow> lineupGroups,
 }) =>
     [
       if (shown.page != page) 'page row: ${_rowWords(shown.page, page)}',
-      switch (shown.settings) {
-        SettingsStored(:final row) when row == settings => null,
-        SettingsStored(:final row) =>
-          'page settings: ${_rowWords(row, settings)}',
-        NoSettingsStored() => 'page settings: the store holds none',
+      switch ((shown.settings, settings)) {
+        (SettingsStored(:final row), final sent?) when row == sent => null,
+        (NoSettingsStored(), null) => null,
+        (SettingsStored(:final row), final sent) =>
+          'page settings: ${_rowWords(row, sent)}',
+        (NoSettingsStored(), final sent) =>
+          'page settings: ${_rowWords(null, sent)}',
       },
       ..._differences(
         'item',
@@ -494,9 +626,11 @@ List<String> pageDifferences({
       for (final row in shown.unknownKinds)
         'a kind this build skips: ${row.key}',
       for (final row in shown.unplaced) 'unplaced: ${row.ref}',
+      for (final name in shown.foreignNames)
+        'a name this build does not know: ${name.area}/${name.name}',
     ].nonNulls.toList();
 
-Iterable<String> _differences<T extends Row>(
+Iterable<String> _differences<T extends Object>(
   String kind,
   Map<String, T> shown,
   Map<String, T> server,
@@ -527,6 +661,8 @@ String _brief(Object? row) => switch (row) {
       ReadablePageSettings(:final revision) => 'revision $revision',
       LiveLineupGroup(:final revision) => 'live at revision $revision',
       DeletedLineupGroup(:final revision) => 'deleted at revision $revision',
+      ReadableStrategy(:final revision, :final name) =>
+        '"$name" at revision $revision',
       null => 'nothing',
       _ => '${row.runtimeType}',
     };

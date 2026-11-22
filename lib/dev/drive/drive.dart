@@ -172,7 +172,6 @@ import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
-import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/interactive_map.dart';
@@ -311,10 +310,7 @@ Future<void> _play(String script) async {
   _log('RUN $_runId $script');
   _countLibraryBoxEvents();
   _log(await firstFrameLine(appProviderContainer));
-  if (appProviderContainer.read(cloudStoreSwitchProvider)
-      case final CloudStoreShadow choice) {
-    _log('CLOUDSTORE switch ${cloudSwitchName(choice)}');
-  }
+  if (_cloudStore.isOn(appProviderContainer)) _log('CLOUDSTORE switch shadow');
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
       _failedSteps++;
@@ -364,6 +360,7 @@ Future<void> _play(String script) async {
     if (line.startsWith('FAIL')) _failedSteps++;
     _log(line);
   }
+  _logCloudStore(await _cloudStore.readBack(appProviderContainer));
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
   _log(
     'SUMMARY steps=$_steps failed=$_failedSteps '
@@ -1448,8 +1445,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _hover(
         _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id)),
       );
+    case 'signOut':
+      await c.read(authProvider.notifier).signOut();
+      await _waitFor(() => c.read(authProvider).user == null, 60);
     case 'signIn':
-      final email = Platform.environment['ICARUS_DRIVE_EMAIL']!;
+      final second = value == 'second';
+      final email = second
+          ? Platform.environment['ICARUS_DRIVE_EMAIL_2']!
+          : Platform.environment['ICARUS_DRIVE_EMAIL']!;
       final signedIn = Supabase.instance.client.auth.currentUser?.email;
       if (signedIn != null && signedIn != email) {
         throw StateError('signed in as $signedIn, not $email');
@@ -1458,7 +1461,9 @@ Future<void> _run(Map<String, dynamic> step) async {
         final error =
             await c.read(authProvider.notifier).signInWithEmailPassword(
                   email: email,
-                  password: Platform.environment['ICARUS_DRIVE_PASSWORD']!,
+                  password: second
+                      ? Platform.environment['ICARUS_DRIVE_PASSWORD_2']!
+                      : Platform.environment['ICARUS_DRIVE_PASSWORD']!,
                 );
         if (error != null) throw StateError(error);
       }
