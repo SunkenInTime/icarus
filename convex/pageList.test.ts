@@ -53,6 +53,11 @@ type Shell = { header: Header; pages: Descriptor[] };
 const strategyPublicId = "page-list";
 const firstPage = "page-list-page-1";
 const settings = { agentSize: 40, abilitySize: 30, useNeutralTeamColors: true };
+const otherSettings = {
+  agentSize: 25,
+  abilitySize: 45,
+  useNeutralTeamColors: false,
+};
 
 let opCounter = 0;
 
@@ -137,6 +142,31 @@ async function addPage(who: Harness, pagePublicId: string, sortIndex: number) {
   ]);
 }
 
+async function setSettings(
+  who: Harness,
+  pages: Record<string, Record<string, unknown>>,
+  more: Array<Record<string, unknown>> = [],
+) {
+  const list = await pageList(who);
+  await apply(who, [
+    ...Object.entries(pages).map(([pagePublicId, pageSettings]) => ({
+      type: "pageContent.patch",
+      pagePublicId,
+      settings: pageSettings,
+      expectedPageContentRevision: list.pages.find(
+        (page) => page.publicId === pagePublicId,
+      )!.contentRevision,
+    })),
+    ...more,
+  ]);
+}
+
+function settingsByPage(list: PageList) {
+  return Object.fromEntries(
+    list.pages.map((page) => [page.publicId, page.settings]),
+  );
+}
+
 function withoutContent(page: ListedPage): Descriptor {
   const {
     settings: _settings,
@@ -168,6 +198,43 @@ describe("strategy:getPageList", () => {
     const { users } = await createHarness();
     await expect(shell(users.stranger)).rejects.toThrow("Forbidden");
     await expect(pageList(users.stranger)).rejects.toThrow("Forbidden");
+  });
+
+  test("a share link that was never redeemed reads what getShell reads, signed in or out", async () => {
+    const { t, users } = await createHarness();
+    const shareToken = "unredeemed-link";
+    await users.owner.mutation(createShare, {
+      ...protocol,
+      targetType: "strategy",
+      targetPublicId: strategyPublicId,
+      token: shareToken,
+      role: "editor",
+    });
+    await addPage(users.owner, "page-2", 1);
+    await setSettings(users.owner, { "page-2": settings });
+
+    for (const who of [t, users.stranger]) {
+      const withLink = { ...protocol, strategyPublicId, shareToken };
+      const list = (await who.query(getPageList, withLink)) as PageList;
+      const fromShell = (await who.query(getShell, withLink)) as Shell;
+      expect(list.header).toEqual(fromShell.header);
+      expect(list.header.role).toBe("viewer");
+      expect(list.pages.map(withoutContent)).toEqual(fromShell.pages);
+      expect(settingsByPage(list)).toEqual({
+        [firstPage]: null,
+        "page-2": settings,
+      });
+
+      const withoutLink = { ...protocol, strategyPublicId };
+      const refusal = (query: typeof getShell) =>
+        who.query(query, withoutLink).then(
+          () => null,
+          (error: Error) => error.message,
+        );
+      const shellRefusal = await refusal(getShell);
+      expect(shellRefusal).not.toBeNull();
+      expect(await refusal(getPageList)).toEqual(shellRefusal);
+    }
   });
 
   test("a trashed page is left out, as getShell leaves it out", async () => {
@@ -262,6 +329,10 @@ describe("strategy:getPageList", () => {
     test("reordering pages", async () => {
       const { users } = await createHarness();
       await addPage(users.owner, "page-2", 1);
+      await setSettings(users.owner, {
+        [firstPage]: settings,
+        "page-2": otherSettings,
+      });
       const before = await pageList(users.owner);
       await apply(users.owner, [
         {
@@ -278,9 +349,42 @@ describe("strategy:getPageList", () => {
         "page-2",
         firstPage,
       ]);
-      expect(after.pages.map((page) => page.settings)).toEqual(
-        before.pages.map((page) => page.settings).reverse(),
+      expect(after.pages.map((page) => page.settings)).toEqual([
+        otherSettings,
+        settings,
+      ]);
+      expect(settingsByPage(after)).toEqual(settingsByPage(before));
+    });
+
+    test("changing two pages' settings and their order together", async () => {
+      const { users } = await createHarness();
+      await addPage(users.owner, "page-2", 1);
+      await addPage(users.owner, "page-3", 2);
+      const { header } = await pageList(users.owner);
+      await setSettings(
+        users.owner,
+        { [firstPage]: otherSettings, "page-3": settings },
+        [
+          {
+            type: "page.reorder",
+            pagePublicId: "page-3",
+            sortIndex: 0,
+            expectedStrategyRevision: header.revision,
+          },
+        ],
       );
+      const after = await pageList(users.owner);
+
+      expect(after.pages.map((page) => page.publicId)).toEqual([
+        "page-3",
+        firstPage,
+        "page-2",
+      ]);
+      expect(settingsByPage(after)).toEqual({
+        "page-3": settings,
+        [firstPage]: otherSettings,
+        "page-2": null,
+      });
     });
 
     test("changing a page's settings", async () => {

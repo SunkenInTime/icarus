@@ -95,22 +95,23 @@ export const getPageList = query({
       await listLivePages(ctx, strategy._id),
       "sortIndex",
     );
-    const contents = await Promise.all(
-      pages.map((page) => getPageContent(ctx, page._id)),
-    );
 
     return {
       header: serializeStrategyHeader(strategy, role),
-      pages: pages.map((page, index) => {
-        const content = serializePageContent(contents[index]!);
-        return {
-          ...serializePageDescriptor(strategy.publicId, page),
-          settings: content.settings,
-          contentRevision: content.revision,
-          contentCreatedAt: content.createdAt,
-          contentUpdatedAt: content.updatedAt,
-        };
-      }),
+      pages: await Promise.all(
+        pages.map(async (page) => {
+          const content = serializePageContent(
+            await getPageContent(ctx, page._id),
+          );
+          return {
+            ...serializePageDescriptor(strategy.publicId, page),
+            settings: content.settings,
+            contentRevision: content.revision,
+            contentCreatedAt: content.createdAt,
+            contentUpdatedAt: content.updatedAt,
+          };
+        }),
+      ),
     };
   },
 });
