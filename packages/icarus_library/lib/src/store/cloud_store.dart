@@ -1588,7 +1588,8 @@ extension _CloudStore on LibraryStore {
       case _NumbersRowUnreadable():
         return const Refused(NumbersUnreadable());
       case _NoNumbersRow():
-        if (!await _noCloudAreaStored()) {
+        if (_summaries.values.any((summary) => summary.sync is! KeptHere) ||
+            !await _noCloudAreaStored()) {
           return const Refused(NumbersUnreadable());
         }
       case _NumbersRowRead():

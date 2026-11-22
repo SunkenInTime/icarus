@@ -1696,6 +1696,7 @@ void main() {
           'it is listed as unreadable',
           (contents) => contents[area]!['strategy'] = '{"broken":true}',
         ),
+        ('only its summary is left', (contents) => contents.remove(area)),
       ]) {
         test('with the numbers row missing, import is refused while a cloud '
             'strategy exists and $label', () async {
