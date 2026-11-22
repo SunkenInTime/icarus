@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:icarus/config/drive_build.dart';
+import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/sort_index_order.dart';
@@ -436,8 +438,11 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       }
       final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
       return ValueListenableBuilder(
-        valueListenable: box.listenable(keys: [strategyId]),
+        valueListenable: driveBuild
+            ? countedForDrive(box.listenable(keys: [strategyId]), 'pages-bar')
+            : box.listenable(keys: [strategyId]),
         builder: (context, Box<StrategyData> b, _) {
+          if (driveBuild) countDriveBuild('pages-bar');
           final data = _buildLocalData(b, strategyId, activePageId);
           if (data == null || data.pages.isEmpty) {
             return const SizedBox.shrink();

@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/config/drive_build.dart';
+import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -194,11 +196,17 @@ class FolderContent extends ConsumerWidget {
     final strategiesBoxListenable = ref.watch(strategiesListenable);
     final foldersBoxListenable = ref.watch(foldersListenable);
     return ValueListenableBuilder<Box<StrategyData>>(
-      valueListenable: strategiesBoxListenable,
+      valueListenable: driveBuild
+          ? countedForDrive(strategiesBoxListenable, 'library-strategies')
+          : strategiesBoxListenable,
       builder: (context, strategyBox, _) {
+        if (driveBuild) countDriveBuild('library-strategies');
         return ValueListenableBuilder<Box<Folder>>(
-          valueListenable: foldersBoxListenable,
+          valueListenable: driveBuild
+              ? countedForDrive(foldersBoxListenable, 'library-folders')
+              : foldersBoxListenable,
           builder: (context, folderBox, _) {
+            if (driveBuild) countDriveBuild('library-folders');
             final allFolders = folderBox.values.toList();
             final allStrategies = strategyBox.values.toList();
             final existingFolderIds = allFolders.map((item) => item.id).toSet();

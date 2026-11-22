@@ -170,6 +170,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
+import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -295,6 +296,7 @@ Future<void> _play(String script) async {
     exit(0);
   }
   _log('RUN $_runId $script');
+  _countLibraryBoxEvents();
   _log(await firstFrameLine(appProviderContainer));
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
@@ -327,10 +329,12 @@ Future<void> _play(String script) async {
       _failedSteps++;
       _log('FAIL checking items: $error');
     }
+    _logScreensIfChanged('step $_steps');
     await _flush();
   }
   await Future.wait(_pictureWatches);
   _log(_runFrames.stop());
+  _log(buildsLine());
   try {
     (await mirrorEndLines(appProviderContainer)).forEach(_log);
   } on StoreStepFailed catch (failed) {
@@ -349,6 +353,48 @@ Future<void> _play(String script) async {
   );
   await _flush();
   if (steps.any((step) => step is Map && step['exit'] != null)) exit(0);
+}
+
+var _libraryLogged = <String>[];
+var _pagesBarLogged = <String>[];
+
+void _logLibrary(String label, List<String> library) {
+  _libraryLogged = library;
+  _log('LIBRARY $label ${library.length} on screen');
+  for (final line in library) {
+    _log('LIBRARY $label $line');
+  }
+}
+
+void _logPagesBar(String label, List<String> bar) {
+  _pagesBarLogged = bar;
+  _log('PAGESBAR $label ${bar.isEmpty ? 'none' : bar.join(' | ')}');
+}
+
+var _buildsLogged = '';
+
+void _countLibraryBoxEvents() {
+  Hive.box<StrategyData>(HiveBoxNames.strategiesBox).watch().listen((event) {
+    countLibraryBoxEvent('strategies-box');
+    if (event.key == appProviderContainer.read(strategyProvider).strategyId) {
+      countLibraryBoxEvent('open-strategy-box');
+    }
+  });
+  Hive.box<Folder>(HiveBoxNames.foldersBox)
+      .watch()
+      .listen((_) => countLibraryBoxEvent('folders-box'));
+}
+
+void _logScreensIfChanged(String label) {
+  final library = libraryOnScreen();
+  if (!listEquals(library, _libraryLogged)) _logLibrary(label, library);
+  final bar = pagesBarOnScreen();
+  if (!listEquals(bar, _pagesBarLogged)) _logPagesBar(label, bar);
+  final builds = buildCounts();
+  if (builds != _buildsLogged) {
+    _buildsLogged = builds;
+    _log('BUILDS $label $builds');
+  }
 }
 
 Object? _expand(Object? value) => switch (value) {
@@ -1652,6 +1698,10 @@ Future<void> _run(Map<String, dynamic> step) async {
               '${utility.position.dy.toStringAsFixed(1)}) '
               'door=${utility.mapDoor}',
       ]}');
+    case 'logLibrary':
+      _logLibrary('$value', libraryOnScreen());
+    case 'logPagesBar':
+      _logPagesBar('$value', pagesBarOnScreen());
     case 'logPage':
       _log(
         'PAGE $value strategy=${c.read(strategyProvider).strategyName} '
