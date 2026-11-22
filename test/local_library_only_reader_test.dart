@@ -54,11 +54,65 @@ bool _mentionsLibraryBox(DartType? type) =>
 bool _mayBeARecord(DartType? type) =>
     _isLibraryModel(type) || type is DynamicType;
 
+bool _isABoxName(String? text) =>
+    text != null && _boxFileNames.contains(text.toLowerCase());
+
+String? _textOf(Expression expression, Set<String> aliases) =>
+    switch (expression) {
+      SimpleStringLiteral(:final value) => value,
+      AdjacentStrings(:final strings) => switch ([
+          for (final part in strings) _textOf(part, aliases),
+        ]) {
+          final parts when parts.every((part) => part != null) => parts.join(),
+          _ => null,
+        },
+      BinaryExpression(
+        :final leftOperand,
+        :final operator,
+        :final rightOperand,
+      )
+          when operator.lexeme == '+' =>
+        switch ((
+          _textOf(leftOperand, aliases),
+          _textOf(rightOperand, aliases),
+        )) {
+          (final left?, final right?) => left + right,
+          _ => null,
+        },
+      ParenthesizedExpression(:final expression) =>
+        _textOf(expression, aliases),
+      PrefixedIdentifier(:final identifier) ||
+      PropertyAccess(propertyName: final identifier)
+          when _boxNames.contains(identifier.name) =>
+        _boxFileNames.elementAt(
+          _boxNames.toList().indexOf(identifier.name),
+        ),
+      SimpleIdentifier(:final name) when aliases.contains(name) =>
+        _boxFileNames.first,
+      _ => null,
+    };
+
+final class _AliasFinder extends RecursiveAstVisitor<void> {
+  _AliasFinder(this.aliases);
+
+  final Set<String> aliases;
+
+  @override
+  void visitVariableDeclaration(VariableDeclaration node) {
+    if (node.initializer case final value?
+        when _isABoxName(_textOf(value, aliases))) {
+      aliases.add(node.name.lexeme);
+    }
+    super.visitVariableDeclaration(node);
+  }
+}
+
 final class _ReadFinder extends RecursiveAstVisitor<void> {
-  _ReadFinder(this.unit, this.path);
+  _ReadFinder(this.unit, this.path, this.aliases);
 
   final ResolvedUnitResult unit;
   final String path;
+  final Set<String> aliases;
   final found = <(int, String)>{};
 
   void _found(AstNode node, String what) =>
@@ -81,14 +135,28 @@ final class _ReadFinder extends RecursiveAstVisitor<void> {
   }
 
   @override
+  void visitArgumentList(ArgumentList node) {
+    for (final argument in node.arguments) {
+      if (_isABoxName(_textOf(argument, aliases))) {
+        _found(argument, 'box name');
+      }
+    }
+    super.visitArgumentList(node);
+  }
+
+  @override
   void visitSimpleStringLiteral(SimpleStringLiteral node) {
-    if (_boxFileNames.contains(node.value)) _found(node, 'box name');
+    if (_isABoxName(node.value)) _found(node, 'box name');
     super.visitSimpleStringLiteral(node);
   }
 
   @override
   void visitMethodInvocation(MethodInvocation node) {
     if (_mentionsLibraryBox(node.staticType)) _found(node, 'box');
+    if (node.methodName.name == 'get' &&
+        node.realTarget?.staticType is DynamicType) {
+      _found(node.methodName, 'held box');
+    }
     super.visitMethodInvocation(node);
   }
 
@@ -114,6 +182,7 @@ Future<Map<String, List<(int, String)>>> _readsIn(List<String> roots) async {
     sdkPath: _dartSdk,
   );
   final found = <String, List<(int, String)>>{};
+  final units = <(String, ResolvedUnitResult)>[];
   for (final context in collection.contexts) {
     final files = context.contextRoot.analyzedFiles().where(
           (file) => file.endsWith('.dart') && !file.endsWith('.g.dart'),
@@ -125,13 +194,20 @@ Future<Map<String, List<(int, String)>>> _readsIn(List<String> roots) async {
       if (unit is! ResolvedUnitResult) {
         fail('$path did not resolve: $unit');
       }
-      final finder = _ReadFinder(unit, path);
-      unit.unit.accept(finder);
-      if (finder.found.isNotEmpty) {
-        found[path] = finder.found.toList()
-          ..sort((a, b) =>
-              a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
-      }
+      units.add((path, unit));
+    }
+  }
+  final aliases = <String>{};
+  for (final (_, unit) in units) {
+    unit.unit.accept(_AliasFinder(aliases));
+  }
+  for (final (path, unit) in units) {
+    final finder = _ReadFinder(unit, path, aliases);
+    unit.unit.accept(finder);
+    if (finder.found.isNotEmpty) {
+      found[path] = finder.found.toList()
+        ..sort((a, b) =>
+            a.$1 != b.$1 ? a.$1.compareTo(b.$1) : a.$2.compareTo(b.$2));
     }
   }
   return found;
@@ -168,6 +244,7 @@ void main() {
       (14, 'record box'),
       (15, 'record box'),
       (16, 'box name'),
+      (17, 'box name'),
       (18, 'box name'),
       (19, 'box'),
       (20, 'box'),
@@ -177,6 +254,11 @@ void main() {
       (24, 'box type'),
       (26, 'box type'),
       (27, 'box'),
+      (30, 'box name'),
+      (31, 'box name'),
+      (32, 'box name'),
+      (33, 'box name'),
+      (34, 'held box'),
     ]);
   });
 }
