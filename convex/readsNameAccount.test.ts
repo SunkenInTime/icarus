@@ -42,14 +42,15 @@ async function createHarness(): Promise<{
   editor: Harness;
 }> {
   const t = convexTest(schema, modules);
-  const [owner, editor] = (["owner", "editor"] as const).map((subject) =>
+  const signedIn = (subject: string) =>
     t.withIdentity({
       issuer: "https://reads-name-account.test",
       subject,
       tokenIdentifier: `reads-name-account|${subject}`,
       name: subject,
-    }),
-  );
+    });
+  const owner = signedIn("owner");
+  const editor = signedIn("editor");
   for (const user of [owner, editor]) {
     await user.mutation(ensureCurrentUser, protocol);
   }
@@ -128,5 +129,18 @@ describe.each(Object.keys(reads) as Read[])("%s naming an account", (name) => {
     expect(await refusal(read(editor, name, named))).toContain(
       "Forbidden: signed in as a different account",
     );
+  });
+
+  test("is refused for the account before the strategy is looked for", async () => {
+    const { editor } = await createHarness();
+    const missing = { strategyPublicId: "no-such-strategy" };
+    expect(await refusal(read(editor, name, missing))).not.toContain(
+      "signed in as a different account",
+    );
+    expect(
+      await refusal(
+        read(editor, name, { ...missing, accountSubject: "owner" }),
+      ),
+    ).toContain("Forbidden: signed in as a different account");
   });
 });
