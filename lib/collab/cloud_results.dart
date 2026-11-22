@@ -119,6 +119,3 @@ ResultRows<PageRead> pageRead(RemotePageSnapshot page, CanRead canRead) =>
         ],
       ),
     );
-
-ResultRows<PageSettingsRow> pageSettingsRead(RemotePageSnapshot page) =>
-    _rows(() => _settings(page.page.publicId, page.content));

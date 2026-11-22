@@ -325,18 +325,19 @@ void main() {
   tapTests();
 }
 
-
 void tapTests() {
   group('the result tap', () {
     late _Server server;
     late ConvexStrategyRepository repository;
     late _Tap tap;
+    late List<Object> order;
     StreamSubscription<RemotePageSnapshot>? watching;
 
     setUp(() {
       server = _Server();
       repository = ConvexStrategyRepository(IcarusConvexApi(server));
-      tap = _Tap();
+      order = [];
+      tap = _Tap(order);
       repository.tap = tap;
     });
     tearDown(() => watching?.cancel());
@@ -344,7 +345,10 @@ void tapTests() {
     Future<void> watch() async {
       watching = repository
           .watchPageSnapshot(strategyPublicId: 'strategy', pagePublicId: 'p')
-          .listen((_) {}, onError: (_) {});
+          .listen(
+            (page) => order.add(('editor', page)),
+            onError: (Object error) => order.add(('editor error', error)),
+          );
       await pumpEventQueue();
     }
 
@@ -357,16 +361,25 @@ void tapTests() {
             ),
         ];
 
-    test('hands over each whole answer with the payload the server sent, '
-        'tagged with the read it answers', () async {
+    List<RemotePageSnapshot> editorPages() => [
+          for (final event in order)
+            if (event case ('editor', final RemotePageSnapshot page)) page,
+        ];
+
+    test(
+        'hears of each whole answer after the editor has it, with the '
+        'payload the server sent, under the read it answers', () async {
       await watch();
       final issue = tap.issues.single;
       server.publish(agents(3));
       await pumpEventQueue();
 
+      expect(order.map((event) => (event as (String, Object)).$1),
+          ['editor', 'tap']);
       final (strategyId, page, answered) = tap.pages.single;
       expect(strategyId, 'strategy');
       expect(answered, issue);
+      expect(page, same(editorPages().single));
       final sent = (server.page.toDart()['elements']! as List<Object?>)
           .cast<Map<Object?, Object?>>();
       expect(
@@ -379,57 +392,182 @@ void tapTests() {
       );
     });
 
-    test('hands over the answers of the slices under their own read, and a '
-        'read answered from the live slices is not handed over again',
-        () async {
+    test(
+        'hears of every page the editor is given, the saved whole page the '
+        'slices fall back to included', () async {
+      await watch();
+      server.holdParts = true;
+      server.publish(agents(20));
+      server.publish(agents(20, moved: _id(1)));
+      await pumpEventQueue();
+      server.publish(agents(20, moved: _id(2)));
+      await pumpEventQueue();
+      server.fail('page:getFrame', StateError('the slices failed'));
+      await pumpEventQueue();
+
+      final shown = editorPages();
+      expect(
+        shown.last.elements.singleWhere((e) => e.publicId == _id(2)).revision,
+        2,
+      );
+      expect(tap.pages.map((page) => page.$2), shown);
+    });
+
+    test(
+        'a read answered from the live slices is not heard of again, and a '
+        'watch that ends closes its reads', () async {
       await watch();
       server.publish(agents(20));
       server.publish(agents(20, moved: _id(1)));
       await pumpEventQueue();
-      final handedOver = tap.pages.length;
-      expect(tap.issues, hasLength(2));
-      expect(tap.pages.last.$3, tap.issues.last);
+      final heard = tap.pages.length;
 
       await repository.fetchPageSnapshot(
         strategyPublicId: 'strategy',
         pagePublicId: 'p',
       );
-      expect(tap.pages, hasLength(handedOver));
+      await pumpEventQueue();
+      expect(tap.pages, hasLength(heard));
+
+      await watching!.cancel();
+      watching = null;
+      await pumpEventQueue();
+      expect(tap.closed, containsAll(tap.issues));
     });
 
-    test('hands over a read from the server once, and its failure', () async {
+    test(
+        'hears of a read from the server once, and of a failed read after '
+        'its caller has the error', () async {
       await repository.fetchPageSnapshot(
         strategyPublicId: 'strategy',
         pagePublicId: 'p',
       );
+      await pumpEventQueue();
       expect(tap.pages, hasLength(1));
 
-      await watch();
-      server.fail('page:getSnapshot', StateError('the read broke'));
+      server.failReads = StateError('the read broke');
+      Object? caught;
+      try {
+        await repository.fetchPageSnapshot(
+          strategyPublicId: 'strategy',
+          pagePublicId: 'p',
+        );
+      } catch (error) {
+        caught = error;
+        order.add(('caller error', error));
+      }
       await pumpEventQueue();
+
+      expect(caught, isA<StateError>());
       expect(tap.failures.single.$2, 'page p');
+      expect(
+        order.map((event) => (event as (String, Object)).$1).toList().last2,
+        ['caller error', 'tap failure'],
+      );
+    });
+
+    group('a tap that throws changes nothing for the editor', () {
+      test('when asked for a read', () async {
+        tap.throwOn = 'issued';
+        await watch();
+        server.publish(agents(3));
+        await pumpEventQueue();
+        await repository.fetchPageSnapshot(
+          strategyPublicId: 'strategy',
+          pagePublicId: 'p',
+        );
+
+        expect(editorPages(), hasLength(1));
+        expect(tap.pages, isEmpty);
+        expect(tap.tapFailures, hasLength(2));
+      });
+
+      test('when told of a page', () async {
+        tap.throwOn = 'pageArrived';
+        await watch();
+        server.publish(agents(3));
+        server.publish(agents(3, moved: _id(1)));
+        await pumpEventQueue();
+
+        expect(editorPages(), hasLength(2));
+        expect(tap.tapFailures, hasLength(2));
+      });
+
+      test('when told of a failure', () async {
+        tap.throwOn = 'readFailed';
+        await watch();
+        server.fail('page:getSnapshot', StateError('the watch broke'));
+        await pumpEventQueue();
+        server.failReads = StateError('the read broke');
+        Object? caught;
+        try {
+          await repository.fetchPageSnapshot(
+            strategyPublicId: 'strategy',
+            pagePublicId: 'p',
+          );
+        } catch (error) {
+          caught = error;
+        }
+        await pumpEventQueue();
+
+        expect(
+          order.whereType<(String, Object)>().where(
+                (event) => event.$1 == 'editor error',
+              ),
+          hasLength(1),
+        );
+        expect(caught, isA<StateError>());
+        expect(tap.tapFailures, hasLength(2));
+      });
     });
   });
 }
 
+extension<T> on List<T> {
+  List<T> get last2 => sublist(length - 2);
+}
+
 final class _Tap implements ResultTap {
+  _Tap(this.order);
+
+  final List<Object> order;
   final issues = <int>[];
   final pages = <(String, RemotePageSnapshot, Object)>[];
   final failures = <(String, String, Object)>[];
+  final closed = <Object>[];
+  final tapFailures = <Object>[];
+  String? throwOn;
+
+  void _maybeThrow(String method) {
+    if (throwOn == method) throw StateError('the tap broke in $method');
+  }
 
   @override
-  Object issued() {
+  Object issued({required bool throughShareLink}) {
+    _maybeThrow('issued');
     issues.add(issues.length);
     return issues.last;
   }
 
   @override
-  void pageArrived(String strategyId, RemotePageSnapshot page, Object issue) =>
-      pages.add((strategyId, page, issue));
+  void pageArrived(String strategyId, RemotePageSnapshot page, Object issue) {
+    _maybeThrow('pageArrived');
+    order.add(('tap', page));
+    pages.add((strategyId, page, issue));
+  }
 
   @override
-  void readFailed(String strategyId, String what, Object error, Object issue) =>
-      failures.add((strategyId, what, error));
+  void readFailed(String strategyId, String what, Object error, Object issue) {
+    _maybeThrow('readFailed');
+    order.add(('tap failure', error));
+    failures.add((strategyId, what, error));
+  }
+
+  @override
+  void readClosed(Object issue) => closed.add(issue);
+
+  @override
+  void tapFailed(Object error) => tapFailures.add(error);
 }
 
 String _id(int index) =>
@@ -514,9 +652,12 @@ final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
       ? '$name from "${args.value['fromPublicId']!.toDart()}"'
       : name;
 
+  Object? failReads;
+
   @override
   Future<ConvexValue> query(String name, ConvexObject args) async {
     reads.add(_key(name, args));
+    if (failReads case final error?) throw error;
     return _answer(name, args);
   }
 

@@ -74,8 +74,7 @@ import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/startup/launch_clock.dart';
-import 'package:icarus/library_store/cloud_shadow_provider.dart';
-import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/library_store/store_startup.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy_view.dart';
@@ -291,19 +290,15 @@ Future<void> main(List<String> args) async {
         }
       }
 
-      final localShadow = storeLaunch.choice is! StoreSwitchOff &&
-          PlatformPolicy.current.allowsLocalLibrary;
-      final cloudShadow = storeLaunch.cloud is CloudStoreShadow;
-      final storeOpening = switch (hiveDirectoryPath) {
-        final String directory when localShadow || cloudShadow =>
-          appProviderContainer.read(libraryStoreProvider.notifier).open(
-                libraryStoreFile(directory),
-                build: cloudShadow ? Settings.versionName : '',
-              ),
-        _ => null,
-      };
-      final shadowStore = switch ((hiveDirectoryPath, storeOpening)) {
-        (final String directory, final opening?) when localShadow => (
+      final stores = openStores(
+        appProviderContainer,
+        storeLaunch,
+        hiveDirectory: hiveDirectoryPath,
+        allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
+        build: Settings.versionName,
+      );
+      final shadowStore = switch ((hiveDirectoryPath, stores.opening)) {
+        (final String directory, final opening?) when stores.localShadow => (
             opening: opening,
             directory: directory,
             mode: switch (storeLaunch.choice) {
@@ -369,15 +364,11 @@ Future<void> main(List<String> args) async {
           ),
         );
       }
-      if (storeOpening != null) closeLibraryStoreOnExit(appProviderContainer);
-      if (storeOpening != null && cloudShadow) {
-        unawaited(
-          appProviderContainer.read(cloudShadowProvider.notifier).begin(
-                opening: storeOpening,
-                build: Settings.versionName,
-              ),
-        );
+      if (stores.opening != null) {
+        closeLibraryStoreOnExit(appProviderContainer);
       }
+      beginCloudShadow(appProviderContainer, stores,
+          build: Settings.versionName);
       if (shadowStore case (:final opening, :final directory, :final mode)) {
         appProviderContainer.read(shadowProvider.notifier).begin(
               opening: opening,

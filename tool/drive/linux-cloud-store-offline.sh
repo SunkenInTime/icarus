@@ -18,10 +18,18 @@ log=$parent/$(basename "$out")-harness.log
 : > "$log"
 say() { echo "$(date +%T.%3N) $*" | tee -a "$log"; }
 
+run_pid=""
 cleanup() {
+  status=$?
   set +e
   sudo -n nft delete table inet "$table" 2>/dev/null
+  if [ -n "$run_pid" ] && kill -0 "$run_pid" 2>/dev/null; then
+    say "stopping the run"
+    systemctl --user stop "$unit.scope"
+    wait "$run_pid"
+  fi
   say "cleanup done; tables left: $(sudo -n nft list tables | grep -c "$table")"
+  exit "$status"
 }
 trap cleanup EXIT
 

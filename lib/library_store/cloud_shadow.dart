@@ -6,18 +6,12 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-typedef ResultTag = ({int? connection, int? account});
-
 enum SkipReason {
   receivedOffline('received while the app counted itself offline'),
   endedConnection('read on a connection that has since ended'),
-  earlierAccount('read under an account that has since changed'),
-  accountUnknown(
-    'its read crossed an account change, and the transport does not say '
-    'which account answered it',
-  ),
   endedSession('the queue answered that its session had ended'),
-  refusedByServer('the server answered the read with a refusal, not rows');
+  throughShareLink('read through a share link, which the shadow does not '
+      'follow');
 
   const SkipReason(this.words);
 
@@ -61,10 +55,11 @@ final class ReadFailed extends Verdict {
 }
 
 final class LedgerEntry {
-  LedgerEntry(this.strategyId, this.what);
+  LedgerEntry(this.strategyId, this.what, {this.pageId});
 
   final String strategyId;
   final String what;
+  final String? pageId;
   Verdict verdict = const NotProcessed();
 }
 
@@ -84,6 +79,12 @@ final class ShadowConnectionLost extends CloudShadowReport {
   const ShadowConnectionLost(this.strategyId);
 
   final String strategyId;
+}
+
+final class ShadowEnded extends CloudShadowReport {
+  const ShadowEnded(this.reason);
+
+  final String reason;
 }
 
 final class ShadowStopped extends CloudShadowReport {
@@ -175,8 +176,8 @@ String _idOf(Row row) => switch (row) {
 
 final class _Strategy {
   bool inStore = false;
-  ResultTag? bound;
-  ResultTag? newest;
+  int? bound;
+  int? newest;
   int? lostConnection;
   final expected = _Expected();
   final waiting = <_Job>[];
@@ -189,17 +190,17 @@ sealed class _Job {
 }
 
 final class _PageJob extends _Job {
-  const _PageJob(LedgerEntry super.entry, this.page, this.tag);
+  const _PageJob(LedgerEntry super.entry, this.page, this.connection);
 
   final RemotePageSnapshot page;
-  final ResultTag tag;
+  final int? connection;
 }
 
 final class _ListJob extends _Job {
-  const _ListJob(LedgerEntry super.entry, this.list, this.tag);
+  const _ListJob(LedgerEntry super.entry, this.list, this.connection);
 
   final RemotePageList list;
-  final ResultTag tag;
+  final int? connection;
 }
 
 final class _LostJob extends _Job {
@@ -222,6 +223,7 @@ final class CloudShadow {
   final reports = <CloudShadowReport>[];
   final ledger = <LedgerEntry>[];
   String? stopped;
+  String? ended;
 
   final _jobs = ListQueue<_Job>();
   final _strategies = <String, _Strategy>{};
@@ -238,35 +240,47 @@ final class CloudShadow {
     reports.add(ShadowStopped(reason));
   }
 
-  void page(String strategyId, RemotePageSnapshot snapshot, ResultTag tag) {
-    final entry = LedgerEntry(strategyId, 'page ${snapshot.page.publicId}');
-    ledger.add(entry);
-    _add(_PageJob(entry, snapshot, tag));
+  void end(String reason) {
+    if (ended != null || stopped != null) return;
+    ended = reason;
+    reports.add(ShadowEnded(reason));
   }
 
-  void pageList(String strategyId, RemotePageList list, ResultTag tag) {
+  bool get _taking => stopped == null && ended == null;
+
+  void page(String strategyId, RemotePageSnapshot snapshot, int? connection) {
+    if (!_taking) return;
+    final pageId = snapshot.page.publicId;
+    final entry = LedgerEntry(strategyId, 'page $pageId', pageId: pageId);
+    ledger.add(entry);
+    _add(_PageJob(entry, snapshot, connection));
+  }
+
+  void pageList(String strategyId, RemotePageList list, int? connection) {
+    if (!_taking) return;
     final entry = LedgerEntry(strategyId, 'the page list');
     ledger.add(entry);
-    _add(_ListJob(entry, list, tag));
+    _add(_ListJob(entry, list, connection));
+  }
+
+  void skipped(String strategyId, String what, SkipReason reason) {
+    if (!_taking) return;
+    ledger.add(LedgerEntry(strategyId, what)..verdict = Skipped(reason));
   }
 
   void readFailed(
     String strategyId,
     String what,
     Object error,
-    ResultTag tag, {
-    required bool refusedByServer,
-  }) {
-    final entry = LedgerEntry(strategyId, 'a read of $what');
-    ledger.add(entry);
-    entry.verdict = switch (tag) {
-      (connection: null, account: _) =>
-        const Skipped(SkipReason.receivedOffline),
-      (connection: _, account: null) =>
-        const Skipped(SkipReason.accountUnknown),
-      _ when refusedByServer => const Skipped(SkipReason.refusedByServer),
-      _ => ReadFailed('the read failed: $error'),
-    };
+    int? connection,
+  ) {
+    if (!_taking) return;
+    ledger.add(
+      LedgerEntry(strategyId, 'a read of $what')
+        ..verdict = connection == null
+            ? const Skipped(SkipReason.receivedOffline)
+            : ReadFailed('the read failed: $error'),
+    );
   }
 
   void connectionLost() => _add(const _LostJob());
@@ -300,10 +314,10 @@ final class CloudShadow {
   Future<void> _run(_Job job) async {
     try {
       switch (job) {
-        case _PageJob(:final entry, :final page, :final tag):
-          await _page(entry!, page, tag);
-        case _ListJob(:final entry, :final list, :final tag):
-          await _list(entry!, list, tag);
+        case _PageJob(:final entry, :final page, :final connection):
+          await _page(entry!, page, connection);
+        case _ListJob(:final entry, :final list, :final connection):
+          await _list(entry!, list, connection);
         case _LostJob():
           await _lost();
       }
@@ -329,17 +343,18 @@ final class CloudShadow {
 
   _Strategy _of(String strategyId) => _strategies[strategyId] ??= _Strategy();
 
-  bool _admit(LedgerEntry entry, ResultTag tag) {
-    if (tag.connection == null) {
+  bool _admit(LedgerEntry entry, int? connection) {
+    if (connection == null) {
       entry.verdict = const Skipped(SkipReason.receivedOffline);
       return false;
     }
-    if (tag.account == null) {
-      entry.verdict = const Skipped(SkipReason.accountUnknown);
-      return false;
-    }
     final state = _of(entry.strategyId);
-    if (state.lostConnection case final lost? when tag.connection! <= lost) {
+    final ended = switch ((state.lostConnection, state.newest)) {
+      (final lost?, _) when connection <= lost => true,
+      (_, final newest?) when connection < newest => true,
+      _ => false,
+    };
+    if (ended) {
       entry.verdict = const Skipped(SkipReason.endedConnection);
       return false;
     }
@@ -350,8 +365,8 @@ final class CloudShadow {
     for (final MapEntry(key: strategyId, value: state) in _strategies.entries) {
       final bound = state.bound;
       if (!state.inStore || bound == null) continue;
-      if (state.lostConnection == bound.connection) continue;
-      state.lostConnection = bound.connection;
+      if (state.lostConnection == bound) continue;
+      state.lostConnection = bound;
       if (await _record(strategyId, null, [const ConnectionLost()]) != null) {
         reports.add(ShadowConnectionLost(strategyId));
       }
@@ -361,15 +376,15 @@ final class CloudShadow {
   Future<void> _page(
     LedgerEntry entry,
     RemotePageSnapshot snapshot,
-    ResultTag tag,
+    int? connection,
   ) async {
-    if (!_admit(entry, tag)) return;
+    if (!_admit(entry, connection)) return;
     final state = _of(entry.strategyId);
     if (!state.inStore) {
-      state.waiting.add(_PageJob(entry, snapshot, tag));
+      state.waiting.add(_PageJob(entry, snapshot, connection));
       return;
     }
-    if (!await _bindFor(entry, state, tag)) return;
+    if (!await _bindFor(entry, state, connection!)) return;
     final PageRead read;
     switch (pageRead(snapshot, canRead)) {
       case RowsRead(:final value):
@@ -388,9 +403,9 @@ final class CloudShadow {
   Future<void> _list(
     LedgerEntry entry,
     RemotePageList list,
-    ResultTag tag,
+    int? connection,
   ) async {
-    if (!_admit(entry, tag)) return;
+    if (!_admit(entry, connection)) return;
     final state = _of(entry.strategyId);
     final HeaderRead header;
     switch (pageListRead(list)) {
@@ -402,7 +417,7 @@ final class CloudShadow {
         return;
     }
     if (!state.inStore) {
-      await _start(entry, state, header, tag);
+      await _start(entry, state, header, connection!);
       if (!state.inStore) return;
       for (final waiting in state.waiting.reversed) {
         _add(waiting, first: true);
@@ -410,7 +425,7 @@ final class CloudShadow {
       state.waiting.clear();
       return;
     }
-    if (!await _bindFor(entry, state, tag)) return;
+    if (!await _bindFor(entry, state, connection!)) return;
     if (await _arrive(entry, header)) {
       state.expected.header(header);
       await _compare(entry, pages: const {});
@@ -420,41 +435,31 @@ final class CloudShadow {
   Future<bool> _bindFor(
     LedgerEntry entry,
     _Strategy state,
-    ResultTag tag,
+    int connection,
   ) async {
-    final bound = state.bound;
-    if (bound == tag) return true;
-    if (state.newest case final newest?
-        when tag != newest &&
-            (tag.connection! < newest.connection! ||
-                (tag.connection == newest.connection &&
-                    tag.account! < newest.account!))) {
-      entry.verdict = Skipped(
-        tag.connection! < newest.connection!
-            ? SkipReason.endedConnection
-            : SkipReason.earlierAccount,
-      );
-      return false;
-    }
-    final (because, event) = bound == null || tag.connection != bound.connection
-        ? ('the connection came back', const ConnectionReturned())
-        : ('the account changed', const AccountChanged());
-    return _open(entry, state, tag, because, [event]);
+    if (state.bound == connection) return true;
+    return _open(
+      entry,
+      state,
+      connection,
+      'the connection came back',
+      [const ConnectionReturned()],
+    );
   }
 
   Future<bool> _open(
     LedgerEntry entry,
     _Strategy state,
-    ResultTag tag,
+    int connection,
     String because,
     List<QueueEvent> events,
   ) async {
     state.bound = null;
-    state.newest = tag;
+    state.newest = connection;
     if (await _record(entry.strategyId, entry, events) == null) return false;
     final session = await _sessionOf(entry);
     if (session == null) return false;
-    state.bound = tag;
+    state.bound = connection;
     reports.add(ShadowSessionOpened(entry.strategyId, session, because));
     return true;
   }
@@ -463,7 +468,7 @@ final class CloudShadow {
     LedgerEntry entry,
     _Strategy state,
     HeaderRead header,
-    ResultTag tag,
+    int connection,
   ) async {
     final strategyId = entry.strategyId;
     final StrategySummary? listed;
@@ -481,6 +486,7 @@ final class CloudShadow {
     switch (listed?.sync) {
       case null:
         _openedThisRun.add(strategyId);
+        state.newest = connection;
         final added = await _write(
           () => store.addCloudStrategy(header, const []),
         );
@@ -488,8 +494,7 @@ final class CloudShadow {
           case Saved():
             final session = await _sessionOf(entry);
             if (session == null) return;
-            state.bound = tag;
-            state.newest = tag;
+            state.bound = connection;
             state.inStore = true;
             reports.add(
               ShadowSessionOpened(
@@ -521,7 +526,7 @@ final class CloudShadow {
         if (!await _open(
           entry,
           state,
-          tag,
+          connection,
           restarted ? 'the app started' : 'the strategy was opened again',
           [
             if (restarted) AppRestarted(build: build),
@@ -647,7 +652,7 @@ final class CloudShadow {
     final sentPages = [
       for (final page in _ordered(expected.pages.values)) page.publicId,
     ];
-    final compared = pages ?? {...shownPages, ...expected.pages.keys};
+    final compared = pages ?? expected.elements.keys.toSet();
     return [
       if (expected.strategy case final row? when content.strategy != row)
         'strategy row: ${_rowWords(content.strategy, row)}',

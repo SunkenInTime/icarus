@@ -3,10 +3,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:convex_flutter/convex_flutter.dart' as native;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:icarus/collab/src/convex_client_types.dart';
 
 class ConvexClient implements ConvexClientValueSource {
   ConvexClient._(this._client, this.config);
+
+  @visibleForTesting
+  ConvexClient.over(this._client, this.config);
 
   final native.ConvexClient _client;
   final ConvexConfig config;
@@ -155,28 +159,33 @@ class ConvexClient implements ConvexClientValueSource {
 
   bool get authSettled => _authSettledAt == _authChanges;
 
-  Future<T> _changingAuth<T>(Future<T> Function() change) async {
+  void _countAuthChange(Future<Object?> change) {
     final mine = ++_authChanges;
-    try {
-      return await change();
-    } finally {
+    void settled() {
       if (_authChanges == mine) _authSettledAt = mine;
     }
+
+    change.then<void>((_) => settled(), onError: (Object _) => settled());
   }
 
   Future<AuthHandleWrapper> setAuthWithRefresh({
     required Future<String?> Function() fetchToken,
     void Function(bool isAuthenticated)? onAuthChange,
-  }) =>
-      _changingAuth(() async {
-        final handle = await _client.setAuthWithRefresh(
-          fetchToken: fetchToken,
-          onAuthChange: onAuthChange,
-        );
-        return _NativeAuthHandleWrapper(handle, () => _authChanges++);
-      });
+  }) async {
+    final setting = _client.setAuthWithRefresh(
+      fetchToken: fetchToken,
+      onAuthChange: onAuthChange,
+    );
+    _countAuthChange(setting);
+    final handle = await setting;
+    return _NativeAuthHandleWrapper(handle, () => _authChanges++);
+  }
 
-  Future<void> clearAuth() => _changingAuth(_client.clearAuth);
+  Future<void> clearAuth() {
+    final clearing = _client.clearAuth();
+    _countAuthChange(clearing);
+    return clearing;
+  }
 
   Future<bool> reconnect() => _client.reconnect();
 

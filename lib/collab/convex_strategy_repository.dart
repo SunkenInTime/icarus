@@ -27,17 +27,50 @@ final convexStrategyRepositoryProvider = Provider<ConvexStrategyRepository>(
 );
 
 abstract interface class ResultTap {
-  Object issued();
+  Object issued({required bool throughShareLink});
 
   void pageArrived(String strategyId, RemotePageSnapshot page, Object issue);
 
   void readFailed(String strategyId, String what, Object error, Object issue);
+
+  void readClosed(Object issue);
+
+  void tapFailed(Object error);
 }
 
 class ConvexStrategyRepository {
   ConvexStrategyRepository(this._api);
 
   ResultTap? tap;
+
+  Object? _issue(String? shareToken) {
+    final tap = this.tap;
+    if (tap == null) return null;
+    try {
+      return tap.issued(throughShareLink: shareToken != null);
+    } catch (error) {
+      _tapFailed(tap, error);
+      return null;
+    }
+  }
+
+  void _tell(Object? issue, void Function(ResultTap tap, Object issue) tell) {
+    final tap = this.tap;
+    if (tap == null || issue == null) return;
+    Timer.run(() {
+      try {
+        tell(tap, issue);
+      } catch (error) {
+        _tapFailed(tap, error);
+      }
+    });
+  }
+
+  void _tapFailed(ResultTap tap, Object error) {
+    try {
+      tap.tapFailed(error);
+    } catch (_) {}
+  }
 
   factory ConvexStrategyRepository.fromClient(ConvexClient client) =>
       ConvexStrategyRepository(
@@ -257,19 +290,24 @@ class ConvexStrategyRepository {
         _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)] ??
             (null, 0);
     if (live != null) return live;
-    final issue = tap?.issued();
+    final issue = _issue(shareToken);
     final PageGetSnapshotResult read;
     try {
       read =
           await _wholePage(strategyPublicId, pagePublicId, shareToken).fetch();
     } catch (error) {
-      if (issue != null) {
-        tap?.readFailed(strategyPublicId, 'page $pagePublicId', error, issue);
-      }
+      _tell(
+        issue,
+        (tap, issue) => tap.readFailed(
+            strategyPublicId, 'page $pagePublicId', error, issue),
+      );
       rethrow;
     }
     final page = _pageSnapshot(read);
-    if (issue != null) tap?.pageArrived(strategyPublicId, page, issue);
+    _tell(
+      issue,
+      (tap, issue) => tap.pageArrived(strategyPublicId, page, issue),
+    );
     return page;
   }
 
@@ -337,10 +375,32 @@ class ConvexStrategyRepository {
     late final StreamController<RemotePageSnapshot> controller;
     StreamSubscription<PageGetSnapshotResult>? whole;
     StreamSubscription<PageGetSnapshotResult>? sliced;
+    Object? wholeIssue;
+    Object? slicedIssue;
     var slicing = false;
     var registered = false;
     String? firstVersion;
     PageGetSnapshotResult? lastWhole;
+
+    void deliver(RemotePageSnapshot page, Object? issue) {
+      controller.add(page);
+      _tell(
+        issue,
+        (tap, issue) => tap.pageArrived(strategyPublicId, page, issue),
+      );
+    }
+
+    void deliverError(Object error, StackTrace stackTrace, Object? issue) {
+      controller.addError(error, stackTrace);
+      _tell(
+        issue,
+        (tap, issue) => tap.readFailed(
+            strategyPublicId, 'page $pagePublicId', error, issue),
+      );
+    }
+
+    void closed(Object? issue) =>
+        _tell(issue, (tap, issue) => tap.readClosed(issue));
 
     /// Until the slices first answer, the whole page is still watched: when
     /// they fail first, it carries the page again from its latest answer,
@@ -350,9 +410,11 @@ class ConvexStrategyRepository {
       sliced = null;
       slicing = false;
       if (stopping != null) unawaited(stopping.cancel());
+      closed(slicedIssue);
+      slicedIssue = null;
       if (lastWhole case final page?) {
         firstVersion = _pageVersion(page);
-        controller.add(_pageSnapshot(page));
+        deliver(_pageSnapshot(page), wholeIssue);
       }
     }
 
@@ -366,33 +428,26 @@ class ConvexStrategyRepository {
       slicing = true;
       final (frame, slices) =
           _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
-      final issue = tap?.issued();
+      final issue = slicedIssue = _issue(shareToken);
       sliced = assembledPages(
         ConvexQuery.watchTogether([frame, ...slices]),
       ).listen(
         (assembled) {
           final page = _pageSnapshot(assembled);
-          if (issue != null) tap?.pageArrived(strategyPublicId, page, issue);
           final (_, watchers) = _slicedPages[key] ?? (null, 0);
           if (whole case final stopping?) {
             whole = null;
             unawaited(stopping.cancel());
+            closed(wholeIssue);
+            wholeIssue = null;
             _slicedPages[key] = (page, watchers + 1);
             registered = true;
           } else {
             _slicedPages[key] = (page, watchers);
           }
-          controller.add(page);
+          deliver(page, issue);
         },
         onError: (Object error, StackTrace stackTrace) {
-          if (issue != null) {
-            tap?.readFailed(
-              strategyPublicId,
-              'page $pagePublicId',
-              error,
-              issue,
-            );
-          }
           if (!registered) {
             giveUpSlices();
             return;
@@ -401,7 +456,7 @@ class ConvexStrategyRepository {
           // than to a page they no longer stand behind.
           final (_, watchers) = _slicedPages[key]!;
           _slicedPages[key] = (null, watchers);
-          controller.addError(error, stackTrace);
+          deliverError(error, stackTrace, issue);
         },
         onDone: () {
           if (!registered) giveUpSlices();
@@ -411,35 +466,22 @@ class ConvexStrategyRepository {
 
     controller = StreamController<RemotePageSnapshot>(
       onListen: () {
-        final issue = tap?.issued();
+        final issue = wholeIssue = _issue(shareToken);
         whole = _wholePage(strategyPublicId, pagePublicId, shareToken)
             .watch()
             .listen(
           (page) {
             lastWhole = page;
             if (slicing) return;
-            final snapshot = _pageSnapshot(page);
-            if (issue != null) {
-              tap?.pageArrived(strategyPublicId, snapshot, issue);
-            }
-            controller.add(snapshot);
+            deliver(_pageSnapshot(page), issue);
             // The web client can hand over its cached answer and then the
             // same one from the server: only different rows are a change.
             final version = _pageVersion(page);
             firstVersion ??= version;
             if (version != firstVersion && sliced == null) watchSlices(page);
           },
-          onError: (Object error, StackTrace stackTrace) {
-            if (issue != null) {
-              tap?.readFailed(
-                strategyPublicId,
-                'page $pagePublicId',
-                error,
-                issue,
-              );
-            }
-            controller.addError(error, stackTrace);
-          },
+          onError: (Object error, StackTrace stackTrace) =>
+              deliverError(error, stackTrace, issue),
         );
       },
       onPause: () {
@@ -459,6 +501,8 @@ class ConvexStrategyRepository {
             _slicedPages[key] = (page, watchers - 1);
           }
         }
+        closed(wholeIssue);
+        closed(slicedIssue);
         await Future.wait([
           if (whole case final w?) w.cancel(),
           if (sliced case final s?) s.cancel(),

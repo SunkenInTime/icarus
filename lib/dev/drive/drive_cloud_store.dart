@@ -75,9 +75,11 @@ final class CloudStoreLine {
   final bool problem;
 }
 
-const _finalWait = Duration(seconds: 30);
-
 final class CloudStoreLog {
+  CloudStoreLog({this.finalWait = const Duration(seconds: 30)});
+
+  final Duration finalWait;
+
   int _reportsRead = 0;
   final _settled = <LedgerEntry>{};
 
@@ -130,12 +132,9 @@ final class CloudStoreLog {
           ),
         ];
       case CloudShadowRunning(:final shadow):
-        await c.read(cloudShadowProvider.notifier).stopSubscriptions();
-        final left = _finalWait - DateTime.now().difference(lastStep);
-        final finished = await shadow.idle.then((_) => true).timeout(
-              left.isNegative ? Duration.zero : left,
-              onTimeout: () => false,
-            );
+        final notifier = c.read(cloudShadowProvider.notifier)..cutoff();
+        final drained = await notifier.drained(lastStep.add(finalWait));
+        notifier.detach();
         final ledger = shadow.ledger;
         int count<T extends Verdict>() =>
             ledger.where((entry) => entry.verdict is T).length;
@@ -150,14 +149,47 @@ final class CloudStoreLog {
             ))
               strategyId,
         ];
+        final lastContent = <(String, String), LedgerEntry>{};
+        for (final entry in ledger) {
+          if (entry.pageId case final pageId?) {
+            lastContent[(entry.strategyId, pageId)] = entry;
+          }
+        }
         return [
           ...drain(c),
-          if (!finished)
+          if (shadow.ended case final reason?)
+            CloudStoreLine(
+              'CLOUDSTORE ended: $reason; nothing after it is recorded',
+              problem: false,
+            ),
+          if (!drained.idle)
             CloudStoreLine(
               'CLOUDSTORE the shadow had work left '
-              '${_finalWait.inSeconds} s after the last step',
+              '${finalWait.inSeconds} s after the last step',
               problem: true,
             ),
+          if (drained.readsOpen > 0)
+            CloudStoreLine(
+              'CLOUDSTORE not processed: ${drained.readsOpen} reads issued '
+              'and never answered ${finalWait.inSeconds} s after the last '
+              'step',
+              problem: true,
+            ),
+          if (drained.watchesOpen > 0)
+            CloudStoreLine(
+              'CLOUDSTORE ${drained.watchesOpen} page list watches had not '
+              'closed ${finalWait.inSeconds} s after the last step',
+              problem: true,
+            ),
+          for (final MapEntry(key: (strategyId, pageId), value: entry)
+              in lastContent.entries)
+            if (entry.verdict is! ComparedEqual)
+              CloudStoreLine(
+                'CLOUDSTORE inconclusive: the last content of page $pageId '
+                'of $strategyId the editor received was not compared equal '
+                '(${_verdictWords(entry.verdict)})',
+                problem: true,
+              ),
           for (final entry in open)
             CloudStoreLine(
               'CLOUDSTORE not processed: ${entry.what} of ${entry.strategyId}',
@@ -186,10 +218,39 @@ final class CloudStoreLog {
     }
   }
 
+  List<CloudStoreLine> closeFailed(ProviderContainer c, Object error) {
+    if (!isOn(c)) return const [];
+    if (c.read(cloudShadowProvider) case CloudShadowRunning(:final shadow)) {
+      shadow.stop('closing the store failed: $error');
+    }
+    return [
+      CloudStoreLine(
+        'CLOUDSTORE closing the store failed: $error',
+        problem: true,
+      ),
+    ];
+  }
+
   Future<List<CloudStoreLine>> readBack(ProviderContainer c) async {
     if (!isOn(c)) return const [];
     final state = c.read(cloudShadowProvider);
     if (state is! CloudShadowRunning) return const [];
+    final lateStop = [
+      for (final report in state.shadow.reports.sublist(_reportsRead))
+        if (report is ShadowStopped)
+          CloudStoreLine(
+            'CLOUDSTORE stopped after the verdict: ${report.reason}',
+            problem: true,
+          ),
+    ];
+    _reportsRead = state.shadow.reports.length;
+    return [...lateStop, ...await _readBack(c, state)];
+  }
+
+  Future<List<CloudStoreLine>> _readBack(
+    ProviderContainer c,
+    CloudShadowRunning state,
+  ) async {
     if (c.read(libraryStoreProvider) is! LibraryStoreClosed) {
       return const [
         CloudStoreLine(
@@ -281,6 +342,10 @@ CloudStoreLine _reportLine(CloudShadowReport report) => switch (report) {
           'CLOUDSTORE session $session for $strategyId: $because',
           problem: false,
         ),
+      ShadowEnded(:final reason) => CloudStoreLine(
+          'CLOUDSTORE ended: $reason',
+          problem: false,
+        ),
       ShadowConnectionLost(:final strategyId) => CloudStoreLine(
           'CLOUDSTORE connection dropped for $strategyId',
           problem: false,
@@ -298,4 +363,13 @@ String _opened(LibraryStoreOpened opened) => switch (opened) {
         '${storageFailureWords(failure, StoreStep.opening)} ($failure)',
       LibraryStoreTooSmall(:final maxKeyLength) =>
         'the engine holds keys of only $maxKeyLength characters',
+    };
+
+String _verdictWords(Verdict verdict) => switch (verdict) {
+      NotProcessed() => 'not processed',
+      ComparedEqual() => 'compared equal',
+      ComparedDifferent() => 'compared different',
+      Skipped(:final reason) => 'skipped: ${reason.words}',
+      RefusedByStore(:final why) => 'refused by the store: $why',
+      ReadFailed(:final why) => 'failed: $why',
     };

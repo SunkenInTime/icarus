@@ -118,10 +118,9 @@ Future<LibraryStore> openStore(MemoryStorage storage) async =>
       StoreNotOpened(:final problem) => throw StateError('$problem'),
     };
 
-ResultTag tag(int connection, [int account = 0]) =>
-    (connection: connection, account: account);
+int tag(int connection) => connection;
 
-const offline = (connection: null, account: 0);
+const int? offline = null;
 
 Future<void> none() async {}
 
@@ -169,6 +168,14 @@ RemoteFullPage secondPage() => RemoteFullPage(
         updatedAt: at,
       ),
       content: settingsAt(1),
+    );
+
+RemotePageSnapshot emptySecondPage() => RemotePageSnapshot(
+      page: secondPage().page,
+      content: settingsAt(1),
+      elements: const [],
+      lineups: const [],
+      assetsById: const {},
     );
 
 Matcher get allEqual => everyElement(isA<ComparedEqual>());
@@ -259,14 +266,13 @@ void main() {
 
     test(
         'a result read on a connection that has ended is skipped with that '
-        'reason, and so is one read under an earlier account', () async {
+        'reason', () async {
       final store = await openStore(MemoryStorage());
       final rows = serverRows();
       final shadow = shadowOn(store)
         ..pageList(strategyId, pageList(rows), tag(0))
         ..page(strategyId, pageSnapshot(rows), tag(1))
         ..page(strategyId, pageSnapshot(rows), tag(0))
-        ..page(strategyId, pageSnapshot(rows), tag(1, 1))
         ..page(strategyId, pageSnapshot(rows), tag(1));
       await shadow.idle;
 
@@ -279,35 +285,59 @@ void main() {
           SkipReason.endedConnection,
         ),
         isA<ComparedEqual>(),
-        isA<Skipped>().having(
-          (skipped) => skipped.reason,
-          'reason',
-          SkipReason.earlierAccount,
-        ),
       ]);
       expect(sessionsOpened(shadow), [
         'the strategy was added',
         'the connection came back',
-        'the account changed',
       ]);
     });
 
     test(
-        'signing out and in as another account with the strategy open opens '
-        'a new session on the same connection', () async {
+        'after a first open the store refused, an older connection is still '
+        'skipped as ended', () async {
+      final store = await openStore(MemoryStorage());
+      final rows = serverRows();
+      final stray = RemoteFullPage(
+        page: RemotePage(
+          publicId: 'stray',
+          strategyPublicId: 'another-strategy',
+          name: 'Stray',
+          sortIndex: 5,
+          isAttack: true,
+          revision: 1,
+          createdAt: at,
+          updatedAt: at,
+        ),
+        content: settingsAt(1),
+      );
+      final shadow = shadowOn(store)
+        ..pageList(strategyId, pageList(rows, more: [stray]), tag(1))
+        ..pageList(strategyId, pageList(rows), tag(0));
+      await shadow.idle;
+
+      expect(verdicts(shadow), [
+        isA<RefusedByStore>(),
+        isA<Skipped>().having(
+          (skipped) => skipped.reason,
+          'reason',
+          SkipReason.endedConnection,
+        ),
+      ]);
+      expect((store.library as LibraryOpen).list.strategies, isEmpty);
+    });
+
+    test('a result taken after the shadow ended is not recorded', () async {
       final store = await openStore(MemoryStorage());
       final rows = serverRows();
       final shadow = shadowOn(store)
         ..pageList(strategyId, pageList(rows), tag(0))
-        ..page(strategyId, pageSnapshot(rows), tag(0))
-        ..page(strategyId, pageSnapshot(rows), tag(0, 2));
+        ..end('the account changed')
+        ..page(strategyId, pageSnapshot(rows), tag(0));
       await shadow.idle;
 
-      expect(verdicts(shadow), allEqual);
-      expect(
-        sessionsOpened(shadow).last,
-        'the account changed',
-      );
+      expect(verdicts(shadow), [isA<ComparedEqual>()]);
+      expect(shadow.ended, 'the account changed');
+      expect(shadow.stopped, isNull);
     });
 
     test('a result received offline is skipped with that reason', () async {
@@ -595,43 +625,19 @@ void main() {
     });
 
     test(
-        'a result whose account the transport cannot name is skipped with '
-        'that reason', () async {
-      final store = await openStore(MemoryStorage());
-      final rows = serverRows();
-      final shadow = shadowOn(store)
-        ..pageList(strategyId, pageList(rows), tag(0))
-        ..page(strategyId, pageSnapshot(rows), (connection: 0, account: null));
-      await shadow.idle;
-
-      expect(
-        shadow.ledger.last.verdict,
-        isA<Skipped>().having(
-          (skipped) => skipped.reason,
-          'reason',
-          SkipReason.accountUnknown,
-        ),
-      );
-    });
-
-    test(
-        'a failed read is an entry: skipped when offline, when its account '
-        'is unknown or when the server refused it, failed otherwise', () async {
+        'a failed read is an entry: skipped when offline, failed otherwise, '
+        'and a share link read is skipped with that reason', () async {
       final shadow = shadowOn(await openStore(MemoryStorage()))
-        ..readFailed('s', 'the page list', 'x', offline, refusedByServer: false)
-        ..readFailed('s', 'the page list', 'x', (connection: 1, account: null),
-            refusedByServer: false)
-        ..readFailed('s', 'the page list', 'x', tag(1), refusedByServer: true)
-        ..readFailed('s', 'the page list', 'x', tag(1), refusedByServer: false);
+        ..readFailed('s', 'the page list', 'x', offline)
+        ..readFailed('s', 'the page list', 'x', tag(1))
+        ..skipped('s', 'page p', SkipReason.throughShareLink);
 
       expect(verdicts(shadow), [
         isA<Skipped>()
             .having((v) => v.reason, 'reason', SkipReason.receivedOffline),
-        isA<Skipped>()
-            .having((v) => v.reason, 'reason', SkipReason.accountUnknown),
-        isA<Skipped>()
-            .having((v) => v.reason, 'reason', SkipReason.refusedByServer),
         isA<ReadFailed>(),
+        isA<Skipped>()
+            .having((v) => v.reason, 'reason', SkipReason.throughShareLink),
       ]);
     });
 
@@ -685,13 +691,14 @@ void main() {
     });
 
     test(
-        'the read back compares every page whole: an extra row on a page '
-        'that was not the last one read is a difference', () async {
+        'the read back compares the contents of every page this run received '
+        'content for, empty ones included', () async {
       final storage = MemoryStorage();
       final rows = serverRows();
       final store = await openStore(storage);
       final shadow = shadowOn(store)
         ..pageList(strategyId, pageList(rows, more: [secondPage()]), tag(0))
+        ..page(strategyId, emptySecondPage(), tag(0))
         ..page(strategyId, pageSnapshot(rows), tag(0));
       await shadow.idle;
       await store.close();
@@ -705,6 +712,33 @@ void main() {
       final differences = (await shadow
           .readBack(await openStore(MemoryStorage(contents))))[strategyId]!;
       expect(differences, [contains('page p2: a kind this build skips')]);
+    });
+
+    test(
+        'a page this run received no content for is compared by its row and '
+        'settings only, so content kept from an earlier run is no difference',
+        () async {
+      final storage = MemoryStorage();
+      final rows = serverRows();
+      final first = await openStore(storage);
+      final before = shadowOn(first)
+        ..pageList(strategyId, pageList(rows, more: [secondPage()]), tag(0))
+        ..page(strategyId, pageSnapshot(rows), tag(0));
+      await before.idle;
+      await first.close();
+
+      final second = await openStore(storage);
+      final after = shadowOn(second)
+        ..pageList(strategyId, pageList(rows, more: [secondPage()]), tag(0))
+        ..page(strategyId, emptySecondPage(), tag(0));
+      await after.idle;
+      await second.close();
+
+      expect(verdicts(after), allEqual);
+      expect(
+        await after.readBack(await openStore(storage)),
+        {strategyId: isEmpty},
+      );
     });
 
     test(

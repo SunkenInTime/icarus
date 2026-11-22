@@ -170,7 +170,6 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
-import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
@@ -347,11 +346,10 @@ Future<void> _play(String script) async {
     _logCloudStore(_cloudStore.drain(appProviderContainer));
     await _flush();
   }
-  final lastStep = DateTime.now();
+  final cloudEnd =
+      _cloudStore.end(appProviderContainer, lastStep: DateTime.now());
   await Future.wait(_pictureWatches);
-  _logCloudStore(
-    await _cloudStore.end(appProviderContainer, lastStep: lastStep),
-  );
+  _logCloudStore(await cloudEnd);
   _log(_runFrames.stop());
   _log(buildsLine());
   try {
@@ -360,9 +358,15 @@ Future<void> _play(String script) async {
     _failedSteps++;
     failed.problems.forEach(_log);
   }
-  if (await closeStoreLine(appProviderContainer) case final line?) {
-    if (line.startsWith('FAIL')) _failedSteps++;
-    _log(line);
+  try {
+    if (await closeStoreLine(appProviderContainer) case final line?) {
+      if (line.startsWith('FAIL')) _failedSteps++;
+      _log(line);
+    }
+  } catch (error) {
+    _failedSteps++;
+    _log('FAIL closing the store: $error');
+    _logCloudStore(_cloudStore.closeFailed(appProviderContainer, error));
   }
   _logCloudStore(await _cloudStore.readBack(appProviderContainer));
   final problems = _flutterErrors + _failedSteps + _misplaced.length;
@@ -1449,19 +1453,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _hover(
         _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id)),
       );
-    case 'signOut':
-      final signingOut = c.read(guardedSignOutRequestProvider)(
-        appNavigatorKey.currentContext!,
-      );
-      await _waitFor(() => _countOf((w) => _isText(w, 'Sign out?')) > 0, 30);
-      await _tap(_centerOf((w) => _isText(w, 'Sign Out')));
-      if (!await signingOut) throw StateError('the sign-out was not done');
-      await _waitFor(() => c.read(authProvider).user == null, 60);
     case 'signIn':
-      final second = value == 'second';
-      final email = second
-          ? Platform.environment['ICARUS_DRIVE_EMAIL_2']!
-          : Platform.environment['ICARUS_DRIVE_EMAIL']!;
+      final email = Platform.environment['ICARUS_DRIVE_EMAIL']!;
       final signedIn = Supabase.instance.client.auth.currentUser?.email;
       if (signedIn != null && signedIn != email) {
         throw StateError('signed in as $signedIn, not $email');
@@ -1470,9 +1463,7 @@ Future<void> _run(Map<String, dynamic> step) async {
         final error =
             await c.read(authProvider.notifier).signInWithEmailPassword(
                   email: email,
-                  password: second
-                      ? Platform.environment['ICARUS_DRIVE_PASSWORD_2']!
-                      : Platform.environment['ICARUS_DRIVE_PASSWORD']!,
+                  password: Platform.environment['ICARUS_DRIVE_PASSWORD']!,
                 );
         if (error != null) throw StateError(error);
       }
