@@ -71,7 +71,8 @@ server writes only the named fields onto the row as it is now:
   with `lastWriterWins: true` are unchecked. The server client resends a call
   pending across a lost connection with its original arguments, however late,
   so an unchecked change caught by a dropped connection could land an hour
-  later over a teammate's newer work (#714). A client that sets
+  later over a teammate's newer work (#714;
+  `tool/check_convex_web_replay.mjs` shows the browser client doing it). A client that sets
   `sendsLiveBasis` gets the server's time in every `applyBatch` answer
   (`serverTime`) and sends the newest one it has as the batch's `liveBasis`.
   The server refuses the whole batch with `UNCHECKED_OUTSIDE_WINDOW`, before
