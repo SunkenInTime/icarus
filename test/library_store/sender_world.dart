@@ -5,15 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
+import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
-import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 import 'cloud_shadow_test.dart'
-    show at, pageList, pageSnapshot, serverRows, servedAccount, strategyId;
+    show at, pageList, secondPage, serverRows, servedAccount, strategyId;
 
 final start = DateTime.utc(2026, 11, 23, 12);
 const otherStrategy = 'hand-2';
@@ -31,17 +31,52 @@ final class ServerCall {
   List<String> get opIds => [for (final op in ops) op.opId];
 }
 
+final class ReadCall {
+  const ReadCall(this.strategyId, this.page, this.account);
+
+  final String strategyId;
+  final String? page;
+  final Account account;
+
+  @override
+  String toString() => page == null ? 'list' : 'page $page';
+}
+
 typedef Answering = Future<StoreBatchOutcome> Function(ServerCall call);
+
+typedef ReadAnswering = Future<StoreReadOutcome> Function(ReadCall call);
+
+int? revisionOf(Row? row) => switch (row?.toJson()) {
+      {'revision': final int revision} => revision,
+      _ => null,
+    };
+
+int? visibleRevision(StrategyRowSet rows, StrategyOp op) =>
+    switch (targetOf(op)) {
+      StrategyTarget() => revisionOf(rows.strategy),
+      PageTarget(:final pagePublicId) => revisionOf(rows.page(pagePublicId)),
+      SettingsTarget(:final pagePublicId) =>
+        revisionOf(rows.settingsOf(pagePublicId)),
+      ElementTarget(:final elementPublicId) =>
+        revisionOf(rows.element(elementPublicId)),
+      LineupTarget(:final lineupPublicId) =>
+        revisionOf(rows.lineupGroup(lineupPublicId)),
+    };
 
 final class FakeServer {
   final calls = <ServerCall>[];
-  final receipts = <(String, String, String), int>{};
+  final receipts = <(String, String, String), OpAnswer>{};
   final appliedTimes = <(String, String), int>{};
   final owners = <String, Account>{};
+  final roles = <String, StoreReadRole>{};
   final wrongAccount = <ServerCall>[];
-  final revisions = <String, int>{};
+  final wrongAccountReads = <ReadCall>[];
+  final rows = <String, StrategyRowSet>{};
+  final readCalls = <ReadCall>[];
   final _answers = <String, List<Answering>>{};
+  final _readAnswers = <String, List<ReadAnswering>>{};
   void Function(ServerCall call)? onCall;
+  void Function(ReadCall call)? onRead;
 
   int get applied => appliedTimes.length;
 
@@ -50,9 +85,14 @@ final class FakeServer {
 
   bool get anyAppliedTwice => appliedTimes.values.any((times) => times > 1);
 
-  void answerNormally() => _answers.clear();
+  void answerNormally() {
+    _answers.clear();
+    _readAnswers.clear();
+  }
 
-  bool get answersNormally => _answers.values.every((queued) => queued.isEmpty);
+  bool get answersNormally =>
+      _answers.values.every((queued) => queued.isEmpty) &&
+      _readAnswers.values.every((queued) => queued.isEmpty);
 
   void answerNext(String strategyId, Answering answering) =>
       (_answers[strategyId] ??= []).add(answering);
@@ -62,32 +102,67 @@ final class FakeServer {
         (_) => Future<StoreBatchOutcome>.value(outcome),
       );
 
-  StoreBatchOutcome applyAll(ServerCall call) {
-    final answers = <OpAnswer>[];
-    for (final op in call.ops) {
-      final key = (call.strategyId, call.clientId, op.opId);
-      if (receipts[key] case final revision?) {
-        answers.add(
-          NoopAnswer(
-            op.opId,
-            revision: revision,
-            replay: NoopReplay.appliedWhenFirstReceived,
-          ),
+  void answerReadNext(String strategyId, ReadAnswering answering) =>
+      (_readAnswers[strategyId] ??= []).add(answering);
+
+  void answerReadWith(String strategyId, StoreReadOutcome outcome) =>
+      answerReadNext(strategyId, (_) => Future.value(outcome));
+
+  OpAnswer _applyOne(String strategy, String client, StrategyOp op) {
+    final key = (strategy, client, op.opId);
+    switch (receipts[key]) {
+      case AppliedAnswer(:final revision):
+        return NoopAnswer(
+          op.opId,
+          revision: revision,
+          replay: NoopReplay.appliedWhenFirstReceived,
         );
-        continue;
-      }
-      final revision =
-          revisions[call.strategyId] = (revisions[call.strategyId] ?? 2) + 1;
-      receipts[key] = revision;
-      appliedTimes.update(
-        (call.strategyId, op.opId),
-        (times) => times + 1,
-        ifAbsent: () => 1,
-      );
-      answers.add(AppliedAnswer(op.opId, revision: revision));
+      case final answer?:
+        return answer;
+      case null:
+        break;
     }
-    return StoreBatchAnswered(answers, complete: true);
+    final now = rows[strategy]!;
+    final OpAnswer answer;
+    switch (applyOp(now, op)) {
+      case final OpApplied done:
+        final next = rows[strategy] = now.withRows(done.rows);
+        appliedTimes.update(
+          (strategy, op.opId),
+          (times) => times + 1,
+          ifAbsent: () => 1,
+        );
+        answer = AppliedAnswer(op.opId, revision: visibleRevision(next, op)!);
+      case OpUnchanged():
+        final revision = visibleRevision(now, op);
+        answer = revision == null
+            ? NoopWithoutRevision(op.opId)
+            : NoopAnswer(
+                op.opId,
+                revision: revision,
+                replay: NoopReplay.notApplied,
+              );
+      case OpRefused(refusal: Rejected(:final reason)):
+        answer = RejectedAnswer(op.opId, reason, const NoServerCopy());
+      case OpRefused(refusal: Failed(:final code)):
+        answer = FailedAnswer(op.opId, KnownFailure(code), code.wireName);
+      case OpRefused(:final refusal):
+        throw StateError('the fake server cannot refuse with $refusal');
+    }
+    receipts[key] = answer;
+    return answer;
   }
+
+  StoreBatchOutcome applyAll(ServerCall call) => StoreBatchAnswered(
+        [
+          for (final op in call.ops)
+            _applyOne(call.strategyId, call.clientId, op),
+        ],
+        complete: true,
+      );
+
+  OpAnswer teammate(String strategyId, StrategyOp op) =>
+      _applyOne(strategyId, 'teammate', op);
 
   Future<StoreBatchOutcome> send({
     required String strategyPublicId,
@@ -107,6 +182,76 @@ final class FakeServer {
     }
     return Future.value(applyAll(call));
   }
+
+  HeaderRead headerOf(String strategyId) {
+    final held = rows[strategyId]!;
+    final pages = [...held.pages]..sort(
+        (a, b) => ((a.toJson()! as Map)['sortIndex'] as int)
+            .compareTo((b.toJson()! as Map)['sortIndex'] as int),
+      );
+    return HeaderRead(
+      strategy: held.strategy as StrategyRow,
+      pages: pages,
+      settings: [...held.settings],
+    );
+  }
+
+  StoreReadOutcome _answerRead(ReadCall call) {
+    final held = rows[call.strategyId];
+    if (held == null) {
+      return StoreReadAnswered(
+        call.page == null ? const StrategyGone() : PageGone(call.page!),
+      );
+    }
+    final page = call.page;
+    if (page == null) {
+      return StoreReadAnswered(
+        headerOf(call.strategyId),
+        role: roles[call.strategyId] ?? StoreReadRole.owner,
+      );
+    }
+    final pageRow = held.page(page);
+    if (pageRow == null) return StoreReadAnswered(PageGone(page));
+    return StoreReadAnswered(
+      PageRead(
+        page: pageRow,
+        elements: [...held.elementsOn(page)],
+        lineupGroups: [...held.lineupGroupsOn(page)],
+      ),
+    );
+  }
+
+  Future<StoreReadOutcome> _read(ReadCall call) {
+    readCalls.add(call);
+    onRead?.call(call);
+    if (owners[call.strategyId] case final owner? when owner != call.account) {
+      wrongAccountReads.add(call);
+    }
+    final queued = _readAnswers[call.strategyId];
+    if (queued != null && queued.isNotEmpty) {
+      return queued.removeAt(0)(call);
+    }
+    return Future.value(_answerRead(call));
+  }
+
+  Future<StoreReadOutcome> answerNow(ReadCall call) =>
+      Future.value(_answerRead(call));
+
+  StoreReads get reads => StoreReads(
+        pageList: ({required strategyPublicId, required account}) =>
+            _read(ReadCall(strategyPublicId, null, account)),
+        page: ({
+          required strategyPublicId,
+          required pagePublicId,
+          required account,
+        }) =>
+            _read(ReadCall(strategyPublicId, pagePublicId, account)),
+      );
+
+  List<String> readsOf(String strategyId) => [
+        for (final call in readCalls)
+          if (call.strategyId == strategyId) '$call',
+      ];
 }
 
 final class RefusingLease implements StorageLease {
@@ -214,6 +359,7 @@ final class SlowSenderStore extends SenderStore {
     bool readSession = false,
   }) async {
     if (throwsOnBase && events.any((event) => event is BaseArrived)) {
+      throwsOnBase = false;
       throw StateError('the store broke');
     }
     final written = await super.write(
@@ -242,49 +388,19 @@ final class SlowSenderStore extends SenderStore {
   }
 }
 
-final class RecordingIntake implements ResultIntake {
-  RecordingIntake(this.inner, this.arrivals);
-
-  final ResultIntake inner;
-  final List<Object> arrivals;
-  final outcomes = Map<ResultForStore, ResultOutcome>.identity();
-
-  @override
-  void resultsFrom(int signIns) => inner.resultsFrom(signIns);
-
-  @override
-  Future<ResultOutcome> take(ResultForStore result) {
-    arrivals.add(result);
-    return inner.take(result).then((outcome) => outcomes[result] = outcome);
-  }
-}
-
 final class World {
-  World._(
-    this.async,
-    this.engine,
-    this.store,
-    this.server,
-    this.sender,
-    this.arrivals,
-    this.intake,
-  );
+  World._(this.async, this.engine, this.store, this.server, this.sender);
 
   final FakeAsync async;
   final RefusingEngine engine;
   final LibraryStore store;
   final FakeServer server;
   final CloudSender sender;
-  final List<Object> arrivals;
-  final RecordingIntake intake;
-  CloudShadow? shadow;
   late _Flag dropsConnectionLost;
-  StreamSubscription<StoreChange>? _changes;
   late Account? _account;
   late int? _connection;
   late int _authChanges;
   late int _signOuts;
-  var _moved = 0;
 
   RefusingLease get lease => engine.leased!;
 
@@ -332,14 +448,12 @@ final class World {
     FakeAsync async, {
     MemoryStorage? storage,
     FakeServer? server,
-    bool shadow = true,
     String clientId = 'client-1',
     Snapshot? startingWith,
   }) {
     final inputs = startingWith ??
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
     final dropsConnectionLost = _Flag();
-    final arrivals = <Object>[];
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
     LibraryStore? store;
     LibraryStore.open(
@@ -355,69 +469,34 @@ final class World {
     );
     async.flushMicrotasks();
     final fake = server ?? FakeServer();
-    fake.owners[strategyId] = servedAccount;
+    fake.owners[strategyId] ??= servedAccount;
+    fake.rows[strategyId] ??= serverRows();
     final sender = CloudSender(
       store: SlowSenderStore(store!),
-      send: ({
-        required strategyPublicId,
-        required clientId,
-        required ops,
-        required account,
-      }) =>
-          fake
-              .send(
-        strategyPublicId: strategyPublicId,
-        clientId: clientId,
-        ops: ops,
-        account: account,
-      )
-              .then((outcome) {
-        arrivals.add(ops);
-        return outcome;
-      }),
+      send: fake.send,
+      reads: fake.reads,
       build: 'test-build',
       clientId: clientId,
       inputs: inputs,
       timing: timing,
       clock: () => start.add(async.elapsed),
       recordsConnectionLost: () => !dropsConnectionLost.value,
-    )..resultsFrom(inputs.signIns);
-    final intake = RecordingIntake(sender, arrivals);
-    final world = World._(async, engine, store!, fake, sender, arrivals, intake)
+    );
+    final world = World._(async, engine, store!, fake, sender)
       ..dropsConnectionLost = dropsConnectionLost
       .._account = inputs.account
       .._connection = inputs.connection
       .._authChanges = inputs.signIns
       .._signOuts = inputs.signOuts;
-    if (shadow) {
-      world.shadow = CloudShadow(
-        store!,
-        build: 'test-build',
-        canRead: appCanRead,
-        breathe: none,
-        intake: intake,
-      )..serve(servedAccount);
-    }
     sender.start();
     return world;
   }
 
   void addServedStrategy() {
-    shadow!
-      ..pageList(
-        strategyId,
-        pageList(serverRows()),
-        _connection,
-        stamp: stamp,
-      )
-      ..page(
-        strategyId,
-        pageSnapshot(serverRows()),
-        _connection,
-        stamp: stamp,
-      );
-    settle(Duration.zero);
-    expect(shadow!.stopped, isNull);
+    sender.adopt(strategyId);
+    settle(const Duration(seconds: 2));
+    expect(sender.adopting(strategyId), isFalse);
+    expect(cloud().queue.session.number, greaterThan(0));
   }
 
   void addOtherStrategy({Account? owner, String id = otherStrategy}) {
@@ -439,9 +518,13 @@ final class World {
       RowsRead(:final value) => value,
       RowsUnreadable(:final problem) => throw StateError('$problem'),
     };
+    server.rows[id] = StrategyRowSet(
+      strategy: header.strategy as ReadableStrategy,
+    );
     Saving<StrategySummary, LibraryRefusal>? added;
-    store.addCloudStrategy(
-        whose, header, const []).then((value) => added = value);
+    store.addCloudStrategy(whose, header, const []).then(
+      (value) => added = value,
+    );
     async.flushMicrotasks();
     expect(added, isA<Saved<StrategySummary, LibraryRefusal>>());
   }
@@ -451,22 +534,28 @@ final class World {
     async.flushMicrotasks();
   }
 
-  void commitMove(int n) {
-    _moved = n;
+  LiveElement firstElement() {
     final first = serverRows().elements.whereType<LiveElement>().first;
     Reading<PageContent>? read;
     store
         .readPage(strategyId, first.pagePublicId)
         .then((value) => read = value);
     async.flushMicrotasks();
-    final element = (read! as Found<PageContent>)
+    return (read! as Found<PageContent>)
         .value
         .elements
         .whereType<LiveElement>()
         .firstWhere((element) => element.publicId == first.publicId);
-    _commit(strategyId, servedAccount, [
+  }
+
+  void commitMove(int n) {
+    final element = firstElement();
+    _commit(strategyId, servedAccount, [moveOf(element, n, 'move-$n')]);
+  }
+
+  static ElementPatchOp moveOf(LiveElement element, int n, String opId) =>
       ElementPatchOp(
-        opId: 'move-$n',
+        opId: opId,
         elementPublicId: element.publicId,
         expectedElementRevision: element.revision,
         payload: ElementPayload(
@@ -477,18 +566,51 @@ final class World {
             'position': {'dx': 100.0 + n, 'dy': 50.0 + n},
           },
         ),
+      );
+
+  OpAnswer teammateMoves(int n) {
+    final first = serverRows().elements.whereType<LiveElement>().first;
+    final onServer =
+        server.rows[strategyId]!.element(first.publicId)! as LiveElement;
+    return server.teammate(
+      strategyId,
+      moveOf(onServer, 500 + n, 'teammate-$n'),
+    );
+  }
+
+  void secondPageOnServer() {
+    final header = switch (pageListRead(
+      pageList(serverRows(), more: [secondPage()]),
+    )) {
+      RowsRead(:final value) => value,
+      RowsUnreadable(:final problem) => throw StateError('$problem'),
+    };
+    server.rows[strategyId] = server.rows[strategyId]!
+        .withRows([...header.pages, ...header.settings]);
+  }
+
+  void commitMerge(int n) {
+    final element = firstElement();
+    final move = moveOf(element, n, 'merge-$n');
+    _commit(strategyId, servedAccount, [
+      ElementPatchOp(
+        opId: move.opId,
+        elementPublicId: move.elementPublicId,
+        expectedElementRevision: move.expectedElementRevision,
+        payload: move.payload,
+        merge: FieldMerge(fields: const ['position']),
       ),
     ]);
   }
 
   void commitElementDelete(String opId) {
-    final first = serverRows().elements.whereType<LiveElement>().first;
+    final element = firstElement();
     _commit(strategyId, servedAccount, [
       ElementDeleteOp(
         opId: opId,
-        elementPublicId: first.publicId,
-        pagePublicId: first.pagePublicId,
-        expectedElementRevision: first.revision,
+        elementPublicId: element.publicId,
+        pagePublicId: element.pagePublicId,
+        expectedElementRevision: element.revision,
       ),
     ]);
   }
@@ -543,44 +665,6 @@ final class World {
     expect(saved, isA<Saved<List<Committed>, CommitRefusal>>());
   }
 
-  void showResult() {
-    shadow!.page(strategyId, shownPage(), _connection, stamp: stamp);
-    settle();
-  }
-
-  app.RemotePageSnapshot shownPage() {
-    final snapshot = pageSnapshot(serverRows());
-    final first = serverRows().elements.whereType<LiveElement>().first;
-    return app.RemotePageSnapshot(
-      page: snapshot.page,
-      content: snapshot.content,
-      elements: [
-        for (final element in snapshot.elements)
-          if (element.publicId != first.publicId)
-            element
-          else
-            app.RemoteElement(
-              publicId: element.publicId,
-              strategyPublicId: element.strategyPublicId,
-              pagePublicId: element.pagePublicId,
-              elementType: element.elementType,
-              payload: {
-                ...element.payload,
-                'data': {
-                  ...(element.payload['data']! as Map),
-                  'position': {'dx': 100.0 + _moved, 'dy': 50.0 + _moved},
-                },
-              },
-              sortIndex: element.sortIndex,
-              revision: server.revisions[strategyId] ?? element.revision,
-              deleted: element.deleted,
-            ),
-      ],
-      lineups: snapshot.lineups,
-      assetsById: snapshot.assetsById,
-    );
-  }
-
   CloudStrategy cloud([String strategy = strategyId]) {
     Reading<StrategyContent>? read;
     store.readStrategy(strategy).then((value) => read = value);
@@ -621,21 +705,21 @@ final class World {
             ...events,
       ];
 
+  List<String> readsRecorded([String strategy = strategyId]) => [
+        for (final report in sender.store.reports)
+          if (report case ReadRecorded(:final strategyId, :final read)
+              when strategyId == strategy)
+            read,
+      ];
+
   String status([String strategy = strategyId]) =>
       '${sender.view.strategies[strategy]}';
-
-  List<CloudShadowReport> get shadowReports => shadow?.reports ?? const [];
-
-  void close() {
-    unawaited(_changes?.cancel());
-  }
 }
 
 void inWorld(
   void Function(World world) body, {
   MemoryStorage? storage,
   FakeServer? server,
-  bool shadow = true,
   bool addStrategy = true,
   String clientId = 'client-1',
   bool keepOpen = false,
@@ -645,14 +729,12 @@ void inWorld(
       async,
       storage: storage,
       server: server,
-      shadow: shadow,
       clientId: clientId,
     );
     if (addStrategy) world.addServedStrategy();
     body(world);
     if (!keepOpen) {
       world.sender.dispose();
-      world.close();
       world.store.close();
       async.flushMicrotasks();
     }

@@ -15,6 +15,7 @@
   {"addAgent": "c1-{run}", "at": [600, 400]},
   {"waitSettled": 60},
   {"wait": 4},
+  {"storeAdopt": 60},
   {"holdSender": true},
   {"storeMove": "c1-{run}", "by": [30, 30]},
   {"signOut": true},

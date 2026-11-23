@@ -248,6 +248,14 @@ async function sendFromStore(device, strategyPublicId, clientId, op) {
   return result.appliedRevision;
 }
 
+const namedPage = (device, strategyPublicId, pagePublicId) =>
+  device.query("page:getSnapshot", { ...wholePageArgs(strategyPublicId, pagePublicId), accountSubject: COACH.subject });
+
+const namedPageList = (device, strategyPublicId) =>
+  device.query("strategy:getPageList", { strategyPublicId, accountSubject: COACH.subject });
+
+const STORE_BURSTS = 5;
+
 function withSenderCounts(result) {
   result.metrics.applyBatchCalls = result.summary.byFunction.get("ops:applyBatch")?.runs ?? 0;
   result.metrics.conflictRetries = result.summary.total.conflictRetries;
@@ -822,6 +830,67 @@ export const SESSIONS = {
       "shows it.",
     world: "team",
     run: (context) => twoPeople(context, sendLive),
+  },
+
+  storeReadPage: {
+    title: "The store's sender reads a page for itself",
+    about:
+      "One page:getSnapshot of the typical strategy's first page (60 items), named for the coach's account as the " +
+      "store's sender reads a page the queue asks for: a whole-row write after an answer at a revision it did not " +
+      "predict, or a page whose landed work it retires. Read after the strategy changed, so the server reads it.",
+    world: "team",
+    async run({ env, world }) {
+      await rename(world.typical);
+      return metered([world.coach], env, () =>
+        namedPage(world.coach, world.typical.publicId, world.typical.pages[0]),
+      );
+    },
+  },
+
+  storeReadPageDelete: {
+    title: "The store's sender reads before a page delete",
+    about:
+      "A page delete waits for the page list and the page read since this device last changed them. The sender reads " +
+      "them, named for the coach's account, one per step: strategy:getPageList, then page:getSnapshot of the page " +
+      "(the typical strategy's first page, 60 items). The same page-list read confirms edit access after FORBIDDEN, " +
+      "and adopting a strategy reads it first.",
+    world: "team",
+    async run({ env, world }) {
+      await rename(world.typical);
+      return metered([world.coach], env, async () => {
+        await namedPageList(world.coach, world.typical.publicId);
+        await namedPage(world.coach, world.typical.publicId, world.typical.pages[0]);
+      });
+    },
+  },
+
+  storeSoloSessionRetire: {
+    title: "Edit alone with no editor open, sent and retired by the store's sender",
+    about:
+      "soloSession's 50 moves sent by the store's sender with nothing watching: five bursts of ten with a minute's " +
+      "pause after each. The sender reads nothing before a send; once a strategy has been quiet for 30 s it reads the " +
+      "touched page to retire its landed work, and not that page again for five minutes, so the session reads the page " +
+      "twice (test/library_store/cloud_sender_test.dart counts the same). The reads stand in for a source of results " +
+      "until the editor's page results come through the store.",
+    world: "team",
+    async run({ env, world, rng }) {
+      const coach = world.coach;
+      const session = world.session;
+      const rows = (await coach.query("page:getSnapshot", wholePageArgs(session.publicId, session.pages[0]))).elements;
+      const clientId = rng.uuid();
+      const perBurst = SESSION_EDITS / STORE_BURSTS;
+      const result = await metered([coach], env, async () => {
+        for (let burst = 0; burst < STORE_BURSTS; burst++) {
+          for (const row of rows.slice(burst * perBurst, (burst + 1) * perBurst)) {
+            await sendFromStore(coach, session.publicId, clientId, liveMove(row, rng));
+          }
+          if (burst === 0 || burst === STORE_BURSTS - 1) {
+            await namedPage(coach, session.publicId, session.pages[0]);
+          }
+        }
+      });
+      return withSenderCounts(result);
+    },
   },
 
   twoPeopleStore: {

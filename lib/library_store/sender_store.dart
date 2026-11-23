@@ -133,6 +133,12 @@ final class StoredStrategy {
         OwnerUnreadable() => null,
       };
 
+  bool get needsReading => switch (tally) {
+        Tally(standing: Standing.editAccessLost) => true,
+        Tally(:final waiting) => waiting.containsKey(Underway.awaitingResult),
+        null => false,
+      };
+
   bool get hasWorkToSend {
     final known = tally;
     if (known == null) return true;
@@ -170,19 +176,12 @@ final class SessionOpenedFor extends SenderReport {
   final Snapshot stamp;
 }
 
-final class ResultWritten extends SenderReport {
-  const ResultWritten(
-    super.strategyId,
-    this.session,
-    this.stamp, {
-    required this.inputsWhenWritten,
-    required this.result,
-  });
+final class ReadRecorded extends SenderReport {
+  const ReadRecorded(super.strategyId, this.read, this.why, {required this.at});
 
-  final int session;
-  final ResultForStore result;
-  final Snapshot stamp;
-  final Snapshot inputsWhenWritten;
+  final String read;
+  final String why;
+  final DateTime at;
 }
 
 final class EventNotApplied extends SenderReport {

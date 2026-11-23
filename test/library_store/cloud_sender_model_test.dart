@@ -3,16 +3,13 @@ import 'dart:math';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/collab/cloud_results.dart';
-import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
-import 'package:icarus/library_store/cloud_shadow.dart';
+import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart'
-    show at, pageList, pageSnapshot, serverRows, servedAccount, strategyId;
+import 'cloud_shadow_test.dart' show servedAccount, strategyId;
 import 'sender_world.dart';
 
 const seeds = int.fromEnvironment('SENDER_MODEL_SEEDS', defaultValue: 480);
@@ -55,7 +52,6 @@ final class Model {
   final broken = <String>[];
   final committed = <String, String>{};
   final folded = <String>{};
-  final oldStamps = <Snapshot>[];
 
   Snapshot get stamp => (
         account: account,
@@ -72,8 +68,19 @@ final class Model {
       clientId: 'client-${restarts + 1}',
       startingWith: stamp,
     );
-    _resultsSignIns = signIns;
-    _lastArrival = -1;
+    server.onRead = (call) {
+      if (world.sender.sendingUnder != stamp) {
+        broken.add('$call of ${call.strategyId} went out under '
+            '${world.sender.sendingUnder} while the inputs were $stamp');
+      }
+      if (world.sender.held case final reason?) {
+        broken.add('a read while sending was held ($reason)');
+      }
+      if (refusedAt == signIns) {
+        broken.add('a read after a sign-in refusal, with the sign-in '
+            'unchanged');
+      }
+    };
     server.onCall = (call) {
       final under = world.sender.sendingUnder;
       if (under != stamp) {
@@ -92,84 +99,40 @@ final class Model {
       world.addServedStrategy();
       world.addOtherStrategy();
     }
-    results();
   }
 
   void restart() {
     _readReports();
     world.sender.dispose();
-    world.close();
     world.store.close();
     async.flushMicrotasks();
     restarts++;
     refusedAt = null;
     _read = 0;
-    _opened.clear();
     _restartsWritten.clear();
+    _readSince.clear();
+    _retiredAt.clear();
+    _accessAt.clear();
     open(first: false);
   }
 
-  void remember() {
-    oldStamps.add(stamp);
-    if (oldStamps.length > 4) oldStamps.removeAt(0);
+  void teammate() {
+    final strategy = strategies[random.nextInt(2)];
+    final row = server.rows[strategy]!.strategy;
+    final revision = (row.toJson() as Map)['revision']! as int;
+    teammates++;
+    server.teammate(
+      strategy,
+      StrategyPatchOp(
+        opId: 'teammate-$teammates',
+        expectedStrategyRevision: revision,
+        name: 'Teammate $teammates',
+      ),
+    );
+    log.add('teammate renames $strategy');
   }
 
-  void results([Snapshot? under]) {
-    final given = under ?? stamp;
-    final shadow = world.shadow!;
-    for (final strategy in strategies) {
-      final revision = server.revisions[strategy] ?? 1;
-      if (strategy == strategyId) {
-        shadow.pageList(
-          strategy,
-          pageList(serverRows(), revision: revision),
-          given.connection,
-          stamp: given,
-        );
-        shadow.page(
-          strategy,
-          pageSnapshot(serverRows()),
-          given.connection,
-          stamp: given,
-        );
-      } else {
-        shadow.pageList(
-          strategy,
-          RemotePageList(
-            header: app.RemoteStrategyHeader(
-              publicId: otherStrategy,
-              name: 'Second',
-              mapData: 'bind',
-              revision: revision,
-              createdAt: at,
-              updatedAt: at,
-              role: 'owner',
-            ),
-            pages: const [],
-          ),
-          given.connection,
-          stamp: given,
-        );
-      }
-    }
-    async.flushMicrotasks();
-  }
-
-  void staleResult() {
-    if (oldStamps.isEmpty) return;
-    final old = oldStamps[random.nextInt(oldStamps.length)];
-    if (old.connection == connection && old.account == account) return;
-    final before = world.sender.store.reports.length;
-    results(old);
-    world.settle(const Duration(milliseconds: 500));
-    for (final report in world.sender.store.reports.skip(before)) {
-      if (report case ResultWritten(stamp: final written) when written == old) {
-        broken.add('a result that arrived under $old was recorded while the '
-            'inputs were $stamp');
-      }
-    }
-    log.add('stale result under ${old.connection}');
-  }
+  var teammates = 0;
 
   Set<String> _presentIn(String strategy) {
     final cloud = world.cloud(strategy);
@@ -204,6 +167,7 @@ final class Model {
       async.flushMicrotasks();
       if (saved is Saved) {
         committed[id] = strategy;
+        _readSince.remove(strategy);
         for (final other in strategies) {
           final after = _presentIn(other);
           final gone = before[other]!.difference(after);
@@ -223,27 +187,11 @@ final class Model {
   }
 
   final _removed = <String>{};
-  final _opened = <(String, int), Snapshot>{};
   final _restartsWritten = <String, int>{};
-  int? _resultsSignIns;
+  final _readSince = <String, Set<String>>{};
+  final _retiredAt = <(String, String), DateTime>{};
+  final _accessAt = <String, DateTime>{};
   var _read = 0;
-  var _lastArrival = -1;
-
-  void _inArrivalOrder(Object arrival, String what) {
-    final index = world.arrivals.indexWhere((seen) => identical(seen, arrival));
-    if (index < 0) return;
-    if (index < _lastArrival) {
-      broken.add('$what, arrival $index, was recorded after arrival '
-          '$_lastArrival');
-    }
-    _lastArrival = max(_lastArrival, index);
-  }
-
-  static bool _isAnswer(QueueEvent event) => switch (event) {
-        OpAnswered() || BatchRefused() || ClaimReleased() => true,
-        TransportFailed(:final failure) => failure != TransportFailure.timeout,
-        _ => false,
-      };
 
   void _readReports() {
     final reports = world.sender.store.reports;
@@ -255,9 +203,7 @@ final class Model {
             :final effects,
             :final batch,
           ):
-          if (batch != null && events.every(_isAnswer)) {
-            _inArrivalOrder(batch.ops, 'the answer to $batch');
-          }
+          if (batch != null) _readSince.remove(strategyId);
           for (final effect in effects) {
             if (effect case OpRemoved(:final opId)) _removed.add(opId);
           }
@@ -272,35 +218,31 @@ final class Model {
                   'in one run');
             }
           }
-        case SessionOpenedFor(:final strategyId, :final session, :final stamp):
-          _opened[(strategyId, session)] = stamp;
-        case ResultWritten(
-            :final strategyId,
-            :final session,
-            :final stamp,
-            :final inputsWhenWritten,
-            :final result,
-          ):
-          if (!world.arrivals.any((seen) => identical(seen, result))) {
-            broken.add('a result for $strategyId was recorded that never '
-                'arrived');
+        case SessionOpenedFor(:final strategyId):
+          _readSince.remove(strategyId);
+          _accessAt.remove(strategyId);
+        case ReadRecorded(:final strategyId, :final read, :final why)
+            when why == 'the queue asked for it':
+          if (!(_readSince[strategyId] ??= {}).add(read)) {
+            broken.add('$read of $strategyId was read twice for the queue '
+                'with nothing changed between');
           }
-          _inArrivalOrder(result, 'a result for $strategyId');
-          if (inputsWhenWritten != stamp) {
-            broken.add('a result under $stamp was written while the inputs '
-                'were $inputsWhenWritten');
+        case ReadRecorded(:final strategyId, :final read, :final why, :final at)
+            when why == 'landed work waits for a result':
+          if (_retiredAt[(strategyId, read)] case final last?
+              when at.difference(last) < timing.retireAgainAfter) {
+            broken.add('$read of $strategyId was read to retire landed work '
+                '${at.difference(last)} after the last');
           }
-          if (stamp.signIns != _resultsSignIns) {
-            broken.add('a result under sign-in ${stamp.signIns} was written '
-                'in a run whose results began under $_resultsSignIns');
+          _retiredAt[(strategyId, read)] = at;
+        case ReadRecorded(:final strategyId, :final why, :final at)
+            when why == 'edit access was lost':
+          if (_accessAt[strategyId] case final last?
+              when at.difference(last) < timing.readAgainAfter) {
+            broken.add('the page list of $strategyId was read for edit access '
+                '${at.difference(last)} after the last');
           }
-          final under = _opened[(strategyId, session)];
-          if (under == null ||
-              under.connection != stamp.connection ||
-              under.account != stamp.account) {
-            broken.add('a result under $stamp went into session $session of '
-                '$strategyId, which was opened for $under');
-          }
+          _accessAt[strategyId] = at;
         case _:
           break;
       }
@@ -377,7 +319,6 @@ final class Model {
     final hold = storage.holdNextWrite();
     world.sender.wake();
     world.settle(const Duration(milliseconds: 300));
-    remember();
     final choice = random.nextInt(3);
     if (choice == 2) {
       world.sender.hold('held while a write is held');
@@ -395,124 +336,80 @@ final class Model {
     async.flushMicrotasks();
   }
 
-  var _fresh = 0;
-
-  void _probeHeld(
-    String what,
-    void Function() hand,
-    void Function(ResultOutcome? outcome) check,
-  ) {
-    final sender = world.sender;
-    final wasHeld = sender.held;
-    sender.hold('held for a probe');
-    world.settle(const Duration(milliseconds: 300));
-    final hold = storage.holdNextWrite();
-    var reached = false;
-    unawaited(
-      hold.reached.then((_) {
-        reached = true;
-        remember();
-        connection = nextConnection++;
-        world.connection = connection;
-      }),
-    );
-    final arrivedBefore = world.arrivals.length;
-    hand();
-    final result = world.arrivals.length > arrivedBefore
-        ? world.arrivals[arrivedBefore]
-        : null;
-    world.settle(const Duration(milliseconds: 300));
-    hold.letGo();
-    world.settle(const Duration(milliseconds: 300));
-    if (wasHeld == null) {
-      sender.release();
-    } else {
-      sender.hold(wasHeld);
-    }
-    log.add('$what${reached ? '' : ' (no write reached)'}');
-    if (reached && result is ResultForStore) {
-      check(world.intake.outcomes[result]);
-    }
-  }
-
-  bool get _resultsWouldBeTaken =>
-      !world.sender.busy &&
-      connection != null &&
-      account == servedAccount &&
-      world.sender.resultsSignIns == signIns;
-
-  void heldAdd() {
-    if (!_resultsWouldBeTaken) return;
-    final id = 'fresh-${++_fresh}';
-    server.owners[id] = servedAccount;
-    _probeHeld(
-      'the add of $id is held while the connection changes',
-      () {
-        final given = stamp;
-        world.shadow!.pageList(
-          id,
-          RemotePageList(
-            header: app.RemoteStrategyHeader(
-              publicId: id,
-              name: 'Fresh',
-              mapData: 'bind',
-              revision: 1,
-              createdAt: at,
-              updatedAt: at,
-              role: 'owner',
-            ),
-            pages: const [],
-          ),
-          given.connection,
-          stamp: given,
+  void readFault() {
+    final strategy = strategies[random.nextInt(2)];
+    final choice = random.nextInt(7);
+    final readSoon = random.nextBool();
+    log.add('read fault $strategy $choice${readSoon ? ', read soon' : ''}');
+    if (readSoon) world.sender.adopt(strategy, again: true);
+    switch (choice) {
+      case 0:
+        server.answerReadNext(
+          strategy,
+          (_) => Future.microtask(() {
+            refusedAt = signIns;
+            return const StoreReadRefused(
+              StoreReadRefusal.accountMismatch,
+              'another account',
+            );
+          }),
         );
-      },
-      (outcome) {
-        if (outcome is! ResultStale) {
-          broken.add('the first page list of $id was added while the '
-              'connection changed, and the intake was told $outcome');
-        }
-        if (world.sender.bound[id] case final session?) {
-          broken.add('$id was bound to $session though its add outlived its '
-              'connection');
-        }
-      },
-    );
-  }
-
-  void heldSessionWrite() {
-    if (!_resultsWouldBeTaken) return;
-    remember();
-    connection = nextConnection++;
-    world.connection = connection;
-    world.settle(const Duration(milliseconds: 300));
-    if (!_resultsWouldBeTaken) return;
-    final before = world.cloud().queue.session.number;
-    _probeHeld(
-      'the first session write after reconnecting is held while the '
-      'connection changes',
-      () {
-        world.shadow!.page(
-          strategyId,
-          pageSnapshot(serverRows()),
-          connection,
-          stamp: stamp,
+      case 1:
+        server.answerReadNext(
+          strategy,
+          (_) => Future.microtask(() {
+            refusedAt = signIns;
+            return const StoreReadRefused(
+              StoreReadRefusal.unauthenticated,
+              'signed out',
+            );
+          }),
         );
-      },
-      (outcome) {
-        final opened = world.cloud().queue.session.number;
-        if (opened == before) return;
-        if (outcome is! ResultStale) {
-          broken.add('a result whose session write outlived its connection '
-              'was answered $outcome');
-        }
-        if (world.sender.bound[strategyId] case final session?
-            when session.number == opened) {
-          broken.add('$strategyId was bound to session $opened, opened for a '
-              'connection replaced during its write');
-        }
-      },
-    );
+      case 2:
+        server.answerReadWith(
+          strategy,
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+        );
+      case 3:
+        server.answerReadWith(
+          strategy,
+          const StoreReadLost(TransportFailure.network, 'lost'),
+        );
+      case 4:
+        server.answerReadWith(
+          strategy,
+          const StoreReadUnreadable('rows this build cannot read'),
+        );
+      case 5:
+        server.answerReadNext(strategy, (_) {
+          final late = Completer<StoreReadOutcome>();
+          Timer(
+            const Duration(seconds: 60),
+            () => late.complete(const StoreReadAnswered(StrategyGone())),
+          );
+          return late.future;
+        });
+      case _:
+        final change = random.nextInt(3);
+        server.answerReadNext(strategy, (call) async {
+          switch (change) {
+            case 0:
+              connection = nextConnection++;
+              world.connection = connection;
+            case 1:
+              _signedInAs(null);
+              world.account = null;
+              _signedInAs(servedAccount);
+              world.account = servedAccount;
+            case _:
+              _signedInAs(
+                account == servedAccount ? otherAccount : servedAccount,
+              );
+              world.account = account;
+          }
+          return const StoreReadAnswered(StrategyGone());
+        });
+    }
   }
 
   void waitAndCountLooks(int seconds) {
@@ -543,13 +440,11 @@ final class Model {
         world.sender.wake();
         log.add('wake');
       case 4:
-        remember();
         connection =
             connection == null || random.nextBool() ? nextConnection++ : null;
         world.connection = connection;
         log.add('connection $connection');
       case 5:
-        remember();
         final options = [servedAccount, otherAccount, null];
         _signedInAs(options[random.nextInt(3)]);
         signIns++;
@@ -578,12 +473,11 @@ final class Model {
         restart();
         log.add('restart');
       case 12:
-        results();
-        log.add('results');
+        teammate();
       case 13:
         changeDuringWrite();
       case 14:
-        staleResult();
+        readFault();
       case 15 when random.nextBool():
         world.slowStore.afterRead = random.nextBool()
             ? Duration(milliseconds: random.nextInt(1500))
@@ -593,9 +487,9 @@ final class Model {
         world.slowStore.dropSessionReadBack = 1;
         log.add('one session read-back is lost');
       case 17:
-        heldAdd();
+        readFault();
       case 18:
-        heldSessionWrite();
+        teammate();
       case _:
         final seconds = random.nextInt(60);
         waitAndCountLooks(seconds);
@@ -614,15 +508,21 @@ final class Model {
       reason: 'sent as an account that does not own it\n$trail',
     );
     expect(
+      server.wrongAccountReads.map((call) => '${call.strategyId} $call'),
+      isEmpty,
+      reason: 'read as an account that does not own it\n$trail',
+    );
+    expect(
       [
-        for (final report in world.shadow!.reports)
-          if (report case ShadowSessionOpened(:final because)
-              when because != 'the sender opened it' &&
-                  because != 'the strategy was added')
-            because,
+        for (final strategy in strategies)
+          if (standingOf(world.cloud(strategy).queue) ==
+              Standing.deletedOnServer)
+            strategy,
       ],
       isEmpty,
-      reason: 'the shadow opened a session itself\n$trail',
+      reason: 'a read answered after the loop moved on was recorded: the '
+          'store holds a strategy as deleted that the server never deleted\n'
+          '$trail',
     );
   }
 
@@ -693,13 +593,10 @@ final class Model {
     world
       ..account = account
       ..connection = connection;
+    server.roles.clear();
     world.sender.release();
     final sender = world.sender;
-    if ((sender.resultsSignIns != null && sender.resultsSignIns != signIns) ||
-        sender.signInWaitFrom == signIns ||
-        sender.upgradeAsked) {
-      restart();
-    }
+    if (sender.signInWaitFrom == signIns || sender.upgradeAsked) restart();
   }
 
   void checkLiveness() {
@@ -720,7 +617,6 @@ final class Model {
     }
     for (var round = 0; round < 30; round++) {
       world.settle(const Duration(minutes: 1));
-      results();
       if (_settledOrNeedsYou()) break;
     }
     for (final strategy in strategies) {
@@ -728,8 +624,24 @@ final class Model {
       expect(
         [for (final work in cloud.queue.landed) work.op.opId],
         isEmpty,
-        reason: 'results that show the server\'s copy did not clear the '
-            'landed work of $strategy\n$trail',
+        reason: 'the loop\'s reads did not clear the landed work of '
+            '$strategy\n$trail',
+      );
+      expect(
+        [
+          for (final entry in cloud.queue.entries)
+            for (final hold in cloud.views[entry.id]?.holds ?? const <Hold>[])
+              if (hold is AwaitingResult && !_needsUser(cloud, entry.id))
+                '${entry.id} awaits ${hold.subject}',
+        ],
+        isEmpty,
+        reason: 'a need the queue raised was never read; sender '
+            '${world.sender.view}\n$trail',
+      );
+      expect(
+        world.sender.cannotRead(strategy),
+        isNull,
+        reason: 'healed, $strategy is still held as unreadable\n$trail',
       );
       for (final entry in cloud.queue.entries) {
         expect(
@@ -789,6 +701,7 @@ final class Model {
   bool _settledOrNeedsYou() => strategies.every((strategy) {
         final cloud = world.cloud(strategy);
         return cloud.queue.landed.isEmpty &&
+            world.sender.cannotRead(strategy) == null &&
             cloud.queue.entries.every(
               (entry) => _needsUser(cloud, entry.id),
             );
@@ -850,7 +763,6 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
           'seed $seed${dropLost == null ? '' : ' (ConnectionLost ${dropLost ? 'dropped' : 'kept'})'}: ${failure.message}');
     } finally {
       model.world.sender.dispose();
-      model.world.close();
       model.world.store.close();
       async.flushMicrotasks();
     }

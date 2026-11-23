@@ -323,7 +323,11 @@ Future<void> _play(String script) async {
   _log('RUN $_runId $script');
   _countLibraryBoxEvents();
   _log(await firstFrameLine(appProviderContainer));
-  if (_cloudStore.isOn(appProviderContainer)) _log('CLOUDSTORE switch shadow');
+  if (_cloudStore.isOn(appProviderContainer)) {
+    _log(_cloudStore.sends(appProviderContainer)
+        ? 'CLOUDSTORE switch send'
+        : 'CLOUDSTORE switch shadow');
+  }
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
       _failedSteps++;
@@ -1663,8 +1667,15 @@ Future<void> _run(Map<String, dynamic> step) async {
           value as String,
           ((by[0] as num).toDouble(), (by[1] as num).toDouble()),
           startingWith: step['startingWith'] == true,
+          merge: step['merge'] == true,
         ),
       );
+    case 'addPage':
+      await c.read(strategyProvider.notifier).addPage();
+    case 'storeDeletePage':
+      _log(await storeDeletePage(c, (value as num).toInt()));
+    case 'setMemberRole':
+      _log(await setMemberRole(c, value as String));
     case 'waitStoreSent':
       _log(
         await waitStoreSent(
@@ -1675,6 +1686,10 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'expectStoreNeedsYou':
       (await storeNeedsYou(c)).forEach(_log);
+    case 'storeAdopt':
+      _log(
+        await storeAdopt(c, Duration(seconds: (value as num).toInt())),
+      );
     case 'storeUseCloud':
       _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':

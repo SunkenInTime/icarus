@@ -16,6 +16,7 @@
   {"addAgent": "k2-{run}", "at": [700, 300]},
   {"waitSettled": 60},
   {"wait": 4},
+  {"storeAdopt": 60},
   {"holdSender": true},
   {"storeMove": "k1-{run}", "by": [40, 40]},
   {"storeSyncState": true},

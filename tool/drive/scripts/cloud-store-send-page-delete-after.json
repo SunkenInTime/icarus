@@ -1,0 +1,10 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 6},
+  {"storeDeletePage": 1},
+  {"waitStoreSent": 120},
+  {"storeSyncState": true},
+  {"exit": 1}
+]

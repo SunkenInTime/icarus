@@ -15,6 +15,7 @@
   {"addAgent": "o1-{run}", "at": [600, 400]},
   {"waitSettled": 60},
   {"wait": 4},
+  {"storeAdopt": 60},
   {"holdSender": true},
   {"storeMove": "o1-{run}", "by": [60, -40]},
   {"shareLink": "editor", "file": "{out}/edit-code.txt"},

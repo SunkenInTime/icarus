@@ -646,6 +646,104 @@
           "budget": 0
         }
       }
+    },
+    "storeReadPage": {
+      "title": "The store's sender reads a page for itself",
+      "about": "One page:getSnapshot of the typical strategy's first page (60 items), named for the coach's account as the store's sender reads a page the queue asks for: a whole-row write after an answer at a revision it did not predict, or a page whose landed work it retires. Read after the strategy changed, so the server reads it.",
+      "metrics": {
+        "functionCalls": {
+          "today": 1,
+          "budget": 3
+        },
+        "readBytes": {
+          "today": 46693,
+          "budget": 58367
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 216,
+          "budget": 270
+        },
+        "returnBytes": {
+          "today": 42523,
+          "budget": 53154
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "storeReadPageDelete": {
+      "title": "The store's sender reads before a page delete",
+      "about": "A page delete waits for the page list and the page read since this device last changed them. The sender reads them, named for the coach's account, one per step: strategy:getPageList, then page:getSnapshot of the page (the typical strategy's first page, 60 items). The same page-list read confirms edit access after FORBIDDEN, and adopting a strategy reads it first.",
+      "metrics": {
+        "functionCalls": {
+          "today": 2,
+          "budget": 4
+        },
+        "readBytes": {
+          "today": 49586,
+          "budget": 61983
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 331,
+          "budget": 414
+        },
+        "returnBytes": {
+          "today": 44195,
+          "budget": 55244
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "storeSoloSessionRetire": {
+      "title": "Edit alone with no editor open, sent and retired by the store's sender",
+      "about": "soloSession's 50 moves sent by the store's sender with nothing watching: five bursts of ten with a minute's pause after each. The sender reads nothing before a send; once a strategy has been quiet for 30 s it reads the touched page to retire its landed work, and not that page again for five minutes, so the session reads the page twice (test/library_store/cloud_sender_test.dart counts the same). The reads stand in for a source of results until the editor's page results come through the store.",
+      "metrics": {
+        "functionCalls": {
+          "today": 52,
+          "budget": 63
+        },
+        "readBytes": {
+          "today": 307405,
+          "budget": 384257
+        },
+        "writeBytes": {
+          "today": 115698,
+          "budget": 144623
+        },
+        "sentBytes": {
+          "today": 49166,
+          "budget": 61458
+        },
+        "returnBytes": {
+          "today": 93061,
+          "budget": 116327
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        },
+        "applyBatchCalls": {
+          "today": 50,
+          "budget": 50
+        },
+        "conflictRetries": {
+          "today": 0,
+          "budget": 0
+        }
+      }
     }
   }
 }
