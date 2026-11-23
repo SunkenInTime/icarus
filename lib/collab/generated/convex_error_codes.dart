@@ -43,6 +43,7 @@ enum ConvexErrorCode {
   shareLinkRevoked('SHARE_LINK_REVOKED'),
   strategyTooLargeToDuplicate('STRATEGY_TOO_LARGE_TO_DUPLICATE'),
   unauthenticated('UNAUTHENTICATED'),
+  uncheckedOutsideWindow('UNCHECKED_OUTSIDE_WINDOW'),
   unsupportedOp('UNSUPPORTED_OP'),
   uploadIntentNotFound('UPLOAD_INTENT_NOT_FOUND'),
   unknown('UNKNOWN');

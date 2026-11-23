@@ -50195,6 +50195,12 @@
             },
             "optional": true
           },
+          "liveBasis": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
           "ops": {
             "fieldType": {
               "type": "array",
@@ -122700,6 +122706,12 @@
             },
             "optional": true
           },
+          "sendsLiveBasis": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -145950,6 +145962,12 @@
               }
             },
             "optional": false
+          },
+          "serverTime": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
           },
           "strategyPublicId": {
             "fieldType": {
