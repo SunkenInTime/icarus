@@ -1,13 +1,14 @@
 import 'dart:async';
 
 import 'package:icarus/library_store/action_journal.dart';
-import 'package:icarus/library_store/canvas_changes.dart';
+import 'package:icarus/library_store/canvas_units.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 sealed class MirrorStop {
@@ -142,30 +143,57 @@ final class StoreMirror extends LocalLibraryFollower {
     _kick();
   }
 
-  Future<int> repairJournaled() async {
+  Future<int> releaseTakenUp() async {
     final journal = actions;
     if (journal == null || _phase is! MirrorFollowing) return 0;
     await drained();
-    final unsaved = journal.unsaved;
-    for (final id in unsaved) {
-      if (const LocalLibrary().storedStrategy(id) case final current?) {
-        journal.repair(current);
-      }
+    final taken = journal.takenUp;
+    for (final id in taken) {
+      final hive = const LocalLibrary().storedStrategy(id);
+      journal.release(id, hive == null ? null : cloneStrategy(hive));
     }
     _kick();
     await drained();
-    return unsaved.length;
+    return taken.length;
   }
 
-  void journal(
-    String strategyId,
-    String label,
-    List<CanvasChange> changes,
-  ) {
+  void takeUp(String strategyId, StrategyData hive, StrategyData canvas) {
     final journal = actions;
     if (journal == null || _phase is! MirrorFollowing) return;
-    journal.action(strategyId, label, changes);
+    journal.takeUp(strategyId, hive, canvas);
     _strategies.remove(strategyId);
+    _kick();
+  }
+
+  void unit(
+    String strategyId, {
+    required UnitKind kind,
+    required List<DeclaredAction> declared,
+    required StrategyData? snapshot,
+    required Set<String> pages,
+    String? notJudged,
+    int items = 0,
+    Duration snapshotTime = Duration.zero,
+  }) {
+    final journal = actions;
+    if (journal == null || _phase is! MirrorFollowing) return;
+    journal.unit(
+      strategyId,
+      kind: kind,
+      actions: declared,
+      snapshot: snapshot,
+      pages: pages,
+      notJudged: notJudged,
+      items: items,
+      snapshotTime: snapshotTime,
+    );
+    _kick();
+  }
+
+  void release(String strategyId, StrategyData? hive) {
+    final journal = actions;
+    if (journal == null || _phase is! MirrorFollowing) return;
+    journal.release(strategyId, hive);
     _kick();
   }
 
@@ -188,6 +216,7 @@ final class StoreMirror extends LocalLibraryFollower {
   }
 
   Set<String> get strategiesNotKnownEqual => {
+        ...?actions?.takenUp,
         ..._strategies,
         ..._strategiesInFlight,
         ...reads.strategiesBeingWritten,
@@ -336,7 +365,7 @@ final class StoreMirror extends LocalLibraryFollower {
           case JournalStopped(:final stop):
             _stop(MirrorStoreStopped(stop));
             return;
-          case JournalSaved(
+          case JournalPut(
               :final strategyId,
               :final image,
               :final removeFirst,

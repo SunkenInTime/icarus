@@ -111,6 +111,8 @@ final class PageSideSet extends CanvasChange {
 enum ActionWay { done, undone, redone }
 
 abstract interface class EditFollower {
+  void attach();
+
   void onAction(UserAction action, {required ActionWay way});
 
   void onPagesChanged(List<CanvasChange> Function() changes, String label);

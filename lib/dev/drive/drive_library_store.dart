@@ -382,7 +382,7 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
       );
   final drainedAfter = clock.elapsed;
   final endSave = await saveOpenLocalStrategy(c, mirror);
-  await mirror.repairJournaled();
+  await mirror.releaseTakenUp();
   final checkClock = Stopwatch()..start();
   final check = await c.read(shadowProvider.notifier).checkAgain(ready);
   final lines = [

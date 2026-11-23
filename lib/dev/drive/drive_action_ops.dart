@@ -1,8 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/library_store/action_journal.dart';
-import 'package:icarus/library_store/action_ops.dart';
-import 'package:icarus/library_store/ops_verdict.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -15,29 +13,80 @@ ActionJournal? _journal(ProviderContainer c) =>
     };
 
 String _counted(Map<String, int> counts) => [
-      for (final key in counts.keys.toList()..sort()) '$key=${counts[key]}',
+      for (final key in counts.keys.toList()..sort()) '$key ${counts[key]}',
     ].join(', ');
 
 Map<String, int> opsCounts(ActionOpsTally t) => {
-      'actions': t.actions,
-      'actionsWithOps': t.actionsWithOps,
-      'commits': t.commits,
+      'unitsOpened': t.unitsOpened,
+      'coveredAndCorrect': t.coveredAndCorrect,
+      'changedWithoutAction': t.changedWithoutAction,
+      'opsWrong': t.opsWrong,
+      'notJudged': t.unitsNotJudged,
       'commitsRefused': t.commitsRefused.length,
-      'gaps': t.gaps.length,
-      'saves': t.saves,
-      'savesFailed': t.savesFailed,
       'followerFaults': t.followerFaults.length,
-      'readBackEqual': t.readBackEqual,
-      'readBackUnequal': t.readBackUnequal,
-      'imageWroteNothing': t.imageWroteNothing,
-      'imageWroteHeaderTimeOnly': t.imageWroteHeaderTimeOnly,
-      'imageWroteRows': t.imageWroteRows,
-      'realRows': t.rowsByClass[ImageRowClass.real] ?? 0,
-      'trashedPagesRemoved': t.trashedPagesRemoved,
-      'deletedRowsRemoved': t.deletedRowsRemoved,
-      'lineupsInsideGroups': t.lineupsInsideGroups,
-      'lineupsChangingGroups': t.lineupsChangingGroups,
+      'hiveSavesDifferent': t.hiveSavesDifferent,
     };
+
+String _ms(Duration d) => (d.inMicroseconds / 1000).toStringAsFixed(1);
+
+List<String> _costLines(String label, List<UnitCost> costs) {
+  String spread(Iterable<Duration> values) {
+    final sorted = [...values]..sort();
+    if (sorted.isEmpty) return '-';
+    return 'p50 ${_ms(sorted[sorted.length ~/ 2])} '
+        'max ${_ms(sorted.last)} ms';
+  }
+
+  return [
+    for (final (name, low, high) in [
+      ('up to 50 items', 0, 50),
+      ('51 to 500 items', 51, 500),
+      ('over 500 items', 501, 1 << 30),
+    ])
+      if (costs.where((c) => c.items >= low && c.items <= high).toList()
+          case final bucket when bucket.isNotEmpty)
+        'OPS $label unit cost, page with $name: ${bucket.length} units; '
+            'snapshot ${spread(bucket.map((c) => c.snapshot))}; '
+            'replay ${spread(bucket.map((c) => c.replay))}; '
+            'compare ${spread(bucket.map((c) => c.compare))}',
+  ];
+}
+
+List<String> actionOpsLines(String label, ActionOpsTally t) => [
+      'OPS $label units opened ${t.unitsOpened}: covered and correct '
+          '${t.coveredAndCorrect}, changed without an action '
+          '${t.changedWithoutAction}, ops wrong ${t.opsWrong} (both '
+          '${t.bothChecksFailed}), not judged ${t.unitsNotJudged}'
+          '${t.notJudged.isEmpty ? '' : ' (${_counted(t.notJudged)})'}; '
+          'adds up ${t.addsUp ? 'yes' : 'NO'}; units with no change '
+          '${t.unitsWithNoChange}',
+      'OPS $label actions ${t.actions}, commits ${t.commits}, ops '
+          '${t.opsCommitted}, commits refused ${t.commitsRefused.length}; '
+          'taken up ${t.takenUp}, released ${t.released} (Hive put back '
+          '${t.releasesThatPutHiveBack}), store put right from the canvas '
+          '${t.repairsFromCanvas}; follower faults ${t.followerFaults.length}',
+      'OPS $label hive saves ${t.hiveSaves}: equal to the store '
+          '${t.hiveSavesEqualToStore}, different ${t.hiveSavesDifferent}, '
+          'failed ${t.hiveSavesFailed}'
+          '${t.hiveDifferencesByField.isEmpty ? '' : '; differing fields ${_counted(t.hiveDifferencesByField)}'}',
+      for (final MapEntry(key: kind, value: k) in t.byKind.entries)
+        'OPS $label kind "$kind": judged ${k.judged}, covered and correct '
+            '${k.coveredAndCorrect}, changed without an action '
+            '${k.changedWithoutAction}, ops wrong ${k.opsWrong}, not judged '
+            '${k.notJudged.values.fold(0, (a, b) => a + b)}'
+            '${k.notJudged.isEmpty ? '' : ' (${_counted(k.notJudged)})'}',
+      for (final f in t.findings)
+        'OPS $label unit ${f.number} "${f.kind}"'
+            '${f.uncovered.isEmpty ? '' : ' changed without an action: ${f.uncovered.take(12).join('; ')}${f.uncovered.length > 12 ? ' (+${f.uncovered.length - 12})' : ''}'}'
+            '${f.wrong.isEmpty ? '' : ' | ops wrong: ${f.wrong.take(12).join('; ')}${f.wrong.length > 12 ? ' (+${f.wrong.length - 12})' : ''}'}'
+            '${f.gaps.isEmpty ? '' : ' | gaps: ${f.gaps.take(6).join('; ')}'}',
+      for (final refused in t.commitsRefused) 'OPS $label refused $refused',
+      for (final fault in t.followerFaults) 'OPS $label follower fault $fault',
+      for (final h in t.hiveFindings)
+        'OPS $label hive save ${h.save} differs from the store: '
+            '${h.differences.take(12).join('; ')}',
+      ..._costLines(label, t.costs),
+    ];
 
 String actionOpsInFlight(ProviderContainer c) => switch (_journal(c)) {
       final journal? => 'actions journaled ${journal.tally.actions}, '
@@ -54,54 +103,10 @@ String? opStillPendingProblem(ProviderContainer c) => switch (_journal(c)) {
       null => 'this run does not journal action ops',
     };
 
-List<String> actionOpsLines(String label, ActionOpsTally t) => [
-      'OPS $label actions ${t.actions}, ${t.actionsWithOps} with ops; '
-          'commits ${t.commits}, ${t.opsCommitted} ops, '
-          '${t.commitsWithNothingToSave} with nothing to save, '
-          '${t.commitsRefused.length} refused; saves ${t.saves}: read back '
-          'equal ${t.readBackEqual}, unequal ${t.readBackUnequal}, not in the '
-          'store ${t.savesNotInStore}, not read ${t.savesNotRead}; image saves '
-          'that differed in nothing ${t.imageWroteNothing}, only the header '
-          'time ${t.imageWroteHeaderTimeOnly}, other rows ${t.imageWroteRows}; '
-          'failed Hive saves ${t.savesFailed}; strategies followed '
-          '${t.followed}; follower faults ${t.followerFaults.length}',
-      'OPS $label strategies removed before an image save because the '
-          'store held what an image may not drop: trashed pages '
-          '${t.trashedPagesRemoved}, deleted rows ${t.deletedRowsRemoved}; strategies repaired from Hive at the end '
-          '${t.repairedAtEnd}, after ${t.actionsAfterLastSave} actions made '
-          'after their last save',
-      'OPS $label rows that differed before each image save: ${[
-        for (final rowClass in ImageRowClass.values)
-          '${rowClass.words} ${t.rowsByClass[rowClass] ?? 0}',
-      ].join(', ')}',
-      'OPS $label lineup actions: inside unchanged groups '
-          '${t.lineupsInsideGroups}, changing which groups exist '
-          '${t.lineupsChangingGroups}',
-      'OPS $label action kinds: ${_counted(t.actionKinds)}',
-      if (t.differencesByField.isNotEmpty)
-        'OPS $label read-back differences by field: '
-            '${_counted(t.differencesByField)}',
-      for (final refused in t.commitsRefused)
-        'OPS $label refused ${refused.action}: ${refused.reason}',
-      for (final gap in t.gaps) 'OPS $label gap ${gap.action}: ${gap.gap}',
-      for (final fault in t.followerFaults) 'OPS $label follower fault $fault',
-      for (final lineup in t.lineups)
-        if (lineup.shape case LineupGroupsChanged(:final before, :final after))
-          'OPS $label lineup ${lineup.action}: groups ${before.length} -> '
-              '${after.length}, ${before.difference(after).length} gone, '
-              '${after.difference(before).length} new',
-      for (final finding in t.findings) ...[
-        if (finding.differences.isNotEmpty)
-          'OPS $label save ${finding.save} read back unequal after '
-              '[${finding.actions.join('; ')}]: '
-              '${finding.differences.take(12).join('; ')}'
-              '${finding.differences.length > 12 ? ' (+${finding.differences.length - 12})' : ''}',
-        if (finding.realWrites.isNotEmpty)
-          'OPS $label save ${finding.save} image wrote real rows after '
-              '[${finding.actions.join('; ')}]: '
-              '${finding.realWrites.take(8).join('; ')}',
-      ],
-    ];
+Future<void> _settled(StoreMirror mirror) async {
+  await Future<void>.delayed(Duration.zero);
+  await mirror.drained().timeout(const Duration(seconds: 60));
+}
 
 Future<List<String>> actionOpsStep(
   ProviderContainer c, {
@@ -112,14 +117,15 @@ Future<List<String>> actionOpsStep(
       (throw StoreStepFailed(['this run does not journal action ops']));
   if (c.read(shadowProvider.notifier).mode case Mirroring(:final mirror)
       when mirror.phase is MirrorFollowing) {
-    if (await saveOpenLocalStrategy(c, mirror) case final refused?) {
-      throw StoreStepFailed([refused]);
-    }
-    await mirror.drained().timeout(const Duration(seconds: 60));
+    await _settled(mirror);
   }
   final lines = actionOpsLines(label, journal.tally);
   final counts = opsCounts(journal.tally);
   final problems = [
+    if (!journal.tally.addsUp)
+      'units do not add up: opened ${journal.tally.unitsOpened}, judged '
+          '${journal.tally.unitsJudged}, not judged '
+          '${journal.tally.unitsNotJudged}',
     for (final MapEntry(:key, :value) in expected.entries)
       if (counts[key] != value) '$key is ${counts[key]}, expected $value',
   ];
@@ -139,11 +145,18 @@ Future<String?> saveOpenLocalStrategy(
     return 'OPS the open strategy could not be saved at the end: '
         '${error.message}';
   }
-  await mirror.drained();
+  await _settled(mirror);
   return null;
 }
 
 List<String> actionOpsEndLines(StoreMirror mirror) => switch (mirror.actions) {
-      final journal? => actionOpsLines('run', journal.tally),
+      final journal? => [
+          ...actionOpsLines('run', journal.tally),
+          if (!journal.tally.addsUp)
+            'OPS run units do not add up: opened '
+                '${journal.tally.unitsOpened}, judged '
+                '${journal.tally.unitsJudged}, not judged '
+                '${journal.tally.unitsNotJudged}',
+        ],
       null => const [],
     };

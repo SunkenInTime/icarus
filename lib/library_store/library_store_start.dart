@@ -43,7 +43,6 @@ final class LibraryStoreStart {
           actions: journal,
         );
         final follower = OpsFollower(journaling, () => appProviderContainer);
-        journal.inEditor = follower.isOpenInEditor;
         return LibraryStoreStart._(
           choice,
           Mirroring(journaling),
