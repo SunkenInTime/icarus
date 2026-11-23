@@ -1,3 +1,4 @@
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/library_rows/page_items.dart';
@@ -364,6 +365,29 @@ final class OpsBuilder {
         if (await _page(pageId, 'changed') case final page?) {
           _objectChanged(page, before, after);
         }
+      case ObjectRaised(:final pageId, :final kind, :final id):
+        if (await _page(pageId, 'raised') case final page?) {
+          _objectRaised(page, kind, id);
+        }
+      case StrategyFieldsChanged(:final name, :final map, :final theme):
+        _ops.add(StrategyPatchOp(
+          opId: _opId(),
+          expectedStrategyRevision: _headerRevision,
+          name: name,
+          mapData: map == null ? null : Maps.mapNames[map],
+          themeProfile: switch (theme) {
+            null => const KeepValue(),
+            StrategyThemeChoice(profileId: final id?) => SetValue(id),
+            StrategyThemeChoice() => const ClearValue(),
+          },
+          themeOverridePalette: switch (theme) {
+            null => const KeepValue(),
+            StrategyThemeChoice(overridePalette: final palette?) =>
+              SetValue(themePaletteOf(palette)),
+            StrategyThemeChoice() => const ClearValue(),
+          },
+        ));
+        _headerRevision++;
       case LineupsChanged(:final pageId, :final removed, :final added):
         if (await _page(pageId, 'lineups') case final page?) {
           _lineupsChanged(page, pageId, removed, added);
@@ -532,6 +556,39 @@ final class OpsBuilder {
     existing
       ..live = false
       ..revision += 1;
+  }
+
+  void _objectRaised(_Page page, ActionObjectKind kind, String id) {
+    final existing = page.elements[id];
+    if (existing == null || !existing.live) {
+      _gaps.add(ObjectNotInStore(kind, id, 'raised'));
+      return;
+    }
+    final base = existing.row;
+    final aboveIt = page.elements.values.any((other) =>
+        other.live &&
+        other.row.payload.kind == base.payload.kind &&
+        other.sortIndex > existing.sortIndex);
+    if (!aboveIt) return;
+    final number = page.nextElementIndex();
+    _ops.add(elementEditOp(
+      opId: _opId(),
+      base: base,
+      drawn: DrawnAt(existing.revision),
+      payload: base.payload,
+      sortIndex: number,
+      connection: Connection.live,
+    ));
+    existing
+      ..revision += 1
+      ..sortIndex = number
+      ..row = LiveElement(
+        publicId: base.publicId,
+        pagePublicId: base.pagePublicId,
+        payload: base.payload,
+        sortIndex: number,
+        revision: existing.revision,
+      );
   }
 
   void _objectChanged(

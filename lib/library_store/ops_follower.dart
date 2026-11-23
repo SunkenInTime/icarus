@@ -205,6 +205,20 @@ final class OpsFollower implements EditFollower, UnitSource {
     );
   }
 
+  @override
+  void onEdit(
+    List<CanvasChange> Function(String pageId) changes,
+    String label,
+  ) {
+    _guarded(label, () {
+      final pageId =
+          _container().read(strategyPageSessionProvider).activePageId;
+      if (_localStrategy() == null || pageId == null) return;
+      _open().actions.add(DeclaredAction(label, changes(pageId)));
+      _schedule();
+    });
+  }
+
   void _noteChange() {
     if (_unit == null && _takenUp == null && _localStrategy() == null) return;
     _open();

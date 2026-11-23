@@ -15,6 +15,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/library_store/canvas_changes.dart';
 
 final agentProvider =
     NotifierProvider<AgentProvider, List<PlacedAgentNode>>(AgentProvider.new);
@@ -186,6 +187,10 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
+    ActionProvider.editFollower?.onEdit(
+      (pageId) => [ObjectRaised(pageId, ActionObjectKind.agent, id)],
+      'raise agent',
+    );
     _joinDroppedCopy(droppedCopy, id);
   }
 

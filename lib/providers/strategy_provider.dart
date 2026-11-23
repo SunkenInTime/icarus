@@ -2384,15 +2384,33 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   void setThemeProfileForCurrentStrategy(String profileId) {
     ref.read(strategyThemeProvider.notifier).setProfile(profileId);
+    _themeEdited();
   }
 
   void setThemeOverrideForCurrentStrategy(MapThemePalette palette) {
     ref.read(strategyThemeProvider.notifier).setOverride(palette);
+    _themeEdited();
   }
 
   void clearThemeOverrideForCurrentStrategy() {
     ref.read(strategyThemeProvider.notifier).clearOverride();
+    _themeEdited();
   }
+
+  void _themeEdited() => ActionProvider.editFollower?.onEdit(
+        (_) {
+          final theme = ref.read(strategyThemeProvider);
+          return [
+            StrategyFieldsChanged(
+              theme: StrategyThemeChoice(
+                profileId: theme.profileId,
+                overridePalette: theme.overridePalette,
+              ),
+            ),
+          ];
+        },
+        'theme',
+      );
 
   Future<void> renameStrategy(
     String strategyID,
@@ -2443,6 +2461,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       (await const LocalLibrary().renameStrategy(strategy, newName)).orThrow();
       if (state.strategyId == strategyID) {
         state = state.copyWith(strategyName: newName);
+        ActionProvider.editFollower?.onEdit(
+          (_) => [StrategyFieldsChanged(name: newName)],
+          'strategy name',
+        );
       }
     } else {
       log("Strategy with ID $strategyID not found.");
@@ -2752,6 +2774,10 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> switchSide({required bool allPages}) async {
     final isAttack = !ref.read(mapProvider).isAttack;
     ref.read(mapProvider.notifier).setAttack(isAttack);
+    ActionProvider.editFollower?.onEdit(
+      (pageId) => [PageSideSet(pageId, isAttack: isAttack)],
+      'side of the page on screen',
+    );
     setUnsaved();
     final strategyId = state.strategyId;
     if (!allPages || strategyId == null) return;
