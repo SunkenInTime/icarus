@@ -210,6 +210,7 @@ import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -2104,7 +2105,9 @@ Future<void> _run(Map<String, dynamic> step) async {
         ]} '
         'lineups=${c.read(lineUpProvider).graph.links.length} '
         'selected=${c.read(canvasSelectionProvider).length} '
-        'tool=${c.read(interactionStateProvider).name}',
+        'tool=${c.read(interactionStateProvider).name} '
+        'agentSize=${c.read(strategySettingsProvider).agentSize} '
+        'abilitySize=${c.read(strategySettingsProvider).abilitySize}',
       );
     case 'expectOpened':
       if (!listEquals(_openedLinks, (value as List).cast<String>())) {
