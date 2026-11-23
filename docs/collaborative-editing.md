@@ -67,6 +67,20 @@ server writes only the named fields onto the row as it is now:
 - **A live delete wins.** `element.delete` and `lineup.delete` with
   `lastWriterWins: true` skip the revision check. A delete without it (work
   that waited offline) is still checked.
+- **Unchecked changes must arrive live.** A merge without `base` and a delete
+  with `lastWriterWins: true` are unchecked. The server client resends a call
+  pending across a lost connection with its original arguments, however late,
+  so an unchecked change caught by a dropped connection could land an hour
+  later over a teammate's newer work (#714). A client that sets
+  `sendsLiveBasis` gets the server's time in every `applyBatch` answer
+  (`serverTime`) and sends the newest one it has as the batch's `liveBasis`.
+  The server refuses the whole batch with `UNCHECKED_OUTSIDE_WINDOW`, before
+  reading or recording anything, when it arrives more than
+  `UNCHECKED_WINDOW_MS` (30 s) after that time, when the basis is later than
+  the server's time, or when it holds an unchecked change and no basis. The
+  client then sends the same ops checked, under the same op ids. Both times
+  are the server's, so players' clocks play no part. Clients that do not set
+  `sendsLiveBasis` are answered as before.
 
 An edit to an item a teammate deleted is still refused as `deleted`, and Keep
 mine still brings the item back.

@@ -265,4 +265,5 @@ export const operationResultValidator = v.union(
 export const applyBatchResultValidator = v.object({
   strategyPublicId: v.string(),
   results: v.array(operationResultValidator),
+  serverTime: v.optional(v.number()),
 });
