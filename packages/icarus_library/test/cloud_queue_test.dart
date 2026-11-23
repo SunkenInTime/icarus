@@ -1371,6 +1371,37 @@ void main() {
       expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
     });
 
+    test('an undo waiting for its row asks the user once its delete\'s resend '
+        'window has closed, though nothing happened in between', () {
+      final server = Server();
+      final client = online();
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      sendAndAnswer(client, server, ['del']);
+      client
+        ..must(const ConnectionLost())
+        ..must(const ConnectionReturned())
+        ..edit(putBackOf('back', drawn, 'e1'));
+      expect(client.view('back').holds, [isA<AwaitingResult>()]);
+      final later = client.at.add(resendWindow + const Duration(minutes: 1));
+      final queue = client.queue;
+      final afresh = CloudQueue(
+        entries: queue.entries,
+        attempts: queue.attempts,
+        landed: queue.landed,
+        nextAttempt: queue.nextAttempt,
+        nextSession: queue.nextSession,
+        shown: queue.shown,
+        strategy: queue.strategy,
+        session: queue.session,
+      );
+      expect(
+        entryViews(queue, later)['back']!.state,
+        const NeedsUser(ChangedUnseen()),
+      );
+      expect(entryViews(afresh, later), entryViews(queue, later));
+    });
+
     test('an undo after a delete answered with no revision needs the user', () {
       final client = online();
       final drawn = client.visible;

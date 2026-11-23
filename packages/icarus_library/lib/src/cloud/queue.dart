@@ -1485,9 +1485,10 @@ final class _NameAt extends _Verdict {
 }
 
 final class _AwaitRow extends _Verdict {
-  const _AwaitRow(this.page);
+  const _AwaitRow(this.page, {this.until});
 
   final String? page;
+  final DateTime? until;
 }
 
 final class _AskUser extends _Verdict {
@@ -1613,11 +1614,11 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
             when revision == authored && digest == seen.digest =>
           _NameAt(authored, until: until),
         _KnownRow(current: true) => const _AskUser(),
-        _KnownRow(:final page) => _AwaitRow(page),
+        _KnownRow(:final page) => _AwaitRow(page, until: until),
         _ => _AwaitRow(switch (entry.scope) {
           OnPage(:final pagePublicId) => pagePublicId,
           _ => null,
-        }),
+        }, until: until),
       };
     case _Writes.wholeRow:
       if (!entry.behindOwn) return _NameAt(authored);
