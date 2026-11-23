@@ -56,6 +56,7 @@ void main() {
         clientId: 'client-1',
         ops: [rename('op-1')],
         account: owner,
+        serverTime: const ServerTimeNotAsked(),
       );
       final (name, args) = transport.mutations.single;
       expect(name, 'ops:applyBatch');
@@ -116,6 +117,7 @@ void main() {
         clientId: 'client-1',
         ops: [rename('op-1')],
         account: owner,
+        serverTime: const ServerTimeNotAsked(),
       );
       expect(
         outcome,
@@ -141,8 +143,61 @@ void main() {
           clientId: 'client-1',
           ops: [rename('op-1')],
           account: owner,
+          serverTime: const ServerTimeNotAsked(),
         ),
         isA<StoreBatchAccountMismatch>(),
+      );
+    });
+
+    test(
+        'not asking for the server\'s time sends neither the opt-in nor a '
+        'basis', () async {
+      await storeBatchSenderOver(repository)(
+        strategyPublicId: strategy,
+        clientId: 'client-1',
+        ops: [rename('op-1')],
+        account: owner,
+        serverTime: const ServerTimeNotAsked(),
+      );
+      final (_, args) = transport.mutations.single;
+      expect(args.containsKey('sendsLiveBasis'), isFalse);
+      expect(args.containsKey('liveBasis'), isFalse);
+    });
+
+    test(
+        'asking for the server\'s time opts in, sends the basis when there is '
+        'one, and reads the answer\'s server time', () async {
+      transport.answer = () => {
+            'results': [
+              {'opId': 'op-1', 'status': 'applied', 'appliedRevision': 3},
+            ],
+            'strategyPublicId': strategy,
+            'serverTime': 1764000000500.0,
+          };
+      final send = storeBatchSenderOver(repository);
+      final withBasis = await send(
+        strategyPublicId: strategy,
+        clientId: 'client-1',
+        ops: [rename('op-1')],
+        account: owner,
+        serverTime: const ServerTimeAsked(basis: 1764000000000),
+      );
+      await send(
+        strategyPublicId: strategy,
+        clientId: 'client-1',
+        ops: [rename('op-2')],
+        account: owner,
+        serverTime: const ServerTimeAsked(),
+      );
+      final [(_, first), (_, second)] = transport.mutations;
+      expect(first['sendsLiveBasis'], true);
+      expect(first['liveBasis'], 1764000000000);
+      expect(second['sendsLiveBasis'], true);
+      expect(second.containsKey('liveBasis'), isFalse);
+      expect(
+        withBasis,
+        isA<StoreBatchAnswered>()
+            .having((o) => o.serverTime, 'serverTime', 1764000000500),
       );
     });
 
@@ -264,6 +319,7 @@ void main() {
       expect(of('FORBIDDEN'), refused(BatchRefusal.editAccessRemoved));
       expect(of('NOT_FOUND'), refused(BatchRefusal.strategyDeleted));
       expect(of('ACCOUNT_MISMATCH'), isA<StoreBatchAccountMismatch>());
+      expect(of('UNCHECKED_OUTSIDE_WINDOW'), isA<StoreBatchOutsideWindow>());
       expect(
         of('RATE_LIMITED'),
         isA<StoreBatchLost>().having(

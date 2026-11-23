@@ -1261,6 +1261,7 @@ final class CloudSender {
           clientId: batch.clientId,
           ops: batch.ops,
           account: batch.account,
+          serverTime: const ServerTimeNotAsked(),
         ),
       ).then((outcome) => outcome).timeout(
             _timing.giveUpAfter,
@@ -1358,5 +1359,7 @@ List<QueueEvent> answersOf(
       StoreBatchLost(:final failure) => [
           TransportFailed(batch.attempt, failure, at: at),
         ],
-      StoreBatchAccountMismatch() => [ClaimReleased(batch.attempt)],
+      StoreBatchAccountMismatch() || StoreBatchOutsideWindow() => [
+          ClaimReleased(batch.attempt)
+        ],
     };
