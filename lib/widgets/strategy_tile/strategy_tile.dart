@@ -206,6 +206,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     final isMoving = !_isCloud &&
         ref.watch(movingToCloudProvider.select((ids) => ids.contains(id)));
     final needsConnection = _needsConnection;
+    final notInStore = widget.localStrategy?.notInStore ?? false;
     final isPosted = _canShare &&
         ref.watch(
           myPostsByStrategyProvider.select((posts) => posts.containsKey(id)),
@@ -348,14 +349,17 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                               ? const MovingToCloudBadge()
                                               : needsConnection
                                                   ? const NeedsConnectionBadge()
-                                                  : widget.showDeviceBadge
-                                                      ? const DeviceOnlyBadge()
-                                                      : viewData.sharedBadge ??
-                                                          (isPosted
-                                                              ? const CommunityPostedBadge()
-                                                              : isCommunityCopy
-                                                                  ? const CommunityCopyBadge()
-                                                                  : null),
+                                                  : notInStore
+                                                      ? const NotInStoreBadge()
+                                                      : widget.showDeviceBadge
+                                                          ? const DeviceOnlyBadge()
+                                                          : viewData
+                                                                  .sharedBadge ??
+                                                              (isPosted
+                                                                  ? const CommunityPostedBadge()
+                                                                  : isCommunityCopy
+                                                                      ? const CommunityCopyBadge()
+                                                                      : null),
                                         ),
                                       ),
                                       const SizedBox(height: 10),

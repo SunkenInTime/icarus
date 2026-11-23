@@ -1,0 +1,9 @@
+[
+  {"libraryFromStore": "the store", "seconds": 300, "expect": {"rebuiltAtOpen": 0, "fromHive": 0}},
+  {"wait": 2},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"wait": 1},
+  {"logLibrary": "second start"},
+  {"exit": 1}
+]

@@ -1,5 +1,8 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/pages_bar.dart';
@@ -25,6 +28,53 @@ String buildCounts() => '${_counts(_builds)}; NOTIFIED ${_counts(_notified)}; '
 
 String buildsLine() => 'BUILDS ${buildCounts()}';
 
+final _noticeFrames = <String, List<int>>{};
+
+void _markFrameAfterNotice(String what) {
+  final scheduler = SchedulerBinding.instance;
+  if (scheduler.schedulerPhase != SchedulerPhase.idle) return;
+  scheduler.scheduleFrameCallback(
+    (_) => (_noticeFrames[what] ??= [])
+        .add(scheduler.currentSystemFrameTimeStamp.inMicroseconds),
+  );
+}
+
+void forgetNoticeFrames() => _noticeFrames.clear();
+
+bool noticeFramesUntimed(List<FrameTiming> timings) => _noticeFrames.values
+    .expand((frames) => frames)
+    .any((target) => _drawnFor(target, timings) == null);
+
+FrameTiming? _drawnFor(int target, List<FrameTiming> timings) {
+  FrameTiming? drawn;
+  for (final timing in timings) {
+    final vsync = timing.timestampInMicroseconds(FramePhase.vsyncStart);
+    if (vsync < target &&
+        target - vsync <= 25000 &&
+        (drawn == null ||
+            vsync > drawn.timestampInMicroseconds(FramePhase.vsyncStart))) {
+      drawn = timing;
+    }
+  }
+  return drawn;
+}
+
+String noticeFramesLine(List<FrameTiming> timings) {
+  String frame(int target) {
+    String ms(Duration d) => (d.inMicroseconds / 1000).toStringAsFixed(2);
+    return switch (_drawnFor(target, timings)) {
+      final timing? => 'build ${ms(timing.buildDuration)} raster '
+          '${ms(timing.rasterDuration)}',
+      null => 'not timed',
+    };
+  }
+
+  return [
+    for (final what in _noticeFrames.keys.toList()..sort())
+      '$what ${_noticeFrames[what]!.map(frame).join(', ')} ms',
+  ].join('; ');
+}
+
 final _counted = Expando<ValueListenable<Object?>>('counted for the driver');
 
 ValueListenable<T> countedForDrive<T>(ValueListenable<T> source, String what) =>
@@ -46,6 +96,7 @@ final class _Counted<T> implements ValueListenable<T> {
         (
           counting: () {
             _notified.update(_what, (count) => count + 1, ifAbsent: () => 1);
+            _markFrameAfterNotice(_what);
             listener();
           },
           added: 0,
@@ -129,6 +180,7 @@ typedef DrawnItem = ({String kind, Key? key, String drawn});
 List<DrawnItem> drawnOnScreen(String? Function(Widget widget) kindOf) {
   final items = <DrawnItem>[];
   void visit(Element element) {
+    if (element.widget case TickerMode(enabled: false)) return;
     if (kindOf(element.widget) case final kind?) {
       if (_onScreen(element)) {
         items
@@ -153,6 +205,39 @@ List<String> libraryOnScreen() => [
       ))
         '${item.kind} ${item.key} ${item.drawn}',
     ];
+
+typedef GridRow = ({String kind, String id, String name, Object row});
+
+List<GridRow> gridRowsOnScreen() {
+  final rows = <GridRow>[];
+  void visit(Element element) {
+    final widget = element.widget;
+    if (widget case TickerMode(enabled: false)) return;
+    final row = switch (widget) {
+      StrategyTile(localStrategy: final strategy?) => (
+          kind: 'strategy',
+          id: strategy.id,
+          name: strategy.name,
+          row: strategy as Object,
+        ),
+      FolderCard(data: FolderCardViewData(:final folder)) => (
+          kind: 'folder',
+          id: folder.id,
+          name: folder.name,
+          row: folder as Object,
+        ),
+      _ => null,
+    };
+    if (row != null) {
+      if (_onScreen(element)) rows.add(row);
+      return;
+    }
+    element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  return rows;
+}
 
 List<String> pagesBarOnScreen() => [
       for (final item in drawnOnScreen(

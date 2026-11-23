@@ -43,12 +43,27 @@ abstract interface class LocalStrategySummary {
   bool get opensOnAttack;
 
   List<AgentType> get agentTypes;
+
+  bool get notInStore;
 }
 
+DateTime _asStored(DateTime time) => DateTime.fromMillisecondsSinceEpoch(
+      time.millisecondsSinceEpoch,
+      isUtc: true,
+    );
+
 final class _HiveStrategySummary implements LocalStrategySummary {
-  const _HiveStrategySummary(this._strategy);
+  _HiveStrategySummary(
+    this._strategy, {
+    this.notInStore = false,
+    this.asStored = false,
+  });
 
   final StrategyData _strategy;
+  final bool asStored;
+
+  @override
+  final bool notInStore;
 
   @override
   String get id => _strategy.id;
@@ -63,10 +78,15 @@ final class _HiveStrategySummary implements LocalStrategySummary {
   String? get folderId => _strategy.folderID;
 
   @override
-  DateTime get createdAt => _strategy.createdAt;
+  DateTime get createdAt => asStored ? _createdAtAsStored : _strategy.createdAt;
 
   @override
-  DateTime get lastEdited => _strategy.lastEdited;
+  DateTime get lastEdited =>
+      asStored ? _lastEditedAsStored : _strategy.lastEdited;
+
+  late final _createdAtAsStored = _asStored(_strategy.createdAt);
+
+  late final _lastEditedAsStored = _asStored(_strategy.lastEdited);
 
   @override
   LocalSides get sides {
@@ -107,6 +127,18 @@ final class _Mapped<S, T> implements ValueListenable<T> {
       _source.removeListener(listener);
 }
 
+Folder _folderAsStored(Folder folder) => Folder(
+      name: folder.name,
+      id: folder.id,
+      dateCreated: DateTime.fromMillisecondsSinceEpoch(
+        folder.dateCreated.millisecondsSinceEpoch,
+      ),
+      iconId: folder.iconId,
+      color: folder.color,
+      parentID: folder.parentID,
+      customColor: folder.customColor,
+    );
+
 final class LocalStrategyImage {
   const LocalStrategyImage._(this._box, this._id);
 
@@ -119,38 +151,131 @@ final class LocalStrategyImage {
       };
 }
 
-final localLibraryViewProvider = Provider<LocalLibraryView>(
-  (ref) => LocalLibraryView(),
-);
+abstract interface class LocalLibraryListing {
+  ValueListenable<Iterable<LocalStrategySummary>> get strategies;
 
-final class LocalLibraryView {
+  ValueListenable<Iterable<Folder>> get folders;
+
+  LocalStrategySummary? strategy(String id);
+
+  Folder? folder(String id);
+
+  List<Folder> folderChildren(String id);
+
+  bool get holdsAnything;
+
+  ValueListenable<bool> mixesSides(String? id);
+}
+
+base class HiveLibraryListing implements LocalLibraryListing {
   Box<StrategyData> get _strategyBox =>
       Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
   Box<Folder> get _folderBox => Hive.box<Folder>(HiveBoxNames.foldersBox);
 
+  @override
   late final ValueListenable<Iterable<LocalStrategySummary>> strategies =
       _Mapped(
     _strategyBox.listenable(),
     (Box<StrategyData> box) => box.values.map(LocalStrategySummary.fromHive),
   );
 
+  @override
   late final ValueListenable<Iterable<Folder>> folders = _Mapped(
     _folderBox.listenable(),
     (Box<Folder> box) => box.values,
   );
 
+  @override
   LocalStrategySummary? strategy(String id) => switch (_strategyBox.get(id)) {
         final strategy? => LocalStrategySummary.fromHive(strategy),
         null => null,
       };
 
+  @override
   Folder? folder(String id) => _folderBox.get(id);
 
+  @override
   List<Folder> folderChildren(String id) =>
       _folderBox.values.where((folder) => folder.parentID == id).toList();
 
+  @override
   bool get holdsAnything => _strategyBox.isNotEmpty || _folderBox.isNotEmpty;
+
+  @override
+  ValueListenable<bool> mixesSides(String? id) => _Mapped(
+        _strategyBox.listenable(keys: [id]),
+        (Box<StrategyData> box) {
+          final pages = switch (id) {
+                final id? => box.get(id)?.pages,
+                null => null,
+              } ??
+              const [];
+          return pages.any((page) => page.isAttack != pages.first.isAttack);
+        },
+      );
+
+  static LocalStrategySummary asStored(StrategyData strategy) =>
+      _HiveStrategySummary(strategy, asStored: true);
+
+  Iterable<LocalStrategySummary> strategiesAsStored() => _strategyBox.values
+      .map((strategy) => _HiveStrategySummary(strategy, asStored: true));
+
+  Iterable<Folder> foldersAsStored() => _folderBox.values.map(_folderAsStored);
+
+  Folder? folderAsStored(String id) => switch (_folderBox.get(id)) {
+        final folder? => _folderAsStored(folder),
+        null => null,
+      };
+
+  LocalStrategySummary? strategyAsStored(
+    String id, {
+    required bool notInStore,
+  }) =>
+      switch (_strategyBox.get(id)) {
+        final strategy? => _HiveStrategySummary(
+            strategy,
+            notInStore: notInStore,
+            asStored: true,
+          ),
+        null => null,
+      };
+}
+
+final localLibraryListingProvider = Provider<LocalLibraryListing?>(
+  (ref) => null,
+);
+
+final localLibraryViewProvider = Provider<LocalLibraryView>(
+  (ref) => LocalLibraryView(listing: ref.watch(localLibraryListingProvider)),
+);
+
+final class LocalLibraryView {
+  LocalLibraryView({LocalLibraryListing? listing})
+      : onDisk = HiveLibraryListing() {
+    _listing = listing ?? onDisk;
+  }
+
+  final HiveLibraryListing onDisk;
+  late final LocalLibraryListing _listing;
+
+  Box<StrategyData> get _strategyBox =>
+      Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+
+  ValueListenable<Iterable<LocalStrategySummary>> get strategies =>
+      _listing.strategies;
+
+  ValueListenable<Iterable<Folder>> get folders => _listing.folders;
+
+  LocalStrategySummary? strategy(String id) => _listing.strategy(id);
+
+  Folder? folder(String id) => _listing.folder(id);
+
+  List<Folder> folderChildren(String id) => _listing.folderChildren(id);
+
+  bool get holdsAnything => _listing.holdsAnything;
+
+  ValueListenable<bool> mixesSides(String? id) => _listing.mixesSides(id);
 
   bool get isOpen => Hive.isBoxOpen(HiveBoxNames.strategiesBox);
 

@@ -1,0 +1,13 @@
+[
+  {"expectStoreRefuses": ["fixture-newer-build", "fixture-unreadable-in-store"]},
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"wait": 2},
+  {"logLibrary": "start"},
+  {"libraryFromStore": "store", "seconds": 120, "expect": {"fromHive": 2}},
+  {"wait": 1},
+  {"logLibrary": "from the store"},
+  {"shot": "{out}/not-in-store.png"},
+  {"exit": 1}
+]

@@ -51,8 +51,7 @@ final class _HiveBoxes implements LibraryBoxes {
   const _HiveBoxes();
 
   @override
-  StrategyData? strategy(String id) =>
-      const LocalLibrary().storedStrategy(id);
+  StrategyData? strategy(String id) => const LocalLibrary().storedStrategy(id);
 
   @override
   Folder? folder(String id) => const LocalLibrary().storedFolder(id);
@@ -82,6 +81,10 @@ final class HiveReads {
   bool strategyWriting(String id) => _strategiesWriting.containsKey(id);
 
   bool folderWriting(String id) => _foldersWriting.containsKey(id);
+
+  Iterable<String> get strategiesBeingWritten => _strategiesWriting.keys;
+
+  Iterable<String> get foldersBeingWritten => _foldersWriting.keys;
 
   void writing(LibraryTouch touch) {
     for (final id in touch.strategies) {

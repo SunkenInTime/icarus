@@ -3139,6 +3139,11 @@
     "description": "Small pill on a strategy thumbnail (11 px text)."
   },
   "strategyBadgeDeviceOnlyTooltip": "Saved only on this computer",
+  "strategyBadgeNotInStore": "Not in the store",
+  "@strategyBadgeNotInStore": {
+    "description": "Small pill on a strategy thumbnail in driver and debug builds when the library list is read from the store and this strategy is shown from Hive instead. Wording not final: Dara chooses it before any user can see this."
+  },
+  "strategyBadgeNotInStoreTooltip": "Shown from the files on this computer: the library store does not hold it",
   "strategyBadgeNeedsConnection": "Needs a connection",
   "@strategyBadgeNeedsConnection": {
     "description": "Small pill on a cloud strategy thumbnail while offline."

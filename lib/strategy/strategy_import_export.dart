@@ -2468,10 +2468,10 @@ class StrategyImportExportService {
 
   /// The local library as it is on disk, whichever store the screen shows.
   _ExportLibrary _localLibraryForExport() => _ExportLibrary(
-        folders: ref.read(localLibraryViewProvider).folders.value,
+        folders: ref.read(localLibraryViewProvider).onDisk.folders.value,
         strategies: [
           for (final strategy
-              in ref.read(localLibraryViewProvider).strategies.value)
+              in ref.read(localLibraryViewProvider).onDisk.strategies.value)
             (
               id: strategy.id,
               name: strategy.name,

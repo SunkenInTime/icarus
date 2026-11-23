@@ -20,6 +20,10 @@ final class StoreSwitchMirror extends LibraryStoreSwitch {
   const StoreSwitchMirror();
 }
 
+final class StoreSwitchRead extends LibraryStoreSwitch {
+  const StoreSwitchRead();
+}
+
 sealed class CloudStoreSwitch {
   const CloudStoreSwitch();
 }
@@ -37,6 +41,7 @@ final class LibraryStoreLaunch {
 
   static const shadowFlag = '--library-store=shadow';
   static const mirrorFlag = '--library-store=mirror';
+  static const readFlag = '--library-store=read';
   static const offFlag = '--library-store=off';
   static const cloudShadowFlag = '--cloud-store=shadow';
 
@@ -59,6 +64,8 @@ final class LibraryStoreLaunch {
         case mirrorFlag:
           choice =
               mayShadow ? const StoreSwitchMirror() : const StoreSwitchOff();
+        case readFlag:
+          choice = mayShadow ? const StoreSwitchRead() : const StoreSwitchOff();
         case offFlag:
           choice = const StoreSwitchOff();
         case cloudShadowFlag:
