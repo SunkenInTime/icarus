@@ -1150,6 +1150,7 @@ abstract interface class OpsModule {
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
     required List<OpsApplyBatchArgsOpsItem> ops,
+    ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
 }
@@ -1170,6 +1171,7 @@ final class _OpsModule implements OpsModule {
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
     required List<OpsApplyBatchArgsOpsItem> ops,
+    ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeOpsApplyBatchArgs(
@@ -1183,6 +1185,7 @@ final class _OpsModule implements OpsModule {
       elementFieldLevel: elementFieldLevel,
       includeWasApplied: includeWasApplied,
       ops: ops,
+      readsAccountMismatch: readsAccountMismatch,
       strategyPublicId: strategyPublicId,
     );
     return _invoke(

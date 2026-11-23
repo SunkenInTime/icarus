@@ -81,26 +81,24 @@ export async function requireCurrentUser(ctx: AnyCtx): Promise<Doc<"users">> {
 }
 
 /**
- * Refuses a write bound to an account other than the caller's.
+ * Refuses a call bound to an account other than the caller's.
  * [accountSubject] is the identity subject (the JWT `sub`) of the account
- * the write belongs to; for Icarus it is the Supabase user id the client
- * keys its outbox by. The refusal is FORBIDDEN, thrown, so nothing in the
- * write is applied or recorded and the client keeps the work for its own
- * account to send again.
+ * the call belongs to; for Icarus it is the Supabase user id the client
+ * keys its work by. The refusal is thrown, so nothing is applied or
+ * recorded and the client keeps the work for its own account. It is
+ * ACCOUNT_MISMATCH, or FORBIDDEN for callers that predate that code.
  */
 export async function assertCallerIsAccount(
   ctx: AnyCtx,
   accountSubject: string,
+  code: "ACCOUNT_MISMATCH" | "FORBIDDEN" = "ACCOUNT_MISMATCH",
 ): Promise<void> {
   const identity = await ctx.auth.getUserIdentity();
   if (identity === null) {
     throw unauthenticatedError();
   }
   if (identity.subject !== accountSubject) {
-    throw errorWithCode(
-      "FORBIDDEN",
-      "Forbidden: signed in as a different account",
-    );
+    throw errorWithCode(code, "Forbidden: signed in as a different account");
   }
 }
 
