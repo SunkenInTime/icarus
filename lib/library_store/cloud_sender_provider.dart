@@ -4,13 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/store_batch.dart';
+import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
+import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus_library/icarus_library.dart' show Account, LibraryStore;
 import 'package:uuid/uuid.dart';
@@ -29,6 +32,19 @@ final convexSignInsProvider = Provider<Stream<bool>>(
 
 final storeBatchSendProvider = Provider<StoreBatchSend>(
   (ref) => storeBatchSenderOver(ref.read(convexStrategyRepositoryProvider)),
+);
+
+final storeReadsProvider = Provider<StoreReads>(
+  (ref) => storeReadsOver(
+    ref.read(convexStrategyRepositoryProvider),
+    canRead: appCanRead,
+  ),
+);
+
+final senderEditorProvider = Provider<ProviderListenable<String?>>(
+  (ref) => remoteEditorSnapshotProvider.select(
+    (snapshot) => snapshot.valueOrNull?.shell.header.publicId,
+  ),
 );
 
 final senderSignInWatchProvider = Provider<ProviderListenable<Object?>>(
@@ -50,14 +66,33 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
   var _signOuts = 0;
   Account? _lastAccount;
 
+  LibraryStoreOpened? opened;
+
+  Object? openingThrew;
+
   @override
   CloudSender? build() => null;
+
+  Future<void> beginOn(
+    Future<LibraryStoreOpened> opening, {
+    required String build,
+  }) async {
+    final LibraryStoreOpened ready;
+    try {
+      ready = opened = await opening;
+    } catch (error) {
+      openingThrew = error;
+      return;
+    }
+    if (ready case LibraryStoreReady(:final store)) begin(store, build: build);
+  }
 
   CloudSender begin(LibraryStore store, {required String build}) {
     if (state case final running?) return running;
     final sender = CloudSender(
       store: SenderStore(store, keepsAllReports: driveBuild),
       send: ref.read(storeBatchSendProvider),
+      reads: ref.read(storeReadsProvider),
       build: build,
       clientId: const Uuid().v4(),
       inputs: _inputs(),
@@ -65,10 +100,20 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
       clock: ref.read(cloudSenderClockProvider),
     );
     state = sender;
-    void refresh() => sender.inputs = _inputs();
+    final editor = ref.read(senderEditorProvider);
+    void adoptOpen() {
+      if (ref.read(editor) case final open?) sender.adopt(open);
+    }
+
+    void refresh() {
+      sender.inputs = _inputs();
+      adoptOpen();
+    }
+
     final signIns = ref.read(convexSignInsProvider).listen((_) => refresh());
     ref.listen(ref.read(senderSignInWatchProvider), (_, __) => refresh());
     ref.listen<bool>(convexConnectionSnapshotProvider, (_, __) => refresh());
+    ref.listen<String?>(editor, (_, __) => adoptOpen(), fireImmediately: true);
     ref.onDispose(() {
       unawaited(signIns.cancel());
       sender.dispose();

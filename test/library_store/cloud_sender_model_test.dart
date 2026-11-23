@@ -3,16 +3,16 @@ import 'dart:math';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/collab/cloud_results.dart';
-import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
-import 'package:icarus/library_store/cloud_shadow.dart';
+import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/library_store/cloud_sender.dart';
+import 'package:icarus/library_store/landed_retiring.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 import 'cloud_shadow_test.dart'
-    show at, pageList, pageSnapshot, serverRows, servedAccount, strategyId;
+    show secondPage, serverRows, servedAccount, strategyId;
 import 'sender_world.dart';
 
 const seeds = int.fromEnvironment('SENDER_MODEL_SEEDS', defaultValue: 480);
@@ -55,7 +55,6 @@ final class Model {
   final broken = <String>[];
   final committed = <String, String>{};
   final folded = <String>{};
-  final oldStamps = <Snapshot>[];
 
   Snapshot get stamp => (
         account: account,
@@ -72,8 +71,26 @@ final class Model {
       clientId: 'client-${restarts + 1}',
       startingWith: stamp,
     );
-    _resultsSignIns = signIns;
-    _lastArrival = -1;
+    server.onRead = (call) {
+      _underAt[call] = (restarts, world.readEras);
+      if (call.why == 'edit access was lost') {
+        _lossAt[call] = (
+          world.cloud(call.strategyId).queue.strategy.accessLostAt,
+          (restarts, world.readEras),
+        );
+      }
+      if (world.sender.sendingUnder != stamp) {
+        broken.add('$call of ${call.strategyId} went out under '
+            '${world.sender.sendingUnder} while the inputs were $stamp');
+      }
+      if (world.sender.held case final reason?) {
+        broken.add('a read while sending was held ($reason)');
+      }
+      if (refusedAt == signIns) {
+        broken.add('a read after a sign-in refusal, with the sign-in '
+            'unchanged');
+      }
+    };
     server.onCall = (call) {
       final under = world.sender.sendingUnder;
       if (under != stamp) {
@@ -89,87 +106,47 @@ final class Model {
       }
     };
     if (first) {
-      world.addServedStrategy();
+      world
+        ..secondPageOnServer()
+        ..addServedStrategy();
+      _requestsSeen = server.readCalls.length;
       world.addOtherStrategy();
     }
-    results();
   }
 
   void restart() {
     _readReports();
     world.sender.dispose();
-    world.close();
     world.store.close();
     async.flushMicrotasks();
     restarts++;
     refusedAt = null;
     _read = 0;
-    _opened.clear();
     _restartsWritten.clear();
+    _retired.clear();
+    _lastViewer.clear();
+    _lastAccess.clear();
+    _requestsSeen = server.readCalls.length;
     open(first: false);
   }
 
-  void remember() {
-    oldStamps.add(stamp);
-    if (oldStamps.length > 4) oldStamps.removeAt(0);
+  void teammate() {
+    final strategy = strategies[random.nextInt(2)];
+    final row = server.rows[strategy]!.strategy;
+    final revision = (row.toJson() as Map)['revision']! as int;
+    teammates++;
+    server.teammate(
+      strategy,
+      StrategyPatchOp(
+        opId: 'teammate-$teammates',
+        expectedStrategyRevision: revision,
+        name: 'Teammate $teammates',
+      ),
+    );
+    log.add('teammate renames $strategy');
   }
 
-  void results([Snapshot? under]) {
-    final given = under ?? stamp;
-    final shadow = world.shadow!;
-    for (final strategy in strategies) {
-      final revision = server.revisions[strategy] ?? 1;
-      if (strategy == strategyId) {
-        shadow.pageList(
-          strategy,
-          pageList(serverRows(), revision: revision),
-          given.connection,
-          stamp: given,
-        );
-        shadow.page(
-          strategy,
-          pageSnapshot(serverRows()),
-          given.connection,
-          stamp: given,
-        );
-      } else {
-        shadow.pageList(
-          strategy,
-          RemotePageList(
-            header: app.RemoteStrategyHeader(
-              publicId: otherStrategy,
-              name: 'Second',
-              mapData: 'bind',
-              revision: revision,
-              createdAt: at,
-              updatedAt: at,
-              role: 'owner',
-            ),
-            pages: const [],
-          ),
-          given.connection,
-          stamp: given,
-        );
-      }
-    }
-    async.flushMicrotasks();
-  }
-
-  void staleResult() {
-    if (oldStamps.isEmpty) return;
-    final old = oldStamps[random.nextInt(oldStamps.length)];
-    if (old.connection == connection && old.account == account) return;
-    final before = world.sender.store.reports.length;
-    results(old);
-    world.settle(const Duration(milliseconds: 500));
-    for (final report in world.sender.store.reports.skip(before)) {
-      if (report case ResultWritten(stamp: final written) when written == old) {
-        broken.add('a result that arrived under $old was recorded while the '
-            'inputs were $stamp');
-      }
-    }
-    log.add('stale result under ${old.connection}');
-  }
+  var teammates = 0;
 
   Set<String> _presentIn(String strategy) {
     final cloud = world.cloud(strategy);
@@ -181,69 +158,298 @@ final class Model {
 
   Set<String> _present() => {for (final id in strategies) ..._presentIn(id)};
 
-  void edit() {
-    final strategy = strategies[random.nextInt(2)];
+  StrategyContent? _content(String strategy) {
     Reading<StrategyContent>? read;
     world.store.readStrategy(strategy).then((value) => read = value);
     async.flushMicrotasks();
-    if (read case Found(value: StrategyContent(strategy: final row))) {
-      final revision = (row.toJson()! as Map)['revision']! as int;
-      final before = {for (final id in strategies) id: _presentIn(id)};
-      final entries = world.cloud(strategy).queue.entries;
-      final lastEntry = entries.isEmpty ? null : entries.last.id;
-      edits++;
-      final id = 'edit-$edits';
-      Saving<List<Committed>, CommitRefusal>? saved;
-      world.store.commitAllAs(servedAccount, strategy, [
-        StrategyPatchOp(
-          opId: id,
-          expectedStrategyRevision: revision,
-          name: 'Edit $edits',
-        ),
-      ]).then((value) => saved = value);
-      async.flushMicrotasks();
-      if (saved is Saved) {
-        committed[id] = strategy;
-        for (final other in strategies) {
-          final after = _presentIn(other);
-          final gone = before[other]!.difference(after);
-          if (gone.isEmpty) continue;
-          if (other == strategy &&
-              gone.length == 1 &&
-              gone.single == lastEntry &&
-              after.contains(id)) {
-            folded.add(gone.single);
-          } else {
-            broken.add('committing $id to $strategy took $gone out of the '
-                'queue of $other');
-          }
-        }
+    return switch (read) {
+      Found(:final value) => value,
+      _ => null,
+    };
+  }
+
+  static int _revision(Row row) => (row.toJson()! as Map)['revision']! as int;
+
+  void _commitTracked(String strategy, StrategyOp op) {
+    final before = {for (final id in strategies) id: _presentIn(id)};
+    final entries = world.cloud(strategy).queue.entries;
+    final lastEntry = entries.isEmpty ? null : entries.last.id;
+    Saving<List<Committed>, CommitRefusal>? saved;
+    world.store.commitAllAs(
+        servedAccount, strategy, [op]).then((value) => saved = value);
+    async.flushMicrotasks();
+    if (saved is! Saved) return;
+    final id = op.opId;
+    committed[id] = strategy;
+    _epochs[strategy] = (_epochs[strategy] ?? 0) + 1;
+    for (final other in strategies) {
+      final after = _presentIn(other);
+      final gone = before[other]!.difference(after);
+      if (gone.isEmpty) continue;
+      if (other == strategy &&
+          gone.length == 1 &&
+          gone.single == lastEntry &&
+          after.contains(id)) {
+        folded.add(gone.single);
+      } else {
+        broken.add('committing $id to $strategy took $gone out of the '
+            'queue of $other');
       }
     }
   }
 
-  final _removed = <String>{};
-  final _opened = <(String, int), Snapshot>{};
-  final _restartsWritten = <String, int>{};
-  int? _resultsSignIns;
-  var _read = 0;
-  var _lastArrival = -1;
-
-  void _inArrivalOrder(Object arrival, String what) {
-    final index = world.arrivals.indexWhere((seen) => identical(seen, arrival));
-    if (index < 0) return;
-    if (index < _lastArrival) {
-      broken.add('$what, arrival $index, was recorded after arrival '
-          '$_lastArrival');
-    }
-    _lastArrival = max(_lastArrival, index);
+  void edit() {
+    final strategy = strategies[random.nextInt(2)];
+    final content = _content(strategy);
+    if (content == null) return;
+    edits++;
+    _commitTracked(
+      strategy,
+      StrategyPatchOp(
+        opId: 'edit-$edits',
+        expectedStrategyRevision: _revision(content.strategy),
+        name: 'Edit $edits',
+      ),
+    );
   }
 
-  static bool _isAnswer(QueueEvent event) => switch (event) {
-        OpAnswered() || BatchRefused() || ClaimReleased() => true,
-        TransportFailed(:final failure) => failure != TransportFailure.timeout,
-        _ => false,
+  LiveElement? _element() {
+    final first = serverRows().elements.whereType<LiveElement>().first;
+    Reading<PageContent>? read;
+    world.store
+        .readPage(strategyId, first.pagePublicId)
+        .then((value) => read = value);
+    async.flushMicrotasks();
+    return switch (read) {
+      Found(:final value) => value.elements
+          .whereType<LiveElement>()
+          .where((element) => element.publicId == first.publicId)
+          .firstOrNull,
+      _ => null,
+    };
+  }
+
+  void ownMove() {
+    final element = _element();
+    if (element == null) return;
+    edits++;
+    _commitTracked(strategyId, World.moveOf(element, edits, 'move-$edits'));
+    log.add('own whole-row move');
+  }
+
+  String get _second => secondPage().page.publicId;
+
+  void ownPageOp() {
+    final content = _content(strategyId);
+    if (content == null ||
+        !content.pages.any((page) => page.publicId == _second) ||
+        content.pages.length < 2) {
+      return;
+    }
+    edits++;
+    final revision = _revision(content.strategy);
+    final choice = random.nextInt(3);
+    if (choice == 2) {
+      final page = content.pages.firstWhere((row) => row.publicId == _second);
+      _commitTracked(
+        strategyId,
+        PagePatchOp(
+          opId: 'page-rename-$edits',
+          pagePublicId: _second,
+          expectedPageRevision: _revision(page),
+          name: 'Page $edits',
+        ),
+      );
+      log.add('own page rename');
+    } else if (choice == 1) {
+      _commitTracked(
+        strategyId,
+        PageReorderOp(
+          opId: 'reorder-$edits',
+          pagePublicId: _second,
+          sortIndex: random.nextInt(2),
+          expectedStrategyRevision: revision,
+        ),
+      );
+      log.add('own page reorder');
+    } else {
+      _commitTracked(
+        strategyId,
+        PageDeleteOp(
+          opId: 'page-delete-$edits',
+          pagePublicId: _second,
+          expectedStrategyRevision: revision,
+        ),
+      );
+      log.add('own page delete');
+    }
+  }
+
+  void teammateOnRows() {
+    switch (random.nextInt(3)) {
+      case 0:
+        final first = serverRows().elements.whereType<LiveElement>().first;
+        if (server.rows[strategyId]!.element(first.publicId) is LiveElement) {
+          teammates++;
+          world.teammateMoves(teammates);
+          log.add('teammate moves the element');
+        }
+      case 1:
+        if (server.rows[strategyId]!.page(_second) != null) {
+          world.teammateDeletesPage(_second);
+          log.add('teammate deletes the second page');
+        }
+      case _:
+        teammate();
+    }
+  }
+
+  void viewerRefusal() {
+    final strategy = strategies[random.nextInt(2)];
+    server
+      ..roles[strategy] = StoreReadRole.viewer
+      ..answerWith(
+        strategy,
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+      );
+    log.add('$strategy refused as a viewer');
+  }
+
+  void checkRetireFloor() {
+    heal();
+    if (_element() == null) return;
+    world.settle(const Duration(minutes: 11));
+    final before = server.readCalls.length;
+    ownMove();
+    world.settle(const Duration(seconds: 40));
+    ownMove();
+    world.settle(const Duration(minutes: 1));
+    final retires = [
+      for (final call in server.readCalls.skip(before))
+        if (call.why == 'landed work waits for a result' &&
+            call.strategyId == strategyId)
+          call,
+    ];
+    if (retires.length > 1) {
+      broken.add('landed work of $strategyId was read for retirement '
+          '${retires.length} times within five minutes: $retires');
+    }
+    log.add('retire probe');
+  }
+
+  void checkScheduled() {
+    final sender = world.sender;
+    if (connection == null ||
+        account != servedAccount ||
+        sender.held != null ||
+        sender.runHold != null) {
+      return;
+    }
+    if (sender.busy || sender.woken) return;
+    final now = start.add(async.elapsed);
+    final latest = now.add(timing.readAgainAfter + const Duration(minutes: 1));
+    for (final stored in sender.store.strategies()) {
+      if (stored.ownerAccount != servedAccount) continue;
+      if (sender.cannotRead(stored.id) != null) continue;
+      final cloud = world.cloud(stored.id);
+      final shown = sender.couldNotResolve(stored.id, cloud)?.subjects ?? [];
+      final unshown = {
+        for (final view in cloud.views.values)
+          for (final hold in view.holds)
+            if (hold case AwaitingResult(:final subject)
+                when !shown.contains('$subject'))
+              '$subject',
       };
+      if (unshown.isEmpty) continue;
+      final outlook = sender.outlook(stored.id, cloud);
+      final settled = now.add(timing.longestWait);
+      final due = switch (outlook) {
+        ReadAt(:final at) when at.isAfter(settled) => at,
+        _ => settled,
+      };
+      final armed = sender.armedFor;
+      final problem = switch (outlook) {
+        _ when !sender.looksAt(stored) => 'the sender does not look at it',
+        NothingToRead() => 'nothing is planned',
+        _ when armed == null => 'a read is due by $due and no timer is armed',
+        _ when armed.isAfter(due) =>
+          'a read is due by $due and the timer is armed for $armed',
+        _ when armed.isAfter(latest) =>
+          'the timer is armed for $armed, past ten minutes from now',
+        _ => null,
+      };
+      if (problem != null) {
+        broken.add('${stored.id} asks for $unshown, none of it shown as '
+            'could not resolve: $problem ($outlook)');
+      }
+    }
+  }
+
+  void reopen() {
+    final strategy = strategies[random.nextInt(2)];
+    world.sender.adopt(strategy);
+    log.add('the editor opens $strategy again');
+  }
+
+  void checkRequests() {
+    final calls = server.readCalls;
+    for (var n = _requestsSeen; n < calls.length; n++) {
+      final call = calls[n];
+      final key = (call.strategyId, '$call');
+      if (call.why == 'the strategy was adopted' && call.page == null) {
+        broken.add('the page list of ${call.strategyId}, which the store '
+            'holds, was read again for adoption');
+      }
+      switch (call.why) {
+        case 'landed work waits for a result':
+          final last = (_retired[key] ?? const [])
+              .where(
+                (read) =>
+                    read.under == _underAt[call] && read.at.isBefore(call.at!),
+              )
+              .map((read) => read.at)
+              .fold<DateTime?>(
+                null,
+                (latest, at) =>
+                    latest == null || at.isAfter(latest) ? at : latest,
+              );
+          if (last != null &&
+              call.at!.difference(last) < timing.retireAgainAfter) {
+            broken.add('$call of ${call.strategyId} was requested to retire '
+                'landed work ${call.at!.difference(last)} after a recorded '
+                'read');
+          }
+        case 'edit access was lost':
+          if ((_lastViewer[call.strategyId], _lossAt[call])
+              case ((final at, final answered), final asked?)
+              when answered == asked &&
+                  call.at!.isAfter(at) &&
+                  call.at!.difference(at) < timing.readAgainAfter) {
+            broken.add('the page list of ${call.strategyId} was requested for '
+                'edit access ${call.at!.difference(at)} after a viewer\'s '
+                'answer to the same loss, under the same sign-in and '
+                'connection');
+          }
+          _lastAccess[call.strategyId] = call;
+      }
+    }
+    _requestsSeen = calls.length;
+  }
+
+  final _lossAt = <ReadCall, (int, (int, int))>{};
+  final _underAt = <ReadCall, (int, int)>{};
+
+  var _requestsSeen = 0;
+  final _retired =
+      <(String, String), List<({DateTime at, (int, int)? under})>>{};
+  final _lastViewer = <String, (DateTime, (int, (int, int)))>{};
+  final _lastAccess = <String, ReadCall>{};
+  final _epochs = <String, int>{};
+  final _needReads = <(String, String), List<(int, DateTime)>>{};
+
+  final _removed = <String>{};
+  final _restartsWritten = <String, int>{};
+  var _read = 0;
 
   void _readReports() {
     final reports = world.sender.store.reports;
@@ -255,8 +461,21 @@ final class Model {
             :final effects,
             :final batch,
           ):
-          if (batch != null && events.every(_isAnswer)) {
-            _inArrivalOrder(batch.ops, 'the answer to $batch');
+          if (batch != null) {
+            _epochs[strategyId] = (_epochs[strategyId] ?? 0) + 1;
+          }
+          if (events.any((event) => event is EditAccessConfirmed)) {
+            final call = server.readCalls
+                .where(
+                  (call) =>
+                      call.strategyId == strategyId &&
+                      call.why == 'edit access was lost',
+                )
+                .lastOrNull;
+            if (call == null || !(call.role?.edits ?? false)) {
+              broken.add('edit access of $strategyId was confirmed after a '
+                  'page list that said ${call?.role}');
+            }
           }
           for (final effect in effects) {
             if (effect case OpRemoved(:final opId)) _removed.add(opId);
@@ -272,34 +491,39 @@ final class Model {
                   'in one run');
             }
           }
-        case SessionOpenedFor(:final strategyId, :final session, :final stamp):
-          _opened[(strategyId, session)] = stamp;
-        case ResultWritten(
-            :final strategyId,
-            :final session,
-            :final stamp,
-            :final inputsWhenWritten,
-            :final result,
-          ):
-          if (!world.arrivals.any((seen) => identical(seen, result))) {
-            broken.add('a result for $strategyId was recorded that never '
-                'arrived');
+        case SessionOpenedFor(:final strategyId):
+          _epochs[strategyId] = (_epochs[strategyId] ?? 0) + 1;
+        case ReadRecorded(:final strategyId, :final read, :final why, :final at)
+            when why == 'the queue asked for it':
+          final epoch = _epochs[strategyId] ?? 0;
+          final reads = (_needReads[(strategyId, read)] ??= [])
+            ..add((epoch, at));
+          final recent = reads.where(
+            (entry) =>
+                entry.$1 == epoch &&
+                at.difference(entry.$2) < timing.readAgainAfter,
+          );
+          if (recent.length > timing.unresolvedRounds) {
+            broken.add('$read of $strategyId was read ${recent.length} times '
+                'for the queue within ten minutes with nothing changed');
           }
-          _inArrivalOrder(result, 'a result for $strategyId');
-          if (inputsWhenWritten != stamp) {
-            broken.add('a result under $stamp was written while the inputs '
-                'were $inputsWhenWritten');
-          }
-          if (stamp.signIns != _resultsSignIns) {
-            broken.add('a result under sign-in ${stamp.signIns} was written '
-                'in a run whose results began under $_resultsSignIns');
-          }
-          final under = _opened[(strategyId, session)];
-          if (under == null ||
-              under.connection != stamp.connection ||
-              under.account != stamp.account) {
-            broken.add('a result under $stamp went into session $session of '
-                '$strategyId, which was opened for $under');
+        case ReadRecorded(:final strategyId, :final read, :final why, :final at)
+            when why == 'landed work waits for a result':
+          (_retired[(strategyId, read == 'the page list' ? 'list' : read)] ??=
+                  [])
+              .add((
+            at: at,
+            under: _underAt[server.readCalls.lastWhere(
+              (call) => call.strategyId == strategyId && call.at == at,
+            )],
+          ));
+        case ReadRecorded(:final strategyId, :final why, :final at)
+            when why == 'edit access was lost':
+          if (_lastAccess[strategyId] case final call?
+              when call.role?.edits == false) {
+            if (_lossAt[call] case final asked?) {
+              _lastViewer[strategyId] = (at, asked);
+            }
           }
         case _:
           break;
@@ -377,7 +601,6 @@ final class Model {
     final hold = storage.holdNextWrite();
     world.sender.wake();
     world.settle(const Duration(milliseconds: 300));
-    remember();
     final choice = random.nextInt(3);
     if (choice == 2) {
       world.sender.hold('held while a write is held');
@@ -395,124 +618,83 @@ final class Model {
     async.flushMicrotasks();
   }
 
-  var _fresh = 0;
-
-  void _probeHeld(
-    String what,
-    void Function() hand,
-    void Function(ResultOutcome? outcome) check,
-  ) {
-    final sender = world.sender;
-    final wasHeld = sender.held;
-    sender.hold('held for a probe');
-    world.settle(const Duration(milliseconds: 300));
-    final hold = storage.holdNextWrite();
-    var reached = false;
-    unawaited(
-      hold.reached.then((_) {
-        reached = true;
-        remember();
-        connection = nextConnection++;
-        world.connection = connection;
-      }),
-    );
-    final arrivedBefore = world.arrivals.length;
-    hand();
-    final result = world.arrivals.length > arrivedBefore
-        ? world.arrivals[arrivedBefore]
-        : null;
-    world.settle(const Duration(milliseconds: 300));
-    hold.letGo();
-    world.settle(const Duration(milliseconds: 300));
-    if (wasHeld == null) {
-      sender.release();
-    } else {
-      sender.hold(wasHeld);
-    }
-    log.add('$what${reached ? '' : ' (no write reached)'}');
-    if (reached && result is ResultForStore) {
-      check(world.intake.outcomes[result]);
-    }
-  }
-
-  bool get _resultsWouldBeTaken =>
-      !world.sender.busy &&
-      connection != null &&
-      account == servedAccount &&
-      world.sender.resultsSignIns == signIns;
-
-  void heldAdd() {
-    if (!_resultsWouldBeTaken) return;
-    final id = 'fresh-${++_fresh}';
-    server.owners[id] = servedAccount;
-    _probeHeld(
-      'the add of $id is held while the connection changes',
-      () {
-        final given = stamp;
-        world.shadow!.pageList(
-          id,
-          RemotePageList(
-            header: app.RemoteStrategyHeader(
-              publicId: id,
-              name: 'Fresh',
-              mapData: 'bind',
-              revision: 1,
-              createdAt: at,
-              updatedAt: at,
-              role: 'owner',
-            ),
-            pages: const [],
-          ),
-          given.connection,
-          stamp: given,
+  void readFault() {
+    final strategy = strategies[random.nextInt(2)];
+    final choice = random.nextInt(8);
+    log.add('read fault $strategy $choice');
+    switch (choice) {
+      case 0:
+        server.answerReadNext(
+          strategy,
+          (_) => Future.microtask(() {
+            refusedAt = signIns;
+            return const StoreReadRefused(
+              StoreReadRefusal.accountMismatch,
+              'another account',
+            );
+          }),
         );
-      },
-      (outcome) {
-        if (outcome is! ResultStale) {
-          broken.add('the first page list of $id was added while the '
-              'connection changed, and the intake was told $outcome');
-        }
-        if (world.sender.bound[id] case final session?) {
-          broken.add('$id was bound to $session though its add outlived its '
-              'connection');
-        }
-      },
-    );
-  }
-
-  void heldSessionWrite() {
-    if (!_resultsWouldBeTaken) return;
-    remember();
-    connection = nextConnection++;
-    world.connection = connection;
-    world.settle(const Duration(milliseconds: 300));
-    if (!_resultsWouldBeTaken) return;
-    final before = world.cloud().queue.session.number;
-    _probeHeld(
-      'the first session write after reconnecting is held while the '
-      'connection changes',
-      () {
-        world.shadow!.page(
-          strategyId,
-          pageSnapshot(serverRows()),
-          connection,
-          stamp: stamp,
+      case 1:
+        server.answerReadNext(
+          strategy,
+          (_) => Future.microtask(() {
+            refusedAt = signIns;
+            return const StoreReadRefused(
+              StoreReadRefusal.unauthenticated,
+              'signed out',
+            );
+          }),
         );
-      },
-      (outcome) {
-        final opened = world.cloud().queue.session.number;
-        if (opened == before) return;
-        if (outcome is! ResultStale) {
-          broken.add('a result whose session write outlived its connection '
-              'was answered $outcome');
-        }
-        if (world.sender.bound[strategyId] case final session?
-            when session.number == opened) {
-          broken.add('$strategyId was bound to session $opened, opened for a '
-              'connection replaced during its write');
-        }
-      },
-    );
+      case 2:
+        server.answerReadWith(
+          strategy,
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+        );
+      case 3:
+        server.answerReadWith(
+          strategy,
+          const StoreReadLost(TransportFailure.network, 'lost'),
+        );
+      case 4:
+        server.answerReadWith(
+          strategy,
+          const StoreReadUnreadable('rows this build cannot read'),
+        );
+      case 7:
+        server.answerReadNext(strategy, (call) {
+          if (call.page == _second) world.teammateDeletesPage(_second);
+          return Future.value(server.answerNow(call));
+        });
+      case 5:
+        server.answerReadNext(strategy, (_) {
+          final late = Completer<StoreReadOutcome>();
+          Timer(
+            const Duration(seconds: 60),
+            () => late.complete(const StoreReadAnswered(StrategyGone())),
+          );
+          return late.future;
+        });
+      case _:
+        final change = random.nextInt(3);
+        server.answerReadNext(strategy, (call) async {
+          switch (change) {
+            case 0:
+              connection = nextConnection++;
+              world.connection = connection;
+            case 1:
+              _signedInAs(null);
+              world.account = null;
+              _signedInAs(servedAccount);
+              world.account = servedAccount;
+            case _:
+              _signedInAs(
+                account == servedAccount ? otherAccount : servedAccount,
+              );
+              world.account = account;
+          }
+          return const StoreReadAnswered(StrategyGone());
+        });
+    }
   }
 
   void waitAndCountLooks(int seconds) {
@@ -534,7 +716,7 @@ final class Model {
       false => false,
       null => drops.nextBool(),
     };
-    final choice = random.nextInt(19);
+    final choice = random.nextInt(25);
     switch (choice) {
       case 0 || 1 || 2:
         edit();
@@ -543,13 +725,11 @@ final class Model {
         world.sender.wake();
         log.add('wake');
       case 4:
-        remember();
         connection =
             connection == null || random.nextBool() ? nextConnection++ : null;
         world.connection = connection;
         log.add('connection $connection');
       case 5:
-        remember();
         final options = [servedAccount, otherAccount, null];
         _signedInAs(options[random.nextInt(3)]);
         signIns++;
@@ -578,12 +758,11 @@ final class Model {
         restart();
         log.add('restart');
       case 12:
-        results();
-        log.add('results');
+        teammate();
       case 13:
         changeDuringWrite();
       case 14:
-        staleResult();
+        readFault();
       case 15 when random.nextBool():
         world.slowStore.afterRead = random.nextBool()
             ? Duration(milliseconds: random.nextInt(1500))
@@ -593,11 +772,24 @@ final class Model {
         world.slowStore.dropSessionReadBack = 1;
         log.add('one session read-back is lost');
       case 17:
-        heldAdd();
+        readFault();
       case 18:
-        heldSessionWrite();
+        teammate();
+      case 19 || 20:
+        ownMove();
+      case 21:
+        ownPageOp();
+      case 22:
+        teammateOnRows();
+      case 23:
+        viewerRefusal();
+      case 24 when random.nextBool():
+        reopen();
+      case 24:
+        reopen();
       case _:
-        final seconds = random.nextInt(60);
+        final seconds =
+            random.nextBool() ? random.nextInt(60) : 30 + random.nextInt(400);
         waitAndCountLooks(seconds);
         log.add('wait $seconds s');
     }
@@ -614,15 +806,21 @@ final class Model {
       reason: 'sent as an account that does not own it\n$trail',
     );
     expect(
+      server.wrongAccountReads.map((call) => '${call.strategyId} $call'),
+      isEmpty,
+      reason: 'read as an account that does not own it\n$trail',
+    );
+    expect(
       [
-        for (final report in world.shadow!.reports)
-          if (report case ShadowSessionOpened(:final because)
-              when because != 'the sender opened it' &&
-                  because != 'the strategy was added')
-            because,
+        for (final strategy in strategies)
+          if (standingOf(world.cloud(strategy).queue) ==
+              Standing.deletedOnServer)
+            strategy,
       ],
       isEmpty,
-      reason: 'the shadow opened a session itself\n$trail',
+      reason: 'a read answered after the loop moved on was recorded: the '
+          'store holds a strategy as deleted that the server never deleted\n'
+          '$trail',
     );
   }
 
@@ -689,22 +887,19 @@ final class Model {
       ..refusedAreas.clear()
       ..refuseNext = 0;
     _signedInAs(servedAccount);
-    connection ??= nextConnection++;
+    connection = nextConnection++;
     world
       ..account = account
       ..connection = connection;
+    server.roles.clear();
     world.sender.release();
     final sender = world.sender;
-    if ((sender.resultsSignIns != null && sender.resultsSignIns != signIns) ||
-        sender.signInWaitFrom == signIns ||
-        sender.upgradeAsked) {
-      restart();
-    }
+    if (sender.signInWaitFrom == signIns || sender.upgradeAsked) restart();
   }
 
   void checkLiveness() {
     heal();
-    world.settle(const Duration(minutes: 5));
+    world.settle(const Duration(minutes: 11));
     for (final strategy in strategies) {
       final cloud = world.cloud(strategy);
       final sendable = [
@@ -714,22 +909,38 @@ final class Model {
       expect(
         sendable,
         isEmpty,
-        reason: 'after five quiet minutes $strategy still holds work it could '
+        reason:
+            'after eleven quiet minutes $strategy still holds work it could '
             'send: the loop slept on it; sender ${world.sender.view}\n$trail',
       );
     }
     for (var round = 0; round < 30; round++) {
       world.settle(const Duration(minutes: 1));
-      results();
       if (_settledOrNeedsYou()) break;
     }
     for (final strategy in strategies) {
       final cloud = world.cloud(strategy);
       expect(
-        [for (final work in cloud.queue.landed) work.op.opId],
+        _landedNotShown(strategy, cloud),
         isEmpty,
-        reason: 'results that show the server\'s copy did not clear the '
-            'landed work of $strategy\n$trail',
+        reason: 'the loop\'s reads did not clear the landed work of '
+            '$strategy\n$trail',
+      );
+      expect(
+        [
+          for (final entry in cloud.queue.entries)
+            for (final hold in cloud.views[entry.id]?.holds ?? const <Hold>[])
+              if (hold is AwaitingResult && !_needsUser(cloud, entry.id))
+                '${entry.id} awaits ${hold.subject}',
+        ],
+        isEmpty,
+        reason: 'a need the queue raised was never read; sender '
+            '${world.sender.view}\n$trail',
+      );
+      expect(
+        world.sender.cannotRead(strategy),
+        isNull,
+        reason: 'healed, $strategy is still held as unreadable\n$trail',
       );
       for (final entry in cloud.queue.entries) {
         expect(
@@ -788,11 +999,28 @@ final class Model {
 
   bool _settledOrNeedsYou() => strategies.every((strategy) {
         final cloud = world.cloud(strategy);
-        return cloud.queue.landed.isEmpty &&
+        return _landedNotShown(strategy, cloud).isEmpty &&
+            world.sender.cannotRead(strategy) == null &&
             cloud.queue.entries.every(
               (entry) => _needsUser(cloud, entry.id),
             );
       });
+
+  List<String> _landedNotShown(String strategy, CloudStrategy cloud) {
+    final shown = world.sender.couldNotResolve(strategy, cloud)?.subjects ??
+        const <String>[];
+    return [
+      for (final MapEntry(key: page, value: works)
+          in Retiring.landedByPage(cloud).entries)
+        if (!shown.contains(
+          'landed work on '
+          '${page == Retiring.list ? 'the page list' : 'page $page'}',
+        ))
+          for (final (attempt, position) in works)
+            'attempt $attempt position $position on '
+                '${page == Retiring.list ? 'the page list' : 'page $page'}',
+    ];
+  }
 
   bool _needsUser(CloudStrategy cloud, String id, [int depth = 0]) {
     final view = cloud.views[id];
@@ -830,8 +1058,11 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
       for (var i = 0; i < steps; i++) {
         model.step();
         model.checkSafety();
+        model.checkScheduled();
+        model.checkRequests();
         if (i % 10 == 9) model.checkIsolation();
         if (i % 10 == 4) model.checkFairness();
+        if (i % 35 == 7) model.checkRetireFloor();
       }
       model.checkLiveness();
       model.checkTurns();
@@ -850,7 +1081,6 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
           'seed $seed${dropLost == null ? '' : ' (ConnectionLost ${dropLost ? 'dropped' : 'kept'})'}: ${failure.message}');
     } finally {
       model.world.sender.dispose();
-      model.world.close();
       model.world.store.close();
       async.flushMicrotasks();
     }

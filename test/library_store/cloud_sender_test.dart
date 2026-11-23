@@ -3,13 +3,14 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
+import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart' show useCloudAs;
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
+import 'package:icarus/library_store/landed_retiring.dart';
 import 'package:icarus/library_store/sender_store.dart';
-import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -17,9 +18,9 @@ import 'cloud_shadow_test.dart'
     show
         openStore,
         pageId,
+        secondPage,
         pageList,
         pageSnapshot,
-        secondPage,
         serverRows,
         servedAccount,
         shadowOn,
@@ -27,6 +28,8 @@ import 'cloud_shadow_test.dart'
 import 'sender_world.dart';
 
 final _signIns = StateProvider<int>((ref) => 0);
+
+final _editorOpen = StateProvider<String?>((ref) => null);
 
 void holdNextWrite(MemoryStorage storage, void Function() atIt) {
   final hold = storage.holdNextWrite();
@@ -68,7 +71,6 @@ void main() {
           for (var n = 1; n <= moves; n++) {
             world.commitMove(n);
             world.settle();
-            world.showResult();
           }
           expect(world.server.calls, hasLength(moves));
           expect(world.server.applied, moves);
@@ -93,7 +95,6 @@ void main() {
         },
         storage: storage,
         server: server,
-        shadow: false,
         addStrategy: false,
       );
     });
@@ -188,7 +189,6 @@ void main() {
           },
           storage: storage,
           server: server,
-          shadow: false,
           addStrategy: false,
           clientId: 'client-2',
         );
@@ -285,6 +285,7 @@ void main() {
       ]) {
         inWorld((world) {
           world.addOtherStrategy();
+          world.server.roles[strategyId] = StoreReadRole.viewer;
           world.server.answerWith(strategyId, StoreBatchRefusedWhole(refusal));
           world.commitMove(1);
           world.settle(const Duration(minutes: 1));
@@ -307,7 +308,6 @@ void main() {
         inWorld((world) {
           world.commitMove(1);
           world.settle();
-          world.showResult();
           world.dropsConnectionLost.value = refuseTheRecord;
           world.connection = null;
           world.settle();
@@ -369,37 +369,6 @@ void main() {
     });
 
     test(
-        'a result that arrived under a connection since replaced is stale, '
-        'and recorded into no session', () {
-      inWorld((world) {
-        final old = world.stamp;
-        world.connection = 2;
-        world.settle();
-        world.shadow!.page(
-          strategyId,
-          pageSnapshot(serverRows()),
-          old.connection,
-          stamp: old,
-        );
-        world.settle();
-        expect(
-          world.shadow!.ledger.last.verdict,
-          isA<Skipped>().having(
-            (skip) => skip.reason,
-            'reason',
-            SkipReason.staleForSender,
-          ),
-        );
-        expect(
-          world.sender.store.reports.whereType<ResultWritten>().where(
-                (written) => written.stamp == old,
-              ),
-          hasLength(2),
-        );
-      });
-    });
-
-    test(
         'a claim made while the connection, the sign-in or the account '
         'changed is given back and sent from the new session', () {
       for (final (change, restore)
@@ -451,7 +420,6 @@ void main() {
         },
         storage: storage,
         server: server,
-        shadow: false,
         addStrategy: false,
         clientId: 'client-2',
       );
@@ -512,18 +480,25 @@ void main() {
       });
     });
 
-    test('with nothing to do, the loop does not look again by itself', () {
+    test(
+        'with nothing to do but retire its landed work, the loop reads once '
+        'and does not look again by itself', () {
       inWorld((world) {
         world.commitMove(1);
         world.settle();
         final looks = world.sender.looks;
+        final reads = world.server.readCalls.length;
         world.settle(const Duration(minutes: 10));
-        expect(world.sender.looks - looks, lessThanOrEqualTo(1));
+        expect(world.server.readCalls.skip(reads).map((call) => '$call'), [
+          'page p1',
+        ]);
+        expect(world.cloud().queue.landed, isEmpty);
+        expect(world.sender.looks - looks, lessThanOrEqualTo(2));
       });
     });
 
     test(
-        'the shadow and the loop opening one strategy at once write the '
+        'adopting a strategy the store holds after a restart writes the '
         'restart once and one session', () {
       final storage = MemoryStorage();
       final server = FakeServer();
@@ -540,11 +515,6 @@ void main() {
           world.settle();
           expect(world.cloud().queue.nextSession, before + 2);
           expect(world.written().whereType<AppRestarted>(), hasLength(1));
-          final opened = world.shadowReports
-              .whereType<ShadowSessionOpened>()
-              .map((report) => report.because);
-          expect(opened, isNotEmpty);
-          expect(opened, everyElement('the sender opened it'));
           expect(server.calls, hasLength(1));
         },
         storage: storage,
@@ -570,7 +540,6 @@ void main() {
           expect(world.server.calls, hasLength(1));
         },
         storage: storage,
-        shadow: false,
         addStrategy: false,
       );
     });
@@ -601,23 +570,6 @@ void main() {
         world.settle();
         expect(during, inInclusiveRange(2, 4));
         expect(world.queueLength(), 0);
-      });
-    });
-
-    test('a result arriving does not hold a send back', () {
-      inWorld((world) {
-        world.commitAdds(1);
-        for (var n = 0; n < 6; n++) {
-          world.async.elapse(const Duration(milliseconds: 60));
-          world.shadow!.page(
-            strategyId,
-            pageSnapshot(serverRows()),
-            world.connection,
-            stamp: world.stamp,
-          );
-        }
-        world.async.flushMicrotasks();
-        expect(world.server.calls, hasLength(1));
       });
     });
 
@@ -729,7 +681,6 @@ void main() {
           expect(world.queueLength(), 0);
         },
         storage: storage,
-        shadow: false,
         addStrategy: false,
       );
     });
@@ -754,218 +705,9 @@ void main() {
         });
       }
     });
-
-    test(
-        'a first page list that arrived under a replaced connection adds '
-        'nothing, and one whose add outlived its connection binds nothing', () {
-      final storage = MemoryStorage();
-      inWorld(
-        (world) {
-          final old = world.stamp;
-          world.connection = 2;
-          world.settle();
-          world.shadow!.pageList(
-            strategyId,
-            pageList(serverRows()),
-            old.connection,
-            stamp: old,
-          );
-          world.settle();
-          expect(world.store.library, isA<LibraryOpen>());
-          expect(
-            (world.store.library as LibraryOpen).list.strategies,
-            isEmpty,
-          );
-          holdNextWrite(storage, () => world.connection = 3);
-          world.shadow!.pageList(
-            strategyId,
-            pageList(serverRows()),
-            2,
-            stamp: (
-              account: servedAccount,
-              connection: 2,
-              signIns: 1,
-              signOuts: 0,
-            ),
-          );
-          world.settle();
-          expect(
-            (world.store.library as LibraryOpen).list.strategies,
-            hasLength(1),
-          );
-          expect(world.sender.bound, isEmpty);
-          expect(
-              world.sender.store.reports.whereType<ResultWritten>(), isEmpty);
-        },
-        storage: storage,
-        addStrategy: false,
-      );
-    });
-
-    test(
-        'a result whose session write is held while the connection is '
-        'replaced is stale, and records nothing', () {
-      final storage = MemoryStorage();
-      inWorld((world) {
-        final before =
-            world.sender.store.reports.whereType<ResultWritten>().length;
-        world.connection = 2;
-        world.settle();
-        holdNextWrite(storage, () => world.connection = 3);
-        world.shadow!.page(
-          strategyId,
-          pageSnapshot(serverRows()),
-          2,
-          stamp: (
-            account: servedAccount,
-            connection: 2,
-            signIns: 1,
-            signOuts: 0,
-          ),
-        );
-        world.settle();
-        expect(
-          world.sender.store.reports.whereType<ResultWritten>(),
-          hasLength(before),
-        );
-        expect(world.sender.bound[strategyId]?.connection, isNot(2));
-      }, storage: storage);
-    });
-
-    test(
-        'after a change of sign-in count, results stop for the run while '
-        'sends go on', () {
-      inWorld((world) {
-        world.authChanges = 2;
-        world.settle();
-        final before =
-            world.sender.store.reports.whereType<ResultWritten>().length;
-        world.showResult();
-        expect(
-          world.sender.store.reports.whereType<ResultWritten>(),
-          hasLength(before),
-        );
-        world.commitMove(1);
-        world.settle();
-        expect(world.server.calls, hasLength(1));
-      });
-    });
   });
 
   group('the round-five cases', () {
-    test(
-        'the sign-in rule holds from the start of the run: a first page list '
-        'under a later sign-in count adds nothing', () {
-      inWorld(
-        (world) {
-          world.authChanges = 2;
-          world.settle();
-          world.shadow!.pageList(
-            strategyId,
-            pageList(serverRows()),
-            world.connection,
-            stamp: world.stamp,
-          );
-          world.settle();
-          expect(
-            (world.store.library as LibraryOpen).list.strategies,
-            isEmpty,
-          );
-          expect(world.intake.outcomes.values.single, isA<ResultStale>());
-        },
-        addStrategy: false,
-      );
-    });
-
-    test(
-        'results that arrived before a call\'s answer are recorded before it, '
-        'so they are not taken as the fresh read a page delete waits for', () {
-      inWorld((world) {
-        void handOlder() => world.shadow!
-          ..pageList(
-            strategyId,
-            pageList(serverRows(), more: [secondPage()]),
-            world.connection,
-            stamp: world.stamp,
-          )
-          ..page(
-            strategyId,
-            pageSnapshot(serverRows()),
-            world.connection,
-            stamp: world.stamp,
-          );
-        handOlder();
-        world.settle();
-        final reply = Completer<void>();
-        world.server.answerNext(strategyId, (call) {
-          final answered = world.server.applyAll(call);
-          return reply.future.then((_) => answered);
-        });
-        world.commitMove(1);
-        world.settle(const Duration(milliseconds: 300));
-        expect(world.server.calls, hasLength(1));
-        world.commitPageDelete('delete-page', pageId);
-        final before = world.sender.store.reports.length;
-        handOlder();
-        world.async.flushMicrotasks();
-        reply.complete();
-        world.settle();
-        expect(
-          [
-            for (final report in world.sender.store.reports.skip(before))
-              if (report is ResultWritten)
-                'result'
-              else if (report case EventsWritten(:final events)
-                  when events.any((event) => event is OpAnswered))
-                'answer',
-          ],
-          ['result', 'result', 'answer'],
-        );
-        expect(
-          [
-            for (final call in world.server.calls)
-              for (final op in call.ops)
-                if (op is PageDeleteOp) op.opId,
-          ],
-          isEmpty,
-        );
-        expect(
-          [for (final entry in world.cloud().queue.entries) entry.id],
-          contains('delete-page'),
-        );
-      });
-    });
-
-    test(
-        'a result waiting when the loop ends is answered as not recorded, '
-        'and the shadow drains', () {
-      final storage = MemoryStorage();
-      inWorld((world) {
-        world.commitMove(1);
-        final hold = storage.holdNextWrite();
-        unawaited(
-          hold.reached.then((_) {
-            world.shadow!.page(
-              strategyId,
-              pageSnapshot(serverRows()),
-              world.connection,
-              stamp: world.stamp,
-            );
-            unawaited(world.store.close());
-            hold.letGo();
-          }),
-        );
-        world.settle(const Duration(minutes: 1));
-        expect(world.sender.ended, isNotNull);
-        final waited = world.arrivals.whereType<ResultForStore>().last;
-        expect(world.intake.outcomes[waited], isA<ResultNotRecorded>());
-        var drained = false;
-        unawaited(world.shadow!.idle.then((_) => drained = true));
-        world.settle();
-        expect(drained, isTrue);
-      }, storage: storage);
-    });
-
     test(
         'use cloud acts as the signed-in account: another account cannot take '
         'the cloud\'s version of the owner\'s rejected edit', () {
@@ -1003,98 +745,6 @@ void main() {
         expect(used, ['move-1']);
         expect(world.queueLength(), 0);
       });
-    });
-
-    test(
-        'a result compared after a newer one for its strategy was handed over '
-        'is skipped as superseded, not reported different', () {
-      inWorld((world) {
-        final before = world.shadow!.ledger.length;
-        world.server.revisions[strategyId] = 5;
-        world.shadow!
-          ..page(
-            strategyId,
-            pageSnapshot(serverRows()),
-            world.connection,
-            stamp: world.stamp,
-          )
-          ..page(
-            strategyId,
-            world.shownPage(),
-            world.connection,
-            stamp: world.stamp,
-          );
-        world.settle();
-        expect(
-          [
-            for (final entry in world.shadow!.ledger.skip(before))
-              entry.verdict,
-          ],
-          [
-            isA<Skipped>().having(
-              (skipped) => skipped.reason,
-              'reason',
-              SkipReason.superseded,
-            ),
-            isA<ComparedEqual>(),
-          ],
-        );
-      });
-    });
-
-    test(
-        'after a restart, a page recorded before the run\'s first page list is '
-        'skipped for comparison, not reported different', () {
-      final storage = MemoryStorage();
-      inWorld((world) {}, storage: storage);
-      inWorld(
-        (world) {
-          world.shadow!.page(
-            strategyId,
-            pageSnapshot(serverRows()),
-            world.connection,
-            stamp: world.stamp,
-          );
-          world.settle();
-          expect(world.sender.store.reports.whereType<ResultWritten>(),
-              hasLength(1));
-          expect(
-            world.shadow!.ledger.single.verdict,
-            isA<Skipped>().having(
-              (skipped) => skipped.reason,
-              'reason',
-              SkipReason.beforePageList,
-            ),
-          );
-        },
-        storage: storage,
-        addStrategy: false,
-      );
-    });
-
-    test(
-        'a result written into its session after the connection changed '
-        'justifies nothing: the next send opens a new session first and goes '
-        'out checked', () {
-      final storage = MemoryStorage();
-      inWorld((world) {
-        world.sender.hold('held by the test');
-        world.commitElementDelete('delete-1');
-        world.settle();
-        holdNextWrite(storage, () => world.connection = 2);
-        world.showResult();
-        final shown = world.arrivals.whereType<ResultForStore>().last;
-        expect(world.intake.outcomes[shown], isA<ResultRecorded>());
-        final before = world.written().length;
-        world.sender.release();
-        world.settle();
-        expect(
-          world.written().skip(before).map((event) => event.runtimeType),
-          containsAllInOrder([ConnectionReturned, BatchClaimed]),
-        );
-        final sent = world.server.calls.single.ops.single as ElementDeleteOp;
-        expect(sent.lastWriterWins, isFalse);
-      }, storage: storage);
     });
 
     test(
@@ -1163,121 +813,6 @@ void main() {
         );
         expect(world.server.calls, hasLength(1));
       });
-    });
-
-    test('a result whose recording throws is answered as not recorded', () {
-      inWorld((world) {
-        world.slowStore.throwsOnBase = true;
-        world.shadow!.page(
-          strategyId,
-          pageSnapshot(serverRows()),
-          world.connection,
-          stamp: world.stamp,
-        );
-        world.settle();
-        final handed = world.arrivals.whereType<ResultForStore>().last;
-        expect(world.intake.outcomes[handed], isA<ResultNotRecorded>());
-      });
-    });
-
-    test(
-        'pages wait until the strategy is recorded: after a stale first page '
-        'list they are recorded with the next one', () {
-      inWorld(
-        (world) {
-          final old = world.stamp;
-          world.connection = 2;
-          world.settle();
-          world.shadow!
-            ..pageList(
-              strategyId,
-              pageList(serverRows()),
-              old.connection,
-              stamp: old,
-            )
-            ..page(
-              strategyId,
-              pageSnapshot(serverRows()),
-              world.connection,
-              stamp: world.stamp,
-            );
-          world.settle();
-          expect(
-            (world.store.library as LibraryOpen).list.strategies,
-            isEmpty,
-          );
-          world.shadow!.pageList(
-            strategyId,
-            pageList(serverRows()),
-            world.connection,
-            stamp: world.stamp,
-          );
-          world.settle();
-          expect(
-            world.sender.store.reports.whereType<ResultWritten>().where(
-                  (written) => written.result is PageResultForStore,
-                ),
-            hasLength(1),
-          );
-        },
-        addStrategy: false,
-      );
-    });
-
-    test(
-        'pages that arrive before the strategy is recorded are recorded in '
-        'the order they arrived', () {
-      inWorld(
-        (world) {
-          final older = pageSnapshot(serverRows());
-          world.server.revisions[strategyId] = 5;
-          final newer = world.shownPage();
-          world.shadow!
-            ..page(strategyId, older, world.connection, stamp: world.stamp)
-            ..pageList(
-              strategyId,
-              pageList(serverRows()),
-              world.connection,
-              stamp: world.stamp,
-            )
-            ..page(strategyId, newer, world.connection, stamp: world.stamp);
-          world.settle();
-          expect(
-            [
-              for (final written
-                  in world.sender.store.reports.whereType<ResultWritten>())
-                if (written.result case PageResultForStore(:final page))
-                  page.elements.whereType<LiveElement>().first.revision,
-            ],
-            [1, 5],
-          );
-        },
-        addStrategy: false,
-      );
-    });
-
-    test('a result answered after the shadow stopped changes nothing in it',
-        () {
-      final storage = MemoryStorage();
-      inWorld((world) {
-        world.connection = 2;
-        world.settle();
-        final shadow = world.shadow!;
-        final opened = shadow.reports.whereType<ShadowSessionOpened>().length;
-        holdNextWrite(storage, () => shadow.stop('stopped by the test'));
-        shadow.page(
-          strategyId,
-          pageSnapshot(serverRows()),
-          world.connection,
-          stamp: world.stamp,
-        );
-        world.settle();
-        expect(world.intake.outcomes.values.last, isA<ResultRecorded>());
-        expect(
-          shadow.reports.whereType<ShadowSessionOpened>(),
-          hasLength(opened),
-        );
-      }, storage: storage);
     });
 
     test(
@@ -1364,6 +899,924 @@ void main() {
     expect(shadow.ledger.last.verdict, isNot(isA<Skipped>()));
   });
 
+  group('the read step', () {
+    List<String> readsAfter(World world, int before) =>
+        [for (final call in world.server.readCalls.skip(before)) '$call'];
+
+    test(
+        'adopting the strategy the editor opens reads its page list, then each '
+        'page, one read per step, as the strategy\'s account', () {
+      inWorld(
+        (world) {
+          world.sender.adopt(strategyId);
+          world.settle();
+          expect(readsAfter(world, 0), ['list', 'page p1']);
+          expect(
+            world.server.readCalls.map((call) => call.account),
+            everyElement(servedAccount),
+          );
+          expect(world.firstElement().publicId, isNotEmpty);
+          expect(world.sender.adopting(strategyId), isFalse);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test('a strategy this account can only view is not adopted', () {
+      final server = FakeServer()..roles[strategyId] = StoreReadRole.viewer;
+      inWorld(
+        (world) {
+          world.sender.adopt(strategyId);
+          world.settle();
+          expect(readsAfter(world, 0), ['list']);
+          expect(
+            (world.store.library as LibraryOpen).list.strategies,
+            isEmpty,
+          );
+        },
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'budget: 50 whole-row moves in five bursts with minute pauses read '
+        'nothing before they are sent, and the page twice to retire landed '
+        'work: at the first pause, then not again for five minutes', () {
+      inWorld((world) {
+        final before = world.server.readCalls.length;
+        for (var burst = 0; burst < 5; burst++) {
+          for (var n = 1; n <= 10; n++) {
+            world.commitMove(burst * 10 + n);
+            world.settle();
+          }
+          world.settle(const Duration(minutes: 1));
+        }
+        expect(world.server.calls, hasLength(50));
+        expect(world.server.applied, 50);
+        expect(readsAfter(world, before), ['page p1', 'page p1']);
+        expect(world.cloud().queue.landed, isEmpty);
+      });
+    });
+
+    test(
+        'budget: a first edit, a field merge and a burst of ten edits to one '
+        'item read nothing before they are sent; the burst\'s edits wait '
+        'behind each other on the one row', () {
+      inWorld((world) {
+        final before = world.server.readCalls.length;
+        world.commitMove(1);
+        world.settle();
+        world.commitMerge(2);
+        world.settle();
+        for (var n = 0; n < 10; n++) {
+          world.commitMove(10 + n);
+          world.async.elapse(const Duration(milliseconds: 50));
+        }
+        world.settle();
+        expect(world.server.calls, hasLength(12));
+        expect(world.queueLength(), 0);
+        expect(readsAfter(world, before), isEmpty);
+      });
+    });
+
+    test(
+        'budget: a start with unsent work in three strategies sends it with no '
+        'read first, then reads once per strategy to retire it', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld((world) {
+        world
+          ..addOtherStrategy()
+          ..addOtherStrategy(id: 'hand-3')
+          ..sender.hold('held by the test')
+          ..commitMove(1)
+          ..commitRename(otherStrategy, 'other')
+          ..commitRename('hand-3', 'third')
+          ..settle();
+      }, storage: storage, server: server);
+      inWorld(
+        (world) {
+          final before = server.readCalls.length;
+          world.settle(const Duration(seconds: 20));
+          expect(server.calls, hasLength(3));
+          expect(readsAfter(world, before), isEmpty);
+          world.settle(const Duration(minutes: 1));
+          expect(
+            readsAfter(world, before)..sort(),
+            ['list', 'list', 'page p1'],
+          );
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a whole write after a field merge that landed at a revision a '
+        'teammate moved reads its page once before it is decided', () {
+      inWorld((world) {
+        world.server.answerNext(strategyId, (call) async {
+          world.teammateMoves(1);
+          return world.server.applyAll(call);
+        });
+        world.commitMerge(1);
+        world.settle();
+        expect(world.cloud().queue.landed.single.produced, isNull);
+        final before = world.server.readCalls.length;
+        world.commitMove(2);
+        world.settle();
+        expect(readsAfter(world, before), ['page p1']);
+        expect(
+          world.queueLength() == 0 || world.views().single.state is NeedsUser,
+          isTrue,
+        );
+      });
+    });
+
+    test(
+        'after a restart a page delete reads the page list and the page, one '
+        'per step, then goes out', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      inWorld(
+        (world) {
+          final before = server.readCalls.length;
+          world.commitPageDelete('delete-p2', secondPage().page.publicId);
+          world.settle();
+          expect(readsAfter(world, before), ['list', 'page p2']);
+          expect(
+            [for (final call in server.calls) ...call.opIds],
+            contains('delete-p2'),
+          );
+          world.settle(const Duration(minutes: 1));
+          expect(readsAfter(world, before), ['list', 'page p2', 'list']);
+          expect(world.cloud().queue.landed, isEmpty);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'edit access lost is lifted by a page list that says the account '
+        'edits, and a viewer\'s stays held, read again only after ten minutes',
+        () {
+      for (final role in [StoreReadRole.editor, StoreReadRole.viewer]) {
+        inWorld((world) {
+          world.server.roles[strategyId] = role;
+          world.server.answerWith(
+            strategyId,
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          );
+          final before = world.server.readCalls.length;
+          world.commitMove(1);
+          world.settle(const Duration(minutes: 1));
+          expect(
+            readsAfter(world, before),
+            role.edits ? ['list', 'page p1'] : ['list'],
+            reason: '$role',
+          );
+          if (role.edits) {
+            expect(world.written(), contains(isA<EditAccessConfirmed>()));
+            expect(world.queueLength(), 0);
+          } else {
+            expect(world.face(), Face.editAccessLost);
+            final first = world.server.readCalls.last.at!;
+            final again = first.add(const Duration(minutes: 10));
+            world.settle(
+              again.difference(start.add(world.async.elapsed)) -
+                  const Duration(seconds: 1),
+            );
+            expect(readsAfter(world, before), ['list']);
+            world.settle(const Duration(seconds: 2));
+            expect(readsAfter(world, before), ['list', 'list']);
+            expect(world.server.readCalls.last.at!.isBefore(again), isFalse);
+          }
+        });
+      }
+    });
+
+    test(
+        'a read refused as FORBIDDEN is a fact beside the sync state, read '
+        'again after ten minutes and cleared by a read that is answered', () {
+      inWorld((world) {
+        world.server.answerReadWith(
+          strategyId,
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+        );
+        world.commitMove(1);
+        world.settle();
+        expect(world.sender.cannotRead(strategyId), isNull);
+        world.settle(const Duration(minutes: 1));
+        expect(world.sender.cannotRead(strategyId), isNotNull);
+        expect(world.cloud().queue.landed, isNotEmpty);
+        world.settle(const Duration(minutes: 11));
+        expect(world.sender.cannotRead(strategyId), isNull);
+        expect(world.cloud().queue.landed, isEmpty);
+      });
+    });
+
+    test('a read refused as FORBIDDEN does not hold back the next send', () {
+      inWorld((world) {
+        world.server.answerReadWith(
+          strategyId,
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+        );
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 1));
+        expect(world.sender.cannotRead(strategyId), isNotNull);
+        world.commitMove(2);
+        world.settle();
+        expect(world.server.calls.last.opIds, ['move-2']);
+      });
+    });
+
+    test('the run-wide refusals of a read hold the run as a call\'s do', () {
+      for (final (refusal, hold) in [
+        (StoreReadRefusal.accountMismatch, isA<SignInHold>()),
+        (StoreReadRefusal.unauthenticated, isA<SignInHold>()),
+        (StoreReadRefusal.upgradeRequired, isA<UpgradeHold>()),
+      ]) {
+        inWorld((world) {
+          world.server.answerReadWith(
+            strategyId,
+            StoreReadRefused(refusal, '$refusal'),
+          );
+          world.commitMove(1);
+          world.settle(const Duration(minutes: 1));
+          expect(world.sender.runHold, hold, reason: '$refusal');
+        });
+      }
+    });
+
+    test('a lost read is tried again after the write retry delay', () {
+      inWorld((world) {
+        world.server.answerReadWith(
+          strategyId,
+          const StoreReadLost(TransportFailure.network, 'lost'),
+        );
+        world.commitMove(1);
+        world.settle();
+        final before = world.server.readCalls.length;
+        world.settle(const Duration(seconds: 29));
+        expect(readsAfter(world, before), ['page p1']);
+        expect(world.cloud().queue.landed, isNotEmpty);
+        world.settle(const Duration(seconds: 3));
+        expect(readsAfter(world, before), ['page p1', 'page p1']);
+        expect(world.cloud().queue.landed, isEmpty);
+      });
+    });
+
+    test(
+        'a read answered after the connection, the account or the sign-outs '
+        'changed is dropped, and read again under the new inputs', () {
+      for (final change in <void Function(World)>[
+        (world) => world.connection = 2,
+        (world) => world
+          ..signIn(null)
+          ..signIn(servedAccount),
+      ]) {
+        inWorld((world) {
+          world.commitMove(1);
+          world.settle();
+          world.server.answerReadNext(strategyId, (call) async {
+            change(world);
+            return world.server.answerNow(call);
+          });
+          final before = world.server.readCalls.length;
+          final recorded = world.readsRecorded().length;
+          world.settle(const Duration(minutes: 1));
+          expect(readsAfter(world, before), ['page p1', 'page p1']);
+          expect(world.readsRecorded().skip(recorded), ['page p1']);
+          expect(world.cloud().queue.landed, isEmpty);
+        });
+      }
+    });
+
+    test(
+        'a sign-in refresh mid-session does not stop results: the next read '
+        'is recorded', () {
+      inWorld((world) {
+        world.authChanges = 2;
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 1));
+        expect(world.readsRecorded().last, 'page p1');
+        expect(world.cloud().queue.landed, isEmpty);
+      });
+    });
+  });
+
+  group('the review round', () {
+    List<String> readsAfter(World world, int before) =>
+        [for (final call in world.server.readCalls.skip(before)) '$call'];
+
+    String secondId() => secondPage().page.publicId;
+
+    test(
+        'a result the disk refuses to write is not counted as read: the page '
+        'is read again and recorded', () {
+      inWorld(
+        (world) {
+          var refused = false;
+          world.server.onRead = (call) {
+            if (call.page != null && !refused) {
+              refused = true;
+              world.lease.refuseNext = 1;
+            }
+          };
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 10));
+          expect(readsAfter(world, 0), ['list', 'page p1', 'page p1']);
+          expect(world.readsRecorded(), ['the page list', 'page p1']);
+          expect(world.sender.adopting(strategyId), isFalse);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a page delete whose page a teammate deletes between its two reads '
+        'is read again, not left waiting', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      inWorld(
+        (world) {
+          server.readCalls.clear();
+          server.onRead = (call) {
+            if (call.page == secondId() && server.readCalls.length == 2) {
+              world.teammateDeletesPage(secondId());
+            }
+          };
+          world.commitPageDelete('delete-p2', secondId());
+          world.settle(const Duration(minutes: 1));
+          expect(readsAfter(world, 0).take(2), ['list', 'page p2']);
+          expect(readsAfter(world, 0).length, inInclusiveRange(3, 6));
+          expect(world.queueLength(), 0);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a need that its reads cannot settle is read three times, then shown '
+        'as could not resolve, and after ten minutes read three times again',
+        () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      inWorld(
+        (world) {
+          server.overrideRead = (call) => call.page == secondId()
+              ? const StoreReadAnswered(PageGone('nowhere'))
+              : null;
+          server.readCalls.clear();
+          world.commitPageDelete('delete-p2', secondId());
+          world.settle(const Duration(minutes: 1));
+          final pageReads = [
+            for (final call in server.readCalls)
+              if (call.page == secondId()) call,
+          ];
+          expect(pageReads, hasLength(3));
+          expect(world.sender.couldNotResolve(strategyId), isNotNull);
+          expect(world.views().single.holds, isNotEmpty);
+          world.settle(const Duration(minutes: 8));
+          expect(
+            [
+              for (final call in server.readCalls)
+                if (call.page == secondId()) call
+            ],
+            hasLength(3),
+          );
+          world.settle(const Duration(minutes: 2));
+          expect(
+            [
+              for (final call in server.readCalls)
+                if (call.page == secondId()) call
+            ],
+            hasLength(6),
+          );
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'landed work whose page a teammate deleted is not left in silence: it '
+        'is read again and then shown as could not resolve', () {
+      inWorld((world) {
+        world.commitMove(1);
+        world.settle();
+        world.teammateDeletesPage(pageId);
+        final before = world.server.readCalls.length;
+        world.settle(const Duration(minutes: 40));
+        for (final page in Retiring.landedByPage(world.cloud()).keys) {
+          final (read, subject) = page == Retiring.list
+              ? ('list', 'the page list')
+              : ('page $page', 'page $page');
+          expect(
+            readsAfter(world, before).where((call) => call == read),
+            hasLength(greaterThanOrEqualTo(3)),
+            reason: subject,
+          );
+          expect(
+            world.sender.couldNotResolve(strategyId)?.subjects,
+            contains('landed work on $subject'),
+          );
+        }
+        expect(readsAfter(world, before).length, lessThanOrEqualTo(8));
+      });
+    });
+
+    test(
+        'a page row\'s need is answered from the page list, which shows page '
+        'rows, not from the page', () {
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+          final p2 = secondId();
+          final strategyRevision = (world
+              .rowOf(
+                (content) => content.strategy,
+              )
+              .toJson()! as Map)['revision']! as int;
+          world.commit([
+            PageReorderOp(
+              opId: 'reorder',
+              pagePublicId: p2,
+              sortIndex: 0,
+              expectedStrategyRevision: strategyRevision,
+            ),
+          ]);
+          world.settle(const Duration(seconds: 3));
+          final pageRevision = (world
+              .rowOf(
+                (content) =>
+                    content.pages.firstWhere((page) => page.publicId == p2),
+              )
+              .toJson()! as Map)['revision']! as int;
+          final before = world.server.readCalls.length;
+          world.commit([
+            PagePatchOp(
+              opId: 'rename',
+              pagePublicId: p2,
+              expectedPageRevision: pageRevision,
+              name: 'Renamed',
+            ),
+          ]);
+          world.settle(const Duration(seconds: 5));
+          expect(readsAfter(world, before), ['list']);
+          expect(world.server.calls.last.opIds, ['rename']);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test('reopening a strategy the store holds reads nothing more', () {
+      inWorld((world) {
+        final before = world.server.readCalls.length;
+        world.sender.adopt(strategyId);
+        world.settle(const Duration(seconds: 20));
+        expect(readsAfter(world, before), isEmpty);
+      });
+    });
+
+    test('a restart resumes reading the pages an adoption had not read yet',
+        () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          server.overrideRead = (call) => call.page != null
+              ? const StoreReadLost(TransportFailure.network, 'cut')
+              : null;
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 1));
+          expect(world.sender.adopting(strategyId), isTrue);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      server.overrideRead = null;
+      inWorld(
+        (world) {
+          final before = server.readCalls.length;
+          world.settle();
+          expect(readsAfter(world, before), ['page p1']);
+          expect(world.firstElement().publicId, isNotEmpty);
+          expect(world.sender.adopting(strategyId), isFalse);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a request to adopt is bound to the account that asked: signed in as '
+        'another before it is tried, nothing is read', () {
+      inWorld(
+        (world) {
+          world.sender.adopt(strategyId);
+          world.signIn(otherAccount);
+          world.settle();
+          expect(world.server.readCalls, isEmpty);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a first adoption whose write the disk refuses waits the write retry '
+        'delay before it reads the page list again', () {
+      inWorld(
+        (world) {
+          world.lease.refuseNext = 3;
+          world.sender.adopt(strategyId);
+          for (var n = 0; n < 3; n++) {
+            world.sender.wake();
+            world.async.elapse(const Duration(milliseconds: 100));
+          }
+          expect(readsAfter(world, 0), ['list']);
+          world.settle(const Duration(seconds: 3));
+          expect(readsAfter(world, 0), ['list', 'list']);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a lost read for edit access is tried again after the read retry '
+        'delay, not the viewer\'s ten minutes', () {
+      inWorld((world) {
+        world.server.answerWith(
+          strategyId,
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+        );
+        world.server.answerReadWith(
+          strategyId,
+          const StoreReadLost(TransportFailure.network, 'lost'),
+        );
+        final before = world.server.readCalls.length;
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 5));
+        expect(readsAfter(world, before), ['list', 'list']);
+        expect(world.written(), contains(isA<EditAccessConfirmed>()));
+      });
+    });
+
+    test(
+        'a result written while the connection changes is kept in the store '
+        'but neither reported nor counted by the sender', () {
+      final storage = MemoryStorage();
+      inWorld(
+        (world) {
+          world.server.onRead = (call) {
+            if (call.page != null && world.connection == 1) {
+              holdNextWrite(storage, () => world.connection = 2);
+            }
+          };
+          world.sender.adopt(strategyId);
+          world.settle();
+          expect(readsAfter(world, 0), ['list', 'page p1']);
+          expect(world.readsRecorded(), ['the page list']);
+          expect(world.firstElement().publicId, isNotEmpty);
+        },
+        storage: storage,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a read answered by a future of a narrower type is recorded, not '
+        'taken for lost', () {
+      inWorld((world) {
+        world.server.answerReadNext(
+          strategyId,
+          (call) => Future<StoreReadAnswered>.value(
+            world.server.answerNow(call) as StoreReadAnswered,
+          ),
+        );
+        world.commitMove(1);
+        final before = world.server.readCalls.length;
+        world.settle(const Duration(minutes: 1));
+        expect(readsAfter(world, before), ['page p1']);
+        expect(world.cloud().queue.landed, isEmpty);
+      });
+    });
+
+    test(
+        'budget: an hour of edits with a pause every minute reads the page '
+        'twelve times to retire landed work, and nothing else', () {
+      inWorld((world) {
+        final before = world.server.readCalls.length;
+        for (var minute = 0; minute < 60; minute++) {
+          world.commitMove(minute);
+          world.settle(const Duration(minutes: 1));
+        }
+        expect(world.server.calls, hasLength(60));
+        expect(
+          readsAfter(world, before),
+          [for (var n = 0; n < 12; n++) 'page p1'],
+        );
+      });
+    });
+  });
+
+  group('reads remember one sign-in and connection', () {
+    List<String> readsAfter(World world, int before) =>
+        [for (final call in world.server.readCalls.skip(before)) '$call'];
+
+    String secondId() => secondPage().page.publicId;
+
+    void withSecondPage(MemoryStorage storage, FakeServer server) => inWorld(
+          (world) {
+            world.secondPageOnServer();
+            world.sender.adopt(strategyId);
+            world.settle();
+          },
+          storage: storage,
+          server: server,
+          addStrategy: false,
+        );
+
+    test(
+        'asking to adopt a strategy the store holds reads nothing and leaves '
+        'nothing pending, even when the server has deleted it', () {
+      inWorld((world) {
+        world.server.rows.remove(strategyId);
+        final before = world.server.readCalls.length;
+        world.sender.adopt(strategyId);
+        world.settle(const Duration(minutes: 1));
+        expect(readsAfter(world, before), isEmpty);
+        expect(world.sender.adopting(strategyId), isFalse);
+      });
+    });
+
+    test(
+        'a page delete whose page read the disk refuses to write is read '
+        'again, and a refused read is not counted toward could not resolve',
+        () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      inWorld(
+        (world) {
+          var refused = 0;
+          server.onRead = (call) {
+            if (call.page == secondId() && refused < 3) {
+              refused++;
+              world.lease.refuseNext = 1;
+            }
+          };
+          final before = server.readCalls.length;
+          world.commitPageDelete('delete-p2', secondId());
+          world.settle(const Duration(minutes: 1));
+          expect(
+            readsAfter(world, before).where((read) => read == 'page p2'),
+            hasLength(4),
+          );
+          expect(
+            world.readsRecorded().where((read) => read == 'page p2'),
+            hasLength(1),
+          );
+          expect(world.sender.couldNotResolve(strategyId), isNull);
+          expect(
+            [for (final call in server.calls) ...call.opIds],
+            contains('delete-p2'),
+          );
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a need shown as could not resolve is read again at once on a new '
+        'connection', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      inWorld(
+        (world) {
+          server.overrideRead = (call) => call.page == secondId()
+              ? const StoreReadAnswered(PageGone('nowhere'))
+              : null;
+          world.commitPageDelete('delete-p2', secondId());
+          world.settle(const Duration(minutes: 1));
+          expect(world.sender.couldNotResolve(strategyId), isNotNull);
+          final offline = server.readCalls.length;
+          world.connection = null;
+          world.settle();
+          expect(readsAfter(world, offline), isEmpty);
+          final before = server.readCalls.length;
+          world.connection = 2;
+          world.settle(const Duration(seconds: 5));
+          expect(readsAfter(world, before), contains('page p2'));
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a second loss of edit access within ten minutes of an editor\'s '
+        'answer is read at once', () {
+      inWorld((world) {
+        world.server
+          ..roles[strategyId] = StoreReadRole.editor
+          ..answerWith(
+            strategyId,
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          );
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 30));
+        expect(world.queueLength(), 0);
+        world.server
+          ..roles[strategyId] = StoreReadRole.viewer
+          ..answerWith(
+            strategyId,
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          );
+        final before = world.server.readCalls.length;
+        world.commitMove(2);
+        world.settle(const Duration(seconds: 5));
+        expect(readsAfter(world, before), ['list']);
+        expect(world.face(), Face.editAccessLost);
+      });
+    });
+
+    test(
+        'a request to adopt made before a sign-out is dropped: signed in again '
+        'as the same account, nothing is read', () {
+      inWorld(
+        (world) {
+          world.sender.adopt(strategyId);
+          world.signIn(null);
+          world.signIn(servedAccount);
+          world.settle();
+          expect(world.server.readCalls, isEmpty);
+          expect(world.sender.adopting(strategyId), isFalse);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'the read record is replaced whole, every field, on a new connection, '
+        'on a different account and after a sign-out, before anything is '
+        'planned', () {
+      final changes = <String, void Function(World)>{
+        'a new connection': (world) => world
+          ..connection = null
+          ..connection = 2,
+        'a different account': (world) => world
+          ..signIn(otherAccount)
+          ..signIn(servedAccount),
+        'a sign-out': (world) => world
+          ..signIn(null)
+          ..signIn(servedAccount),
+      };
+      for (final MapEntry(key: change, value: make) in changes.entries) {
+        inWorld((world) {
+          final now = start.add(world.async.elapsed);
+          final seeded = (
+            under: readsUnder(world.sender.inputs),
+            retryAt: now.add(const Duration(hours: 1)),
+            failures: 4,
+            cannotRead: const CannotRead('seeded'),
+            viewer: (lossAttempt: 7, until: now.add(const Duration(hours: 1))),
+            rounds: {PageResult(pageId): (rounds: 3, at: now)},
+            retired: {
+              Retiring.list: (works: {(1, 0)}, at: now, rounds: 3),
+            },
+          );
+          world.sender.rememberReads(strategyId, seeded);
+          expect(world.sender.readMemory(strategyId), seeded, reason: change);
+          make(world);
+          expect(
+            world.sender.readMemory(strategyId),
+            freshReads(readsUnder(world.sender.inputs)),
+            reason: change,
+          );
+          final before = world.server.readCalls.length;
+          world.commitMove(1);
+          world.settle(const Duration(seconds: 40));
+          expect(readsAfter(world, before), ['page p1'], reason: change);
+        });
+      }
+    });
+  });
+
+  group('the bot review of the third round', () {
+    List<String> readsAfter(World world, int before) =>
+        [for (final call in world.server.readCalls.skip(before)) '$call'];
+
+    test(
+        'a read-back that throws after adoption saves ends the sender with the '
+        'store\'s words instead of escaping the loop', () {
+      inWorld(
+        (world) {
+          world.slowStore.readsThrow = true;
+          world.sender.adopt(strategyId);
+          world.settle();
+          expect(world.sender.ended, contains('the store threw'));
+          var finished = false;
+          world.sender.done.then((_) => finished = true);
+          world.settle();
+          expect(finished, isTrue);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'the read is planned from the queue as it stands after the session '
+        'opens, not from before it', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      inWorld(
+        (world) {
+          world.commitMove(1);
+          world.settle(const Duration(seconds: 5));
+          expect(world.cloud().queue.landed, isNotEmpty);
+          world.connection = null;
+          world.settle(const Duration(seconds: 40));
+          final before = server.readCalls.length;
+          world.slowStore.duringSessionWrite = () => world.commitPageDelete(
+                'delete-p2',
+                secondPage().page.publicId,
+              );
+          world.connection = 2;
+          world.settle(const Duration(seconds: 1));
+          expect(readsAfter(world, before).first, 'list');
+          expect(server.readCalls[before].why, 'the queue asked for it');
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+  });
+
   group('through the real provider', () {
     test(
         'disposing the container during a call ends quietly: nothing throws, '
@@ -1384,6 +1837,8 @@ void main() {
               return answer.future;
             }),
             convexSignInsProvider.overrideWithValue(const Stream.empty()),
+            storeReadsProvider.overrideWithValue(world.server.reads),
+            senderEditorProvider.overrideWithValue(_editorOpen),
             cloudSenderClockProvider.overrideWithValue(
               () => start.add(world.async.elapsed),
             ),

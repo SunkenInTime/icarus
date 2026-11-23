@@ -323,7 +323,11 @@ Future<void> _play(String script) async {
   _log('RUN $_runId $script');
   _countLibraryBoxEvents();
   _log(await firstFrameLine(appProviderContainer));
-  if (_cloudStore.isOn(appProviderContainer)) _log('CLOUDSTORE switch shadow');
+  if (_cloudStore.isOn(appProviderContainer)) {
+    _log(_cloudStore.sends(appProviderContainer)
+        ? 'CLOUDSTORE switch send'
+        : 'CLOUDSTORE switch shadow');
+  }
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
       _failedSteps++;
@@ -1663,8 +1667,50 @@ Future<void> _run(Map<String, dynamic> step) async {
           value as String,
           ((by[0] as num).toDouble(), (by[1] as num).toDouble()),
           startingWith: step['startingWith'] == true,
+          merge: step['merge'] == true,
         ),
       );
+    case 'storeMayLag':
+      final lag = (row: value as String, why: step['why'] as String);
+      _cloudStore.lagging.add(lag);
+      _log(
+        'CLOUDSTORE item ${lag.row} may be at an older revision in the store '
+        'than on the server at the end: ${lag.why}',
+      );
+    case 'storeExpect':
+      final expected = await expectStrategy(
+        c,
+        value as Object,
+        Duration(seconds: ((step['within'] ?? 60) as num).toInt()),
+      );
+      _cloudStore.expected.add(expected);
+      _log(
+        'CLOUDSTORE the store holds ${expected.id} "${expected.name}", and '
+        'must still hold it, equal to the server\'s copy, at the end',
+      );
+    case 'storeAdd':
+      final at = step['at'] as List;
+      _log(
+        await storeAdd(
+          c,
+          value as String,
+          kind: step['kind'] as String,
+          at: ((at[0] as num).toDouble(), (at[1] as num).toDouble()),
+        ),
+      );
+    case 'storeAddPage':
+      _log(await storeAddPage(c));
+    case 'addPage':
+      await c.read(strategyProvider.notifier).addPage();
+    case 'storeDeletePage':
+      if (value is! int || value < 0) {
+        throw StateError(
+          'storeDeletePage takes a page number counting from 0, not $value',
+        );
+      }
+      _log(await storeDeletePage(c, value));
+    case 'setMemberRole':
+      _log(await setMemberRole(c, value as String));
     case 'waitStoreSent':
       _log(
         await waitStoreSent(
@@ -1679,6 +1725,10 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':
       (await storeSyncStates(c)).forEach(_log);
+    case 'waitStoreHeld':
+      _log(
+        await waitStoreHeld(c, Duration(seconds: (value as num).toInt())),
+      );
     case 'killNow':
       _log('KILLED by the script');
       exit(9);
