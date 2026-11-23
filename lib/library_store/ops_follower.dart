@@ -244,8 +244,11 @@ final class OpsFollower implements EditFollower, UnitSource {
       _unit = null;
       _mirror.closedWithoutJudging(
         unit.actions,
-        notJudged: 'no local strategy open',
-        discarded: 'actions with no local strategy open',
+        notJudged:
+            id == null ? 'no local strategy open' : 'no page on screen yet',
+        discarded: id == null
+            ? 'actions with no local strategy open'
+            : 'actions before a page was on screen',
       );
       return;
     }

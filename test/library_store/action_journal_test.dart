@@ -173,6 +173,8 @@ void main() {
     final h = await open();
     final id = openId();
     expect(h.mirror.strategiesNotKnownEqual, contains(id));
+    expect(h.tally.notJudged, containsPair('the strategy opening', 1));
+    expect(h.tally.notJudged.keys, isNot(contains('no local strategy open')));
 
     final text = container.read(textProvider).first;
     final caption = text.caption;
