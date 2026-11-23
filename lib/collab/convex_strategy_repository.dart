@@ -664,11 +664,43 @@ class ConvexStrategyRepository {
       throw StateError('Cloud operation batch exceeds the payload policy.');
     }
 
+    return _applyBatch(
+      strategyPublicId,
+      clientId,
+      _typedOps(ops),
+      accountSubject,
+      readsAccountMismatch: false,
+    );
+  }
+
+  Future<List<OpAck>> applyWireBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<Map<String, Object?>> ops,
+    required String accountSubject,
+  }) async {
+    if (ops.isEmpty) return const [];
+    return _applyBatch(
+      strategyPublicId,
+      clientId,
+      _typedWire(ops),
+      accountSubject,
+      readsAccountMismatch: true,
+    );
+  }
+
+  Future<List<OpAck>> _applyBatch(
+    String strategyPublicId,
+    String clientId,
+    List<OpsApplyBatchArgsOpsItem> ops,
+    String? accountSubject, {
+    required bool readsAccountMismatch,
+  }) async {
     final result = await _api.ops.applyBatch(
       strategyPublicId: strategyPublicId,
       clientId: clientId,
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-      ops: _typedOps(ops),
+      ops: ops,
       accountSubject: _optional(accountSubject),
       // This client restores deleted pages, so it sends such a delete again.
       checkTrashedPageDeletes: const ConvexOptional.present(true),
@@ -678,6 +710,9 @@ class ConvexStrategyRepository {
       // This client moves its waiting work onto the revision a resent op
       // made (StrategyOpQueueNotifier._ownRevision).
       includeWasApplied: const ConvexOptional.present(true),
+      readsAccountMismatch: readsAccountMismatch
+          ? const ConvexOptional.present(true)
+          : const ConvexOptional.absent(),
     );
     return result.results.map(_opAck).toList(growable: false);
   }
@@ -718,14 +753,18 @@ class ConvexStrategyRepository {
     );
   }
 
-  List<OpsApplyBatchArgsOpsItem> _typedOps(List<StrategyOp> ops) => ops.indexed
-      .map(
-        (entry) => OpsApplyBatchArgsOpsItem.decode(
-          ConvexValue.fromDart(entry.$2.toConvexJson()),
-          'ops[${entry.$1}]',
-        ),
-      )
-      .toList(growable: false);
+  List<OpsApplyBatchArgsOpsItem> _typedOps(List<StrategyOp> ops) =>
+      _typedWire([for (final op in ops) op.toConvexJson()]);
+
+  List<OpsApplyBatchArgsOpsItem> _typedWire(List<Map<String, Object?>> ops) =>
+      ops.indexed
+          .map(
+            (entry) => OpsApplyBatchArgsOpsItem.decode(
+              ConvexValue.fromDart(entry.$2),
+              'ops[${entry.$1}]',
+            ),
+          )
+          .toList(growable: false);
 
   Future<void> createFolder({
     required String publicId,
