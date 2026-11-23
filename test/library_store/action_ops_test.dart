@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/action_ops.dart';
@@ -432,6 +433,23 @@ StrategyData _takingLineupOrder(StrategyData strategy, StrategyData read) {
 bool _isGroupOrder(ReadBackDifference difference) =>
     difference.what == 'lineup groups' && difference.field == 'order';
 
+bool _groupsInterleaved(LineUpGraph graph) {
+  final groupOf = {
+    for (final (index, group) in lineupGroups(graph).indexed)
+      for (final link in group.lineUps.links) link.id: index,
+  };
+  final finished = <int>{};
+  int? current;
+  for (final link in graph.links) {
+    final group = groupOf[link.id];
+    if (group == null || group == current) continue;
+    if (finished.contains(group)) return true;
+    if (current != null) finished.add(current);
+    current = group;
+  }
+  return false;
+}
+
 void main() {
   test(
       'before rows plus the ops built for each change, read back, equal the after state, for every kind of object, lineups sharing spots in interleaved order, and a page list out of sort order',
@@ -462,11 +480,17 @@ void main() {
             }}',
           );
         }
+        final wasInterleaved = strategy.pages.any(
+          (page) => _groupsInterleaved(page.lineUpGraph),
+        );
         strategy = next.after;
         final read = await _readBack(store, strategy.id);
         final differences = readBackDifferences(_readable(strategy), read);
         expect(
-          differences.where((d) => !_isGroupOrder(d)),
+          [
+            for (final d in differences)
+              if (!_isGroupOrder(d) || !wasInterleaved) '$d',
+          ],
           isEmpty,
           reason: 'seed $seed step $step ${next.what}',
         );
@@ -602,6 +626,89 @@ void main() {
       'undo two deletes inside',
     ]);
     await store.close();
+  });
+
+  group(
+      'a page patch after a move, a delete or an add in the same batch uses '
+      'the revision the store gave the page when it renumbered it', () {
+    StrategyData pages() => generatedStrategy(Optionals.unset).copyWith(
+          id: 'renumbered',
+          pages: [
+            for (final (n, name, auto) in [
+              (0, 'Page 1', true),
+              (1, 'Page 2', true),
+              (2, 'Third', false),
+            ])
+              generatedPage(
+                id: 'p$n',
+                sortIndex: n,
+                optionals: Optionals.unset,
+                isAttack: true,
+                isAutoNamed: auto,
+              ).copyWith(name: name),
+          ],
+        );
+
+    Future<List<String>> run(List<CanvasChange> changes) async {
+      final strategy = pages();
+      final store = await _storeWith(strategy);
+      addTearDown(store.close);
+      final built =
+          await (await OpsBuilder.read(store, strategy.id))!.build(changes);
+      expect(built.gaps, isEmpty);
+      final result = await store.commitAll(strategy.id, built.ops);
+      expect(result, isA<Saved<List<Committed>, CommitRefusal>>(),
+          reason: '$result');
+      final read = await _readBack(store, strategy.id);
+      return [
+        for (final page in [
+          ...read.pages
+        ]..sort((a, b) => a.sortIndex - b.sortIndex))
+          '${page.id} ${page.name} ${page.isAttack ? 'attack' : 'defense'}',
+      ];
+    }
+
+    test('a move, then a rename of a page the move shifted', () async {
+      expect(
+        await run(const [
+          PageMoved('p2', 0),
+          PageRenamed('p1', 'Retake', isAutoNamed: false),
+        ]),
+        ['p2 Third attack', 'p0 Page 2 attack', 'p1 Retake attack'],
+      );
+    });
+
+    test('a delete, then a side change of a page the delete shifted', () async {
+      expect(
+        await run(const [
+          PageRemoved('p0'),
+          PageSideSet('p1', isAttack: false),
+        ]),
+        ['p1 Page 1 defense', 'p2 Third attack'],
+      );
+    });
+
+    test('an add, then a rename of a page the add shifted', () async {
+      final added = generatedPage(
+        id: 'p-new',
+        sortIndex: 0,
+        optionals: Optionals.unset,
+        isAttack: true,
+        isAutoNamed: false,
+      ).copyWith(name: 'Opening', lineUpGraph: LineUpGraph.empty);
+      expect(
+        await run([
+          PageAdded(added, index: 0),
+          const PageRenamed('p0', 'Retake', isAutoNamed: false),
+        ]),
+        [
+          'p-new Opening attack',
+          'p0 Retake attack',
+          'p1 Page 3 attack',
+          'p2 Third attack',
+        ],
+      );
+    });
   });
 
   test(

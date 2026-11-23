@@ -135,12 +135,16 @@ final class _Page {
   _Page({
     required this.revision,
     required this.sortIndex,
+    required this.name,
+    required this.isAutoNamed,
     required this.settingsRevision,
     required this.settings,
   });
 
   int revision;
   int sortIndex;
+  String name;
+  bool? isAutoNamed;
   int? settingsRevision;
   PageSettings? settings;
   final elements = <String, _Tracked<LiveElement>>{};
@@ -229,6 +233,14 @@ final class OpsBuilder {
       builder._pages[page.publicId] = _Page(
         revision: page.revision,
         sortIndex: page.sortIndex,
+        name: switch (page) {
+          LivePage(:final name) => name,
+          _ => '',
+        },
+        isAutoNamed: switch (page) {
+          LivePage(:final isAutoNamed) => isAutoNamed,
+          _ => null,
+        },
         settingsRevision: switch (content.settings[page.publicId]) {
           ReadablePageSettings(:final revision) => revision,
           _ => null,
@@ -392,7 +404,10 @@ final class OpsBuilder {
             isAutoNamed: isAutoNamed,
             expectedPageRevision: page.revision,
           ));
-          page.revision++;
+          page
+            ..revision += 1
+            ..name = name
+            ..isAutoNamed = isAutoNamed;
         }
       case PageSideSet(:final pageId, :final isAttack):
         if (_livePage(pageId, 'side') case final page?) {
@@ -413,9 +428,10 @@ final class OpsBuilder {
           ));
           _headerRevision++;
           _gone.add(pageId);
+          _placePages(_livePageOrder());
         }
       case PageMoved(:final pageId, :final index):
-        if (_livePage(pageId, 'moved') case final page?) {
+        if (_livePage(pageId, 'moved') != null) {
           _ops.add(PageReorderOp(
             opId: _opId(),
             pagePublicId: pageId,
@@ -423,8 +439,31 @@ final class OpsBuilder {
             expectedStrategyRevision: _headerRevision,
           ));
           _headerRevision++;
-          page.sortIndex = index;
+          final order = _livePageOrder()..remove(pageId);
+          order.insert(index.clamp(0, order.length), pageId);
+          _placePages(order);
         }
+    }
+  }
+
+  List<String> _livePageOrder() => [
+        for (final MapEntry(key: id) in _pages.entries.toList()
+          ..sort((a, b) => a.value.sortIndex != b.value.sortIndex
+              ? a.value.sortIndex - b.value.sortIndex
+              : a.key.compareTo(b.key)))
+          if (!_gone.contains(id)) id,
+      ];
+
+  void _placePages(List<String> order, {String? except}) {
+    for (final (index, id) in order.indexed) {
+      if (id == except) continue;
+      final page = _pages[id]!;
+      final name = page.isAutoNamed == true ? 'Page ${index + 1}' : page.name;
+      if (page.sortIndex == index && page.name == name) continue;
+      page
+        ..sortIndex = index
+        ..name = name
+        ..revision += 1;
     }
   }
 
@@ -816,14 +855,20 @@ final class OpsBuilder {
       copyContentFromPagePublicId: copyOf,
     ));
     _headerRevision++;
+    final order = _livePageOrder()..remove(page.id);
+    final placedAt = index.clamp(0, order.length);
+    order.insert(placedAt, page.id);
     final added = _Page(
       revision: 1,
-      sortIndex: index,
+      sortIndex: placedAt,
+      name: page.name,
+      isAutoNamed: page.isAutoNamed,
       settingsRevision: 1,
       settings: pageSettingsOf(page.settings),
     )..elementsRead = copyOf == null;
     _pages[page.id] = added;
     _gone.remove(page.id);
+    _placePages(order, except: page.id);
     if (copyOf != null) return;
     for (final item in pageItemsOf(page)) {
       switch (item.payload) {

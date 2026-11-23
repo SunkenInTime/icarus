@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart';
-import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/library_store/action_journal.dart';
 import 'package:icarus/library_store/hive_reads.dart';
@@ -17,10 +19,12 @@ import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus_library/icarus_library.dart' hide UserAction;
 
 import '../library_rows/generated_strategies.dart';
@@ -352,6 +356,36 @@ void main() {
     });
 
     test(
+        'whether the last action\'s commit has returned is told by that '
+        'action alone, not by op and action totals from earlier units',
+        () async {
+      final engine = _RefusingEngine();
+      final h = await openInEditor(container, strategy(),
+          engine: (memory) => engine..inner = memory);
+      addTearDown(h.dispose);
+      await h.measure(
+          () => container.read(actionProvider.notifier).clearAllAsAction());
+      expect(h.tally.opsCommitted, greaterThan(h.tally.actions));
+
+      final hold = engine.hold = Completer<void>();
+      final agentsBefore = container.read(agentProvider).length;
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'held-agent',
+          type: AgentType.jett,
+          position: const Offset(40, 40)));
+      for (var turn = 0; turn < 5; turn++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(container.read(agentProvider), hasLength(agentsBefore + 1));
+      expect(h.journal.settled(h.journal.lastAction), isFalse);
+
+      engine.hold = null;
+      hold.complete();
+      await h.settle();
+      expect(h.journal.settled(h.journal.lastAction), isTrue);
+    });
+
+    test(
         'opening a strategy before the mirror is following is counted, not '
         'dropped', () async {
       final h = await openInEditor(container, strategy(), follow: false);
@@ -463,6 +497,7 @@ final class _RefusingEngine implements StorageEngine {
   late StorageEngine inner;
   var commits = 0;
   var refuseFrom = 1 << 30;
+  Completer<void>? hold;
 
   @override
   Future<Leasing> lease() async => switch (await inner.lease()) {
@@ -499,6 +534,7 @@ final class _RefusingLease implements StorageLease {
 
   @override
   Future<Committing> commit(List<Change> changes) async {
+    if (_engine.hold case final hold?) await hold.future;
     _engine.commits += 1;
     if (_engine.commits >= _engine.refuseFrom) {
       return const CommitRefused(DeviceFailure('refused by the test'));

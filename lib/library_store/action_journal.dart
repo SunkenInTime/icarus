@@ -28,11 +28,18 @@ sealed class _Job {
 }
 
 final class _TakeUpJob extends _Job {
-  const _TakeUpJob(super.strategyId, this.hive, this.canvas, this.actions);
+  const _TakeUpJob(
+    super.strategyId,
+    this.hive,
+    this.canvas,
+    this.actions, {
+    required this.firstAction,
+  });
 
   final StrategyData hive;
   final StrategyData canvas;
   final List<DeclaredAction> actions;
+  final int firstAction;
 }
 
 final class _UnitJob extends _Job {
@@ -45,6 +52,7 @@ final class _UnitJob extends _Job {
     required this.notJudged,
     required this.items,
     required this.snapshotTime,
+    required this.firstAction,
   });
 
   final UnitKind kind;
@@ -54,6 +62,7 @@ final class _UnitJob extends _Job {
   final String? notJudged;
   final int items;
   final Duration snapshotTime;
+  final int firstAction;
 }
 
 final class _ReleaseJob extends _Job {
@@ -187,6 +196,7 @@ final class ActionJournal {
   final StrategyData? Function(String id) _hiveNow;
   final _jobs = Queue<_Job>();
   final _savesThisTurn = <_SaveJob>[];
+  final _settledActions = <int>{};
   final _takenUp = <String>{};
   final _previous = <String, StrategyData>{};
   final tally = ActionOpsTally();
@@ -219,6 +229,22 @@ final class ActionJournal {
 
   void opened() => tally.unitsOpened += 1;
 
+  int get lastAction => tally.actions;
+
+  bool settled(int action) => _settledActions.contains(action);
+
+  int _numbered(List<DeclaredAction> actions) {
+    final first = tally.actions + 1;
+    tally.actions += actions.length;
+    return first;
+  }
+
+  void _settle(int firstAction, int count) {
+    for (var n = 0; n < count; n++) {
+      _settledActions.add(firstAction + n);
+    }
+  }
+
   static String kindOf(List<DeclaredAction> actions) {
     final labels = <String>[];
     for (final action in actions) {
@@ -232,7 +258,7 @@ final class ActionJournal {
     required String notJudged,
     required String discarded,
   }) {
-    tally.actions += actions.length;
+    _settle(_numbered(actions), actions.length);
     final kind = kindOf(actions);
     if (actions.isEmpty) {
       _notJudged(kind, notJudged);
@@ -248,8 +274,9 @@ final class ActionJournal {
     List<DeclaredAction> actions,
   ) {
     _takenUp.add(strategyId);
-    tally.actions += actions.length;
-    _jobs.add(_TakeUpJob(strategyId, hive, canvas, actions));
+    final first = _numbered(actions);
+    _jobs
+        .add(_TakeUpJob(strategyId, hive, canvas, actions, firstAction: first));
   }
 
   void unit(
@@ -262,7 +289,7 @@ final class ActionJournal {
     int items = 0,
     Duration snapshotTime = Duration.zero,
   }) {
-    tally.actions += actions.length;
+    final first = _numbered(actions);
     _jobs.add(_UnitJob(
       strategyId,
       kind: kind,
@@ -272,6 +299,7 @@ final class ActionJournal {
       notJudged: notJudged,
       items: items,
       snapshotTime: snapshotTime,
+      firstAction: first,
     ));
   }
 
@@ -311,8 +339,10 @@ final class ActionJournal {
   void forget() {
     for (final job in _jobs) {
       switch (job) {
-        case _UnitJob(:final actions) || _TakeUpJob(:final actions):
+        case _UnitJob(:final actions, :final firstAction) ||
+              _TakeUpJob(:final actions, :final firstAction):
           _discarded(kindOf(actions), 'the mirror stopped');
+          _settle(firstAction, actions.length);
         case _ReleaseJob() || _SaveJob():
           break;
       }
@@ -326,11 +356,24 @@ final class ActionJournal {
   Future<JournalStep> runDue(LibraryStore store) async {
     final job = _jobs.removeFirst();
     return switch (job) {
-      final _TakeUpJob takeUp => await _runTakeUp(store, takeUp),
-      final _UnitJob unit => await _runUnit(store, unit),
+      final _TakeUpJob takeUp => _settledAfter(
+          takeUp.firstAction,
+          takeUp.actions.length,
+          await _runTakeUp(store, takeUp),
+        ),
+      final _UnitJob unit => _settledAfter(
+          unit.firstAction,
+          unit.actions.length,
+          await _runUnit(store, unit),
+        ),
       final _ReleaseJob release => await _runRelease(store, release),
       final _SaveJob save => await _runSave(store, save),
     };
+  }
+
+  JournalStep _settledAfter(int firstAction, int count, JournalStep step) {
+    _settle(firstAction, count);
+    return step;
   }
 
   Future<JournalStep> _runTakeUp(LibraryStore store, _TakeUpJob job) async {
@@ -437,11 +480,16 @@ final class ActionJournal {
 
     final gaps = <String>[];
     var refused = false;
-    for (final action in job.actions) {
-      if (action.changes.isEmpty) continue;
+    for (final (index, action) in job.actions.indexed) {
+      final number = job.firstAction + index;
+      if (action.changes.isEmpty) {
+        _settledActions.add(number);
+        continue;
+      }
       final builder = await OpsBuilder.read(store, id);
       if (builder == null) {
         gaps.add('${action.label}: the store has no readable strategy');
+        _settledActions.add(number);
         continue;
       }
       final built = await builder.build(action.changes);
@@ -449,9 +497,14 @@ final class ActionJournal {
         gaps.add('${action.label}: $gap');
       }
       final ops = alterOps(action.label, built.ops);
-      if (ops.isEmpty) continue;
+      if (ops.isEmpty) {
+        _settledActions.add(number);
+        continue;
+      }
       tally.commits += 1;
-      switch (await store.commitAll(id, ops)) {
+      final committing = await store.commitAll(id, ops);
+      _settledActions.add(number);
+      switch (committing) {
         case Saved():
           tally.opsCommitted += ops.length;
         case NothingToSave():

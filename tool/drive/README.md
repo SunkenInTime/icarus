@@ -146,10 +146,10 @@ The strategy is taken up when it opens, once its page is drawn: the store gets t
 
 At the end of the run the driver saves the open local strategy, closes out any unit still open, releases the strategy and logs the `OPS run` lines: units by disposition, findings by kind, the same per action kind, every finding with the fields it names, commits and refusals, follower faults, how the canvas differed from Hive at open, the Hive save report, and the time the copy, the replay and the comparison took, grouped by how many items the page held.
 
-- `{"actionOps": label, "expect": {...}?}` waits for the queue to drain and logs the `OPS` lines so far. It fails if the units do not add up. `expect` can name counts that must match: `unitsOpened`, `unitsWithFindings`, `noFinding`, `changedWithoutAction`, `beforeNotOnCanvas`, `opsWrong`, `notJudged`, `discarded`, `commitsRefused`, `followerFaults`, `hiveSavesDifferent`.
+- `{"actionOps": label, "expect": {...}?, "expectKinds": {...}?}` waits for the queue to drain and logs the `OPS` lines so far. It fails if the units do not add up. `expect` can name counts that must match: `unitsOpened`, `unitsWithFindings`, `noFinding`, `changedWithoutAction`, `beforeNotOnCanvas`, `opsWrong`, `notJudged`, `discarded`, `commitsRefused`, `followerFaults`, `hiveSavesDifferent`. `expectKinds` maps an action kind, as the `OPS` lines name it, to the number of units of that kind the run must have opened so far.
 - `{"fillPage": n}` adds agents and texts to the page on screen in one transaction until it holds n items. `scripts/ops-cost-24-local.json`, `ops-cost-240-local.json` and `ops-cost-960-local.json` time the checker on pages of those sizes.
 - `{"slowStoreCommits": ms}` makes every store commit wait that long first (driver builds only), to show that nothing in the editor waits for one. `scripts/ops-strokes-with-slow-commits.json` draws three strokes with commits at 200 ms.
-- `{"path": [...], "firstFrame": label, "opStillPending": true?}` logs, in the first frame after the release, the drawings on screen and how many ops have landed; with `opStillPending` the step fails unless that stroke's op had not landed yet.
+- `{"path": [...], "firstFrame": label, "opStillPending": true?}` logs, in the first frame after the release, the drawings on screen and whether the commit of the stroke's own action has returned; with `opStillPending` the step fails unless it had not.
 
 ## Keeping the two in step
 

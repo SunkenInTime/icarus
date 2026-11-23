@@ -1248,6 +1248,9 @@ Future<void> _run(Map<String, dynamic> step) async {
           c,
           label: '$value',
           expected: {...?(step['expect'] as Map<String, dynamic>?)},
+          expectedKinds: {
+            ...?(step['expectKinds'] as Map<String, dynamic>?),
+          },
         ),
       ))
           .forEach(_log);

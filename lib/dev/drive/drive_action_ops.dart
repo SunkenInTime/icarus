@@ -120,17 +120,18 @@ String _notAddingUp(ActionJournal journal) =>
     '${journal.unitsStillOpen}';
 
 String actionOpsInFlight(ProviderContainer c) => switch (_journal(c)) {
-      final journal? => 'actions journaled ${journal.tally.actions}, '
-          'ops landed in the store ${journal.tally.opsCommitted}',
+      final journal? => 'actions journaled ${journal.lastAction}; the last '
+          'one\'s commit ${journal.settled(journal.lastAction) ? 'has' : 'has not'} '
+          'returned',
       null => 'this run does not journal action ops',
     };
 
 String? opStillPendingProblem(ProviderContainer c) => switch (_journal(c)) {
-      final journal? when journal.tally.opsCommitted < journal.tally.actions =>
-        null,
+      final journal? when journal.lastAction == 0 =>
+        'no action was journaled for the stroke',
+      final journal? when !journal.settled(journal.lastAction) => null,
       final journal? => 'the stroke\'s op had already landed by the first '
-          'frame after its release: ${journal.tally.opsCommitted} ops for '
-          '${journal.tally.actions} actions',
+          'frame after its release (action ${journal.lastAction})',
       null => 'this run does not journal action ops',
     };
 
@@ -139,10 +140,20 @@ Future<void> _settled(StoreMirror mirror) async {
   await mirror.drained().timeout(const Duration(seconds: 60));
 }
 
+int _unitsOfKind(ActionOpsTally t, String kind) => switch (t.byKind[kind]) {
+      final k? => k.withFindings +
+          k.noFinding +
+          k.noChange +
+          _sum(k.notJudged) +
+          _sum(k.discarded),
+      null => 0,
+    };
+
 Future<List<String>> actionOpsStep(
   ProviderContainer c, {
   required String label,
   required Map<String, Object?> expected,
+  Map<String, Object?> expectedKinds = const {},
 }) async {
   final journal = _journal(c) ??
       (throw StoreStepFailed(['this run does not journal action ops']));
@@ -156,6 +167,10 @@ Future<List<String>> actionOpsStep(
     if (!journal.addsUp) _notAddingUp(journal),
     for (final MapEntry(:key, :value) in expected.entries)
       if (counts[key] != value) '$key is ${counts[key]}, expected $value',
+    for (final MapEntry(:key, :value) in expectedKinds.entries)
+      if (_unitsOfKind(journal.tally, key) != value)
+        'units of kind "$key": ${_unitsOfKind(journal.tally, key)}, '
+            'expected $value',
   ];
   if (problems.isNotEmpty) throw StoreStepFailed([...lines, ...problems]);
   return lines;

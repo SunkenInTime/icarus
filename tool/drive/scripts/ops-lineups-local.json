@@ -91,6 +91,6 @@
   {"wait": 2},
   {"hoverAt": [60, 700]},
   {"wait": 1},
-  {"actionOps": "after copying a lone lineup group to the blank next page"},
+  {"actionOps": "after copying a lone lineup group to the blank next page", "expectKinds": {"copy lineups to page": 1}},
   {"exit": 1}
 ]
