@@ -328,9 +328,14 @@ final class OpsBuilder {
         if (await _page(pageId, 'changed') case final page?) {
           _objectChanged(page, after);
         }
-      case LineupsChanged(:final pageId, :final before, :final after):
+      case LineupsChanged(
+          :final pageId,
+          :final before,
+          :final after,
+          :final touching,
+        ):
         if (await _page(pageId, 'lineups') case final page?) {
-          _lineupsChanged(page, pageId, before, after);
+          _lineupsChanged(page, pageId, before, after, touching);
         }
       case LineupPartChanged(:final pageId, :final partId, :final graph):
         if (await _page(pageId, 'lineup part') case final page?) {
@@ -496,18 +501,17 @@ final class OpsBuilder {
     String pageId,
     LineUpGraph before,
     LineUpGraph after,
+    Set<String> touching,
   ) {
     final links = {
       for (final link in [...before.links, ...after.links]) link.id,
     };
-    final groupsBefore = {
-      for (final group in _groupsOf(pageId, before, links: links))
-        group.publicId: group,
-    };
-    final groupsAfter = {
-      for (final group in _groupsOf(pageId, after, links: links))
-        group.publicId: group,
-    };
+    Map<String, LiveLineupGroup> touched(LineUpGraph graph) => {
+          for (final group in _groupsOf(pageId, graph, links: links))
+            if (_partIds(group).any(touching.contains)) group.publicId: group,
+        };
+    final groupsBefore = touched(before);
+    final groupsAfter = touched(after);
     _shapes.add(
       groupsBefore.keys.toSet().containsAll(groupsAfter.keys) &&
               groupsAfter.keys.toSet().containsAll(groupsBefore.keys)

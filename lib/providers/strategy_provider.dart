@@ -1599,6 +1599,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               page.id,
               page.lineUpGraph,
               lineUpsInGroupOrder(page.lineUpGraph.followedBy(lineUps)),
+              touching: lineupPartIds(lineUps),
             ),
       ],
       'copy lineups to page',

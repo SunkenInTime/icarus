@@ -31,10 +31,16 @@ final class ObjectChanged extends CanvasChange {
 }
 
 final class LineupsChanged extends CanvasChange {
-  const LineupsChanged(super.pageId, this.before, this.after);
+  const LineupsChanged(
+    super.pageId,
+    this.before,
+    this.after, {
+    required this.touching,
+  });
 
   final LineUpGraph before;
   final LineUpGraph after;
+  final Set<String> touching;
 }
 
 final class LineupPartChanged extends CanvasChange {
@@ -119,7 +125,10 @@ ActionObjectState? objectOnPage(StrategyPage page, String id) {
 }
 
 bool readsTheEditor(UserAction action) => switch (action) {
-      LineUpEditAction() || WeaponSelectionAction() => true,
+      LineUpGraphAction() ||
+      LineUpEditAction() ||
+      WeaponSelectionAction() =>
+        true,
       _ when action.group == ActionGroup.bulk =>
         action.changes.any(readsTheEditor),
       _ => false,
@@ -132,23 +141,31 @@ List<CanvasChange> canvasChangesOf(
   required EditorNow now,
 }) {
   if (action.group == ActionGroup.bulk) {
-    final changes = reversed ? action.changes.reversed : action.changes;
-    return [
-      for (final change in changes)
-        ...canvasChangesOf(
-          change,
-          pageId: pageId,
-          reversed: reversed,
-          now: now,
-        ),
-    ];
+    final performed =
+        reversed ? action.changes.reversed.toList() : action.changes;
+    var lineups = now.lineups;
+    final changes = <List<CanvasChange>>[];
+    for (final change in performed.reversed) {
+      changes.add(canvasChangesOf(
+        change,
+        pageId: pageId,
+        reversed: reversed,
+        now: EditorNow(lineups: lineups, agent: now.agent),
+      ));
+      lineups = lineupsBefore(change, reversed: reversed, after: lineups);
+    }
+    return [for (final step in changes.reversed) ...step];
   }
   switch (action) {
     case LineUpGraphAction(:final before, :final after):
+      final (removed, added) = reversed ? (after, before) : (before, after);
       return [
-        reversed
-            ? LineupsChanged(pageId, after, before)
-            : LineupsChanged(pageId, before, after),
+        LineupsChanged(
+          pageId,
+          lineupsBefore(action, reversed: reversed, after: now.lineups),
+          now.lineups,
+          touching: {...lineupPartIds(removed), ...lineupPartIds(added)},
+        ),
       ];
     case LineUpEditAction(:final targetId):
       return [LineupPartChanged(pageId, targetId, now.lineups)];
@@ -192,4 +209,57 @@ List<CanvasChange> canvasChangesOf(
       ],
     _ => const [],
   };
+}
+
+Set<String> lineupPartIds(LineUpGraph graph) => {
+      for (final origin in graph.origins) origin.id,
+      for (final landing in graph.landings) landing.id,
+      for (final link in graph.links) link.id,
+    };
+
+LineUpGraph lineupsBefore(
+  UserAction action, {
+  required bool reversed,
+  required LineUpGraph after,
+}) {
+  if (action.group == ActionGroup.bulk) {
+    final performed =
+        reversed ? action.changes.reversed.toList() : action.changes;
+    var lineups = after;
+    for (final change in performed.reversed) {
+      lineups = lineupsBefore(change, reversed: reversed, after: lineups);
+    }
+    return lineups;
+  }
+  if (action is! LineUpGraphAction) return after;
+  final (removed, added) =
+      reversed ? (action.after, action.before) : (action.before, action.after);
+  final addedLinks = {for (final link in added.links) link.id};
+  final links = [
+    for (final link in after.links)
+      if (!addedLinks.contains(link.id)) link,
+    for (final link in removed.links)
+      if (!after.links.any((kept) => kept.id == link.id)) link,
+  ];
+  bool used(String id) =>
+      links.any((link) => link.originId == id || link.landingId == id);
+  final addedEnds = {
+    for (final origin in added.origins) origin.id,
+    for (final landing in added.landings) landing.id,
+  };
+  return LineUpGraph(
+    origins: [
+      for (final origin in after.origins)
+        if (!addedEnds.contains(origin.id) || used(origin.id)) origin,
+      for (final origin in removed.origins)
+        if (!after.origins.any((kept) => kept.id == origin.id)) origin,
+    ],
+    landings: [
+      for (final landing in after.landings)
+        if (!addedEnds.contains(landing.id) || used(landing.id)) landing,
+      for (final landing in removed.landings)
+        if (!after.landings.any((kept) => kept.id == landing.id)) landing,
+    ],
+    links: links,
+  );
 }

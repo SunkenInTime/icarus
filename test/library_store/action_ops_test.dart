@@ -9,11 +9,12 @@ import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/ops_verdict.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
-import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/icarus_library.dart' hide UserAction;
 
 import '../library_rows/generated_strategies.dart';
 
@@ -201,7 +202,7 @@ _Step? _step(StrategyData strategy, Random random, int step) {
         ],
       );
   final objects = _objectsOf(page);
-  switch (random.nextInt(12)) {
+  switch (random.nextInt(13)) {
     case 0 || 1:
       final template = _objectsOf(_page('x', 0, random));
       final added = _withId(
@@ -241,7 +242,20 @@ _Step? _step(StrategyData strategy, Random random, int step) {
           : _withNewLineup(before, '${strategy.id}-l$step', random);
       return _Step(
         withPage(page.copyWith(lineUpGraph: after)),
-        LineupsChanged(page.id, before, after),
+        LineupsChanged(
+          page.id,
+          before,
+          after,
+          touching: {
+            for (final (from, to) in [(before, after), (after, before)])
+              for (final link in from.links)
+                if (!to.links.any((kept) => kept.id == link.id)) ...[
+                  link.id,
+                  link.originId,
+                  link.landingId,
+                ],
+          },
+        ),
         'lineups',
       );
     case 6 when page.lineUpLinks.isNotEmpty:
@@ -302,6 +316,13 @@ _Step? _step(StrategyData strategy, Random random, int step) {
         PageSideSet(page.id, isAttack: isAttack),
         'page side',
       );
+    case 12:
+      final name = 'Retake $step';
+      return _Step(
+        withPage(page.copyWith(name: name, isAutoNamed: false)),
+        PageRenamed(page.id, name, isAutoNamed: false),
+        'page rename',
+      );
   }
   return null;
 }
@@ -340,9 +361,42 @@ Future<LibraryStore> _storeWith(StrategyData strategy) async {
     StrategyRowsRefused(:final problems) => fail('$problems'),
   };
   final put = await store.putStrategy(rows);
-  expect(put, isA<Saved<LibraryEdited, Object>>(), reason: switch (put) { Refused(:final reason) => "$reason", _ => "$put" });
+  expect(put, isA<Saved<LibraryEdited, Object>>(),
+      reason: switch (put) {
+        Refused(:final reason) => "$reason",
+        _ => "$put"
+      });
   return store;
 }
+
+LineUpGraph _without(LineUpGraph graph, Set<String> linkIds) =>
+    linkIds.fold(graph, (left, id) {
+      final link = left.links.where((link) => link.id == id).firstOrNull;
+      return link == null ? left : _withoutLink(left, link);
+    });
+
+LineUpGraph _part(LineUpGraph graph, String linkId) {
+  final link = graph.links.singleWhere((link) => link.id == linkId);
+  return LineUpGraph(
+    origins: [graph.origins.singleWhere((o) => o.id == link.originId)],
+    landings: [graph.landings.singleWhere((l) => l.id == link.landingId)],
+    links: [link],
+  );
+}
+
+LineUpGraphAction _lineupAdded(LineUpGraph graph, String linkId) =>
+    LineUpGraphAction(
+      type: ActionType.addition,
+      id: linkId,
+      after: _part(graph, linkId),
+    );
+
+LineUpGraphAction _lineupDeleted(LineUpGraph graph, String linkId) =>
+    LineUpGraphAction(
+      type: ActionType.deletion,
+      id: linkId,
+      before: _part(graph, linkId),
+    );
 
 void main() {
   test(
@@ -368,7 +422,10 @@ void main() {
               isA<Saved<List<Committed>, CommitRefusal>>(),
               isA<NothingToSave<List<Committed>, CommitRefusal>>(),
             ),
-            reason: 'seed $seed step $step ${next.what}: ${switch (result) { Refused(:final reason) => '$reason', _ => '$result' }}',
+            reason: 'seed $seed step $step ${next.what}: ${switch (result) {
+              Refused(:final reason) => '$reason',
+              _ => '$result'
+            }}',
           );
         }
         strategy = next.after;
@@ -397,8 +454,94 @@ void main() {
       'page remove',
       'page move',
       'page side',
+      'page rename',
     ]) {
       expect(counts[what], greaterThan(5), reason: what);
     }
+  });
+
+  test(
+      'a lineup action holds only the lineup it added or removed; with the page graph on screen it builds the ops that leave the store equal to the page, for an add at a shared spot, its undo and redo, a delete, and a transaction of two deletes and its undo',
+      () async {
+    final whole = sharedSpotLineups('pl');
+    final pageId = 'lineup-page';
+    final page = generatedPage(
+      id: pageId,
+      sortIndex: 0,
+      optionals: Optionals.unset,
+      isAttack: true,
+      lineups: _without(whole, {'pl-link-b'}),
+    ).copyWith();
+    var strategy = generatedStrategy(Optionals.unset).copyWith(
+      id: 'lineups',
+      pages: [page],
+    );
+    final store = await _storeWith(strategy);
+    final shapes = <String>[];
+
+    Future<void> act(
+      String what,
+      UserAction action, {
+      required LineUpGraph now,
+      bool reversed = false,
+    }) async {
+      final builder = (await OpsBuilder.read(store, strategy.id))!;
+      final built = await builder.build(canvasChangesOf(
+        action,
+        pageId: pageId,
+        reversed: reversed,
+        now: EditorNow(lineups: now, agent: (_) => null),
+      ));
+      expect(built.gaps, isEmpty, reason: what);
+      final result = await store.commitAll(strategy.id, built.ops);
+      expect(result, isA<Saved<List<Committed>, CommitRefusal>>(),
+          reason: '$what: $result');
+      shapes.addAll([
+        for (final shape in built.lineupShapes)
+          '$what ${shape is LineupsInsideGroups ? 'inside' : 'groups'}',
+      ]);
+      strategy = strategy.copyWith(pages: [
+        strategy.pages.single.copyWith(lineUpGraph: now),
+      ]);
+      expect(
+        readBackDifferences(
+          _readable(strategy),
+          await _readBack(store, strategy.id),
+        ),
+        isEmpty,
+        reason: what,
+      );
+    }
+
+    final added = _lineupAdded(whole, 'pl-link-b');
+    await act('add at a shared spot', added, now: whole);
+    await act('undo the add', added,
+        now: _without(whole, {'pl-link-b'}), reversed: true);
+    await act('redo the add', added, now: whole);
+    final withoutD = _without(whole, {'pl-link-d'});
+    await act('delete', _lineupDeleted(whole, 'pl-link-d'), now: withoutD);
+    final both = UserAction(
+      type: ActionType.transaction,
+      id: 'both',
+      group: ActionGroup.bulk,
+      changes: [
+        _lineupDeleted(withoutD, 'pl-link-a'),
+        _lineupDeleted(withoutD, 'pl-link-c'),
+      ],
+    );
+    await act('two deletes', both,
+        now: _without(withoutD, {'pl-link-a', 'pl-link-c'}));
+    await act('undo two deletes', both, now: withoutD, reversed: true);
+    expect(shapes, [
+      'add at a shared spot groups',
+      'undo the add groups',
+      'redo the add groups',
+      'delete groups',
+      'two deletes groups',
+      'two deletes inside',
+      'undo two deletes inside',
+      'undo two deletes groups',
+    ]);
+    await store.close();
   });
 }
