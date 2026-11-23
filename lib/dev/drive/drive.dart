@@ -178,6 +178,7 @@ import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
@@ -1442,6 +1443,47 @@ Future<void> _run(Map<String, dynamic> step) async {
               ),
       );
       await _place(id, _point(step, 'at'), (p) => agents.updatePosition(p, id));
+    case 'fillPage':
+      int onPage() =>
+          c.read(agentProvider).length +
+          c.read(abilityProvider).length +
+          c.read(drawingProvider).elements.length +
+          c.read(textProvider).length +
+          c.read(placedImageProvider).images.length +
+          c.read(utilityProvider).length;
+      final from = onPage();
+      final target = (value as num).toInt();
+      final agents = c.read(agentProvider.notifier);
+      final texts = c.read(textProvider.notifier);
+      const types = [
+        AgentType.jett,
+        AgentType.sova,
+        AgentType.sage,
+        AgentType.omen,
+      ];
+      c.read(actionProvider.notifier).performTransaction(
+        groups: const [],
+        mutation: () {
+          for (var n = from; n < target; n++) {
+            final at = Offset(60.0 + (n % 40) * 22, 60.0 + (n ~/ 40) * 22);
+            if (n.isEven) {
+              agents.addAgent(PlacedAgent(
+                id: 'fill-$n',
+                type: types[(n ~/ 2) % types.length],
+                position: at,
+              ));
+            } else {
+              texts.addText(PlacedText(
+                id: 'fill-$n',
+                position: at,
+                sizeVersion: worldSizedMediaVersion,
+              )..text = 'Fill $n');
+            }
+          }
+        },
+      );
+      await _frames(2);
+      _log('FILL the page went from $from to ${onPage()} items');
     case 'addSmoke':
       final id = value as String;
       final abilities = c.read(abilityProvider.notifier);
