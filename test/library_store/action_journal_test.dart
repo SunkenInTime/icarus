@@ -1,462 +1,267 @@
-import 'dart:async';
-import 'dart:io';
-
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/domain/folder.dart';
 import 'package:icarus/const/weapons.dart';
-import 'package:icarus/providers/agent_provider.dart';
-import 'package:icarus/hive/hive_registration.dart';
-import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/action_journal.dart';
-import 'package:icarus/library_store/canvas_changes.dart';
-import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_reads.dart';
-import 'package:icarus/library_store/library_box_writes.dart';
-import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/ops_follower.dart';
 import 'package:icarus/library_store/ops_verdict.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
-import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/action_provider.dart';
-import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
+import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/local_library.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart' hide UserAction;
 
 import '../library_rows/generated_strategies.dart';
-import 'hive_scratch.dart';
-
-StrategyPage _page(String id) => generatedPage(
-      id: id,
-      sortIndex: 0,
-      optionals: Optionals.set,
-      isAttack: true,
-    ).copyWith();
-
-StrategyData _strategy() => generatedStrategy(Optionals.unset).copyWith(
-      id: 'journaled',
-      pages: [_page('p0')],
-    );
-
-ActionObjectState _added(String id) => ActionObjectState.fromJson(
-      ActionObjectKind.text,
-      {
-        ...ActionObjectState.text(_page('template').textData.single).toJson(),
-        'id': id,
-      },
-    );
-
-StrategyData _withTexts(StrategyData strategy, List<ActionObjectState> added) {
-  final page = strategy.pages.single;
-  return strategy.copyWith(
-    pages: [
-      page.copyWith(
-        textData: [...page.textData, for (final o in added) o.text!],
-      ),
-    ],
-  );
-}
-
-final class _Gate {
-  Completer<void>? _closed;
-  final _hit = <Completer<void>>[];
-
-  void close() => _closed = Completer<void>();
-
-  void open() {
-    final closed = _closed;
-    _closed = null;
-    closed?.complete();
-  }
-
-  Future<void> get hit {
-    final waiting = Completer<void>();
-    _hit.add(waiting);
-    return waiting.future;
-  }
-
-  Future<void> pass() async {
-    final closed = _closed;
-    if (closed == null) return;
-    for (final waiting in _hit) {
-      waiting.complete();
-    }
-    _hit.clear();
-    await closed.future;
-  }
-}
-
-final class _GatedEngine implements StorageEngine {
-  _GatedEngine(this._inner, this._gate);
-
-  final StorageEngine _inner;
-  final _Gate _gate;
-
-  @override
-  Future<Leasing> lease() async => switch (await _inner.lease()) {
-        Leased(:final lease) => Leased(_GatedLease(lease, _gate)),
-        final other => other,
-      };
-}
-
-final class _GatedLease implements StorageLease {
-  _GatedLease(this._inner, this._gate);
-
-  final StorageLease _inner;
-  final _Gate _gate;
-
-  @override
-  int get maxKeyLength => _inner.maxKeyLength;
-
-  @override
-  LeaseStatus get status => _inner.status;
-
-  @override
-  Future<KeyRead> read(String area, String key) => _inner.read(area, key);
-
-  @override
-  Future<Stored<List<String>>> keys(String area, String prefix) =>
-      _inner.keys(area, prefix);
-
-  @override
-  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
-      _inner.entries(area, prefix);
-
-  @override
-  Future<Stored<List<String>>> areas(String prefix) => _inner.areas(prefix);
-
-  @override
-  Future<Committing> commit(List<Change> changes) async {
-    await _gate.pass();
-    return _inner.commit(changes);
-  }
-
-  @override
-  Future<Releasing> release() => _inner.release();
-}
-
-typedef _Following = ({
-  StoreMirror mirror,
-  ActionJournal journal,
-  LibraryStore store,
-  Completer<void> gap,
-  _Gate gate,
-});
+import 'unit_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  late Directory directory;
-
-  setUp(() async {
-    directory = await Directory.systemTemp.createTemp('icarus-journal-');
-    Hive.init(directory.path);
-    if (!Hive.isAdapterRegistered(20)) registerIcarusAdapters(Hive);
-    await openScratchHive(directory, strategies: [_strategy()]);
+  late ProviderContainer container;
+  setUpAll(() {
+    container = ProviderContainer(
+      overrides: [authProvider.overrideWith(_SignedOut.new)],
+    );
+    appProviderContainer = container;
   });
+  setUp(() async => openUnitHive());
   tearDown(() async {
     LocalLibrary.follower = null;
     ActionProvider.editFollower = null;
     await Hive.close();
-    await directory.delete(recursive: true);
   });
 
-  Future<_Following> following() async {
-    final gap = Completer<void>();
-    final gate = _Gate();
-    var copied = false;
-    final journal = ActionJournal();
-    final mirror = StoreMirror(
-      reads: HiveReads(),
-      betweenAnimations: () => copied ? gap.future : Future<void>.value(),
-      actions: journal,
-    );
-    LocalLibrary.follower = mirror;
-    final store = switch (await LibraryStore.open(
-      _GatedEngine(MemoryEngine(MemoryStorage()), gate),
-      canRead: appCanRead,
-    )) {
-      StoreOpened(:final store) => store,
-      StoreNotOpened(:final problem) => fail('$problem'),
-    };
-    final writes = LibraryBoxWrites();
-    await mirror.copyThenFollow(store, writes: writes);
-    await writes.stop();
-    copied = true;
-    return (
-      mirror: mirror,
-      journal: journal,
-      store: store,
-      gap: gap,
-      gate: gate,
+  var opened = 0;
+  StrategyData strategy() {
+    opened += 1;
+    final id = 'journaled-$opened';
+    return generatedStrategy(Optionals.unset).copyWith(
+      id: id,
+      pages: [
+        generatedPage(
+          id: '$id-p0',
+          sortIndex: 0,
+          optionals: Optionals.set,
+          isAttack: true,
+        ).copyWith(),
+      ],
     );
   }
 
-  List<String> differencesOf(ActionJournal journal) => [
-        for (final finding in journal.tally.findings)
-          for (final difference in finding.differences) '$difference',
-      ];
+  Future<UnitHarness> open() async {
+    final h = await openInEditor(container, strategy());
+    addTearDown(h.dispose);
+    return h;
+  }
 
-  Future<StrategyData> readBack(LibraryStore store, String id) async =>
-      switch (await readStoredRows(store, id)) {
-        StoredRowsRead(:final rows) => switch (strategyFromRows(rows)) {
-            StrategyDataMade(:final strategy) => strategy,
-            StrategyDataRefused(:final problems) => fail('$problems'),
-          },
+  String openId() => container.read(strategyProvider).strategyId!;
+
+  Future<StrategyRowSet> storedRows(UnitHarness h) async =>
+      switch (await readStoredRows(h.store, openId())) {
+        StoredRowsRead(:final rows) => rows,
         StoredRowsNot(:final stored) => fail('$stored'),
       };
 
-  StrategyData inEditorTerms(StrategyData strategy) =>
-      switch (strategyToRows(strategyAsHiveHoldsIt(strategy))) {
-        StrategyRowsMade(:final rows) => switch (strategyFromRows(rows)) {
-            StrategyDataMade(:final strategy) => strategy,
-            StrategyDataRefused(:final problems) => fail('$problems'),
-          },
-        StrategyRowsRefused(:final problems) => fail('$problems'),
-      };
-
-  test(
-      'a burst of edits across two saves, all queued before the mirror runs, compares each save with exactly the ops of the actions before it, and both read back equal',
-      () async {
-    final (:mirror, :journal, :gap, store: _, gate: _) = await following();
-    final first = _added('first');
-    final second = _added('second');
-    final third = _added('third');
-    void act(ActionObjectState object) => mirror.journal(
-          'journaled',
-          'addition text',
-          [ObjectAdded('p0', object)],
+  Future<String?> storedCaption(UnitHarness h, String itemId) async {
+    final rows = await storedRows(h);
+    final row = rows.elements.whereType<LiveElement>().singleWhere(
+          (row) => row.publicId == itemId,
         );
+    return (row.payload.toJson()['data'] as Map)['caption'] as String?;
+  }
 
-    act(first);
-    act(second);
-    final afterTwo = _withTexts(_strategy(), [first, second]);
-    final saving = const LocalLibrary().savePageOnScreen(afterTwo);
-    act(third);
-    await saving;
-    await const LocalLibrary()
-        .savePageOnScreen(_withTexts(_strategy(), [first, second, third]));
+  test(
+      'a Hive save behind the canvas is reported against the store and never '
+      'moves the store back', () async {
+    final h = await open();
+    final hiveBefore = const LocalLibrary().storedStrategy(openId())!;
+    final behind = hiveBefore.copyWith();
+    final text = container.read(textProvider).first.id;
+    final silent = await h.measure(() => h.silently(() => container
+        .read(textProvider.notifier)
+        .setCaption(text, 'Caption only the canvas has')));
+    expect(silent.outcomes, {UnitOutcome.changedWithoutAction},
+        reason: '$silent');
+    expect(await storedCaption(h, text), 'Caption only the canvas has');
 
-    expect(journal.tally.saves, 0);
-    gap.complete();
-    await mirror.drained();
+    final save =
+        await h.measure(() => const LocalLibrary().savePageOnScreen(behind));
 
-    expect(journal.tally.actions, 3);
-    expect(journal.tally.commits, 3);
-    expect(journal.tally.commitsRefused, isEmpty);
-    expect(journal.tally.gaps, isEmpty);
-    expect(journal.tally.saves, 2);
-    expect(journal.tally.readBackEqual, 2);
-    expect(journal.tally.readBackUnequal, 0);
-    expect(journal.tally.findings, isEmpty);
+    expect(save.judged, 0, reason: '$save');
+    expect(h.tally.hiveSavesDifferent, 1);
+    expect(h.tally.hiveFindings.single.differences,
+        contains(contains('$text caption')));
+    expect(await storedCaption(h, text), 'Caption only the canvas has');
   });
 
   test(
-      'a save that holds an edit no action reported reads back unequal and names the object',
-      () async {
-    final (:mirror, :journal, :gap, store: _, gate: _) = await following();
-    final reported = _added('reported');
-    final silent = _added('silent');
-    mirror.journal('journaled', 'addition text', [ObjectAdded('p0', reported)]);
-    await const LocalLibrary()
-        .savePageOnScreen(_withTexts(_strategy(), [reported, silent]));
-    gap.complete();
-    await mirror.drained();
+      'a Hive write of the open strategy that fails is counted as failed and '
+      'never compared', () async {
+    final h = await open();
+    final stored = const LocalLibrary().storedStrategy(openId())!.copyWith();
+    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).close();
+    final write = await const LocalLibrary().savePageOnScreen(stored);
+    await h.settle();
 
-    expect(journal.tally.readBackUnequal, 1);
-    expect(differencesOf(journal), ['text silent missing']);
-    expect(journal.tally.findings.single.actions, ['addition text']);
+    expect(write, isA<LibraryWriteFailed>());
+    expect(h.tally.hiveSavesFailed, 1);
+    expect(h.tally.hiveSaves, 0);
   });
 
   test(
-      'a delete leaves a deleted row the image save may not drop, so the strategy is removed and the image put fresh, and the store then reads back as exactly what Hive holds',
-      () async {
-    final (:mirror, :journal, :gap, :store, gate: _) = await following();
-    final text =
-        ActionObjectState.text(_strategy().pages.single.textData.single);
-    mirror.journal('journaled', 'deletion text', [ObjectRemoved('p0', text)]);
-    final page = _strategy().pages.single;
-    await const LocalLibrary().savePageOnScreen(
-      _strategy().copyWith(pages: [page.copyWith(textData: const [])]),
-    );
-    gap.complete();
-    await mirror.drained();
+      'putting the store right after a delete removes the strategy first, so '
+      'the deleted row cannot refuse the image, and the store then holds the '
+      'canvas', () async {
+    final h = await open();
+    final text = container.read(textProvider).first.id;
+    final agent = container.read(agentProvider).first.id;
+    final deleted = await h.measure(
+        () => container.read(textProvider.notifier).removeTextAsAction(text));
+    expect(deleted.outcomes, {UnitOutcome.coveredAndCorrect});
+    expect(
+        (await storedRows(h)).elements.whereType<DeletedElement>(), isNotEmpty);
 
-    expect(journal.tally.readBackEqual, 1);
-    expect(journal.tally.deletedRowsRemoved, 1);
-    expect(mirror.refusedStrategies, isEmpty);
-    final rows = switch (await readStoredRows(store, 'journaled')) {
+    final silent = await h.measure(() => h.silently(() => container
+        .read(agentProvider.notifier)
+        .setCaption(agent, 'Put right from the canvas')));
+    expect(silent.outcomes, {UnitOutcome.changedWithoutAction});
+    expect(h.tally.repairsFromCanvas, greaterThan(0));
+    expect(h.mirror.refusedStrategies, isEmpty);
+    expect((await storedRows(h)).elements.whereType<DeletedElement>(), isEmpty);
+    expect(await storedCaption(h, agent), 'Put right from the canvas');
+  });
+
+  test(
+      'the open strategy is not known equal while it is taken up, so read mode '
+      'draws it from Hive, and closing puts Hive back and hands it back',
+      () async {
+    final h = await open();
+    final id = openId();
+    expect(h.mirror.strategiesNotKnownEqual, contains(id));
+
+    final text = container.read(textProvider).first;
+    final caption = text.caption;
+    await h.measure(() =>
+        container.read(textProvider.notifier).setCaption(text.id, 'Unsaved'));
+    await container.read(strategyProvider.notifier).clearCurrentStrategy();
+    await h.settle();
+
+    expect(h.tally.released, 1);
+    expect(h.tally.releasesThatPutHiveBack, 1);
+    expect(h.mirror.strategiesNotKnownEqual, isNot(contains(id)));
+    final rows = switch (await readStoredRows(h.store, id)) {
       StoredRowsRead(:final rows) => rows,
       StoredRowsNot(:final stored) => fail('$stored'),
     };
-    expect(rows.elements.whereType<DeletedElement>(), isEmpty);
+    final row = rows.elements
+        .whereType<LiveElement>()
+        .singleWhere((row) => row.publicId == text.id);
+    expect((row.payload.toJson()['data'] as Map)['caption'], caption);
+  });
+
+  test(
+      'after a follower fault no unit is judged, and judging starts again once '
+      'the strategy is taken up again', () async {
+    final h = await open();
+    final id = openId();
+    final text = container.read(textProvider).first.id;
+    void caption(String value) =>
+        container.read(textProvider.notifier).setCaption(text, value);
+
+    h.faultOnNextReach = true;
+    final faulted = await h.measure(() => caption('During the fault'));
+    expect(h.tally.followerFaults, hasLength(1));
+    expect(ActionProvider.editFollower, isNull);
+    expect(faulted.judged, 0, reason: '$faulted');
+    expect(faulted.notJudged, {'a follower fault': 1});
+
+    final after = await h.measure(() => caption('After the fault'));
+    expect(after.judged, 0, reason: '$after');
+    expect(after.notJudged, {'a follower fault': 1});
+
+    await container.read(strategyProvider.notifier).clearCurrentStrategy();
+    await h.settle();
     expect(
-      readBackDifferences(
-        inEditorTerms(const LocalLibrary().storedStrategy('journaled')!),
-        await readBack(store, 'journaled'),
-      ),
-      isEmpty,
-    );
+        await container.read(strategyProvider.notifier).loadFromHive(id), true);
+    await h.settle();
+    expect(ActionProvider.editFollower, same(h.follower));
+    final again = await h.measure(() => caption('Taken up again'));
+    expect(again.outcomes, {UnitOutcome.coveredAndCorrect}, reason: '$again');
+    expect(h.tally.addsUp, isTrue);
   });
 
   test(
-      'an ordinary mirror batch held in a commit does not write a later save of a strategy the journal has taken, so that save is compared against the actions alone',
-      () async {
-    final (:mirror, :journal, :store, :gate, :gap) = await following();
-    gate.close();
-    final reachedCommit = gate.hit;
-    await const LocalLibrary().addFolder(
-      Folder(id: 'f', name: 'F', dateCreated: DateTime.utc(2026, 2, 1)),
-    );
-    await const LocalLibrary().savePageOnScreen(_strategy());
-    gap.complete();
-    await reachedCommit;
+      'a text being typed is one unit: nothing is judged while the draft is '
+      'open, and committing it is judged with its action', () async {
+    final h = await open();
+    final text = container.read(textProvider).first.id;
+    final drafts = container.read(textDraftProvider.notifier);
+    for (final typed in ['P', 'Pl', 'Pla', 'Plant']) {
+      final keystroke = await h.measure(() => drafts.setDraft(text, typed));
+      expect(keystroke.judged + keystroke.notJudged.length, 0,
+          reason: '$typed: $keystroke');
+    }
+    final committed = await h.measure(() => drafts.commitDraft(text));
 
-    mirror.journal('journaled', 'edit text', const []);
-    await const LocalLibrary()
-        .savePageOnScreen(_withTexts(_strategy(), [_added('late')]));
-    gate.open();
-    await mirror.drained();
-
-    expect(journal.tally.saves, 1);
-    expect(journal.tally.commits, 0);
-    expect(journal.tally.readBackUnequal, 1);
-    expect(differencesOf(journal), ['text late missing']);
-    expect(
-      (await readBack(store, 'journaled'))
-          .pages
-          .single
-          .textData
-          .map((t) => t.id),
-      contains('late'),
-    );
+    expect(committed.judged, 1, reason: '$committed');
+    expect(committed.outcomes, {UnitOutcome.coveredAndCorrect});
+    expect(h.tally.findings, isEmpty);
   });
 
   test(
-      'two queued renames of the same stored object are each compared with the name that save wrote',
+      'a follower whose error cannot even be described leaves add, undo and '
+      'redo alone through the real hooks, detaches each time and is counted',
       () async {
-    final (:mirror, :journal, :gap, store: _, gate: _) = await following();
-    mirror.journal('journaled', 'edit text', const []);
-    final stored = const LocalLibrary().storedStrategy('journaled')!;
-    final original = stored.name;
-    await const LocalLibrary().renameStrategy(stored, 'New name');
-    await const LocalLibrary().renameStrategy(stored, original);
-    gap.complete();
-    await mirror.drained();
-
-    expect(journal.tally.saves, 2);
-    expect(journal.tally.readBackUnequal, 2);
-    expect(differencesOf(journal), [
-      'strategy journaled name',
-      'strategy journaled name',
-    ]);
-  });
-
-  test('a Hive write that fails is counted as a failed save and never compared',
-      () async {
-    final (:mirror, :journal, :gap, store: _, gate: _) = await following();
-    mirror.journal(
-      'journaled',
-      'addition text',
-      [ObjectAdded('p0', _added('lost'))],
+    final journal = ActionJournal();
+    final mirror = StoreMirror(
+      reads: HiveReads(),
+      betweenAnimations: () => Future<void>.value(),
+      actions: journal,
     );
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).close();
-    final write = await const LocalLibrary()
-        .savePageOnScreen(_withTexts(_strategy(), [_added('lost')]));
-    expect(write, isA<LibraryWriteFailed>());
-    gap.complete();
-    await mirror.drained();
-
-    expect(journal.tally.commits, 1);
-    expect(journal.tally.savesFailed, 1);
-    expect(journal.tally.saves, 0);
-    expect(journal.tally.readBackEqual, 0);
-  });
-
-  test(
-      'the first save of the strategy open in the editor is compared even when no action came before it',
-      () async {
-    final (:mirror, :journal, :gap, store: _, gate: _) = await following();
-    journal.inEditor = (id) => id == 'journaled';
-    await const LocalLibrary()
-        .savePageOnScreen(_withTexts(_strategy(), [_added('silent')]));
-    gap.complete();
-    await mirror.drained();
-
-    expect(journal.tally.followed, 1);
-    expect(journal.tally.saves, 1);
-    expect(differencesOf(journal), ['text silent missing']);
-  });
-
-  test(
-      'an edit carries only the fields its action changed, so a silent change to another field of the same item still reads back unequal',
-      () async {
-    final (:mirror, :journal, :gap, store: _, gate: _) = await following();
-    final text = _strategy().pages.single.textData.single;
-    final silentlyTagged = ActionObjectState.text(text).text!
-      ..tagColorValue = 0xFF22C55E;
-    final before = ActionObjectState.text(silentlyTagged);
-    final after = ActionObjectState.text(silentlyTagged)
-      ..text!.caption = 'Plant B';
-    mirror.journal(
-      'journaled',
-      'edit text',
-      [ObjectChanged('p0', before, after)],
-    );
-    final page = _strategy().pages.single;
-    await const LocalLibrary().savePageOnScreen(
-      _strategy().copyWith(pages: [
-        page.copyWith(textData: [ActionObjectState.text(after.text!).text!]),
-      ]),
-    );
-    gap.complete();
-    await mirror.drained();
-
-    expect(differencesOf(journal), ['text ${text.id} tagColorValue']);
-  });
-
-  test(
-      'a follower whose error cannot even be described leaves add, undo and redo alone through the real hooks, detaches each time and is counted',
-      () async {
-    final (:mirror, :journal, gap: _, store: _, gate: _) = await following();
-    final container = ProviderContainer();
-    addTearDown(container.dispose);
+    final own = ProviderContainer();
+    addTearDown(own.dispose);
     OpsFollower throwing() => OpsFollower(mirror, () => throw _Unprintable());
-    final agent = _page('canvas').agentData.first;
-    container.read(agentProvider.notifier).addAgent(agent);
-    final actions = container.read(actionProvider.notifier);
+    final agent = generatedPage(
+      id: 'canvas',
+      sortIndex: 0,
+      optionals: Optionals.set,
+      isAttack: true,
+    ).agentData.first;
+    own.read(agentProvider.notifier).addAgent(agent);
+    final actions = own.read(actionProvider.notifier);
 
     ActionProvider.editFollower = throwing();
-    container
-        .read(agentProvider.notifier)
-        .setWeapon(agent.id, WeaponType.vandal);
+    own.read(agentProvider.notifier).setWeapon(agent.id, WeaponType.vandal);
     expect(ActionProvider.editFollower, isNull);
-    expect(container.read(actionProvider).last, isA<WeaponSelectionAction>());
-    expect(container.read(agentProvider).single.weapon, WeaponType.vandal);
+    expect(own.read(actionProvider).last, isA<WeaponSelectionAction>());
+    expect(own.read(agentProvider).single.weapon, WeaponType.vandal);
 
     ActionProvider.editFollower = throwing();
     actions.undoAction();
     expect(ActionProvider.editFollower, isNull);
     expect(actions.poppedItems, hasLength(1));
-    expect(
-        container.read(agentProvider).single.weapon, isNot(WeaponType.vandal));
+    expect(own.read(agentProvider).single.weapon, isNot(WeaponType.vandal));
 
     ActionProvider.editFollower = throwing();
     actions.redoAction();
     expect(ActionProvider.editFollower, isNull);
     expect(actions.poppedItems, isEmpty);
-    expect(container.read(agentProvider).single.weapon, WeaponType.vandal);
+    expect(own.read(agentProvider).single.weapon, WeaponType.vandal);
 
     expect(journal.tally.followerFaults, hasLength(3));
   });
 
   test(
-      'the read-back compares the order of lineups inside each group, and the order of the groups, as separate differences',
-      () {
+      'the comparison reads the order of lineups inside each group, and the '
+      'order of the groups, as separate differences', () {
     final page = generatedPage(
       id: 'lineups',
       sortIndex: 0,
@@ -465,7 +270,7 @@ void main() {
       lineups: sharedSpotLineups('pl'),
     ).copyWith();
     final graph = page.lineUpGraph;
-    StrategyData withLinks(List<String> ids) => _strategy().copyWith(pages: [
+    StrategyData withLinks(List<String> ids) => strategy().copyWith(pages: [
           page.copyWith(
             lineUpGraph: LineUpGraph(
               origins: graph.origins,
@@ -494,4 +299,15 @@ void main() {
 final class _Unprintable implements Exception {
   @override
   String toString() => throw StateError('cannot describe this error');
+}
+
+final class _SignedOut extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: false,
+        isConvexUserReady: false,
+        convexAuthStatus: ConvexAuthStatus.signedOut,
+        user: null,
+      );
 }
