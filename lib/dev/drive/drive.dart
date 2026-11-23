@@ -1675,7 +1675,7 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectStoreNeedsYou':
       (await storeNeedsYou(c)).forEach(_log);
     case 'storeUseCloud':
-      _log(await storeUseCloud(c));
+      _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':
       (await storeSyncStates(c)).forEach(_log);
     case 'killNow':

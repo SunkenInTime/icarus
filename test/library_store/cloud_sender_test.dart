@@ -3,16 +3,27 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
+import 'package:icarus/dev/drive/drive_cloud_store.dart' show useCloudAs;
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/sender_store.dart';
+import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 import 'cloud_shadow_test.dart'
-    show pageList, pageSnapshot, serverRows, servedAccount, strategyId;
+    show
+        openStore,
+        pageId,
+        pageList,
+        pageSnapshot,
+        secondPage,
+        serverRows,
+        servedAccount,
+        shadowOn,
+        strategyId;
 import 'sender_world.dart';
 
 final _signIns = StateProvider<int>((ref) => 0);
@@ -826,6 +837,296 @@ void main() {
         expect(world.server.calls, hasLength(1));
       });
     });
+  });
+
+  group('the round-five cases', () {
+    test(
+        'the sign-in rule holds from the start of the run: a first page list '
+        'under a later sign-in count adds nothing', () {
+      inWorld(
+        (world) {
+          world.authChanges = 2;
+          world.settle();
+          world.shadow!.pageList(
+            strategyId,
+            pageList(serverRows()),
+            world.connection,
+            stamp: world.stamp,
+          );
+          world.settle();
+          expect(
+            (world.store.library as LibraryOpen).list.strategies,
+            isEmpty,
+          );
+          expect(world.intake.outcomes.values.single, isA<ResultStale>());
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'results that arrived before a call\'s answer are recorded before it, '
+        'so they are not taken as the fresh read a page delete waits for', () {
+      inWorld((world) {
+        void handOlder() => world.shadow!
+          ..pageList(
+            strategyId,
+            pageList(serverRows(), more: [secondPage()]),
+            world.connection,
+            stamp: world.stamp,
+          )
+          ..page(
+            strategyId,
+            pageSnapshot(serverRows()),
+            world.connection,
+            stamp: world.stamp,
+          );
+        handOlder();
+        world.settle();
+        final reply = Completer<void>();
+        world.server.answerNext(strategyId, (call) {
+          final answered = world.server.applyAll(call);
+          return reply.future.then((_) => answered);
+        });
+        world.commitMove(1);
+        world.settle(const Duration(milliseconds: 300));
+        expect(world.server.calls, hasLength(1));
+        world.commitPageDelete('delete-page', pageId);
+        final before = world.sender.store.reports.length;
+        handOlder();
+        world.async.flushMicrotasks();
+        reply.complete();
+        world.settle();
+        expect(
+          [
+            for (final report in world.sender.store.reports.skip(before))
+              if (report is ResultWritten)
+                'result'
+              else if (report case EventsWritten(:final events)
+                  when events.any((event) => event is OpAnswered))
+                'answer',
+          ],
+          ['result', 'result', 'answer'],
+        );
+        expect(
+          [
+            for (final call in world.server.calls)
+              for (final op in call.ops)
+                if (op is PageDeleteOp) op.opId,
+          ],
+          isEmpty,
+        );
+      });
+    });
+
+    test(
+        'a result waiting when the loop ends is answered as not recorded, '
+        'and the shadow drains', () {
+      final storage = MemoryStorage();
+      inWorld((world) {
+        world.commitMove(1);
+        final hold = storage.holdNextWrite();
+        unawaited(
+          hold.reached.then((_) {
+            world.shadow!.page(
+              strategyId,
+              pageSnapshot(serverRows()),
+              world.connection,
+              stamp: world.stamp,
+            );
+            unawaited(world.store.close());
+            hold.letGo();
+          }),
+        );
+        world.settle(const Duration(minutes: 1));
+        expect(world.sender.ended, isNotNull);
+        final waited = world.arrivals.whereType<ResultForStore>().last;
+        expect(world.intake.outcomes[waited], isA<ResultNotRecorded>());
+        var drained = false;
+        unawaited(world.shadow!.idle.then((_) => drained = true));
+        world.settle();
+        expect(drained, isTrue);
+      }, storage: storage);
+    });
+
+    test(
+        'use cloud acts as the signed-in account: another account cannot take '
+        'the cloud\'s version of the owner\'s rejected edit', () {
+      inWorld((world) {
+        world.server.answerWith(
+          strategyId,
+          StoreBatchAnswered(
+            [
+              const RejectedAnswer(
+                'move-1',
+                RejectionReason.revisionMismatch,
+                NoServerCopy(),
+              ),
+            ],
+            complete: true,
+          ),
+        );
+        world.commitMove(1);
+        world.settle();
+        expect(world.views().single.state, isA<NeedsUser>());
+        Object? refused;
+        unawaited(
+          useCloudAs(world.store, otherAccount, strategyId).then<void>(
+            (_) {},
+            onError: (Object error) => refused = error,
+          ),
+        );
+        world.settle();
+        expect(refused, isA<StateError>());
+        expect(world.views().single.state, isA<NeedsUser>());
+        List<String>? used;
+        useCloudAs(world.store, servedAccount, strategyId)
+            .then((value) => used = value);
+        world.settle();
+        expect(used, ['move-1']);
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
+        'a result compared after a newer one for its strategy was handed over '
+        'is skipped as superseded, not reported different', () {
+      inWorld((world) {
+        final before = world.shadow!.ledger.length;
+        world.server.revisions[strategyId] = 5;
+        world.shadow!
+          ..page(
+            strategyId,
+            pageSnapshot(serverRows()),
+            world.connection,
+            stamp: world.stamp,
+          )
+          ..page(
+            strategyId,
+            world.shownPage(),
+            world.connection,
+            stamp: world.stamp,
+          );
+        world.settle();
+        expect(
+          [
+            for (final entry in world.shadow!.ledger.skip(before))
+              entry.verdict,
+          ],
+          [
+            isA<Skipped>().having(
+              (skipped) => skipped.reason,
+              'reason',
+              SkipReason.superseded,
+            ),
+            isA<ComparedEqual>(),
+          ],
+        );
+      });
+    });
+
+    test(
+        'after a restart, a page recorded before the run\'s first page list is '
+        'skipped for comparison, not reported different', () {
+      final storage = MemoryStorage();
+      inWorld((world) {}, storage: storage);
+      inWorld(
+        (world) {
+          world.shadow!.page(
+            strategyId,
+            pageSnapshot(serverRows()),
+            world.connection,
+            stamp: world.stamp,
+          );
+          world.settle();
+          expect(world.sender.store.reports.whereType<ResultWritten>(),
+              hasLength(1));
+          expect(
+            world.shadow!.ledger.single.verdict,
+            isA<Skipped>().having(
+              (skipped) => skipped.reason,
+              'reason',
+              SkipReason.beforePageList,
+            ),
+          );
+        },
+        storage: storage,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a result written into its session after the connection changed '
+        'justifies nothing: the next send opens a new session first and goes '
+        'out checked', () {
+      final storage = MemoryStorage();
+      inWorld((world) {
+        world.sender.hold('held by the test');
+        world.commitElementDelete('delete-1');
+        world.settle();
+        holdNextWrite(storage, () => world.connection = 2);
+        world.showResult();
+        final shown = world.arrivals.whereType<ResultForStore>().last;
+        expect(world.intake.outcomes[shown], isA<ResultRecorded>());
+        final before = world.written().length;
+        world.sender.release();
+        world.settle();
+        expect(
+          world.written().skip(before).map((event) => event.runtimeType),
+          containsAllInOrder([ConnectionReturned, BatchClaimed]),
+        );
+        final sent = world.server.calls.single.ops.single as ElementDeleteOp;
+        expect(sent.lastWriterWins, isFalse);
+      }, storage: storage);
+    });
+
+    test(
+        'signing out ends the sessions: signed back in as the same account on '
+        'the same connection, a delete queued before is sent checked', () {
+      inWorld((world) {
+        world.sender.hold('held by the test');
+        world.commitElementDelete('delete-1');
+        world.settle();
+        world.signIn(null);
+        world.settle();
+        expect(world.sender.bound, isEmpty);
+        world.signIn(servedAccount);
+        world.settle();
+        world.sender.release();
+        world.settle();
+        final sent = world.server.calls.single.ops.single as ElementDeleteOp;
+        expect(sent.lastWriterWins, isFalse);
+      });
+    });
+  });
+
+  test(
+      'shadow-only mode compares while the queue holds this device\'s own '
+      'work, as it did before the sender', () async {
+    final store = await openStore(MemoryStorage());
+    final shadow = shadowOn(store)
+      ..pageList(strategyId, pageList(serverRows()), 0)
+      ..page(strategyId, pageSnapshot(serverRows()), 0);
+    await shadow.idle;
+    final row = switch (await store.readStrategy(strategyId)) {
+      Found(:final value) => value.strategy,
+      final other => throw StateError('$other'),
+    };
+    expect(
+      await store.commitAllAs(servedAccount, strategyId, [
+        StrategyPatchOp(
+          opId: 'rename',
+          expectedStrategyRevision: (row.toJson()! as Map)['revision']! as int,
+          name: 'Renamed',
+        ),
+      ]),
+      isA<Saved<List<Committed>, CommitRefusal>>(),
+    );
+
+    shadow.page(strategyId, pageSnapshot(serverRows()), 0);
+    await shadow.idle;
+
+    expect(shadow.ledger.last.verdict, isNot(isA<Skipped>()));
   });
 
   group('through the real provider', () {

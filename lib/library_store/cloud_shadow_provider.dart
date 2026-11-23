@@ -163,6 +163,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
         _account = auth.changes;
         subject = named;
         shadow.serve(Account(named));
+        shadow.intake?.resultsFrom(auth.changes);
         return true;
       case final account when account != auth.changes && shadow.intake == null:
         shadow.end('the account changed');
@@ -205,13 +206,19 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
 
   void _watchList(CloudShadow shadow, String strategyId) {
     if (_listed != strategyId || _list != null || !_serving()) return;
+    final named = subject!;
     _list = ref
         .read(convexStrategyRepositoryProvider)
-        .watchPageList(strategyId, accountSubject: subject!)
+        .watchPageList(strategyId, accountSubject: named)
         .listen(
           (list) => _guarded(() {
             if (!_serving()) return;
-            final stamp = _stamp();
+            final now = _stamp();
+            final stamp = (
+              account: Account(named),
+              connection: now.connection,
+              signIns: now.signIns,
+            );
             shadow.pageList(strategyId, list, stamp.connection, stamp: stamp);
           }),
           onError: (Object _) => _notTaken('a page list read failed'),

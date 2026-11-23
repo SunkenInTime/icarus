@@ -196,34 +196,74 @@ Future<List<String>> storeNeedsYou(ProviderContainer c) async {
   return lines;
 }
 
-Future<String> storeUseCloud(ProviderContainer c) async {
-  final sender = _sender(c);
-  final chosen = <String>[];
-  for (final (strategyId, cloud) in await _cloudQueues(_running(c).store)) {
-    for (final entry in cloud.queue.entries) {
-      if (cloud.views[entry.id]?.state is NeedsUser) {
-        final written = await sender.store.write(cloud.owner, strategyId, [
-          UserUsedCloud(entry.id),
-        ]);
-        switch (written) {
-          case WriteTroubled(:final trouble):
-            throw StateError(
-              'use cloud for ${entry.id} was not written: ${trouble.why}',
-            );
-          case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
-            throw StateError(
-              'use cloud for ${entry.id} was not applied: '
-              '${notApplied.join('; ')}',
-            );
-          case WrittenWith():
-            break;
-        }
-        chosen.add(entry.id);
+Future<String> storeUseCloud(ProviderContainer c, String itemId) async {
+  final store = _running(c).store;
+  final strategyId = await _strategyHolding(store, itemId);
+  final chosen = await useCloudAs(store, _signedIn(c), strategyId);
+  return 'CLOUDSTORE used the cloud\'s version for ${chosen.join(', ')} of '
+      '$strategyId';
+}
+
+Future<String> _strategyHolding(LibraryStore store, String itemId) async {
+  for (final strategyId in _storedCloudStrategies(store)) {
+    final read = await store.readStrategy(strategyId);
+    if (read is! Found<StrategyContent>) continue;
+    for (final page in read.value.pages) {
+      final content = await store.readPage(strategyId, page.publicId);
+      if (content is! Found<PageContent>) continue;
+      if (content.value.elements.any(
+        (element) => element is LiveElement && element.publicId == itemId,
+      )) {
+        return strategyId;
       }
     }
   }
-  if (chosen.isEmpty) throw StateError('no entry needed the user');
-  return 'CLOUDSTORE used the cloud\'s version for ${chosen.join(', ')}';
+  throw StateError('the store holds no item $itemId');
+}
+
+Future<List<String>> useCloudAs(
+  LibraryStore store,
+  Account signedIn,
+  String strategyId,
+) async {
+  final CloudStrategy cloud;
+  switch (await store.readStrategy(strategyId)) {
+    case Found(value: StrategyContent(sync: final CloudStrategy found)):
+      cloud = found;
+    case final other:
+      throw StateError('the queue of $strategyId could not be read: $other');
+  }
+  final chosen = [
+    for (final entry in cloud.queue.entries)
+      if (cloud.views[entry.id]?.state is NeedsUser) entry.id,
+  ];
+  if (chosen.isEmpty)
+    throw StateError('no entry of $strategyId needs the user');
+  for (final opId in chosen) {
+    switch (await store.record(signedIn, strategyId, [UserUsedCloud(opId)])) {
+      case Saved(:final value):
+        for (final outcome in value.outcomes) {
+          if (outcome case ReportNotApplicable(:final why)) {
+            throw StateError('use cloud for $opId was not applied: $why');
+          }
+        }
+      case NothingToSave():
+        throw StateError('use cloud for $opId changed nothing');
+      case Refused(:final reason):
+        throw StateError('use cloud for $opId was refused: $reason');
+      case NotSaved(:final failure):
+        throw StateError(
+          'use cloud for $opId was not written: '
+          '${storageFailureWords(failure, StoreStep.refusedSave)}',
+        );
+      case SaveInDoubt(:final failure):
+        throw StateError(
+          'use cloud for $opId may not have been written: '
+          '${storageFailureWords(failure, StoreStep.saveInDoubt)}',
+        );
+    }
+  }
+  return chosen;
 }
 
 Future<List<String>> storeSyncStates(ProviderContainer c) async {

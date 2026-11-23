@@ -1,6 +1,7 @@
 import 'package:icarus/collab/collab_models.dart'
     show maxCloudBatchBytes, serializedConvexValueUtf8Bytes;
 import 'package:icarus/library_store/storage_failure_words.dart';
+import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 final class ClaimedBatch {
@@ -175,9 +176,11 @@ final class ResultWritten extends SenderReport {
     this.session,
     this.stamp, {
     required this.inputsWhenWritten,
+    required this.result,
   });
 
   final int session;
+  final ResultForStore result;
   final ({Account? account, int? connection, int signIns}) stamp;
   final ({Account? account, int? connection, int signIns}) inputsWhenWritten;
 }

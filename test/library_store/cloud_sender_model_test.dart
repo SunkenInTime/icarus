@@ -59,10 +59,10 @@ final class Model {
       storage: storage,
       server: server,
       clientId: 'client-${restarts + 1}',
+      startingWith: stamp,
     );
-    world.account = account;
-    world.connection = connection;
-    world.authChanges = signIns;
+    _resultsSignIns = signIns;
+    _lastArrival = -1;
     server.onCall = (call) {
       final under = world.sender.sendingUnder;
       if (under != stamp) {
@@ -95,7 +95,6 @@ final class Model {
     _read = 0;
     _opened.clear();
     _restartsWritten.clear();
-    _resultsSignIns = null;
     open(first: false);
   }
 
@@ -215,12 +214,37 @@ final class Model {
   final _restartsWritten = <String, int>{};
   int? _resultsSignIns;
   var _read = 0;
+  var _lastArrival = -1;
+
+  void _inArrivalOrder(Object arrival, String what) {
+    final index = world.arrivals.indexWhere((seen) => identical(seen, arrival));
+    if (index < 0) return;
+    if (index < _lastArrival) {
+      broken.add('$what, arrival $index, was recorded after arrival '
+          '$_lastArrival');
+    }
+    _lastArrival = max(_lastArrival, index);
+  }
+
+  static bool _isAnswer(QueueEvent event) => switch (event) {
+        OpAnswered() || BatchRefused() || ClaimReleased() => true,
+        TransportFailed(:final failure) => failure != TransportFailure.timeout,
+        _ => false,
+      };
 
   void _readReports() {
     final reports = world.sender.store.reports;
     for (final report in reports.skip(_read)) {
       switch (report) {
-        case EventsWritten(:final strategyId, :final events, :final effects):
+        case EventsWritten(
+            :final strategyId,
+            :final events,
+            :final effects,
+            :final batch,
+          ):
+          if (batch != null && events.every(_isAnswer)) {
+            _inArrivalOrder(batch.ops, 'the answer to $batch');
+          }
           for (final effect in effects) {
             if (effect case OpRemoved(:final opId)) _removed.add(opId);
           }
@@ -242,15 +266,20 @@ final class Model {
             :final session,
             :final stamp,
             :final inputsWhenWritten,
+            :final result,
           ):
+          if (!world.arrivals.any((seen) => identical(seen, result))) {
+            broken.add('a result for $strategyId was recorded that never '
+                'arrived');
+          }
+          _inArrivalOrder(result, 'a result for $strategyId');
           if (inputsWhenWritten != stamp) {
             broken.add('a result under $stamp was written while the inputs '
                 'were $inputsWhenWritten');
           }
-          final takenUnder = _resultsSignIns ??= stamp.signIns;
-          if (stamp.signIns != takenUnder) {
+          if (stamp.signIns != _resultsSignIns) {
             broken.add('a result under sign-in ${stamp.signIns} was written '
-                'after results were taken under $takenUnder');
+                'in a run whose results began under $_resultsSignIns');
           }
           final under = _opened[(strategyId, session)];
           if (under == null ||
@@ -355,6 +384,126 @@ final class Model {
     async.flushMicrotasks();
   }
 
+  var _fresh = 0;
+
+  void _probeHeld(
+    String what,
+    void Function() hand,
+    void Function(ResultOutcome? outcome) check,
+  ) {
+    final sender = world.sender;
+    final wasHeld = sender.held;
+    sender.hold('held for a probe');
+    world.settle(const Duration(milliseconds: 300));
+    final hold = storage.holdNextWrite();
+    var reached = false;
+    unawaited(
+      hold.reached.then((_) {
+        reached = true;
+        remember();
+        connection = nextConnection++;
+        world.connection = connection;
+      }),
+    );
+    final arrivedBefore = world.arrivals.length;
+    hand();
+    final result = world.arrivals.length > arrivedBefore
+        ? world.arrivals[arrivedBefore]
+        : null;
+    world.settle(const Duration(milliseconds: 300));
+    hold.letGo();
+    world.settle(const Duration(milliseconds: 300));
+    if (wasHeld == null) {
+      sender.release();
+    } else {
+      sender.hold(wasHeld);
+    }
+    log.add('$what${reached ? '' : ' (no write reached)'}');
+    if (reached && result is ResultForStore) {
+      check(world.intake.outcomes[result]);
+    }
+  }
+
+  bool get _resultsWouldBeTaken =>
+      !world.sender.busy &&
+      connection != null &&
+      account == servedAccount &&
+      world.sender.resultsSignIns == signIns;
+
+  void heldAdd() {
+    if (!_resultsWouldBeTaken) return;
+    final id = 'fresh-${++_fresh}';
+    server.owners[id] = servedAccount;
+    _probeHeld(
+      'the add of $id is held while the connection changes',
+      () {
+        final given = stamp;
+        world.shadow!.pageList(
+          id,
+          RemotePageList(
+            header: app.RemoteStrategyHeader(
+              publicId: id,
+              name: 'Fresh',
+              mapData: 'bind',
+              revision: 1,
+              createdAt: at,
+              updatedAt: at,
+              role: 'owner',
+            ),
+            pages: const [],
+          ),
+          given.connection,
+          stamp: given,
+        );
+      },
+      (outcome) {
+        if (outcome is! ResultStale) {
+          broken.add('the first page list of $id was added while the '
+              'connection changed, and the intake was told $outcome');
+        }
+        if (world.sender.bound[id] case final session?) {
+          broken.add('$id was bound to $session though its add outlived its '
+              'connection');
+        }
+      },
+    );
+  }
+
+  void heldSessionWrite() {
+    if (!_resultsWouldBeTaken) return;
+    remember();
+    connection = nextConnection++;
+    world.connection = connection;
+    world.settle(const Duration(milliseconds: 300));
+    if (!_resultsWouldBeTaken) return;
+    final before = world.cloud().queue.session.number;
+    _probeHeld(
+      'the first session write after reconnecting is held while the '
+      'connection changes',
+      () {
+        world.shadow!.page(
+          strategyId,
+          pageSnapshot(serverRows()),
+          connection,
+          stamp: stamp,
+        );
+      },
+      (outcome) {
+        final opened = world.cloud().queue.session.number;
+        if (opened == before) return;
+        if (outcome is! ResultStale) {
+          broken.add('a result whose session write outlived its connection '
+              'was answered $outcome');
+        }
+        if (world.sender.bound[strategyId] case final session?
+            when session.number == opened) {
+          broken.add('$strategyId was bound to session $opened, opened for a '
+              'connection replaced during its write');
+        }
+      },
+    );
+  }
+
   void waitAndCountLooks(int seconds) {
     final sender = world.sender;
     final (looks, wakes, dues, acts) =
@@ -374,7 +523,7 @@ final class Model {
       false => false,
       null => drops.nextBool(),
     };
-    final choice = random.nextInt(17);
+    final choice = random.nextInt(19);
     switch (choice) {
       case 0 || 1 || 2:
         edit();
@@ -432,6 +581,10 @@ final class Model {
       case 15:
         world.slowStore.dropSessionReadBack = 1;
         log.add('one session read-back is lost');
+      case 17:
+        heldAdd();
+      case 18:
+        heldSessionWrite();
       case _:
         final seconds = random.nextInt(60);
         waitAndCountLooks(seconds);

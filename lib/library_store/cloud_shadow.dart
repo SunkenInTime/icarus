@@ -14,7 +14,11 @@ enum SkipReason {
   staleForSender('the sender found it stale: it arrived under a connection '
       'or sign-in that has since changed, or before the store held its '
       'strategy'),
-  ownWorkInFlight('this device\'s own work was still on its way');
+  ownWorkInFlight('this device\'s own work was still on its way'),
+  superseded('a newer result for the strategy was handed to the sender before '
+      'this one was compared'),
+  beforePageList('it was recorded before this run\'s first page list, which '
+      'the comparison needs');
 
   const SkipReason(this.words);
 
@@ -180,12 +184,22 @@ String _idOf(Row row) => switch (row) {
 
 final class _Strategy {
   bool inStore = false;
+  bool listHanded = false;
+  bool listRecorded = false;
+  var handed = 0;
   int? bound;
   int? newest;
   int? lostConnection;
   final expected = _Expected();
   final waiting = <_Job>[];
+  final beforeList = <_Handing>[];
 }
+
+typedef _Handing = ({
+  LedgerEntry entry,
+  ResultForStore result,
+  int connection,
+});
 
 sealed class _Job {
   const _Job(this.entry);
@@ -209,6 +223,14 @@ final class _ListJob extends _Job {
 
 final class _LostJob extends _Job {
   const _LostJob() : super(null);
+}
+
+final class _HandedJob extends _Job {
+  const _HandedJob(this.handing, this.number, this.outcome) : super(null);
+
+  final _Handing handing;
+  final int number;
+  final Future<ResultOutcome> outcome;
 }
 
 final class CloudShadow {
@@ -286,6 +308,10 @@ final class CloudShadow {
       stamp: stamp,
     );
     ledger.add(entry);
+    if (intake != null) {
+      _receivePage(entry, snapshot, connection);
+      return;
+    }
     _add(_PageJob(entry, snapshot, connection));
   }
 
@@ -298,7 +324,76 @@ final class CloudShadow {
     if (!_taking) return;
     final entry = LedgerEntry(strategyId, 'the page list', stamp: stamp);
     ledger.add(entry);
+    if (intake != null) {
+      _receiveList(entry, list, connection);
+      return;
+    }
     _add(_ListJob(entry, list, connection));
+  }
+
+  void _receivePage(
+    LedgerEntry entry,
+    RemotePageSnapshot snapshot,
+    int? connection,
+  ) {
+    if (!_admit(entry, connection)) return;
+    final stamp = entry.stamp;
+    if (stamp == null) return;
+    switch (pageRead(snapshot, canRead)) {
+      case RowsRead(:final value):
+        final handing = (
+          entry: entry,
+          result: PageResultForStore(entry.strategyId, stamp, value),
+          connection: connection!,
+        );
+        final state = _of(entry.strategyId);
+        if (state.inStore ||
+            state.listHanded ||
+            _storeHolds(entry.strategyId)) {
+          _hand(handing);
+        } else {
+          state.beforeList.add(handing);
+        }
+      case RowsUnreadable(:final problem):
+        entry.verdict =
+            ReadFailed('the server rows could not be read: $problem');
+    }
+  }
+
+  void _receiveList(
+    LedgerEntry entry,
+    RemotePageList list,
+    int? connection,
+  ) {
+    if (!_admit(entry, connection)) return;
+    final stamp = entry.stamp;
+    if (stamp == null) return;
+    switch (pageListRead(list)) {
+      case RowsRead(:final value):
+        _of(entry.strategyId).listHanded = true;
+        _hand((
+          entry: entry,
+          result: ListResultForStore(entry.strategyId, stamp, value),
+          connection: connection!,
+        ));
+      case RowsUnreadable(:final problem):
+        entry.verdict =
+            ReadFailed('the server rows could not be read: $problem');
+    }
+  }
+
+  bool _storeHolds(String strategyId) => switch (store.library) {
+        LibraryOpen(:final list) =>
+          list.strategies.any((summary) => summary.publicId == strategyId),
+        LibraryShut() => false,
+      };
+
+  void _hand(_Handing handing) {
+    if (stopped != null) return;
+    final state = _of(handing.entry.strategyId);
+    _add(
+      _HandedJob(handing, ++state.handed, intake!.take(handing.result)),
+    );
   }
 
   void connectionLost() => _add(const _LostJob());
@@ -338,6 +433,8 @@ final class CloudShadow {
           await _list(entry!, list, connection);
         case _LostJob():
           await _lost();
+        case _HandedJob(:final handing, :final number, :final outcome):
+          await _afterHanding(handing, number, await outcome);
       }
     } on _StoppedNow {
       return;
@@ -399,34 +496,6 @@ final class CloudShadow {
   ) async {
     if (!_admit(entry, connection)) return;
     final state = _of(entry.strategyId);
-    if (intake != null && !state.inStore) {
-      state.waiting.add(_PageJob(entry, snapshot, connection));
-      return;
-    }
-    if (intake != null) {
-      final PageRead handed;
-      switch (pageRead(snapshot, canRead)) {
-        case RowsRead(:final value):
-          handed = value;
-        case RowsUnreadable(:final problem):
-          entry.verdict =
-              ReadFailed('the server rows could not be read: $problem');
-          return;
-      }
-      final stamp = entry.stamp;
-      if (stamp == null ||
-          !await _handed(
-            entry,
-            state,
-            connection!,
-            PageResultForStore(entry.strategyId, stamp, handed),
-          )) {
-        return;
-      }
-      state.expected.page(handed);
-      await _compare(entry, pages: {handed.page.publicId});
-      return;
-    }
     if (!state.inStore) {
       state.waiting.add(_PageJob(entry, snapshot, connection));
       return;
@@ -463,25 +532,6 @@ final class CloudShadow {
             ReadFailed('the server rows could not be read: $problem');
         return;
     }
-    if (intake != null) {
-      final stamp = entry.stamp;
-      if (stamp == null ||
-          !await _handed(
-            entry,
-            state,
-            connection!,
-            ListResultForStore(entry.strategyId, stamp, header),
-          )) {
-        return;
-      }
-      state.expected.header(header);
-      await _compare(entry, pages: const {});
-      for (final waiting in state.waiting.reversed) {
-        _add(waiting, first: true);
-      }
-      state.waiting.clear();
-      return;
-    }
     if (!state.inStore) {
       await _start(entry, state, header, connection!);
       if (!state.inStore) return;
@@ -498,13 +548,14 @@ final class CloudShadow {
     }
   }
 
-  Future<bool> _handed(
-    LedgerEntry entry,
-    _Strategy state,
-    int connection,
-    ResultForStore result,
+  Future<void> _afterHanding(
+    _Handing handing,
+    int number,
+    ResultOutcome outcome,
   ) async {
-    switch (await intake!.take(result)) {
+    final (:entry, :result, :connection) = handing;
+    final state = _of(entry.strategyId);
+    switch (outcome) {
       case ResultRecorded(:final session, :final added):
         state.inStore = true;
         if (state.bound != connection) {
@@ -517,13 +568,37 @@ final class CloudShadow {
             ),
           );
         }
-        return true;
       case ResultStale():
         entry.verdict = const Skipped(SkipReason.staleForSender);
-        return false;
+        return;
       case ResultNotRecorded(:final why):
         entry.verdict = RefusedByStore('the sender did not record it: $why');
-        return false;
+        return;
+    }
+    final Set<String> pages;
+    switch (result) {
+      case ListResultForStore(:final header):
+        state.expected.header(header);
+        state.listRecorded = true;
+        pages = const {};
+        final waiting = [...state.beforeList];
+        state.beforeList.clear();
+        waiting.forEach(_hand);
+      case PageResultForStore(:final page):
+        state.expected.page(page);
+        pages = {page.page.publicId};
+    }
+    if (!state.listRecorded) {
+      entry.verdict = const Skipped(SkipReason.beforePageList);
+      return;
+    }
+    if (state.handed != number) {
+      entry.verdict = const Skipped(SkipReason.superseded);
+      return;
+    }
+    await _compare(entry, pages: pages);
+    if (state.handed != number && entry.verdict is ComparedDifferent) {
+      entry.verdict = const Skipped(SkipReason.superseded);
     }
   }
 
@@ -708,11 +783,15 @@ final class CloudShadow {
     return null;
   }
 
+  Future<bool> _ownWorkInFlight(String strategyId) async =>
+      switch (await _read(() => store.readStrategy(strategyId))) {
+        Found(value: StrategyContent(sync: CloudStrategy(:final queue))) =>
+          queue.entries.isNotEmpty || queue.landed.isNotEmpty,
+        _ => false,
+      };
+
   Future<void> _compare(LedgerEntry entry, {required Set<String> pages}) async {
-    if (await _read(() => store.readStrategy(entry.strategyId))
-        case Found(
-          value: StrategyContent(sync: CloudStrategy(:final queue)),
-        ) when queue.entries.isNotEmpty || queue.landed.isNotEmpty) {
+    if (intake != null && await _ownWorkInFlight(entry.strategyId)) {
       entry.verdict = const Skipped(SkipReason.ownWorkInFlight);
       return;
     }

@@ -25,7 +25,7 @@
   {"wait": 8},
   {"expectStoreNeedsYou": true},
   {"storeSyncState": true},
-  {"storeUseCloud": true},
+  {"storeUseCloud": "o1-{run}"},
   {"waitStoreSent": 60},
   {"storeSyncState": true},
   {"signal": "owner-done"},

@@ -45,5 +45,7 @@ final class ResultNotRecorded extends ResultOutcome {
 }
 
 abstract interface class ResultIntake {
+  void resultsFrom(int signIns);
+
   Future<ResultOutcome> take(ResultForStore result);
 }

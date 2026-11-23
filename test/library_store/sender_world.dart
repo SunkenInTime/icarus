@@ -238,20 +238,47 @@ final class SlowSenderStore extends SenderStore {
   }
 }
 
+final class RecordingIntake implements ResultIntake {
+  RecordingIntake(this.inner, this.arrivals);
+
+  final ResultIntake inner;
+  final List<Object> arrivals;
+  final outcomes = Map<ResultForStore, ResultOutcome>.identity();
+
+  @override
+  void resultsFrom(int signIns) => inner.resultsFrom(signIns);
+
+  @override
+  Future<ResultOutcome> take(ResultForStore result) {
+    arrivals.add(result);
+    return inner.take(result).then((outcome) => outcomes[result] = outcome);
+  }
+}
+
 final class World {
-  World._(this.async, this.engine, this.store, this.server, this.sender);
+  World._(
+    this.async,
+    this.engine,
+    this.store,
+    this.server,
+    this.sender,
+    this.arrivals,
+    this.intake,
+  );
 
   final FakeAsync async;
   final RefusingEngine engine;
   final LibraryStore store;
   final FakeServer server;
   final CloudSender sender;
+  final List<Object> arrivals;
+  final RecordingIntake intake;
   CloudShadow? shadow;
   late _Flag dropsConnectionLost;
   StreamSubscription<StoreChange>? _changes;
-  Account? _account = servedAccount;
-  int? _connection = 1;
-  int _authChanges = 1;
+  late Account? _account;
+  late int? _connection;
+  late int _authChanges;
   var _moved = 0;
 
   RefusingLease get lease => engine.leased!;
@@ -299,8 +326,12 @@ final class World {
     FakeServer? server,
     bool shadow = true,
     String clientId = 'client-1',
+    Snapshot? startingWith,
   }) {
+    final inputs =
+        startingWith ?? (account: servedAccount, connection: 1, signIns: 1);
     final dropsConnectionLost = _Flag();
+    final arrivals = <Object>[];
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
     LibraryStore? store;
     LibraryStore.open(
@@ -319,23 +350,43 @@ final class World {
     fake.owners[strategyId] = servedAccount;
     final sender = CloudSender(
       store: SlowSenderStore(store!),
-      send: fake.send,
+      send: ({
+        required strategyPublicId,
+        required clientId,
+        required ops,
+        required account,
+      }) =>
+          fake
+              .send(
+        strategyPublicId: strategyPublicId,
+        clientId: clientId,
+        ops: ops,
+        account: account,
+      )
+              .then((outcome) {
+        arrivals.add(ops);
+        return outcome;
+      }),
       build: 'test-build',
       clientId: clientId,
-      inputs: (account: servedAccount, connection: 1, signIns: 1),
+      inputs: inputs,
       timing: timing,
       clock: () => start.add(async.elapsed),
       recordsConnectionLost: () => !dropsConnectionLost.value,
-    );
-    final world = World._(async, engine, store!, fake, sender)
-      ..dropsConnectionLost = dropsConnectionLost;
+    )..resultsFrom(inputs.signIns);
+    final intake = RecordingIntake(sender, arrivals);
+    final world = World._(async, engine, store!, fake, sender, arrivals, intake)
+      ..dropsConnectionLost = dropsConnectionLost
+      .._account = inputs.account
+      .._connection = inputs.connection
+      .._authChanges = inputs.signIns;
     if (shadow) {
       world.shadow = CloudShadow(
         store!,
         build: 'test-build',
         canRead: appCanRead,
         breathe: none,
-        intake: sender,
+        intake: intake,
       )..serve(servedAccount);
     }
     sender.start();
@@ -421,6 +472,32 @@ final class World {
     ]);
   }
 
+  void commitElementDelete(String opId) {
+    final first = serverRows().elements.whereType<LiveElement>().first;
+    _commit(strategyId, servedAccount, [
+      ElementDeleteOp(
+        opId: opId,
+        elementPublicId: first.publicId,
+        pagePublicId: first.pagePublicId,
+        expectedElementRevision: first.revision,
+      ),
+    ]);
+  }
+
+  void commitPageDelete(String opId, String pageId) {
+    Reading<StrategyContent>? read;
+    store.readStrategy(strategyId).then((value) => read = value);
+    async.flushMicrotasks();
+    final row = (read! as Found<StrategyContent>).value.strategy;
+    _commit(strategyId, servedAccount, [
+      PageDeleteOp(
+        opId: opId,
+        pagePublicId: pageId,
+        expectedStrategyRevision: (row.toJson()! as Map)['revision']! as int,
+      ),
+    ]);
+  }
+
   void commitAdds(int count, {int from = 0}) {
     final first = serverRows().elements.whereType<LiveElement>().first;
     _commit(strategyId, servedAccount, [
@@ -458,9 +535,14 @@ final class World {
   }
 
   void showResult() {
+    shadow!.page(strategyId, shownPage(), _connection, stamp: stamp);
+    settle();
+  }
+
+  app.RemotePageSnapshot shownPage() {
     final snapshot = pageSnapshot(serverRows());
     final first = serverRows().elements.whereType<LiveElement>().first;
-    final shown = app.RemotePageSnapshot(
+    return app.RemotePageSnapshot(
       page: snapshot.page,
       content: snapshot.content,
       elements: [
@@ -488,8 +570,6 @@ final class World {
       lineups: snapshot.lineups,
       assetsById: snapshot.assetsById,
     );
-    shadow!.page(strategyId, shown, _connection, stamp: stamp);
-    settle();
   }
 
   CloudStrategy cloud([String strategy = strategyId]) {

@@ -99,6 +99,12 @@ final class _Troubled extends _Session {
 
 typedef SenderView = ({String run, Map<String, String> strategies});
 
+typedef _Arrival = ({
+  int number,
+  ResultForStore result,
+  Completer<ResultOutcome> answer,
+});
+
 final class CloudSender implements ResultIntake {
   CloudSender({
     required SenderStore store,
@@ -139,7 +145,8 @@ final class CloudSender implements ResultIntake {
   final _lastEdit = <String, DateTime>{};
   final _firstEdit = <String, DateTime>{};
   final _checkedClean = <String>{};
-  final _results = ListQueue<(ResultForStore, Completer<ResultOutcome>)>();
+  final _results = ListQueue<_Arrival>();
+  var _arrived = 0;
   var looks = 0;
   var wakes = 0;
   var dues = 0;
@@ -212,12 +219,17 @@ final class CloudSender implements ResultIntake {
   }
 
   @override
+  void resultsFrom(int signIns) => resultsSignIns ??= signIns;
+
+  @override
   Future<ResultOutcome> take(ResultForStore result) {
     if (disposed || ended != null) {
-      return Future.value(const ResultStale('the sender has stopped'));
+      return Future.value(
+        ResultNotRecorded(ended ?? 'the sender was disposed'),
+      );
     }
     final answer = Completer<ResultOutcome>();
-    _results.add((result, answer));
+    _results.add((number: ++_arrived, result: result, answer: answer));
     wake();
     return answer.future;
   }
@@ -246,12 +258,33 @@ final class CloudSender implements ResultIntake {
 
   void _refuseWaitingResults(String why) {
     while (_results.isNotEmpty) {
-      final (_, answer) = _results.removeFirst();
-      if (!answer.isCompleted) answer.complete(ResultStale(why));
+      final (:answer, number: _, result: _) = _results.removeFirst();
+      if (!answer.isCompleted) answer.complete(ResultNotRecorded(why));
     }
   }
 
   Future<void> _run() async {
+    try {
+      await _loop();
+    } finally {
+      _refuseWaitingResults(
+        ended ?? (disposed ? 'the sender was disposed' : 'the loop stopped'),
+      );
+    }
+  }
+
+  Future<bool> _recordArrivals({int? before}) async {
+    while (_results.isNotEmpty &&
+        (before == null || _results.first.number < before)) {
+      final (number: _, :result, :answer) = _results.removeFirst();
+      final outcome = await _takeResult(result);
+      if (!answer.isCompleted) answer.complete(outcome);
+      if (disposed || ended != null) return false;
+    }
+    return true;
+  }
+
+  Future<void> _loop() async {
     DateTime? due;
     while (!disposed) {
       await _sleepUntilWoken(due);
@@ -263,21 +296,15 @@ final class CloudSender implements ResultIntake {
         _end(shut.why);
         return;
       }
-      while (_results.isNotEmpty) {
-        final (result, answer) = _results.removeFirst();
-        inStep = true;
-        final outcome = await _takeResult(result);
-        inStep = false;
-        if (!answer.isCompleted) answer.complete(outcome);
-        if (disposed || ended != null) {
-          _refuseWaitingResults(ended ?? 'the sender was disposed');
-          return;
-        }
-      }
+      inStep = true;
+      final going = await _recordArrivals();
+      inStep = false;
+      if (!going) return;
       final snap = _inputs;
-      if (snap.connection == null && bound.isNotEmpty) {
+      if ((snap.connection == null || snap.account == null) &&
+          bound.isNotEmpty) {
         inStep = true;
-        await _connectionLost();
+        await _sessionsEnded();
         inStep = false;
         if (disposed) return;
       }
@@ -343,7 +370,7 @@ final class CloudSender implements ResultIntake {
     await waiting.future;
   }
 
-  Future<void> _connectionLost() async {
+  Future<void> _sessionsEnded() async {
     final lost = [...bound.entries];
     bound.clear();
     for (final MapEntry(key: strategyId, value: session) in lost) {
@@ -356,12 +383,20 @@ final class CloudSender implements ResultIntake {
   Future<ResultOutcome> _takeResult(ResultForStore result) async {
     final stamp = result.stamp;
     final id = result.strategyId;
+    final takenUnder = resultsSignIns;
+    if (takenUnder == null) {
+      return const ResultStale('results have not begun for this run');
+    }
+    if (stamp.account != _inputs.account) {
+      return const ResultStale(
+        'the account its read named is not the account signed in',
+      );
+    }
     if (stamp != _inputs) {
       return const ResultStale(
         'the connection, the account or the sign-in changed since',
       );
     }
-    final takenUnder = resultsSignIns ??= stamp.signIns;
     if (stamp.signIns != takenUnder) {
       return const ResultStale(
         'results stop for the run at the first change of sign-in, because '
@@ -381,7 +416,7 @@ final class CloudSender implements ResultIntake {
         return const ResultStale('the store does not hold the strategy yet');
       }
       final written = await _store.add(account, id, result.header);
-      if (disposed) return const ResultStale('the sender was disposed');
+      if (disposed) return const ResultNotRecorded('the sender was disposed');
       switch (written) {
         case WriteTroubled(trouble: StoreShut(:final why)):
           _end(why);
@@ -403,7 +438,13 @@ final class CloudSender implements ResultIntake {
           _store.reports
             ..add(SessionOpenedFor(id, session, stamp))
             ..add(
-              ResultWritten(id, session, stamp, inputsWhenWritten: _inputs),
+              ResultWritten(
+                id,
+                session,
+                stamp,
+                inputsWhenWritten: _inputs,
+                result: result,
+              ),
             );
           return ResultRecorded(session, added: true);
       }
@@ -429,7 +470,7 @@ final class CloudSender implements ResultIntake {
     final written = await _store.write(account, id, [
       BaseArrived(base, session: number),
     ]);
-    if (disposed) return const ResultStale('the sender was disposed');
+    if (disposed) return const ResultNotRecorded('the sender was disposed');
     switch (written) {
       case WriteTroubled(:final trouble):
         if (trouble is StoreShut) _end(trouble.why);
@@ -444,6 +485,7 @@ final class CloudSender implements ResultIntake {
             number,
             stamp,
             inputsWhenWritten: inputsWhenWritten,
+            result: result,
           ),
         );
         return ResultRecorded(number, added: false);
@@ -591,8 +633,10 @@ final class CloudSender implements ResultIntake {
     }
     sendingUnder = snap;
     final outcome = await _call(batch);
+    final answeredAs = ++_arrived;
     sendingUnder = null;
     if (disposed) return const _Ended();
+    if (!await _recordArrivals(before: answeredAs)) return const _Ended();
     switch (outcome) {
       case StoreBatchRefusedWhole(refusal: BatchRefusal.unauthenticated) ||
             StoreBatchAccountMismatch():
