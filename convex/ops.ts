@@ -1883,6 +1883,7 @@ export const applyBatch = mutation({
     // another account is refused whole (see assertCallerIsAccount). Older
     // clients send it unbound, checked against whoever is signed in.
     accountSubject: v.optional(v.string()),
+    readsAccountMismatch: v.optional(v.boolean()),
     // Set by clients that read wasApplied on a replayed op's noop: the op
     // was applied when first received, at the noop's currentRevision, so
     // that revision is the client's own write and its waiting work can move
@@ -1893,7 +1894,11 @@ export const applyBatch = mutation({
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     if (args.accountSubject !== undefined) {
-      await assertCallerIsAccount(ctx, args.accountSubject);
+      await assertCallerIsAccount(
+        ctx,
+        args.accountSubject,
+        args.readsAccountMismatch === true ? "ACCOUNT_MISMATCH" : "FORBIDDEN",
+      );
     }
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user } = await assertStrategyRole(ctx, strategy, "editor");

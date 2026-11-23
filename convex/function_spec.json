@@ -122694,6 +122694,12 @@
             },
             "optional": false
           },
+          "readsAccountMismatch": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"

@@ -94,13 +94,52 @@ Future<String> pageListRefusal(
         .first
         .timeout(const Duration(seconds: 20));
   } catch (error) {
-    if (!isTypedConvexForbiddenError(error)) rethrow;
+    if (!isAccountMismatchError(error)) rethrow;
     return 'CLOUDSTORE a page list read naming $accountSubject, signed in as '
         '$signedIn, was refused: $error';
   }
   throw StateError(
     'a page list read naming $accountSubject was answered while signed in '
     'as $signedIn',
+  );
+}
+
+Future<String> batchRefusal(
+  ProviderContainer c,
+  String accountSubject, {
+  required bool readsAccountMismatch,
+}) async {
+  final strategyId =
+      c.read(remoteEditorSnapshotProvider).valueOrNull?.shell.header.publicId;
+  if (strategyId == null) throw StateError('no cloud strategy is open');
+  final signedIn = c.read(authProvider).user?.id;
+  if (signedIn == null || signedIn == accountSubject) {
+    throw StateError(
+      'a refusal needs a sign-in other than $accountSubject, and this one '
+      'is $signedIn',
+    );
+  }
+  final expected = readsAccountMismatch
+      ? isAccountMismatchError
+      : isTypedConvexForbiddenError;
+  try {
+    await c
+        .read(convexStrategyRepositoryProvider)
+        .sendEmptyBatch(
+          strategyPublicId: strategyId,
+          accountSubject: accountSubject,
+          readsAccountMismatch: readsAccountMismatch,
+        )
+        .timeout(const Duration(seconds: 20));
+  } catch (error) {
+    if (!expected(error)) rethrow;
+    return 'CLOUDSTORE a batch naming $accountSubject, signed in as '
+        '$signedIn, ${readsAccountMismatch ? 'reading' : 'not reading'} '
+        'the mismatch, was refused: $error';
+  }
+  throw StateError(
+    'a batch naming $accountSubject was answered while signed in as '
+    '$signedIn',
   );
 }
 

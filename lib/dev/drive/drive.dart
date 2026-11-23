@@ -1525,6 +1525,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'expectPageListRefusedNaming':
       _log(await pageListRefusal(c, value as String));
+    case 'expectBatchRefusedNaming':
+      _log(
+        await batchRefusal(
+          c,
+          value as String,
+          readsAccountMismatch: step['readsAccountMismatch'] as bool,
+        ),
+      );
     case 'expectStoredPayloadVersion':
       _log(
         await storedPayloadVersion(
