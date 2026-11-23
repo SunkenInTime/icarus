@@ -460,8 +460,10 @@ final class ActionJournal {
           refused = true;
           tally.commitsRefused.add('${action.label}: $reason');
         case NotSaved(:final failure):
+          _notJudged(kind, 'the store did not save');
           return JournalStopped(StoreDidNotSave(failure));
         case SaveInDoubt(:final failure):
+          _notJudged(kind, 'the store\'s save is in doubt');
           return JournalStopped(StoreSaveInDoubt(failure));
       }
     }

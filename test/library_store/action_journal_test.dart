@@ -113,11 +113,15 @@ void main() {
     final h = await open();
     final page = const LocalLibrary().storedStrategy(openId())!.pages.first.id;
     final saves = h.tally.hiveSaves;
+    final verdicts = h.tally.hiveSavesEqualToStore + h.tally.hiveSavesDifferent;
     final renamed = await h.measure(() =>
         container.read(strategyProvider.notifier).renamePage(page, 'Retake'));
 
     expect(renamed.outcomes, {UnitOutcome.noFinding}, reason: '$renamed');
     expect(h.tally.hiveSaves, greaterThan(saves));
+    expect(h.tally.hiveSavesEqualToStore + h.tally.hiveSavesDifferent,
+        greaterThan(verdicts),
+        reason: 'the save was compared with the store');
     expect(
       [for (final f in h.tally.hiveFindings) ...f.differences],
       everyElement(isIn([
@@ -323,6 +327,31 @@ void main() {
     });
 
     test(
+        'a unit whose second commit the store refuses, after its first '
+        'landed, is not judged with the reason, and the units still add up',
+        () async {
+      final engine = _RefusingEngine();
+      final h = await openInEditor(container, strategy(),
+          engine: (memory) => engine..inner = memory);
+      addTearDown(h.dispose);
+      final agent = container.read(agentProvider).first.id;
+      final text = container.read(textProvider).first.id;
+      engine.refuseFrom = engine.commits + 2;
+      final unit = await h.measure(() {
+        container
+            .read(agentProvider.notifier)
+            .setCaption(agent, 'Lands in the store');
+        container
+            .read(textProvider.notifier)
+            .setCaption(text, 'Refused by the store');
+      });
+
+      expect(unit.notJudged, {'the store did not save': 1}, reason: '$unit');
+      expect(h.mirror.phase, isA<MirrorStopped>());
+      expect(h.tally.unitsOpened, h.tally.unitsDisposed);
+    });
+
+    test(
         'opening a strategy before the mirror is following is counted, not '
         'dropped', () async {
       final h = await openInEditor(container, strategy(), follow: false);
@@ -428,4 +457,55 @@ final class _SignedOut extends AuthProvider {
         convexAuthStatus: ConvexAuthStatus.signedOut,
         user: null,
       );
+}
+
+final class _RefusingEngine implements StorageEngine {
+  late StorageEngine inner;
+  var commits = 0;
+  var refuseFrom = 1 << 30;
+
+  @override
+  Future<Leasing> lease() async => switch (await inner.lease()) {
+        Leased(:final lease) => Leased(_RefusingLease(lease, this)),
+        final other => other,
+      };
+}
+
+final class _RefusingLease implements StorageLease {
+  _RefusingLease(this._inner, this._engine);
+
+  final StorageLease _inner;
+  final _RefusingEngine _engine;
+
+  @override
+  int get maxKeyLength => _inner.maxKeyLength;
+
+  @override
+  LeaseStatus get status => _inner.status;
+
+  @override
+  Future<KeyRead> read(String area, String key) => _inner.read(area, key);
+
+  @override
+  Future<Stored<List<String>>> keys(String area, String prefix) =>
+      _inner.keys(area, prefix);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
+      _inner.entries(area, prefix);
+
+  @override
+  Future<Stored<List<String>>> areas(String prefix) => _inner.areas(prefix);
+
+  @override
+  Future<Committing> commit(List<Change> changes) async {
+    _engine.commits += 1;
+    if (_engine.commits >= _engine.refuseFrom) {
+      return const CommitRefused(DeviceFailure('refused by the test'));
+    }
+    return _inner.commit(changes);
+  }
+
+  @override
+  Future<Releasing> release() => _inner.release();
 }

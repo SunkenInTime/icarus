@@ -393,6 +393,7 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
     ...actionOpsEndLines(mirror),
     ...describeCheck(check, checkClock.elapsed),
   ];
+  if (endSave != null) throw StoreStepFailed(lines);
   if (actionOpsEndProblem(mirror) case final problem?) {
     throw StoreStepFailed([...lines, problem]);
   }

@@ -605,6 +605,87 @@ void main() {
   });
 
   test(
+      'a lineup restored on its own after its group kept its row through a '
+      'join and a split gets a row of its own, never the kept group\'s id',
+      () async {
+    final whole = sharedSpotLineups('pl');
+    const pageId = 'lineup-page';
+    var strategy = generatedStrategy(Optionals.unset).copyWith(
+      id: 'kept-ids',
+      pages: [
+        generatedPage(
+          id: pageId,
+          sortIndex: 0,
+          optionals: Optionals.unset,
+          isAttack: true,
+          lineups: _without(whole, {'pl-link-a', 'pl-link-b', 'pl-link-c'}),
+        ).copyWith(),
+      ],
+    );
+    final store = await _storeWith(strategy);
+    final lastOps = <StrategyOp>[];
+
+    Future<void> act(String what, UserAction action) async {
+      final changes = canvasChangesOf(
+        action,
+        pageId: pageId,
+        reversed: false,
+        now: EditorNow(agent: (_) => null),
+      );
+      final built =
+          await (await OpsBuilder.read(store, strategy.id))!.build(changes);
+      expect(built.gaps, isEmpty, reason: what);
+      final result = await store.commitAll(strategy.id, built.ops);
+      expect(result, isA<Saved<List<Committed>, CommitRefusal>>(),
+          reason: '$what: $result');
+      lastOps
+        ..clear()
+        ..addAll(built.ops);
+      strategy = strategy.copyWith(pages: [
+        strategy.pages.single.copyWith(
+          lineUpGraph: changes.whereType<LineupsChanged>().fold<LineUpGraph>(
+                strategy.pages.single.lineUpGraph,
+                (graph, change) => lineupsWithParts(
+                  graph,
+                  removed: change.removed,
+                  added: change.added,
+                ),
+              ),
+        ),
+      ]);
+      expect(
+        [
+          for (final difference in readBackDifferences(
+            _readable(strategy),
+            await _readBack(store, strategy.id),
+          ))
+            '$difference',
+        ],
+        isEmpty,
+        reason: what,
+      );
+    }
+
+    await act('add a', _lineupAdded(whole, 'pl-link-a'));
+    await act('join b', _lineupAdded(whole, 'pl-link-b'));
+    await act('join c', _lineupAdded(whole, 'pl-link-c'));
+    await act('remove a', _lineupDeleted(whole, 'pl-link-a'));
+    await act('remove b', _lineupDeleted(whole, 'pl-link-b'));
+    await act('restore a on its own', _lineupAdded(whole, 'pl-link-a'));
+
+    expect(lastOps.whereType<LineupGroupAddOp>(), hasLength(1));
+    expect(lastOps.where((op) => op is! LineupGroupAddOp), isEmpty);
+    final rows = switch (await readStoredRows(store, strategy.id)) {
+      StoredRowsRead(:final rows) => rows,
+      StoredRowsNot(:final stored) => fail('$stored'),
+    };
+    final live = rows.lineupGroups.whereType<LiveLineupGroup>().toList();
+    expect(live.map((g) => g.publicId).toSet(), hasLength(live.length));
+    expect(live, hasLength(3));
+    await store.close();
+  });
+
+  test(
       'deleting the lineup whose id named its group leaves the renamed group where the old one was, so the group order reads back equal',
       () async {
     final whole = sharedSpotLineups('pl');

@@ -541,12 +541,16 @@ final class OpsBuilder {
       );
   }
 
-  List<LiveLineupGroup> _groupsOf(String pageId, LineUpGraph graph) =>
+  List<LiveLineupGroup> _groupsOf(
+    String pageId,
+    LineUpGraph graph, {
+    Set<String> reserved = const {},
+  }) =>
       lineupGroupRowsOf(
         strategyId: _strategyId,
         pageId: pageId,
         graph: graph,
-        takenGroupIds: {for (final link in graph.links) link.id},
+        takenGroupIds: {for (final link in graph.links) link.id, ...reserved},
         everyLinkId: {for (final link in graph.links) link.id},
       );
 
@@ -572,6 +576,7 @@ final class OpsBuilder {
     final made = _groupsOf(
       pageId,
       lineupsWithParts(before, removed: removed, added: added),
+      reserved: {for (final t in live) t.row.publicId},
     );
     final kept = <_Tracked<LiveLineupGroup>>{};
     final placed = <({

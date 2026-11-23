@@ -258,8 +258,41 @@ List<_Case> _otherCases() {
       LineUpEditField.linkDetails, link.id, change.backward, change.forward);
   final landingVisibility = edit(LineUpEditField.landingVisibility, landing.id,
       visibility.backward, visibility.forward);
-  LineUpGraph applied(LineUpEditAction a) =>
-      lineupsWithField(graph, a.field, a.targetId, a.after);
+  LineUpGraph applied(LineUpEditAction a) => LineUpGraph(
+        origins: [
+          for (final o in graph.origins)
+            o.id == origin.id && a.field == LineUpEditField.originPosition
+                ? o.copyWith(
+                    agent: o.agent.copyWith(position: const Offset(123, 456)))
+                : o,
+        ],
+        landings: [
+          for (final l in graph.landings)
+            if (l.id != landing.id)
+              l
+            else
+              switch (a.field) {
+                LineUpEditField.landingPosition => l.copyWith(
+                    ability:
+                        l.ability.copyWith(position: const Offset(654, 321))),
+                LineUpEditField.landingVisibility => l.copyWith(
+                    ability: l.ability.copyWith(
+                      visualState: l.ability.visualState.copyWith(
+                        showRangeFill: !l.ability.visualState.showRangeFill,
+                        showVisionCone: !l.ability.visualState.showVisionCone,
+                      ),
+                    ),
+                  ),
+                _ => l,
+              },
+        ],
+        links: [
+          for (final k in graph.links)
+            k.id == link.id && a.field == LineUpEditField.linkDetails
+                ? k.copyWith(name: 'Retake smoke', notes: 'From heaven')
+                : k,
+        ],
+      );
   final settings = StrategySettings(
     agentSize: base.settings.agentSize + 7,
     abilitySize: base.settings.abilitySize + 3,

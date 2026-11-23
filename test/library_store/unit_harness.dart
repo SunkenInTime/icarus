@@ -151,6 +151,7 @@ Future<UnitHarness> openInEditor(
   ProviderContainer container,
   StrategyData strategy, {
   bool follow = true,
+  StorageEngine Function(StorageEngine memory)? engine,
 }) async {
   final migrated = StrategyMigrator.migrateToCurrentVersion(strategy);
   await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
@@ -163,7 +164,7 @@ Future<UnitHarness> openInEditor(
   );
   LocalLibrary.follower = mirror;
   final store = switch (await LibraryStore.open(
-    MemoryEngine(MemoryStorage()),
+    (engine ?? (memory) => memory)(MemoryEngine(MemoryStorage())),
     canRead: appCanRead,
   )) {
     StoreOpened(:final store) => store,

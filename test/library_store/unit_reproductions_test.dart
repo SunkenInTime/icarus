@@ -17,6 +17,8 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 
 import '../library_rows/generated_strategies.dart';
+import 'package:icarus/strategy/local_library.dart';
+
 import 'unit_harness.dart';
 
 LineUpGraph _threeGroups(String prefix) {
@@ -193,8 +195,7 @@ void main() {
     final committed = h.tally.opsCommitted;
     final repeated = await h.measure(edit);
 
-    expect(repeated.outcomes, {UnitOutcome.noFinding},
-        reason: '$repeated');
+    expect(repeated.outcomes, {UnitOutcome.noFinding}, reason: '$repeated');
     expect(h.tally.opsCommitted, greaterThan(committed));
   });
 
@@ -258,8 +259,7 @@ void main() {
     };
     for (final MapEntry(key: step, value: perform) in steps.entries) {
       final unit = await h.measure(perform);
-      expect(unit.outcomes, {UnitOutcome.noFinding},
-          reason: '$step: $unit');
+      expect(unit.outcomes, {UnitOutcome.noFinding}, reason: '$step: $unit');
     }
   });
 
@@ -292,22 +292,35 @@ void main() {
       () async {
     final h = await open();
     final link = container.read(lineUpProvider).graph.links.first;
+    final session = container.read(strategyPageSessionProvider);
+    final destination =
+        session.availablePageIds.firstWhere((id) => id != session.activePageId);
+    final strategyId = container.read(strategyProvider).strategyId!;
+    final linksBefore = {
+      for (final l in const LocalLibrary()
+          .storedStrategy(strategyId)!
+          .pages
+          .singleWhere((page) => page.id == destination)
+          .lineUpGraph
+          .links)
+        l.id,
+    };
     final copied = await h.measure(() =>
         container.read(strategyProvider.notifier).copyLineUpsToAdjacentPage(
           linkIds: {link.id},
           direction: PageTransitionDirection.forward,
         ));
     expect(copied.outcomes, {UnitOutcome.noFinding}, reason: '$copied');
-    final session = container.read(strategyPageSessionProvider);
-    await container.read(strategyProvider.notifier).setActivePage(session
-        .availablePageIds
-        .firstWhere((id) => id != session.activePageId));
+    await container.read(strategyProvider.notifier).setActivePage(destination);
     await h.settle();
     final there = container
         .read(lineUpProvider)
         .graph
         .links
-        .firstWhere((l) => l.name == link.name && l.notes == link.notes);
+        .where((l) => !linksBefore.contains(l.id))
+        .single;
+    expect(there.id, isNot(link.id));
+    expect(there.name, link.name);
     final edited = await h.measure(() => container
         .read(lineUpProvider.notifier)
         .updateLink(there.copyWith(notes: 'Edited where it was copied')));
@@ -340,8 +353,7 @@ void main() {
     };
     for (final MapEntry(key: step, value: perform) in steps.entries) {
       final unit = await h.measure(perform);
-      expect(unit.outcomes, {UnitOutcome.noFinding},
-          reason: '$step: $unit');
+      expect(unit.outcomes, {UnitOutcome.noFinding}, reason: '$step: $unit');
     }
     final added = await h.measure(() => strategies.addPage());
     expect(added.uncovered, isEmpty, reason: '$added');
