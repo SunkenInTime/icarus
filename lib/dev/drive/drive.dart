@@ -1671,8 +1671,35 @@ Future<void> _run(Map<String, dynamic> step) async {
         ),
       );
     case 'storeMayLag':
-      _cloudStore.mayLag = value as String;
-      _log('CLOUDSTORE the store may lag behind the server at the end: $value');
+      final lag = (row: value as String, why: step['why'] as String);
+      _cloudStore.lagging.add(lag);
+      _log(
+        'CLOUDSTORE item ${lag.row} may be at an older revision in the store '
+        'than on the server at the end: ${lag.why}',
+      );
+    case 'storeExpect':
+      final expected = await expectStrategy(
+        c,
+        value as Object,
+        Duration(seconds: ((step['within'] ?? 60) as num).toInt()),
+      );
+      _cloudStore.expected.add(expected);
+      _log(
+        'CLOUDSTORE the store holds ${expected.id} "${expected.name}", and '
+        'must still hold it, equal to the server\'s copy, at the end',
+      );
+    case 'storeAdd':
+      final at = step['at'] as List;
+      _log(
+        await storeAdd(
+          c,
+          value as String,
+          kind: step['kind'] as String,
+          at: ((at[0] as num).toDouble(), (at[1] as num).toDouble()),
+        ),
+      );
+    case 'storeAddPage':
+      _log(await storeAddPage(c));
     case 'addPage':
       await c.read(strategyProvider.notifier).addPage();
     case 'storeDeletePage':
@@ -1689,10 +1716,6 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'expectStoreNeedsYou':
       (await storeNeedsYou(c)).forEach(_log);
-    case 'storeAdopt':
-      _log(
-        await storeAdopt(c, Duration(seconds: (value as num).toInt())),
-      );
     case 'storeUseCloud':
       _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':

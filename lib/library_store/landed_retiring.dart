@@ -7,13 +7,15 @@ typedef RetiringTiming = ({
   int rounds,
 });
 
+typedef RetireRead = ({Set<(int, int)> works, DateTime at, int rounds});
+
+typedef RetireReads = Map<String, RetireRead>;
+
 final class Retiring {
   static const list = '';
 
   final _active = <String, DateTime>{};
   final _clear = <String>{};
-  final _readFor =
-      <(String, String), ({Set<(int, int)> works, DateTime at, int rounds})>{};
 
   bool mayRetire(String id) => !_clear.contains(id);
 
@@ -35,13 +37,14 @@ final class Retiring {
     CloudStrategy cloud,
     DateTime now,
     RetiringTiming timing,
+    RetireReads reads,
   ) {
     if (cloud.queue.landed.isEmpty) return (read: null, due: null);
     final quietAt = (_active[id] ?? now).add(timing.quiet);
     if (quietAt.isAfter(now)) return (read: null, due: quietAt);
     DateTime? due;
     for (final MapEntry(key: page, value: works) in _byPage(cloud).entries) {
-      final prior = _readFor[(id, page)];
+      final prior = reads[page];
       if (prior == null) return (read: page, due: null);
       final stuck =
           prior.works.containsAll(works) && prior.rounds >= timing.rounds;
@@ -56,27 +59,35 @@ final class Retiring {
     if (next == (read: null, due: null)) _clear.add(id);
   }
 
-  void read(String id, String page, CloudStrategy cloud, DateTime at) {
+  static RetireReads read(
+    RetireReads reads,
+    String page,
+    CloudStrategy cloud,
+    DateTime at,
+  ) {
     final works = _byPage(cloud)[page] ?? const {};
-    final prior = _readFor[(id, page)];
-    _readFor[(id, page)] = (
-      works: works,
-      at: at,
-      rounds: prior != null && prior.works.containsAll(works)
-          ? prior.rounds + 1
-          : 1,
-    );
+    final prior = reads[page];
+    return {
+      ...reads,
+      page: (
+        works: works,
+        at: at,
+        rounds: prior != null && prior.works.containsAll(works)
+            ? prior.rounds + 1
+            : 1,
+      ),
+    };
   }
 
-  List<(String, DateTime)> stuck(
-    String id,
+  static List<(String, DateTime)> stuck(
     CloudStrategy cloud,
     DateTime now,
     RetiringTiming timing,
+    RetireReads reads,
   ) =>
       [
         for (final MapEntry(key: page, value: works) in _byPage(cloud).entries)
-          if (_readFor[(id, page)] case final prior?
+          if (reads[page] case final prior?
               when prior.rounds >= timing.rounds &&
                   prior.works.containsAll(works) &&
                   prior.at.add(timing.stuck).isAfter(now))

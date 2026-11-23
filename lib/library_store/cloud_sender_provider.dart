@@ -97,17 +97,20 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
       clock: ref.read(cloudSenderClockProvider),
     );
     state = sender;
-    void refresh() => sender.inputs = _inputs();
+    final editor = ref.read(senderEditorProvider);
+    void adoptOpen() {
+      if (ref.read(editor) case final open?) sender.adopt(open);
+    }
+
+    void refresh() {
+      sender.inputs = _inputs();
+      adoptOpen();
+    }
+
     final signIns = ref.read(convexSignInsProvider).listen((_) => refresh());
     ref.listen(ref.read(senderSignInWatchProvider), (_, __) => refresh());
     ref.listen<bool>(convexConnectionSnapshotProvider, (_, __) => refresh());
-    ref.listen<String?>(
-      ref.read(senderEditorProvider),
-      (_, open) {
-        if (open != null) sender.adopt(open);
-      },
-      fireImmediately: true,
-    );
+    ref.listen<String?>(editor, (_, __) => adoptOpen(), fireImmediately: true);
     ref.onDispose(() {
       unawaited(signIns.cancel());
       sender.dispose();

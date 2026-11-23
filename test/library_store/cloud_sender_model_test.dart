@@ -71,6 +71,13 @@ final class Model {
       startingWith: stamp,
     );
     server.onRead = (call) {
+      _underAt[call] = (restarts, world.readEras);
+      if (call.why == 'edit access was lost') {
+        _lossAt[call] = (
+          world.cloud(call.strategyId).queue.strategy.accessLostAt,
+          (restarts, world.readEras),
+        );
+      }
       if (world.sender.sendingUnder != stamp) {
         broken.add('$call of ${call.strategyId} went out under '
             '${world.sender.sendingUnder} while the inputs were $stamp');
@@ -119,7 +126,6 @@ final class Model {
     _lastViewer.clear();
     _lastAccess.clear();
     _requestsSeen = server.readCalls.length;
-    _againAsked.clear();
     open(first: false);
   }
 
@@ -308,24 +314,6 @@ final class Model {
     log.add('$strategy refused as a viewer');
   }
 
-  void adoptAgain() {
-    _againAsked.add(strategyId);
-    world.sender.adopt(strategyId, again: true);
-    world.settle(Duration(milliseconds: random.nextInt(300)));
-    switch (random.nextInt(3)) {
-      case 0:
-        restart();
-        log.add('adoption interrupted by a restart');
-      case 1:
-        connection = nextConnection++;
-        _reconnects++;
-        world.connection = connection;
-        log.add('adoption interrupted by connection $connection');
-      case _:
-        log.add('adoption again');
-    }
-  }
-
   void checkRetireFloor() {
     heal();
     if (_element() == null) return;
@@ -356,27 +344,42 @@ final class Model {
         sender.runHold != null) {
       return;
     }
+    if (sender.busy || sender.woken) return;
+    final now = start.add(async.elapsed);
+    final latest = now.add(timing.readAgainAfter + const Duration(minutes: 1));
     for (final stored in sender.store.strategies()) {
       if (stored.ownerAccount != servedAccount) continue;
+      if (sender.cannotRead(stored.id) != null) continue;
       final cloud = world.cloud(stored.id);
-      final needs = [
+      final shown = sender.couldNotResolve(stored.id, cloud)?.subjects ?? [];
+      final unshown = {
         for (final view in cloud.views.values)
           for (final hold in view.holds)
-            if (hold case AwaitingResult(:final subject)) subject,
-      ];
-      if (needs.isEmpty) continue;
-      if (sender.couldNotResolve(stored.id, cloud) != null ||
-          sender.cannotRead(stored.id) != null) {
-        continue;
-      }
+            if (hold case AwaitingResult(:final subject)
+                when !shown.contains(CloudSender.readWords(subject)))
+              CloudSender.readWords(subject),
+      };
+      if (unshown.isEmpty) continue;
       final outlook = sender.outlook(stored.id, cloud);
-      final now = start.add(async.elapsed);
-      final tooFar = outlook is ReadAt &&
-          outlook.at.difference(now) >
-              timing.readAgainAfter + const Duration(minutes: 1);
-      if (outlook is NothingToRead || tooFar || !sender.looksAt(stored)) {
-        broken.add('${stored.id} asks for $needs with nothing scheduled and '
-            'nothing shown ($outlook, looked at: ${sender.looksAt(stored)})');
+      final settled = now.add(timing.longestWait);
+      final due = switch (outlook) {
+        ReadAt(:final at) when at.isAfter(settled) => at,
+        _ => settled,
+      };
+      final armed = sender.armedFor;
+      final problem = switch (outlook) {
+        _ when !sender.looksAt(stored) => 'the sender does not look at it',
+        NothingToRead() => 'nothing is planned',
+        _ when armed == null => 'a read is due by $due and no timer is armed',
+        _ when armed.isAfter(due) =>
+          'a read is due by $due and the timer is armed for $armed',
+        _ when armed.isAfter(latest) =>
+          'the timer is armed for $armed, past ten minutes from now',
+        _ => null,
+      };
+      if (problem != null) {
+        broken.add('${stored.id} asks for $unshown, none of it shown as '
+            'could not resolve: $problem ($outlook)');
       }
     }
   }
@@ -392,42 +395,43 @@ final class Model {
     for (var n = _requestsSeen; n < calls.length; n++) {
       final call = calls[n];
       final key = (call.strategyId, '$call');
-      if (call.why == 'the strategy was adopted' &&
-          call.page == null &&
-          !_againAsked.contains(call.strategyId)) {
+      if (call.why == 'the strategy was adopted' && call.page == null) {
         broken.add('the page list of ${call.strategyId}, which the store '
-            'holds, was read again for adoption that nobody asked for');
+            'holds, was read again for adoption');
       }
       switch (call.why) {
         case 'landed work waits for a result':
-          if (_lastRetire[key] case final last?
-              when call.at!.isAfter(last) &&
+          if (_lastRetire[key] case (final last, final under)
+              when under == _underAt[call] &&
+                  call.at!.isAfter(last) &&
                   call.at!.difference(last) < timing.retireAgainAfter) {
             broken.add('$call of ${call.strategyId} was requested to retire '
                 'landed work ${call.at!.difference(last)} after a recorded '
                 'read');
           }
         case 'edit access was lost':
-          if (_lastViewer[call.strategyId] case (final at, final reconnects)
-              when reconnects == _reconnects &&
+          if ((_lastViewer[call.strategyId], _lossAt[call])
+              case ((final at, final answered), final asked?)
+              when answered == asked &&
                   call.at!.isAfter(at) &&
                   call.at!.difference(at) < timing.readAgainAfter) {
             broken.add('the page list of ${call.strategyId} was requested for '
-                'edit access ${call.at!.difference(at)} after a viewer\'s');
+                'edit access ${call.at!.difference(at)} after a viewer\'s '
+                'answer to the same loss, under the same sign-in and '
+                'connection');
           }
           _lastAccess[call.strategyId] = call;
       }
     }
     _requestsSeen = calls.length;
-    _againAsked.removeWhere((id) => !world.sender.adopting(id));
   }
 
-  final _againAsked = <String>{};
+  final _lossAt = <ReadCall, (int, (int, int))>{};
+  final _underAt = <ReadCall, (int, int)>{};
 
   var _requestsSeen = 0;
-  var _reconnects = 0;
-  final _lastRetire = <(String, String), DateTime>{};
-  final _lastViewer = <String, (DateTime, int)>{};
+  final _lastRetire = <(String, String), (DateTime, (int, int)?)>{};
+  final _lastViewer = <String, (DateTime, (int, (int, int)))>{};
   final _lastAccess = <String, ReadCall>{};
   final _epochs = <String, int>{};
   final _needReads = <(String, String), List<(int, DateTime)>>{};
@@ -494,13 +498,19 @@ final class Model {
           }
         case ReadRecorded(:final strategyId, :final read, :final why, :final at)
             when why == 'landed work waits for a result':
-          _lastRetire[(strategyId, read == 'the page list' ? 'list' : read)] =
-              at;
+          _lastRetire[(strategyId, read == 'the page list' ? 'list' : read)] = (
+            at,
+            _underAt[server.readCalls.lastWhere(
+              (call) => call.strategyId == strategyId && call.at == at,
+            )],
+          );
         case ReadRecorded(:final strategyId, :final why, :final at)
             when why == 'edit access was lost':
           if (_lastAccess[strategyId] case final call?
               when call.role?.edits == false) {
-            _lastViewer[strategyId] = (at, _reconnects);
+            if (_lossAt[call] case final asked?) {
+              _lastViewer[strategyId] = (at, asked);
+            }
           }
         case _:
           break;
@@ -584,7 +594,6 @@ final class Model {
       log.add('hold while a write is held');
     } else if (choice == 0) {
       connection = nextConnection++;
-      _reconnects++;
       world.connection = connection;
       log.add('connection $connection while a write is held');
     } else {
@@ -599,12 +608,7 @@ final class Model {
   void readFault() {
     final strategy = strategies[random.nextInt(2)];
     final choice = random.nextInt(8);
-    final readSoon = random.nextBool();
-    log.add('read fault $strategy $choice${readSoon ? ', read soon' : ''}');
-    if (readSoon) {
-      _againAsked.add(strategy);
-      world.sender.adopt(strategy, again: true);
-    }
+    log.add('read fault $strategy $choice');
     switch (choice) {
       case 0:
         server.answerReadNext(
@@ -663,7 +667,6 @@ final class Model {
           switch (change) {
             case 0:
               connection = nextConnection++;
-              _reconnects++;
               world.connection = connection;
             case 1:
               _signedInAs(null);
@@ -711,7 +714,6 @@ final class Model {
       case 4:
         connection =
             connection == null || random.nextBool() ? nextConnection++ : null;
-        _reconnects++;
         world.connection = connection;
         log.add('connection $connection');
       case 5:
@@ -769,7 +771,7 @@ final class Model {
       case 23:
         viewerRefusal();
       case 24 when random.nextBool():
-        adoptAgain();
+        reopen();
       case 24:
         reopen();
       case _:
@@ -873,7 +875,6 @@ final class Model {
       ..refuseNext = 0;
     _signedInAs(servedAccount);
     connection = nextConnection++;
-    _reconnects++;
     world
       ..account = account
       ..connection = connection;

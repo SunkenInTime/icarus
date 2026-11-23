@@ -12,12 +12,10 @@
   {"wait": 12},
   {"tapIcon": "x", "optional": true},
   {"waitSettled": 60},
-  {"addPage": true},
-  {"wait": 10},
-  {"waitSettled": 60},
-  {"logPagesBar": true},
-  {"wait": 10},
-  {"storeAdopt": 60},
+  {"storeExpect": true},
+  {"storeAddPage": true},
   {"waitStoreSent": 60, "landed": "may wait"},
+  {"wait": 6},
+  {"logPagesBar": true},
   {"killNow": true}
 ]

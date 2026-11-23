@@ -455,7 +455,12 @@ final class World {
         signOuts: _signOuts,
       );
 
-  void _push() => sender.inputs = stamp;
+  var readEras = 0;
+
+  void _push() {
+    if (readsUnder(stamp) != readsUnder(sender.inputs)) readEras++;
+    sender.inputs = stamp;
+  }
 
   static World open(
     FakeAsync async, {

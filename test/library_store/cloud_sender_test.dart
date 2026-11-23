@@ -9,6 +9,7 @@ import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
+import 'package:icarus/library_store/landed_retiring.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -1040,11 +1041,16 @@ void main() {
         'per step, then goes out', () {
       final storage = MemoryStorage();
       final server = FakeServer();
-      inWorld((world) {
-        world.secondPageOnServer();
-        world.sender.adopt(strategyId, again: true);
-        world.settle();
-      }, storage: storage, server: server);
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
       inWorld(
         (world) {
           final before = server.readCalls.length;
@@ -1240,11 +1246,16 @@ void main() {
         'is read again, not left waiting', () {
       final storage = MemoryStorage();
       final server = FakeServer();
-      inWorld((world) {
-        world.secondPageOnServer();
-        world.sender.adopt(strategyId, again: true);
-        world.settle();
-      }, storage: storage, server: server);
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
       inWorld(
         (world) {
           server.readCalls.clear();
@@ -1272,11 +1283,16 @@ void main() {
         () {
       final storage = MemoryStorage();
       final server = FakeServer();
-      inWorld((world) {
-        world.secondPageOnServer();
-        world.sender.adopt(strategyId, again: true);
-        world.settle();
-      }, storage: storage, server: server);
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
       inWorld(
         (world) {
           server.overrideRead = (call) => call.page == secondId()
@@ -1530,6 +1546,193 @@ void main() {
           [for (var n = 0; n < 12; n++) 'page p1'],
         );
       });
+    });
+  });
+
+  group('reads remember one sign-in and connection', () {
+    List<String> readsAfter(World world, int before) =>
+        [for (final call in world.server.readCalls.skip(before)) '$call'];
+
+    String secondId() => secondPage().page.publicId;
+
+    void withSecondPage(MemoryStorage storage, FakeServer server) => inWorld(
+          (world) {
+            world.secondPageOnServer();
+            world.sender.adopt(strategyId);
+            world.settle();
+          },
+          storage: storage,
+          server: server,
+          addStrategy: false,
+        );
+
+    test(
+        'asking to adopt a strategy the store holds reads nothing and leaves '
+        'nothing pending, even when the server has deleted it', () {
+      inWorld((world) {
+        world.server.rows.remove(strategyId);
+        final before = world.server.readCalls.length;
+        world.sender.adopt(strategyId);
+        world.settle(const Duration(minutes: 1));
+        expect(readsAfter(world, before), isEmpty);
+        expect(world.sender.adopting(strategyId), isFalse);
+      });
+    });
+
+    test(
+        'a page delete whose page read the disk refuses to write is read '
+        'again, and a refused read is not counted toward could not resolve',
+        () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      inWorld(
+        (world) {
+          var refused = 0;
+          server.onRead = (call) {
+            if (call.page == secondId() && refused < 3) {
+              refused++;
+              world.lease.refuseNext = 1;
+            }
+          };
+          final before = server.readCalls.length;
+          world.commitPageDelete('delete-p2', secondId());
+          world.settle(const Duration(minutes: 1));
+          expect(
+            readsAfter(world, before).where((read) => read == 'page p2'),
+            hasLength(4),
+          );
+          expect(
+            world.readsRecorded().where((read) => read == 'page p2'),
+            hasLength(1),
+          );
+          expect(world.sender.couldNotResolve(strategyId), isNull);
+          expect(
+            [for (final call in server.calls) ...call.opIds],
+            contains('delete-p2'),
+          );
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a need shown as could not resolve is read again at once on a new '
+        'connection', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      inWorld(
+        (world) {
+          server.overrideRead = (call) => call.page == secondId()
+              ? const StoreReadAnswered(PageGone('nowhere'))
+              : null;
+          world.commitPageDelete('delete-p2', secondId());
+          world.settle(const Duration(minutes: 1));
+          expect(world.sender.couldNotResolve(strategyId), isNotNull);
+          final before = server.readCalls.length;
+          world.connection = null;
+          world.settle();
+          world.connection = 2;
+          world.settle(const Duration(seconds: 5));
+          expect(readsAfter(world, before), contains('page p2'));
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a second loss of edit access within ten minutes of an editor\'s '
+        'answer is read at once', () {
+      inWorld((world) {
+        world.server
+          ..roles[strategyId] = StoreReadRole.editor
+          ..answerWith(
+            strategyId,
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          );
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 30));
+        expect(world.queueLength(), 0);
+        world.server
+          ..roles[strategyId] = StoreReadRole.viewer
+          ..answerWith(
+            strategyId,
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          );
+        final before = world.server.readCalls.length;
+        world.commitMove(2);
+        world.settle(const Duration(seconds: 5));
+        expect(readsAfter(world, before), ['list']);
+        expect(world.face(), Face.editAccessLost);
+      });
+    });
+
+    test(
+        'a request to adopt made before a sign-out is dropped: signed in again '
+        'as the same account, nothing is read', () {
+      inWorld(
+        (world) {
+          world.sender.adopt(strategyId);
+          world.signIn(null);
+          world.signIn(servedAccount);
+          world.settle();
+          expect(world.server.readCalls, isEmpty);
+          expect(world.sender.adopting(strategyId), isFalse);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'the read record is replaced whole, every field, on a new connection, '
+        'on a different account and after a sign-out, before anything is '
+        'planned', () {
+      final changes = <String, void Function(World)>{
+        'a new connection': (world) => world
+          ..connection = null
+          ..connection = 2,
+        'a different account': (world) => world
+          ..signIn(otherAccount)
+          ..signIn(servedAccount),
+        'a sign-out': (world) => world
+          ..signIn(null)
+          ..signIn(servedAccount),
+      };
+      for (final MapEntry(key: change, value: make) in changes.entries) {
+        inWorld((world) {
+          final now = start.add(world.async.elapsed);
+          final seeded = (
+            under: readsUnder(world.sender.inputs),
+            retryAt: now.add(const Duration(hours: 1)),
+            failures: 4,
+            cannotRead: const CannotRead('seeded'),
+            viewer: (lossAttempt: 7, until: now.add(const Duration(hours: 1))),
+            rounds: {'page p1': (rounds: 3, at: now)},
+            retired: {
+              Retiring.list: (works: {(1, 0)}, at: now, rounds: 3),
+            },
+          );
+          world.sender.rememberReads(strategyId, seeded);
+          expect(world.sender.readMemory(strategyId), seeded, reason: change);
+          make(world);
+          expect(
+            world.sender.readMemory(strategyId),
+            freshReads(readsUnder(world.sender.inputs)),
+            reason: change,
+          );
+          final before = world.server.readCalls.length;
+          world.commitMove(1);
+          world.settle(const Duration(seconds: 40));
+          expect(readsAfter(world, before), ['page p1'], reason: change);
+        });
+      }
     });
   });
 

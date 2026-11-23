@@ -3,6 +3,7 @@
   {"tapIcon": "x", "optional": true},
   {"signIn": true},
   {"wait": 6},
+  {"storeExpect": "held"},
   {"waitStoreSent": 120, "landed": "may wait"},
   {"storeSyncState": true},
   {"holdSender": true},
