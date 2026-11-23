@@ -12,6 +12,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/services/cloud_strategy_export.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/delete_folder_alert_dialog.dart';
@@ -355,6 +356,7 @@ class _ControlledFolderProvider extends FolderProvider {
   @override
   Future<CloudLibraryActionResult> editFolder({
     required Folder folder,
+    LocalFolderEntry? local,
     required String newName,
     required int newIconId,
     required FolderColor newColor,

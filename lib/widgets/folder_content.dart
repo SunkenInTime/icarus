@@ -390,6 +390,7 @@ class FolderContent extends ConsumerWidget {
       lastUpdated: folderLastUpdated(folder, strategies),
       card: FolderCardViewData(
         folder: folder,
+        local: HiveFolderRecord(folder),
         strategies: strategies,
         folderCount: index.childFolderCount(folder.id),
       ),

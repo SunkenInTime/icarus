@@ -7,6 +7,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/cloud_library_action.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/widgets/color_picker_button.dart';
 import 'package:icarus/widgets/custom_segmented_tabs.dart';
@@ -28,9 +29,12 @@ class FolderEditDialog extends ConsumerStatefulWidget {
   const FolderEditDialog({
     super.key,
     this.folder,
+    this.local,
     this.store,
   });
   final Folder? folder;
+
+  final LocalFolderEntry? local;
 
   /// The store to write to. Defaults to the active workspace.
   final LibraryWorkspace? store;
@@ -68,6 +72,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
       if (widget.folder != null) {
         result = await ref.read(folderProvider.notifier).editFolder(
               folder: widget.folder!,
+              local: widget.local,
               newName: name,
               newIconId: _selectedIconId,
               newColor: _selectedColor,
