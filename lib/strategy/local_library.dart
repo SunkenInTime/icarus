@@ -107,6 +107,18 @@ final class LocalLibrary {
 
   Iterable<Folder> get storedFolders => _folders.values;
 
+  Iterable<({Object key, String id})> get storedStrategyNames => [
+        for (final key in _strategies.keys)
+          if (_strategies.get(key) case final strategy?)
+            (key: key as Object, id: strategy.id),
+      ];
+
+  Iterable<({Object key, String id})> get storedFolderNames => [
+        for (final key in _folders.keys)
+          if (_folders.get(key) case final folder?)
+            (key: key as Object, id: folder.id),
+      ];
+
   List<Stream<Object?>> boxEvents() => [_strategies.watch(), _folders.watch()];
 
   Set<String> boxFileNames() =>

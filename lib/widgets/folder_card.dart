@@ -788,12 +788,31 @@ class _FolderCardState extends ConsumerState<FolderCard>
             : () async {
                 _closeMenus();
                 if (widget.isDemo || _refusedOffline()) return;
+                final HiveFolderRecord? record;
+                switch (widget.data.local) {
+                  case null:
+                    record = null;
+                  case final entry:
+                    record =
+                        ref.read(localLibraryViewProvider).recordFor(entry);
+                    if (record == null) {
+                      AppErrorReporter.reportError(
+                        l10n.folderEditSaveFailed,
+                        error: StateError(
+                          'the library holds no folder under ${_folder.id}',
+                        ),
+                        stackTrace: StackTrace.current,
+                        source: 'FolderCard.edit',
+                      );
+                      return;
+                    }
+                }
                 await showDialog<String>(
                   context: context,
                   builder: (context) {
                     return FolderEditDialog(
                       folder: _folder,
-                      local: widget.data.local,
+                      local: record,
                       store: widget.store,
                     );
                   },

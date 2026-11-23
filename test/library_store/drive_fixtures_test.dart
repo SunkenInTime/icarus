@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
@@ -20,6 +21,7 @@ import 'hive_scratch.dart';
 final _notInStoreOut = Platform.environment['ICARUS_NOT_IN_STORE_FIXTURE'];
 final _storeToAge = Platform.environment['ICARUS_AGE_STORE'];
 final _smallOut = Platform.environment['ICARUS_SMALL_LIBRARY_FIXTURE'];
+final _keptOut = Platform.environment['ICARUS_KEPT_ON_HIVE_FIXTURE'];
 
 const unreadableInStoreId = 'fixture-unreadable-in-store';
 const newerBuildId = 'fixture-newer-build';
@@ -98,7 +100,48 @@ Future<void> writeNotInStoreFixture(
   );
 }
 
+Future<void> writeKeptOnHiveFixture(Directory out) async {
+  final bare = generatedStrategy(Optionals.unset).copyWith(
+    pages: [
+      for (final page in generatedStrategy(Optionals.unset).pages)
+        page.copyWith(drawingData: const []),
+    ],
+  );
+  Folder folder(String id, String name) =>
+      Folder(name: name, id: id, dateCreated: DateTime.utc(2026, 2, 1));
+  await openScratchHive(
+    out,
+    strategies: [bare.copyWith(id: 'fixture-kept', name: 'Kept')],
+    folders: [folder('fixture-retakes', 'Retakes')],
+  );
+  final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+  final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
+  await strategies.put(
+    1,
+    bare.copyWith(id: 'fixture-numbered', name: 'Strategy under a number'),
+  );
+  await folders.put(0, folder('fixture-plans', 'Under a number'));
+  await folders.put('fixture-plans', folder('fixture-plans', 'Under its id'));
+  await folders.put(
+    'fixture-alternate',
+    folder('fixture-elsewhere', 'Under another key'),
+  );
+  await Hive.close();
+}
+
 void main() {
+  test(
+    'writes a library with records the store cannot name by id: a folder sharing its id with another, a folder and a strategy under integer keys, a folder under a key that is not its id',
+    () async {
+      final out = Directory(_keptOut!)..createSync(recursive: true);
+      expect(out.listSync(), isEmpty, reason: 'give the fixture a new folder');
+      await writeKeptOnHiveFixture(out);
+    },
+    skip: _keptOut == null
+        ? 'set ICARUS_KEPT_ON_HIVE_FIXTURE to a new folder'
+        : false,
+  );
+
   test(
     'writes a library with a strategy the converter refuses and one the store cannot read',
     () async {

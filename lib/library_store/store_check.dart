@@ -3,6 +3,7 @@ import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/row_texts.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
@@ -153,6 +154,7 @@ final class StoreChecked extends StoreCheck {
     required List<StrategyCheck> strategies,
     required List<FolderCheck> folders,
     required List<UnplacedRow> unplaced,
+    required this.keptOnHive,
   })  : notMirrored = List.unmodifiable(notMirrored),
         foreignNames = List.unmodifiable(foreignNames),
         strategies = List.unmodifiable(strategies),
@@ -166,6 +168,7 @@ final class StoreChecked extends StoreCheck {
   final List<StrategyCheck> strategies;
   final List<FolderCheck> folders;
   final List<UnplacedRow> unplaced;
+  final HiveNames keptOnHive;
 
   int get sameStrategies => strategies.whereType<StrategySame>().length;
 
@@ -285,6 +288,7 @@ Future<StoreCheck> checkStoreAgainstHive(
         FolderWriteRefused(key, value),
     ],
     unplaced: list.unplaced,
+    keptOnHive: hive.names,
   );
 }
 

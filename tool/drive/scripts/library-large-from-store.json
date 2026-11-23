@@ -5,6 +5,7 @@
   {"resize": [1600, 900]},
   {"wait": 2},
   {"logLibrary": "start"},
+  {"libraryFromStore": "before scrolling", "seconds": 60, "expect": {"fromHive": 0}},
   {"framesStart": 1},
   {"scrollAt": [800, 600, 1500]},
   {"wait": 1},

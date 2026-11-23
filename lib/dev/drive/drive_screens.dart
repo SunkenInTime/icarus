@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
@@ -220,7 +221,10 @@ List<GridRow> gridRowsOnScreen() {
           name: strategy.name,
           row: strategy as Object,
         ),
-      FolderCard(data: FolderCardViewData(:final folder)) => (
+      FolderCard(
+        data: FolderCardViewData(local: LocalFolderEntry(:final folder))
+      ) =>
+        (
           kind: 'folder',
           id: folder.id,
           name: folder.name,

@@ -1,10 +1,10 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/domain/folder.dart';
@@ -20,77 +20,9 @@ import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 import '../library_rows/generated_strategies.dart';
+import 'gated_engine.dart';
 import 'hive_scratch.dart';
 import 'tile_parity.dart';
-
-final class _Gate {
-  Completer<void>? _held;
-  var failNext = false;
-  var commits = 0;
-
-  bool get isHeld => _held != null;
-
-  void hold() => _held ??= Completer<void>();
-
-  void release() {
-    _held?.complete();
-    _held = null;
-  }
-}
-
-final class _GatedEngine implements StorageEngine {
-  _GatedEngine(this.inner, this.gate);
-
-  final StorageEngine inner;
-  final _Gate gate;
-
-  @override
-  Future<Leasing> lease() async => switch (await inner.lease()) {
-        Leased(:final lease) => Leased(_GatedLease(lease, gate)),
-        final other => other,
-      };
-}
-
-final class _GatedLease implements StorageLease {
-  _GatedLease(this.inner, this.gate);
-
-  final StorageLease inner;
-  final _Gate gate;
-
-  @override
-  int get maxKeyLength => inner.maxKeyLength;
-
-  @override
-  LeaseStatus get status => inner.status;
-
-  @override
-  Future<KeyRead> read(String area, String key) => inner.read(area, key);
-
-  @override
-  Future<Stored<List<String>>> keys(String area, String prefix) =>
-      inner.keys(area, prefix);
-
-  @override
-  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
-      inner.entries(area, prefix);
-
-  @override
-  Future<Stored<List<String>>> areas(String prefix) => inner.areas(prefix);
-
-  @override
-  Future<Committing> commit(List<Change> changes) async {
-    gate.commits++;
-    if (gate._held case final held?) await held.future;
-    if (gate.failNext) {
-      gate.failNext = false;
-      return const CommitRefused(DeviceFailure('the disk is full'));
-    }
-    return inner.commit(changes);
-  }
-
-  @override
-  Future<Releasing> release() => inner.release();
-}
 
 String _tile(LocalStrategySummary strategy) => [
       strategy.id,
@@ -119,6 +51,19 @@ StrategyData _withoutDrawings(StrategyData strategy) => strategy.copyWith(
         for (final page in strategy.pages) page.copyWith(drawingData: const []),
       ],
     );
+
+StrategyData _pagesOutOfOrder(String id) {
+  final bare = _withoutDrawings(generatedStrategy(Optionals.unset));
+  final page = bare.pages.first;
+  return bare.copyWith(
+    id: id,
+    name: 'Pages out of order',
+    pages: [
+      page.copyWith(id: '$id-attack', sortIndex: 1, isAttack: true),
+      page.copyWith(id: '$id-defend', sortIndex: 0, isAttack: false),
+    ],
+  );
+}
 
 StrategyData _portraitsCrossed(String id) {
   final bare = _withoutDrawings(generatedStrategy(Optionals.unset));
@@ -205,6 +150,9 @@ void main() {
     var drawnFromStore = 0;
     var foldersFromStore = 0;
     var crossedFromStore = 0;
+    var reorderedFromStore = 0;
+    var keptStrategiesSeen = 0;
+    var keptFoldersSeen = 0;
     for (var seed = 0; seed < 24; seed++) {
       final random = Random(seed);
       await openScratchHive(
@@ -218,14 +166,45 @@ void main() {
               lastEdited: DateTime.utc(2026, 1, 1, 0, 0, n),
             ),
           _portraitsCrossed('s$seed-crossed'),
+          _pagesOutOfOrder('s$seed-reordered'),
         ],
         folders: [
           Folder(name: 'Root', id: 'f$seed-root', dateCreated: DateTime(2026)),
+          Folder(name: 'Spare', id: 'f$seed-spare', dateCreated: DateTime(2026)),
         ],
       );
-      final gate = _Gate();
+      final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      final folderBox = Hive.box<Folder>(HiveBoxNames.foldersBox);
+      await strategyBox.add(
+        _shapes[0].copyWith(id: 's$seed-numbered', name: 'Under a number'),
+      );
+      await strategyBox.put(
+        's$seed-alias',
+        _shapes[1].copyWith(id: 's$seed-aliased', name: 'Under another key'),
+      );
+      await strategyBox.put(
+        's$seed-twin',
+        _shapes[0].copyWith(id: 's$seed-1', name: 'Twin of 1'),
+      );
+      await folderBox.add(
+        Folder(
+            name: 'Numbered',
+            id: 'f$seed-numbered',
+            dateCreated: DateTime(2026)),
+      );
+      await folderBox.put(
+        'f$seed-alias',
+        Folder(
+            name: 'Aliased', id: 'f$seed-aliased', dateCreated: DateTime(2026)),
+      );
+      await folderBox.put(
+        'f$seed-twin',
+        Folder(
+            name: 'Twin spare', id: 'f$seed-spare', dateCreated: DateTime(2026)),
+      );
+      final gate = CommitGate();
       final store = switch (await LibraryStore.open(
-        _GatedEngine(MemoryEngine(MemoryStorage()), gate),
+        GatedEngine(MemoryEngine(MemoryStorage()), gate),
         canRead: appCanRead,
       )) {
         StoreOpened(:final store) => store,
@@ -242,6 +221,10 @@ void main() {
         clock: () => Duration.zero,
       )..follow(mirror);
       LocalLibrary.follower = mirror;
+      final keptStrategies = mirror.reads.names.strategies.keptIds;
+      final keptFolders = mirror.reads.names.folders.keptIds;
+      expect(keptStrategies, {'s$seed-numbered', 's$seed-aliased', 's$seed-1'});
+      expect(keptFolders, {'f$seed-numbered', 'f$seed-aliased', 'f$seed-spare'});
 
       bool fromStoreByRule(String id, {required bool folder}) =>
           switch (listing.source) {
@@ -259,8 +242,11 @@ void main() {
         }
         final stored = const LocalLibrary().storedStrategy(fromHive.id)!;
         final inGroups = HiveLibraryListing.asStored(inGroupOrder(stored));
+        final asTheStoreHasIt =
+            HiveLibraryListing.asStored(inGroupOrder(inPageOrder(stored)));
         if (_tile(inGroups) != _tile(fromHive)) crossedFromStore++;
-        return _tile(inGroups);
+        if (_tile(asTheStoreHasIt) != _tile(inGroups)) reorderedFromStore++;
+        return _tile(asTheStoreHasIt);
       }
 
       void check(String when) {
@@ -279,13 +265,18 @@ void main() {
             row.notInStore,
             switch (listing.source) {
               ListFromStore(:final mirror) =>
-                mirror.refusedStrategies.containsKey(row.id),
+                mirror.refusedStrategies.containsKey(row.id) ||
+                    keptStrategies.contains(row.id),
               ListFromHive() => false,
             },
             reason: 'seed $seed, $when, mark on ${row.id}',
           );
           final fromStore = listing.drewFromStore(row);
           if (fromStore) drawnFromStore++;
+          if (keptStrategies.contains(row.id)) {
+            keptStrategiesSeen++;
+            expect(fromStore, isFalse, reason: 'seed $seed, $when, ${row.id}');
+          }
           expect(
             fromStore,
             fromStoreByRule(row.id, folder: false),
@@ -301,6 +292,11 @@ void main() {
         for (final folder in folders) {
           final fromStore = listing.drewFromStore(folder);
           if (fromStore) foldersFromStore++;
+          if (keptFolders.contains(folder.id)) {
+            keptFoldersSeen++;
+            expect(fromStore, isFalse,
+                reason: 'seed $seed, $when, ${folder.id}');
+          }
           expect(
             fromStore,
             fromStoreByRule(folder.id, folder: true),
@@ -308,16 +304,31 @@ void main() {
           );
         }
         for (final strategy in hive.strategiesAsStored()) {
+          final byId = listing.strategy(strategy.id);
+          if (keptStrategies.contains(strategy.id)) {
+            final underThatKey =
+                hive.strategyAsStored(strategy.id, notInStore: const {});
+            expect(
+              byId == null ? null : _tile(byId),
+              underThatKey == null ? null : _tile(underThatKey),
+              reason: 'seed $seed, $when, ${strategy.id} looked up by id',
+            );
+            continue;
+          }
           expect(
-            _tile(listing.strategy(strategy.id)!),
+            _tile(byId!),
             expectedTile(strategy),
             reason: 'seed $seed, $when, ${strategy.id}',
           );
         }
         for (final folder in hive.foldersAsStored()) {
+          final byId = listing.folder(folder.id);
+          final expected = keptFolders.contains(folder.id)
+              ? hive.folderAsStored(folder.id)
+              : folder;
           expect(
-            _folder(listing.folder(folder.id)!),
-            _folder(folder),
+            byId == null ? null : _folder(byId),
+            expected == null ? null : _folder(expected),
             reason: 'seed $seed, $when, ${folder.id}',
           );
           expect(
@@ -368,7 +379,11 @@ void main() {
           case 2 || 3:
             final id = pick(strategyIds()) ?? 'missing';
             what = 'rename $id';
-            action = const LocalLibrary().renameStrategy(id, 'Renamed $step');
+            action = switch (const LocalLibrary().storedStrategy(id)) {
+              final stored? =>
+                const LocalLibrary().renameStrategy(stored, 'Renamed $step'),
+              null => Future.value(const LibraryWritten()),
+            };
           case 4:
             final id = pick(strategyIds()) ?? 'missing';
             final to = switch (random.nextInt(3)) {
@@ -377,7 +392,10 @@ void main() {
               _ => pick(folderIds()),
             };
             what = 'move $id to $to';
-            action = const LocalLibrary().moveStrategy(id, to);
+            action = switch (const LocalLibrary().storedStrategy(id)) {
+              final stored? => const LocalLibrary().moveStrategy(stored, to),
+              null => Future.value(const LibraryWritten()),
+            };
           case 5:
             final id = pick(strategyIds()) ?? 'missing';
             what = 'delete $id';
@@ -473,5 +491,8 @@ void main() {
     expect(drawnFromStore, greaterThan(5000));
     expect(foldersFromStore, greaterThan(1000));
     expect(crossedFromStore, greaterThan(100));
+    expect(reorderedFromStore, greaterThan(100));
+    expect(keptStrategiesSeen, greaterThan(1000));
+    expect(keptFoldersSeen, greaterThan(1000));
   }, timeout: const Timeout(Duration(minutes: 5)));
 }

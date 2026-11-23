@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
@@ -45,6 +46,10 @@ abstract interface class LibraryBoxes {
   Iterable<StrategyData> get strategies;
 
   Iterable<Folder> get folders;
+
+  Iterable<HiveRecordName> get strategyNames;
+
+  Iterable<HiveRecordName> get folderNames;
 }
 
 final class _HiveBoxes implements LibraryBoxes {
@@ -62,6 +67,14 @@ final class _HiveBoxes implements LibraryBoxes {
 
   @override
   Iterable<Folder> get folders => const LocalLibrary().storedFolders;
+
+  @override
+  Iterable<HiveRecordName> get strategyNames =>
+      const LocalLibrary().storedStrategyNames;
+
+  @override
+  Iterable<HiveRecordName> get folderNames =>
+      const LocalLibrary().storedFolderNames;
 }
 
 List<Stream<Object?>> libraryBoxEvents() => const LocalLibrary().boxEvents();
@@ -75,6 +88,10 @@ final class HiveReads {
   HiveReads.over(this._boxes);
 
   final LibraryBoxes _boxes;
+  late final HiveNames names = HiveNames.of(
+    strategies: _boxes.strategyNames,
+    folders: _boxes.folderNames,
+  );
   final _strategiesWriting = <String, int>{};
   final _foldersWriting = <String, int>{};
 
@@ -111,30 +128,39 @@ final class HiveReads {
     }
   }
 
-  HiveRead<StrategyData> strategy(String id) => strategyWriting(id)
-      ? const HiveStillWriting()
-      : switch (_boxes.strategy(id)) {
-          final strategy? => InHive(strategyAsHiveHoldsIt(strategy)),
-          null => const NotInHive(),
-        };
+  HiveRead<StrategyData> strategy(String id) => switch (id) {
+        _ when !names.strategies.namesById(id) => const NotInHive(),
+        _ when strategyWriting(id) => const HiveStillWriting(),
+        _ => switch (_boxes.strategy(id)) {
+            final strategy? => InHive(strategyAsHiveHoldsIt(strategy)),
+            null => const NotInHive(),
+          },
+      };
 
-  HiveRead<Folder> folder(String id) => folderWriting(id)
-      ? const HiveStillWriting()
-      : switch (_boxes.folder(id)) {
-          final folder? => InHive(folderAsHiveHoldsIt(folder)),
-          null => const NotInHive(),
-        };
+  HiveRead<Folder> folder(String id) => switch (id) {
+        _ when !names.folders.namesById(id) => const NotInHive(),
+        _ when folderWriting(id) => const HiveStillWriting(),
+        _ => switch (_boxes.folder(id)) {
+            final folder? => InHive(folderAsHiveHoldsIt(folder)),
+            null => const NotInHive(),
+          },
+      };
 
   HiveSnapshot library() => HiveSnapshot(
         library: HiveLibrary(
           strategies: [
             for (final strategy in _boxes.strategies)
-              if (!strategyWriting(strategy.id)) strategy,
+              if (names.strategies.namesById(strategy.id) &&
+                  !strategyWriting(strategy.id))
+                strategy,
           ],
           folders: [
             for (final folder in _boxes.folders)
-              if (!folderWriting(folder.id)) folder,
+              if (names.folders.namesById(folder.id) &&
+                  !folderWriting(folder.id))
+                folder,
           ],
+          names: names,
         ),
         strategiesWriting: _strategiesWriting.keys.toSet(),
         foldersWriting: _foldersWriting.keys.toSet(),

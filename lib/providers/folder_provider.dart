@@ -272,7 +272,7 @@ class FolderProvider extends Notifier<String?> {
 
   Future<CloudLibraryActionResult> editFolder({
     required Folder folder,
-    LocalFolderEntry? local,
+    HiveFolderRecord? local,
     required String newName,
     required int newIconId,
     required FolderColor newColor,
@@ -311,8 +311,8 @@ class FolderProvider extends Notifier<String?> {
       return result;
     }
 
-    (await _restyle(
-      local ?? HiveFolderRecord(folder),
+    (await const LocalLibrary().restyleFolder(
+      local?.folder ?? folder,
       name: newName,
       iconId: newIconId,
       customColor: newCustomColor,
@@ -321,23 +321,6 @@ class FolderProvider extends Notifier<String?> {
         .orThrow();
     return CloudLibraryActionResult.succeeded;
   }
-
-  Future<LibraryWrite> _restyle(
-    LocalFolderEntry entry, {
-    required String name,
-    required int iconId,
-    required Color? customColor,
-    required FolderColor color,
-  }) =>
-      switch (entry) {
-        HiveFolderRecord(:final folder) => const LocalLibrary().restyleFolder(
-            folder,
-            name: name,
-            iconId: iconId,
-            customColor: customColor,
-            color: color,
-          ),
-      };
 
   Future<CloudLibraryActionResult> moveToFolder({
     required String folderID,

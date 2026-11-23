@@ -6,6 +6,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
+import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -88,26 +89,28 @@ final class ListFromStore extends LibraryListSource {
 
 int _byKey(String a, String b) => a.compareTo(b);
 
+List<Object> _keysFromHive(Set<String> ids, BoxNames names) => [
+      ...{...ids, for (final record in names.kept) record.key},
+    ]..sort(compareHiveKeys);
+
 Iterable<T> _merged<T>(
   Iterable<MapEntry<String, T>> stored,
-  List<String> fromHive,
-  T? Function(String id) hive,
+  Set<String> idsFromHive,
+  List<Object> keysFromHive,
+  T? Function(Object key) hive,
 ) sync* {
   var next = 0;
   for (final MapEntry(:key, :value) in stored) {
-    while (next < fromHive.length && _byKey(fromHive[next], key) < 0) {
-      if (hive(fromHive[next]) case final item?) yield item;
+    if (idsFromHive.contains(key)) continue;
+    while (next < keysFromHive.length &&
+        compareHiveKeys(keysFromHive[next], key) < 0) {
+      if (hive(keysFromHive[next]) case final item?) yield item;
       next++;
-    }
-    if (next < fromHive.length && fromHive[next] == key) {
-      if (hive(key) case final item?) yield item;
-      next++;
-      continue;
     }
     yield value;
   }
-  for (; next < fromHive.length; next++) {
-    if (hive(fromHive[next]) case final item?) yield item;
+  for (; next < keysFromHive.length; next++) {
+    if (hive(keysFromHive[next]) case final item?) yield item;
   }
 }
 
@@ -201,26 +204,35 @@ final class StoreLibraryListing implements LocalLibraryListing {
   Set<String> _foldersFromHive(StoreMirror mirror) =>
       {...mirror.foldersNotKnownEqual, ..._unshowableFolders};
 
-  Iterable<LocalStrategySummary> _strategiesNow() => switch (source) {
-        ListFromHive() => _hive.strategiesAsStored(),
-        ListFromStore(:final mirror) => _merged(
-            _stored.entries,
-            _strategiesFromHive(mirror).toList()..sort(_byKey),
-            (id) => _hive.strategyAsStored(
-              id,
-              notInStore: _marked.strategies.contains(id),
-            ),
-          ),
-      };
+  Iterable<LocalStrategySummary> _strategiesNow() {
+    switch (source) {
+      case ListFromHive():
+        return _hive.strategiesAsStored();
+      case ListFromStore(:final mirror):
+        final ids = _strategiesFromHive(mirror);
+        return _merged(
+          _stored.entries,
+          ids,
+          _keysFromHive(ids, mirror.reads.names.strategies),
+          (key) => _hive.strategyAsStored(key, notInStore: _marked.strategies),
+        );
+    }
+  }
 
-  Iterable<Folder> _foldersNow() => switch (source) {
-        ListFromHive() => _hive.foldersAsStored(),
-        ListFromStore(:final mirror) => _merged(
-            _storedFolders.entries,
-            _foldersFromHive(mirror).toList()..sort(_byKey),
-            _hive.folderAsStored,
-          ),
-      };
+  Iterable<Folder> _foldersNow() {
+    switch (source) {
+      case ListFromHive():
+        return _hive.foldersAsStored();
+      case ListFromStore(:final mirror):
+        final ids = _foldersFromHive(mirror);
+        return _merged(
+          _storedFolders.entries,
+          ids,
+          _keysFromHive(ids, mirror.reads.names.folders),
+          _hive.folderAsStored,
+        );
+    }
+  }
 
   void holdOnHive() => _moving(() => _held = true);
 
@@ -354,8 +366,16 @@ final class StoreLibraryListing implements LocalLibraryListing {
   ({bool strategies, bool folders}) _marksChanged() {
     final marked = switch (source) {
       ListFromStore(:final mirror) => (
-          strategies: {...mirror.refusedStrategies.keys, ..._unshowable},
-          folders: {...mirror.refusedFolders.keys, ..._unshowableFolders},
+          strategies: {
+            ...mirror.refusedStrategies.keys,
+            ..._unshowable,
+            ...mirror.reads.names.strategies.keptIds,
+          },
+          folders: {
+            ...mirror.refusedFolders.keys,
+            ..._unshowableFolders,
+            ...mirror.reads.names.folders.keptIds,
+          },
         ),
       ListFromHive() => (
           strategies: const <String>{},
@@ -384,10 +404,7 @@ final class StoreLibraryListing implements LocalLibraryListing {
   @override
   LocalStrategySummary? strategy(String id) => _fromStore(id)
       ? _stored[id]
-      : _hive.strategyAsStored(
-          id,
-          notInStore: _marked.strategies.contains(id),
-        );
+      : _hive.strategyAsStored(id, notInStore: _marked.strategies);
 
   @override
   Folder? folder(String id) =>
@@ -396,6 +413,11 @@ final class StoreLibraryListing implements LocalLibraryListing {
   @override
   List<Folder> folderChildren(String id) =>
       _foldersNow().where((folder) => folder.parentID == id).toList();
+
+  @override
+  LocalFolderEntry folderEntry(Folder folder) => drewFromStore(folder)
+      ? StoreFolderRow(folder)
+      : _hive.folderEntry(folder);
 
   @override
   bool get holdsAnything =>

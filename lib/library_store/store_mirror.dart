@@ -114,8 +114,9 @@ final class StoreMirror extends LocalLibraryFollower {
   void onAnswered(LibraryTouch touch) {
     _noticed++;
     reads.answered(touch);
-    _strategies.addAll(touch.strategies);
-    _folders.addAll(touch.folders);
+    _strategies
+        .addAll(touch.strategies.where(reads.names.strategies.namesById));
+    _folders.addAll(touch.folders.where(reads.names.folders.namesById));
     _kick();
   }
 
@@ -134,6 +135,7 @@ final class StoreMirror extends LocalLibraryFollower {
         ..._strategiesInFlight,
         ...reads.strategiesBeingWritten,
         ..._refusedStrategies.keys,
+        ...reads.names.strategies.keptIds,
       };
 
   Set<String> get foldersNotKnownEqual => {
@@ -141,6 +143,7 @@ final class StoreMirror extends LocalLibraryFollower {
         ..._foldersInFlight,
         ...reads.foldersBeingWritten,
         ..._refusedFolders.keys,
+        ...reads.names.folders.keptIds,
       };
 
   Future<ShadowCopy> copyThenFollow(

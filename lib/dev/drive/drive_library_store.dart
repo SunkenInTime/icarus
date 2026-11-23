@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
+import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/library_listing.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -111,7 +112,16 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
               'not mirrored ${checked.notMirrored.length}; folder '
               'problems ${checked.folderProblems.length}; names this build '
               'does not know ${checked.foreignNames.length}; unplaced rows '
-              '${checked.unplaced.length}; ${took.inMilliseconds} ms',
+              '${checked.unplaced.length}; kept on Hive '
+              '${checked.keptOnHive.strategies.kept.length} strategies '
+              '${checked.keptOnHive.folders.kept.length} folders; '
+              '${took.inMilliseconds} ms',
+          for (final (kind, names) in [
+            ('strategy', checked.keptOnHive.strategies),
+            ('folder', checked.keptOnHive.folders),
+          ])
+            for (final (:key, :id, :reason) in names.kept)
+              'STORE kept on Hive $kind $id at key $key: $reason',
           for (final problem in checked.strategyProblems)
             ...switch (problem) {
               StrategySame() => const <String>[],
@@ -415,16 +425,23 @@ String? listSourceName(ProviderContainer c) =>
       null => null,
     };
 
+String? _keptBecause(BoxNames names, String id) => [
+      for (final record in names.kept)
+        if (record.id == id) 'kept on Hive: ${record.reason}',
+    ].firstOrNull;
+
 String _refusalOf(StoreMirror mirror, String strategyId) =>
     switch (mirror.refusedStrategies[strategyId]) {
       final reason? => '$reason',
-      null => 'this build cannot show its stored summary',
+      null => _keptBecause(mirror.reads.names.strategies, strategyId) ??
+          'this build cannot show its stored summary',
     };
 
 String _folderRefusalOf(StoreMirror mirror, String folderId) =>
     switch (mirror.refusedFolders[folderId]) {
       final reason? => '$reason',
-      null => 'this build cannot show its stored row',
+      null => _keptBecause(mirror.reads.names.folders, folderId) ??
+          'this build cannot show its stored row',
     };
 
 Future<List<String>> waitForStoreList(
@@ -602,17 +619,20 @@ String letListGo(ProviderContainer c) {
   return 'STORE list let go';
 }
 
-Future<bool> mirrorDrained(ProviderContainer c) async {
+enum MirrorWait { notMirroring, drained, stillBusy }
+
+Future<MirrorWait> mirrorDrained(ProviderContainer c) async {
   if (c.read(shadowProvider.notifier).mode case Mirroring(:final mirror)
       when mirror.phase is MirrorFollowing) {
-    await mirror.drained().timeout(
-          const Duration(seconds: 2),
-          onTimeout: () {},
-        );
+    final drained = await mirror
+        .drained()
+        .then((_) => true)
+        .timeout(const Duration(seconds: 30), onTimeout: () => false);
+    if (!drained) return MirrorWait.stillBusy;
     await WidgetsBinding.instance.endOfFrame;
-    return true;
+    return MirrorWait.drained;
   }
-  return false;
+  return MirrorWait.notMirroring;
 }
 
 List<String> listEndLines(ProviderContainer c) {

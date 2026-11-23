@@ -207,7 +207,7 @@ class FolderContent extends ConsumerWidget {
                   folder: item,
                   currentFolderId: folder?.id,
                 ))
-                  _localFolderRow(item, index),
+                  _localFolderRow(item, index, library),
             ];
             final strategies = [
               for (final item in allStrategies)
@@ -382,7 +382,11 @@ class FolderContent extends ConsumerWidget {
         policy.supports(PlatformFeature.importFiles);
   }
 
-  LibraryFolderRow _localFolderRow(Folder folder, LocalFolderIndex index) {
+  LibraryFolderRow _localFolderRow(
+    Folder folder,
+    LocalFolderIndex index,
+    LocalLibraryView library,
+  ) {
     final strategies = index.strategiesInTree(folder);
     return LibraryFolderRow(
       folder: folder,
@@ -390,7 +394,7 @@ class FolderContent extends ConsumerWidget {
       lastUpdated: folderLastUpdated(folder, strategies),
       card: FolderCardViewData(
         folder: folder,
-        local: HiveFolderRecord(folder),
+        local: library.folderEntry(folder),
         strategies: strategies,
         folderCount: index.childFolderCount(folder.id),
       ),

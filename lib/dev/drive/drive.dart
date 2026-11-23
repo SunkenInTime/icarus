@@ -355,8 +355,14 @@ Future<void> _play(String script) async {
       _log('FAIL checking items: $error');
     }
     _logScreensIfChanged('step $_steps');
-    if (await mirrorDrained(appProviderContainer)) {
-      _logScreensIfChanged('step $_steps after the mirror drained');
+    switch (await mirrorDrained(appProviderContainer)) {
+      case MirrorWait.drained:
+        _logScreensIfChanged('step $_steps after the mirror drained');
+      case MirrorWait.stillBusy:
+        _failedSteps++;
+        _log('FAIL step $_steps: the mirror had not drained 30 s after it');
+      case MirrorWait.notMirroring:
+        break;
     }
     _logCloudStore(_cloudStore.drain(appProviderContainer));
     await _flush();
@@ -2170,22 +2176,35 @@ Future<void> _watchLibraryText(
   required String mark,
   required num seconds,
 }) async {
-  final deadline = DateTime.now().add(
-    Duration(milliseconds: (seconds * 1000).round()),
-  );
-  bool late() => DateTime.now().isAfter(deadline);
-  while (_marks[mark] == null && !late()) {
+  bool settled() =>
+      libraryOnScreen().any((line) => line.contains('"$text"')) != gone;
+  void fail(String why) {
+    _failedSteps++;
+    _log('FAIL "$text" $why');
+  }
+
+  if (settled()) {
+    fail('was already ${gone ? 'gone from' : 'on'} the library screen '
+        'before $mark');
+    return;
+  }
+  final before = _marks[mark];
+  final markBy = DateTime.now().add(const Duration(minutes: 2));
+  while (identical(_marks[mark], before) && DateTime.now().isBefore(markBy)) {
     await Future<void>.delayed(const Duration(milliseconds: 1));
   }
-  while (!late() &&
-      libraryOnScreen().any((line) => line.contains('"$text"')) == gone) {
+  final since = _marks[mark];
+  if (since == null || identical(since, before)) {
+    fail('was watched for, but $mark never happened');
+    return;
+  }
+  final patience = Duration(milliseconds: (seconds * 1000).round());
+  while (since.elapsed < patience && !settled()) {
     await Future<void>.delayed(const Duration(milliseconds: 2));
   }
-  final since = _marks[mark];
-  if (since == null || late()) {
-    _failedSteps++;
-    _log('FAIL "$text" never ${gone ? 'left' : 'reached'} the library on '
-        'screen within $seconds s of $mark');
+  if (!settled()) {
+    fail('never ${gone ? 'left' : 'reached'} the library on screen within '
+        '$seconds s of $mark');
     return;
   }
   _log('TIMED $mark "$text" ${gone ? 'gone from' : 'on'} the library screen '

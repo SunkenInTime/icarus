@@ -22,6 +22,13 @@ final class HiveFolderRecord extends LocalFolderEntry {
   final Folder folder;
 }
 
+final class StoreFolderRow extends LocalFolderEntry {
+  const StoreFolderRow(this.folder);
+
+  @override
+  final Folder folder;
+}
+
 abstract interface class LocalStrategySummary {
   factory LocalStrategySummary.fromHive(StrategyData strategy) =
       _HiveStrategySummary;
@@ -127,17 +134,23 @@ final class _Mapped<S, T> implements ValueListenable<T> {
       _source.removeListener(listener);
 }
 
-Folder _folderAsStored(Folder folder) => Folder(
-      name: folder.name,
-      id: folder.id,
-      dateCreated: DateTime.fromMillisecondsSinceEpoch(
-        folder.dateCreated.millisecondsSinceEpoch,
-      ),
-      iconId: folder.iconId,
-      color: folder.color,
-      parentID: folder.parentID,
-      customColor: folder.customColor,
-    );
+final _recordBehind = Expando<Folder>('the Hive record a copy was made from');
+
+Folder _folderAsStored(Folder folder) {
+  final copy = Folder(
+    name: folder.name,
+    id: folder.id,
+    dateCreated: DateTime.fromMillisecondsSinceEpoch(
+      folder.dateCreated.millisecondsSinceEpoch,
+    ),
+    iconId: folder.iconId,
+    color: folder.color,
+    parentID: folder.parentID,
+    customColor: folder.customColor,
+  );
+  _recordBehind[copy] = folder;
+  return copy;
+}
 
 final class LocalStrategyImage {
   const LocalStrategyImage._(this._box, this._id);
@@ -161,6 +174,8 @@ abstract interface class LocalLibraryListing {
   Folder? folder(String id);
 
   List<Folder> folderChildren(String id);
+
+  LocalFolderEntry folderEntry(Folder folder);
 
   bool get holdsAnything;
 
@@ -200,6 +215,10 @@ base class HiveLibraryListing implements LocalLibraryListing {
       _folderBox.values.where((folder) => folder.parentID == id).toList();
 
   @override
+  LocalFolderEntry folderEntry(Folder folder) =>
+      HiveFolderRecord(_recordBehind[folder] ?? folder);
+
+  @override
   bool get holdsAnything => _strategyBox.isNotEmpty || _folderBox.isNotEmpty;
 
   @override
@@ -223,19 +242,19 @@ base class HiveLibraryListing implements LocalLibraryListing {
 
   Iterable<Folder> foldersAsStored() => _folderBox.values.map(_folderAsStored);
 
-  Folder? folderAsStored(String id) => switch (_folderBox.get(id)) {
+  Folder? folderAsStored(Object key) => switch (_folderBox.get(key)) {
         final folder? => _folderAsStored(folder),
         null => null,
       };
 
   LocalStrategySummary? strategyAsStored(
-    String id, {
-    required bool notInStore,
+    Object key, {
+    required Set<String> notInStore,
   }) =>
-      switch (_strategyBox.get(id)) {
+      switch (_strategyBox.get(key)) {
         final strategy? => _HiveStrategySummary(
             strategy,
-            notInStore: notInStore,
+            notInStore: notInStore.contains(strategy.id),
             asStored: true,
           ),
         null => null,
@@ -262,6 +281,8 @@ final class LocalLibraryView {
   Box<StrategyData> get _strategyBox =>
       Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
+  Box<Folder> get _folderBox => Hive.box<Folder>(HiveBoxNames.foldersBox);
+
   ValueListenable<Iterable<LocalStrategySummary>> get strategies =>
       _listing.strategies;
 
@@ -272,6 +293,16 @@ final class LocalLibraryView {
   Folder? folder(String id) => _listing.folder(id);
 
   List<Folder> folderChildren(String id) => _listing.folderChildren(id);
+
+  LocalFolderEntry folderEntry(Folder folder) => _listing.folderEntry(folder);
+
+  HiveFolderRecord? recordFor(LocalFolderEntry entry) => switch (entry) {
+        final HiveFolderRecord record => record,
+        StoreFolderRow(:final folder) => switch (_folderBox.get(folder.id)) {
+            final stored? => HiveFolderRecord(stored),
+            null => null,
+          },
+      };
 
   bool get holdsAnything => _listing.holdsAnything;
 

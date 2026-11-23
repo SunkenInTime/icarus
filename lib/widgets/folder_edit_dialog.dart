@@ -34,7 +34,7 @@ class FolderEditDialog extends ConsumerStatefulWidget {
   });
   final Folder? folder;
 
-  final LocalFolderEntry? local;
+  final HiveFolderRecord? local;
 
   /// The store to write to. Defaults to the active workspace.
   final LibraryWorkspace? store;

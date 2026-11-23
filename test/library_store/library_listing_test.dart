@@ -74,11 +74,23 @@ final class _CountedHive extends HiveLibraryListing {
 
   @override
   LocalStrategySummary? strategyAsStored(
-    String id, {
-    required bool notInStore,
+    Object key, {
+    required Set<String> notInStore,
   }) {
-    reads.add('strategy $id');
-    return super.strategyAsStored(id, notInStore: notInStore);
+    reads.add('strategy $key');
+    return super.strategyAsStored(key, notInStore: notInStore);
+  }
+
+  @override
+  Iterable<Folder> foldersAsStored() {
+    reads.add('every folder');
+    return super.foldersAsStored();
+  }
+
+  @override
+  Folder? folderAsStored(Object key) {
+    reads.add('folder $key');
+    return super.folderAsStored(key);
   }
 }
 
@@ -346,11 +358,23 @@ void main() {
     await _copy(mirror, await _store());
     copied = true;
     var notices = 0;
-    listing.strategies.addListener(() => notices++);
+    final heard = <String>[];
+    listing.strategies.addListener(() {
+      notices++;
+      heard.add(_nameOf(listing, 'a-first'));
+    });
 
-    final renaming = const LocalLibrary().renameStrategy('a-first', 'Renamed');
+    final renaming = const LocalLibrary().renameStrategy(
+      const LocalLibrary().storedStrategy('a-first')!,
+      'Renamed',
+    );
     expect(_nameOf(listing, 'a-first'), 'Renamed');
     await renaming;
+    for (var turn = 0; turn < 100 && notices == 0; turn++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(notices, 1);
+    expect(heard, ['Renamed']);
     expect(_nameOf(listing, 'a-first'), 'Renamed');
     expect(mirror.strategiesNotKnownEqual, contains('a-first'));
     expect(listing.drewFromStore(_rowOf(listing, 'a-first')), isFalse);
@@ -369,36 +393,49 @@ void main() {
   test(
       'a strategy started during the start-up copy is drawn from Hive at the handover, not from the copy taken before it',
       () async {
+    Completer<void>? paused;
     final (:listing, :mirror, hive: _) = _reading(
-      betweenAnimations: () => Future<void>.delayed(Duration.zero),
+      betweenAnimations: () =>
+          paused?.future ?? Future<void>.delayed(Duration.zero),
     );
     for (var n = 0; n < 30; n++) {
       await const LocalLibrary()
           .addStrategy(_bare.copyWith(id: 'later-$n', name: 'Later $n'));
     }
+    final fromTheStore = <String>[];
+    final listening = mirror.updates.listen((_) {
+      if (listing.source is ListFromStore) {
+        fromTheStore.add(_nameOf(listing, 'a-first'));
+      }
+    });
     final store = await _store();
     final writes = LibraryBoxWrites();
-    var copied = 0;
     final copying = mirror.copyThenFollow(
       store,
       writes: writes,
-      progress: (done, _) => copied = done,
+      progress: (done, _) {
+        if (done == 3) paused ??= Completer<void>();
+      },
     );
-    while (copied < 3) {
+    while (paused == null) {
       await Future<void>.delayed(Duration.zero);
     }
-    await const LocalLibrary().renameStrategy('a-first', 'Renamed mid-copy');
-    final heard = <String>[];
-    final listening = mirror.updates.listen(
-      (_) => heard.add(_nameOf(listing, 'a-first')),
+    expect(listing.source, isA<ListFromHive>());
+    await const LocalLibrary().renameStrategy(
+      const LocalLibrary().storedStrategy('a-first')!,
+      'Renamed mid-copy',
     );
+    expect(fromTheStore, isEmpty);
+    paused!.complete();
+    paused = null;
     await copying;
     await writes.stop();
     await mirror.drained();
     await listening.cancel();
 
-    expect(heard, isNotEmpty);
-    expect(heard.toSet(), {'Renamed mid-copy'});
+    expect(fromTheStore, isNotEmpty);
+    expect(fromTheStore.first, 'Renamed mid-copy');
+    expect(fromTheStore.toSet(), {'Renamed mid-copy'});
     expect(_tiles(listing), _asStored());
   });
 
