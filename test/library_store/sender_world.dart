@@ -176,6 +176,7 @@ final class FakeServer {
     required String clientId,
     required List<StrategyOp> ops,
     required Account account,
+    required ServerTimeAsk serverTime,
   }) {
     final call = ServerCall(strategyPublicId, clientId, account, ops);
     calls.add(call);

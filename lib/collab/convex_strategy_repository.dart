@@ -708,19 +708,27 @@ class ConvexStrategyRepository {
     );
   }
 
-  Future<List<OpAck>> applyWireBatch({
+  Future<({List<OpAck> acks, double? serverTime})> applyWireBatch({
     required String strategyPublicId,
     required String clientId,
     required List<Map<String, Object?>> ops,
     required String accountSubject,
+    bool sendsLiveBasis = false,
+    double? liveBasis,
   }) async {
-    if (ops.isEmpty) return const [];
-    return _applyBatch(
+    if (ops.isEmpty) return (acks: const <OpAck>[], serverTime: null);
+    final result = await _applyBatchResult(
       strategyPublicId,
       clientId,
       _typedWire(ops),
       accountSubject,
       readsAccountMismatch: true,
+      sendsLiveBasis: sendsLiveBasis,
+      liveBasis: liveBasis,
+    );
+    return (
+      acks: result.results.map(_opAck).toList(growable: false),
+      serverTime: result.serverTime.isPresent ? result.serverTime.value : null,
     );
   }
 
@@ -731,7 +739,26 @@ class ConvexStrategyRepository {
     String? accountSubject, {
     required bool readsAccountMismatch,
   }) async {
-    final result = await _api.ops.applyBatch(
+    final result = await _applyBatchResult(
+      strategyPublicId,
+      clientId,
+      ops,
+      accountSubject,
+      readsAccountMismatch: readsAccountMismatch,
+    );
+    return result.results.map(_opAck).toList(growable: false);
+  }
+
+  Future<OpsApplyBatchResult> _applyBatchResult(
+    String strategyPublicId,
+    String clientId,
+    List<OpsApplyBatchArgsOpsItem> ops,
+    String? accountSubject, {
+    required bool readsAccountMismatch,
+    bool sendsLiveBasis = false,
+    double? liveBasis,
+  }) {
+    return _api.ops.applyBatch(
       strategyPublicId: strategyPublicId,
       clientId: clientId,
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
@@ -748,8 +775,11 @@ class ConvexStrategyRepository {
       readsAccountMismatch: readsAccountMismatch
           ? const ConvexOptional.present(true)
           : const ConvexOptional.absent(),
+      sendsLiveBasis: sendsLiveBasis
+          ? const ConvexOptional.present(true)
+          : const ConvexOptional.absent(),
+      liveBasis: _optional(liveBasis),
     );
-    return result.results.map(_opAck).toList(growable: false);
   }
 
   Future<void> sendEmptyBatch({
