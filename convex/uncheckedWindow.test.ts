@@ -363,6 +363,22 @@ describe("the window's edge", () => {
     ).toBe("UNCHECKED_OUTSIDE_WINDOW");
     expect((await agent(me)).revision).toBe(1);
   });
+
+  test("a basis that is not a number the server could have sent is refused", async () => {
+    const { me } = await createHarness();
+
+    for (const basis of [Number.NaN, Infinity, -Infinity]) {
+      expect(
+        await refusal(
+          batch(me, "me", [movePatch("me-move", { dx: 90, dy: 90 })], {
+            sendsLiveBasis: true,
+            liveBasis: basis,
+          }),
+        ),
+      ).toBe("UNCHECKED_OUTSIDE_WINDOW");
+    }
+    expect((await agent(me)).revision).toBe(1);
+  });
 });
 
 const uncheckedForms: Record<string, Op> = {

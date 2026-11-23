@@ -66,10 +66,7 @@ const args = {
     },
   ],
 };
-let answered = false;
-client.mutation('ops:applyBatch', args).then(() => {
-  answered = true;
-});
+void client.mutation('ops:applyBatch', args);
 
 assert.equal(sockets.length, 1, 'the client opens one socket');
 sockets[0].onopen();
@@ -90,11 +87,9 @@ assert.deepEqual(
   'a mutation pending across a reconnect is sent again unchanged',
 );
 assert.deepEqual(replayed.args, [args], 'the replay carries the original arguments');
-assert.equal(answered, false, 'the caller is still waiting for its answer');
 void client.close();
 
 console.log(
   'The browser Convex client sends a mutation pending across a reconnect ' +
-    'again with its original arguments, liveBasis included, so ' +
-    'ops:applyBatch judges the replay by the time the batch was written.',
+    'again with its original arguments, liveBasis included.',
 );

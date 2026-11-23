@@ -1883,10 +1883,10 @@ function assertUncheckedInWindow(
     }
     return;
   }
-  if (liveBasis > now) {
+  if (!Number.isFinite(liveBasis) || liveBasis > now) {
     throw errorWithCode(
       "UNCHECKED_OUTSIDE_WINDOW",
-      "The live basis is later than the server's time",
+      "The live basis is not a time the server has reached",
     );
   }
   if (now - liveBasis > UNCHECKED_WINDOW_MS) {

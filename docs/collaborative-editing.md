@@ -72,16 +72,24 @@ server writes only the named fields onto the row as it is now:
   pending across a lost connection with its original arguments, however late,
   so an unchecked change caught by a dropped connection could land an hour
   later over a teammate's newer work (#714;
-  `tool/check_convex_web_replay.mjs` shows the browser client doing it). A client that sets
+  `tool/check_convex_web_replay.mjs` shows the browser client resending the
+  same arguments). A client that sets
   `sendsLiveBasis` gets the server's time in every `applyBatch` answer
-  (`serverTime`) and sends the newest one it has as the batch's `liveBasis`.
+  (`serverTime`). No client sets it yet. One that does must send, as the
+  batch's `liveBasis`, a server time it already held when the change was
+  written, never a newer one picked up while the change waited to be sent:
+  the bound below is only as good as that.
   The server refuses the whole batch with `UNCHECKED_OUTSIDE_WINDOW`, before
   reading or recording anything, when it arrives more than
   `UNCHECKED_WINDOW_MS` (30 s) after that time, when the basis is later than
-  the server's time, or when it holds an unchecked change and no basis. The
-  client then sends the same ops checked, under the same op ids. Both times
-  are the server's, so players' clocks play no part. Clients that do not set
-  `sendsLiveBasis` are answered as before.
+  the server's time or is not a finite number, or when it holds an unchecked
+  change and no basis. The client then sends the same ops checked, under the
+  same op ids. Both times are the server's, so players' clocks play no part.
+  The server's time is read once when the mutation starts, so a batch exactly
+  30 s old passes, one the server reruns after a write conflict is judged
+  again by the later time, and a difference between two servers' clocks moves
+  the cutoff by that much. Clients that do not set `sendsLiveBasis` are
+  answered as before.
 
 An edit to an item a teammate deleted is still refused as `deleted`, and Keep
 mine still brings the item back.
