@@ -317,7 +317,6 @@ Future<void> main(List<String> args) async {
           case (mode: Mirroring(:final mirror), opening: _, directory: _)) {
         LocalLibrary.follower = mirror;
         ActionProvider.editFollower = storeStart.editFollower;
-        storeStart.editFollower?.attach();
       }
 
       // The cloud comes up degraded rather than not at all: a failure here
@@ -362,6 +361,9 @@ Future<void> main(List<String> args) async {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _watchStrategyForDebugBreadcrumbs(),
       );
+      if (ActionProvider.editFollower case final follower?) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => follower.attach());
+      }
       if (driveBuild) {
         unawaited(
           WidgetsBinding.instance.waitUntilFirstFrameRasterized.then(
