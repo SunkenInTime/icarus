@@ -28,10 +28,11 @@ sealed class _Job {
 }
 
 final class _TakeUpJob extends _Job {
-  const _TakeUpJob(super.strategyId, this.hive, this.canvas);
+  const _TakeUpJob(super.strategyId, this.hive, this.canvas, this.actions);
 
   final StrategyData hive;
   final StrategyData canvas;
+  final List<DeclaredAction> actions;
 }
 
 final class _UnitJob extends _Job {
@@ -75,13 +76,19 @@ final class _SaveJob extends _Job {
 StrategyToRows rowsOf(StrategyData strategy) =>
     strategyToRows(strategyAsHiveHoldsIt(strategy));
 
-enum UnitOutcome { coveredAndCorrect, changedWithoutAction, opsWrong }
+enum UnitOutcome {
+  noFinding,
+  changedWithoutAction,
+  beforeNotOnCanvas,
+  opsWrong,
+}
 
 final class UnitFinding {
   const UnitFinding({
     required this.number,
     required this.kind,
     required this.uncovered,
+    required this.stale,
     required this.wrong,
     required this.gaps,
   });
@@ -89,16 +96,22 @@ final class UnitFinding {
   final int number;
   final String kind;
   final List<String> uncovered;
+  final List<String> stale;
   final List<String> wrong;
   final List<String> gaps;
 }
 
 final class KindCounts {
-  var judged = 0;
-  var coveredAndCorrect = 0;
+  var withFindings = 0;
+  var noFinding = 0;
   var changedWithoutAction = 0;
+  var beforeNotOnCanvas = 0;
   var opsWrong = 0;
+  var noChange = 0;
   final notJudged = <String, int>{};
+  final discarded = <String, int>{};
+
+  int get judged => noFinding + withFindings;
 }
 
 final class UnitCost {
@@ -117,14 +130,18 @@ final class HiveSaveFinding {
   final List<String> differences;
 }
 
+int _sum(Map<String, int> counts) => counts.values.fold(0, (a, b) => a + b);
+
 final class ActionOpsTally {
   var unitsOpened = 0;
-  var unitsWithNoChange = 0;
-  var coveredAndCorrect = 0;
+  var unitsWithFindings = 0;
+  var noFinding = 0;
   var changedWithoutAction = 0;
+  var beforeNotOnCanvas = 0;
   var opsWrong = 0;
-  var bothChecksFailed = 0;
+  var unitsWithNoChange = 0;
   final notJudged = <String, int>{};
+  final discarded = <String, int>{};
   final byKind = <String, KindCounts>{};
   final findings = <UnitFinding>[];
   var actions = 0;
@@ -147,13 +164,20 @@ final class ActionOpsTally {
   final hiveFindings = <HiveSaveFinding>[];
   final hiveDifferencesByField = <String, int>{};
 
-  int get unitsJudged => coveredAndCorrect + changedOrWrong;
+  int get unitsJudged => noFinding + unitsWithFindings;
 
-  int get changedOrWrong => changedWithoutAction + opsWrong - bothChecksFailed;
+  int get unitsNotJudged => _sum(notJudged);
 
-  int get unitsNotJudged => notJudged.values.fold(0, (a, b) => a + b);
+  int get unitsDiscarded => _sum(discarded);
 
-  bool get addsUp => unitsOpened == unitsJudged + unitsNotJudged;
+  int get unitsDisposed =>
+      unitsJudged + unitsNotJudged + unitsDiscarded + unitsWithNoChange;
+}
+
+abstract interface class UnitSource {
+  bool get holdsAUnit;
+
+  void closeOut();
 }
 
 final class ActionJournal {
@@ -169,6 +193,7 @@ final class ActionJournal {
   List<StrategyOp> Function(String label, List<StrategyOp> ops) alterOps =
       _asBuilt;
   void Function(String strategyId) onHiveWrite = _nobody;
+  UnitSource? source;
 
   static List<StrategyOp> _asBuilt(String label, List<StrategyOp> ops) => ops;
 
@@ -186,9 +211,45 @@ final class ActionJournal {
 
   StrategyData? hiveNow(String strategyId) => _hiveNow(strategyId);
 
-  void takeUp(String strategyId, StrategyData hive, StrategyData canvas) {
+  int get unitsStillOpen =>
+      _jobs.where((job) => job is _UnitJob || job is _TakeUpJob).length +
+      ((source?.holdsAUnit ?? false) ? 1 : 0);
+
+  bool get addsUp => tally.unitsOpened == tally.unitsDisposed + unitsStillOpen;
+
+  void opened() => tally.unitsOpened += 1;
+
+  static String kindOf(List<DeclaredAction> actions) {
+    final labels = <String>[];
+    for (final action in actions) {
+      if (!labels.contains(action.label)) labels.add(action.label);
+    }
+    return labels.isEmpty ? 'no action' : labels.join(' + ');
+  }
+
+  void closedWithoutJudging(
+    List<DeclaredAction> actions, {
+    required String notJudged,
+    required String discarded,
+  }) {
+    tally.actions += actions.length;
+    final kind = kindOf(actions);
+    if (actions.isEmpty) {
+      _notJudged(kind, notJudged);
+    } else {
+      _discarded(kind, discarded);
+    }
+  }
+
+  void takeUp(
+    String strategyId,
+    StrategyData hive,
+    StrategyData canvas,
+    List<DeclaredAction> actions,
+  ) {
     _takenUp.add(strategyId);
-    _jobs.add(_TakeUpJob(strategyId, hive, canvas));
+    tally.actions += actions.length;
+    _jobs.add(_TakeUpJob(strategyId, hive, canvas, actions));
   }
 
   void unit(
@@ -248,6 +309,14 @@ final class ActionJournal {
   }
 
   void forget() {
+    for (final job in _jobs) {
+      switch (job) {
+        case _UnitJob(:final actions) || _TakeUpJob(:final actions):
+          _discarded(kindOf(actions), 'the mirror stopped');
+        case _ReleaseJob() || _SaveJob():
+          break;
+      }
+    }
     _jobs.clear();
     _savesThisTurn.clear();
     _takenUp.clear();
@@ -266,6 +335,11 @@ final class ActionJournal {
 
   Future<JournalStep> _runTakeUp(LibraryStore store, _TakeUpJob job) async {
     tally.takenUp += 1;
+    if (job.actions.isEmpty) {
+      _notJudged('strategy opened', 'the strategy opening');
+    } else {
+      _discarded(kindOf(job.actions), 'actions while the strategy was opening');
+    }
     _previous[job.strategyId] = job.canvas;
     final opened = differencesOn(
       job.hive,
@@ -309,20 +383,19 @@ final class ActionJournal {
   }
 
   void _notJudged(String kind, String reason) {
-    tally.unitsOpened += 1;
     tally.notJudged.update(reason, (n) => n + 1, ifAbsent: () => 1);
     final counts = tally.byKind.putIfAbsent(kind, KindCounts.new);
     counts.notJudged.update(reason, (n) => n + 1, ifAbsent: () => 1);
   }
 
-  String _kindOf(_UnitJob job) {
-    if (job.kind == UnitKind.load) return 'page loaded';
-    final labels = <String>[];
-    for (final action in job.actions) {
-      if (!labels.contains(action.label)) labels.add(action.label);
-    }
-    return labels.isEmpty ? 'no action' : labels.join(' + ');
+  void _discarded(String kind, String reason) {
+    tally.discarded.update(reason, (n) => n + 1, ifAbsent: () => 1);
+    final counts = tally.byKind.putIfAbsent(kind, KindCounts.new);
+    counts.discarded.update(reason, (n) => n + 1, ifAbsent: () => 1);
   }
+
+  String _kindOf(_UnitJob job) =>
+      job.kind == UnitKind.load ? 'page loaded' : kindOf(job.actions);
 
   Future<JournalStep> _runUnit(LibraryStore store, _UnitJob job) async {
     final id = job.strategyId;
@@ -334,7 +407,11 @@ final class ActionJournal {
     }
     if (job.kind == UnitKind.load) {
       _previous[id] = snapshot;
-      _notJudged(kind, 'a page loading');
+      if (job.actions.isEmpty) {
+        _notJudged(kind, 'a page loading');
+      } else {
+        _discarded(kindOf(job.actions), 'actions inside a page switch');
+      }
       final read = await _readStore(store, id);
       final behind = read == null
           ? null
@@ -425,16 +502,16 @@ final class ActionJournal {
       _notJudged(kind, 'the store could not be read');
       return repair();
     }
-    final uncoveredLines = [
-      for (final d in uncovered) '$d',
-      for (final s in replayed.stale) '$s',
-    ];
+    final uncoveredLines = [for (final d in uncovered) '$d'];
+    final staleLines = [for (final s in replayed.stale) '$s'];
     final wrongLines = [for (final d in wrong) '$d'];
     if (job.actions.isEmpty &&
         uncoveredLines.isEmpty &&
+        staleLines.isEmpty &&
         wrongLines.isEmpty &&
         behind.isEmpty) {
       tally.unitsWithNoChange += 1;
+      tally.byKind.putIfAbsent(kind, KindCounts.new).noChange += 1;
       return const JournalContinues();
     }
     if (refused) {
@@ -444,27 +521,30 @@ final class ActionJournal {
           : _repaired(await repair());
     }
 
-    tally.unitsOpened += 1;
-    final counts = tally.byKind.putIfAbsent(kind, KindCounts.new)..judged += 1;
-    if (uncoveredLines.isEmpty && wrongLines.isEmpty) {
-      tally.coveredAndCorrect += 1;
-      counts.coveredAndCorrect += 1;
+    final counts = tally.byKind.putIfAbsent(kind, KindCounts.new);
+    if (uncoveredLines.isEmpty && staleLines.isEmpty && wrongLines.isEmpty) {
+      tally.noFinding += 1;
+      counts.noFinding += 1;
     } else {
+      tally.unitsWithFindings += 1;
+      counts.withFindings += 1;
       if (uncoveredLines.isNotEmpty) {
         tally.changedWithoutAction += 1;
         counts.changedWithoutAction += 1;
+      }
+      if (staleLines.isNotEmpty) {
+        tally.beforeNotOnCanvas += 1;
+        counts.beforeNotOnCanvas += 1;
       }
       if (wrongLines.isNotEmpty) {
         tally.opsWrong += 1;
         counts.opsWrong += 1;
       }
-      if (uncoveredLines.isNotEmpty && wrongLines.isNotEmpty) {
-        tally.bothChecksFailed += 1;
-      }
       tally.findings.add(UnitFinding(
-        number: tally.unitsOpened,
+        number: tally.unitsWithFindings,
         kind: kind,
         uncovered: uncoveredLines,
+        stale: staleLines,
         wrong: wrongLines,
         gaps: gaps,
       ));

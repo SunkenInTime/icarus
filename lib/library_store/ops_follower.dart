@@ -49,8 +49,10 @@ final class _OpenUnit {
   var pageLevel = false;
 }
 
-final class OpsFollower implements EditFollower {
-  OpsFollower(this._mirror, this._container);
+final class OpsFollower implements EditFollower, UnitSource {
+  OpsFollower(this._mirror, this._container) {
+    _mirror.actions?.source = this;
+  }
 
   final StoreMirror _mirror;
   final ProviderContainer Function() _container;
@@ -157,7 +159,7 @@ final class OpsFollower implements EditFollower {
       final pageId =
           _container().read(strategyPageSessionProvider).activePageId;
       if (_localStrategy() == null || pageId == null) return;
-      (_unit ??= _OpenUnit()).actions.add(DeclaredAction(
+      _open().actions.add(DeclaredAction(
             actionLabel(kept, way),
             canvasChangesOf(
               kept,
@@ -174,15 +176,38 @@ final class OpsFollower implements EditFollower {
   void onPagesChanged(List<CanvasChange> Function() changes, String label) {
     _guarded(label, () {
       if (_localStrategy() == null) return;
-      (_unit ??= _OpenUnit())
+      _open()
         ..pageLevel = true
         ..actions.add(DeclaredAction(label, changes()));
       _schedule();
     });
   }
 
+  _OpenUnit _open() {
+    final open = _unit;
+    if (open != null) return open;
+    _mirror.unitOpened();
+    return _unit = _OpenUnit();
+  }
+
+  @override
+  bool get holdsAUnit => _unit != null;
+
+  @override
+  void closeOut() {
+    final unit = _unit;
+    if (unit == null) return;
+    _unit = null;
+    _mirror.closedWithoutJudging(
+      unit.actions,
+      notJudged: 'a unit still open at the end',
+      discarded: 'actions in a unit still open at the end',
+    );
+  }
+
   void _noteChange() {
-    _unit ??= _OpenUnit();
+    if (_unit == null && _takenUp == null && _localStrategy() == null) return;
+    _open();
     _schedule();
   }
 
@@ -202,11 +227,26 @@ final class OpsFollower implements EditFollower {
     if (session.isApplyingPage) return;
     final id = _localStrategy();
     final pageId = session.activePageId;
-    if (_takenUp != null && _takenUp != id) {
-      _release(_takenUp!);
+    if (_takenUp case final taken? when taken != id) {
+      final unit = _unit!;
+      _unit = null;
+      _release(taken);
+      _mirror.closedWithoutJudging(
+        unit.actions,
+        notJudged: 'the strategy closing',
+        discarded: 'actions as the strategy changed',
+      );
+      if (id == null) return;
+      _open();
     }
     if (id == null || pageId == null) {
+      final unit = _unit!;
       _unit = null;
+      _mirror.closedWithoutJudging(
+        unit.actions,
+        notJudged: 'no local strategy open',
+        discarded: 'actions with no local strategy open',
+      );
       return;
     }
     if (pageId != _appliedPage) return;
@@ -214,7 +254,7 @@ final class OpsFollower implements EditFollower {
     _unit = null;
     if (_takenUp == null) {
       _loadPending = false;
-      _takeUp(id, pageId);
+      _takeUp(id, pageId, unit.actions);
       return;
     }
     if (_loadPending) {
@@ -228,6 +268,8 @@ final class OpsFollower implements EditFollower {
         snapshot: snapshot,
         pages: const {},
         snapshotTime: clock.elapsed,
+        notJudged:
+            snapshot == null ? 'the library holds no such strategy' : null,
       );
       return;
     }
@@ -266,17 +308,23 @@ final class OpsFollower implements EditFollower {
 
   var _changedPages = <String>{};
 
-  void _takeUp(String id, String pageId) {
+  void _takeUp(String id, String pageId, List<DeclaredAction> declared) {
     final hive = const LocalLibrary().storedStrategy(id);
-    if (hive == null) return;
     _seen.clear();
     _last = null;
+    final canvas = hive == null ? null : _capture(id, pageId, everyPage: true);
+    if (hive == null || canvas == null) {
+      _mirror.closedWithoutJudging(
+        declared,
+        notJudged: 'the library holds no such strategy',
+        discarded: 'actions on a strategy the library does not hold',
+      );
+      return;
+    }
     _faulted = false;
     ActionProvider.editFollower ??= this;
-    final canvas = _capture(id, pageId, everyPage: true);
-    if (canvas == null) return;
     _takenUp = id;
-    _mirror.takeUp(id, cloneStrategy(hive), canvas);
+    _mirror.takeUp(id, cloneStrategy(hive), canvas, declared);
   }
 
   void _release(String id) {

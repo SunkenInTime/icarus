@@ -90,7 +90,7 @@ void main() {
     expect(added.wrong, contains(contains('added-then-undone')));
     expect(undone.outcomes, {UnitOutcome.opsWrong}, reason: '$undone');
     expect(undone.wrong, contains(contains('added-then-undone')));
-    expect(h.tally.addsUp, isTrue);
+    expect(h.journal.addsUp, isTrue);
   });
 
   test('a turn where nothing changed gets no verdict, even when Hive is saved',
@@ -178,7 +178,7 @@ void main() {
         .read(textProvider.notifier)
         .setCaption(text, 'Caption that was discarded');
 
-    expect((await h.measure(edit)).outcomes, {UnitOutcome.coveredAndCorrect});
+    expect((await h.measure(edit)).outcomes, {UnitOutcome.noFinding});
     await container.read(strategyProvider.notifier).clearCurrentStrategy();
     await h.settle();
     expect(h.tally.released, 1);
@@ -193,7 +193,7 @@ void main() {
     final committed = h.tally.opsCommitted;
     final repeated = await h.measure(edit);
 
-    expect(repeated.outcomes, {UnitOutcome.coveredAndCorrect},
+    expect(repeated.outcomes, {UnitOutcome.noFinding},
         reason: '$repeated');
     expect(h.tally.opsCommitted, greaterThan(committed));
   });
@@ -214,7 +214,7 @@ void main() {
       utilities.updateRotationHistory(cone());
       utilities.updateRotation(cone(), rotated, length);
     });
-    expect(first.outcomes, {UnitOutcome.coveredAndCorrect}, reason: '$first');
+    expect(first.outcomes, {UnitOutcome.noFinding}, reason: '$first');
 
     final router = GestureBinding.instance.pointerRouter;
     final held = await h.measure(() async {
@@ -258,7 +258,7 @@ void main() {
     };
     for (final MapEntry(key: step, value: perform) in steps.entries) {
       final unit = await h.measure(perform);
-      expect(unit.outcomes, {UnitOutcome.coveredAndCorrect},
+      expect(unit.outcomes, {UnitOutcome.noFinding},
           reason: '$step: $unit');
     }
   });
@@ -285,7 +285,7 @@ void main() {
         .read(lineUpProvider.notifier)
         .updateLink(link.copyWith(notes: 'Edited on the copy')));
 
-    expect(edited.outcomes, {UnitOutcome.coveredAndCorrect}, reason: '$edited');
+    expect(edited.outcomes, {UnitOutcome.noFinding}, reason: '$edited');
   });
 
   test('a lineup copied to the next page can be edited there through ops',
@@ -297,7 +297,7 @@ void main() {
           linkIds: {link.id},
           direction: PageTransitionDirection.forward,
         ));
-    expect(copied.outcomes, {UnitOutcome.coveredAndCorrect}, reason: '$copied');
+    expect(copied.outcomes, {UnitOutcome.noFinding}, reason: '$copied');
     final session = container.read(strategyPageSessionProvider);
     await container.read(strategyProvider.notifier).setActivePage(session
         .availablePageIds
@@ -312,7 +312,7 @@ void main() {
         .read(lineUpProvider.notifier)
         .updateLink(there.copyWith(notes: 'Edited where it was copied')));
 
-    expect(edited.outcomes, {UnitOutcome.coveredAndCorrect}, reason: '$edited');
+    expect(edited.outcomes, {UnitOutcome.noFinding}, reason: '$edited');
   });
 
   test(
@@ -340,7 +340,7 @@ void main() {
     };
     for (final MapEntry(key: step, value: perform) in steps.entries) {
       final unit = await h.measure(perform);
-      expect(unit.outcomes, {UnitOutcome.coveredAndCorrect},
+      expect(unit.outcomes, {UnitOutcome.noFinding},
           reason: '$step: $unit');
     }
     final added = await h.measure(() => strategies.addPage());

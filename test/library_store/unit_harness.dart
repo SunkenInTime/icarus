@@ -40,6 +40,8 @@ final class UnitHarness {
     final before = UnitDelta._counts(tally);
     final findings = tally.findings.length;
     final notJudged = {...tally.notJudged};
+    final discarded = {...tally.discarded};
+    final opened = tally.unitsOpened;
     await perform();
     await settle();
     final after = UnitDelta._counts(tally);
@@ -54,6 +56,11 @@ final class UnitHarness {
         for (final MapEntry(:key, :value) in tally.notJudged.entries)
           if (value > (notJudged[key] ?? 0)) key: value - (notJudged[key] ?? 0),
       },
+      discarded: {
+        for (final MapEntry(:key, :value) in tally.discarded.entries)
+          if (value > (discarded[key] ?? 0)) key: value - (discarded[key] ?? 0),
+      },
+      opened: tally.unitsOpened - opened,
     );
   }
 
@@ -88,27 +95,35 @@ final class UnitDelta {
     required this.judged,
     required this.findings,
     required this.notJudged,
+    required this.discarded,
+    required this.opened,
   });
 
   final Set<UnitOutcome> outcomes;
   final int judged;
   final List<UnitFinding> findings;
   final Map<String, int> notJudged;
+  final Map<String, int> discarded;
+  final int opened;
 
   List<String> get uncovered => [for (final f in findings) ...f.uncovered];
 
   List<String> get wrong => [for (final f in findings) ...f.wrong];
 
+  List<String> get stale => [for (final f in findings) ...f.stale];
+
   static Map<UnitOutcome?, int> _counts(ActionOpsTally tally) => {
-        UnitOutcome.coveredAndCorrect: tally.coveredAndCorrect,
+        UnitOutcome.noFinding: tally.noFinding,
         UnitOutcome.changedWithoutAction: tally.changedWithoutAction,
+        UnitOutcome.beforeNotOnCanvas: tally.beforeNotOnCanvas,
         UnitOutcome.opsWrong: tally.opsWrong,
         null: tally.unitsJudged,
       };
 
   @override
   String toString() => 'outcomes $outcomes, judged $judged, not judged '
-      '$notJudged, changed without an action $uncovered, ops wrong $wrong';
+      '$notJudged, discarded $discarded, changed without an action '
+      '$uncovered, before did not match the canvas $stale, ops wrong $wrong';
 }
 
 Future<Directory> openUnitHive() async {
@@ -134,8 +149,9 @@ Future<Directory> openUnitHive() async {
 
 Future<UnitHarness> openInEditor(
   ProviderContainer container,
-  StrategyData strategy,
-) async {
+  StrategyData strategy, {
+  bool follow = true,
+}) async {
   final migrated = StrategyMigrator.migrateToCurrentVersion(strategy);
   await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
       .put(migrated.id, migrated);
@@ -153,9 +169,11 @@ Future<UnitHarness> openInEditor(
     StoreOpened(:final store) => store,
     StoreNotOpened(:final problem) => fail('$problem'),
   };
-  final writes = LibraryBoxWrites();
-  await mirror.copyThenFollow(store, writes: writes);
-  await writes.stop();
+  if (follow) {
+    final writes = LibraryBoxWrites();
+    await mirror.copyThenFollow(store, writes: writes);
+    await writes.stop();
+  }
   late final UnitHarness harness;
   final follower = OpsFollower(mirror, () {
     if (harness.faultOnNextReach) {
@@ -172,6 +190,8 @@ Future<UnitHarness> openInEditor(
     isTrue,
   );
   await harness.settle();
-  expect(journal.tally.takenUp, 1, reason: 'the strategy is taken up');
+  if (follow) {
+    expect(journal.tally.takenUp, 1, reason: 'the strategy is taken up');
+  }
   return harness;
 }

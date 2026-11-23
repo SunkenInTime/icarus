@@ -1,3 +1,6 @@
+import 'package:flutter/gestures.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -40,24 +43,25 @@ void main() {
   });
 
   var opened = 0;
-  StrategyData strategy() {
+  StrategyData strategy({int pages = 1}) {
     opened += 1;
     final id = 'journaled-$opened';
     return generatedStrategy(Optionals.unset).copyWith(
       id: id,
       pages: [
-        generatedPage(
-          id: '$id-p0',
-          sortIndex: 0,
-          optionals: Optionals.set,
-          isAttack: true,
-        ).copyWith(),
+        for (var n = 0; n < pages; n++)
+          generatedPage(
+            id: '$id-p$n',
+            sortIndex: n,
+            optionals: Optionals.set,
+            isAttack: true,
+          ).copyWith(),
       ],
     );
   }
 
-  Future<UnitHarness> open() async {
-    final h = await openInEditor(container, strategy());
+  Future<UnitHarness> open({int pages = 1}) async {
+    final h = await openInEditor(container, strategy(pages: pages));
     addTearDown(h.dispose);
     return h;
   }
@@ -112,8 +116,7 @@ void main() {
     final renamed = await h.measure(() =>
         container.read(strategyProvider.notifier).renamePage(page, 'Retake'));
 
-    expect(renamed.outcomes, {UnitOutcome.coveredAndCorrect},
-        reason: '$renamed');
+    expect(renamed.outcomes, {UnitOutcome.noFinding}, reason: '$renamed');
     expect(h.tally.hiveSaves, greaterThan(saves));
     expect(
       [for (final f in h.tally.hiveFindings) ...f.differences],
@@ -149,7 +152,7 @@ void main() {
     final agent = container.read(agentProvider).first.id;
     final deleted = await h.measure(
         () => container.read(textProvider.notifier).removeTextAsAction(text));
-    expect(deleted.outcomes, {UnitOutcome.coveredAndCorrect});
+    expect(deleted.outcomes, {UnitOutcome.noFinding});
     expect(
         (await storedRows(h)).elements.whereType<DeletedElement>(), isNotEmpty);
 
@@ -218,8 +221,8 @@ void main() {
     await h.settle();
     expect(ActionProvider.editFollower, same(h.follower));
     final again = await h.measure(() => caption('Taken up again'));
-    expect(again.outcomes, {UnitOutcome.coveredAndCorrect}, reason: '$again');
-    expect(h.tally.addsUp, isTrue);
+    expect(again.outcomes, {UnitOutcome.noFinding}, reason: '$again');
+    expect(h.journal.addsUp, isTrue);
   });
 
   test(
@@ -236,8 +239,97 @@ void main() {
     final committed = await h.measure(() => drafts.commitDraft(text));
 
     expect(committed.judged, 1, reason: '$committed');
-    expect(committed.outcomes, {UnitOutcome.coveredAndCorrect});
+    expect(committed.outcomes, {UnitOutcome.noFinding});
     expect(h.tally.findings, isEmpty);
+  });
+
+  group('every unit opened gets a disposition, and nothing is dropped unseen',
+      () {
+    final router = GestureBinding.instance.pointerRouter;
+
+    test(
+        'an edit made after a page switch under a held pointer is counted as '
+        'discarded, not lost in the page load', () async {
+      final h = await open(pages: 2);
+      final other = container
+          .read(strategyPageSessionProvider)
+          .availablePageIds
+          .firstWhere((id) =>
+              id != container.read(strategyPageSessionProvider).activePageId);
+      final held = await h.measure(() async {
+        router.route(const PointerDownEvent(pointer: 51));
+        await container.read(strategyProvider.notifier).setActivePage(other);
+        await Future<void>.delayed(Duration.zero);
+        final agent = container.read(agentProvider).first.id;
+        container
+            .read(agentProvider.notifier)
+            .setCaption(agent, 'Edited across the switch');
+        await Future<void>.delayed(Duration.zero);
+        router.route(const PointerUpEvent(pointer: 51));
+      });
+
+      expect(held.discarded, {'actions inside a page switch': 1},
+          reason: '$held');
+      expect(held.judged, 0);
+      expect(h.journal.addsUp, isTrue);
+    });
+
+    test(
+        'an edit in one strategy, held until another opens, is counted as '
+        'discarded', () async {
+      final h = await open();
+      final second = strategy();
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .put(second.id, StrategyMigrator.migrateToCurrentVersion(second));
+      final held = await h.measure(() async {
+        router.route(const PointerDownEvent(pointer: 52));
+        final text = container.read(textProvider).first.id;
+        container
+            .read(textProvider.notifier)
+            .setCaption(text, 'Edited before the other opened');
+        await Future<void>.delayed(Duration.zero);
+        await container.read(strategyProvider.notifier).loadFromHive(second.id);
+        await Future<void>.delayed(Duration.zero);
+        router.route(const PointerUpEvent(pointer: 52));
+      });
+
+      expect(held.discarded, {'actions as the strategy changed': 1},
+          reason: '$held');
+      expect(h.tally.takenUp, 2);
+      expect(h.journal.addsUp, isTrue);
+    });
+
+    test(
+        'a unit still held when the run ends is counted as discarded, and '
+        'nothing is left open', () async {
+      final h = await open();
+      router.route(const PointerDownEvent(pointer: 53));
+      final text = container.read(textProvider).first.id;
+      container
+          .read(textProvider.notifier)
+          .setCaption(text, 'Still held at the end');
+      await h.settle();
+      expect(h.journal.unitsStillOpen, 1);
+      expect(h.journal.addsUp, isTrue);
+
+      await h.mirror.releaseTakenUp();
+      router.route(const PointerUpEvent(pointer: 53));
+
+      expect(h.tally.discarded, {'actions in a unit still open at the end': 1});
+      expect(h.journal.unitsStillOpen, 0);
+      expect(h.tally.unitsOpened, h.tally.unitsDisposed);
+    });
+
+    test(
+        'opening a strategy before the mirror is following is counted, not '
+        'dropped', () async {
+      final h = await openInEditor(container, strategy(), follow: false);
+      addTearDown(h.dispose);
+
+      expect(h.tally.takenUp, 0);
+      expect(h.tally.notJudged, {'the mirror was not following yet': 1});
+      expect(h.journal.addsUp, isTrue);
+    });
   });
 
   test(

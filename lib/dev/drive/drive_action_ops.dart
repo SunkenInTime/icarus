@@ -18,14 +18,20 @@ String _counted(Map<String, int> counts) => [
 
 Map<String, int> opsCounts(ActionOpsTally t) => {
       'unitsOpened': t.unitsOpened,
-      'coveredAndCorrect': t.coveredAndCorrect,
+      'unitsWithFindings': t.unitsWithFindings,
+      'noFinding': t.noFinding,
       'changedWithoutAction': t.changedWithoutAction,
+      'beforeNotOnCanvas': t.beforeNotOnCanvas,
       'opsWrong': t.opsWrong,
       'notJudged': t.unitsNotJudged,
+      'discarded': t.unitsDiscarded,
       'commitsRefused': t.commitsRefused.length,
       'followerFaults': t.followerFaults.length,
       'hiveSavesDifferent': t.hiveSavesDifferent,
     };
+
+String _reasons(Map<String, int> counts) =>
+    counts.isEmpty ? '' : ' (${_counted(counts)})';
 
 String _ms(Duration d) => (d.inMicroseconds / 1000).toStringAsFixed(1);
 
@@ -52,45 +58,66 @@ List<String> _costLines(String label, List<UnitCost> costs) {
   ];
 }
 
-List<String> actionOpsLines(String label, ActionOpsTally t) => [
-      'OPS $label units opened ${t.unitsOpened}: covered and correct '
-          '${t.coveredAndCorrect}, changed without an action '
-          '${t.changedWithoutAction}, ops wrong ${t.opsWrong} (both '
-          '${t.bothChecksFailed}), not judged ${t.unitsNotJudged}'
-          '${t.notJudged.isEmpty ? '' : ' (${_counted(t.notJudged)})'}; '
-          'adds up ${t.addsUp ? 'yes' : 'NO'}; units with no change '
-          '${t.unitsWithNoChange}',
-      'OPS $label actions ${t.actions}, commits ${t.commits}, ops '
-          '${t.opsCommitted}, commits refused ${t.commitsRefused.length}; '
-          'taken up ${t.takenUp}, released ${t.released} (Hive put back '
-          '${t.releasesThatPutHiveBack}), store put right from the canvas '
-          '${t.repairsFromCanvas} after a unit and ${t.repairsAtLoad} at a '
-          'page load; follower faults ${t.followerFaults.length}',
-      'OPS $label opened with the canvas different from Hive '
-          '${t.openedDifferentFromHive} times'
-          '${t.openedDifferences.isEmpty ? '' : ': ${_counted(t.openedDifferences)}'}',
-      'OPS $label hive saves ${t.hiveSaves}: equal to the store '
-          '${t.hiveSavesEqualToStore}, different ${t.hiveSavesDifferent}, '
-          'failed ${t.hiveSavesFailed}'
-          '${t.hiveDifferencesByField.isEmpty ? '' : '; differing fields ${_counted(t.hiveDifferencesByField)}'}',
-      for (final MapEntry(key: kind, value: k) in t.byKind.entries)
-        'OPS $label kind "$kind": judged ${k.judged}, covered and correct '
-            '${k.coveredAndCorrect}, changed without an action '
-            '${k.changedWithoutAction}, ops wrong ${k.opsWrong}, not judged '
-            '${k.notJudged.values.fold(0, (a, b) => a + b)}'
-            '${k.notJudged.isEmpty ? '' : ' (${_counted(k.notJudged)})'}',
-      for (final f in t.findings)
-        'OPS $label unit ${f.number} "${f.kind}"'
-            '${f.uncovered.isEmpty ? '' : ' changed without an action: ${f.uncovered.take(12).join('; ')}${f.uncovered.length > 12 ? ' (+${f.uncovered.length - 12})' : ''}'}'
-            '${f.wrong.isEmpty ? '' : ' | ops wrong: ${f.wrong.take(12).join('; ')}${f.wrong.length > 12 ? ' (+${f.wrong.length - 12})' : ''}'}'
-            '${f.gaps.isEmpty ? '' : ' | gaps: ${f.gaps.take(6).join('; ')}'}',
-      for (final refused in t.commitsRefused) 'OPS $label refused $refused',
-      for (final fault in t.followerFaults) 'OPS $label follower fault $fault',
-      for (final h in t.hiveFindings)
-        'OPS $label hive save ${h.save} differs from the store: '
-            '${h.differences.take(12).join('; ')}',
-      ..._costLines(label, t.costs),
-    ];
+List<String> actionOpsLines(String label, ActionJournal journal) {
+  final t = journal.tally;
+  return [
+    'OPS $label gap finder: a finding is evidence of a gap; a unit with no '
+        'finding is evidence of nothing',
+    'OPS $label units opened ${t.unitsOpened}: with a finding '
+        '${t.unitsWithFindings} (changed without an action '
+        '${t.changedWithoutAction}, the action\'s before did not match the '
+        'canvas ${t.beforeNotOnCanvas}, ops wrong ${t.opsWrong}), no finding '
+        '${t.noFinding}, no change ${t.unitsWithNoChange}, not judged '
+        '${t.unitsNotJudged}${_reasons(t.notJudged)}, discarded '
+        '${t.unitsDiscarded}${_reasons(t.discarded)}, still open '
+        '${journal.unitsStillOpen}; adds up ${journal.addsUp ? 'yes' : 'NO'}',
+    'OPS $label actions ${t.actions}, commits ${t.commits}, ops '
+        '${t.opsCommitted}, commits refused ${t.commitsRefused.length}; '
+        'taken up ${t.takenUp}, released ${t.released} (Hive put back '
+        '${t.releasesThatPutHiveBack}), store put right from the canvas '
+        '${t.repairsFromCanvas} after a unit and ${t.repairsAtLoad} at a '
+        'page load; follower faults ${t.followerFaults.length}',
+    'OPS $label opened with the canvas different from Hive '
+        '${t.openedDifferentFromHive} times'
+        '${t.openedDifferences.isEmpty ? '' : ': ${_counted(t.openedDifferences)}'}',
+    'OPS $label hive saves ${t.hiveSaves}: equal to the store '
+        '${t.hiveSavesEqualToStore}, different ${t.hiveSavesDifferent}, '
+        'failed ${t.hiveSavesFailed}'
+        '${t.hiveDifferencesByField.isEmpty ? '' : '; differing fields ${_counted(t.hiveDifferencesByField)}'}',
+    for (final MapEntry(key: kind, value: k) in t.byKind.entries)
+      'OPS $label kind "$kind": with a finding ${k.withFindings} (changed '
+          'without an action ${k.changedWithoutAction}, the action\'s before '
+          'did not match the canvas ${k.beforeNotOnCanvas}, ops wrong '
+          '${k.opsWrong}), no finding ${k.noFinding}, no change '
+          '${k.noChange}, not judged ${_sum(k.notJudged)}'
+          '${_reasons(k.notJudged)}, discarded ${_sum(k.discarded)}'
+          '${_reasons(k.discarded)}',
+    for (final f in t.findings)
+      'OPS $label finding ${f.number} "${f.kind}"'
+          '${_listed(' changed without an action: ', f.uncovered)}'
+          '${_listed(' | the action\'s before did not match the canvas: ', f.stale)}'
+          '${_listed(' | ops wrong: ', f.wrong)}'
+          '${f.gaps.isEmpty ? '' : ' | gaps: ${f.gaps.take(6).join('; ')}'}',
+    for (final refused in t.commitsRefused) 'OPS $label refused $refused',
+    for (final fault in t.followerFaults) 'OPS $label follower fault $fault',
+    for (final h in t.hiveFindings)
+      'OPS $label hive save ${h.save} differs from the store: '
+          '${h.differences.take(12).join('; ')}',
+    ..._costLines(label, t.costs),
+  ];
+}
+
+int _sum(Map<String, int> counts) => counts.values.fold(0, (a, b) => a + b);
+
+String _listed(String heading, List<String> lines) => lines.isEmpty
+    ? ''
+    : '$heading${lines.take(12).join('; ')}'
+        '${lines.length > 12 ? ' (+${lines.length - 12})' : ''}';
+
+String _notAddingUp(ActionJournal journal) =>
+    'units do not add up: opened ${journal.tally.unitsOpened}, given a '
+    'disposition ${journal.tally.unitsDisposed}, still open '
+    '${journal.unitsStillOpen}';
 
 String actionOpsInFlight(ProviderContainer c) => switch (_journal(c)) {
       final journal? => 'actions journaled ${journal.tally.actions}, '
@@ -123,13 +150,10 @@ Future<List<String>> actionOpsStep(
       when mirror.phase is MirrorFollowing) {
     await _settled(mirror);
   }
-  final lines = actionOpsLines(label, journal.tally);
+  final lines = actionOpsLines(label, journal);
   final counts = opsCounts(journal.tally);
   final problems = [
-    if (!journal.tally.addsUp)
-      'units do not add up: opened ${journal.tally.unitsOpened}, judged '
-          '${journal.tally.unitsJudged}, not judged '
-          '${journal.tally.unitsNotJudged}',
+    if (!journal.addsUp) _notAddingUp(journal),
     for (final MapEntry(:key, :value) in expected.entries)
       if (counts[key] != value) '$key is ${counts[key]}, expected $value',
   ];
@@ -154,13 +178,12 @@ Future<String?> saveOpenLocalStrategy(
 }
 
 List<String> actionOpsEndLines(StoreMirror mirror) => switch (mirror.actions) {
-      final journal? => [
-          ...actionOpsLines('run', journal.tally),
-          if (!journal.tally.addsUp)
-            'OPS run units do not add up: opened '
-                '${journal.tally.unitsOpened}, judged '
-                '${journal.tally.unitsJudged}, not judged '
-                '${journal.tally.unitsNotJudged}',
-        ],
+      final journal? => actionOpsLines('run', journal),
       null => const [],
+    };
+
+String? actionOpsEndProblem(StoreMirror mirror) => switch (mirror.actions) {
+      final journal? when !journal.addsUp || journal.unitsStillOpen > 0 =>
+        'OPS run ${_notAddingUp(journal)}',
+      _ => null,
     };

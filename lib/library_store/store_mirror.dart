@@ -149,7 +149,9 @@ final class StoreMirror extends LocalLibraryFollower {
 
   Future<int> releaseTakenUp() async {
     final journal = actions;
-    if (journal == null || _phase is! MirrorFollowing) return 0;
+    if (journal == null) return 0;
+    journal.source?.closeOut();
+    if (_phase is! MirrorFollowing) return 0;
     await drained();
     final taken = journal.takenUp;
     for (final id in taken) {
@@ -161,10 +163,36 @@ final class StoreMirror extends LocalLibraryFollower {
     return taken.length;
   }
 
-  void takeUp(String strategyId, StrategyData hive, StrategyData canvas) {
+  void unitOpened() => actions?.opened();
+
+  void closedWithoutJudging(
+    List<DeclaredAction> declared, {
+    required String notJudged,
+    required String discarded,
+  }) =>
+      actions?.closedWithoutJudging(
+        declared,
+        notJudged: notJudged,
+        discarded: discarded,
+      );
+
+  void takeUp(
+    String strategyId,
+    StrategyData hive,
+    StrategyData canvas,
+    List<DeclaredAction> declared,
+  ) {
     final journal = actions;
-    if (journal == null || _phase is! MirrorFollowing) return;
-    journal.takeUp(strategyId, hive, canvas);
+    if (journal == null) return;
+    if (_phase is! MirrorFollowing) {
+      journal.closedWithoutJudging(
+        declared,
+        notJudged: 'the mirror was not following yet',
+        discarded: 'actions before the mirror was following',
+      );
+      return;
+    }
+    journal.takeUp(strategyId, hive, canvas, declared);
     _strategies.remove(strategyId);
     _kick();
   }
@@ -180,7 +208,15 @@ final class StoreMirror extends LocalLibraryFollower {
     Duration snapshotTime = Duration.zero,
   }) {
     final journal = actions;
-    if (journal == null || _phase is! MirrorFollowing) return;
+    if (journal == null) return;
+    if (_phase is! MirrorFollowing) {
+      journal.closedWithoutJudging(
+        declared,
+        notJudged: 'the mirror was not following yet',
+        discarded: 'actions before the mirror was following',
+      );
+      return;
+    }
     journal.unit(
       strategyId,
       kind: kind,

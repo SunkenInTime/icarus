@@ -393,6 +393,9 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
     ...actionOpsEndLines(mirror),
     ...describeCheck(check, checkClock.elapsed),
   ];
+  if (actionOpsEndProblem(mirror) case final problem?) {
+    throw StoreStepFailed([...lines, problem]);
+  }
   if (check case StoreChecked(isExact: true)) return lines;
   if (check case final StoreChecked checked
       when storeRefusalsExpected.isNotEmpty &&
