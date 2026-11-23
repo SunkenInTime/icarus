@@ -103,7 +103,17 @@ void main() {
       ], lagging: const [
         lag
       ]),
-      hasLength(4),
+      unorderedEquals([
+        for (final difference in [
+          'page p1: item b1: the store holds live at revision 2, the server '
+              'sent live at revision 3',
+          'page p1: item a1: missing from the store',
+          'page p1: item a1: the store holds live at revision 4, the server '
+              'sent live at revision 3',
+          'page list: the store holds p1, the server sent p1, p2',
+        ])
+          'CLOUDSTORE compared at the end: strategy-a: $difference',
+      ]),
     );
   });
 }

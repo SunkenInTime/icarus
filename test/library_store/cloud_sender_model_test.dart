@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
+import 'package:icarus/library_store/landed_retiring.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -122,7 +123,7 @@ final class Model {
     refusedAt = null;
     _read = 0;
     _restartsWritten.clear();
-    _lastRetire.clear();
+    _retired.clear();
     _lastViewer.clear();
     _lastAccess.clear();
     _requestsSeen = server.readCalls.length;
@@ -356,8 +357,8 @@ final class Model {
         for (final view in cloud.views.values)
           for (final hold in view.holds)
             if (hold case AwaitingResult(:final subject)
-                when !shown.contains(CloudSender.readWords(subject)))
-              CloudSender.readWords(subject),
+                when !shown.contains('$subject'))
+              '$subject',
       };
       if (unshown.isEmpty) continue;
       final outlook = sender.outlook(stored.id, cloud);
@@ -401,10 +402,19 @@ final class Model {
       }
       switch (call.why) {
         case 'landed work waits for a result':
-          if (_lastRetire[key] case (final last, final under)
-              when under == _underAt[call] &&
-                  call.at!.isAfter(last) &&
-                  call.at!.difference(last) < timing.retireAgainAfter) {
+          final last = (_retired[key] ?? const [])
+              .where(
+                (read) =>
+                    read.under == _underAt[call] && read.at.isBefore(call.at!),
+              )
+              .map((read) => read.at)
+              .fold<DateTime?>(
+                null,
+                (latest, at) =>
+                    latest == null || at.isAfter(latest) ? at : latest,
+              );
+          if (last != null &&
+              call.at!.difference(last) < timing.retireAgainAfter) {
             broken.add('$call of ${call.strategyId} was requested to retire '
                 'landed work ${call.at!.difference(last)} after a recorded '
                 'read');
@@ -430,7 +440,8 @@ final class Model {
   final _underAt = <ReadCall, (int, int)>{};
 
   var _requestsSeen = 0;
-  final _lastRetire = <(String, String), (DateTime, (int, int)?)>{};
+  final _retired =
+      <(String, String), List<({DateTime at, (int, int)? under})>>{};
   final _lastViewer = <String, (DateTime, (int, (int, int)))>{};
   final _lastAccess = <String, ReadCall>{};
   final _epochs = <String, int>{};
@@ -498,12 +509,14 @@ final class Model {
           }
         case ReadRecorded(:final strategyId, :final read, :final why, :final at)
             when why == 'landed work waits for a result':
-          _lastRetire[(strategyId, read == 'the page list' ? 'list' : read)] = (
-            at,
-            _underAt[server.readCalls.lastWhere(
+          (_retired[(strategyId, read == 'the page list' ? 'list' : read)] ??=
+                  [])
+              .add((
+            at: at,
+            under: _underAt[server.readCalls.lastWhere(
               (call) => call.strategyId == strategyId && call.at == at,
             )],
-          );
+          ));
         case ReadRecorded(:final strategyId, :final why, :final at)
             when why == 'edit access was lost':
           if (_lastAccess[strategyId] case final call?
@@ -908,10 +921,7 @@ final class Model {
     for (final strategy in strategies) {
       final cloud = world.cloud(strategy);
       expect(
-        [
-          if (world.sender.couldNotResolve(strategy, cloud) == null)
-            for (final work in cloud.queue.landed) work.op.opId,
-        ],
+        _landedNotShown(strategy, cloud),
         isEmpty,
         reason: 'the loop\'s reads did not clear the landed work of '
             '$strategy\n$trail',
@@ -989,13 +999,28 @@ final class Model {
 
   bool _settledOrNeedsYou() => strategies.every((strategy) {
         final cloud = world.cloud(strategy);
-        return (cloud.queue.landed.isEmpty ||
-                world.sender.couldNotResolve(strategy, cloud) != null) &&
+        return _landedNotShown(strategy, cloud).isEmpty &&
             world.sender.cannotRead(strategy) == null &&
             cloud.queue.entries.every(
               (entry) => _needsUser(cloud, entry.id),
             );
       });
+
+  List<String> _landedNotShown(String strategy, CloudStrategy cloud) {
+    final shown = world.sender.couldNotResolve(strategy, cloud)?.subjects ??
+        const <String>[];
+    return [
+      for (final MapEntry(key: page, value: works)
+          in Retiring.landedByPage(cloud).entries)
+        if (!shown.contains(
+          'landed work on '
+          '${page == Retiring.list ? 'the page list' : 'page $page'}',
+        ))
+          for (final (attempt, position) in works)
+            'attempt $attempt position $position on '
+                '${page == Retiring.list ? 'the page list' : 'page $page'}',
+    ];
+  }
 
   bool _needsUser(CloudStrategy cloud, String id, [int depth = 0]) {
     final view = cloud.views[id];

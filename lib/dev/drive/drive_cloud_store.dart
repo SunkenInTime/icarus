@@ -430,6 +430,34 @@ Future<List<String>> useCloudAs(
   return chosen;
 }
 
+Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
+  final strategyId = storedCloudStrategy(c);
+  final until = DateTime.now().add(within);
+  while (true) {
+    final cloud = switch (await _storeOf(c).readStrategy(strategyId)) {
+      Found(value: StrategyContent(sync: final CloudStrategy cloud)) => cloud,
+      final other => throw StateError('$strategyId could not be read: $other'),
+    };
+    final viewer = _sender(c).readMemory(strategyId).viewer;
+    if (standingOf(cloud.queue) == Standing.editAccessLost &&
+        cloud.queue.entries.isNotEmpty &&
+        viewer?.lossAttempt == cloud.queue.strategy.accessLostAt) {
+      return 'CLOUDSTORE $strategyId is held for lost edit access with '
+          '${cloud.queue.entries.length} entries unsent, and its page list '
+          'said this account can only view it';
+    }
+    if (DateTime.now().isAfter(until)) {
+      throw StateError(
+        '$strategyId was not held for lost edit access with a viewer\'s '
+        'answer within ${within.inSeconds} s: standing '
+        '${standingOf(cloud.queue).name}, ${cloud.queue.entries.length} '
+        'entries, viewer answer $viewer; sender ${_senderWords(c)}',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+}
+
 Future<List<String>> storeSyncStates(ProviderContainer c) async {
   final signedIn = switch (c.read(authProvider).user?.id) {
     final String id when id.isNotEmpty => SignedInAs(Account(id)),
@@ -808,9 +836,11 @@ final class CloudStoreLog {
       return [
         CloudStoreLine(
           'CLOUDSTORE the sender never started: '
-          '${switch (c.read(cloudSenderProvider.notifier).opened) {
-            final opened? => _opened(opened),
-            null => 'the store had not opened',
+          '${switch (c.read(cloudSenderProvider.notifier)) {
+            CloudSenderNotifier(opened: final opened?) => _opened(opened),
+            CloudSenderNotifier(openingThrew: final error?) =>
+              'opening the store threw: $error',
+            _ => 'the store had not opened',
           }}',
           problem: true,
         ),
@@ -818,6 +848,17 @@ final class CloudStoreLog {
     }
     final deadline = lastStep.add(finalWait);
     final stopping = await _senderStopped(c, deadline);
+    if (sender.busy) {
+      return [
+        ..._senderDrain(c),
+        ...stopping,
+        const CloudStoreLine(
+          'CLOUDSTORE the store was not compared with the server: the sender '
+          'was still in a step, so the store could still change',
+          problem: true,
+        ),
+      ];
+    }
     final left = await _workLeft(sender.store.store);
     final asLeft = await _compareWithServer(
       c,
@@ -1015,17 +1056,19 @@ Future<List<CloudStoreLine>> _namedReadBack(
   }
   switch (await openLibraryStore(opened.file, build: sender.build)) {
     case LibraryStoreReady(:final store, :final closeEngine):
-      final lines = await _compareWithServer(
-        c,
-        store,
-        build: sender.build,
-        when: 'after reopening the store',
-        expected: expected,
-        lagging: lagging,
-      );
-      await store.close();
-      await closeEngine();
-      return lines;
+      try {
+        return await _compareWithServer(
+          c,
+          store,
+          build: sender.build,
+          when: 'after reopening the store',
+          expected: expected,
+          lagging: lagging,
+        );
+      } finally {
+        await store.close();
+        await closeEngine();
+      }
     case final other:
       return [
         CloudStoreLine(
@@ -1044,7 +1087,20 @@ Future<List<CloudStoreLine>> _compareWithServer(
   required List<ExpectedStrategy> expected,
   required List<LaggingRow> lagging,
 }) async {
-  final signedIn = _signedIn(c);
+  final signedIn = switch (c.read(authProvider).user?.id) {
+    final String id when id.isNotEmpty => Account(id),
+    _ => null,
+  };
+  if (signedIn == null) {
+    return [
+      CloudStoreLine(
+        'CLOUDSTORE compared $when: nobody is signed in at the end, so the '
+        'server\'s copy cannot be read as the store\'s account and the store '
+        'was not compared',
+        problem: true,
+      ),
+    ];
+  }
   final repository = c.read(convexStrategyRepositoryProvider);
   final held = <ServerComparison>[];
   final library = store.library;

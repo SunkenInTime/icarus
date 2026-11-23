@@ -68,6 +68,8 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
 
   LibraryStoreOpened? opened;
 
+  Object? openingThrew;
+
   @override
   CloudSender? build() => null;
 
@@ -79,6 +81,7 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
     try {
       ready = opened = await opening;
     } catch (error) {
+      openingThrew = error;
       return;
     }
     if (ready case LibraryStoreReady(:final store)) begin(store, build: build);

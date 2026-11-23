@@ -362,6 +362,14 @@ final class SlowSenderStore extends SenderStore {
   var afterRead = Duration.zero;
   var dropSessionReadBack = 0;
   var throwsOnBase = false;
+  void Function()? duringSessionWrite;
+  var readsThrow = false;
+
+  @override
+  Future<Reading<StrategyContent>> readStrategy(String strategyId) {
+    if (readsThrow) throw StateError('the store broke on a read');
+    return super.readStrategy(strategyId);
+  }
 
   @override
   Future<Written> write(
@@ -374,6 +382,11 @@ final class SlowSenderStore extends SenderStore {
     if (throwsOnBase && events.any((event) => event is BaseArrived)) {
       throwsOnBase = false;
       throw StateError('the store broke');
+    }
+    if (readSession) {
+      final during = duringSessionWrite;
+      duringSessionWrite = null;
+      during?.call();
     }
     final written = await super.write(
       owner,

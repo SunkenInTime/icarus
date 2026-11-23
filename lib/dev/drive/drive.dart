@@ -1703,7 +1703,12 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'addPage':
       await c.read(strategyProvider.notifier).addPage();
     case 'storeDeletePage':
-      _log(await storeDeletePage(c, (value as num).toInt()));
+      if (value is! int || value < 0) {
+        throw StateError(
+          'storeDeletePage takes a page number counting from 0, not $value',
+        );
+      }
+      _log(await storeDeletePage(c, value));
     case 'setMemberRole':
       _log(await setMemberRole(c, value as String));
     case 'waitStoreSent':
@@ -1720,6 +1725,10 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':
       (await storeSyncStates(c)).forEach(_log);
+    case 'waitStoreHeld':
+      _log(
+        await waitStoreHeld(c, Duration(seconds: (value as num).toInt())),
+      );
     case 'killNow':
       _log('KILLED by the script');
       exit(9);

@@ -178,7 +178,7 @@ typedef ReadMemory = ({
   int failures,
   CannotRead? cannotRead,
   ViewerWait? viewer,
-  Map<String, NeedRounds> rounds,
+  Map<ResultSubject, NeedRounds> rounds,
   RetireReads retired,
 });
 
@@ -211,7 +211,7 @@ extension on ReadMemory {
 
   ReadMemory answered({
     required ViewerWait? viewer,
-    required Map<String, NeedRounds> rounds,
+    required Map<ResultSubject, NeedRounds> rounds,
     required RetireReads retired,
   }) =>
       (
@@ -224,7 +224,7 @@ extension on ReadMemory {
         retired: retired,
       );
 
-  ReadMemory withRounds(Map<String, NeedRounds> rounds) => (
+  ReadMemory withRounds(Map<ResultSubject, NeedRounds> rounds) => (
         under: under,
         retryAt: retryAt,
         failures: failures,
@@ -422,7 +422,7 @@ final class CloudSender {
           in memory.rounds.entries)
         if (rounds >= _timing.unresolvedRounds &&
             at.add(_timing.readAgainAfter).isAfter(now))
-          (subject, at.add(_timing.readAgainAfter)),
+          ('$subject', at.add(_timing.readAgainAfter)),
       if (cloud ?? _lastSeen[strategyId] case final seen?)
         for (final (page, until)
             in Retiring.stuck(seen, now, _timing.retiring, memory.retired))
@@ -448,7 +448,8 @@ final class CloudSender {
         blocked != null && blocked.isAfter(now)
             ? ReadAt(blocked)
             : ReadNow('$read (${why.words})'),
-      (planned: null, due: final at?) => ReadAt(at),
+      (planned: null, due: final at?) =>
+        ReadAt(blocked != null && blocked.isAfter(at) ? blocked : at),
       (planned: null, due: null) => const NothingToRead(),
     };
   }
@@ -570,10 +571,9 @@ final class CloudSender {
       for (final strategy in stored) {
         _wanted.remove(strategy.id);
       }
+      final storedIds = {for (final strategy in stored) strategy.id};
       _memory.removeWhere(
-        (id, _) =>
-            !_wanted.containsKey(id) &&
-            !stored.any((strategy) => strategy.id == id),
+        (id, _) => !_wanted.containsKey(id) && !storedIds.contains(id),
       );
       final candidates = <_Candidate>[
         for (final id in _wanted.keys) _Adopt(id),
@@ -797,25 +797,22 @@ final class CloudSender {
       _note(id, 'closed attempts $open that no call answers');
       return _afterWrite(id, written, mustApply: true);
     }
+    final fresh = _plan(id, cloud, _clock(), _boundMemory(id, snap));
     switch (pick(cloud, clientId)) {
       case final Picked picked when _sendable(cloud):
         return _sendStep(id, owner, snap, picked);
       case Picked():
-        final next = planned ??
-            _plan(id, cloud, _clock(), _boundMemory(id, snap)).planned;
-        if (next == null) {
-          _note(id, 'held: ${standingOf(cloud.queue).name}');
-          return _Skipped(readDue);
+        if (fresh.planned case final next?) {
+          return _readStep(id, owner, snap, session, cloud, next);
         }
-        return _readStep(id, owner, snap, session, cloud, next);
+        _note(id, 'held: ${standingOf(cloud.queue).name}');
+        return _Skipped(fresh.due);
       case NothingSendable(:final why, :final retryAt):
-        final next = planned ??
-            _plan(id, cloud, _clock(), _boundMemory(id, snap)).planned;
-        if (next == null) {
-          _note(id, why);
-          return _Skipped(retryAt);
+        if (fresh.planned case final next?) {
+          return _readStep(id, owner, snap, session, cloud, next);
         }
-        return _readStep(id, owner, snap, session, cloud, next);
+        _note(id, why);
+        return _Skipped(_earliest(retryAt, fresh.due));
     }
   }
 
@@ -841,19 +838,20 @@ final class CloudSender {
       if (due == null || at.isBefore(due!)) due = at;
     }
 
-    final needed = {for (final subject in _needsOf(cloud)) _readOf(subject)}
-        .toList()
+    final needed = _needsOf(cloud).toList()
       ..sort(
-          (a, b) => (a is _ReadList ? 0 : 1).compareTo(b is _ReadList ? 0 : 1));
-    for (final next in needed) {
-      final at = switch (memory.rounds['$next']) {
+        (a, b) => (_readOf(a) is _ReadList ? 0 : 1)
+            .compareTo(_readOf(b) is _ReadList ? 0 : 1),
+      );
+    for (final need in needed) {
+      final at = switch (memory.rounds[need]) {
         null => now,
         (:final rounds, :final at) when rounds >= _timing.unresolvedRounds =>
           at.add(_timing.readAgainAfter),
         (:final rounds, :final at) => at.add(_timing.readRetryAfter(rounds)),
       };
       if (!at.isAfter(now)) {
-        return (planned: (read: next, why: _Why.need), due: null);
+        return (planned: (read: _readOf(need), why: _Why.need), due: null);
       }
       later(at);
     }
@@ -882,8 +880,6 @@ final class CloudSender {
           if (!cloud.queue.shown.content.containsKey(page)) page,
       ];
 
-  static String readWords(ResultSubject subject) => '${_readOf(subject)}';
-
   static _Read _readOf(ResultSubject subject) => switch (subject) {
         PageListResult() => const _ReadList(),
         RowResult(
@@ -897,9 +893,7 @@ final class CloudSender {
 
   void _forgetResolved(String id, CloudStrategy cloud, Snapshot snap) {
     final memory = _boundMemory(id, snap);
-    final raised = {
-      for (final subject in _needsOf(cloud)) '${_readOf(subject)}'
-    };
+    final raised = _needsOf(cloud);
     final now = _clock();
     final kept = {
       for (final MapEntry(key: subject, value: rounds) in memory.rounds.entries)
@@ -1045,10 +1039,12 @@ final class CloudSender {
       rounds: switch (why) {
         _Why.need => {
             ...memory.rounds,
-            '$read': (
-              rounds: (memory.rounds['$read']?.rounds ?? 0) + 1,
-              at: started,
-            ),
+            for (final need in _needsOf(cloud))
+              if ('${_readOf(need)}' == '$read')
+                need: (
+                  rounds: (memory.rounds[need]?.rounds ?? 0) + 1,
+                  at: started,
+                ),
           },
         _ => memory.rounds,
       },

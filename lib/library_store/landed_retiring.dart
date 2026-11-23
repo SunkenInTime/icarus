@@ -43,7 +43,8 @@ final class Retiring {
     final quietAt = (_active[id] ?? now).add(timing.quiet);
     if (quietAt.isAfter(now)) return (read: null, due: quietAt);
     DateTime? due;
-    for (final MapEntry(key: page, value: works) in _byPage(cloud).entries) {
+    for (final MapEntry(key: page, value: works)
+        in landedByPage(cloud).entries) {
       final prior = reads[page];
       if (prior == null) return (read: page, due: null);
       final stuck =
@@ -65,7 +66,7 @@ final class Retiring {
     CloudStrategy cloud,
     DateTime at,
   ) {
-    final works = _byPage(cloud)[page] ?? const {};
+    final works = landedByPage(cloud)[page] ?? const {};
     final prior = reads[page];
     return {
       ...reads,
@@ -86,7 +87,8 @@ final class Retiring {
     RetireReads reads,
   ) =>
       [
-        for (final MapEntry(key: page, value: works) in _byPage(cloud).entries)
+        for (final MapEntry(key: page, value: works)
+            in landedByPage(cloud).entries)
           if (reads[page] case final prior?
               when prior.rounds >= timing.rounds &&
                   prior.works.containsAll(works) &&
@@ -94,7 +96,7 @@ final class Retiring {
             (page, prior.at.add(timing.stuck)),
       ];
 
-  static Map<String, Set<(int, int)>> _byPage(CloudStrategy cloud) {
+  static Map<String, Set<(int, int)>> landedByPage(CloudStrategy cloud) {
     final byPage = <String, Set<(int, int)>>{};
     for (final work in cloud.queue.landed) {
       final page = switch (targetOf(work.op)) {

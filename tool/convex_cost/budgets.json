@@ -679,7 +679,7 @@
     },
     "storeReadPageDelete": {
       "title": "The store's sender reads before a page delete",
-      "about": "A page delete waits for the page list and the page read since this device last changed them. The sender reads them, named for the coach's account, one per step: strategy:getPageList, then page:getSnapshot of the page (the typical strategy's first page, 60 items). The same page-list read confirms edit access after FORBIDDEN, and adopting a strategy reads it first.",
+      "about": "A page delete waits for the page list and the page read since this device last changed them. The sender reads them, named for the coach's account, one per step: strategy:getPageList, then page:getSnapshot of the page (the typical strategy's first page, 60 items). After a send is refused because edit access was removed, the same page-list read confirms edit access when it returns an owner or editor role, and adopting a strategy reads it first.",
       "metrics": {
         "functionCalls": {
           "today": 2,

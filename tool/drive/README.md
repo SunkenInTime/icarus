@@ -76,6 +76,7 @@ Its steps:
 - `{"holdSender": true}` and `{"releaseSender": true}` hold sending and let it go again; answers already received are still written while it is held.
 - `{"waitStoreSent": seconds}` waits until every queue is empty and no landed work waits for a result; with `"landed": "may wait"` landed work may still wait.
 - `{"expectStoreNeedsYou": true}` logs every entry that needs the user, with the queue's reason, and fails if there is none; `{"storeUseCloud": "<item id>"}` takes the cloud's version of each entry that needs the user in the strategy holding that item, as the signed-in account; the store refuses it when that account does not own the strategy.
+- `{"waitStoreHeld": seconds}` waits until the store's one cloud strategy is held for lost edit access with work unsent, and the sender's page-list read for that loss said the account can only view it; it fails if that does not happen in time.
 - `{"storeSyncState": true}` logs each cloud strategy's sync state for the account signed in, whose work it is, and the sender's state.
 - `{"killNow": true}` ends the app at once, the way a crash does.
 - `{"signOut": true}` signs out through the app's own confirmation; `{"signIn": "second"}` signs in to `--second-account` (Linux).

@@ -1096,8 +1096,16 @@ void main() {
             expect(world.queueLength(), 0);
           } else {
             expect(world.face(), Face.editAccessLost);
-            world.settle(const Duration(minutes: 10));
+            final first = world.server.readCalls.last.at!;
+            final again = first.add(const Duration(minutes: 10));
+            world.settle(
+              again.difference(start.add(world.async.elapsed)) -
+                  const Duration(seconds: 1),
+            );
+            expect(readsAfter(world, before), ['list']);
+            world.settle(const Duration(seconds: 2));
             expect(readsAfter(world, before), ['list', 'list']);
+            expect(world.server.readCalls.last.at!.isBefore(again), isFalse);
           }
         });
       }
@@ -1341,11 +1349,20 @@ void main() {
         world.teammateDeletesPage(pageId);
         final before = world.server.readCalls.length;
         world.settle(const Duration(minutes: 40));
-        expect(
-          world.cloud().queue.landed.isEmpty ||
-              world.sender.couldNotResolve(strategyId) != null,
-          isTrue,
-        );
+        for (final page in Retiring.landedByPage(world.cloud()).keys) {
+          final (read, subject) = page == Retiring.list
+              ? ('list', 'the page list')
+              : ('page $page', 'page $page');
+          expect(
+            readsAfter(world, before).where((call) => call == read),
+            hasLength(greaterThanOrEqualTo(3)),
+            reason: subject,
+          );
+          expect(
+            world.sender.couldNotResolve(strategyId)?.subjects,
+            contains('landed work on $subject'),
+          );
+        }
         expect(readsAfter(world, before).length, lessThanOrEqualTo(8));
       });
     });
@@ -1633,9 +1650,11 @@ void main() {
           world.commitPageDelete('delete-p2', secondId());
           world.settle(const Duration(minutes: 1));
           expect(world.sender.couldNotResolve(strategyId), isNotNull);
-          final before = server.readCalls.length;
+          final offline = server.readCalls.length;
           world.connection = null;
           world.settle();
+          expect(readsAfter(world, offline), isEmpty);
+          final before = server.readCalls.length;
           world.connection = 2;
           world.settle(const Duration(seconds: 5));
           expect(readsAfter(world, before), contains('page p2'));
@@ -1714,7 +1733,7 @@ void main() {
             failures: 4,
             cannotRead: const CannotRead('seeded'),
             viewer: (lossAttempt: 7, until: now.add(const Duration(hours: 1))),
-            rounds: {'page p1': (rounds: 3, at: now)},
+            rounds: {PageResult(pageId): (rounds: 3, at: now)},
             retired: {
               Retiring.list: (works: {(1, 0)}, at: now, rounds: 3),
             },
@@ -1733,6 +1752,68 @@ void main() {
           expect(readsAfter(world, before), ['page p1'], reason: change);
         });
       }
+    });
+  });
+
+  group('the bot review of the third round', () {
+    List<String> readsAfter(World world, int before) =>
+        [for (final call in world.server.readCalls.skip(before)) '$call'];
+
+    test(
+        'a read-back that throws after adoption saves ends the sender with the '
+        'store\'s words instead of escaping the loop', () {
+      inWorld(
+        (world) {
+          world.slowStore.readsThrow = true;
+          world.sender.adopt(strategyId);
+          world.settle();
+          expect(world.sender.ended, contains('the store threw'));
+          var finished = false;
+          world.sender.done.then((_) => finished = true);
+          world.settle();
+          expect(finished, isTrue);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'the read is planned from the queue as it stands after the session '
+        'opens, not from before it', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      inWorld(
+        (world) {
+          world.commitMove(1);
+          world.settle(const Duration(seconds: 5));
+          expect(world.cloud().queue.landed, isNotEmpty);
+          world.connection = null;
+          world.settle(const Duration(seconds: 40));
+          final before = server.readCalls.length;
+          world.slowStore.duringSessionWrite = () => world.commitPageDelete(
+                'delete-p2',
+                secondPage().page.publicId,
+              );
+          world.connection = 2;
+          world.settle(const Duration(seconds: 1));
+          expect(readsAfter(world, before).first, 'list');
+          expect(server.readCalls[before].why, 'the queue asked for it');
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
     });
   });
 

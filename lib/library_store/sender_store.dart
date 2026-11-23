@@ -235,10 +235,13 @@ base class SenderStore {
         LibraryShut() => const [],
       };
 
+  Future<Reading<StrategyContent>> readStrategy(String strategyId) =>
+      store.readStrategy(strategyId);
+
   Future<QueueRead> read(String strategyId) async {
     final Reading<StrategyContent> reading;
     try {
-      reading = await store.readStrategy(strategyId);
+      reading = await readStrategy(strategyId);
     } catch (error) {
       return QueueTroubled(StoreShut('the store threw: $error'));
     }
@@ -287,17 +290,9 @@ base class SenderStore {
         report(
           EventsWritten(strategyId, events, batch: batch, effects: effects),
         );
-        return WrittenWith(
-          effects,
-          session: readSession ? await _session(strategyId) : null,
-          notApplied: notApplied,
-        );
+        return _writtenWith(strategyId, effects, notApplied, readSession);
       case NothingToSave():
-        return WrittenWith(
-          const [],
-          session: readSession ? await _session(strategyId) : null,
-          notApplied: const [],
-        );
+        return _writtenWith(strategyId, const [], const [], readSession);
       case Refused(:final reason):
         return _troubled(
           strategyId,
@@ -330,12 +325,31 @@ base class SenderStore {
     };
   }
 
-  Future<int?> _session(String strategyId) async =>
-      switch (await store.readStrategy(strategyId)) {
+  Future<Written> _writtenWith(
+    String strategyId,
+    List<QueueEffect> effects,
+    List<String> notApplied,
+    bool readSession,
+  ) async {
+    if (!readSession) {
+      return WrittenWith(effects, session: null, notApplied: notApplied);
+    }
+    final Reading<StrategyContent> reading;
+    try {
+      reading = await readStrategy(strategyId);
+    } catch (error) {
+      return _troubled(strategyId, StoreShut('the store threw: $error'));
+    }
+    return WrittenWith(
+      effects,
+      session: switch (reading) {
         Found(value: StrategyContent(sync: CloudStrategy(:final queue))) =>
           queue.session.number,
         _ => null,
-      };
+      },
+      notApplied: notApplied,
+    );
+  }
 
   Future<Written> add(
     Account owner,
@@ -349,18 +363,8 @@ base class SenderStore {
       return _troubled(strategyId, StoreShut('the store threw: $error'));
     }
     switch (result) {
-      case Saved():
-        return WrittenWith(
-          const [],
-          session: await _session(strategyId),
-          notApplied: const [],
-        );
-      case NothingToSave():
-        return WrittenWith(
-          const [],
-          session: await _session(strategyId),
-          notApplied: const [],
-        );
+      case Saved() || NothingToSave():
+        return _writtenWith(strategyId, const [], const [], true);
       case Refused(:final reason):
         return _troubled(
           strategyId,
