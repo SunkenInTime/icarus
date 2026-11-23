@@ -31,6 +31,7 @@ Map<String, int> opsCounts(ActionOpsTally t) => {
       'imageWroteRows': t.imageWroteRows,
       'realRows': t.rowsByClass[ImageRowClass.real] ?? 0,
       'trashedPagesRemoved': t.trashedPagesRemoved,
+      'deletedRowsRemoved': t.deletedRowsRemoved,
       'lineupsInsideGroups': t.lineupsInsideGroups,
       'lineupsChangingGroups': t.lineupsChangingGroups,
     };
@@ -43,8 +44,9 @@ List<String> actionOpsLines(String label, ActionOpsTally t) => [
           'equal ${t.readBackEqual}, unequal ${t.readBackUnequal}, not in the '
           'store ${t.savesNotInStore}, not read ${t.savesNotRead}; image saves '
           'wrote nothing ${t.imageWroteNothing}, wrote rows ${t.imageWroteRows}',
-      'OPS $label trashed pages removed before an image save '
-          '${t.trashedPagesRemoved}; strategies repaired from Hive at the end '
+      'OPS $label strategies removed before an image save because the '
+          'store held what an image may not drop: trashed pages '
+          '${t.trashedPagesRemoved}, deleted rows ${t.deletedRowsRemoved}; strategies repaired from Hive at the end '
           '${t.repairedAtEnd}, after ${t.actionsAfterLastSave} actions made '
           'after their last save',
       'OPS $label rows the image saves wrote: ${[

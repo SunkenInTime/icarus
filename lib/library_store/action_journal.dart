@@ -90,6 +90,7 @@ final class ActionOpsTally {
   var imageWroteRows = 0;
   final rowsByClass = <ImageRowClass, int>{};
   var trashedPagesRemoved = 0;
+  var deletedRowsRemoved = 0;
   var repairedAtEnd = 0;
   var actionsAfterLastSave = 0;
   final findings = <SaveFinding>[];
@@ -208,7 +209,7 @@ final class ActionJournal {
     if (!job.compares) {
       if (await readStoredRows(store, job.strategyId)
           case StoredRowsRead(:final rows)) {
-        trashed = rows.pages.any((page) => page is TrashedPage);
+        trashed = _holdsWhatAnImageCannotDrop(rows);
       }
       return JournalSaved(job.strategyId, image, removeFirst: trashed);
     }
@@ -217,15 +218,24 @@ final class ActionJournal {
     switch (await readStoredRows(store, job.strategyId)) {
       case StoredRowsRead(:final rows):
         _compare(saved, image, rows, actions);
-        trashed = rows.pages.any((page) => page is TrashedPage);
+        trashed = _holdsWhatAnImageCannotDrop(rows);
+        if (rows.pages.any((page) => page is TrashedPage)) {
+          tally.trashedPagesRemoved += 1;
+        } else if (trashed) {
+          tally.deletedRowsRemoved += 1;
+        }
       case StoredRowsNot(stored: StoredMissing()):
         tally.savesNotInStore += 1;
       case StoredRowsNot():
         tally.savesNotRead += 1;
     }
-    if (trashed) tally.trashedPagesRemoved += 1;
     return JournalSaved(job.strategyId, image, removeFirst: trashed);
   }
+
+  static bool _holdsWhatAnImageCannotDrop(StrategyRowSet rows) =>
+      rows.pages.any((page) => page is TrashedPage) ||
+      rows.elements.any((row) => row is DeletedElement) ||
+      rows.lineupGroups.any((row) => row is DeletedLineupGroup);
 
   void _compare(
     StrategyData saved,

@@ -153,4 +153,27 @@ void main() {
     );
     expect(journal.tally.findings.single.actions, ['addition text']);
   });
+
+  test(
+      'a delete leaves a deleted row the image save may not drop, so the strategy is removed and the image put fresh, and the store ends exactly as Hive',
+      () async {
+    final (:mirror, :journal, :gap) = await following();
+    final text =
+        ActionObjectState.text(_strategy().pages.single.textData.single);
+    mirror.journal(
+      'journaled',
+      'deletion text',
+      Future.value([ObjectRemoved('p0', text)]),
+    );
+    final page = _strategy().pages.single;
+    await const LocalLibrary().savePageOnScreen(
+      _strategy().copyWith(pages: [page.copyWith(textData: const [])]),
+    );
+    gap.complete();
+    await mirror.drained();
+
+    expect(journal.tally.readBackEqual, 1);
+    expect(journal.tally.deletedRowsRemoved, 1);
+    expect(mirror.refusedStrategies, isEmpty);
+  });
 }
