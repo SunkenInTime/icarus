@@ -308,13 +308,29 @@ StrategyData _withPages(StrategyData strategy, Set<String> pages) =>
         if (pages.contains(page.id)) page,
     ]);
 
+final class ComparedOn {
+  ComparedOn(this.strategy, Set<String> pages)
+      : rows = inRowTerms(_withPages(strategy, pages));
+
+  final StrategyData strategy;
+  final StrategyData? rows;
+}
+
 List<ReadBackDifference>? differencesOn(
   StrategyData expected,
   StrategyData actual,
   Set<String> pages,
+) =>
+    differencesBetween(ComparedOn(expected, pages), ComparedOn(actual, pages));
+
+List<ReadBackDifference>? differencesBetween(
+  ComparedOn expectedOn,
+  ComparedOn actualOn,
 ) {
-  final left = inRowTerms(_withPages(expected, pages));
-  final right = inRowTerms(_withPages(actual, pages));
+  final expected = expectedOn.strategy;
+  final actual = actualOn.strategy;
+  final left = expectedOn.rows;
+  final right = actualOn.rows;
   if (left == null || right == null) return null;
   final differences = readBackDifferences(left, right);
   final listed = {for (final d in differences) '$d'};

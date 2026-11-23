@@ -32,5 +32,6 @@
   {"key": "keyS"},
   {"wait": 1},
   {"framesLog": "edits on a page of 240 items"},
-  {"actionOps": "after edits on a page of 240 items"}
+  {"actionOps": "after edits on a page of 240 items"},
+  {"exit": 1}
 ]

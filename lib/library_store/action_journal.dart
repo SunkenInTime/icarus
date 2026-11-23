@@ -291,10 +291,9 @@ final class ActionJournal {
     final differences = read == null
         ? null
         : differencesOn(hive, read, {for (final page in hive.pages) page.id});
-    if (differences != null && differences.isEmpty) {
-      return const JournalContinues();
+    if (differences == null || differences.isNotEmpty) {
+      tally.releasesThatPutHiveBack += 1;
     }
-    tally.releasesThatPutHiveBack += 1;
     return JournalPut(
       job.strategyId,
       rowsOf(hive),
@@ -393,10 +392,14 @@ final class ActionJournal {
 
     final compareClock = Stopwatch()..start();
     final read = await _readStore(store, id);
-    final uncovered = differencesOn(replayed.strategy, snapshot, pages);
+    final declaredOn = ComparedOn(replayed.strategy, pages);
+    final canvasOn = ComparedOn(snapshot, pages);
+    final storeOn = read == null ? null : ComparedOn(read, pages);
+    final uncovered = differencesBetween(declaredOn, canvasOn);
     final wrong =
-        read == null ? null : differencesOn(replayed.strategy, read, pages);
-    final behind = read == null ? null : differencesOn(snapshot, read, pages);
+        storeOn == null ? null : differencesBetween(declaredOn, storeOn);
+    final behind =
+        storeOn == null ? null : differencesBetween(canvasOn, storeOn);
     tally.costs.add(UnitCost(
       job.items,
       job.snapshotTime,
