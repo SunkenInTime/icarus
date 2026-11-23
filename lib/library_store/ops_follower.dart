@@ -93,11 +93,23 @@ final class OpsFollower implements EditFollower {
   void _following(String label, void Function() follow) {
     try {
       follow();
-    } on Object catch (error, stackTrace) {
+    } on Object catch (error) {
       if (identical(ActionProvider.editFollower, this)) {
         ActionProvider.editFollower = null;
       }
-      _mirror.followerFaulted(label, error, stackTrace);
+      try {
+        _mirror.followerFaulted(label, _described(error));
+      } on Object {
+        return;
+      }
+    }
+  }
+
+  static String _described(Object error) {
+    try {
+      return '$error';
+    } on Object {
+      return 'a ${error.runtimeType} that could not be described';
     }
   }
 }

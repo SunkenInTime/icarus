@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/const/weapons.dart';
+import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/action_journal.dart';
@@ -417,24 +420,38 @@ void main() {
   });
 
   test(
-      'a follower that throws leaves the edit alone, detaches itself and is counted as a fault',
+      'a follower whose error cannot even be described leaves add, undo and redo alone through the real hooks, detaches each time and is counted',
       () async {
     final (:mirror, :journal, gap: _, store: _, gate: _) = await following();
-    final follower = OpsFollower(
-      mirror,
-      () => throw StateError('no container'),
-    );
-    ActionProvider.editFollower = follower;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    OpsFollower throwing() => OpsFollower(mirror, () => throw _Unprintable());
+    final agent = _page('canvas').agentData.first;
+    container.read(agentProvider.notifier).addAgent(agent);
+    final actions = container.read(actionProvider.notifier);
 
-    follower.onAction(
-      UserAction(type: ActionType.edit, id: 'x', group: ActionGroup.text),
-      way: ActionWay.done,
-    );
-    follower.onPagesChanged(() => throw StateError('no page'), 'page add');
-
+    ActionProvider.editFollower = throwing();
+    container
+        .read(agentProvider.notifier)
+        .setWeapon(agent.id, WeaponType.vandal);
     expect(ActionProvider.editFollower, isNull);
-    expect(journal.tally.followerFaults, hasLength(2));
-    expect(journal.follows('journaled'), isFalse);
+    expect(container.read(actionProvider).last, isA<WeaponSelectionAction>());
+    expect(container.read(agentProvider).single.weapon, WeaponType.vandal);
+
+    ActionProvider.editFollower = throwing();
+    actions.undoAction();
+    expect(ActionProvider.editFollower, isNull);
+    expect(actions.poppedItems, hasLength(1));
+    expect(
+        container.read(agentProvider).single.weapon, isNot(WeaponType.vandal));
+
+    ActionProvider.editFollower = throwing();
+    actions.redoAction();
+    expect(ActionProvider.editFollower, isNull);
+    expect(actions.poppedItems, isEmpty);
+    expect(container.read(agentProvider).single.weapon, WeaponType.vandal);
+
+    expect(journal.tally.followerFaults, hasLength(3));
   });
 
   test(
@@ -472,4 +489,9 @@ void main() {
         ['lineup groups lineups order']);
     expect(between(['a', 'b', 'c', 'd'], ['a', 'b', 'c', 'd']), isEmpty);
   });
+}
+
+final class _Unprintable implements Exception {
+  @override
+  String toString() => throw StateError('cannot describe this error');
 }

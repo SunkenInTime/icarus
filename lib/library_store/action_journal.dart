@@ -182,8 +182,8 @@ final class ActionJournal {
     }
   }
 
-  void faulted(String label, Object error) {
-    tally.followerFaults.add('$label: $error');
+  void faulted(String label, String fault) {
+    tally.followerFaults.add('$label: $fault');
     _following.clear();
   }
 

@@ -169,8 +169,8 @@ final class StoreMirror extends LocalLibraryFollower {
     _kick();
   }
 
-  void followerFaulted(String label, Object error, StackTrace stackTrace) =>
-      actions?.faulted(label, error);
+  void followerFaulted(String label, String fault) =>
+      actions?.faulted(label, fault);
 
   bool _handedOff(String strategyId) => actions?.follows(strategyId) ?? false;
 
