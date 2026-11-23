@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_store/action_ops.dart' show pageItemOf;
 import 'package:icarus/library_store/canvas_changes.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/ops_verdict.dart';
@@ -11,6 +12,7 @@ import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus_library/icarus_library.dart' show ClearedBy, laterField;
 
 StrategySettings cloneSettings(StrategySettings settings) => StrategySettings(
       agentSize: settings.agentSize,
@@ -136,6 +138,19 @@ final class Replayed {
 Map<String, Object?> _json(ActionObjectState object) =>
     jsonDecode(jsonEncode(object.toJson())) as Map<String, Object?>;
 
+bool _clearsWhatWasNotThere(
+  ActionObjectState object,
+  String field,
+  Object? declared,
+  Object? held,
+) {
+  if (held != null) return false;
+  return switch (laterField(pageItemOf(object).kind, field)?.empty) {
+    ClearedBy(:final value) => cloudJsonEquivalent(value, declared),
+    _ => false,
+  };
+}
+
 Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
   final stale = <StaleBefore>[];
   final pages = {for (final page in start.pages) page.id: page};
@@ -185,7 +200,8 @@ Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
         final current = _json(list[index]);
         for (final key in {...from.keys, ...to.keys}) {
           if (cloudJsonEquivalent(from[key], to[key])) continue;
-          if (!cloudJsonEquivalent(current[key], from[key])) {
+          if (!cloudJsonEquivalent(current[key], from[key]) &&
+              !_clearsWhatWasNotThere(after, key, from[key], current[key])) {
             stale.add(StaleBefore(after.kind.name, after.id, key,
                 declared: from[key], held: current[key]));
           }
