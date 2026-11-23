@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -51,9 +52,13 @@ void beginCloudShadow(
         :final cloudSends,
       )) {
     unawaited(
-      container
-          .read(cloudShadowProvider.notifier)
-          .begin(opening: opening, build: build, sends: cloudSends),
+      cloudSends
+          ? container
+              .read(cloudSenderProvider.notifier)
+              .beginOn(opening, build: build)
+          : container
+              .read(cloudShadowProvider.notifier)
+              .begin(opening: opening, build: build),
     );
   }
 }

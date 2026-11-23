@@ -11,11 +11,15 @@ sealed class StoreBatchOutcome {
 }
 
 final class StoreBatchAnswered extends StoreBatchOutcome {
-  StoreBatchAnswered(List<store.OpAnswer> answers, {required this.complete})
-      : answers = List.unmodifiable(answers);
+  StoreBatchAnswered(
+    List<store.OpAnswer> answers, {
+    required this.complete,
+    this.serverTime,
+  }) : answers = List.unmodifiable(answers);
 
   final List<store.OpAnswer> answers;
   final bool complete;
+  final int? serverTime;
 }
 
 final class StoreBatchRefusedWhole extends StoreBatchOutcome {
@@ -37,11 +41,32 @@ final class StoreBatchAccountMismatch extends StoreBatchOutcome {
   final String why;
 }
 
+final class StoreBatchOutsideWindow extends StoreBatchOutcome {
+  const StoreBatchOutsideWindow(this.why);
+
+  final String why;
+}
+
+sealed class ServerTimeAsk {
+  const ServerTimeAsk();
+}
+
+final class ServerTimeNotAsked extends ServerTimeAsk {
+  const ServerTimeNotAsked();
+}
+
+final class ServerTimeAsked extends ServerTimeAsk {
+  const ServerTimeAsked({this.basis});
+
+  final int? basis;
+}
+
 typedef StoreBatchSend = Future<StoreBatchOutcome> Function({
   required String strategyPublicId,
   required String clientId,
   required List<store.StrategyOp> ops,
   required store.Account account,
+  required ServerTimeAsk serverTime,
 });
 
 StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
@@ -49,25 +74,36 @@ StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
       required clientId,
       required ops,
       required account,
+      required serverTime,
     }) async {
-      final List<OpAck> acks;
+      final ({List<OpAck> acks, double? serverTime}) answer;
       try {
-        acks = await repository.applyWireBatch(
+        answer = await repository.applyWireBatch(
           strategyPublicId: strategyPublicId,
           clientId: clientId,
           ops: [for (final op in ops) op.toJson()],
           accountSubject: account.subject,
+          sendsLiveBasis: serverTime is ServerTimeAsked,
+          liveBasis: switch (serverTime) {
+            ServerTimeAsked(:final basis?) => basis.toDouble(),
+            _ => null,
+          },
         );
       } catch (error) {
         return storeBatchOutcomeOfError(error);
       }
-      return storeBatchOutcomeOf(ops, acks);
+      return storeBatchOutcomeOf(
+        ops,
+        answer.acks,
+        serverTime: answer.serverTime?.toInt(),
+      );
     };
 
 StoreBatchOutcome storeBatchOutcomeOf(
   List<store.StrategyOp> sent,
-  List<OpAck> acks,
-) {
+  List<OpAck> acks, {
+  int? serverTime,
+}) {
   final sentIds = {for (final op in sent) op.opId};
   final answers = <store.OpAnswer>[];
   for (final ack in acks) {
@@ -90,6 +126,7 @@ StoreBatchOutcome storeBatchOutcomeOf(
   return StoreBatchAnswered(
     answers,
     complete: sentIds.every(answered.contains),
+    serverTime: serverTime,
   );
 }
 
@@ -161,6 +198,9 @@ StoreBatchOutcome storeBatchOutcomeOfError(Object error) {
   }
   if (isAccountMismatchError(error)) {
     return StoreBatchAccountMismatch('$error');
+  }
+  if (isUncheckedOutsideWindowError(error)) {
+    return StoreBatchOutsideWindow('$error');
   }
   if (isTypedConvexForbiddenError(error)) {
     return const StoreBatchRefusedWhole(store.BatchRefusal.editAccessRemoved);

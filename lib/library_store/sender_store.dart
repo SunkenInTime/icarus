@@ -133,6 +133,12 @@ final class StoredStrategy {
         OwnerUnreadable() => null,
       };
 
+  bool get needsReading => switch (tally) {
+        Tally(standing: Standing.editAccessLost) => true,
+        Tally(:final waiting) => waiting.containsKey(Underway.awaitingResult),
+        null => false,
+      };
+
   bool get hasWorkToSend {
     final known = tally;
     if (known == null) return true;
@@ -170,19 +176,12 @@ final class SessionOpenedFor extends SenderReport {
   final Snapshot stamp;
 }
 
-final class ResultWritten extends SenderReport {
-  const ResultWritten(
-    super.strategyId,
-    this.session,
-    this.stamp, {
-    required this.inputsWhenWritten,
-    required this.result,
-  });
+final class ReadRecorded extends SenderReport {
+  const ReadRecorded(super.strategyId, this.read, this.why, {required this.at});
 
-  final int session;
-  final ResultForStore result;
-  final Snapshot stamp;
-  final Snapshot inputsWhenWritten;
+  final String read;
+  final String why;
+  final DateTime at;
 }
 
 final class EventNotApplied extends SenderReport {
@@ -236,10 +235,13 @@ base class SenderStore {
         LibraryShut() => const [],
       };
 
+  Future<Reading<StrategyContent>> readStrategy(String strategyId) =>
+      store.readStrategy(strategyId);
+
   Future<QueueRead> read(String strategyId) async {
     final Reading<StrategyContent> reading;
     try {
-      reading = await store.readStrategy(strategyId);
+      reading = await readStrategy(strategyId);
     } catch (error) {
       return QueueTroubled(StoreShut('the store threw: $error'));
     }
@@ -288,17 +290,9 @@ base class SenderStore {
         report(
           EventsWritten(strategyId, events, batch: batch, effects: effects),
         );
-        return WrittenWith(
-          effects,
-          session: readSession ? await _session(strategyId) : null,
-          notApplied: notApplied,
-        );
+        return _writtenWith(strategyId, effects, notApplied, readSession);
       case NothingToSave():
-        return WrittenWith(
-          const [],
-          session: readSession ? await _session(strategyId) : null,
-          notApplied: const [],
-        );
+        return _writtenWith(strategyId, const [], const [], readSession);
       case Refused(:final reason):
         return _troubled(
           strategyId,
@@ -331,12 +325,31 @@ base class SenderStore {
     };
   }
 
-  Future<int?> _session(String strategyId) async =>
-      switch (await store.readStrategy(strategyId)) {
+  Future<Written> _writtenWith(
+    String strategyId,
+    List<QueueEffect> effects,
+    List<String> notApplied,
+    bool readSession,
+  ) async {
+    if (!readSession) {
+      return WrittenWith(effects, session: null, notApplied: notApplied);
+    }
+    final Reading<StrategyContent> reading;
+    try {
+      reading = await readStrategy(strategyId);
+    } catch (error) {
+      return _troubled(strategyId, StoreShut('the store threw: $error'));
+    }
+    return WrittenWith(
+      effects,
+      session: switch (reading) {
         Found(value: StrategyContent(sync: CloudStrategy(:final queue))) =>
           queue.session.number,
         _ => null,
-      };
+      },
+      notApplied: notApplied,
+    );
+  }
 
   Future<Written> add(
     Account owner,
@@ -350,18 +363,8 @@ base class SenderStore {
       return _troubled(strategyId, StoreShut('the store threw: $error'));
     }
     switch (result) {
-      case Saved():
-        return WrittenWith(
-          const [],
-          session: await _session(strategyId),
-          notApplied: const [],
-        );
-      case NothingToSave():
-        return WrittenWith(
-          const [],
-          session: await _session(strategyId),
-          notApplied: const [],
-        );
+      case Saved() || NothingToSave():
+        return _writtenWith(strategyId, const [], const [], true);
       case Refused(:final reason):
         return _troubled(
           strategyId,
@@ -456,8 +459,8 @@ Pick pick(CloudStrategy cloud, String newClientId) {
   if (client != null) return Picked(client, ids);
   return NothingSendable(
     awaiting > 0
-        ? '$awaiting ops wait for a result from the server, which nothing '
-            'reads while the editor does not show this strategy'
+        ? '$awaiting ops wait for a result from the server, which the '
+            'sender reads next'
         : 'nothing in its queue may be sent now',
     retryAt: retryAt,
   );

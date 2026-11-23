@@ -3,6 +3,7 @@
   {"tapIcon": "x", "optional": true},
   {"signIn": true},
   {"wait": 6},
+  {"storeExpect": "held"},
   {"openStoredCloudStrategy": true},
   {"wait": 12},
   {"tapIcon": "x", "optional": true},
