@@ -1016,10 +1016,10 @@ void main() {
 
     test(
         'a whole write after a field merge that landed at a revision a '
-        'teammate moved reads its page once before it is decided', () {
+        'teammate made reads its page once before it is decided', () {
       inWorld((world) {
         world.server.answerNext(strategyId, (call) async {
-          world.teammateMoves(1);
+          world.teammateRotates(1);
           return world.server.applyAll(call);
         });
         world.commitMerge(1);

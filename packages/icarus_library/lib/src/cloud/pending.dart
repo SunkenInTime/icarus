@@ -11,6 +11,27 @@ const serverRemembersAnswersFor = Duration(days: 30);
 
 const resendWindow = Duration(days: 29);
 
+const liveFor = Duration(seconds: 20);
+
+final class ServerTimeBasis {
+  const ServerTimeBasis(this.serverTime, {required this.heldAt});
+
+  final int serverTime;
+  final Duration heldAt;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ServerTimeBasis &&
+      other.serverTime == serverTime &&
+      other.heldAt == heldAt;
+
+  @override
+  int get hashCode => Object.hash(ServerTimeBasis, serverTime, heldAt);
+
+  @override
+  String toString() => 'ServerTimeBasis($serverTime, held at $heldAt)';
+}
+
 const sendGiveUpAfter = Duration(hours: 1);
 
 const _setEquality = SetEquality<Object?>();
@@ -37,6 +58,7 @@ final class PendingOp extends QueueEntry {
     required this.retriedAfter,
     this.window = const WindowOpen(),
     this.behindOwn = false,
+    this.basis,
   });
 
   final Work work;
@@ -48,6 +70,7 @@ final class PendingOp extends QueueEntry {
   final int retriedAfter;
   final ResendWindow window;
   final bool behindOwn;
+  final ServerTimeBasis? basis;
 
   StrategyOp get op => work.op;
 
@@ -73,6 +96,7 @@ final class PendingOp extends QueueEntry {
     retriedAfter: retriedAfter ?? this.retriedAfter,
     window: window ?? this.window,
     behindOwn: behindOwn,
+    basis: basis,
   );
 
   @override
@@ -87,7 +111,8 @@ final class PendingOp extends QueueEntry {
       other.refusal == refusal &&
       other.retriedAfter == retriedAfter &&
       other.window == window &&
-      other.behindOwn == behindOwn;
+      other.behindOwn == behindOwn &&
+      other.basis == basis;
 
   @override
   int get hashCode => Object.hash(
@@ -720,6 +745,7 @@ enum BatchRefusal {
   unauthenticated,
   editAccessRemoved,
   strategyDeleted,
+  uncheckedTooLate,
 }
 
 sealed class SendCut {

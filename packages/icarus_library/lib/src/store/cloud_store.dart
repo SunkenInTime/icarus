@@ -267,11 +267,13 @@ DateTime _storedPrecision(DateTime time) => DateTime.fromMillisecondsSinceEpoch(
 );
 
 QueueEvent _atStoredPrecision(QueueEvent event) => switch (event) {
-  BatchClaimed(:final clientId, :final opIds, :final at) => BatchClaimed(
-    clientId: clientId,
-    opIds: opIds,
-    at: _storedPrecision(at),
-  ),
+  BatchClaimed(:final clientId, :final opIds, :final at, :final elapsed) =>
+    BatchClaimed(
+      clientId: clientId,
+      opIds: opIds,
+      at: _storedPrecision(at),
+      elapsed: elapsed,
+    ),
   TransportFailed(:final attempt, :final failure, :final at) => TransportFailed(
     attempt,
     failure,
