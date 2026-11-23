@@ -883,7 +883,8 @@ class _ShortcutBindingRow extends StatelessWidget {
               ),
               if (onReset != null)
                 ShadTooltip(
-                  builder: (_) => Text(context.l10n.settingsKeybindsResetTooltip),
+                  builder: (_) =>
+                      Text(context.l10n.settingsKeybindsResetTooltip),
                   child: ShadIconButton.ghost(
                     icon: const Icon(LucideIcons.undo2, size: 15),
                     onPressed: onReset,
@@ -1676,7 +1677,7 @@ class _SettingsSliderTileState extends State<_SettingsSliderTile> {
                 max: widget.max,
                 divisions: widget.divisions,
                 value: widget.value,
-                onChangeStart: (value) => _dragStartValue = value,
+                onChangeStart: (_) => _dragStartValue = widget.value,
                 onChangeEnd: (value) {
                   widget.onChangeCommitted?.call(
                     _dragStartValue ?? widget.value,
