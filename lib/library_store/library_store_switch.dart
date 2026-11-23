@@ -33,7 +33,9 @@ final class CloudStoreOff extends CloudStoreSwitch {
 }
 
 final class CloudStoreShadow extends CloudStoreSwitch {
-  const CloudStoreShadow();
+  const CloudStoreShadow({this.sends = false});
+
+  final bool sends;
 }
 
 final class LibraryStoreLaunch {
@@ -44,6 +46,7 @@ final class LibraryStoreLaunch {
   static const readFlag = '--library-store=read';
   static const offFlag = '--library-store=off';
   static const cloudShadowFlag = '--cloud-store=shadow';
+  static const cloudSendFlag = '--cloud-store=send';
 
   final LibraryStoreSwitch choice;
   final CloudStoreSwitch cloud;
@@ -70,6 +73,10 @@ final class LibraryStoreLaunch {
           choice = const StoreSwitchOff();
         case cloudShadowFlag:
           cloud = mayShadow ? const CloudStoreShadow() : const CloudStoreOff();
+        case cloudSendFlag:
+          cloud = mayShadow
+              ? const CloudStoreShadow(sends: true)
+              : const CloudStoreOff();
         case _:
           others.add(argument);
       }

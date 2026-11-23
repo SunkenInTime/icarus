@@ -566,6 +566,86 @@
           "budget": 2
         }
       }
+    },
+    "soloSessionStore": {
+      "title": "Edit alone, sent by the cloud store's sender",
+      "about": "soloSession's 50 moves, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH, one applyBatch per move in the op's live form. It measures what the server spends on the cloud store's sender's call pattern; it does not run the Dart sender, whose own call count for these moves test/library_store/cloud_sender_test.dart checks.",
+      "metrics": {
+        "functionCalls": {
+          "today": 105,
+          "budget": 126
+        },
+        "readBytes": {
+          "today": 933923,
+          "budget": 1167404
+        },
+        "writeBytes": {
+          "today": 115698,
+          "budget": 144623
+        },
+        "sentBytes": {
+          "today": 49644,
+          "budget": 62055
+        },
+        "returnBytes": {
+          "today": 635194,
+          "budget": 793993
+        },
+        "queryReruns": {
+          "today": 50,
+          "budget": 60
+        },
+        "listReruns": {
+          "today": 0,
+          "budget": 2
+        },
+        "applyBatchCalls": {
+          "today": 50,
+          "budget": 50
+        },
+        "conflictRetries": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "twoPeopleStore": {
+      "title": "Two people on one page, sent by the cloud store's sender",
+      "about": "twoPeople's 20 moves by the owner, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH, one applyBatch per move in the op's live form, while the teammate watches the page. It measures the server's side of that call pattern, not the Dart sender, whose own call count test/library_store/cloud_sender_test.dart checks.",
+      "metrics": {
+        "functionCalls": {
+          "today": 45,
+          "budget": 54
+        },
+        "readBytes": {
+          "today": 406478,
+          "budget": 508098
+        },
+        "writeBytes": {
+          "today": 46275,
+          "budget": 57844
+        },
+        "sentBytes": {
+          "today": 20373,
+          "budget": 25467
+        },
+        "returnBytes": {
+          "today": 294263,
+          "budget": 367829
+        },
+        "queryReruns": {
+          "today": 20,
+          "budget": 24
+        },
+        "applyBatchCalls": {
+          "today": 20,
+          "budget": 20
+        },
+        "conflictRetries": {
+          "today": 0,
+          "budget": 0
+        }
+      }
     }
   }
 }

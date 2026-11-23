@@ -14,7 +14,8 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
       [--companion FILE] [--companion-account EMAIL] [--exe DIR] [--out DIR]
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
       [--hive-store DIR] [--library-store off|shadow|mirror|read]
-      [--cloud-store shadow] [--kill-after-seconds S]
+      [--cloud-store shadow|send] [--second-account EMAIL]
+      [--kill-after-seconds S]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
         --convex it talks to the dev deployment; production is refused.
@@ -35,7 +36,10 @@ run     Runs --script, and --companion beside it when given, against the
         also draws the library list and folders from the store.
         --cloud-store shadow passes --cloud-store=shadow to every instance:
         the open cloud strategy's results go into the store too, and the
-        driver compares the open page with them.
+        driver compares the open page with them. --cloud-store send also
+        sends the store's queue to the server.
+        --second-account gives the main instance a second account, which a
+        {"signIn": "second"} step signs in to.
         --kill-after-seconds kills the main instance with SIGKILL S seconds
         after it starts, the way a crash stops it, and counts that as a
         pass; an app that finished first is judged as usual. Start the next
@@ -186,6 +190,7 @@ Future<void> main(List<String> args) async {
           'hive-store',
           'library-store',
           'cloud-store',
+          'second-account',
           'kill-after-seconds',
         })));
       default:
@@ -249,11 +254,15 @@ Future<int> _build(Map<String, String> options) async {
   return 0;
 }
 
+bool signsInAsSecond(List<Object?> steps) =>
+    steps.any((step) => step is Map && step['signIn'] == 'second');
+
 class _Instance {
-  _Instance(this.name, this.script, this.email);
+  _Instance(this.name, this.script, this.email, {this.second});
   final String name;
   final String script;
   final String? email;
+  final String? second;
   Process? process;
   var timedOut = false;
   var killed = false;
@@ -281,7 +290,12 @@ Future<int> _run(Map<String, String> options) async {
   }
 
   final instances = [
-    _Instance('main', _absolute(scriptPath), options['account']),
+    _Instance(
+      'main',
+      _absolute(scriptPath),
+      options['account'],
+      second: options['second-account'],
+    ),
     if (options['companion'] case final String companion)
       _Instance(
         'companion',
@@ -316,6 +330,15 @@ Future<int> _run(Map<String, String> options) async {
             '(or --companion-account for the companion).',
           ));
       needsPassword.add(email);
+    }
+    if (signsInAsSecond(steps)) {
+      needsPassword.add(
+        instance.second ??
+            (throw UsageError(
+              '$name signs in to a second account; give it with '
+              '--second-account.',
+            )),
+      );
     }
   }
   if (refusals.isNotEmpty) {
@@ -356,8 +379,8 @@ Future<int> _run(Map<String, String> options) async {
     );
   }
   final cloudStore = options['cloud-store'];
-  if (cloudStore != null && cloudStore != 'shadow') {
-    throw UsageError('--cloud-store is shadow, not "$cloudStore"');
+  if (cloudStore != null && cloudStore != 'shadow' && cloudStore != 'send') {
+    throw UsageError('--cloud-store is shadow or send, not "$cloudStore"');
   }
   if (options['hive-store'] case final String seed) {
     if (!Directory(seed).existsSync()) {
@@ -563,6 +586,10 @@ Future<void> _start(
       if (email != null) 'ICARUS_DRIVE_EMAIL': email,
       if (passwords[email] case final String password)
         'ICARUS_DRIVE_PASSWORD': password,
+      if (instance.second case final String second)
+        'ICARUS_DRIVE_EMAIL_2': second,
+      if (passwords[instance.second] case final String password)
+        'ICARUS_DRIVE_PASSWORD_2': password,
     },
   );
   instance.process = process;

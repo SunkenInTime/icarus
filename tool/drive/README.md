@@ -57,6 +57,23 @@ The driver steps that go with it:
 
 `getPageList` has to be on the deployment the build talks to.
 
+### Sending from the store
+
+`--cloud-store send` (`-CloudStore send`) runs the shadow and, beside it, a sender for the store's queue (`lib/library_store/cloud_sender.dart`). The sender is one loop that does one thing at a time: it waits for a change, waits 180 ms, takes one snapshot of the inputs (the account signed in, the connection, the sign-in count), and does one step for the strategy that was served least recently: open its session, close an attempt no call answers, or claim, check the snapshot still holds and the store is open, call `ops:applyBatch` as the strategy's owner (opted in to `ACCOUNT_MISMATCH`), and record the answer. One unit owns sessions (`store_sessions.dart`): it writes `AppRestarted`, `ConnectionReturned` and `AccountChanged`, and `ConnectionLost` as best effort, and the shadow records each result into the session of the snapshot it arrived under, or skips it as stale. A strategy whose write is refused waits with a growing delay while the others go on. Work that waits for a result from the server waits while the editor does not show that strategy, and nothing yet lifts edit access lost after `FORBIDDEN`. Results that arrive while the strategy has its own work queued or landed are not compared (`this device's own work was still on its way`), and the run fails if work is left in a queue at the end.
+
+Its steps:
+
+- `{"storeMove": id, "by": [dx, dy]}` commits a whole-row move of element `id` to the store, at the revision the store holds, as the account signed in; with `"startingWith": true`, of the first element whose id starts with `id`.
+- `{"breakConvexSignIn": true}` gives the Convex client a token the server refuses, the way an expired sign-in the app cannot refresh looks; `{"restoreConvexSignIn": true}` has the app set its Convex sign-in up again.
+- `{"holdSender": true}` and `{"releaseSender": true}` hold sending and let it go again; answers already received are still written while it is held.
+- `{"waitStoreSent": seconds}` waits until every queue is empty and no landed work waits for a result; with `"landed": "may wait"` landed work may still wait.
+- `{"expectStoreNeedsYou": true}` logs every entry that needs the user, with the queue's reason, and fails if there is none; `{"storeUseCloud": "<item id>"}` takes the cloud's version of each entry that needs the user in the strategy holding that item, as the signed-in account; the store refuses it when that account does not own the strategy.
+- `{"storeSyncState": true}` logs each cloud strategy's sync state for the account signed in, whose work it is, and the sender's state.
+- `{"killNow": true}` ends the app at once, the way a crash does.
+- `{"signOut": true}` signs out through the app's own confirmation; `{"signIn": "second"}` signs in to `--second-account` (Linux).
+
+The scripts: `cloud-store-send.json` (ops sent and the store equal to the server), `cloud-store-send-owner.json` with `cloud-store-send-teammate.json` (a teammate's edit first, so the owner's op needs the user), `cloud-store-send-offline.json` through `linux-cloud-store-offline.sh <exe dir> <out> <account> <script> send` (an answer lost, the same op id resent and answered as already applied), `cloud-store-send-restart-before.json` then `cloud-store-send-restart-after.json` with `--hive-store` (unsent work sent once after a restart), `cloud-store-send-account.json` with `--second-account` (nothing sent for another account, sent once the owner is back), `cloud-store-send-closed-before.json` then `cloud-store-send-closed-after.json` through `linux-cloud-store-offline.sh <exe dir> <out> <account> <script> send <store>` (saved work sent with no editor open, then a move made offline sent once the connection is back), and `cloud-store-send-expired.json` (an expired sign-in during a send: no call storm, sent once signed in again).
+
 ## The library store in shadow
 
 `--library-store shadow` on Linux, `-LibraryStore shadow` on Windows, starts the app with the library store switched to shadow: as it starts, it copies every local strategy and folder from Hive into a SQLite store beside the Hive boxes (`library_store/library.sqlite`), reads every strategy back out and compares it with Hive. Nothing reads the store yet. `--hive-store DIR` (`-HiveStore`) starts the main instance on a copy of `DIR`, which is never opened itself, so a real library can be checked without touching it.

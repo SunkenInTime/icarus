@@ -1,18 +1,24 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart'
     show AppliedOpAck, ElementDeleteOp;
+import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
+import 'package:icarus/library_store/cloud_sender.dart';
+import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_sqlite.dart';
+import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus_library/icarus_library.dart' hide ElementDeleteOp;
+import 'package:uuid/uuid.dart';
 
 CloudShadow _running(ProviderContainer c) {
   if (!c.exists(cloudShadowProvider)) {
@@ -23,6 +29,259 @@ CloudShadow _running(ProviderContainer c) {
     throw StateError('the cloud store shadow is not running');
   }
   return state.shadow;
+}
+
+CloudSender? _sending(ProviderContainer c) =>
+    c.exists(cloudSenderProvider) ? c.read(cloudSenderProvider) : null;
+
+CloudSender _sender(ProviderContainer c) {
+  _running(c);
+  return _sending(c) ??
+      (throw StateError('the cloud store does not send in this run'));
+}
+
+String _senderWords(ProviderContainer c) => _viewWords(_sender(c).view);
+
+String _viewWords(SenderView view) => [
+      view.run,
+      for (final MapEntry(:key, :value) in view.strategies.entries)
+        '$key: $value',
+    ].join('; ');
+
+Account _signedIn(ProviderContainer c) =>
+    switch (c.read(authProvider).user?.id) {
+      final String id when id.isNotEmpty => Account(id),
+      _ => throw StateError('nobody is signed in'),
+    };
+
+Future<String> breakConvexSignIn() async {
+  await ConvexClient.instance.setAuthWithRefresh(
+    fetchToken: () async => 'a-token-the-server-refuses',
+  );
+  return 'CLOUDSTORE the Convex client holds a token the server refuses; '
+      'it counts itself signed in: ${ConvexClient.instance.isAuthenticated}';
+}
+
+String holdSender(ProviderContainer c) {
+  _sender(c).hold('held by the driver');
+  return 'CLOUDSTORE sender held by the driver';
+}
+
+String releaseSender(ProviderContainer c) {
+  _sender(c).release();
+  return 'CLOUDSTORE sender released by the driver';
+}
+
+Future<String> storeMove(
+  ProviderContainer c,
+  String itemId,
+  (double, double) by, {
+  bool startingWith = false,
+}) async {
+  final store = _running(c).store;
+  for (final strategyId in _storedCloudStrategies(store)) {
+    final read = await store.readStrategy(strategyId);
+    if (read is! Found<StrategyContent>) continue;
+    for (final page in read.value.pages) {
+      final content = await store.readPage(strategyId, page.publicId);
+      if (content is! Found<PageContent>) continue;
+      for (final element in content.value.elements) {
+        if (element
+            case LiveElement(
+              :final publicId,
+              :final payload,
+              :final revision,
+            )
+            when startingWith
+                ? publicId.startsWith(itemId)
+                : publicId == itemId) {
+          final data = payload.data.toJson();
+          final at = data['position'];
+          if (at is! Map) throw StateError('$itemId has no position');
+          final position = {
+            'dx': (at['dx'] as num).toDouble() + by.$1,
+            'dy': (at['dy'] as num).toDouble() + by.$2,
+          };
+          final op = ElementPatchOp(
+            opId: const Uuid().v4(),
+            elementPublicId: publicId,
+            expectedElementRevision: revision,
+            payload: ElementPayload(
+              kind: payload.kind,
+              payloadVersion: payload.payloadVersion,
+              data: {...data, 'position': position},
+              unknownFields: payload.unknownFields.toJson(),
+            ),
+          );
+          final saved = await store.commitAllAs(_signedIn(c), strategyId, [
+            op,
+          ]);
+          if (saved case Saved()) {
+            return 'CLOUDSTORE committed ${op.opId}: $itemId of $strategyId '
+                'to (${position['dx']}, ${position['dy']}) over revision '
+                '$revision';
+          }
+          throw StateError('the store did not take the move: $saved');
+        }
+      }
+    }
+  }
+  throw StateError('the store holds no item $itemId');
+}
+
+Future<List<(String, CloudStrategy)>> _cloudQueues(LibraryStore store) async {
+  final queues = <(String, CloudStrategy)>[];
+  for (final strategyId in _storedCloudStrategies(store)) {
+    switch (await store.readStrategy(strategyId)) {
+      case Found(value: StrategyContent(sync: final CloudStrategy cloud)):
+        queues.add((strategyId, cloud));
+      case final other:
+        throw StateError('the queue of $strategyId could not be read: $other');
+    }
+  }
+  return queues;
+}
+
+Future<String> waitStoreSent(
+  ProviderContainer c,
+  Duration within, {
+  bool landedMayWait = false,
+}) async {
+  final store = _running(c).store;
+  final until = DateTime.now().add(within);
+  while (true) {
+    final queues = await _cloudQueues(store);
+    if (queues.isEmpty) {
+      throw StateError('the store lists no cloud queue to wait on');
+    }
+    final left = [
+      for (final (strategyId, cloud) in queues)
+        if (cloud.queue.entries.isNotEmpty ||
+            (!landedMayWait && cloud.queue.landed.isNotEmpty))
+          '$strategyId: ${cloud.queue.entries.length} entries, '
+              '${cloud.queue.landed.length} landed',
+    ];
+    if (left.isEmpty) {
+      final landed = [
+        for (final (strategyId, cloud) in queues)
+          if (cloud.queue.landed.isNotEmpty)
+            '${cloud.queue.landed.length} landed ops of $strategyId',
+      ];
+      return 'CLOUDSTORE every queue is empty and '
+          '${landed.isEmpty ? 'no landed work waits for a result' : '${landed.join(', ')} wait for a result'}'
+          '; sender ${_senderWords(c)}';
+    }
+    if (DateTime.now().isAfter(until)) {
+      throw StateError(
+        'work left after ${within.inSeconds} s: ${left.join('; ')}; sender '
+        '${_senderWords(c)}',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+}
+
+Future<List<String>> storeNeedsYou(ProviderContainer c) async {
+  final lines = <String>[];
+  for (final (strategyId, cloud) in await _cloudQueues(_running(c).store)) {
+    for (final entry in cloud.queue.entries) {
+      if (cloud.views[entry.id]?.state case NeedsUser(:final reason)) {
+        lines.add(
+          'CLOUDSTORE needs you: ${entry.id} of $strategyId, ${reason.runtimeType} '
+          '$reason',
+        );
+      }
+    }
+  }
+  if (lines.isEmpty) throw StateError('no entry needs the user');
+  return lines;
+}
+
+Future<String> storeUseCloud(ProviderContainer c, String itemId) async {
+  final store = _running(c).store;
+  final strategyId = await _strategyHolding(store, itemId);
+  final chosen = await useCloudAs(store, _signedIn(c), strategyId);
+  return 'CLOUDSTORE used the cloud\'s version for ${chosen.join(', ')} of '
+      '$strategyId';
+}
+
+Future<String> _strategyHolding(LibraryStore store, String itemId) async {
+  for (final strategyId in _storedCloudStrategies(store)) {
+    final read = await store.readStrategy(strategyId);
+    if (read is! Found<StrategyContent>) continue;
+    for (final page in read.value.pages) {
+      final content = await store.readPage(strategyId, page.publicId);
+      if (content is! Found<PageContent>) continue;
+      if (content.value.elements.any(
+        (element) => element is LiveElement && element.publicId == itemId,
+      )) {
+        return strategyId;
+      }
+    }
+  }
+  throw StateError('the store holds no item $itemId');
+}
+
+Future<List<String>> useCloudAs(
+  LibraryStore store,
+  Account signedIn,
+  String strategyId,
+) async {
+  final CloudStrategy cloud;
+  switch (await store.readStrategy(strategyId)) {
+    case Found(value: StrategyContent(sync: final CloudStrategy found)):
+      cloud = found;
+    case final other:
+      throw StateError('the queue of $strategyId could not be read: $other');
+  }
+  final chosen = [
+    for (final entry in cloud.queue.entries)
+      if (cloud.views[entry.id]?.state is NeedsUser) entry.id,
+  ];
+  if (chosen.isEmpty)
+    throw StateError('no entry of $strategyId needs the user');
+  for (final opId in chosen) {
+    switch (await store.record(signedIn, strategyId, [UserUsedCloud(opId)])) {
+      case Saved(:final value):
+        for (final outcome in value.outcomes) {
+          if (outcome case ReportNotApplicable(:final why)) {
+            throw StateError('use cloud for $opId was not applied: $why');
+          }
+        }
+      case NothingToSave():
+        throw StateError('use cloud for $opId changed nothing');
+      case Refused(:final reason):
+        throw StateError('use cloud for $opId was refused: $reason');
+      case NotSaved(:final failure):
+        throw StateError(
+          'use cloud for $opId was not written: '
+          '${storageFailureWords(failure, StoreStep.refusedSave)}',
+        );
+      case SaveInDoubt(:final failure):
+        throw StateError(
+          'use cloud for $opId may not have been written: '
+          '${storageFailureWords(failure, StoreStep.saveInDoubt)}',
+        );
+    }
+  }
+  return chosen;
+}
+
+Future<List<String>> storeSyncStates(ProviderContainer c) async {
+  final signedIn = switch (c.read(authProvider).user?.id) {
+    final String id when id.isNotEmpty => SignedInAs(Account(id)),
+    _ => const SignedOut(),
+  };
+  final library = _running(c).store.library;
+  if (library is! LibraryOpen) throw StateError('the store is shut');
+  return [
+    for (final summary in library.list.strategies)
+      if (summary.sync case KeptInCloud(:final owner, :final tally))
+        'CLOUDSTORE sync of ${summary.publicId} for $signedIn: '
+            '${syncStateOf(owner, tally, network: Network.online, signedIn: signedIn)}, '
+            'the work of $owner; run hold ${_sender(c).runHold ?? 'none'}; '
+            'sender ${_senderWords(c)}',
+  ];
 }
 
 List<String> _storedCloudStrategies(LibraryStore store) {
@@ -208,6 +467,30 @@ final class CloudStoreLog {
 
   int _reportsRead = 0;
   final _settled = <LedgerEntry>{};
+  StreamSubscription<SenderView>? _senderViews;
+  final _senderLines = <CloudStoreLine>[];
+  int _senderReportsRead = 0;
+
+  void _watchSender(ProviderContainer c) {
+    if (_senderViews != null) return;
+    final sender = _sending(c);
+    if (sender == null) return;
+    _senderLines.add(
+      CloudStoreLine(
+        'CLOUDSTORE sender: ${_viewWords(sender.view)}',
+        problem: false,
+      ),
+    );
+    _senderViews = sender.views.listen(
+      (next) => _senderLines.add(
+        CloudStoreLine(
+          'CLOUDSTORE sender at ${_clockTime(DateTime.now())}: '
+          '${_viewWords(next)}',
+          problem: next.run.startsWith('ended'),
+        ),
+      ),
+    );
+  }
 
   bool isOn(ProviderContainer c) => c.exists(cloudShadowProvider);
 
@@ -216,6 +499,22 @@ final class CloudStoreLog {
     final state = c.read(cloudShadowProvider);
     if (state is! CloudShadowRunning) return const [];
     final shadow = state.shadow;
+    _watchSender(c);
+    final sender = _sending(c);
+    final senderReports = <SenderReport>[];
+    if (sender != null) {
+      final SenderStore(:reports, :reportsDropped) = sender.store;
+      senderReports.addAll(
+        reports.skip(max(0, _senderReportsRead - reportsDropped)),
+      );
+      _senderReportsRead = reportsDropped + reports.length;
+    }
+    final senderLines = [
+      ..._senderLines,
+      for (final report in senderReports)
+        if (_senderReportLine(report) case final line?) line,
+    ];
+    _senderLines.clear();
     final reports = shadow.reports.sublist(_reportsRead);
     _reportsRead = shadow.reports.length;
     final settled = [
@@ -225,6 +524,7 @@ final class CloudStoreLog {
     final equal = settled.where((entry) => entry.verdict is ComparedEqual);
     final skipped = settled.where((entry) => entry.verdict is Skipped);
     return [
+      ...senderLines,
       for (final report in reports) _reportLine(report),
       for (final entry in settled) ..._problemLines(entry),
       if (equal.isNotEmpty || skipped.isNotEmpty)
@@ -258,8 +558,10 @@ final class CloudStoreLog {
             problem: true,
           ),
         ];
-      case CloudShadowRunning(:final shadow):
+      case final CloudShadowRunning state:
+        final shadow = state.shadow;
         final notifier = c.read(cloudShadowProvider.notifier)..cutoff();
+        final stopping = await _senderStopped(c, lastStep.add(finalWait));
         final drained = await notifier.drained(lastStep.add(finalWait));
         notifier.detach();
         final ledger = shadow.ledger;
@@ -273,8 +575,13 @@ final class CloudStoreLog {
         );
         final waiting =
             ledger.where((entry) => entry.verdict is NotProcessed).length;
+        final left = _sending(c) == null
+            ? const <CloudStoreLine>[]
+            : await _workLeft(shadow.store);
         return [
           ...drain(c),
+          ...stopping,
+          ...left,
           if (shadow.ended case final reason?)
             CloudStoreLine(
               'CLOUDSTORE ended: $reason; nothing after it is recorded',
@@ -322,6 +629,48 @@ final class CloudStoreLog {
     }
   }
 
+  Future<List<CloudStoreLine>> _senderStopped(
+    ProviderContainer c,
+    DateTime deadline,
+  ) async {
+    final sender = _sending(c);
+    if (sender == null) return const [];
+    sender.hold('the run ended');
+    while (sender.busy) {
+      if (DateTime.now().isAfter(deadline)) {
+        return [
+          CloudStoreLine(
+            'CLOUDSTORE the sender had not finished by the end: '
+            '${_viewWords(sender.view)}',
+            problem: true,
+          ),
+        ];
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    return [
+      if (sender.ended case final why?)
+        CloudStoreLine('CLOUDSTORE the sender ended: $why', problem: true),
+    ];
+  }
+
+  Future<List<CloudStoreLine>> _workLeft(LibraryStore store) async => [
+        for (final (strategyId, cloud) in await _cloudQueues(store)) ...[
+          for (final entry in cloud.queue.entries)
+            CloudStoreLine(
+              'CLOUDSTORE work left in the queue of $strategyId: ${entry.id} '
+              '${cloud.views[entry.id]?.state}',
+              problem: true,
+            ),
+          if (cloud.queue.landed.isNotEmpty)
+            CloudStoreLine(
+              'CLOUDSTORE ${cloud.queue.landed.length} landed ops of '
+              '$strategyId wait for a result to show them',
+              problem: false,
+            ),
+        ],
+      ];
+
   List<CloudStoreLine> closeFailed(ProviderContainer c, Object error) {
     if (!isOn(c)) return const [];
     if (c.read(cloudShadowProvider) case CloudShadowRunning(:final shadow)) {
@@ -365,11 +714,26 @@ final class CloudStoreLog {
     }
     switch (await openLibraryStore(state.file, build: state.shadow.build)) {
       case LibraryStoreReady(:final store, :final closeEngine):
-        final compared = await state.shadow.readBack(store);
+        final ownWorkAfterEnd = {
+          for (final (strategyId, cloud) in await _cloudQueues(store))
+            if (cloud.queue.landed.isNotEmpty) strategyId,
+        };
+        final compared = {
+          for (final MapEntry(:key, :value)
+              in (await state.shadow.readBack(store)).entries)
+            if (!ownWorkAfterEnd.contains(key)) key: value,
+        };
         await store.close();
         await closeEngine();
         return [
-          if (compared.isEmpty)
+          for (final strategyId in ownWorkAfterEnd)
+            CloudStoreLine(
+              'CLOUDSTORE read back of $strategyId not compared: this '
+              'device\'s own work landed, and no result recorded since '
+              'shows it',
+              problem: false,
+            ),
+          if (compared.isEmpty && ownWorkAfterEnd.isEmpty)
             const CloudStoreLine(
               'CLOUDSTORE read back had no strategy to compare',
               problem: true,
@@ -459,6 +823,70 @@ CloudStoreLine _reportLine(CloudShadowReport report) => switch (report) {
           'CLOUDSTORE stopped: $reason',
           problem: true,
         ),
+    };
+
+CloudStoreLine? _senderReportLine(SenderReport report) => switch (report) {
+      EventsWritten(:final strategyId, :final events, :final batch) =>
+        CloudStoreLine(
+          'CLOUDSTORE recorded for $strategyId'
+          '${batch == null ? '' : ' (${batch.ops.length} ops sent as client ${batch.clientId})'}: '
+          '${events.map(_eventWords).join('; ')}',
+          problem: false,
+        ),
+      EventNotApplied(:final strategyId, :final why) => CloudStoreLine(
+          'CLOUDSTORE the queue of $strategyId did not apply an event: $why',
+          problem: false,
+        ),
+      SessionOpenedFor(:final strategyId, :final session, :final stamp) =>
+        CloudStoreLine(
+          'CLOUDSTORE the sender opened session $session of $strategyId for '
+          'connection ${stamp.connection} and ${stamp.account?.subject}',
+          problem: false,
+        ),
+      ResultWritten() => null,
+      WriteNotMade(:final strategyId, :final trouble) => CloudStoreLine(
+          'CLOUDSTORE a write for $strategyId was not made '
+          '(${trouble.runtimeType}): ${trouble.why}',
+          problem: true,
+        ),
+    };
+
+String _clockTime(DateTime time) => '${time.hour.toString().padLeft(2, '0')}:'
+    '${time.minute.toString().padLeft(2, '0')}:'
+    '${time.second.toString().padLeft(2, '0')}.'
+    '${time.millisecond.toString().padLeft(3, '0')}';
+
+String _eventWords(QueueEvent event) => switch (event) {
+      OpAnswered(
+        :final attempt,
+        answer: AppliedAnswer(:final opId, :final revision)
+      ) =>
+        'attempt $attempt: $opId applied at revision $revision',
+      OpAnswered(
+        :final attempt,
+        answer: NoopAnswer(:final opId, :final revision, :final replay)
+      ) =>
+        'attempt $attempt: $opId changed nothing at revision $revision (${replay.name})',
+      OpAnswered(:final attempt, answer: NoopWithoutRevision(:final opId)) =>
+        'attempt $attempt: $opId changed nothing',
+      OpAnswered(
+        :final attempt,
+        answer: RejectedAnswer(:final opId, :final reason)
+      ) =>
+        'attempt $attempt: $opId rejected (${reason.wireName})',
+      OpAnswered(
+        :final attempt,
+        answer: FailedAnswer(:final opId, :final code)
+      ) =>
+        'attempt $attempt: $opId failed ($code)',
+      TransportFailed(:final attempt, :final failure) =>
+        'attempt $attempt: no answer (${failure.name})',
+      BatchRefused(:final attempt, :final refusal) =>
+        'attempt $attempt refused whole (${refusal.name})',
+      ClaimReleased(:final attempt) => 'attempt $attempt given back unsent',
+      UserUsedCloud(:final opId) =>
+        'the user took the cloud\'s version of $opId',
+      _ => '${event.runtimeType}',
     };
 
 String _opened(LibraryStoreOpened opened) => switch (opened) {
