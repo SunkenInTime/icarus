@@ -9,6 +9,8 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/library_listing.dart';
@@ -152,6 +154,7 @@ void main() {
     var crossedFromStore = 0;
     var reorderedFromStore = 0;
     var keptStrategiesSeen = 0;
+    var inTheCloudSeen = 0;
     var keptFoldersSeen = 0;
     for (var seed = 0; seed < 24; seed++) {
       final random = Random(seed);
@@ -167,10 +170,12 @@ void main() {
             ),
           _portraitsCrossed('s$seed-crossed'),
           _pagesOutOfOrder('s$seed-reordered'),
+          _shapes[1].copyWith(id: 's$seed-shared', name: 'Also in the cloud'),
         ],
         folders: [
           Folder(name: 'Root', id: 'f$seed-root', dateCreated: DateTime(2026)),
-          Folder(name: 'Spare', id: 'f$seed-spare', dateCreated: DateTime(2026)),
+          Folder(
+              name: 'Spare', id: 'f$seed-spare', dateCreated: DateTime(2026)),
         ],
       );
       final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -200,7 +205,9 @@ void main() {
       await folderBox.put(
         'f$seed-twin',
         Folder(
-            name: 'Twin spare', id: 'f$seed-spare', dateCreated: DateTime(2026)),
+            name: 'Twin spare',
+            id: 'f$seed-spare',
+            dateCreated: DateTime(2026)),
       );
       final gate = CommitGate();
       final store = switch (await LibraryStore.open(
@@ -210,6 +217,25 @@ void main() {
         StoreOpened(:final store) => store,
         StoreNotOpened(:final problem) => fail('$problem'),
       };
+      for (final id in ['s$seed-shared', 's$seed-cloud-only']) {
+        final rows = switch (strategyToRows(
+            strategyAsHiveHoldsIt(_shapes[0].copyWith(id: id)))) {
+          StrategyRowsMade(:final rows) => rows,
+          StrategyRowsRefused(:final problems) => fail('$problems'),
+        };
+        expect(
+          await store.addCloudStrategy(
+            Account('account-a'),
+            HeaderRead(
+              strategy: rows.strategy,
+              pages: rows.pages.toList(),
+              settings: rows.settings.toList(),
+            ),
+            const [],
+          ),
+          isA<Saved<StrategySummary, LibraryRefusal>>(),
+        );
+      }
       final mirror = StoreMirror(
         reads: HiveReads(),
         betweenAnimations: () =>
@@ -224,7 +250,8 @@ void main() {
       final keptStrategies = mirror.reads.names.strategies.keptIds;
       final keptFolders = mirror.reads.names.folders.keptIds;
       expect(keptStrategies, {'s$seed-numbered', 's$seed-aliased', 's$seed-1'});
-      expect(keptFolders, {'f$seed-numbered', 'f$seed-aliased', 'f$seed-spare'});
+      expect(
+          keptFolders, {'f$seed-numbered', 'f$seed-aliased', 'f$seed-spare'});
 
       bool fromStoreByRule(String id, {required bool folder}) =>
           switch (listing.source) {
@@ -266,13 +293,18 @@ void main() {
             switch (listing.source) {
               ListFromStore(:final mirror) =>
                 mirror.refusedStrategies.containsKey(row.id) ||
-                    keptStrategies.contains(row.id),
+                    keptStrategies.contains(row.id) ||
+                    row.id == 's$seed-shared',
               ListFromHive() => false,
             },
             reason: 'seed $seed, $when, mark on ${row.id}',
           );
           final fromStore = listing.drewFromStore(row);
           if (fromStore) drawnFromStore++;
+          if (row.id == 's$seed-shared') {
+            inTheCloudSeen++;
+            expect(fromStore, isFalse, reason: 'seed $seed, $when, ${row.id}');
+          }
           if (keptStrategies.contains(row.id)) {
             keptStrategiesSeen++;
             expect(fromStore, isFalse, reason: 'seed $seed, $when, ${row.id}');
@@ -283,6 +315,16 @@ void main() {
             reason: 'seed $seed, $when, source of ${row.id}',
           );
         }
+        expect(
+          listing.strategiesNotInStore,
+          isNot(contains('s$seed-cloud-only')),
+          reason: 'seed $seed, $when',
+        );
+        expect(
+          rows.where((row) => row.id == 's$seed-cloud-only'),
+          isEmpty,
+          reason: 'seed $seed, $when',
+        );
         final folders = listing.folders.value.toList();
         expect(
           [for (final folder in folders) _folder(folder)],
@@ -494,5 +536,6 @@ void main() {
     expect(reorderedFromStore, greaterThan(100));
     expect(keptStrategiesSeen, greaterThan(1000));
     expect(keptFoldersSeen, greaterThan(1000));
+    expect(inTheCloudSeen, greaterThan(500));
   }, timeout: const Timeout(Duration(minutes: 5)));
 }

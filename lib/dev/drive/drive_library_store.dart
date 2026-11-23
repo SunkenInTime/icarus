@@ -430,11 +430,14 @@ String? _keptBecause(BoxNames names, String id) => [
         if (record.id == id) 'kept on Hive: ${record.reason}',
     ].firstOrNull;
 
-String _refusalOf(StoreMirror mirror, String strategyId) =>
+String _refusalOf(LibraryStore store, StoreMirror mirror, String strategyId) =>
     switch (mirror.refusedStrategies[strategyId]) {
       final reason? => '$reason',
       null => _keptBecause(mirror.reads.names.strategies, strategyId) ??
-          'this build cannot show its stored summary',
+          switch (store.summaryOf(strategyId)?.sync) {
+            null || KeptHere() => 'this build cannot show its stored summary',
+            _ => 'kept in the cloud, so not mirrored',
+          },
     };
 
 String _folderRefusalOf(StoreMirror mirror, String folderId) =>
@@ -487,7 +490,7 @@ Future<List<String>> waitForStoreList(
         '${store.summariesRebuiltAtOpen}; not in the store '
         '${strategies.length} strategies, ${folders.length} folders',
     for (final id in strategies.toList()..sort())
-      'STORE listed from Hive $id: ${_refusalOf(mirror, id)}',
+      'STORE listed from Hive $id: ${_refusalOf(store, mirror, id)}',
     for (final id in folders.toList()..sort())
       'STORE folder listed from Hive $id: ${_folderRefusalOf(mirror, id)}',
   ];

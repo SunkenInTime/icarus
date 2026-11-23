@@ -234,6 +234,8 @@ base class HiveLibraryListing implements LocalLibraryListing {
         },
       );
 
+  bool holdsStrategy(String id) => _strategyBox.containsKey(id);
+
   static LocalStrategySummary asStored(StrategyData strategy) =>
       _HiveStrategySummary(strategy, asStored: true);
 

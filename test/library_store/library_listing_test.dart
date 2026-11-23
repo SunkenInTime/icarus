@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
@@ -85,6 +86,12 @@ final class _CountedHive extends HiveLibraryListing {
   Iterable<Folder> foldersAsStored() {
     reads.add('every folder');
     return super.foldersAsStored();
+  }
+
+  @override
+  bool holdsStrategy(String id) {
+    reads.add('holds $id');
+    return super.holdsStrategy(id);
   }
 
   @override
@@ -345,6 +352,58 @@ void main() {
     await mirror.drained();
     expect(_nameOf(listing, 'b-newer'), 'Newer, renamed');
     expect(listing.strategiesNotInStore, {'b-newer', 'c-damaged'});
+  });
+
+  test(
+      'a Hive strategy whose id the store holds as a cloud strategy is drawn from Hive with the mark even when the mirror never refused it, and a cloud strategy Hive does not hold adds no row and no mark',
+      () async {
+    final store = await _store();
+    for (final (id, name) in [
+      ('z-in-both', 'In the cloud'),
+      ('y-cloud-only', 'Only in the cloud'),
+    ]) {
+      final rows = switch (strategyToRows(
+          strategyAsHiveHoldsIt(_bare.copyWith(id: id, name: name)))) {
+        StrategyRowsMade(:final rows) => rows,
+        StrategyRowsRefused(:final problems) => fail('$problems'),
+      };
+      expect(
+        await store.addCloudStrategy(
+          Account('account-a'),
+          HeaderRead(
+            strategy: rows.strategy,
+            pages: rows.pages.toList(),
+            settings: rows.settings.toList(),
+          ),
+          const [],
+        ),
+        isA<Saved<StrategySummary, LibraryRefusal>>(),
+      );
+    }
+    final (:listing, :mirror, hive: _) = _reading();
+    await _copy(mirror, store);
+    expect(listing.source, isA<ListFromStore>());
+    expect(listing.strategiesNotInStore, isEmpty);
+
+    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+      'z-in-both',
+      _bare.copyWith(id: 'z-in-both', name: 'Here too'),
+    );
+
+    expect(mirror.refusedStrategies, isNot(contains('z-in-both')));
+    final row = _rowOf(listing, 'z-in-both');
+    expect(row.name, 'Here too');
+    expect(listing.drewFromStore(row), isFalse);
+    expect(row.notInStore, isTrue);
+    expect(listing.strategy('z-in-both')?.name, 'Here too');
+    expect(listing.strategiesNotInStore, {'z-in-both'});
+    expect(
+      [for (final strategy in listing.strategies.value) strategy.id],
+      [
+        for (final strategy in HiveLibraryListing().strategiesAsStored())
+          strategy.id,
+      ],
+    );
   });
 
   test(

@@ -156,6 +156,7 @@ final class StoreLibraryListing implements LocalLibraryListing {
   final _stored = SplayTreeMap<String, LocalStrategySummary>(_byKey);
   final _storedFolders = SplayTreeMap<String, Folder>(_byKey);
   final _unshowable = <String>{};
+  final _inTheCloud = <String>{};
   final _unshowableFolders = <String>{};
   var _marked = (strategies: const <String>{}, folders: const <String>{});
   final _strategiesMoved = _Moved();
@@ -174,7 +175,10 @@ final class StoreLibraryListing implements LocalLibraryListing {
 
   int get switches => _switches;
 
-  Set<String> get strategiesNotInStore => _marked.strategies;
+  Set<String> get strategiesNotInStore => switch (source) {
+        ListFromStore() => {..._marked.strategies, ..._inTheCloudAndInHive()},
+        ListFromHive() => _marked.strategies,
+      };
 
   Set<String> get foldersNotInStore => _marked.folders;
 
@@ -198,8 +202,16 @@ final class StoreLibraryListing implements LocalLibraryListing {
   @override
   ValueListenable<Iterable<Folder>> get folders => _folders;
 
-  Set<String> _strategiesFromHive(StoreMirror mirror) =>
-      {...mirror.strategiesNotKnownEqual, ..._unshowable};
+  Set<String> _inTheCloudAndInHive() => {
+        for (final id in _inTheCloud)
+          if (_hive.holdsStrategy(id)) id,
+      };
+
+  Set<String> _strategiesFromHive(StoreMirror mirror) => {
+        ...mirror.strategiesNotKnownEqual,
+        ..._unshowable,
+        ..._inTheCloudAndInHive(),
+      };
 
   Set<String> _foldersFromHive(StoreMirror mirror) =>
       {...mirror.foldersNotKnownEqual, ..._unshowableFolders};
@@ -210,11 +222,12 @@ final class StoreLibraryListing implements LocalLibraryListing {
         return _hive.strategiesAsStored();
       case ListFromStore(:final mirror):
         final ids = _strategiesFromHive(mirror);
+        final marked = strategiesNotInStore;
         return _merged(
           _stored.entries,
           ids,
           _keysFromHive(ids, mirror.reads.names.strategies),
-          (key) => _hive.strategyAsStored(key, notInStore: _marked.strategies),
+          (key) => _hive.strategyAsStored(key, notInStore: marked),
         );
     }
   }
@@ -308,6 +321,7 @@ final class StoreLibraryListing implements LocalLibraryListing {
     _stored.clear();
     _storedFolders.clear();
     _unshowable.clear();
+    _inTheCloud.clear();
     _unshowableFolders.clear();
     list.strategies.forEach(_keepSummary);
     list.folders.forEach(_keepFolder);
@@ -325,7 +339,11 @@ final class StoreLibraryListing implements LocalLibraryListing {
     final id = summary.publicId;
     _stored.remove(id);
     _unshowable.remove(id);
-    if (summary.sync is! KeptHere) return;
+    _inTheCloud.remove(id);
+    if (summary.sync is! KeptHere) {
+      _inTheCloud.add(id);
+      return;
+    }
     switch (StoredStrategySummary.of(summary)) {
       case final shown?:
         _fromTheStore[shown] = true;
@@ -338,6 +356,7 @@ final class StoreLibraryListing implements LocalLibraryListing {
   void _forgetSummary(String id) {
     _stored.remove(id);
     _unshowable.remove(id);
+    _inTheCloud.remove(id);
   }
 
   void _keepFolder(FolderRow row) {
@@ -404,7 +423,7 @@ final class StoreLibraryListing implements LocalLibraryListing {
   @override
   LocalStrategySummary? strategy(String id) => _fromStore(id)
       ? _stored[id]
-      : _hive.strategyAsStored(id, notInStore: _marked.strategies);
+      : _hive.strategyAsStored(id, notInStore: strategiesNotInStore);
 
   @override
   Folder? folder(String id) =>
