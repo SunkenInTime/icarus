@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/collab_models.dart'
+    show AppliedOpAck, ElementDeleteOp;
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
@@ -10,7 +12,7 @@ import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
-import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/icarus_library.dart' hide ElementDeleteOp;
 
 CloudShadow _running(ProviderContainer c) {
   if (!c.exists(cloudShadowProvider)) {
@@ -141,6 +143,55 @@ Future<String> batchRefusal(
     'a batch naming $accountSubject was answered while signed in as '
     '$signedIn',
   );
+}
+
+Future<String> uncheckedDelete(
+  ProviderContainer c,
+  String elementId, {
+  required int basisAgeMs,
+  required bool expectRefused,
+}) async {
+  final page = c.read(remoteEditorSnapshotProvider).valueOrNull?.activePage;
+  if (page == null) throw StateError('no cloud page is open');
+  final row = page.elements.where((row) => row.publicId == elementId).single;
+  final repository = c.read(convexStrategyRepositoryProvider);
+  final strategyId = row.strategyPublicId;
+  final basis = (await repository.sendWithLiveBasis(
+    strategyPublicId: strategyId,
+    clientId: 'live-basis',
+    ops: const [],
+  ))
+      .serverTime;
+  final delete = ElementDeleteOp(
+    opId: 'unchecked-delete-$elementId',
+    elementPublicId: elementId,
+    pagePublicId: row.pagePublicId,
+    expectedElementRevision: row.revision,
+    lastWriterWins: true,
+  );
+  final liveBasis = basis - basisAgeMs;
+  final described = 'an unchecked delete of $elementId at revision '
+      '${row.revision} with a live basis $basisAgeMs ms before the server '
+      'time $basis';
+  try {
+    final sent = await repository
+        .sendWithLiveBasis(
+          strategyPublicId: strategyId,
+          clientId: 'live-basis',
+          ops: [delete],
+          liveBasis: liveBasis,
+        )
+        .timeout(const Duration(seconds: 20));
+    final ack = sent.acks.single;
+    if (expectRefused || ack is! AppliedOpAck) {
+      throw StateError('$described was answered $ack');
+    }
+    return 'CLOUDSTORE $described was applied at revision '
+        '${ack.revision}; server time ${sent.serverTime}';
+  } catch (error) {
+    if (!expectRefused || !isUncheckedOutsideWindowError(error)) rethrow;
+    return 'CLOUDSTORE $described was refused: $error';
+  }
 }
 
 final class CloudStoreLine {

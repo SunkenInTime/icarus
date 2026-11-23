@@ -664,19 +664,11 @@ class ConvexStrategyRepository {
       throw StateError('Cloud operation batch exceeds the payload policy.');
     }
 
-    final typedOps = ops.indexed
-        .map(
-          (entry) => OpsApplyBatchArgsOpsItem.decode(
-            ConvexValue.fromDart(entry.$2.toConvexJson()),
-            'ops[${entry.$1}]',
-          ),
-        )
-        .toList(growable: false);
     final result = await _api.ops.applyBatch(
       strategyPublicId: strategyPublicId,
       clientId: clientId,
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-      ops: typedOps,
+      ops: _typedOps(ops),
       accountSubject: _optional(accountSubject),
       // This client restores deleted pages, so it sends such a delete again.
       checkTrashedPageDeletes: const ConvexOptional.present(true),
@@ -704,6 +696,36 @@ class ConvexStrategyRepository {
       readsAccountMismatch: ConvexOptional.present(readsAccountMismatch),
     );
   }
+
+  Future<({List<OpAck> acks, double serverTime})> sendWithLiveBasis({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+    double? liveBasis,
+  }) async {
+    final result = await _api.ops.applyBatch(
+      strategyPublicId: strategyPublicId,
+      clientId: clientId,
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      ops: _typedOps(ops),
+      elementFieldLevel: _elementFieldLevel,
+      sendsLiveBasis: const ConvexOptional.present(true),
+      liveBasis: _optional(liveBasis),
+    );
+    return (
+      acks: result.results.map(_opAck).toList(growable: false),
+      serverTime: result.serverTime.value,
+    );
+  }
+
+  List<OpsApplyBatchArgsOpsItem> _typedOps(List<StrategyOp> ops) => ops.indexed
+      .map(
+        (entry) => OpsApplyBatchArgsOpsItem.decode(
+          ConvexValue.fromDart(entry.$2.toConvexJson()),
+          'ops[${entry.$1}]',
+        ),
+      )
+      .toList(growable: false);
 
   Future<void> createFolder({
     required String publicId,
@@ -1269,6 +1291,13 @@ bool isAccountMismatchError(Object error) {
           error.code == ConvexErrorCode.accountMismatch) ||
       (error is ConvexClientFunctionError &&
           error.rawCode == ConvexErrorCode.accountMismatch.wireName);
+}
+
+bool isUncheckedOutsideWindowError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.uncheckedOutsideWindow) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode == ConvexErrorCode.uncheckedOutsideWindow.wireName);
 }
 
 bool isTypedConvexForbiddenError(Object error) {

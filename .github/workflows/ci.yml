@@ -280,6 +280,9 @@ jobs:
       - name: Check Convex Web Binding Against The Browser Bundle
         run: node tool/check_convex_web_binding.mjs
 
+      - name: Check The Browser Bundle Resends A Pending Mutation Unchanged
+        run: node tool/check_convex_web_replay.mjs
+
       - uses: ./.github/actions/setup-flutter
 
       - name: Analyze

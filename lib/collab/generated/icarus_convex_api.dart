@@ -1149,8 +1149,10 @@ abstract interface class OpsModule {
     required double clientProtocolVersion,
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
+    ConvexOptional<double> liveBasis = const ConvexOptional.absent(),
     required List<OpsApplyBatchArgsOpsItem> ops,
     ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
+    ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
 }
@@ -1170,8 +1172,10 @@ final class _OpsModule implements OpsModule {
     required double clientProtocolVersion,
     ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
     ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
+    ConvexOptional<double> liveBasis = const ConvexOptional.absent(),
     required List<OpsApplyBatchArgsOpsItem> ops,
     ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
+    ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeOpsApplyBatchArgs(
@@ -1184,8 +1188,10 @@ final class _OpsModule implements OpsModule {
       clientProtocolVersion: clientProtocolVersion,
       elementFieldLevel: elementFieldLevel,
       includeWasApplied: includeWasApplied,
+      liveBasis: liveBasis,
       ops: ops,
       readsAccountMismatch: readsAccountMismatch,
+      sendsLiveBasis: sendsLiveBasis,
       strategyPublicId: strategyPublicId,
     );
     return _invoke(
