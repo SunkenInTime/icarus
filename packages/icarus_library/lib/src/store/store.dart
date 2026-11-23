@@ -1312,10 +1312,20 @@ final class LibraryStore {
         case InUnreadableStrategy(:final listing):
           return Refused(StrategyNotReadable(listing.ref));
       }
+      final digest = strategy.digest;
+      final ReadableStrategy header;
+      switch (strategy.header) {
+        case HeaderPlaced(row: final ReadableStrategy row):
+          header = row;
+        case HeaderPlaced(row: final UnreadableStrategy row):
+          return Refused(UnreadableRowInTheWay(row));
+        case HeaderUnplaced() || HeaderAbsent():
+          return Refused(NoSuchStrategy(strategyPublicId));
+      }
       if (strategy.keeping == Keeping.cloud) {
         if (account == null) return Refused(AccountNeeded(strategyPublicId));
         final open = await _openCloud(strategyPublicId);
-        if (_anotherAccountOpening(strategyPublicId, open, account)
+        if (_anotherAccountOpened(strategyPublicId, open, account)
             case final refusal?) {
           return Refused(refusal);
         }
@@ -1328,16 +1338,6 @@ final class LibraryStore {
       }
       if (account != null) {
         return Refused(NotACloudStrategy(strategyPublicId));
-      }
-      final digest = strategy.digest;
-      final ReadableStrategy header;
-      switch (strategy.header) {
-        case HeaderPlaced(row: final ReadableStrategy row):
-          header = row;
-        case HeaderPlaced(row: final UnreadableStrategy row):
-          return Refused(UnreadableRowInTheWay(row));
-        case HeaderUnplaced() || HeaderAbsent():
-          return Refused(NoSuchStrategy(strategyPublicId));
       }
       for (final op in asked) {
         if (await _loadPages(strategy, _pagesFor(op, strategy))

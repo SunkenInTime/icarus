@@ -213,14 +213,12 @@ SyncState syncStateOf(
 }) {
   final face = switch ((owner, signedIn)) {
     (OwnerUnreadable(), _) => Face.ownerUnreadable,
-    (_, SignedOut()) => tally.total == 0 ? null : Face.signedOut,
+    (_, SignedOut()) => Face.signedOut,
     (OwnedBy(account: final whose), SignedInAs(:final account))
         when whose != account =>
-      switch (tally) {
-        Tally(total: 0) => null,
-        Tally(standing: Standing.held) => Face.heldForAnotherAccount,
-        _ => Face.notThisAccount,
-      },
+      tally.standing == Standing.held
+          ? Face.heldForAnotherAccount
+          : Face.notThisAccount,
     _ => _ownFace(tally, network),
   };
   return face == null ? const AllSaved() : Outstanding(face, tally);

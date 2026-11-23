@@ -538,7 +538,10 @@ void main() {
 
     test('only an explicit discard of unsent work lets it go, and removing '
         'the area as unreadable is refused without one', () async {
-      final (store, disk, _) = await withRow('cloud', '{"version":2}');
+      final (store, disk, _) = await withRow(
+        AttemptName(7).name,
+        '{"version":2}',
+      );
       await store.readStrategy(strategyId);
       final discarded = await store.discardUnreadableQueue(
         testAccount,
@@ -844,7 +847,8 @@ void main() {
     });
 
     test('an area with stored results and no cloud row is a held cloud '
-        'strategy: never overwritten as local, and discard works', () async {
+        'strategy: never overwritten as local, and with no owner to read, '
+        'no account may discard it', () async {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
@@ -867,7 +871,11 @@ void main() {
           strategyId,
           const DiscardsUnsentWork(),
         ),
-        isA<Saved<StrategySummary, CommitRefusal>>(),
+        isA<Refused<StrategySummary, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<OwnerNotRead>(),
+        ),
       );
     });
 

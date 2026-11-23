@@ -138,10 +138,9 @@ final class _CloudHeld extends _CloudOpen {
 }
 
 final class _CloudRefused extends _CloudOpen {
-  const _CloudRefused(this.refusal, {this.owner});
+  const _CloudRefused(this.refusal);
 
   final CommitRefusal refusal;
-  final CloudOwner? owner;
 }
 
 final class _CloudUnread extends _CloudOpen {
@@ -576,25 +575,19 @@ extension _CloudStore on LibraryStore {
       case InUnreadableStrategy(:final listing):
         return _CloudRefused(StrategyNotReadable(listing.ref));
     }
-    if (strategy.keeping == Keeping.here) {
-      return _CloudRefused(NotACloudStrategy(strategyPublicId));
-    }
-    final load = await _queueOf(strategy);
-    final CloudOwner? owner = switch (load) {
-      _QueueLoaded(:final queue) => OwnedBy(queue.owner),
-      _QueueHeld(:final owner) => owner,
-      _QueueNotRead() => null,
-    };
     final ReadableStrategy header;
     switch (strategy.header) {
       case HeaderPlaced(row: final ReadableStrategy row):
         header = row;
       case HeaderPlaced(row: final UnreadableStrategy row):
-        return _CloudRefused(UnreadableRowInTheWay(row), owner: owner);
+        return _CloudRefused(UnreadableRowInTheWay(row));
       case HeaderUnplaced() || HeaderAbsent():
-        return _CloudRefused(NoSuchStrategy(strategyPublicId), owner: owner);
+        return _CloudRefused(NoSuchStrategy(strategyPublicId));
     }
-    return switch (load) {
+    if (strategy.keeping == Keeping.here) {
+      return _CloudRefused(NotACloudStrategy(strategyPublicId));
+    }
+    return switch (await _queueOf(strategy)) {
       _QueueLoaded(:final queue) => _CloudReady(strategy, header, queue),
       _QueueHeld(:final rows, :final owner) => _CloudHeld(
         strategy,
@@ -605,29 +598,6 @@ extension _CloudStore on LibraryStore {
       _QueueNotRead(:final failure) => _CloudUnread(failure),
     };
   }
-
-  CommitRefusal? _anotherAccount(
-    String strategyPublicId,
-    CloudOwner? owner,
-    Account asking,
-  ) => switch (owner) {
-    OwnedBy(:final account) when account != asking => WorkOfAnotherAccount(
-      strategyPublicId,
-      owner,
-    ),
-    _ => null,
-  };
-
-  CommitRefusal? _anotherAccountOpening(
-    String strategyPublicId,
-    _CloudOpen open,
-    Account asking,
-  ) => _anotherAccount(strategyPublicId, switch (open) {
-    _CloudReady(:final queue) => OwnedBy(queue.owner),
-    _CloudHeld(:final owner) => owner,
-    _CloudRefused(:final owner) => owner,
-    _CloudUnread() => null,
-  }, asking);
 
   void _forgetCloud(String digest) {
     _strategies.remove(digest);
@@ -1391,18 +1361,50 @@ extension _CloudStore on LibraryStore {
     return result;
   }
 
+  CommitRefusal? _anotherAccount(
+    String strategyPublicId,
+    CloudOwner owner,
+    Account asking,
+  ) => switch (owner) {
+    OwnedBy(:final account) when account != asking => WorkOfAnotherAccount(
+      strategyPublicId,
+      owner,
+    ),
+    _ => null,
+  };
+
+  CommitRefusal? _anotherAccountOpened(
+    String strategyPublicId,
+    _CloudOpen open,
+    Account asking,
+  ) => switch (open) {
+    _CloudReady(:final queue) => _anotherAccount(
+      strategyPublicId,
+      OwnedBy(queue.owner),
+      asking,
+    ),
+    _CloudHeld(:final owner) => _anotherAccount(
+      strategyPublicId,
+      owner,
+      asking,
+    ),
+    _CloudRefused() || _CloudUnread() => null,
+  };
+
   Future<RecordResult> _recordCloud(
     Account asking,
     String strategyPublicId,
     List<QueueEvent> events,
   ) async {
     final open = await _openCloud(strategyPublicId);
-    if (_anotherAccountOpening(strategyPublicId, open, asking)
+    if (_anotherAccountOpened(strategyPublicId, open, asking)
         case final refusal?) {
       return Refused(refusal);
     }
-    if (_firstOutOfPlace(strategyPublicId, events) case final key?) {
-      return Refused(ResultOutOfPlace(key));
+    if (open is! _CloudRefused && open is! _CloudUnread) {
+      if (_firstOutOfPlace(strategyPublicId, events) case final key?) {
+        return Refused(ResultOutOfPlace(key));
+      }
     }
     final _CloudReady cloud;
     switch (open) {
@@ -1745,15 +1747,6 @@ extension _CloudStore on LibraryStore {
       case InUnreadableStrategy(:final listing):
         return Refused(StrategyNotReadable(listing.ref));
     }
-    final load = await _queueOf(strategy);
-    if (_anotherAccount(strategyPublicId, switch (load) {
-          _QueueLoaded(:final queue) => OwnedBy(queue.owner),
-          _QueueHeld(:final owner) => owner,
-          _QueueNotRead() => null,
-        }, account)
-        case final refusal?) {
-      return Refused(refusal);
-    }
     final ReadableStrategy header;
     switch (strategy.header) {
       case HeaderPlaced(row: final ReadableStrategy row):
@@ -1763,13 +1756,23 @@ extension _CloudStore on LibraryStore {
       case HeaderUnplaced() || HeaderAbsent():
         return Refused(StrategyNotReadable(StrategyRef(strategy.area)));
     }
-    switch (load) {
-      case _QueueLoaded():
-        return Refused(QueueNotHeld(strategyPublicId));
+    switch (await _queueOf(strategy)) {
       case _QueueNotRead(:final failure):
         return NotSaved(failure);
-      case _QueueHeld():
-        break;
+      case _QueueLoaded(:final queue):
+        return Refused(
+          _anotherAccount(strategyPublicId, OwnedBy(queue.owner), account) ??
+              QueueNotHeld(strategyPublicId),
+        );
+      case _QueueHeld(:final owner):
+        switch (owner) {
+          case OwnedBy(account: final whose) when whose == account:
+            break;
+          case OwnedBy():
+            return Refused(WorkOfAnotherAccount(strategyPublicId, owner));
+          case OwnerUnreadable():
+            return Refused(OwnerNotRead(strategyPublicId));
+        }
     }
     if (await _loadPages(strategy, strategy.pageDigests) case StorageFailed(
       :final failure,

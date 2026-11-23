@@ -239,6 +239,15 @@ final class WorkOfAnotherAccount implements CommitRefusal, LibraryRefusal {
   String toString() => 'WorkOfAnotherAccount($strategyPublicId, $owner)';
 }
 
+final class OwnerNotRead extends CommitRefusal {
+  const OwnerNotRead(this.strategyPublicId);
+
+  final String strategyPublicId;
+
+  @override
+  String toString() => 'OwnerNotRead($strategyPublicId)';
+}
+
 final class AccountNeeded extends CommitRefusal {
   const AccountNeeded(this.strategyPublicId);
 

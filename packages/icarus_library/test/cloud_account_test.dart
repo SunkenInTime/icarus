@@ -61,6 +61,16 @@ StrategyRowSet otherStrategyRows() => StrategyRowSet(
   lineupGroups: const [],
 );
 
+final class FailingListingsLease extends ForwardingLease {
+  FailingListingsLease(super.inner);
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      area == strategyArea(strategyId)
+      ? const StorageFailed(DeviceFailure('the listing timed out'))
+      : super.entries(area, prefix);
+}
+
 String describe(StoreChange change) => switch (change) {
   StrategyRefreshed(:final strategyPublicId, :final summary) =>
     'refreshed $strategyPublicId ${summary.toJson()}',
@@ -221,7 +231,8 @@ void main() {
     });
   });
 
-  group('another account is told so first, whatever else is wrong', () {
+  group('another account is told so once its owner is known, ahead of '
+      'every other queue refusal', () {
     test('on a held queue whose owner is known', () async {
       final (store, disk) = await reopenedWithCloudRow(
         (row) => {...row, 'presence': 'not a presence'},
@@ -320,6 +331,85 @@ void main() {
     expect(refused.queue.nextAttempt, read.queue.nextAttempt);
     expect(refused.queue.nextSession, read.queue.nextSession);
     expect(refused.queue.session, read.queue.session);
+
+    for (final store in [refusing, reading]) {
+      await store.record(testAccount, strategyId, const [ConnectionReturned()]);
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('next')),
+      );
+    }
+    final refusedNext = await syncOf(refusing);
+    final readNext = await syncOf(reading);
+    expect(refusedNext.queue.session.number, readNext.queue.session.number);
+    expect(
+      (await claimAll(refusing)).attempt,
+      (await claimAll(reading)).attempt,
+    );
+  });
+
+  group('when an earlier refusal comes first, another account still applies '
+      'and saves nothing', () {
+    Future<void> expectNothing(
+      LibraryStore store,
+      MemoryStorage disk,
+      Counts counts,
+      Matcher refusal,
+    ) async {
+      final before = editable(disk.contents);
+      final commitsBefore = counts.commits;
+      for (final call in <Future<Saving<Object?, CommitRefusal>> Function()>[
+        () => store.commitAs(otherAccount, strategyId, movePatch('theirs')),
+        () =>
+            store.commitAllAs(otherAccount, strategyId, [movePatch('theirs')]),
+        () => store.record(otherAccount, strategyId, const [
+          ConnectionReturned(),
+        ]),
+        () => store.discardUnreadableQueue(
+          otherAccount,
+          strategyId,
+          const DiscardsUnsentWork(),
+        ),
+      ]) {
+        expect(await call(), refusal);
+      }
+      expect(counts.commits, commitsBefore);
+      expect(sameContents(disk.contents, before), isTrue);
+    }
+
+    test('a missing strategy row', () async {
+      final (store, storage) = await withWork();
+      await store.close();
+      final contents = editable(storage.contents);
+      contents[area]!.remove('strategy');
+      final disk = MemoryStorage(contents);
+      final (engine, counts) = counting(MemoryEngine(disk));
+      final reopened = await openCloudStore(engine);
+      await expectNothing(
+        reopened,
+        disk,
+        counts,
+        isA<Refused<Object?, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          anyOf(isA<StrategyNotReadable>(), isA<NoSuchStrategy>()),
+        ),
+      );
+    });
+
+    test('a read that fails', () async {
+      final (store, storage) = await withWork();
+      await store.close();
+      final disk = MemoryStorage(editable(storage.contents));
+      final (counted, counts) = counting(MemoryEngine(disk));
+      final failing = WrappingEngine(counted, FailingListingsLease.new);
+      final reopened = await openCloudStore(failing);
+      await expectNothing(
+        reopened,
+        disk,
+        counts,
+        isA<NotSaved<Object?, CommitRefusal>>(),
+      );
+    });
   });
 
   test('an edit of a cloud strategy that names no account is refused, and one '
@@ -380,21 +470,31 @@ void main() {
       expect(sameContents(disk.contents, before), isTrue);
     });
 
-    test('is cleared only by discarding the held work, after which the '
-        'strategy is the discarding account\'s', () async {
-      final (store, _) = await reopenedWithCloudRow(
+    test('permits nothing: no account may discard the held work, and '
+        'nothing is written', () async {
+      final (store, disk) = await reopenedWithCloudRow(
         (row) => {...row}..remove('account'),
       );
-      savedValue(
-        await store.discardUnreadableQueue(
-          otherAccount,
-          strategyId,
-          const DiscardsUnsentWork(),
+      final before = editable(disk.contents);
+      for (final account in [testAccount, otherAccount]) {
+        expect(
+          await store.discardUnreadableQueue(
+            account,
+            strategyId,
+            const DiscardsUnsentWork(),
+          ),
+          refusedWith<OwnerNotRead>(),
+        );
+      }
+      expect(sameContents(disk.contents, before), isTrue);
+      expect(
+        strategyOf(await store.readStrategy(strategyId)).sync,
+        isA<CloudHeld>().having(
+          (held) => held.owner,
+          'owner',
+          const OwnerUnreadable(),
         ),
       );
-      final sync = await syncOf(store);
-      expect(sync.owner, otherAccount);
-      expect(sync.queue.entries, isEmpty);
     });
 
     test(
@@ -507,7 +607,84 @@ void main() {
       waiting: const {Underway.unsent: 2},
     );
     final held = Tally(standing: Standing.held, unreadable: 1);
-    Face faceOf(SyncState state) => (state as Outstanding).face;
+    final deleted = Tally(standing: Standing.deletedOnServer);
+    final accessLost = Tally(standing: Standing.editAccessLost);
+    String stateOf(SyncState state) => switch (state) {
+      AllSaved() => 'allSaved',
+      Outstanding(:final face) => face.name,
+    };
+
+    final viewers = <String, SignedIn>{
+      'signed out': const SignedOut(),
+      'the owner': SignedInAs(testAccount),
+      'someone else': SignedInAs(otherAccount),
+    };
+    final strategies = <String, (CloudOwner, Tally)>{
+      'readable with work': (OwnedBy(testAccount), work),
+      'readable and empty': (OwnedBy(testAccount), Tally.empty),
+      'held, owner known': (OwnedBy(testAccount), held),
+      'held, owner unreadable': (const OwnerUnreadable(), held),
+      'deleted on the server, empty': (OwnedBy(testAccount), deleted),
+      'edit access lost, empty': (OwnedBy(testAccount), accessLost),
+    };
+    const expected = <String, Map<String, (String, String)>>{
+      'signed out': {
+        'readable with work': ('signedOut', 'signedOut'),
+        'readable and empty': ('signedOut', 'signedOut'),
+        'held, owner known': ('signedOut', 'signedOut'),
+        'held, owner unreadable': ('ownerUnreadable', 'ownerUnreadable'),
+        'deleted on the server, empty': ('signedOut', 'signedOut'),
+        'edit access lost, empty': ('signedOut', 'signedOut'),
+      },
+      'the owner': {
+        'readable with work': ('sending', 'offline'),
+        'readable and empty': ('allSaved', 'allSaved'),
+        'held, owner known': ('unreadableWork', 'unreadableWork'),
+        'held, owner unreadable': ('ownerUnreadable', 'ownerUnreadable'),
+        'deleted on the server, empty': ('deletedOnServer', 'deletedOnServer'),
+        'edit access lost, empty': ('editAccessLost', 'editAccessLost'),
+      },
+      'someone else': {
+        'readable with work': ('notThisAccount', 'notThisAccount'),
+        'readable and empty': ('notThisAccount', 'notThisAccount'),
+        'held, owner known': ('heldForAnotherAccount', 'heldForAnotherAccount'),
+        'held, owner unreadable': ('ownerUnreadable', 'ownerUnreadable'),
+        'deleted on the server, empty': ('notThisAccount', 'notThisAccount'),
+        'edit access lost, empty': ('notThisAccount', 'notThisAccount'),
+      },
+    };
+    for (final MapEntry(key: viewer, value: signedIn) in viewers.entries) {
+      for (final MapEntry(key: strategy, value: (owner, tally))
+          in strategies.entries) {
+        test('$viewer, $strategy', () {
+          final (online, offline) = expected[viewer]![strategy]!;
+          expect(
+            stateOf(
+              syncStateOf(
+                owner,
+                tally,
+                network: Network.online,
+                signedIn: signedIn,
+              ),
+            ),
+            online,
+            reason: 'online',
+          );
+          expect(
+            stateOf(
+              syncStateOf(
+                owner,
+                tally,
+                network: Network.offline,
+                signedIn: signedIn,
+              ),
+            ),
+            offline,
+            reason: 'offline',
+          );
+        });
+      }
+    }
 
     test('counts only that account\'s strategies, and names every other '
         'account that holds work', () {
@@ -525,15 +702,14 @@ void main() {
         sync,
         isA<SignedInSync>()
             .having((sync) => sync.account, 'account', testAccount)
-            .having((sync) => faceOf(sync.mine), 'face', Face.sending)
-            .having((sync) => (sync.mine as Outstanding).tally, 'tally', work),
+            .having((sync) => stateOf(sync.mine), 'mine', 'sending'),
       );
       expect(sync.others, {otherAccount: work});
       expect(sync.ownerUnreadable, held);
     });
 
-    test('signed out is its own state, apart from signed in with nothing '
-        'to send', () {
+    test('signed out is its own state, apart from signed in with nothing to '
+        'send', () {
       final signedOut = accountSyncState(
         [(owner: OwnedBy(testAccount), tally: work)],
         network: Network.online,
@@ -541,80 +717,17 @@ void main() {
       );
       expect(signedOut, isA<SignedOutSync>());
       expect(signedOut.others, {testAccount: work});
-      final nothing = accountSyncState(
-        const [],
-        network: Network.online,
-        signedIn: SignedInAs(testAccount),
-      );
       expect(
-        nothing,
+        accountSyncState(
+          const [],
+          network: Network.online,
+          signedIn: SignedInAs(testAccount),
+        ),
         isA<SignedInSync>().having(
-          (sync) => sync.mine,
+          (sync) => stateOf(sync.mine),
           'mine',
-          isA<AllSaved>(),
+          'allSaved',
         ),
-      );
-      expect(
-        faceOf(
-          syncStateOf(
-            OwnedBy(testAccount),
-            work,
-            network: Network.online,
-            signedIn: const SignedOut(),
-          ),
-        ),
-        Face.signedOut,
-      );
-    });
-
-    test('held work says whose it is', () {
-      Face heldAs(CloudOwner owner) => faceOf(
-        syncStateOf(
-          owner,
-          held,
-          network: Network.online,
-          signedIn: SignedInAs(testAccount),
-        ),
-      );
-      expect(heldAs(OwnedBy(testAccount)), Face.unreadableWork);
-      expect(heldAs(OwnedBy(otherAccount)), Face.heldForAnotherAccount);
-      expect(heldAs(const OwnerUnreadable()), Face.ownerUnreadable);
-    });
-
-    test('who owns the work outranks how the connection is', () {
-      for (final network in Network.values) {
-        expect(
-          faceOf(
-            syncStateOf(
-              OwnedBy(otherAccount),
-              work,
-              network: network,
-              signedIn: SignedInAs(testAccount),
-            ),
-          ),
-          Face.notThisAccount,
-          reason: '$network',
-        );
-      }
-      expect(
-        faceOf(
-          syncStateOf(
-            OwnedBy(testAccount),
-            work,
-            network: Network.offline,
-            signedIn: SignedInAs(testAccount),
-          ),
-        ),
-        Face.offline,
-      );
-      expect(
-        syncStateOf(
-          OwnedBy(otherAccount),
-          Tally.empty,
-          network: Network.online,
-          signedIn: SignedInAs(testAccount),
-        ),
-        isA<AllSaved>(),
       );
     });
   });

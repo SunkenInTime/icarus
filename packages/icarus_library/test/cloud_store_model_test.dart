@@ -1291,9 +1291,12 @@ final class StoreModel {
     final (label, call) = pick(calls);
     final result = await call();
     log.add('$label${held ? ' (held)' : ''} -> ${describeSaving(result)}');
+    final namesNoAccount = label == 'an edit naming no account';
     switch (result) {
+      case Refused(reason: AccountNeeded()) when namesNoAccount:
+        count('refused for naming no account');
       case Refused(reason: WorkOfAnotherAccount(:final owner))
-          when owner == OwnedBy(testAccount):
+          when owner == OwnedBy(testAccount) && !namesNoAccount:
         count(
           held
               ? 'refused for another account while held'
@@ -1302,10 +1305,10 @@ final class StoreModel {
         count(
           'refused for another account: ${label.split(' ').take(3).join(' ')}',
         );
-      case Refused(reason: AccountNeeded()):
-        count('refused for naming no account');
       case _:
-        throw StateError('$label was not refused: ${describeSaving(result)}');
+        throw StateError(
+          '$label was not refused as it should be: ${describeSaving(result)}',
+        );
     }
     if (commits != commitsBefore) throw StateError('$label made a commit');
     if (!const DeepCollectionEquality().equals(storage.contents, stored)) {
