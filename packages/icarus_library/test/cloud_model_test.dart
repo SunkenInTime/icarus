@@ -17,7 +17,9 @@ void count(String what, [int by = 1]) =>
 
 final class Model {
   Model(this.seed, {required this.teammates, required this.folding})
-    : random = Random(seed);
+    : random = Random(seed) {
+    skew = Duration(milliseconds: random.nextInt(180001) - 90000);
+  }
 
   final int seed;
   final bool teammates;
@@ -31,7 +33,76 @@ final class Model {
   String build = 'build-0';
   int restarts = 0;
   String openPage = 'page-a';
-  final inFlight = <(int, String, List<StrategyOp>)>[];
+  final inFlight = <(int, String, List<StrategyOp>, int?, int)>[];
+  final held = <(String, List<StrategyOp>, int?)>[];
+  Duration elapsed = Duration.zero;
+  late final Duration skew;
+  final writtenAt = <String, int>{};
+  final teammateWrote = <(Target, String), int>{};
+  final refusedLate = <String>{};
+
+  int get serverNow => clock.millisecondsSinceEpoch + skew.inMilliseconds;
+
+  void pass(Duration time) {
+    clock = clock.add(time);
+    elapsed += time;
+  }
+
+  List<OpAnswer>? receive(String owner, List<StrategyOp> ops, int? basis) {
+    final at = serverNow;
+    final unchecked = [
+      for (final op in ops)
+        if (uncheckedOnTheWire(op)) op,
+    ];
+    if (basis == null && unchecked.isNotEmpty) {
+      throw StateError(
+        'unchecked ${unchecked.map((op) => op.opId)} went out with no basis',
+      );
+    }
+    if (basis != null && (basis > at || at - basis > 30000)) {
+      count('batches refused outside the window');
+      return null;
+    }
+    if (basis != null && at - basis > liveFor.inMilliseconds) {
+      count('batches accepted 20 to 30 s after their basis');
+    }
+    final answers = <OpAnswer>[];
+    for (final op in ops) {
+      final answer = applyOwn(owner, op);
+      answers.add(answer);
+      if (!uncheckedOnTheWire(op) || answer is! AppliedAnswer) continue;
+      count('unchecked ops applied');
+      final late = at - writtenAt[op.opId]!;
+      if (late > 30000) {
+        throw StateError(
+          'unchecked ${op.opId} applied ${late / 1000} s after it was written',
+        );
+      }
+      final target = checkTargetOf(op);
+      final fields = switch (op.toJson()) {
+        {'merge': {'fields': final List<Object?> named}} => [
+          ...named.map((f) => '$f'),
+        ],
+        _ => null,
+      };
+      final overwrote = teammateWrote.entries.any(
+        (wrote) =>
+            wrote.key.$1 == target &&
+            wrote.value > writtenAt[op.opId]! &&
+            (fields == null ||
+                wrote.key.$2 == '*' ||
+                fields.contains(wrote.key.$2)),
+      );
+      if (overwrote) {
+        count(
+          'unchecked ops applied over a teammate\'s newer write to their '
+          'fields, in window',
+        );
+      }
+    }
+    return answers;
+  }
+
   final late = <(int, OpAnswer)>[];
   final inFlightLog = <String, String>{};
   final log = <String>[];
@@ -117,6 +188,9 @@ final class Model {
 
   Step apply(QueueEvent event, String label) {
     client.clock = clock;
+    if (event case UserEdited(edit: Edit(:final op))) {
+      writtenAt[op.opId] = serverNow;
+    }
     final before = client.queue;
     var result = transition(before, event, now: clock);
     if (!folding) result = unfolded(before, event, result);
@@ -136,8 +210,14 @@ final class Model {
         count('nothing to do at another revision');
       }
       for (final effect in effects) {
-        if (effect case OpRemoved(:final cause)) {
+        if (effect case OpRemoved(:final opId, :final cause)) {
           count('removed ${cause.runtimeType}');
+          if (cause case FoldedInto(opId: final into)) {
+            final earlier = writtenAt[opId];
+            if (earlier != null && earlier < (writtenAt[into] ?? earlier + 1)) {
+              writtenAt[into] = earlier;
+            }
+          }
         }
       }
       if (event case OpAnswered(
@@ -175,6 +255,7 @@ final class Model {
               authoredAt: clock,
               refusal: const NotRefused(),
               retriedAfter: before.nextAttempt - 1,
+              basis: before.session.basis,
             ),
           ],
           attempts: before.attempts,
@@ -480,8 +561,9 @@ final class Model {
     final views = seen.views;
     String? owner;
     final ids = <String>[];
+    final most = 1 + random.nextInt(4);
     for (final entry in client.queue.entries) {
-      if (ids.length == 4) break;
+      if (ids.length == most) break;
       final view = views[entry.id];
       if (view == null || !view.sendable) continue;
       final mine = switch (view.state) {
@@ -493,20 +575,64 @@ final class Model {
       ids.add(entry.id);
     }
     if (ids.isEmpty) return;
+    final entries = {
+      for (final entry in client.queue.entries)
+        if (entry is PendingOp) entry.id: entry,
+    };
     final result = must(
-      BatchClaimed(clientId: owner!, opIds: ids, at: clock),
+      BatchClaimed(clientId: owner!, opIds: ids, at: clock, elapsed: elapsed),
       'claim $ids as $owner',
     );
     final sent = result.effects.whereType<SendBatch>().single;
+    int? oldest;
     for (final op in sent.ops) {
       inFlightLog[op.opId] = '${op.toJson()}';
+      if (!uncheckedOnTheWire(op)) continue;
+      count('unchecked sends');
+      final basis = entries[op.opId]!.basis;
+      if (basis == null) {
+        throw StateError('${op.opId} went out unchecked with no basis');
+      }
+      if (elapsed - basis.heldAt > liveFor) {
+        throw StateError(
+          '${op.opId} went out unchecked on a basis '
+          '${elapsed - basis.heldAt} old',
+        );
+      }
+      if (refusedLate.contains(op.opId)) {
+        throw StateError(
+          '${op.opId} went out unchecked again after a late refusal',
+        );
+      }
+      if (oldest == null || basis.serverTime < oldest) {
+        oldest = basis.serverTime;
+      }
     }
-    inFlight.add((sent.attempt, sent.clientId, sent.ops));
+    if ({
+          for (final op in sent.ops)
+            if (uncheckedOnTheWire(op)) entries[op.opId]!.basis!.serverTime,
+        }.length >
+        1) {
+      count('batches whose live ops carry different bases');
+    }
+    if (sent.basis != oldest) {
+      throw StateError(
+        'the batch carries basis ${sent.basis}, its oldest unchecked op '
+        '$oldest',
+      );
+    }
+    inFlight.add((
+      sent.attempt,
+      sent.clientId,
+      sent.ops,
+      sent.basis,
+      client.queue.session.number,
+    ));
   }
 
   void deliver({required bool reliable}) {
     if (inFlight.isEmpty) return;
-    final (attempt, owner, ops) = inFlight.removeAt(
+    final (attempt, owner, ops, basis, session) = inFlight.removeAt(
       random.nextInt(inFlight.length),
     );
     final roll = reliable ? 0 : random.nextInt(12);
@@ -518,6 +644,7 @@ final class Model {
       return;
     }
     if (roll == 11) {
+      if (random.nextBool()) held.add((owner, ops, basis));
       apply(
         TransportFailed(attempt, TransportFailure.network, at: clock),
         'lost $attempt',
@@ -533,7 +660,20 @@ final class Model {
       apply(BatchRefused(attempt, refusal), 'refused whole ${refusal.name}');
       return;
     }
-    final answers = [for (final op in ops) applyOwn(owner, op)];
+    if (roll == 6) {
+      pass(Duration(milliseconds: 20000 + random.nextInt(9000)));
+      count('calls the transport held 20 to 29 s');
+    }
+    final received = receive(owner, ops, basis);
+    if (received == null) {
+      refusedLate.addAll([for (final op in ops) op.opId]);
+      apply(
+        BatchRefused(attempt, BatchRefusal.uncheckedTooLate),
+        'refused late $attempt',
+      );
+      return;
+    }
+    final answers = received;
     if (roll == 9) {
       apply(
         TransportFailed(attempt, TransportFailure.timeout, at: clock),
@@ -550,18 +690,42 @@ final class Model {
       apply(OpAnswered(attempt, answer), 'answer ${answer.opId}');
       if (roll == 7) apply(OpAnswered(attempt, answer), 'again ${answer.opId}');
     }
+    apply(
+      ServerTimeHeld(serverNow, at: elapsed, session: session),
+      'server time $serverNow from session $session',
+    );
+  }
+
+  void teammateWrites() {
+    final before = fieldsOf(server.rows);
+    teammate();
+    final after = fieldsOf(server.rows);
+    for (final key in {...before.keys, ...after.keys}) {
+      if (before[key] != after[key]) teammateWrote[key] = serverNow;
+    }
+  }
+
+  void deliverHeld() {
+    if (held.isEmpty || !server.exists) return;
+    final (owner, ops, basis) = held.removeAt(random.nextInt(held.length));
+    count('held calls delivered');
+    log.add(
+      'transport delivers a held call ${ops.map((op) => op.opId)}: '
+      '${receive(owner, ops, basis) == null ? 'refused' : 'received'}',
+    );
   }
 
   void restart() {
-    for (final (_, owner, ops) in inFlight) {
+    for (final (_, owner, ops, basis, _) in inFlight) {
       if (random.nextBool() && server.exists) {
-        for (final op in ops) {
-          applyOwn(owner, op);
-        }
+        receive(owner, ops, basis);
+      } else if (random.nextBool()) {
+        held.add((owner, ops, basis));
       }
     }
     inFlight.clear();
     late.clear();
+    elapsed = Duration.zero;
     clientId = 'client-${++restarts}';
     if (random.nextInt(3) == 0) build = 'build-$restarts';
     must(AppRestarted(build: build), 'restart as $clientId on $build');
@@ -764,12 +928,8 @@ final class Model {
   }
 
   void purgeAndPutBack() {
-    for (final (attempt, owner, ops) in [...inFlight]) {
-      if (random.nextBool()) {
-        for (final op in ops) {
-          applyOwn(owner, op);
-        }
-      }
+    for (final (attempt, owner, ops, basis, _) in [...inFlight]) {
+      if (random.nextBool()) receive(owner, ops, basis);
       apply(
         TransportFailed(attempt, TransportFailure.network, at: clock),
         'given up across 30 days $attempt',
@@ -900,12 +1060,13 @@ final class Model {
       jumped = true;
       purgeAndPutBack();
     }
-    clock = clock.add(
+    pass(
       jump
           ? serverRemembersAnswersFor + const Duration(hours: 1)
           : Duration(milliseconds: random.nextInt(2000)),
     );
-    switch (random.nextInt(22)) {
+    if (jump) held.clear();
+    switch (random.nextInt(24)) {
       case < 6:
         edit();
       case 6:
@@ -919,7 +1080,19 @@ final class Model {
       case 15:
         lane();
       case 16:
-        if (teammates) teammate();
+        if (teammates) teammateWrites();
+      case 22:
+        final quiet = Duration(milliseconds: 10000 + random.nextInt(35000));
+        if (random.nextBool()) {
+          clock = clock.add(quiet);
+          count('the device slept');
+          log.add('the device slept $quiet: its monotonic clock did not move');
+        } else {
+          pass(quiet);
+          log.add('a quiet spell');
+        }
+      case 23:
+        deliverHeld();
       case 17:
         userActs(draining: false);
       case 18:
@@ -946,7 +1119,7 @@ final class Model {
       round < 300 && client.queue.entries.isNotEmpty;
       round++
     ) {
-      clock = clock.add(const Duration(minutes: 1));
+      pass(const Duration(minutes: 1));
       lane();
       userActs(draining: true);
       claim();
@@ -1017,6 +1190,14 @@ const minimums = {
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
   'teammate changes a page\'s settings': 50,
+  'unchecked sends': 20,
+  'unchecked ops applied': 10,
+  'ServerTimeHeld': 5000,
+  'batches refused outside the window': 4,
+  'batches accepted 20 to 30 s after their basis': 2,
+  'held calls delivered': 200,
+  'the device slept': 100,
+  'calls the transport held 20 to 29 s': 100,
 };
 
 void main() {
@@ -1041,6 +1222,31 @@ void main() {
     }
   });
 }
+
+bool uncheckedOnTheWire(StrategyOp op) => switch (op.toJson()) {
+  {
+    'type': 'element.patch' || 'lineup.patch',
+    'merge': final Map<String, Object?> merge,
+  } =>
+    !merge.containsKey('base'),
+  {'type': 'element.delete' || 'lineup.delete', 'lastWriterWins': true} => true,
+  _ => false,
+};
+
+Map<(Target, String), String> fieldsOf(StrategyRowSet rows) => {
+  for (final (target, row) in [
+    for (final row in rows.elements)
+      (ElementTarget(row.publicId) as Target, row),
+    for (final row in rows.lineupGroups) (LineupTarget(row.publicId), row),
+  ]) ...{
+    (target, '*'): '${row.runtimeType}',
+    if (row.toJson() case {
+      'payload': {'data': final Map<String, Object?> data},
+    })
+      for (final MapEntry(:key, :value) in data.entries)
+        (target, key): '$value',
+  },
+};
 
 Map<Target, int> revisionsOf(StrategyRowSet rows) => {
   const StrategyTarget(): rows.strategy.revision,

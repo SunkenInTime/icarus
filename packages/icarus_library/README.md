@@ -1694,10 +1694,55 @@ session (`SessionOpened`). Results carry the session they were read in, and
 one from a session that ended does not apply. Rows from earlier sessions
 stay for drawing and for ending landed work, but the two decisions results
 make (a page delete, and a write behind a landed merge) use only a header and
-pages read in the current session. An op goes in its live form
-(a field merge without its base, a last-writer-wins delete) only on its first
-send, while connected, in the session it was written in. Every other send is
-checked.
+pages read in the current session.
+
+**The form of a send.** Two kinds of op have a live form, the one that skips
+the server's check so that two people editing at once converge on the last
+arrival: a field merge sent without its base, and an element or lineup delete
+sent last-writer-wins. Every other op is sent the same way in both forms. A
+live send carries a basis: a time the server gave this device in an earlier
+answer. The server refuses a batch that arrives more than 30 s after its basis
+(`UNCHECKED_OUTSIDE_WINDOW`), so a call the transport delivers late cannot
+overwrite a teammate's newer work.
+
+- The queue holds the latest server time it was given, with the moment it
+  arrived by the device's own monotonic clock (`ServerTimeHeld`). It holds
+  one only while connected, and every new session (a restart, a reconnect, an
+  account change) and a lost connection start with none. The session is in
+  memory only.
+- An op takes the queue's basis when it is written (`PendingOp.basis`, stored
+  as `basis`). Nothing changes it after that: a fold keeps the earlier op's
+  basis, the older one, and a "keep mine" replacement has none, so it always
+  goes checked. A stored op without the key has no basis.
+- A claim is given the device's monotonic reading (`BatchClaimed.elapsed`),
+  and `sendPolicy` decides each op's form. It is the only place that does:
+
+| Attempt on record | Connected, and written in this session | Basis | Age at claim | Form |
+|---|---|---|---|---|
+| yes | any | any | any | checked |
+| no | no | any | any | checked |
+| no | yes | none | any | checked |
+| no | yes | yes | no monotonic reading | checked |
+| no | yes | yes | more than 20 s (`liveFor`) | checked |
+| no | yes | yes | 20 s or less | live |
+
+- The batch carries the oldest basis among its live ops (`SendBatch.basis`),
+  and none when it has none. Every live op passed the age check at the same
+  claim, so the oldest passes too, and a batch the server accepts is within
+  30 s of every live op's own basis.
+- A batch refused for lateness (`BatchRefused`, `uncheckedTooLate`) did
+  nothing on the server. Its ops wait again with no retry delay, and since the
+  attempt stays on record, they go checked, under the same op ids. An edit to
+  the same fields does not fold into them (folding needs an op never claimed).
+  The refusal also drops the server time the queue held: it proved older than
+  the device's clock said (a device whose monotonic clock stopped while it
+  slept), so edits go checked until an answer brings a new one.
+- A server time is held only by the session that asked for it
+  (`ServerTimeHeld.session`); one that arrives in another session is
+  ignored.
+- The 10 s between `liveFor` and the server's 30 s covers the server reading
+  its clock when the mutation starts (so the device's count runs about half a
+  round trip behind) and the call's own trip.
 
 **The resend window.** The server remembers its answer to an op id for 30
 days (`serverRemembersAnswersFor`, beside `DAYS_30_MS` in
@@ -1817,7 +1862,8 @@ copy reaches the queue as ordinary adds under ids derived on this device. A
 result saying the strategy is gone stops every claim for that strategy.
 
 **Folding.** One rule: a field edit folds into an earlier field edit of the
-same row only when the earlier one is unsent and unclaimed, both name exactly
+same row only when the earlier one has never been claimed (no attempt on
+record, so not one given back or refused whole either), both name exactly
 the same fields (and both carry a field base or neither does), and nothing
 else for that row is queued between them. The folded edit keeps the earlier
 one's place, base and what it was authored against, with the later one's

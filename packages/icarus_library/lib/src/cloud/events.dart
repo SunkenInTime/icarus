@@ -132,11 +132,25 @@ final class BatchClaimed extends QueueEvent {
     required this.clientId,
     required List<String> opIds,
     required this.at,
+    this.elapsed,
   }) : opIds = List.unmodifiable(opIds);
 
   final String clientId;
   final List<String> opIds;
   final DateTime at;
+  final Duration? elapsed;
+}
+
+final class ServerTimeHeld extends QueueEvent {
+  const ServerTimeHeld(
+    this.serverTime, {
+    required this.at,
+    required this.session,
+  });
+
+  final int serverTime;
+  final Duration at;
+  final int session;
 }
 
 final class ClaimReleased extends QueueEvent {
