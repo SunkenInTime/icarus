@@ -464,7 +464,7 @@ void main() {
       'a lineup action holds only the lineup it added or removed; with the page graph on screen it builds the ops that leave the store equal to the page, for an add at a shared spot, its undo and redo, a delete, and a transaction of two deletes and its undo',
       () async {
     final whole = sharedSpotLineups('pl');
-    final pageId = 'lineup-page';
+    const pageId = 'lineup-page';
     final page = generatedPage(
       id: pageId,
       sortIndex: 0,
