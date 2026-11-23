@@ -178,6 +178,24 @@ LineUpGraph _withNotes(LineUpGraph graph, LineUpLink edited, String notes) =>
       ],
     );
 
+LineUpGraph _linksWithEnds(LineUpGraph graph, Set<String> linkIds) {
+  final links = [
+    for (final link in graph.links)
+      if (linkIds.contains(link.id)) link,
+  ];
+  return LineUpGraph(
+    origins: [
+      for (final origin in graph.origins)
+        if (links.any((link) => link.originId == origin.id)) origin,
+    ],
+    landings: [
+      for (final landing in graph.landings)
+        if (links.any((link) => link.landingId == landing.id)) landing,
+    ],
+    links: links,
+  );
+}
+
 final class _Step {
   _Step(this.after, this.change, this.what);
 
@@ -239,26 +257,33 @@ _Step? _step(StrategyData strategy, Random random, int step) {
         withPage(page.copyWith(lineUpGraph: after)),
         LineupsChanged(
           page.id,
-          before,
-          after,
-          touching: {
-            for (final (from, to) in [(before, after), (after, before)])
-              for (final link in from.links)
-                if (!to.links.any((kept) => kept.id == link.id)) ...[
-                  link.id,
-                  link.originId,
-                  link.landingId,
-                ],
-          },
+          removed: _linksWithEnds(before, {
+            for (final link in before.links)
+              if (!after.links.any((kept) => kept.id == link.id)) link.id,
+          }),
+          added: _linksWithEnds(after, {
+            for (final link in after.links)
+              if (!before.links.any((kept) => kept.id == link.id)) link.id,
+          }),
         ),
         'lineups',
       );
     case 6 when page.lineUpLinks.isNotEmpty:
       final link = page.lineUpLinks[random.nextInt(page.lineUpLinks.length)];
       final graph = _withNotes(page.lineUpGraph, link, 'notes $step');
+      final change = LineUpLinkChange.between(
+        link,
+        graph.links.singleWhere((l) => l.id == link.id),
+      );
       return _Step(
         withPage(page.copyWith(lineUpGraph: graph)),
-        LineupPartChanged(page.id, link.id, graph),
+        LineupFieldChanged(
+          page.id,
+          field: LineUpEditField.linkDetails,
+          targetId: link.id,
+          before: change.backward,
+          after: change.forward,
+        ),
         'lineup notes',
       );
     case 7:
@@ -269,7 +294,7 @@ _Step? _step(StrategyData strategy, Random random, int step) {
       );
       return _Step(
         withPage(page.copyWith(settings: settings)),
-        PageSettingsChanged(page.id, settings),
+        PageSettingsChanged(page.id, before: page.settings, after: settings),
         'settings',
       );
     case 8:
@@ -480,7 +505,7 @@ void main() {
   });
 
   test(
-      'a lineup action holds only the lineup it added or removed; with the page graph on screen it builds the ops that leave the store equal to the page, for an add at a shared spot, its undo and redo, a delete, and a transaction of two deletes and its undo',
+      'a lineup action holds only the lineup it added or removed; its ops leave the store equal to the page as the action declares it, for an add at a shared spot, its undo and redo, a delete, and a transaction of two deletes and its undo',
       () async {
     final whole = sharedSpotLineups('pl');
     const pageId = 'lineup-page';
@@ -505,13 +530,14 @@ void main() {
       bool reversed = false,
       bool splitOffGroupReadsBackLast = false,
     }) async {
-      final builder = (await OpsBuilder.read(store, strategy.id))!;
-      final built = await builder.build(canvasChangesOf(
+      final changes = canvasChangesOf(
         action,
         pageId: pageId,
         reversed: reversed,
-        now: EditorNow(lineups: () => now, agent: (_) => null),
-      ));
+        now: EditorNow(agent: (_) => null),
+      );
+      final builder = (await OpsBuilder.read(store, strategy.id))!;
+      final built = await builder.build(changes);
       expect(built.gaps, isEmpty, reason: what);
       final result = await store.commitAll(strategy.id, built.ops);
       expect(result, isA<Saved<List<Committed>, CommitRefusal>>(),
@@ -520,8 +546,21 @@ void main() {
         for (final shape in built.lineupShapes)
           '$what ${shape is LineupsInsideGroups ? 'inside' : 'groups'}',
       ]);
+      final declared = changes.whereType<LineupsChanged>().fold(
+            strategy.pages.single.lineUpGraph,
+            (graph, change) => lineupsWithParts(
+              graph,
+              removed: change.removed,
+              added: change.added,
+            ),
+          );
+      expect(
+        {for (final link in declared.links) link.id},
+        {for (final link in now.links) link.id},
+        reason: what,
+      );
       strategy = strategy.copyWith(pages: [
-        strategy.pages.single.copyWith(lineUpGraph: now),
+        strategy.pages.single.copyWith(lineUpGraph: declared),
       ]);
       final differences = readBackDifferences(
         _readable(strategy),
@@ -560,10 +599,10 @@ void main() {
       'undo the add groups',
       'redo the add groups',
       'delete groups',
-      'two deletes groups',
+      'two deletes inside',
       'two deletes inside',
       'undo two deletes inside',
-      'undo two deletes groups',
+      'undo two deletes inside',
     ]);
     await store.close();
   });
@@ -592,7 +631,7 @@ void main() {
         _lineupDeleted(whole, 'pl-link-a'),
         pageId: pageId,
         reversed: false,
-        now: EditorNow(lineups: () => now, agent: (_) => null),
+        now: EditorNow(agent: (_) => null),
       ),
     );
     expect(await store.commitAll(strategy.id, built.ops),

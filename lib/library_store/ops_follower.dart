@@ -42,7 +42,6 @@ final class OpsFollower implements EditFollower {
     final container = _container();
     final agents = container.read(agentProvider);
     return EditorNow(
-      lineups: () => container.read(lineUpProvider).graph.deepCopy(),
       agent: (id) {
         for (final agent in agents) {
           if (agent.id == id) return agent;

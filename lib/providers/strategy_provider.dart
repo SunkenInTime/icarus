@@ -1597,9 +1597,8 @@ class StrategyProvider extends Notifier<StrategyState> {
           if (page.id == target.id)
             LineupsChanged(
               page.id,
-              page.lineUpGraph,
-              lineUpsInGroupOrder(page.lineUpGraph.followedBy(lineUps)),
-              touching: lineupPartIds(lineUps),
+              removed: LineUpGraph.empty,
+              added: lineUps.deepCopy(),
             ),
       ],
       'copy lineups to page',
@@ -2922,7 +2921,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     ActionProvider.editFollower?.onPagesChanged(
       () => [
         for (final page in strat.pages)
-          PageSettingsChanged(page.id, transform(page.settings)),
+          PageSettingsChanged(
+            page.id,
+            before: page.settings,
+            after: transform(page.settings),
+          ),
       ],
       'settings on all pages',
     );

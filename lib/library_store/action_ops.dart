@@ -136,11 +136,13 @@ final class _Page {
     required this.revision,
     required this.sortIndex,
     required this.settingsRevision,
+    required this.settings,
   });
 
   int revision;
   int sortIndex;
   int? settingsRevision;
+  PageSettings? settings;
   final elements = <String, _Tracked<LiveElement>>{};
   final groups = <String, _Tracked<LiveLineupGroup>>{};
   var elementsRead = false;
@@ -229,6 +231,10 @@ final class OpsBuilder {
         sortIndex: page.sortIndex,
         settingsRevision: switch (content.settings[page.publicId]) {
           ReadablePageSettings(:final revision) => revision,
+          _ => null,
+        },
+        settings: switch (content.settings[page.publicId]) {
+          ReadablePageSettings(:final settings) => settings,
           _ => null,
         },
       )..elementsRead = page is! LivePage;
@@ -346,21 +352,35 @@ final class OpsBuilder {
         if (await _page(pageId, 'changed') case final page?) {
           _objectChanged(page, before, after);
         }
-      case LineupsChanged(
-          :final pageId,
-          :final before,
-          :final after,
-          :final touching,
-        ):
+      case LineupsChanged(:final pageId, :final removed, :final added):
         if (await _page(pageId, 'lineups') case final page?) {
-          _lineupsChanged(page, pageId, before, after, touching);
+          _lineupsChanged(page, pageId, removed, added);
         }
-      case LineupPartChanged(:final pageId, :final partId, :final graph):
+      case LineupFieldChanged(
+          :final pageId,
+          :final field,
+          :final targetId,
+          :final after,
+        ):
         if (await _page(pageId, 'lineup part') case final page?) {
-          _lineupPartChanged(page, pageId, partId, graph);
+          _lineupPartEdited(
+            page,
+            pageId,
+            targetId,
+            (graph) => lineupsWithField(graph, field, targetId, after),
+          );
         }
-      case PageSettingsChanged(:final pageId, :final settings):
-        _settingsChanged(pageId, settings);
+      case LineupWeaponChanged(:final pageId, :final originId, :final after):
+        if (await _page(pageId, 'lineup weapon') case final page?) {
+          _lineupPartEdited(
+            page,
+            pageId,
+            originId,
+            (graph) => lineupsWithWeapon(graph, originId, after),
+          );
+        }
+      case PageSettingsChanged(:final pageId, :final before, :final after):
+        _settingsChanged(pageId, before, after);
       case PageAdded(:final page, :final index, :final copyOf):
         _pageAdded(page, index: index, copyOf: copyOf);
       case PageRenamed(:final pageId, :final name, :final isAutoNamed):
@@ -521,88 +541,141 @@ final class OpsBuilder {
       );
   }
 
-  List<LiveLineupGroup> _groupsOf(String pageId, LineUpGraph graph,
-          {required Set<String> links}) =>
+  List<LiveLineupGroup> _groupsOf(String pageId, LineUpGraph graph) =>
       lineupGroupRowsOf(
         strategyId: _strategyId,
         pageId: pageId,
         graph: graph,
-        takenGroupIds: {},
-        everyLinkId: links,
+        takenGroupIds: {for (final link in graph.links) link.id},
+        everyLinkId: {for (final link in graph.links) link.id},
       );
 
   void _lineupsChanged(
     _Page page,
     String pageId,
-    LineUpGraph before,
-    LineUpGraph after,
-    Set<String> touching,
+    LineUpGraph removed,
+    LineUpGraph added,
   ) {
-    final links = {
-      for (final link in [...before.links, ...after.links]) link.id,
-    };
-    Map<String, LiveLineupGroup> touched(LineUpGraph graph) => {
-          for (final group in _groupsOf(pageId, graph, links: links))
-            if (_partIds(group).any(touching.contains)) group.publicId: group,
-        };
-    final groupsBefore = touched(before);
-    final groupsAfter = touched(after);
+    final touching = {...lineupPartIds(removed), ...lineupPartIds(added)};
+    final affected = [
+      for (final tracked in page.groups.values)
+        if (tracked.live && _partIds(tracked.row).any(touching.contains))
+          tracked,
+    ]..sort((a, b) => a.sortIndex - b.sortIndex);
+    final before = affected.isEmpty
+        ? LineUpGraph.empty
+        : lineupGraphOfGroups(pageId, [for (final t in affected) t.row]);
+    if (before == null) {
+      _gaps.add(LineupGroupNotInStore(affected.first.row.publicId, pageId));
+      return;
+    }
+    final after = lineupsWithParts(before, removed: removed, added: added);
+    final made = _groupsOf(pageId, after);
+    final kept = <_Tracked<LiveLineupGroup>>{};
+    final placed =
+        <({LiveLineupGroup group, _Tracked<LiveLineupGroup>? keeps})>[];
+    for (final group in made) {
+      final links = idsIn(group.payload.data, 'links').toSet();
+      final overlapping = affected.where((t) =>
+          !kept.contains(t) &&
+          idsIn(t.row.payload.data, 'links').any(links.contains));
+      final keeps = overlapping.firstOrNull;
+      if (keeps != null) kept.add(keeps);
+      placed.add((group: group, keeps: keeps));
+    }
+    final freed = [
+      for (final tracked in affected)
+        if (!kept.contains(tracked)) tracked,
+    ];
     _shapes.add(
-      groupsBefore.keys.toSet().containsAll(groupsAfter.keys) &&
-              groupsAfter.keys.toSet().containsAll(groupsBefore.keys)
+      freed.isEmpty && placed.every((p) => p.keeps != null)
           ? const LineupsInsideGroups()
           : LineupGroupsChanged(
-              before: groupsBefore.keys.toSet(),
-              after: groupsAfter.keys.toSet(),
+              before: {for (final t in affected) t.row.publicId},
+              after: {
+                for (final p in placed)
+                  p.keeps?.row.publicId ?? p.group.publicId,
+              },
             ),
     );
-    final freed = <({Set<String> parts, int sortIndex})>[];
-    for (final id in groupsBefore.keys) {
-      if (groupsAfter.containsKey(id)) continue;
-      final existing = page.groups[id];
-      if (existing == null || !existing.live) {
-        _gaps.add(LineupGroupNotInStore(id, id));
-        continue;
-      }
-      freed.add((parts: _partIds(existing.row), sortIndex: existing.sortIndex));
+    final slots = [
+      for (final tracked in freed)
+        (parts: _partIds(tracked.row), sortIndex: tracked.sortIndex),
+    ];
+    for (final tracked in freed) {
       _ops.add(LineupGroupDeleteOp(
         opId: _opId(),
-        lineupPublicId: id,
+        lineupPublicId: tracked.row.publicId,
         pagePublicId: pageId,
-        expectedLineupRevision: existing.revision,
+        expectedLineupRevision: tracked.revision,
       ));
-      existing
+      tracked
         ..live = false
         ..revision += 1;
     }
-    final changed = [
-      for (final group in groupsAfter.values)
-        if (groupsBefore[group.publicId]?.payload != group.payload) group,
-    ];
-    int phase(LiveLineupGroup group) => switch (page.groups[group.publicId]) {
-          _Tracked(live: true, :final row)
-              when _partIds(row).containsAll(_partIds(group)) =>
+    int phase(({LiveLineupGroup group, _Tracked<LiveLineupGroup>? keeps}) p) =>
+        switch (p.keeps) {
+          null => 2,
+          final keeps when _partIds(keeps.row).containsAll(_partIds(p.group)) =>
             0,
-          _Tracked(live: true) => 1,
-          _ => 2,
+          _ => 1,
         };
-    final takesPlaceOf = <String, int>{};
-    for (final group in groupsAfter.values) {
-      if (page.groups[group.publicId]?.live ?? false) continue;
-      final parts = _partIds(group);
-      final replaced = [
-        for (final slot in freed)
-          if (slot.parts.any(parts.contains)) slot,
-      ];
-      if (replaced.isEmpty) continue;
-      final first =
-          replaced.reduce((a, b) => a.sortIndex <= b.sortIndex ? a : b);
-      freed.remove(first);
-      takesPlaceOf[group.publicId] = first.sortIndex;
+    for (final p in [...placed]..sort((a, b) => phase(a) - phase(b))) {
+      switch (p.keeps) {
+        case final keeps?:
+          _patchGroup(
+            keeps,
+            pageId,
+            LineupGroupPayload(
+              payloadVersion: lineupGroupPayloadVersion,
+              data: {
+                ...p.group.payload.data.toJson(),
+                'id': keeps.row.publicId
+              },
+            ),
+          );
+        case null:
+          final parts = _partIds(p.group);
+          final replaced = [
+            for (final slot in slots)
+              if (slot.parts.any(parts.contains)) slot,
+          ];
+          int? number;
+          if (replaced.isNotEmpty) {
+            final first =
+                replaced.reduce((a, b) => a.sortIndex <= b.sortIndex ? a : b);
+            slots.remove(first);
+            number = first.sortIndex;
+          }
+          _putGroup(page, pageId, p.group, sortIndex: number);
+      }
     }
-    for (final group in [...changed]..sort((a, b) => phase(a) - phase(b))) {
-      _putGroup(page, pageId, group, sortIndex: takesPlaceOf[group.publicId]);
-    }
+  }
+
+  void _patchGroup(
+    _Tracked<LiveLineupGroup> existing,
+    String pageId,
+    LineupGroupPayload payload,
+  ) {
+    if (existing.row.payload == payload) return;
+    _ops.add(lineupEditOp(
+      opId: _opId(),
+      base: existing.row,
+      drawn: BehindWholeWrite(existing.revision),
+      payload: payload,
+      sortIndex: existing.sortIndex,
+      connection: Connection.live,
+    ));
+    existing
+      ..revision += 1
+      ..row = LiveLineupGroup(
+        publicId: existing.row.publicId,
+        strategyPublicId: _strategyId,
+        pagePublicId: pageId,
+        payload: payload,
+        sortIndex: existing.sortIndex,
+        revision: existing.revision,
+      );
   }
 
   void _putGroup(
@@ -617,7 +690,7 @@ final class OpsBuilder {
       _ops.add(lineupEditOp(
         opId: _opId(),
         base: existing.row,
-        drawn: DrawnAt(existing.revision),
+        drawn: BehindWholeWrite(existing.revision),
         payload: group.payload,
         sortIndex: existing.sortIndex,
         connection: Connection.live,
@@ -658,50 +731,65 @@ final class OpsBuilder {
     );
   }
 
-  void _lineupPartChanged(
+  void _lineupPartEdited(
     _Page page,
     String pageId,
     String partId,
-    LineUpGraph graph,
+    LineUpGraph Function(LineUpGraph graph) edit,
   ) {
-    final groups = _groupsOf(
-      pageId,
-      graph,
-      links: {for (final link in graph.links) link.id},
-    );
-    final holding = [
-      for (final group in groups)
-        if (_partIds(group).contains(partId)) group,
-    ];
-    if (holding.isEmpty) {
+    final holding = page.groups.values
+        .where((t) => t.live && _partIds(t.row).contains(partId))
+        .firstOrNull;
+    if (holding == null) {
       _gaps.add(LineupPartNotFound(partId));
       return;
     }
-    for (final group in holding) {
-      final existing = page.groups[group.publicId];
-      if (existing == null || !existing.live) {
-        _gaps.add(LineupGroupNotInStore(group.publicId, partId));
-        continue;
-      }
-      _putGroup(page, pageId, group);
+    final graph = lineupGraphOfGroups(pageId, [holding.row]);
+    final payload = graph == null
+        ? null
+        : lineupGroupPayloadOf(edit(graph), holding.row.publicId);
+    if (payload == null) {
+      _gaps.add(LineupGroupNotInStore(holding.row.publicId, partId));
+      return;
     }
+    _patchGroup(holding, pageId, payload);
   }
 
-  void _settingsChanged(String pageId, StrategySettings settings) {
+  void _settingsChanged(
+    String pageId,
+    StrategySettings before,
+    StrategySettings after,
+  ) {
     final page = _livePage(pageId, 'settings');
     if (page == null) return;
     final revision = page.settingsRevision;
-    if (revision == null) {
+    final stored = page.settings;
+    if (revision == null || stored == null) {
       _gaps.add(PageNotInStore(pageId, 'settings row of'));
       return;
     }
+    final written = PageSettings(
+      agentSize: before.agentSize == after.agentSize
+          ? stored.agentSize
+          : after.agentSize,
+      abilitySize: before.abilitySize == after.abilitySize
+          ? stored.abilitySize
+          : after.abilitySize,
+      useNeutralTeamColors:
+          before.useNeutralTeamColors == after.useNeutralTeamColors
+              ? stored.useNeutralTeamColors
+              : after.useNeutralTeamColors,
+    );
+    if (written == stored) return;
     _ops.add(PageSettingsPatchOp(
       opId: _opId(),
       pagePublicId: pageId,
-      settings: pageSettingsOf(settings),
+      settings: written,
       expectedPageSettingsRevision: revision,
     ));
-    page.settingsRevision = revision + 1;
+    page
+      ..settingsRevision = revision + 1
+      ..settings = written;
   }
 
   void _pageAdded(StrategyPage page, {required int index, String? copyOf}) {
@@ -717,8 +805,12 @@ final class OpsBuilder {
       copyContentFromPagePublicId: copyOf,
     ));
     _headerRevision++;
-    final added = _Page(revision: 1, sortIndex: index, settingsRevision: 1)
-      ..elementsRead = copyOf == null;
+    final added = _Page(
+      revision: 1,
+      sortIndex: index,
+      settingsRevision: 1,
+      settings: pageSettingsOf(page.settings),
+    )..elementsRead = copyOf == null;
     _pages[page.id] = added;
     _gone.remove(page.id);
     if (copyOf != null) return;
@@ -752,11 +844,7 @@ final class OpsBuilder {
           ));
       }
     }
-    for (final group in _groupsOf(
-      page.id,
-      page.lineUpGraph,
-      links: {for (final link in page.lineUpLinks) link.id},
-    )) {
+    for (final group in _groupsOf(page.id, page.lineUpGraph)) {
       _putGroup(added, page.id, group);
     }
   }

@@ -34,29 +34,47 @@ final class ObjectChanged extends CanvasChange {
 }
 
 final class LineupsChanged extends CanvasChange {
-  const LineupsChanged(
-    super.pageId,
-    this.before,
-    this.after, {
-    required this.touching,
-  });
+  const LineupsChanged(super.pageId,
+      {required this.removed, required this.added});
 
-  final LineUpGraph before;
-  final LineUpGraph after;
-  final Set<String> touching;
+  final LineUpGraph removed;
+  final LineUpGraph added;
 }
 
-final class LineupPartChanged extends CanvasChange {
-  const LineupPartChanged(super.pageId, this.partId, this.graph);
+final class LineupFieldChanged extends CanvasChange {
+  const LineupFieldChanged(
+    super.pageId, {
+    required this.field,
+    required this.targetId,
+    required this.before,
+    required this.after,
+  });
 
-  final String partId;
-  final LineUpGraph graph;
+  final LineUpEditField field;
+  final String targetId;
+  final Object before;
+  final Object after;
+}
+
+final class LineupWeaponChanged extends CanvasChange {
+  const LineupWeaponChanged(
+    super.pageId, {
+    required this.originId,
+    required this.before,
+    required this.after,
+  });
+
+  final String originId;
+  final WeaponType before;
+  final WeaponType after;
 }
 
 final class PageSettingsChanged extends CanvasChange {
-  const PageSettingsChanged(super.pageId, this.settings);
+  const PageSettingsChanged(super.pageId,
+      {required this.before, required this.after});
 
-  final StrategySettings settings;
+  final StrategySettings before;
+  final StrategySettings after;
 }
 
 final class PageAdded extends CanvasChange {
@@ -99,11 +117,8 @@ abstract interface class EditFollower {
 }
 
 final class EditorNow {
-  EditorNow({required LineUpGraph Function() lineups, required this.agent})
-      : _lineups = lineups;
+  const EditorNow({required this.agent});
 
-  final LineUpGraph Function() _lineups;
-  late final LineUpGraph lineups = _lineups();
   final PlacedAgentNode? Function(String id) agent;
 }
 
@@ -138,19 +153,15 @@ List<CanvasChange> canvasChangesOf(
   if (action.group == ActionGroup.bulk) {
     final performed =
         reversed ? action.changes.reversed.toList() : action.changes;
-    var lineups = now.lineups;
-    final changes = <List<CanvasChange>>[];
-    for (final change in performed.reversed) {
-      final atThisStep = lineups;
-      changes.add(canvasChangesOf(
-        change,
-        pageId: pageId,
-        reversed: reversed,
-        now: EditorNow(lineups: () => atThisStep, agent: now.agent),
-      ));
-      lineups = lineupsBefore(change, reversed: reversed, after: lineups);
-    }
-    return [for (final step in changes.reversed) ...step];
+    return [
+      for (final change in performed)
+        ...canvasChangesOf(
+          change,
+          pageId: pageId,
+          reversed: reversed,
+          now: now,
+        ),
+    ];
   }
   switch (action) {
     case LineUpGraphAction(:final before, :final after):
@@ -158,16 +169,28 @@ List<CanvasChange> canvasChangesOf(
       return [
         LineupsChanged(
           pageId,
-          lineupsBefore(action, reversed: reversed, after: now.lineups),
-          now.lineups,
-          touching: {...lineupPartIds(removed), ...lineupPartIds(added)},
+          removed: removed.deepCopy(),
+          added: added.deepCopy(),
         ),
       ];
-    case LineUpEditAction(:final targetId):
-      return [LineupPartChanged(pageId, targetId, now.lineups)];
-    case WeaponSelectionAction(:final id)
+    case LineUpEditAction(:final targetId, :final field, :final before):
+      final (from, to) =
+          reversed ? (action.after, before) : (before, action.after);
+      return [
+        LineupFieldChanged(
+          pageId,
+          field: field,
+          targetId: targetId,
+          before: from,
+          after: to,
+        ),
+      ];
+    case WeaponSelectionAction(:final id, :final before, :final after)
         when action.group == ActionGroup.lineUp:
-      return [LineupPartChanged(pageId, id, now.lineups)];
+      final (from, to) = reversed ? (after, before) : (before, after);
+      return [
+        LineupWeaponChanged(pageId, originId: id, before: from, after: to),
+      ];
     case WeaponSelectionAction(:final id, :final before, :final after):
       final agent = now.agent(id);
       if (agent == null) return const [];
@@ -178,7 +201,8 @@ List<CanvasChange> canvasChangesOf(
       changedTo.agent!.weapon = to;
       return [ObjectChanged(pageId, changedFrom, changedTo)];
     case StrategySettingsAction(:final before, :final after):
-      return [PageSettingsChanged(pageId, reversed ? before : after)];
+      final (from, to) = reversed ? (after, before) : (before, after);
+      return [PageSettingsChanged(pageId, before: from, after: to)];
   }
   final delta = action.objectDelta;
   if (delta == null) return const [];
@@ -211,70 +235,44 @@ Set<String> lineupPartIds(LineUpGraph graph) => {
       for (final link in graph.links) link.id,
     };
 
-LineUpGraph lineupsBefore(
-  UserAction action, {
-  required bool reversed,
-  required LineUpGraph after,
-}) {
-  if (action.group == ActionGroup.bulk) {
-    final performed =
-        reversed ? action.changes.reversed.toList() : action.changes;
-    var lineups = after;
-    for (final change in performed.reversed) {
-      lineups = lineupsBefore(change, reversed: reversed, after: lineups);
-    }
-    return lineups;
-  }
-  switch (action) {
-    case LineUpEditAction(:final field, :final targetId, :final before):
-      return lineupsWithField(
-        after,
-        field,
-        targetId,
-        reversed ? action.after : before,
-      );
-    case WeaponSelectionAction(:final id, :final before)
-        when action.group == ActionGroup.lineUp:
-      return lineupsWithWeapon(after, id, reversed ? action.after : before);
-    case LineUpGraphAction(before: final graphBefore, after: final graphAfter):
-      return reversed
-          ? _withoutAdded(after, removed: graphAfter, added: graphBefore)
-          : _withoutAdded(after, removed: graphBefore, added: graphAfter);
-    default:
-      return after;
-  }
-}
-
-LineUpGraph _withoutAdded(
-  LineUpGraph after, {
+LineUpGraph lineupsWithParts(
+  LineUpGraph graph, {
   required LineUpGraph removed,
   required LineUpGraph added,
 }) {
-  final addedLinks = {for (final link in added.links) link.id};
+  final gone = {for (final link in removed.links) link.id};
   final links = [
-    for (final link in after.links)
-      if (!addedLinks.contains(link.id)) link,
-    for (final link in removed.links)
-      if (!after.links.any((kept) => kept.id == link.id)) link,
+    for (final link in graph.links)
+      if (!gone.contains(link.id)) link,
+    for (final link in added.links)
+      if (!graph.links.any((kept) => kept.id == link.id) ||
+          gone.contains(link.id))
+        link,
   ];
   bool used(String id) =>
       links.any((link) => link.originId == id || link.landingId == id);
-  final addedEnds = {
-    for (final origin in added.origins) origin.id,
-    for (final landing in added.landings) landing.id,
+  final removedEnds = {
+    for (final origin in removed.origins) origin.id,
+    for (final landing in removed.landings) landing.id,
   };
+  final origins = [
+    for (final origin in graph.origins)
+      if (!removedEnds.contains(origin.id) || used(origin.id)) origin,
+  ];
+  final landings = [
+    for (final landing in graph.landings)
+      if (!removedEnds.contains(landing.id) || used(landing.id)) landing,
+  ];
   return LineUpGraph(
     origins: [
-      for (final origin in after.origins)
-        if (!addedEnds.contains(origin.id) || used(origin.id)) origin,
-      for (final origin in removed.origins)
-        if (!after.origins.any((kept) => kept.id == origin.id)) origin,
+      ...origins,
+      for (final origin in added.origins)
+        if (!origins.any((kept) => kept.id == origin.id)) origin,
     ],
     landings: [
-      for (final landing in after.landings)
-        if (!addedEnds.contains(landing.id) || used(landing.id)) landing,
-      for (final landing in removed.landings)
-        if (!after.landings.any((kept) => kept.id == landing.id)) landing,
+      ...landings,
+      for (final landing in added.landings)
+        if (!landings.any((kept) => kept.id == landing.id)) landing,
     ],
     links: links,
   );

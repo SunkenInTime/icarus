@@ -131,7 +131,6 @@ Future<List<String>> _run(_Case c) async {
     pageId: _pageId,
     reversed: c.reversed,
     now: EditorNow(
-      lineups: () => c.after.lineUpGraph,
       agent: (id) => c.after.agentData.where((a) => a.id == id).firstOrNull,
     ),
   );

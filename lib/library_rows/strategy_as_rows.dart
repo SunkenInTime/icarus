@@ -250,6 +250,24 @@ List<LiveLineupGroup> lineupGroupRowsOf({
   return groups;
 }
 
+LineupGroupPayload? lineupGroupPayloadOf(LineUpGraph graph, String id) {
+  final made = cloudLineupRows(graph).rows;
+  if (made.length != 1) return null;
+  return LineupGroupPayload(
+    payloadVersion: lineupGroupPayloadVersion,
+    data: {
+      ...Map<String, Object?>.from(made.single.payload['data'] as Map),
+      'id': id,
+    },
+  );
+}
+
+LineUpGraph? lineupGraphOfGroups(String pageId, List<LiveLineupGroup> groups) =>
+    switch (_lineupGraphOf(pageId, [...groups])) {
+      _LineupsRead(:final graph) => graph,
+      _LineupsRefused() => null,
+    };
+
 StrategyToRows strategyToRows(
   StrategyData strategy, {
   Iterable<UnreadableElement> carried = const [],
