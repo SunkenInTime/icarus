@@ -556,52 +556,59 @@ final class OpsBuilder {
     LineUpGraph removed,
     LineUpGraph added,
   ) {
-    final touching = {...lineupPartIds(removed), ...lineupPartIds(added)};
-    final affected = [
+    final live = [
       for (final tracked in page.groups.values)
-        if (tracked.live && _partIds(tracked.row).any(touching.contains))
-          tracked,
-    ]..sort((a, b) => a.sortIndex - b.sortIndex);
-    final before = affected.isEmpty
+        if (tracked.live) tracked,
+    ]..sort((a, b) => a.sortIndex != b.sortIndex
+        ? a.sortIndex - b.sortIndex
+        : a.row.publicId.compareTo(b.row.publicId));
+    final before = live.isEmpty
         ? LineUpGraph.empty
-        : lineupGraphOfGroups(pageId, [for (final t in affected) t.row]);
+        : lineupGraphOfGroups(pageId, [for (final t in live) t.row]);
     if (before == null) {
-      _gaps.add(LineupGroupNotInStore(affected.first.row.publicId, pageId));
+      _gaps.add(LineupGroupNotInStore(live.first.row.publicId, pageId));
       return;
     }
-    final after = lineupsWithParts(before, removed: removed, added: added);
-    final made = _groupsOf(pageId, after);
+    final made = _groupsOf(
+      pageId,
+      lineupsWithParts(before, removed: removed, added: added),
+    );
     final kept = <_Tracked<LiveLineupGroup>>{};
-    final placed =
-        <({LiveLineupGroup group, _Tracked<LiveLineupGroup>? keeps})>[];
-    for (final group in made) {
+    final placed = <({
+      LiveLineupGroup group,
+      _Tracked<LiveLineupGroup>? keeps,
+      int sortIndex,
+    })>[];
+    for (final (sortIndex, group) in made.indexed) {
       final links = idsIn(group.payload.data, 'links').toSet();
-      final overlapping = affected.where((t) =>
-          !kept.contains(t) &&
-          idsIn(t.row.payload.data, 'links').any(links.contains));
-      final keeps = overlapping.firstOrNull;
+      final keeps = live
+          .where((t) =>
+              !kept.contains(t) &&
+              idsIn(t.row.payload.data, 'links').any(links.contains))
+          .firstOrNull;
       if (keeps != null) kept.add(keeps);
-      placed.add((group: group, keeps: keeps));
+      placed.add((group: group, keeps: keeps, sortIndex: sortIndex));
     }
     final freed = [
-      for (final tracked in affected)
+      for (final tracked in live)
         if (!kept.contains(tracked)) tracked,
     ];
+    final touching = {...lineupPartIds(removed), ...lineupPartIds(added)};
     _shapes.add(
       freed.isEmpty && placed.every((p) => p.keeps != null)
           ? const LineupsInsideGroups()
           : LineupGroupsChanged(
-              before: {for (final t in affected) t.row.publicId},
+              before: {
+                for (final t in live)
+                  if (_partIds(t.row).any(touching.contains)) t.row.publicId,
+              },
               after: {
                 for (final p in placed)
-                  p.keeps?.row.publicId ?? p.group.publicId,
+                  if (_partIds(p.group).any(touching.contains))
+                    p.keeps?.row.publicId ?? p.group.publicId,
               },
             ),
     );
-    final slots = [
-      for (final tracked in freed)
-        (parts: _partIds(tracked.row), sortIndex: tracked.sortIndex),
-    ];
     for (final tracked in freed) {
       _ops.add(LineupGroupDeleteOp(
         opId: _opId(),
@@ -613,7 +620,12 @@ final class OpsBuilder {
         ..live = false
         ..revision += 1;
     }
-    int phase(({LiveLineupGroup group, _Tracked<LiveLineupGroup>? keeps}) p) =>
+    int phase(
+            ({
+              LiveLineupGroup group,
+              _Tracked<LiveLineupGroup>? keeps,
+              int sortIndex
+            }) p) =>
         switch (p.keeps) {
           null => 2,
           final keeps when _partIds(keeps.row).containsAll(_partIds(p.group)) =>
@@ -633,21 +645,10 @@ final class OpsBuilder {
                 'id': keeps.row.publicId
               },
             ),
+            sortIndex: p.sortIndex,
           );
         case null:
-          final parts = _partIds(p.group);
-          final replaced = [
-            for (final slot in slots)
-              if (slot.parts.any(parts.contains)) slot,
-          ];
-          int? number;
-          if (replaced.isNotEmpty) {
-            final first =
-                replaced.reduce((a, b) => a.sortIndex <= b.sortIndex ? a : b);
-            slots.remove(first);
-            number = first.sortIndex;
-          }
-          _putGroup(page, pageId, p.group, sortIndex: number);
+          _putGroup(page, pageId, p.group, sortIndex: p.sortIndex);
       }
     }
   }
@@ -655,25 +656,30 @@ final class OpsBuilder {
   void _patchGroup(
     _Tracked<LiveLineupGroup> existing,
     String pageId,
-    LineupGroupPayload payload,
-  ) {
-    if (existing.row.payload == payload) return;
+    LineupGroupPayload payload, {
+    int? sortIndex,
+  }) {
+    final number = sortIndex ?? existing.sortIndex;
+    if (existing.row.payload == payload && existing.sortIndex == number) {
+      return;
+    }
     _ops.add(lineupEditOp(
       opId: _opId(),
       base: existing.row,
       drawn: BehindWholeWrite(existing.revision),
       payload: payload,
-      sortIndex: existing.sortIndex,
+      sortIndex: number,
       connection: Connection.live,
     ));
     existing
       ..revision += 1
+      ..sortIndex = number
       ..row = LiveLineupGroup(
         publicId: existing.row.publicId,
         strategyPublicId: _strategyId,
         pagePublicId: pageId,
         payload: payload,
-        sortIndex: existing.sortIndex,
+        sortIndex: number,
         revision: existing.revision,
       );
   }

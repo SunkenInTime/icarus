@@ -528,7 +528,6 @@ void main() {
       UserAction action, {
       required LineUpGraph now,
       bool reversed = false,
-      bool splitOffGroupReadsBackLast = false,
     }) async {
       final changes = canvasChangesOf(
         action,
@@ -568,7 +567,7 @@ void main() {
       );
       expect(
         [for (final difference in differences) '$difference'],
-        splitOffGroupReadsBackLast ? ['lineup groups $pageId order'] : isEmpty,
+        isEmpty,
         reason: what,
       );
     }
@@ -576,9 +575,7 @@ void main() {
     final added = _lineupAdded(whole, 'pl-link-b');
     await act('add at a shared spot', added, now: whole);
     await act('undo the add', added,
-        now: _without(whole, {'pl-link-b'}),
-        reversed: true,
-        splitOffGroupReadsBackLast: true);
+        now: _without(whole, {'pl-link-b'}), reversed: true);
     await act('redo the add', added, now: whole);
     final withoutD = _without(whole, {'pl-link-d'});
     await act('delete', _lineupDeleted(whole, 'pl-link-d'), now: withoutD);
