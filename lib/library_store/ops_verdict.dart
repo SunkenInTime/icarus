@@ -368,7 +368,7 @@ List<ImageRowWrite> imageRowWrites(
       elsewhere.values.any((other) =>
           other is LiveElement &&
           other.pagePublicId == row.pagePublicId &&
-          other.payload == row.payload);
+          _sameApartFromId(other.payload, row.payload));
   final storedTwins = {
     for (final MapEntry(:key, :value) in storedElements.entries)
       if (!imageElements.containsKey(key)) key: value,
@@ -436,6 +436,14 @@ List<ImageRowWrite> imageRowWrites(
   }
   writes.addAll(_groupWrites(image, stored, trashedPages));
   return writes;
+}
+
+bool _sameApartFromId(ElementPayload left, ElementPayload right) {
+  Map<String, Object?> withoutId(ElementPayload payload) => {
+        ...payload.toJson(),
+        'data': {...payload.data.toJson()}..remove('id'),
+      };
+  return cloudJsonEquivalent(withoutId(left), withoutId(right));
 }
 
 Set<String> _linksOf(LineupGroupRow row) => switch (row) {
