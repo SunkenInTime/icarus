@@ -96,7 +96,9 @@ Future<List<String>> actionOpsStep(
       (throw StoreStepFailed(['this run does not journal action ops']));
   if (c.read(shadowProvider.notifier).mode case Mirroring(:final mirror)
       when mirror.phase is MirrorFollowing) {
-    await saveOpenLocalStrategy(c, mirror);
+    if (await saveOpenLocalStrategy(c, mirror) case final refused?) {
+      throw StoreStepFailed([refused]);
+    }
     await mirror.drained().timeout(const Duration(seconds: 60));
   }
   final lines = actionOpsLines(label, journal.tally);
@@ -109,14 +111,20 @@ Future<List<String>> actionOpsStep(
   return lines;
 }
 
-Future<void> saveOpenLocalStrategy(
+Future<String?> saveOpenLocalStrategy(
     ProviderContainer c, StoreMirror mirror) async {
-  if (mirror.actions == null) return;
+  if (mirror.actions == null) return null;
   final strategy = c.read(strategyProvider);
   final id = strategy.strategyId;
-  if (id == null || strategy.source != StrategySource.local) return;
-  await c.read(strategyProvider.notifier).forceSaveNow(id);
+  if (id == null || strategy.source != StrategySource.local) return null;
+  try {
+    await c.read(strategyProvider.notifier).forceSaveNow(id);
+  } on StateError catch (error) {
+    return 'OPS the open strategy could not be saved at the end: '
+        '${error.message}';
+  }
   await mirror.drained();
+  return null;
 }
 
 List<String> actionOpsEndLines(StoreMirror mirror) => switch (mirror.actions) {

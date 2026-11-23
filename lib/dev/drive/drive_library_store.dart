@@ -381,7 +381,7 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
         ]),
       );
   final drainedAfter = clock.elapsed;
-  await saveOpenLocalStrategy(c, mirror);
+  final endSave = await saveOpenLocalStrategy(c, mirror);
   await mirror.repairJournaled();
   final checkClock = Stopwatch()..start();
   final check = await c.read(shadowProvider.notifier).checkAgain(ready);
@@ -389,6 +389,7 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
     'STORE mirror ${_describePhase(mirror.phase)}; ${mirror.batches} batches '
         'written after saves; drained ${drainedAfter.inMilliseconds} ms after '
         'the script ended',
+    if (endSave != null) endSave,
     ...actionOpsEndLines(mirror),
     ...describeCheck(check, checkClock.elapsed),
   ];
