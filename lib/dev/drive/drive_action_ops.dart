@@ -28,6 +28,7 @@ Map<String, int> opsCounts(ActionOpsTally t) => {
       'readBackEqual': t.readBackEqual,
       'readBackUnequal': t.readBackUnequal,
       'imageWroteNothing': t.imageWroteNothing,
+      'imageWroteHeaderTimeOnly': t.imageWroteHeaderTimeOnly,
       'imageWroteRows': t.imageWroteRows,
       'realRows': t.rowsByClass[ImageRowClass.real] ?? 0,
       'trashedPagesRemoved': t.trashedPagesRemoved,
@@ -49,7 +50,8 @@ List<String> actionOpsLines(String label, ActionOpsTally t) => [
           '${t.commitsRefused.length} refused; saves ${t.saves}: read back '
           'equal ${t.readBackEqual}, unequal ${t.readBackUnequal}, not in the '
           'store ${t.savesNotInStore}, not read ${t.savesNotRead}; image saves '
-          'wrote nothing ${t.imageWroteNothing}, wrote rows ${t.imageWroteRows}',
+          'wrote nothing ${t.imageWroteNothing}, only the header time '
+          '${t.imageWroteHeaderTimeOnly}, other rows ${t.imageWroteRows}',
       'OPS $label strategies removed before an image save because the '
           'store held what an image may not drop: trashed pages '
           '${t.trashedPagesRemoved}, deleted rows ${t.deletedRowsRemoved}; strategies repaired from Hive at the end '

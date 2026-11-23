@@ -87,6 +87,7 @@ final class ActionOpsTally {
   var readBackEqual = 0;
   var readBackUnequal = 0;
   var imageWroteNothing = 0;
+  var imageWroteHeaderTimeOnly = 0;
   var imageWroteRows = 0;
   final rowsByClass = <ImageRowClass, int>{};
   var trashedPagesRemoved = 0;
@@ -279,6 +280,9 @@ final class ActionJournal {
     }
     if (writes.isEmpty) {
       tally.imageWroteNothing += 1;
+    } else if (writes
+        .every((write) => write.rowClass == ImageRowClass.headerTime)) {
+      tally.imageWroteHeaderTimeOnly += 1;
     } else {
       tally.imageWroteRows += 1;
       for (final write in writes) {
