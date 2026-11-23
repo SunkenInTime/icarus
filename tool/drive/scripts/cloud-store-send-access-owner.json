@@ -2,6 +2,7 @@
   {"wait": 10},
   {"tapIcon": "x", "optional": true},
   {"signIn": true},
+  {"storeMayLag": "the teammate's move reaches this store only when the queue asks for it"},
   {"wait": 4},
   {"newCloudFolder": "Folder {run}"},
   {"openCloudFolder": "Folder {run}"},

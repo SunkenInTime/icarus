@@ -39,7 +39,7 @@ CloudSender _sender(ProviderContainer c) =>
     (throw StateError('the cloud store does not send in this run'));
 
 LibraryStore _storeOf(ProviderContainer c) =>
-    _sending(c)?.store.store ?? _storeOf(c);
+    _sending(c)?.store.store ?? _running(c).store;
 
 String _senderWords(ProviderContainer c) => _viewWords(_sender(c).view);
 
@@ -349,6 +349,8 @@ Future<List<String>> storeSyncStates(ProviderContainer c) async {
             '${syncStateOf(owner, tally, network: Network.online, signedIn: signedIn)}, '
             'the work of $owner; run hold ${_sender(c).runHold ?? 'none'}; '
             'read hold ${_sender(c).cannotRead(summary.publicId) ?? 'none'}; '
+            'could not resolve '
+            '${_sender(c).couldNotResolve(summary.publicId) ?? 'nothing'}; '
             'inputs ${_sender(c).inputs}; '
             'sender ${_senderWords(c)}',
   ];
@@ -539,6 +541,7 @@ final class CloudStoreLog {
   StreamSubscription<SenderView>? _senderViews;
   final _senderLines = <CloudStoreLine>[];
   int _senderReportsRead = 0;
+  String? mayLag;
 
   void _watchSender(ProviderContainer c) {
     if (_senderViews != null) return;
@@ -717,9 +720,25 @@ final class CloudStoreLog {
         ),
       ];
     }
-    final refreshed = await _readIntoStore(c, sender, lastStep.add(finalWait));
-    final stopping = await _senderStopped(c, lastStep.add(finalWait));
+    final deadline = lastStep.add(finalWait);
+    final stopping = await _senderStopped(c, deadline);
     final left = await _workLeft(sender.store.store);
+    final asLeft = await _compareWithServer(
+      c,
+      sender.store.store,
+      build: sender.build,
+      when: 'as the run left the store',
+      mayLag: mayLag,
+    );
+    sender.release();
+    final refreshed = await _readIntoStore(c, sender, deadline);
+    final stoppedAgain = await _senderStopped(c, deadline);
+    final afterRead = await _compareWithServer(
+      c,
+      sender.store.store,
+      build: sender.build,
+      when: 'after reading the store again',
+    );
     final reads = <String, int>{};
     for (final report in sender.store.reports) {
       if (report case ReadRecorded(:final why)) {
@@ -728,9 +747,12 @@ final class CloudStoreLog {
     }
     return [
       ..._senderDrain(c),
-      ...refreshed,
       ...stopping,
       ...left,
+      ...asLeft,
+      ...refreshed,
+      ...stoppedAgain,
+      ...afterRead,
       CloudStoreLine(
         'CLOUDSTORE the sender made ${sender.reads} named reads, '
         '${reads.values.fold(0, (a, b) => a + b)} recorded'
@@ -943,106 +965,14 @@ Future<List<CloudStoreLine>> _namedReadBack(ProviderContainer c) async {
       ),
     ];
   }
-  final signedIn = _signedIn(c);
-  final repository = c.read(convexStrategyRepositoryProvider);
   switch (await openLibraryStore(opened.file, build: sender.build)) {
     case LibraryStoreReady(:final store, :final closeEngine):
-      final lines = <CloudStoreLine>[];
-      final library = store.library;
-      final owned = <String>[];
-      if (library is LibraryOpen) {
-        for (final summary in library.list.strategies) {
-          final owner = switch (summary.sync) {
-            KeptInCloud(owner: OwnedBy(:final account)) ||
-            CloudUnverified(owner: OwnedBy(:final account)) =>
-              account,
-            _ => null,
-          };
-          if (owner == null) continue;
-          if (owner != signedIn) {
-            lines.add(
-              CloudStoreLine(
-                'CLOUDSTORE read back of ${summary.publicId} not compared: '
-                'the work of ${owner.subject}, signed in as '
-                '${signedIn.subject}',
-                problem: false,
-              ),
-            );
-            continue;
-          }
-          owned.add(summary.publicId);
-        }
-      }
-      if (owned.isEmpty && lines.isEmpty) {
-        lines.add(
-          const CloudStoreLine(
-            'CLOUDSTORE read back had no strategy to compare',
-            problem: true,
-          ),
-        );
-      }
-      for (final strategyId in owned) {
-        final copy = switch (await LibraryStore.open(
-          MemoryEngine(MemoryStorage()),
-          canRead: appCanRead,
-          build: sender.build,
-        )) {
-          StoreOpened(:final store) => store,
-          StoreNotOpened(:final problem) => throw StateError('$problem'),
-        };
-        final expected = CloudShadow(
-          copy,
-          build: sender.build,
-          canRead: appCanRead,
-          breathe: () async {},
-        )..serve(signedIn);
-        try {
-          final list = await repository.readPageListAs(
-            strategyId,
-            accountSubject: signedIn.subject,
-          );
-          expected.pageList(strategyId, list, 0);
-          for (final page in list.pages) {
-            expected.page(
-              strategyId,
-              await repository.readPageAs(
-                strategyPublicId: strategyId,
-                pagePublicId: page.page.publicId,
-                accountSubject: signedIn.subject,
-              ),
-              0,
-            );
-          }
-          await expected.idle;
-          final differences =
-              (await expected.readBack(store))[strategyId] ?? const [];
-          lines.addAll([
-            if (differences.isEmpty)
-              CloudStoreLine(
-                'CLOUDSTORE read back after reopening the store: $strategyId '
-                'equal to the server\'s copy read as ${signedIn.subject}, '
-                '${list.pages.length} pages',
-                problem: false,
-              ),
-            for (final difference in differences)
-              CloudStoreLine(
-                'CLOUDSTORE read back after reopening the store: $strategyId: '
-                '$difference',
-                problem: true,
-              ),
-          ]);
-        } catch (error) {
-          lines.add(
-            CloudStoreLine(
-              'CLOUDSTORE read back of $strategyId could not read the '
-              'server\'s copy: $error',
-              problem: true,
-            ),
-          );
-        } finally {
-          await copy.close();
-        }
-      }
+      final lines = await _compareWithServer(
+        c,
+        store,
+        build: sender.build,
+        when: 'after reopening the store',
+      );
       await store.close();
       await closeEngine();
       return lines;
@@ -1054,6 +984,131 @@ Future<List<CloudStoreLine>> _namedReadBack(ProviderContainer c) async {
         ),
       ];
   }
+}
+
+Future<List<CloudStoreLine>> _compareWithServer(
+  ProviderContainer c,
+  LibraryStore store, {
+  required String build,
+  required String when,
+  String? mayLag,
+}) async {
+  final signedIn = _signedIn(c);
+  final repository = c.read(convexStrategyRepositoryProvider);
+  final lines = <CloudStoreLine>[];
+  final library = store.library;
+  final owned = <String>[];
+  if (library is LibraryOpen) {
+    for (final summary in library.list.strategies) {
+      final owner = switch (summary.sync) {
+        KeptInCloud(owner: OwnedBy(:final account)) ||
+        CloudUnverified(owner: OwnedBy(:final account)) =>
+          account,
+        _ => null,
+      };
+      if (owner == null) continue;
+      if (owner != signedIn) {
+        lines.add(
+          CloudStoreLine(
+            'CLOUDSTORE compared $when: ${summary.publicId} not compared, '
+            'the work of ${owner.subject} while signed in as '
+            '${signedIn.subject}',
+            problem: false,
+          ),
+        );
+        continue;
+      }
+      owned.add(summary.publicId);
+    }
+  }
+  if (owned.isEmpty && lines.isEmpty) {
+    lines.add(
+      CloudStoreLine(
+        'CLOUDSTORE compared $when: no strategy to compare',
+        problem: true,
+      ),
+    );
+  }
+  for (final strategyId in owned) {
+    final copy = switch (await LibraryStore.open(
+      MemoryEngine(MemoryStorage()),
+      canRead: appCanRead,
+      build: build,
+    )) {
+      StoreOpened(:final store) => store,
+      StoreNotOpened(:final problem) => throw StateError('$problem'),
+    };
+    final expected = CloudShadow(
+      copy,
+      build: build,
+      canRead: appCanRead,
+      breathe: () async {},
+    )..serve(signedIn);
+    try {
+      final list = await repository.readPageListAs(
+        strategyId,
+        accountSubject: signedIn.subject,
+      );
+      expected.pageList(strategyId, list, 0);
+      for (final page in list.pages) {
+        expected.page(
+          strategyId,
+          await repository.readPageAs(
+            strategyPublicId: strategyId,
+            pagePublicId: page.page.publicId,
+            accountSubject: signedIn.subject,
+          ),
+          0,
+        );
+      }
+      await expected.idle;
+      final unjudged = [
+        for (final entry in expected.ledger)
+          if (entry.verdict is! ComparedEqual &&
+              entry.verdict is! ComparedDifferent)
+            '${entry.what}: ${entry.verdict}',
+      ];
+      final verdicts = await expected.readBack(store);
+      final differences = verdicts[strategyId];
+      lines.addAll([
+        if (unjudged.isNotEmpty || differences == null)
+          CloudStoreLine(
+            'CLOUDSTORE compared $when: $strategyId has a result of the '
+            'server\'s with no verdict: '
+            '${[
+              ...unjudged,
+              if (differences == null) 'the strategy'
+            ].join('; ')}',
+            problem: true,
+          ),
+        if (differences != null && differences.isEmpty)
+          CloudStoreLine(
+            'CLOUDSTORE compared $when: $strategyId equal to the server\'s '
+            'copy read as ${signedIn.subject}, ${list.pages.length} pages',
+            problem: false,
+          ),
+        for (final difference in differences ?? const <String>[])
+          CloudStoreLine(
+            mayLag == null
+                ? 'CLOUDSTORE compared $when: $strategyId: $difference'
+                : 'CLOUDSTORE compared $when: $strategyId behind the server '
+                    '($mayLag): $difference',
+            problem: mayLag == null,
+          ),
+      ]);
+    } catch (error) {
+      lines.add(
+        CloudStoreLine(
+          'CLOUDSTORE compared $when: could not read the server\'s copy of '
+          '$strategyId: $error',
+          problem: true,
+        ),
+      );
+    } finally {
+      await copy.close();
+    }
+  }
+  return lines;
 }
 
 String _skips(Iterable<LedgerEntry> skipped) {

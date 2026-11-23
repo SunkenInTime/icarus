@@ -1,13 +1,19 @@
 import 'package:icarus_library/icarus_library.dart';
 
-typedef RetiringTiming = ({Duration quiet, Duration again});
+typedef RetiringTiming = ({
+  Duration quiet,
+  Duration again,
+  Duration stuck,
+  int rounds,
+});
 
 final class Retiring {
   static const list = '';
 
   final _active = <String, DateTime>{};
   final _clear = <String>{};
-  final _readFor = <(String, String), (Set<(int, int)>, DateTime)>{};
+  final _readFor =
+      <(String, String), ({Set<(int, int)> works, DateTime at, int rounds})>{};
 
   bool mayRetire(String id) => !_clear.contains(id);
 
@@ -16,35 +22,66 @@ final class Retiring {
     _clear.remove(id);
   }
 
+  void looked(String id, CloudStrategy cloud, DateTime now) {
+    if (cloud.queue.landed.isEmpty) {
+      _clear.add(id);
+      return;
+    }
+    _active.putIfAbsent(id, () => now);
+  }
+
   ({String? read, DateTime? due}) next(
     String id,
     CloudStrategy cloud,
     DateTime now,
     RetiringTiming timing,
   ) {
-    final landed = cloud.queue.landed;
-    if (landed.isEmpty) {
-      _clear.add(id);
-      return (read: null, due: null);
-    }
-    final quietAt = (_active[id] ??= now).add(timing.quiet);
+    if (cloud.queue.landed.isEmpty) return (read: null, due: null);
+    final quietAt = (_active[id] ?? now).add(timing.quiet);
     if (quietAt.isAfter(now)) return (read: null, due: quietAt);
-    final byPage = _byPage(cloud);
     DateTime? due;
-    for (final MapEntry(key: page, value: works) in byPage.entries) {
-      final (seen, at) = _readFor[(id, page)] ?? (const <(int, int)>{}, null);
-      if (seen.containsAll(works)) continue;
-      final again = at?.add(timing.again);
-      if (again == null || !again.isAfter(now)) return (read: page, due: null);
+    for (final MapEntry(key: page, value: works) in _byPage(cloud).entries) {
+      final prior = _readFor[(id, page)];
+      if (prior == null) return (read: page, due: null);
+      final stuck =
+          prior.works.containsAll(works) && prior.rounds >= timing.rounds;
+      final again = prior.at.add(stuck ? timing.stuck : timing.again);
+      if (!again.isAfter(now)) return (read: page, due: null);
       if (due == null || again.isBefore(due)) due = again;
     }
-    if (due == null) _clear.add(id);
     return (read: null, due: due);
   }
 
-  void read(String id, String page, CloudStrategy cloud, DateTime at) {
-    _readFor[(id, page)] = (_byPage(cloud)[page] ?? const {}, at);
+  void settled(String id, ({String? read, DateTime? due}) next) {
+    if (next == (read: null, due: null)) _clear.add(id);
   }
+
+  void read(String id, String page, CloudStrategy cloud, DateTime at) {
+    final works = _byPage(cloud)[page] ?? const {};
+    final prior = _readFor[(id, page)];
+    _readFor[(id, page)] = (
+      works: works,
+      at: at,
+      rounds: prior != null && prior.works.containsAll(works)
+          ? prior.rounds + 1
+          : 1,
+    );
+  }
+
+  List<(String, DateTime)> stuck(
+    String id,
+    CloudStrategy cloud,
+    DateTime now,
+    RetiringTiming timing,
+  ) =>
+      [
+        for (final MapEntry(key: page, value: works) in _byPage(cloud).entries)
+          if (_readFor[(id, page)] case final prior?
+              when prior.rounds >= timing.rounds &&
+                  prior.works.containsAll(works) &&
+                  prior.at.add(timing.stuck).isAfter(now))
+            (page, prior.at.add(timing.stuck)),
+      ];
 
   static Map<String, Set<(int, int)>> _byPage(CloudStrategy cloud) {
     final byPage = <String, Set<(int, int)>>{};

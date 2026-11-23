@@ -16,6 +16,7 @@ import 'package:icarus_library/icarus_library.dart';
 import 'cloud_shadow_test.dart'
     show
         openStore,
+        pageId,
         secondPage,
         pageList,
         pageSnapshot,
@@ -1202,6 +1203,332 @@ void main() {
         world.settle(const Duration(minutes: 1));
         expect(world.readsRecorded().last, 'page p1');
         expect(world.cloud().queue.landed, isEmpty);
+      });
+    });
+  });
+
+  group('the review round', () {
+    List<String> readsAfter(World world, int before) =>
+        [for (final call in world.server.readCalls.skip(before)) '$call'];
+
+    String secondId() => secondPage().page.publicId;
+
+    test(
+        'a result the disk refuses to write is not counted as read: the page '
+        'is read again and recorded', () {
+      inWorld(
+        (world) {
+          var refused = false;
+          world.server.onRead = (call) {
+            if (call.page != null && !refused) {
+              refused = true;
+              world.lease.refuseNext = 1;
+            }
+          };
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 10));
+          expect(readsAfter(world, 0), ['list', 'page p1', 'page p1']);
+          expect(world.readsRecorded(), ['the page list', 'page p1']);
+          expect(world.sender.adopting(strategyId), isFalse);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a page delete whose page a teammate deletes between its two reads '
+        'is read again, not left waiting', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld((world) {
+        world.secondPageOnServer();
+        world.sender.adopt(strategyId, again: true);
+        world.settle();
+      }, storage: storage, server: server);
+      inWorld(
+        (world) {
+          server.readCalls.clear();
+          server.onRead = (call) {
+            if (call.page == secondId() && server.readCalls.length == 2) {
+              world.teammateDeletesPage(secondId());
+            }
+          };
+          world.commitPageDelete('delete-p2', secondId());
+          world.settle(const Duration(minutes: 1));
+          expect(readsAfter(world, 0).take(2), ['list', 'page p2']);
+          expect(readsAfter(world, 0).length, inInclusiveRange(3, 6));
+          expect(world.queueLength(), 0);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a need that its reads cannot settle is read three times, then shown '
+        'as could not resolve, and after ten minutes read three times again',
+        () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld((world) {
+        world.secondPageOnServer();
+        world.sender.adopt(strategyId, again: true);
+        world.settle();
+      }, storage: storage, server: server);
+      inWorld(
+        (world) {
+          server.overrideRead = (call) => call.page == secondId()
+              ? const StoreReadAnswered(PageGone('nowhere'))
+              : null;
+          server.readCalls.clear();
+          world.commitPageDelete('delete-p2', secondId());
+          world.settle(const Duration(minutes: 1));
+          final pageReads = [
+            for (final call in server.readCalls)
+              if (call.page == secondId()) call,
+          ];
+          expect(pageReads, hasLength(3));
+          expect(world.sender.couldNotResolve(strategyId), isNotNull);
+          expect(world.views().single.holds, isNotEmpty);
+          world.settle(const Duration(minutes: 8));
+          expect(
+            [
+              for (final call in server.readCalls)
+                if (call.page == secondId()) call
+            ],
+            hasLength(3),
+          );
+          world.settle(const Duration(minutes: 2));
+          expect(
+            [
+              for (final call in server.readCalls)
+                if (call.page == secondId()) call
+            ],
+            hasLength(6),
+          );
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'landed work whose page a teammate deleted is not left in silence: it '
+        'is read again and then shown as could not resolve', () {
+      inWorld((world) {
+        world.commitMove(1);
+        world.settle();
+        world.teammateDeletesPage(pageId);
+        final before = world.server.readCalls.length;
+        world.settle(const Duration(minutes: 40));
+        expect(
+          world.cloud().queue.landed.isEmpty ||
+              world.sender.couldNotResolve(strategyId) != null,
+          isTrue,
+        );
+        expect(readsAfter(world, before).length, lessThanOrEqualTo(8));
+      });
+    });
+
+    test(
+        'a page row\'s need is answered from the page list, which shows page '
+        'rows, not from the page', () {
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+          final p2 = secondId();
+          final strategyRevision = (world
+              .rowOf(
+                (content) => content.strategy,
+              )
+              .toJson()! as Map)['revision']! as int;
+          world.commit([
+            PageReorderOp(
+              opId: 'reorder',
+              pagePublicId: p2,
+              sortIndex: 0,
+              expectedStrategyRevision: strategyRevision,
+            ),
+          ]);
+          world.settle(const Duration(seconds: 3));
+          final pageRevision = (world
+              .rowOf(
+                (content) =>
+                    content.pages.firstWhere((page) => page.publicId == p2),
+              )
+              .toJson()! as Map)['revision']! as int;
+          final before = world.server.readCalls.length;
+          world.commit([
+            PagePatchOp(
+              opId: 'rename',
+              pagePublicId: p2,
+              expectedPageRevision: pageRevision,
+              name: 'Renamed',
+            ),
+          ]);
+          world.settle(const Duration(seconds: 5));
+          expect(readsAfter(world, before), ['list']);
+          expect(world.server.calls.last.opIds, ['rename']);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test('reopening a strategy the store holds reads nothing more', () {
+      inWorld((world) {
+        final before = world.server.readCalls.length;
+        world.sender.adopt(strategyId);
+        world.settle(const Duration(seconds: 20));
+        expect(readsAfter(world, before), isEmpty);
+      });
+    });
+
+    test('a restart resumes reading the pages an adoption had not read yet',
+        () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          server.overrideRead = (call) => call.page != null
+              ? const StoreReadLost(TransportFailure.network, 'cut')
+              : null;
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 1));
+          expect(world.sender.adopting(strategyId), isTrue);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      server.overrideRead = null;
+      inWorld(
+        (world) {
+          final before = server.readCalls.length;
+          world.settle();
+          expect(readsAfter(world, before), ['page p1']);
+          expect(world.firstElement().publicId, isNotEmpty);
+          expect(world.sender.adopting(strategyId), isFalse);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a request to adopt is bound to the account that asked: signed in as '
+        'another before it is tried, nothing is read', () {
+      inWorld(
+        (world) {
+          world.sender.adopt(strategyId);
+          world.signIn(otherAccount);
+          world.settle();
+          expect(world.server.readCalls, isEmpty);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a first adoption whose write the disk refuses waits the write retry '
+        'delay before it reads the page list again', () {
+      inWorld(
+        (world) {
+          world.lease.refuseNext = 3;
+          world.sender.adopt(strategyId);
+          for (var n = 0; n < 3; n++) {
+            world.sender.wake();
+            world.async.elapse(const Duration(milliseconds: 100));
+          }
+          expect(readsAfter(world, 0), ['list']);
+          world.settle(const Duration(seconds: 3));
+          expect(readsAfter(world, 0), ['list', 'list']);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a lost read for edit access is tried again after the read retry '
+        'delay, not the viewer\'s ten minutes', () {
+      inWorld((world) {
+        world.server.answerWith(
+          strategyId,
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+        );
+        world.server.answerReadWith(
+          strategyId,
+          const StoreReadLost(TransportFailure.network, 'lost'),
+        );
+        final before = world.server.readCalls.length;
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 5));
+        expect(readsAfter(world, before), ['list', 'list']);
+        expect(world.written(), contains(isA<EditAccessConfirmed>()));
+      });
+    });
+
+    test(
+        'a result written while the connection changes is kept in the store '
+        'but neither reported nor counted by the sender', () {
+      final storage = MemoryStorage();
+      inWorld(
+        (world) {
+          world.server.onRead = (call) {
+            if (call.page != null && world.connection == 1) {
+              holdNextWrite(storage, () => world.connection = 2);
+            }
+          };
+          world.sender.adopt(strategyId);
+          world.settle();
+          expect(readsAfter(world, 0), ['list', 'page p1']);
+          expect(world.readsRecorded(), ['the page list']);
+          expect(world.firstElement().publicId, isNotEmpty);
+        },
+        storage: storage,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a read answered by a future of a narrower type is recorded, not '
+        'taken for lost', () {
+      inWorld((world) {
+        world.server.answerReadNext(
+          strategyId,
+          (call) => Future<StoreReadAnswered>.value(
+            world.server.answerNow(call) as StoreReadAnswered,
+          ),
+        );
+        world.commitMove(1);
+        final before = world.server.readCalls.length;
+        world.settle(const Duration(minutes: 1));
+        expect(readsAfter(world, before), ['page p1']);
+        expect(world.cloud().queue.landed, isEmpty);
+      });
+    });
+
+    test(
+        'budget: an hour of edits with a pause every minute reads the page '
+        'twelve times to retire landed work, and nothing else', () {
+      inWorld((world) {
+        final before = world.server.readCalls.length;
+        for (var minute = 0; minute < 60; minute++) {
+          world.commitMove(minute);
+          world.settle(const Duration(minutes: 1));
+        }
+        expect(world.server.calls, hasLength(60));
+        expect(
+          readsAfter(world, before),
+          [for (var n = 0; n < 12; n++) 'page p1'],
+        );
       });
     });
   });

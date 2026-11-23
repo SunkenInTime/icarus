@@ -16,6 +16,7 @@ import 'package:icarus/library_store/store_startup.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus_library/icarus_library.dart' show LiveElement;
 
 import 'cloud_shadow_test.dart'
     show at, pageList, pageSnapshot, serverRows, strategyId;
@@ -243,6 +244,22 @@ void main() {
       editor.open(null);
       await _settled();
       expect(lists.controllers.single.hasListener, isFalse);
+    });
+
+    test(
+        'in shadow-only mode the driver\'s store commands read the store '
+        'through the shadow', () async {
+      await opened();
+      final first = serverRows().elements.whereType<LiveElement>().first;
+      expect(storedCloudStrategy(container), strategyId);
+      expect(
+        await storedPayloadVersion(
+          container,
+          first.publicId,
+          first.payload.payloadVersion,
+        ),
+        contains(first.publicId),
+      );
     });
 
     test('nothing is taken before the first sign-in', () async {

@@ -1670,6 +1670,9 @@ Future<void> _run(Map<String, dynamic> step) async {
           merge: step['merge'] == true,
         ),
       );
+    case 'storeMayLag':
+      _cloudStore.mayLag = value as String;
+      _log('CLOUDSTORE the store may lag behind the server at the end: $value');
     case 'addPage':
       await c.read(strategyProvider.notifier).addPage();
     case 'storeDeletePage':

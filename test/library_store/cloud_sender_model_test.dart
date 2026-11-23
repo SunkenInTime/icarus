@@ -5,11 +5,13 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart' show servedAccount, strategyId;
+import 'cloud_shadow_test.dart'
+    show secondPage, serverRows, servedAccount, strategyId;
 import 'sender_world.dart';
 
 const seeds = int.fromEnvironment('SENDER_MODEL_SEEDS', defaultValue: 480);
@@ -96,7 +98,10 @@ final class Model {
       }
     };
     if (first) {
-      world.addServedStrategy();
+      world
+        ..secondPageOnServer()
+        ..addServedStrategy();
+      _requestsSeen = server.readCalls.length;
       world.addOtherStrategy();
     }
   }
@@ -110,9 +115,11 @@ final class Model {
     refusedAt = null;
     _read = 0;
     _restartsWritten.clear();
-    _readSince.clear();
-    _retiredAt.clear();
-    _accessAt.clear();
+    _lastRetire.clear();
+    _lastViewer.clear();
+    _lastAccess.clear();
+    _requestsSeen = server.readCalls.length;
+    _againAsked.clear();
     open(first: false);
   }
 
@@ -144,53 +151,289 @@ final class Model {
 
   Set<String> _present() => {for (final id in strategies) ..._presentIn(id)};
 
-  void edit() {
-    final strategy = strategies[random.nextInt(2)];
+  StrategyContent? _content(String strategy) {
     Reading<StrategyContent>? read;
     world.store.readStrategy(strategy).then((value) => read = value);
     async.flushMicrotasks();
-    if (read case Found(value: StrategyContent(strategy: final row))) {
-      final revision = (row.toJson()! as Map)['revision']! as int;
-      final before = {for (final id in strategies) id: _presentIn(id)};
-      final entries = world.cloud(strategy).queue.entries;
-      final lastEntry = entries.isEmpty ? null : entries.last.id;
-      edits++;
-      final id = 'edit-$edits';
-      Saving<List<Committed>, CommitRefusal>? saved;
-      world.store.commitAllAs(servedAccount, strategy, [
-        StrategyPatchOp(
-          opId: id,
-          expectedStrategyRevision: revision,
-          name: 'Edit $edits',
-        ),
-      ]).then((value) => saved = value);
-      async.flushMicrotasks();
-      if (saved is Saved) {
-        committed[id] = strategy;
-        _readSince.remove(strategy);
-        for (final other in strategies) {
-          final after = _presentIn(other);
-          final gone = before[other]!.difference(after);
-          if (gone.isEmpty) continue;
-          if (other == strategy &&
-              gone.length == 1 &&
-              gone.single == lastEntry &&
-              after.contains(id)) {
-            folded.add(gone.single);
-          } else {
-            broken.add('committing $id to $strategy took $gone out of the '
-                'queue of $other');
-          }
-        }
+    return switch (read) {
+      Found(:final value) => value,
+      _ => null,
+    };
+  }
+
+  static int _revision(Row row) => (row.toJson()! as Map)['revision']! as int;
+
+  void _commitTracked(String strategy, StrategyOp op) {
+    final before = {for (final id in strategies) id: _presentIn(id)};
+    final entries = world.cloud(strategy).queue.entries;
+    final lastEntry = entries.isEmpty ? null : entries.last.id;
+    Saving<List<Committed>, CommitRefusal>? saved;
+    world.store.commitAllAs(
+        servedAccount, strategy, [op]).then((value) => saved = value);
+    async.flushMicrotasks();
+    if (saved is! Saved) return;
+    final id = op.opId;
+    committed[id] = strategy;
+    _epochs[strategy] = (_epochs[strategy] ?? 0) + 1;
+    for (final other in strategies) {
+      final after = _presentIn(other);
+      final gone = before[other]!.difference(after);
+      if (gone.isEmpty) continue;
+      if (other == strategy &&
+          gone.length == 1 &&
+          gone.single == lastEntry &&
+          after.contains(id)) {
+        folded.add(gone.single);
+      } else {
+        broken.add('committing $id to $strategy took $gone out of the '
+            'queue of $other');
       }
     }
   }
 
+  void edit() {
+    final strategy = strategies[random.nextInt(2)];
+    final content = _content(strategy);
+    if (content == null) return;
+    edits++;
+    _commitTracked(
+      strategy,
+      StrategyPatchOp(
+        opId: 'edit-$edits',
+        expectedStrategyRevision: _revision(content.strategy),
+        name: 'Edit $edits',
+      ),
+    );
+  }
+
+  LiveElement? _element() {
+    final first = serverRows().elements.whereType<LiveElement>().first;
+    Reading<PageContent>? read;
+    world.store
+        .readPage(strategyId, first.pagePublicId)
+        .then((value) => read = value);
+    async.flushMicrotasks();
+    return switch (read) {
+      Found(:final value) => value.elements
+          .whereType<LiveElement>()
+          .where((element) => element.publicId == first.publicId)
+          .firstOrNull,
+      _ => null,
+    };
+  }
+
+  void ownMove() {
+    final element = _element();
+    if (element == null) return;
+    edits++;
+    _commitTracked(strategyId, World.moveOf(element, edits, 'move-$edits'));
+    log.add('own whole-row move');
+  }
+
+  String get _second => secondPage().page.publicId;
+
+  void ownPageOp() {
+    final content = _content(strategyId);
+    if (content == null ||
+        !content.pages.any((page) => page.publicId == _second) ||
+        content.pages.length < 2) {
+      return;
+    }
+    edits++;
+    final revision = _revision(content.strategy);
+    final choice = random.nextInt(3);
+    if (choice == 2) {
+      final page = content.pages.firstWhere((row) => row.publicId == _second);
+      _commitTracked(
+        strategyId,
+        PagePatchOp(
+          opId: 'page-rename-$edits',
+          pagePublicId: _second,
+          expectedPageRevision: _revision(page),
+          name: 'Page $edits',
+        ),
+      );
+      log.add('own page rename');
+    } else if (choice == 1) {
+      _commitTracked(
+        strategyId,
+        PageReorderOp(
+          opId: 'reorder-$edits',
+          pagePublicId: _second,
+          sortIndex: random.nextInt(2),
+          expectedStrategyRevision: revision,
+        ),
+      );
+      log.add('own page reorder');
+    } else {
+      _commitTracked(
+        strategyId,
+        PageDeleteOp(
+          opId: 'page-delete-$edits',
+          pagePublicId: _second,
+          expectedStrategyRevision: revision,
+        ),
+      );
+      log.add('own page delete');
+    }
+  }
+
+  void teammateOnRows() {
+    switch (random.nextInt(3)) {
+      case 0:
+        final first = serverRows().elements.whereType<LiveElement>().first;
+        if (server.rows[strategyId]!.element(first.publicId) is LiveElement) {
+          teammates++;
+          world.teammateMoves(teammates);
+          log.add('teammate moves the element');
+        }
+      case 1:
+        if (server.rows[strategyId]!.page(_second) != null) {
+          world.teammateDeletesPage(_second);
+          log.add('teammate deletes the second page');
+        }
+      case _:
+        teammate();
+    }
+  }
+
+  void viewerRefusal() {
+    final strategy = strategies[random.nextInt(2)];
+    server
+      ..roles[strategy] = StoreReadRole.viewer
+      ..answerWith(
+        strategy,
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+      );
+    log.add('$strategy refused as a viewer');
+  }
+
+  void adoptAgain() {
+    _againAsked.add(strategyId);
+    world.sender.adopt(strategyId, again: true);
+    world.settle(Duration(milliseconds: random.nextInt(300)));
+    switch (random.nextInt(3)) {
+      case 0:
+        restart();
+        log.add('adoption interrupted by a restart');
+      case 1:
+        connection = nextConnection++;
+        _reconnects++;
+        world.connection = connection;
+        log.add('adoption interrupted by connection $connection');
+      case _:
+        log.add('adoption again');
+    }
+  }
+
+  void checkRetireFloor() {
+    heal();
+    if (_element() == null) return;
+    world.settle(const Duration(minutes: 11));
+    final before = server.readCalls.length;
+    ownMove();
+    world.settle(const Duration(seconds: 40));
+    ownMove();
+    world.settle(const Duration(minutes: 1));
+    final retires = [
+      for (final call in server.readCalls.skip(before))
+        if (call.why == 'landed work waits for a result' &&
+            call.strategyId == strategyId)
+          call,
+    ];
+    if (retires.length > 1) {
+      broken.add('landed work of $strategyId was read for retirement '
+          '${retires.length} times within five minutes: $retires');
+    }
+    log.add('retire probe');
+  }
+
+  void checkScheduled() {
+    final sender = world.sender;
+    if (connection == null ||
+        account != servedAccount ||
+        sender.held != null ||
+        sender.runHold != null) {
+      return;
+    }
+    for (final stored in sender.store.strategies()) {
+      if (stored.ownerAccount != servedAccount) continue;
+      final cloud = world.cloud(stored.id);
+      final needs = [
+        for (final view in cloud.views.values)
+          for (final hold in view.holds)
+            if (hold case AwaitingResult(:final subject)) subject,
+      ];
+      if (needs.isEmpty) continue;
+      if (sender.couldNotResolve(stored.id, cloud) != null ||
+          sender.cannotRead(stored.id) != null) {
+        continue;
+      }
+      final outlook = sender.outlook(stored.id, cloud);
+      final now = start.add(async.elapsed);
+      final tooFar = outlook is ReadAt &&
+          outlook.at.difference(now) >
+              timing.readAgainAfter + const Duration(minutes: 1);
+      if (outlook is NothingToRead || tooFar || !sender.looksAt(stored)) {
+        broken.add('${stored.id} asks for $needs with nothing scheduled and '
+            'nothing shown ($outlook, looked at: ${sender.looksAt(stored)})');
+      }
+    }
+  }
+
+  void reopen() {
+    final strategy = strategies[random.nextInt(2)];
+    world.sender.adopt(strategy);
+    log.add('the editor opens $strategy again');
+  }
+
+  void checkRequests() {
+    final calls = server.readCalls;
+    for (var n = _requestsSeen; n < calls.length; n++) {
+      final call = calls[n];
+      final key = (call.strategyId, '$call');
+      if (call.why == 'the strategy was adopted' &&
+          call.page == null &&
+          !_againAsked.contains(call.strategyId)) {
+        broken.add('the page list of ${call.strategyId}, which the store '
+            'holds, was read again for adoption that nobody asked for');
+      }
+      switch (call.why) {
+        case 'landed work waits for a result':
+          if (_lastRetire[key] case final last?
+              when call.at!.isAfter(last) &&
+                  call.at!.difference(last) < timing.retireAgainAfter) {
+            broken.add('$call of ${call.strategyId} was requested to retire '
+                'landed work ${call.at!.difference(last)} after a recorded '
+                'read');
+          }
+        case 'edit access was lost':
+          if (_lastViewer[call.strategyId] case (final at, final reconnects)
+              when reconnects == _reconnects &&
+                  call.at!.isAfter(at) &&
+                  call.at!.difference(at) < timing.readAgainAfter) {
+            broken.add('the page list of ${call.strategyId} was requested for '
+                'edit access ${call.at!.difference(at)} after a viewer\'s');
+          }
+          _lastAccess[call.strategyId] = call;
+      }
+    }
+    _requestsSeen = calls.length;
+    _againAsked.removeWhere((id) => !world.sender.adopting(id));
+  }
+
+  final _againAsked = <String>{};
+
+  var _requestsSeen = 0;
+  var _reconnects = 0;
+  final _lastRetire = <(String, String), DateTime>{};
+  final _lastViewer = <String, (DateTime, int)>{};
+  final _lastAccess = <String, ReadCall>{};
+  final _epochs = <String, int>{};
+  final _needReads = <(String, String), List<(int, DateTime)>>{};
+
   final _removed = <String>{};
   final _restartsWritten = <String, int>{};
-  final _readSince = <String, Set<String>>{};
-  final _retiredAt = <(String, String), DateTime>{};
-  final _accessAt = <String, DateTime>{};
   var _read = 0;
 
   void _readReports() {
@@ -203,7 +446,22 @@ final class Model {
             :final effects,
             :final batch,
           ):
-          if (batch != null) _readSince.remove(strategyId);
+          if (batch != null) {
+            _epochs[strategyId] = (_epochs[strategyId] ?? 0) + 1;
+          }
+          if (events.any((event) => event is EditAccessConfirmed)) {
+            final call = server.readCalls
+                .where(
+                  (call) =>
+                      call.strategyId == strategyId &&
+                      call.why == 'edit access was lost',
+                )
+                .lastOrNull;
+            if (call == null || !(call.role?.edits ?? false)) {
+              broken.add('edit access of $strategyId was confirmed after a '
+                  'page list that said ${call?.role}');
+            }
+          }
           for (final effect in effects) {
             if (effect case OpRemoved(:final opId)) _removed.add(opId);
           }
@@ -219,30 +477,31 @@ final class Model {
             }
           }
         case SessionOpenedFor(:final strategyId):
-          _readSince.remove(strategyId);
-          _accessAt.remove(strategyId);
-        case ReadRecorded(:final strategyId, :final read, :final why)
+          _epochs[strategyId] = (_epochs[strategyId] ?? 0) + 1;
+        case ReadRecorded(:final strategyId, :final read, :final why, :final at)
             when why == 'the queue asked for it':
-          if (!(_readSince[strategyId] ??= {}).add(read)) {
-            broken.add('$read of $strategyId was read twice for the queue '
-                'with nothing changed between');
+          final epoch = _epochs[strategyId] ?? 0;
+          final reads = (_needReads[(strategyId, read)] ??= [])
+            ..add((epoch, at));
+          final recent = reads.where(
+            (entry) =>
+                entry.$1 == epoch &&
+                at.difference(entry.$2) < timing.readAgainAfter,
+          );
+          if (recent.length > timing.unresolvedRounds) {
+            broken.add('$read of $strategyId was read ${recent.length} times '
+                'for the queue within ten minutes with nothing changed');
           }
         case ReadRecorded(:final strategyId, :final read, :final why, :final at)
             when why == 'landed work waits for a result':
-          if (_retiredAt[(strategyId, read)] case final last?
-              when at.difference(last) < timing.retireAgainAfter) {
-            broken.add('$read of $strategyId was read to retire landed work '
-                '${at.difference(last)} after the last');
-          }
-          _retiredAt[(strategyId, read)] = at;
+          _lastRetire[(strategyId, read == 'the page list' ? 'list' : read)] =
+              at;
         case ReadRecorded(:final strategyId, :final why, :final at)
             when why == 'edit access was lost':
-          if (_accessAt[strategyId] case final last?
-              when at.difference(last) < timing.readAgainAfter) {
-            broken.add('the page list of $strategyId was read for edit access '
-                '${at.difference(last)} after the last');
+          if (_lastAccess[strategyId] case final call?
+              when call.role?.edits == false) {
+            _lastViewer[strategyId] = (at, _reconnects);
           }
-          _accessAt[strategyId] = at;
         case _:
           break;
       }
@@ -325,6 +584,7 @@ final class Model {
       log.add('hold while a write is held');
     } else if (choice == 0) {
       connection = nextConnection++;
+      _reconnects++;
       world.connection = connection;
       log.add('connection $connection while a write is held');
     } else {
@@ -338,10 +598,13 @@ final class Model {
 
   void readFault() {
     final strategy = strategies[random.nextInt(2)];
-    final choice = random.nextInt(7);
+    final choice = random.nextInt(8);
     final readSoon = random.nextBool();
     log.add('read fault $strategy $choice${readSoon ? ', read soon' : ''}');
-    if (readSoon) world.sender.adopt(strategy, again: true);
+    if (readSoon) {
+      _againAsked.add(strategy);
+      world.sender.adopt(strategy, again: true);
+    }
     switch (choice) {
       case 0:
         server.answerReadNext(
@@ -380,6 +643,11 @@ final class Model {
           strategy,
           const StoreReadUnreadable('rows this build cannot read'),
         );
+      case 7:
+        server.answerReadNext(strategy, (call) {
+          if (call.page == _second) world.teammateDeletesPage(_second);
+          return Future.value(server.answerNow(call));
+        });
       case 5:
         server.answerReadNext(strategy, (_) {
           final late = Completer<StoreReadOutcome>();
@@ -395,6 +663,7 @@ final class Model {
           switch (change) {
             case 0:
               connection = nextConnection++;
+              _reconnects++;
               world.connection = connection;
             case 1:
               _signedInAs(null);
@@ -431,7 +700,7 @@ final class Model {
       false => false,
       null => drops.nextBool(),
     };
-    final choice = random.nextInt(19);
+    final choice = random.nextInt(25);
     switch (choice) {
       case 0 || 1 || 2:
         edit();
@@ -442,6 +711,7 @@ final class Model {
       case 4:
         connection =
             connection == null || random.nextBool() ? nextConnection++ : null;
+        _reconnects++;
         world.connection = connection;
         log.add('connection $connection');
       case 5:
@@ -490,8 +760,21 @@ final class Model {
         readFault();
       case 18:
         teammate();
+      case 19 || 20:
+        ownMove();
+      case 21:
+        ownPageOp();
+      case 22:
+        teammateOnRows();
+      case 23:
+        viewerRefusal();
+      case 24 when random.nextBool():
+        adoptAgain();
+      case 24:
+        reopen();
       case _:
-        final seconds = random.nextInt(60);
+        final seconds =
+            random.nextBool() ? random.nextInt(60) : 30 + random.nextInt(400);
         waitAndCountLooks(seconds);
         log.add('wait $seconds s');
     }
@@ -589,7 +872,8 @@ final class Model {
       ..refusedAreas.clear()
       ..refuseNext = 0;
     _signedInAs(servedAccount);
-    connection ??= nextConnection++;
+    connection = nextConnection++;
+    _reconnects++;
     world
       ..account = account
       ..connection = connection;
@@ -601,7 +885,7 @@ final class Model {
 
   void checkLiveness() {
     heal();
-    world.settle(const Duration(minutes: 5));
+    world.settle(const Duration(minutes: 11));
     for (final strategy in strategies) {
       final cloud = world.cloud(strategy);
       final sendable = [
@@ -611,7 +895,8 @@ final class Model {
       expect(
         sendable,
         isEmpty,
-        reason: 'after five quiet minutes $strategy still holds work it could '
+        reason:
+            'after eleven quiet minutes $strategy still holds work it could '
             'send: the loop slept on it; sender ${world.sender.view}\n$trail',
       );
     }
@@ -622,7 +907,10 @@ final class Model {
     for (final strategy in strategies) {
       final cloud = world.cloud(strategy);
       expect(
-        [for (final work in cloud.queue.landed) work.op.opId],
+        [
+          if (world.sender.couldNotResolve(strategy, cloud) == null)
+            for (final work in cloud.queue.landed) work.op.opId,
+        ],
         isEmpty,
         reason: 'the loop\'s reads did not clear the landed work of '
             '$strategy\n$trail',
@@ -700,7 +988,8 @@ final class Model {
 
   bool _settledOrNeedsYou() => strategies.every((strategy) {
         final cloud = world.cloud(strategy);
-        return cloud.queue.landed.isEmpty &&
+        return (cloud.queue.landed.isEmpty ||
+                world.sender.couldNotResolve(strategy, cloud) != null) &&
             world.sender.cannotRead(strategy) == null &&
             cloud.queue.entries.every(
               (entry) => _needsUser(cloud, entry.id),
@@ -743,8 +1032,11 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
       for (var i = 0; i < steps; i++) {
         model.step();
         model.checkSafety();
+        model.checkScheduled();
+        model.checkRequests();
         if (i % 10 == 9) model.checkIsolation();
         if (i % 10 == 4) model.checkFairness();
+        if (i % 35 == 7) model.checkRetireFloor();
       }
       model.checkLiveness();
       model.checkTurns();

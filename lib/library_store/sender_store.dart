@@ -455,8 +455,8 @@ Pick pick(CloudStrategy cloud, String newClientId) {
   if (client != null) return Picked(client, ids);
   return NothingSendable(
     awaiting > 0
-        ? '$awaiting ops wait for a result from the server, which nothing '
-            'reads while the editor does not show this strategy'
+        ? '$awaiting ops wait for a result from the server, which the '
+            'sender reads next'
         : 'nothing in its queue may be sent now',
     retryAt: retryAt,
   );

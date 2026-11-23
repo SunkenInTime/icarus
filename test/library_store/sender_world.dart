@@ -32,11 +32,15 @@ final class ServerCall {
 }
 
 final class ReadCall {
-  const ReadCall(this.strategyId, this.page, this.account);
+  ReadCall(this.strategyId, this.page, this.account);
 
   final String strategyId;
   final String? page;
   final Account account;
+  DateTime? at;
+  String? why;
+  StoreReadRole? role;
+  bool answered = false;
 
   @override
   String toString() => page == null ? 'list' : 'page $page';
@@ -77,6 +81,9 @@ final class FakeServer {
   final _readAnswers = <String, List<ReadAnswering>>{};
   void Function(ServerCall call)? onCall;
   void Function(ReadCall call)? onRead;
+  DateTime Function()? clock;
+  String? Function()? whyNow;
+  StoreReadOutcome? Function(ReadCall call)? overrideRead;
 
   int get applied => appliedTimes.length;
 
@@ -222,6 +229,10 @@ final class FakeServer {
   }
 
   Future<StoreReadOutcome> _read(ReadCall call) {
+    call
+      ..at = clock?.call()
+      ..why = whyNow?.call()
+      ..role = roles[call.strategyId] ?? StoreReadRole.owner;
     readCalls.add(call);
     onRead?.call(call);
     if (owners[call.strategyId] case final owner? when owner != call.account) {
@@ -231,11 +242,13 @@ final class FakeServer {
     if (queued != null && queued.isNotEmpty) {
       return queued.removeAt(0)(call);
     }
+    if (overrideRead?.call(call) case final outcome?) {
+      return Future.value(outcome);
+    }
     return Future.value(_answerRead(call));
   }
 
-  Future<StoreReadOutcome> answerNow(ReadCall call) =>
-      Future.value(_answerRead(call));
+  StoreReadOutcome answerNow(ReadCall call) => _answerRead(call);
 
   StoreReads get reads => StoreReads(
         pageList: ({required strategyPublicId, required account}) =>
@@ -469,7 +482,9 @@ final class World {
     );
     async.flushMicrotasks();
     final fake = server ?? FakeServer();
-    fake.owners[strategyId] ??= servedAccount;
+    fake
+      ..owners[strategyId] ??= servedAccount
+      ..clock = () => start.add(async.elapsed);
     fake.rows[strategyId] ??= serverRows();
     final sender = CloudSender(
       store: SlowSenderStore(store!),
@@ -482,6 +497,7 @@ final class World {
       clock: () => start.add(async.elapsed),
       recordsConnectionLost: () => !dropsConnectionLost.value,
     );
+    fake.whyNow = () => sender.reading;
     final world = World._(async, engine, store!, fake, sender)
       ..dropsConnectionLost = dropsConnectionLost
       .._account = inputs.account
@@ -587,6 +603,26 @@ final class World {
     };
     server.rows[strategyId] = server.rows[strategyId]!
         .withRows([...header.pages, ...header.settings]);
+  }
+
+  void teammateDeletesPage(String page) {
+    final rows = server.rows[strategyId]!;
+    server.rows[strategyId] = StrategyRowSet(
+      strategy: rows.strategy,
+      pages: rows.pages.where((row) => row.publicId != page),
+      settings: rows.settings.where((row) => row.pagePublicId != page),
+      elements: rows.elements.where((row) => row.pagePublicId != page),
+      lineupGroups: rows.lineupGroups.where((row) => row.pagePublicId != page),
+    );
+  }
+
+  void commit(List<StrategyOp> ops) => _commit(strategyId, servedAccount, ops);
+
+  T rowOf<T extends Row>(T? Function(StrategyContent content) find) {
+    Reading<StrategyContent>? read;
+    store.readStrategy(strategyId).then((value) => read = value);
+    async.flushMicrotasks();
+    return find((read! as Found<StrategyContent>).value)!;
   }
 
   void commitMerge(int n) {

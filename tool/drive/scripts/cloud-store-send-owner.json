@@ -2,6 +2,7 @@
   {"wait": 10},
   {"tapIcon": "x", "optional": true},
   {"signIn": true},
+  {"storeMayLag": "the teammate's move, taken with use cloud, is read by nothing the queue asks for"},
   {"wait": 4},
   {"newCloudFolder": "Folder {run}"},
   {"openCloudFolder": "Folder {run}"},
