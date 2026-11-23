@@ -120,6 +120,10 @@ final class StoreMirror extends LocalLibraryFollower {
     reads.writing(touch);
     if (_phase is MirrorFollowing && (actions?.takesSave(touch) ?? false)) {
       _journaled.add(touch);
+      scheduleMicrotask(() {
+        actions?.queueSavesAfterTheTurn();
+        _kick();
+      });
     }
   }
 

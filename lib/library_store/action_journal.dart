@@ -162,6 +162,7 @@ final class ActionJournal {
 
   final StrategyData? Function(String id) _hiveNow;
   final _jobs = Queue<_Job>();
+  final _savesThisTurn = <_SaveJob>[];
   final _takenUp = <String>{};
   final _previous = <String, StrategyData>{};
   final tally = ActionOpsTally();
@@ -222,13 +223,18 @@ final class ActionJournal {
     final saved = touch.wrote;
     if (saved == null) return false;
     if (!_takenUp.contains(saved.id)) return false;
-    _jobs.add(_SaveJob(touch, saved.id, rowsOf(saved)));
+    _savesThisTurn.add(_SaveJob(touch, saved.id, rowsOf(saved)));
     onHiveWrite(saved.id);
     return true;
   }
 
+  void queueSavesAfterTheTurn() {
+    _jobs.addAll(_savesThisTurn);
+    _savesThisTurn.clear();
+  }
+
   void answered(LibraryTouch touch, {required bool written}) {
-    for (final job in _jobs) {
+    for (final job in [..._jobs, ..._savesThisTurn]) {
       if (job is _SaveJob &&
           identical(job.touch, touch) &&
           job.state == _SaveState.writing) {
@@ -243,6 +249,7 @@ final class ActionJournal {
 
   void forget() {
     _jobs.clear();
+    _savesThisTurn.clear();
     _takenUp.clear();
     _previous.clear();
   }

@@ -103,6 +103,30 @@ void main() {
   });
 
   test(
+      'a Hive save made in the same turn as a page command is compared after '
+      'that turn\'s ops: a rename differs only where Hive\'s stored copy is '
+      'behind the canvas', () async {
+    final h = await open();
+    final page = const LocalLibrary().storedStrategy(openId())!.pages.first.id;
+    final saves = h.tally.hiveSaves;
+    final renamed = await h.measure(() =>
+        container.read(strategyProvider.notifier).renamePage(page, 'Retake'));
+
+    expect(renamed.outcomes, {UnitOutcome.coveredAndCorrect},
+        reason: '$renamed');
+    expect(h.tally.hiveSaves, greaterThan(saves));
+    expect(
+      [for (final f in h.tally.hiveFindings) ...f.differences],
+      everyElement(isIn([
+        'strategy ${openId()} themeProfile',
+        'image ${openId()}-p0-image scale',
+      ])),
+      reason: 'only what the canvas changed at open, which a page command '
+          'writes to Hive from its stored copy',
+    );
+  });
+
+  test(
       'a Hive write of the open strategy that fails is counted as failed and '
       'never compared', () async {
     final h = await open();
