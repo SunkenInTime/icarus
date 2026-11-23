@@ -1744,6 +1744,28 @@ overwrite a teammate's newer work.
   its clock when the mutation starts (so the device's count runs about half a
   round trip behind) and the call's own trip.
 
+**A row's life.** A revision names a row's content only within one life of
+the row. The server purges an element's or a lineup group's tombstone, and a
+trashed page, 30 days after the delete; after that the same id can be added
+again, and its revisions start over at 1. So a revision this device learned
+more than 29 days ago (`trustRowsFor`, a day of margin) may name content of
+an earlier life:
+
+- Results stop counting as current once the session's first result is 29
+  days old (`QueueSession.resultsFrom`): the queue forgets them as a new
+  session would (`forgetResults`), but keeps the session number, so results
+  the sender records after it still apply. A write then waits for a fresh
+  result before anything is justified by one.
+- This device's landed work turns aged when it was first sent more than 29
+  days ago (`LandedWork.aged`, stored as `aged`). An aged record no longer
+  predicts a row, never outranks a result, and the first current result that
+  covers its row retires it, whatever revision that result shows.
+- Both happen at the start of a transition, with the passed resend windows
+  (`recordExpiries`), so views stay a function of the queue as it is.
+
+Within 29 days a result at a revision below this device's landed write is
+older than the write's answer, and the landed record still wins.
+
 **The resend window.** The server remembers its answer to an op id for 30
 days (`serverRemembersAnswersFor`, beside `DAYS_30_MS` in
 `convex/maintenance.ts`), so sending the same op id again inside that time
@@ -1804,8 +1826,10 @@ and `_judge` is the only place an outgoing revision is chosen.
   row, including work answered "nothing to do", goes
   only once that row is justified at the revision it names, with the content
   the user saw (or already holding what the op writes, so the server's answer
-  settles it). Otherwise it waits for the row's result (`AwaitingResult`).
-  It needs the user when a result of this session shows the row otherwise,
+  settles it). Otherwise it waits for the row's result (`AwaitingResult`),
+  on the page a result last showed the row on, or the page the op was made on
+  when no result has shown it (a teammate may have moved it since the editor
+  drew it). It needs the user when a result of this session shows the row otherwise,
   when a result of its page no longer holds a row that results showed or this
   device added, or when its page is gone (`RowPageGone`). A solo session
   waits only after a session opens: such an op made behind landed work, or

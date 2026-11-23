@@ -13,6 +13,8 @@ const resendWindow = Duration(days: 29);
 
 const liveFor = Duration(seconds: 20);
 
+const trustRowsFor = Duration(days: 29);
+
 final class ServerTimeBasis {
   const ServerTimeBasis(this.serverTime, {required this.heldAt});
 
@@ -799,6 +801,7 @@ final class LandedWork {
     this.produced,
     this.movedRow,
     this.shownWithout = false,
+    this.aged = false,
   });
 
   final int attempt;
@@ -811,6 +814,7 @@ final class LandedWork {
   final ProducedRow? produced;
   final Row? movedRow;
   final bool shownWithout;
+  final bool aged;
 
   LandedWork withoutProduced() => LandedWork(
     attempt: attempt,
@@ -822,6 +826,20 @@ final class LandedWork {
     firstSentAt: firstSentAt,
     movedRow: movedRow,
     shownWithout: shownWithout,
+    aged: aged,
+  );
+
+  LandedWork asAged() => LandedWork(
+    attempt: attempt,
+    position: position,
+    op: op,
+    revision: revision,
+    shape: shape,
+    own: own,
+    firstSentAt: firstSentAt,
+    movedRow: movedRow,
+    shownWithout: shownWithout,
+    aged: true,
   );
 
   LandedWork seenWithout() => LandedWork(
@@ -835,6 +853,7 @@ final class LandedWork {
     produced: produced,
     movedRow: movedRow,
     shownWithout: true,
+    aged: aged,
   );
 
   @override
@@ -849,7 +868,8 @@ final class LandedWork {
       other.firstSentAt == firstSentAt &&
       other.produced == produced &&
       other.movedRow == movedRow &&
-      other.shownWithout == shownWithout;
+      other.shownWithout == shownWithout &&
+      other.aged == aged;
 
   @override
   int get hashCode => Object.hash(
@@ -863,6 +883,7 @@ final class LandedWork {
     firstSentAt,
     produced,
     shownWithout,
+    aged,
   );
 
   int compareTo(LandedWork other) {

@@ -18,12 +18,37 @@ final class QueueSession {
     required this.build,
     required this.number,
     this.basis,
+    this.resultsFrom,
   });
 
   final bool connected;
   final String build;
   final int number;
   final ServerTimeBasis? basis;
+  final DateTime? resultsFrom;
+
+  QueueSession disconnected() => QueueSession(
+    connected: false,
+    build: build,
+    number: number,
+    resultsFrom: resultsFrom,
+  );
+
+  QueueSession holding(ServerTimeBasis? basis) => QueueSession(
+    connected: connected,
+    build: build,
+    number: number,
+    basis: basis,
+    resultsFrom: resultsFrom,
+  );
+
+  QueueSession withResultsFrom(DateTime? from) => QueueSession(
+    connected: connected,
+    build: build,
+    number: number,
+    basis: basis,
+    resultsFrom: from,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -31,10 +56,11 @@ final class QueueSession {
       other.connected == connected &&
       other.build == build &&
       other.number == number &&
-      other.basis == basis;
+      other.basis == basis &&
+      other.resultsFrom == resultsFrom;
 
   @override
-  int get hashCode => Object.hash(connected, build, number, basis);
+  int get hashCode => Object.hash(connected, build, number, basis, resultsFrom);
 }
 
 final class CloudQueue {
@@ -975,6 +1001,11 @@ final class _Edit {
       build: build,
       number: nextSession++,
     );
+    forgetResults();
+    effects.add(SessionOpened(session.number));
+  }
+
+  void forgetResults() {
     shown = shown.inNewSession();
     for (final (at, work) in [...landed.indexed]) {
       if (work.produced != null) landed[at] = work.withoutProduced();
@@ -994,7 +1025,6 @@ final class _Edit {
       }
     }
     change.everything = true;
-    effects.add(SessionOpened(session.number));
   }
 
   CloudQueue build() {
@@ -1016,10 +1046,45 @@ final class _Edit {
   Stepped done() => Stepped(build(), effects);
 }
 
+bool _outrankedBy(ArrivedBase base, Shown shown, LandedWork work) {
+  if (!work.aged) return false;
+  final row = targetOf(work.op);
+  final page = switch (base) {
+    HeaderRead() => null,
+    PageRead(:final page) => page.publicId,
+    PageGone(:final pagePublicId) => pagePublicId,
+    _ => null,
+  };
+  if (base is HeaderRead) {
+    return row is StrategyTarget || row is PageTarget || row is SettingsTarget;
+  }
+  if (page == null) return false;
+  return shown.rows[row]?.page == page || pagesNeeded(work.op).contains(page);
+}
+
+bool _untrusted(DateTime since, DateTime now) =>
+    !now.isBefore(since.add(trustRowsFor));
+
 CloudQueue recordExpiries(CloudQueue queue, DateTime now) {
   final due = queue._index.dueBy(now);
-  if (due.isEmpty) return queue;
+  final resultsAged = switch (queue.session.resultsFrom) {
+    final from? => _untrusted(from, now),
+    null => false,
+  };
+  final landedAged = [
+    for (final (at, work) in queue.landed.indexed)
+      if (!work.aged && _untrusted(work.firstSentAt, now)) at,
+  ];
+  if (due.isEmpty && !resultsAged && landedAged.isEmpty) return queue;
   final edit = _Edit(queue, now);
+  if (resultsAged) {
+    edit.forgetResults();
+    edit.session = edit.session.withResultsFrom(null);
+  }
+  for (final at in landedAged) {
+    edit.landed[at] = edit.landed[at].asAged();
+    edit.change.everything = true;
+  }
   for (final id in due) {
     if (edit.index.byId[id] case final PendingOp entry
         when entry.window is WindowOpen) {
@@ -1069,11 +1134,8 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       if (edit.session.connected &&
           session == edit.session.number &&
           (held == null || serverTime > held.serverTime)) {
-        edit.session = QueueSession(
-          connected: true,
-          build: edit.session.build,
-          number: edit.session.number,
-          basis: ServerTimeBasis(serverTime, heldAt: at),
+        edit.session = edit.session.holding(
+          ServerTimeBasis(serverTime, heldAt: at),
         );
       }
       return edit.done();
@@ -1102,11 +1164,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       edit.openSession(connected: false, build: build);
       return edit.done();
     case ConnectionLost():
-      edit.session = QueueSession(
-        connected: false,
-        build: edit.session.build,
-        number: edit.session.number,
-      );
+      edit.session = edit.session.disconnected();
       return edit.done();
     case ConnectionReturned():
       edit.openSession(connected: true, build: edit.session.build);
@@ -1189,11 +1247,7 @@ Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
     case BatchRefusal.strategyDeleted:
       edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
     case BatchRefusal.uncheckedTooLate:
-      edit.session = QueueSession(
-        connected: edit.session.connected,
-        build: edit.session.build,
-        number: edit.session.number,
-      );
+      edit.session = edit.session.holding(null);
   }
   return edit.done();
 }
@@ -1208,6 +1262,9 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
 }
 
 Step _arrived(_Edit edit, ArrivedBase base) {
+  if (edit.session.resultsFrom == null) {
+    edit.session = edit.session.withResultsFrom(edit.now);
+  }
   if (base is StrategyGone) {
     edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
     return edit.done();
@@ -1245,7 +1302,10 @@ Step _arrived(_Edit edit, ArrivedBase base) {
     }
   }
   for (final work in [...edit.landed]) {
-    if (!_alreadyShown(edit.shown, work)) continue;
+    if (!_alreadyShown(edit.shown, work) &&
+        !_outrankedBy(base, edit.shown, work)) {
+      continue;
+    }
     edit.landed.remove(work);
     edit.change.lives.addAll([
       ...pagesNeeded(work.op),
@@ -1588,7 +1648,7 @@ _Known? _knownRow(CloudQueue queue, Target row) {
     _NotKnown(:final revision) => revision,
   };
   for (final work in queue.landed) {
-    if (targetOf(work.op) != row) continue;
+    if (work.aged || targetOf(work.op) != row) continue;
     if (best != null && revisionOf(best) >= work.revision) continue;
     best = switch (work.produced) {
       ProducedRow(:final page, :final revision, :final digest) => _KnownRow(
@@ -1715,10 +1775,12 @@ _Verdict _wholeBehindOwn(
   final shown = queue.shown;
   final seen = entry.authored;
   final known = _knownRow(queue, row);
+  final lastShownOn = _shownRow(shown, row)?.page;
   final page = switch ((row, known, entry.scope)) {
     (PageTarget(:final pagePublicId), _, _) => pagePublicId,
     (SettingsTarget(:final pagePublicId), _, _) => pagePublicId,
     (_, _KnownRow(:final page?), _) => page,
+    _ when lastShownOn != null => lastShownOn,
     (_, _, OnPage(:final pagePublicId)) => pagePublicId,
     (_, _, Moving(:final from)) => from,
     _ => null,

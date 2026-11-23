@@ -689,6 +689,7 @@ Map<String, Object?> landedToJson(LandedWork work) => {
   if (work.produced case final produced?) 'produced': _producedToJson(produced),
   if (work.movedRow case final moved?) 'movedRow': moved.toJson(),
   if (work.shownWithout) 'shownWithout': true,
+  if (work.aged) 'aged': true,
 };
 
 CloudRowReading<LandedWork> landedFromText(
@@ -722,12 +723,21 @@ CloudRowReading<LandedWork> landedFromText(
         return false;
       }(),
     };
+    final aged = switch (fields.json['aged']) {
+      null => false,
+      true => true,
+      _ => () {
+        fields.reject('an unreadable flag');
+        return false;
+      }(),
+    };
     return () => LandedWork(
       own: own,
       firstSentAt: firstSentAt,
       movedRow: movedRow(),
       produced: produced(),
       shownWithout: shownWithout,
+      aged: aged,
       attempt: attempt,
       position: position,
       op: op!,

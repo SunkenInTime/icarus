@@ -335,6 +335,11 @@ final class Scenario {
   }
 }
 
+bool _isResult(Fact fact) =>
+    fact is ReadFact || (fact is EventFact && fact.event is BaseArrived);
+
+bool _outlivesTrust(Fact fact) => fact is ClockFact && fact.by >= trustRowsFor;
+
 Iterable<List<Fact>> orderings(List<Fact> facts) sync* {
   final used = List.filled(facts.length, false);
   final chosen = <Fact>[];
@@ -362,6 +367,12 @@ Iterable<List<Fact>> orderings(List<Fact> facts) sync* {
             EventFact(event: BatchRefused()) => true,
             _ => false,
           }) {
+        return false;
+      }
+      if (!used[other] &&
+          other < index &&
+          ((_isResult(facts[other]) && _outlivesTrust(facts[index])) ||
+              (_outlivesTrust(facts[other]) && _isResult(facts[index])))) {
         return false;
       }
     }

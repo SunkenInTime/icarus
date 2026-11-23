@@ -234,7 +234,55 @@ final class Model {
     }
     checkStates();
     checkJustified();
+    checkNothingStalls();
     return result;
+  }
+
+  List<ArrivedBase> resultsFor(ResultSubject subject) {
+    final rows = server.rows;
+    ArrivedBase pageResult(String page) =>
+        rows.page(page) == null ? PageGone(page) : pageReadOf(rows, page);
+    return switch (subject) {
+      PageListResult() => [headerReadOf(rows)],
+      PageResult(:final page) => [pageResult(page)],
+      RowResult(target: StrategyTarget() || PageTarget() || SettingsTarget()) =>
+        [headerReadOf(rows)],
+      RowResult(:final page?) => [pageResult(page)],
+      RowResult() => [headerReadOf(rows)],
+    };
+  }
+
+  void checkNothingStalls() {
+    if (!server.exists) return;
+    final queue = client.queue;
+    for (final MapEntry(key: id, value: view) in entryViews(
+      queue,
+      clock,
+    ).entries) {
+      if (view.state is! Waiting) continue;
+      for (final hold in view.holds) {
+        if (hold is! AwaitingResult) continue;
+        var read = queue;
+        for (final base in resultsFor(hold.subject)) {
+          if (transition(
+                read,
+                BaseArrived(base, session: read.session.number),
+                now: clock,
+              )
+              case Stepped(:final queue)) {
+            read = queue;
+          }
+        }
+        final after = entryViews(read, clock)[id];
+        if (after != null && after.holds.contains(hold)) {
+          throw StateError(
+            '$id waits for ${hold.subject}, and reading it from the server now '
+            'leaves it waiting (${after.state}, ${after.holds})',
+          );
+        }
+        count('waits for a result that a read would settle');
+      }
+    }
   }
 
   Step unfolded(CloudQueue before, QueueEvent event, Step result) {
@@ -1190,6 +1238,7 @@ const minimums = {
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
   'teammate changes a page\'s settings': 50,
+  'waits for a result that a read would settle': 200,
   'unchecked sends': 20,
   'unchecked ops applied': 10,
   'ServerTimeHeld': 5000,
