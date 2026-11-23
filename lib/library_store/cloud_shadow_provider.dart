@@ -218,6 +218,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
               account: Account(named),
               connection: now.connection,
               signIns: now.signIns,
+              signOuts: now.signOuts,
             );
             shadow.pageList(strategyId, list, stamp.connection, stamp: stamp);
           }),
@@ -242,6 +243,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
       },
       connection: _connection(),
       signIns: auth.changes,
+      signOuts: ref.read(cloudSenderProvider)?.inputs.signOuts ?? 0,
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/store_batch.dart';
+import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/sender_store.dart';
@@ -46,13 +47,16 @@ final cloudSenderProvider = NotifierProvider<CloudSenderNotifier, CloudSender?>(
 );
 
 class CloudSenderNotifier extends Notifier<CloudSender?> {
+  var _signOuts = 0;
+  Account? _lastAccount;
+
   @override
   CloudSender? build() => null;
 
   CloudSender begin(LibraryStore store, {required String build}) {
     if (state case final running?) return running;
     final sender = CloudSender(
-      store: SenderStore(store),
+      store: SenderStore(store, keepsAllReports: driveBuild),
       send: ref.read(storeBatchSendProvider),
       build: build,
       clientId: const Uuid().v4(),
@@ -75,14 +79,18 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
 
   Snapshot _inputs() {
     final auth = ref.read(authChangesProvider)();
+    final account = switch (auth) {
+      (authenticated: true, subject: final named?, changes: _) =>
+        Account(named),
+      _ => null,
+    };
+    if (_lastAccount != null && account == null) _signOuts++;
+    _lastAccount = account;
     return (
-      account: switch (auth) {
-        (authenticated: true, subject: final named?, changes: _) =>
-          Account(named),
-        _ => null,
-      },
+      account: account,
       connection: ref.read(senderConnectionProvider)(),
       signIns: auth.changes,
+      signOuts: _signOuts,
     );
   }
 }

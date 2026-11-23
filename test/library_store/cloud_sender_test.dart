@@ -180,8 +180,11 @@ void main() {
             expect(world.queueLength(), 0, reason: at);
             expect(server.appliedOf(strategyId), 1, reason: at);
             expect(server.anyAppliedTwice, isFalse, reason: at);
-            final clients = {for (final call in server.calls) call.clientId};
-            expect(clients, hasLength(1), reason: at);
+            expect(
+              {for (final call in server.calls) call.clientId},
+              {'client-1'},
+              reason: at,
+            );
           },
           storage: storage,
           server: server,
@@ -778,7 +781,12 @@ void main() {
             strategyId,
             pageList(serverRows()),
             2,
-            stamp: (account: servedAccount, connection: 2, signIns: 1),
+            stamp: (
+              account: servedAccount,
+              connection: 2,
+              signIns: 1,
+              signOuts: 0,
+            ),
           );
           world.settle();
           expect(
@@ -808,7 +816,12 @@ void main() {
           strategyId,
           pageSnapshot(serverRows()),
           2,
-          stamp: (account: servedAccount, connection: 2, signIns: 1),
+          stamp: (
+            account: servedAccount,
+            connection: 2,
+            signIns: 1,
+            signOuts: 0,
+          ),
         );
         world.settle();
         expect(
@@ -915,6 +928,10 @@ void main() {
                 if (op is PageDeleteOp) op.opId,
           ],
           isEmpty,
+        );
+        expect(
+          [for (final entry in world.cloud().queue.entries) entry.id],
+          contains('delete-page'),
         );
       });
     });
@@ -1096,6 +1113,224 @@ void main() {
         world.settle();
         final sent = world.server.calls.single.ops.single as ElementDeleteOp;
         expect(sent.lastWriterWins, isFalse);
+      });
+    });
+  });
+
+  group('the round-six cases', () {
+    test(
+        'a sign-out and sign-in as the same account that the loop never '
+        'looks between still ends the session: a delete queued before is '
+        'sent checked', () {
+      inWorld((world) {
+        final reply = Completer<void>();
+        world.server.answerNext(strategyId, (call) {
+          final answered = world.server.applyAll(call);
+          return reply.future.then((_) => answered);
+        });
+        world.commitAdds(1);
+        world.settle(const Duration(milliseconds: 300));
+        expect(world.server.calls, hasLength(1));
+        world.commitElementDelete('delete-1');
+        world
+          ..signIn(null)
+          ..signIn(servedAccount);
+        reply.complete();
+        world.settle();
+        final sent = world.server.calls.last.ops.single as ElementDeleteOp;
+        expect(sent.lastWriterWins, isFalse);
+      });
+    });
+
+    test(
+        'a connection that changes while the queue is read gets no session '
+        'written for it', () {
+      inWorld((world) {
+        final before = world.written().whereType<ConnectionReturned>().length;
+        world.sender.hold('held by the test');
+        world.connection = 2;
+        world.commitMove(1);
+        world.settle();
+        world.slowStore.afterRead = const Duration(seconds: 1);
+        world.sender.release();
+        world.async.elapse(const Duration(milliseconds: 500));
+        world.slowStore.afterRead = Duration.zero;
+        world.connection = 3;
+        world.settle();
+        expect(
+          world.written().whereType<ConnectionReturned>(),
+          hasLength(before + 1),
+        );
+        expect(world.server.calls, hasLength(1));
+      });
+    });
+
+    test('a result whose recording throws is answered as not recorded', () {
+      inWorld((world) {
+        world.slowStore.throwsOnBase = true;
+        world.shadow!.page(
+          strategyId,
+          pageSnapshot(serverRows()),
+          world.connection,
+          stamp: world.stamp,
+        );
+        world.settle();
+        final handed = world.arrivals.whereType<ResultForStore>().last;
+        expect(world.intake.outcomes[handed], isA<ResultNotRecorded>());
+      });
+    });
+
+    test(
+        'pages wait until the strategy is recorded: after a stale first page '
+        'list they are recorded with the next one', () {
+      inWorld(
+        (world) {
+          final old = world.stamp;
+          world.connection = 2;
+          world.settle();
+          world.shadow!
+            ..pageList(
+              strategyId,
+              pageList(serverRows()),
+              old.connection,
+              stamp: old,
+            )
+            ..page(
+              strategyId,
+              pageSnapshot(serverRows()),
+              world.connection,
+              stamp: world.stamp,
+            );
+          world.settle();
+          expect(
+            (world.store.library as LibraryOpen).list.strategies,
+            isEmpty,
+          );
+          world.shadow!.pageList(
+            strategyId,
+            pageList(serverRows()),
+            world.connection,
+            stamp: world.stamp,
+          );
+          world.settle();
+          expect(
+            world.sender.store.reports.whereType<ResultWritten>().where(
+                  (written) => written.result is PageResultForStore,
+                ),
+            hasLength(1),
+          );
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'pages that arrive before the strategy is recorded are recorded in '
+        'the order they arrived', () {
+      inWorld(
+        (world) {
+          final older = pageSnapshot(serverRows());
+          world.server.revisions[strategyId] = 5;
+          final newer = world.shownPage();
+          world.shadow!
+            ..page(strategyId, older, world.connection, stamp: world.stamp)
+            ..pageList(
+              strategyId,
+              pageList(serverRows()),
+              world.connection,
+              stamp: world.stamp,
+            )
+            ..page(strategyId, newer, world.connection, stamp: world.stamp);
+          world.settle();
+          expect(
+            [
+              for (final written
+                  in world.sender.store.reports.whereType<ResultWritten>())
+                if (written.result case PageResultForStore(:final page))
+                  page.elements.whereType<LiveElement>().first.revision,
+            ],
+            [1, 5],
+          );
+        },
+        addStrategy: false,
+      );
+    });
+
+    test('a result answered after the shadow stopped changes nothing in it',
+        () {
+      final storage = MemoryStorage();
+      inWorld((world) {
+        world.connection = 2;
+        world.settle();
+        final shadow = world.shadow!;
+        final opened = shadow.reports.whereType<ShadowSessionOpened>().length;
+        holdNextWrite(storage, () => shadow.stop('stopped by the test'));
+        shadow.page(
+          strategyId,
+          pageSnapshot(serverRows()),
+          world.connection,
+          stamp: world.stamp,
+        );
+        world.settle();
+        expect(world.intake.outcomes.values.last, isA<ResultRecorded>());
+        expect(
+          shadow.reports.whereType<ShadowSessionOpened>(),
+          hasLength(opened),
+        );
+      }, storage: storage);
+    });
+
+    test(
+        'an edit committed while the queue is read moves the claim to the end '
+        'of its own wait', () {
+      inWorld((world) {
+        final calledAt = <Duration>[];
+        world.server.onCall = (_) => calledAt.add(world.async.elapsed);
+        world.slowStore.afterRead = const Duration(milliseconds: 100);
+        world.commitAdds(1);
+        world.async.elapse(const Duration(milliseconds: 230));
+        world.commitAdds(1, from: 1);
+        final edited = world.async.elapsed;
+        world.settle();
+        expect(
+          calledAt.first,
+          greaterThanOrEqualTo(edited + timing.wait),
+        );
+      });
+    });
+
+    test(
+        'a status listener may dispose the sender, and the status stream '
+        'then closes', () {
+      inWorld((world) {
+        var closed = false;
+        world.sender.views.listen(
+          (view) {
+            if (view.run.startsWith('held')) world.sender.dispose();
+          },
+          onDone: () => closed = true,
+        );
+        world.sender.hold('held by the test');
+        world.settle();
+        expect(world.sender.disposed, isTrue);
+        expect(closed, isTrue);
+      });
+    });
+
+    test(
+        'the sender keeps its last thousand reports, and tests and the driver '
+        'can keep them all', () {
+      inWorld((world) {
+        final kept = SenderStore(world.store);
+        final all = SenderStore(world.store, keepsAllReports: true);
+        for (var n = 0; n < 1200; n++) {
+          kept.report(EventNotApplied(strategyId, '$n'));
+          all.report(EventNotApplied(strategyId, '$n'));
+        }
+        expect(kept.reports, hasLength(SenderStore.reportsKept));
+        expect(kept.reportsDropped, 200);
+        expect((kept.reports.first as EventNotApplied).why, '200');
+        expect(all.reports, hasLength(1200));
       });
     });
   });

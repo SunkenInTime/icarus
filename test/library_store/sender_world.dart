@@ -199,10 +199,11 @@ final class _Flag {
 }
 
 final class SlowSenderStore extends SenderStore {
-  SlowSenderStore(super.store);
+  SlowSenderStore(super.store) : super(keepsAllReports: true);
 
   var afterRead = Duration.zero;
   var dropSessionReadBack = 0;
+  var throwsOnBase = false;
 
   @override
   Future<Written> write(
@@ -212,6 +213,9 @@ final class SlowSenderStore extends SenderStore {
     ClaimedBatch? batch,
     bool readSession = false,
   }) async {
+    if (throwsOnBase && events.any((event) => event is BaseArrived)) {
+      throw StateError('the store broke');
+    }
     final written = await super.write(
       owner,
       strategyId,
@@ -279,6 +283,7 @@ final class World {
   late Account? _account;
   late int? _connection;
   late int _authChanges;
+  late int _signOuts;
   var _moved = 0;
 
   RefusingLease get lease => engine.leased!;
@@ -292,6 +297,7 @@ final class World {
   int get authChanges => _authChanges;
 
   set account(Account? next) {
+    if (_account != null && next == null) _signOuts++;
     _account = next;
     _push();
   }
@@ -307,6 +313,7 @@ final class World {
   }
 
   void signIn(Account? next) {
+    if (_account != null && next == null) _signOuts++;
     _account = next;
     _authChanges++;
     _push();
@@ -316,6 +323,7 @@ final class World {
         account: _account,
         connection: _connection,
         signIns: _authChanges,
+        signOuts: _signOuts,
       );
 
   void _push() => sender.inputs = stamp;
@@ -328,8 +336,8 @@ final class World {
     String clientId = 'client-1',
     Snapshot? startingWith,
   }) {
-    final inputs =
-        startingWith ?? (account: servedAccount, connection: 1, signIns: 1);
+    final inputs = startingWith ??
+        (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
     final dropsConnectionLost = _Flag();
     final arrivals = <Object>[];
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
@@ -379,7 +387,8 @@ final class World {
       ..dropsConnectionLost = dropsConnectionLost
       .._account = inputs.account
       .._connection = inputs.connection
-      .._authChanges = inputs.signIns;
+      .._authChanges = inputs.signIns
+      .._signOuts = inputs.signOuts;
     if (shadow) {
       world.shadow = CloudShadow(
         store!,

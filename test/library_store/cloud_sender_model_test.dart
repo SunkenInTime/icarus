@@ -43,6 +43,13 @@ final class Model {
   Account? account = servedAccount;
   int? connection = 1;
   int signIns = 1;
+  int signOuts = 0;
+
+  void _signedInAs(Account? next) {
+    if (account != null && next == null) signOuts++;
+    account = next;
+  }
+
   var nextConnection = 2;
   int? refusedAt;
   final broken = <String>[];
@@ -50,8 +57,12 @@ final class Model {
   final folded = <String>{};
   final oldStamps = <Snapshot>[];
 
-  Snapshot get stamp =>
-      (account: account, connection: connection, signIns: signIns);
+  Snapshot get stamp => (
+        account: account,
+        connection: connection,
+        signIns: signIns,
+        signOuts: signOuts,
+      );
 
   void open({required bool first}) {
     world = World.open(
@@ -160,16 +171,15 @@ final class Model {
     log.add('stale result under ${old.connection}');
   }
 
-  Set<String> _present() {
-    final present = <String>{};
-    for (final strategy in strategies) {
-      final cloud = world.cloud(strategy);
-      present
-        ..addAll([for (final entry in cloud.queue.entries) entry.id])
-        ..addAll([for (final work in cloud.queue.landed) work.op.opId]);
-    }
-    return present;
+  Set<String> _presentIn(String strategy) {
+    final cloud = world.cloud(strategy);
+    return {
+      for (final entry in cloud.queue.entries) entry.id,
+      for (final work in cloud.queue.landed) work.op.opId,
+    };
   }
+
+  Set<String> _present() => {for (final id in strategies) ..._presentIn(id)};
 
   void edit() {
     final strategy = strategies[random.nextInt(2)];
@@ -178,7 +188,7 @@ final class Model {
     async.flushMicrotasks();
     if (read case Found(value: StrategyContent(strategy: final row))) {
       final revision = (row.toJson()! as Map)['revision']! as int;
-      final before = _present();
+      final before = {for (final id in strategies) id: _presentIn(id)};
       final entries = world.cloud(strategy).queue.entries;
       final lastEntry = entries.isEmpty ? null : entries.last.id;
       edits++;
@@ -194,15 +204,18 @@ final class Model {
       async.flushMicrotasks();
       if (saved is Saved) {
         committed[id] = strategy;
-        final after = _present();
-        final gone = before.difference(after);
-        if (gone.isNotEmpty) {
-          if (gone.length == 1 &&
+        for (final other in strategies) {
+          final after = _presentIn(other);
+          final gone = before[other]!.difference(after);
+          if (gone.isEmpty) continue;
+          if (other == strategy &&
+              gone.length == 1 &&
               gone.single == lastEntry &&
               after.contains(id)) {
             folded.add(gone.single);
           } else {
-            broken.add('committing $id took $gone out of the queue');
+            broken.add('committing $id to $strategy took $gone out of the '
+                'queue of $other');
           }
         }
       }
@@ -351,12 +364,10 @@ final class Model {
         );
       case _:
         final answer = Completer<StoreBatchOutcome>();
+        final delay = Duration(seconds: random.nextInt(90));
         server.answerNext(strategy, (call) {
           final outcome = server.applyAll(call);
-          Timer(
-            Duration(seconds: random.nextInt(90)),
-            () => answer.complete(outcome),
-          );
+          Timer(delay, () => answer.complete(outcome));
           return answer.future;
         });
     }
@@ -376,7 +387,7 @@ final class Model {
       world.connection = connection;
       log.add('connection $connection while a write is held');
     } else {
-      account = account == servedAccount ? otherAccount : servedAccount;
+      _signedInAs(account == servedAccount ? otherAccount : servedAccount);
       world.account = account;
       log.add('account ${account?.subject} while a write is held');
     }
@@ -540,7 +551,7 @@ final class Model {
       case 5:
         remember();
         final options = [servedAccount, otherAccount, null];
-        account = options[random.nextInt(3)];
+        _signedInAs(options[random.nextInt(3)]);
         signIns++;
         world
           ..account = account
@@ -677,7 +688,7 @@ final class Model {
     world.lease
       ..refusedAreas.clear()
       ..refuseNext = 0;
-    account = servedAccount;
+    _signedInAs(servedAccount);
     connection ??= nextConnection++;
     world
       ..account = account
@@ -714,6 +725,12 @@ final class Model {
     }
     for (final strategy in strategies) {
       final cloud = world.cloud(strategy);
+      expect(
+        [for (final work in cloud.queue.landed) work.op.opId],
+        isEmpty,
+        reason: 'results that show the server\'s copy did not clear the '
+            'landed work of $strategy\n$trail',
+      );
       for (final entry in cloud.queue.entries) {
         expect(
           _needsUser(cloud, entry.id),
@@ -757,19 +774,24 @@ final class Model {
     );
   }
 
-  ({Set<(String, String)> applied, Set<String> queued}) get outcome => (
+  Outcome get outcome => (
         applied: server.appliedTimes.keys.toSet(),
         queued: {
           for (final strategy in strategies)
             for (final entry in world.cloud(strategy).queue.entries) entry.id,
         },
+        landed: {
+          for (final strategy in strategies)
+            for (final work in world.cloud(strategy).queue.landed) work.op.opId,
+        },
       );
 
   bool _settledOrNeedsYou() => strategies.every((strategy) {
         final cloud = world.cloud(strategy);
-        return cloud.queue.entries.every(
-          (entry) => _needsUser(cloud, entry.id),
-        );
+        return cloud.queue.landed.isEmpty &&
+            cloud.queue.entries.every(
+              (entry) => _needsUser(cloud, entry.id),
+            );
       });
 
   bool _needsUser(CloudStrategy cloud, String id, [int depth = 0]) {
@@ -786,7 +808,11 @@ final class Model {
   String get trail => log.skip(max(0, log.length - 40)).join(' | ');
 }
 
-typedef Outcome = ({Set<(String, String)> applied, Set<String> queued});
+typedef Outcome = ({
+  Set<(String, String)> applied,
+  Set<String> queued,
+  Set<String> landed,
+});
 
 Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
   Outcome? ended;
@@ -855,7 +881,9 @@ void main() {
         if (kept.applied.length != dropped.applied.length ||
             !kept.applied.containsAll(dropped.applied) ||
             kept.queued.length != dropped.queued.length ||
-            !kept.queued.containsAll(dropped.queued)) {
+            !kept.queued.containsAll(dropped.queued) ||
+            kept.landed.length != dropped.landed.length ||
+            !kept.landed.containsAll(dropped.landed)) {
           found.add('seed $seed ends differently: kept $kept, dropped '
               '$dropped');
         }

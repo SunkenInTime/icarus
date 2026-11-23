@@ -50,7 +50,12 @@ final class SignInHold extends RunHold {
   String toString() => 'waiting for the sign-in to change from count $from';
 }
 
-typedef Bound = ({int connection, Account account, int number});
+typedef Bound = ({
+  int connection,
+  Account account,
+  int signOuts,
+  int number,
+});
 
 sealed class _Step {
   const _Step();
@@ -111,7 +116,12 @@ final class CloudSender implements ResultIntake {
     required StoreBatchSend send,
     required this.build,
     required this.clientId,
-    Snapshot inputs = (account: null, connection: null, signIns: 0),
+    Snapshot inputs = (
+      account: null,
+      connection: null,
+      signIns: 0,
+      signOuts: 0,
+    ),
     SenderTiming timing = const SenderTiming(),
     DateTime Function()? clock,
     bool Function()? recordsConnectionLost,
@@ -158,7 +168,7 @@ final class CloudSender implements ResultIntake {
   Completer<void>? _waiting;
   Timer? _due;
   final _last = <String, String>{};
-  final _views = StreamController<SenderView>.broadcast(sync: true);
+  final _views = StreamController<SenderView>.broadcast();
   SenderView _view = (run: 'starting', strategies: const {});
   Future<void>? _running;
 
@@ -277,7 +287,13 @@ final class CloudSender implements ResultIntake {
     while (_results.isNotEmpty &&
         (before == null || _results.first.number < before)) {
       final (number: _, :result, :answer) = _results.removeFirst();
-      final outcome = await _takeResult(result);
+      ResultOutcome outcome;
+      try {
+        outcome = await _takeResult(result);
+      } catch (error) {
+        _end('the store threw while a result was recorded: $error');
+        outcome = ResultNotRecorded(ended!);
+      }
       if (!answer.isCompleted) answer.complete(outcome);
       if (disposed || ended != null) return false;
     }
@@ -433,11 +449,15 @@ final class CloudSender implements ResultIntake {
           if (session == null) {
             return const ResultNotRecorded('its session could not be read');
           }
-          bound[id] =
-              (connection: connection, account: account, number: session);
-          _store.reports
-            ..add(SessionOpenedFor(id, session, stamp))
-            ..add(
+          bound[id] = (
+            connection: connection,
+            account: account,
+            signOuts: stamp.signOuts,
+            number: session,
+          );
+          _store
+            ..report(SessionOpenedFor(id, session, stamp))
+            ..report(
               ResultWritten(
                 id,
                 session,
@@ -479,7 +499,7 @@ final class CloudSender implements ResultIntake {
         return ResultStale(notApplied.join('; '));
       case WrittenWith():
         _checkedClean.remove(id);
-        _store.reports.add(
+        _store.report(
           ResultWritten(
             id,
             number,
@@ -502,8 +522,15 @@ final class CloudSender implements ResultIntake {
     final last = bound[id];
     if (last != null &&
         last.connection == connection &&
-        last.account == account) {
+        last.account == account &&
+        last.signOuts == snap.signOuts) {
       return _Open(last.number, opened: false);
+    }
+    if (snap != _inputs) {
+      return const _Stale(
+        'the connection, the account or the sign-in changed before the '
+        'session was opened',
+      );
     }
     final events = [
       if (!restarted.contains(id)) AppRestarted(build: build),
@@ -527,8 +554,13 @@ final class CloudSender implements ResultIntake {
             NotWrittenNow('the session was written but not read back'),
           );
         }
-        bound[id] = (connection: connection, account: account, number: session);
-        _store.reports.add(SessionOpenedFor(id, session, snap));
+        bound[id] = (
+          connection: connection,
+          account: account,
+          signOuts: snap.signOuts,
+          number: session,
+        );
+        _store.report(SessionOpenedFor(id, session, snap));
         return _Open(session, opened: true);
     }
   }
@@ -606,6 +638,9 @@ final class CloudSender implements ResultIntake {
         return _Skipped(retryAt);
       case final Picked found:
         picked = found;
+    }
+    if (_settledAt(id) case final at? when at.isAfter(_clock())) {
+      return _Skipped(at);
     }
     final ClaimedBatch batch;
     switch (await _store.claim(owner, id, picked, _clock())) {

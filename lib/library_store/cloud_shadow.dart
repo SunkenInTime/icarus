@@ -184,7 +184,6 @@ String _idOf(Row row) => switch (row) {
 
 final class _Strategy {
   bool inStore = false;
-  bool listHanded = false;
   bool listRecorded = false;
   var handed = 0;
   int? bound;
@@ -347,9 +346,8 @@ final class CloudShadow {
           connection: connection!,
         );
         final state = _of(entry.strategyId);
-        if (state.inStore ||
-            state.listHanded ||
-            _storeHolds(entry.strategyId)) {
+        if (state.beforeList.isEmpty &&
+            (state.inStore || _storeHolds(entry.strategyId))) {
           _hand(handing);
         } else {
           state.beforeList.add(handing);
@@ -370,7 +368,6 @@ final class CloudShadow {
     if (stamp == null) return;
     switch (pageListRead(list)) {
       case RowsRead(:final value):
-        _of(entry.strategyId).listHanded = true;
         _hand((
           entry: entry,
           result: ListResultForStore(entry.strategyId, stamp, value),
@@ -553,6 +550,7 @@ final class CloudShadow {
     int number,
     ResultOutcome outcome,
   ) async {
+    if (stopped != null) return;
     final (:entry, :result, :connection) = handing;
     final state = _of(entry.strategyId);
     switch (outcome) {

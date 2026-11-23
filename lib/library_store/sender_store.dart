@@ -167,7 +167,7 @@ final class SessionOpenedFor extends SenderReport {
   const SessionOpenedFor(super.strategyId, this.session, this.stamp);
 
   final int session;
-  final ({Account? account, int? connection, int signIns}) stamp;
+  final Snapshot stamp;
 }
 
 final class ResultWritten extends SenderReport {
@@ -181,8 +181,8 @@ final class ResultWritten extends SenderReport {
 
   final int session;
   final ResultForStore result;
-  final ({Account? account, int? connection, int signIns}) stamp;
-  final ({Account? account, int? connection, int signIns}) inputsWhenWritten;
+  final Snapshot stamp;
+  final Snapshot inputsWhenWritten;
 }
 
 final class EventNotApplied extends SenderReport {
@@ -200,10 +200,22 @@ final class WriteNotMade extends SenderReport {
 const _mostOpsInABatch = 40;
 
 base class SenderStore {
-  SenderStore(this.store);
+  SenderStore(this.store, {this.keepsAllReports = false});
+
+  static const reportsKept = 1000;
 
   final LibraryStore store;
+  final bool keepsAllReports;
   final reports = <SenderReport>[];
+  var reportsDropped = 0;
+
+  void report(SenderReport report) {
+    reports.add(report);
+    if (!keepsAllReports && reports.length > reportsKept) {
+      reports.removeAt(0);
+      reportsDropped++;
+    }
+  }
 
   StoreShut? get shut {
     if (store.library case LibraryShut(:final failure)) {
@@ -268,12 +280,12 @@ base class SenderStore {
               effects.addAll(applied);
             case ReportNotApplicable(:final why):
               notApplied.add('$why');
-              reports.add(EventNotApplied(strategyId, '$why'));
+              report(EventNotApplied(strategyId, '$why'));
             case EditsGoThroughCommit():
               notApplied.add('an edit goes through commit');
           }
         }
-        reports.add(
+        report(
           EventsWritten(strategyId, events, batch: batch, effects: effects),
         );
         return WrittenWith(
@@ -303,7 +315,7 @@ base class SenderStore {
   }
 
   WriteTroubled _troubled(String strategyId, StoreTrouble trouble) {
-    reports.add(WriteNotMade(strategyId, trouble));
+    report(WriteNotMade(strategyId, trouble));
     return WriteTroubled(shut ?? trouble);
   }
 

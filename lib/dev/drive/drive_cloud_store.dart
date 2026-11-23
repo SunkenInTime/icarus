@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart'
@@ -500,10 +501,14 @@ final class CloudStoreLog {
     final shadow = state.shadow;
     _watchSender(c);
     final sender = _sending(c);
-    final senderReports = sender == null
-        ? const <SenderReport>[]
-        : sender.store.reports.sublist(_senderReportsRead);
-    _senderReportsRead += senderReports.length;
+    final senderReports = <SenderReport>[];
+    if (sender != null) {
+      final SenderStore(:reports, :reportsDropped) = sender.store;
+      senderReports.addAll(
+        reports.skip(max(0, _senderReportsRead - reportsDropped)),
+      );
+      _senderReportsRead = reportsDropped + reports.length;
+    }
     final senderLines = [
       ..._senderLines,
       for (final report in senderReports)

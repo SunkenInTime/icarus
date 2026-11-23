@@ -1564,8 +1564,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       final signingOut = c.read(guardedSignOutRequestProvider)(
         appNavigatorKey.currentContext!,
       );
-      await _waitFor(() => _countOf((w) => _isText(w, 'Sign out?')) > 0, 30);
-      await _tap(_centerOf((w) => _isText(w, 'Sign Out')));
+      bool confirm(Widget w) => _hasKey(w, 'sign-out-confirm');
+      await _waitFor(() => _countOf(confirm) > 0, 30);
+      await _tap(_centerOf(confirm));
       if (!await signingOut) throw StateError('the sign-out was not done');
       await _waitFor(() => c.read(authProvider).user == null, 60);
     case 'signIn':
