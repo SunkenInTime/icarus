@@ -22,6 +22,8 @@ import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus_library/icarus_library.dart' hide ElementDeleteOp;
+import 'package:icarus_library/icarus_library.dart' as queue
+    show ElementDeleteOp;
 import 'package:uuid/uuid.dart';
 
 CloudShadow _running(ProviderContainer c) {
@@ -244,6 +246,93 @@ Future<String> storeMove(
     }
   }
   throw StateError('the store holds no item $itemId');
+}
+
+Future<(String, LiveElement)> _storedElement(
+  LibraryStore store,
+  String itemId,
+) async {
+  for (final strategyId in _storedCloudStrategies(store)) {
+    final read = await store.readStrategy(strategyId);
+    if (read is! Found<StrategyContent>) continue;
+    for (final page in read.value.pages) {
+      final content = await store.readPage(strategyId, page.publicId);
+      if (content is! Found<PageContent>) continue;
+      for (final element in content.value.elements) {
+        if (element case final LiveElement live when live.publicId == itemId) {
+          return (strategyId, live);
+        }
+      }
+    }
+  }
+  throw StateError('the store holds no item $itemId');
+}
+
+Future<String> storeDelete(ProviderContainer c, String itemId) async {
+  final store = _storeOf(c);
+  final (strategyId, element) = await _storedElement(store, itemId);
+  final op = queue.ElementDeleteOp(
+    opId: const Uuid().v4(),
+    elementPublicId: element.publicId,
+    pagePublicId: element.pagePublicId,
+    expectedElementRevision: element.revision,
+  );
+  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  if (saved is! Saved) throw StateError('the store did not take it: $saved');
+  return 'CLOUDSTORE committed ${op.opId}: delete $itemId of $strategyId over '
+      'revision ${element.revision}';
+}
+
+Future<String> storeSetField(
+  ProviderContainer c,
+  String itemId,
+  String field,
+  Object? value,
+) async {
+  final store = _storeOf(c);
+  final (strategyId, element) = await _storedElement(store, itemId);
+  final payload = element.payload;
+  final op = ElementPatchOp(
+    opId: const Uuid().v4(),
+    elementPublicId: element.publicId,
+    expectedElementRevision: element.revision,
+    payload: ElementPayload(
+      kind: payload.kind,
+      payloadVersion: payload.payloadVersion,
+      data: {...payload.data.toJson(), field: value},
+      unknownFields: payload.unknownFields.toJson(),
+    ),
+    merge: FieldMerge(fields: [field]),
+  );
+  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  if (saved is! Saved) throw StateError('the store did not take it: $saved');
+  return 'CLOUDSTORE committed ${op.opId}: $field of $itemId of $strategyId '
+      'set to $value as a field merge over revision ${element.revision}';
+}
+
+Future<String> waitStoreRefusedLate(
+    ProviderContainer c, Duration within) async {
+  final store = _storeOf(c);
+  final until = DateTime.now().add(within);
+  while (true) {
+    for (final (strategyId, cloud) in await _cloudQueues(store)) {
+      for (final attempt in cloud.queue.attempts.values) {
+        if (attempt.outcome
+            case AttemptRefusedWhole(refusal: BatchRefusal.uncheckedTooLate)) {
+          return 'CLOUDSTORE attempt ${attempt.number} of $strategyId was '
+              'refused as arriving too late for its basis: '
+              '${attempt.opIds.join(', ')}';
+        }
+      }
+    }
+    if (DateTime.now().isAfter(until)) {
+      throw StateError(
+        'no attempt was refused as late within ${within.inSeconds} s; sender '
+        '${_senderWords(c)}',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
 }
 
 Future<String> storeDeletePage(ProviderContainer c, int index) async {
@@ -1391,6 +1480,23 @@ CloudStoreLine? _senderReportLine(SenderReport report) => switch (report) {
           'CLOUDSTORE read $read of $strategyId as its account ($why)',
           problem: false,
         ),
+      BatchSentAs(:final strategyId, :final batch) => CloudStoreLine(
+          'CLOUDSTORE sending attempt ${batch.attempt} of $strategyId in '
+          'session ${batch.session}: '
+          '${switch (batch.unchecked) {
+            [] => 'every op checked',
+            final live =>
+              'unchecked ${live.join(', ')} on basis ${batch.basis}',
+          }}'
+          '${batch.ops.length > batch.unchecked.length && batch.unchecked.isNotEmpty ? ', the rest checked' : ''}',
+          problem: false,
+        ),
+      UncheckedWithoutBasis(:final strategyId, :final batch) => CloudStoreLine(
+          'CLOUDSTORE attempt ${batch.attempt} of $strategyId went out with '
+          'unchecked ops ${batch.unchecked.join(', ')} and no basis, and the '
+          'server refused it for that: the queue must never send this',
+          problem: true,
+        ),
       WriteNotMade(:final strategyId, :final trouble) => CloudStoreLine(
           'CLOUDSTORE a write for $strategyId was not made '
           '(${trouble.runtimeType}): ${trouble.why}',
@@ -1433,6 +1539,8 @@ String _eventWords(QueueEvent event) => switch (event) {
       ClaimReleased(:final attempt) => 'attempt $attempt given back unsent',
       UserUsedCloud(:final opId) =>
         'the user took the cloud\'s version of $opId',
+      ServerTimeHeld(:final serverTime, :final session) =>
+        'server time $serverTime held for session $session',
       _ => '${event.runtimeType}',
     };
 

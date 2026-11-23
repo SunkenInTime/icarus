@@ -11,6 +11,8 @@ final class ClaimedBatch {
     required this.attempt,
     required this.clientId,
     required List<StrategyOp> ops,
+    required this.session,
+    this.basis,
   }) : ops = List.unmodifiable(ops);
 
   final String strategyId;
@@ -18,6 +20,13 @@ final class ClaimedBatch {
   final int attempt;
   final String clientId;
   final List<StrategyOp> ops;
+  final int session;
+  final int? basis;
+
+  List<String> get unchecked => [
+        for (final op in ops)
+          if (isUncheckedSend(op)) op.opId,
+      ];
 
   @override
   String toString() =>
@@ -188,6 +197,18 @@ final class EventNotApplied extends SenderReport {
   const EventNotApplied(super.strategyId, this.why);
 
   final String why;
+}
+
+final class BatchSentAs extends SenderReport {
+  const BatchSentAs(super.strategyId, this.batch);
+
+  final ClaimedBatch batch;
+}
+
+final class UncheckedWithoutBasis extends SenderReport {
+  const UncheckedWithoutBasis(super.strategyId, this.batch);
+
+  final ClaimedBatch batch;
 }
 
 final class WriteNotMade extends SenderReport {
@@ -384,16 +405,28 @@ base class SenderStore {
     Account owner,
     String strategyId,
     Picked picked,
-    DateTime at,
-  ) async {
+    DateTime at, {
+    required Duration elapsed,
+    required int session,
+  }) async {
     final events = [
-      BatchClaimed(clientId: picked.clientId, opIds: picked.ids, at: at),
+      BatchClaimed(
+        clientId: picked.clientId,
+        opIds: picked.ids,
+        at: at,
+        elapsed: elapsed,
+      ),
     ];
     switch (await write(owner, strategyId, events)) {
       case WrittenWith(:final effects, :final notApplied):
         for (final effect in effects) {
           if (effect
-              case SendBatch(:final attempt, :final clientId, :final ops)) {
+              case SendBatch(
+                :final attempt,
+                :final clientId,
+                :final ops,
+                :final basis,
+              )) {
             return Claimed(
               ClaimedBatch(
                 strategyId: strategyId,
@@ -401,6 +434,8 @@ base class SenderStore {
                 attempt: attempt,
                 clientId: clientId,
                 ops: ops,
+                session: session,
+                basis: basis,
               ),
             );
           }

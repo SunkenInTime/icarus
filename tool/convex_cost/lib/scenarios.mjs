@@ -124,8 +124,13 @@ export class Device {
     return unsubscribe;
   }
 
-  async applyBatch(strategyPublicId, clientId, ops, { includeWasApplied, readsAccountMismatch } = {}) {
-    const { results } = await this.mutation("ops:applyBatch", {
+  async applyBatch(
+    strategyPublicId,
+    clientId,
+    ops,
+    { includeWasApplied, readsAccountMismatch, sendsLiveBasis, liveBasis } = {},
+  ) {
+    const { results, serverTime } = await this.mutation("ops:applyBatch", {
       strategyPublicId,
       clientId,
       ops,
@@ -135,7 +140,13 @@ export class Device {
       elementFieldLevel: ELEMENT_FIELD_LEVEL,
       includeWasApplied,
       readsAccountMismatch,
+      sendsLiveBasis,
+      liveBasis,
     });
+    if (serverTime !== undefined) {
+      this.serverTime = serverTime;
+      this.serverTimeAt = performance.now();
+    }
     const refused = results.filter((result) => result.status !== "applied");
     if (refused.length > 0) throw new Error(`applyBatch refused ops: ${JSON.stringify(refused[0])}`);
     return results;
@@ -509,12 +520,14 @@ async function runSeeded({ env, projectDir, names, scenarios, worlds }) {
     );
     result.seconds = (Date.now() - at) / 1000;
     // A cheap flow that failed is not a pass.
+    const expected = result.expectedFailures ?? {};
     result.problems = [
       ...(result.problems ?? []),
       ...env.devices.flatMap((device) => device.errors),
-      ...[...result.summary.byFunction]
-        .filter(([, row]) => row.failures > 0)
-        .map(([fn, row]) => `${fn} failed ${row.failures} time(s)`),
+      ...[...new Set([...result.summary.byFunction.keys(), ...Object.keys(expected)])]
+        .map((fn) => [fn, result.summary.byFunction.get(fn)?.failures ?? 0, expected[fn] ?? 0])
+        .filter(([, failures, wanted]) => failures !== wanted)
+        .map(([fn, failures, wanted]) => `${fn} failed ${failures} time(s), expected ${wanted}`),
     ];
     results[name] = result;
   }

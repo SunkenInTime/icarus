@@ -239,11 +239,25 @@ async function sendLive(device, strategyPublicId, clientId, op) {
 
 const STORE_SENDER_WAIT_MS = 180;
 
-async function sendFromStore(device, strategyPublicId, clientId, op) {
+const LIVE_FOR_MS = 20000;
+
+function storeForm(device, op, row) {
+  const fresh = device.serverTime !== undefined && performance.now() - device.serverTimeAt <= LIVE_FOR_MS;
+  if (fresh) return { op, liveBasis: device.serverTime };
+  const base = op.merge.fields.map((field) =>
+    field in row.payload.data ? { field, value: row.payload.data[field] } : { field },
+  );
+  return { op: { ...op, merge: { ...op.merge, base } }, liveBasis: undefined };
+}
+
+async function sendFromStore(device, strategyPublicId, clientId, op, row) {
   await new Promise((resolve) => setTimeout(resolve, STORE_SENDER_WAIT_MS));
-  const [result] = await device.applyBatch(strategyPublicId, clientId, [op], {
+  const { op: sent, liveBasis } = storeForm(device, op, row);
+  const [result] = await device.applyBatch(strategyPublicId, clientId, [sent], {
     includeWasApplied: true,
     readsAccountMismatch: true,
+    sendsLiveBasis: true,
+    liveBasis,
   });
   return result.appliedRevision;
 }
@@ -255,6 +269,8 @@ const namedPageList = (device, strategyPublicId) =>
   device.query("strategy:getPageList", { strategyPublicId, accountSubject: COACH.subject });
 
 const STORE_BURSTS = 5;
+
+const LIVE_BASIS_EDITS = 10;
 
 function withSenderCounts(result) {
   result.metrics.applyBatchCalls = result.summary.byFunction.get("ops:applyBatch")?.runs ?? 0;
@@ -616,7 +632,8 @@ async function soloSession({ env, world, rng }, send) {
   const clientId = rng.uuid();
   const result = await metered([coach], env, async () => {
     for (const id of order) {
-      await send(coach, world.session.publicId, clientId, liveMove(editor.page.row(id), rng));
+      const row = editor.page.row(id);
+      await send(coach, world.session.publicId, clientId, liveMove(row, rng), row);
       await editor.page.settle();
     }
   });
@@ -637,7 +654,7 @@ async function twoPeople({ env, world, rng }, send) {
   const clientId = rng.uuid();
   const result = await metered([coach, teammate], env, async () => {
     for (const row of rows.slice(0, PEER_EDITS)) {
-      const revision = await send(coach, session.publicId, clientId, liveMove(row, rng));
+      const revision = await send(coach, session.publicId, clientId, liveMove(row, rng), row);
       await peer.page.waitFor((elements) => elements.some((seen) => seen.publicId === row.publicId && seen.revision >= revision));
       await peer.page.settle();
     }
@@ -883,13 +900,55 @@ export const SESSIONS = {
       const result = await metered([coach], env, async () => {
         for (let burst = 0; burst < STORE_BURSTS; burst++) {
           for (const row of rows.slice(burst * perBurst, (burst + 1) * perBurst)) {
-            await sendFromStore(coach, session.publicId, clientId, liveMove(row, rng));
+            await sendFromStore(coach, session.publicId, clientId, liveMove(row, rng), row);
           }
           if (burst === 0 || burst === STORE_BURSTS - 1) {
             await namedPage(coach, session.publicId, session.pages[0]);
           }
         }
       });
+      return withSenderCounts(result);
+    },
+  },
+
+  storeLiveBasis: {
+    title: "The store's sender inside and outside the server's window",
+    about:
+      "Ten moves on one page sent by the store's sender, opted in to the server's window for unchecked changes. The " +
+      "first, after a quiet start, goes checked with its fields' values as the base; the next nine go unchecked, each " +
+      "carrying the server time from the answer before it. Then one move whose call is held past the window: the " +
+      "server refuses it whole (UNCHECKED_OUTSIDE_WINDOW) before reading the strategy, and the sender sends it again " +
+      "checked under the same op id.",
+    world: "team",
+    async run({ env, world, rng }) {
+      const coach = world.coach;
+      const session = world.session;
+      const rows = (await coach.query("page:getSnapshot", wholePageArgs(session.publicId, session.pages[0]))).elements;
+      const clientId = rng.uuid();
+      coach.serverTime = undefined;
+      const result = await metered([coach], env, async () => {
+        for (const row of rows.slice(0, LIVE_BASIS_EDITS)) {
+          await sendFromStore(coach, session.publicId, clientId, liveMove(row, rng), row);
+        }
+        const row = rows[LIVE_BASIS_EDITS];
+        const held = liveMove(row, rng);
+        let refused = false;
+        try {
+          await coach.applyBatch(session.publicId, clientId, [held], {
+            includeWasApplied: true,
+            readsAccountMismatch: true,
+            sendsLiveBasis: true,
+            liveBasis: coach.serverTime - 31000,
+          });
+        } catch (error) {
+          if (!String(error).includes("UNCHECKED_OUTSIDE_WINDOW")) throw error;
+          refused = true;
+        }
+        if (!refused) throw new Error("a batch held past the window was not refused");
+        coach.serverTime = undefined;
+        await sendFromStore(coach, session.publicId, clientId, held, row);
+      });
+      result.expectedFailures = { "ops:applyBatch": 1 };
       return withSenderCounts(result);
     },
   },

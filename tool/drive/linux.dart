@@ -15,7 +15,7 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
       [--hive-store DIR] [--library-store off|shadow|mirror|read|ops]
       [--cloud-store shadow|send] [--second-account EMAIL]
-      [--kill-after-seconds S]
+      [--kill-after-seconds S] [--main-scope UNIT]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
         --convex it talks to the dev deployment; production is refused.
@@ -47,6 +47,9 @@ run     Runs --script, and --companion beside it when given, against the
         pass; an app that finished first is judged as usual. Start the next
         run with --hive-store <this run's out>/store-main to see what it
         left.
+        --main-scope starts the main instance in a systemd user scope of
+        that name, apart from the companion, so a harness can cut its
+        network alone (tool/drive/linux-cloud-store-late.sh).
 
 run exits 0 when every instance finished its script with SUMMARY ... CLEAN
 and quit before the timeout (default 900 s), 1 when anything else happened,
@@ -194,6 +197,7 @@ Future<void> main(List<String> args) async {
           'cloud-store',
           'second-account',
           'kill-after-seconds',
+          'main-scope',
         })));
       default:
         throw UsageError('no command called "${args.first}"; see --help');
@@ -429,6 +433,7 @@ Future<int> _run(Map<String, String> options) async {
           if (libraryStore != null) '--library-store=$libraryStore',
           if (cloudStore != null) '--cloud-store=$cloudStore',
         ],
+        scope: instance.name == 'main' ? options['main-scope'] : null,
       );
     }
     if (killAfter != null) {
@@ -562,14 +567,23 @@ Future<void> _start(
   String run,
   String display,
   Map<String, String> passwords,
-  List<String> appArgs,
-) async {
+  List<String> appArgs, {
+  String? scope,
+}) async {
   final name = instance.name;
   final home = '$out/home-$name';
   final email = instance.email;
-  final process = await Process.start(
+  final command = [
     'setsid',
-    [exe, '--hive-store-dir=$out/store-$name', ...appArgs],
+    exe,
+    '--hive-store-dir=$out/store-$name',
+    ...appArgs
+  ];
+  final process = await Process.start(
+    scope == null ? command.first : 'systemd-run',
+    scope == null
+        ? command.skip(1).toList()
+        : ['--user', '--scope', '--quiet', '--unit=$scope', ...command],
     workingDirectory: out,
     environment: {
       'DISPLAY': display,

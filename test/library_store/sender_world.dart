@@ -21,15 +21,43 @@ final otherAccount = Account('account-b');
 const timing = SenderTiming();
 
 final class ServerCall {
-  ServerCall(this.strategyId, this.clientId, this.account, this.ops);
+  ServerCall(
+    this.strategyId,
+    this.clientId,
+    this.account,
+    this.ops, [
+    this.serverTime = const ServerTimeNotAsked(),
+  ]);
 
   final String strategyId;
   final String clientId;
   final Account account;
   final List<StrategyOp> ops;
+  final ServerTimeAsk serverTime;
+
+  int? get basis => switch (serverTime) {
+        ServerTimeAsked(:final basis) => basis,
+        ServerTimeNotAsked() => null,
+      };
+
+  List<String> get unchecked => [
+        for (final op in ops)
+          if (uncheckedOnTheWire(op)) op.opId,
+      ];
 
   List<String> get opIds => [for (final op in ops) op.opId];
 }
+
+bool uncheckedOnTheWire(StrategyOp op) => switch (op.toJson()) {
+      {
+        'type': 'element.patch' || 'lineup.patch',
+        'merge': final Map<String, Object?> merge,
+      } =>
+        !merge.containsKey('base'),
+      {'type': 'element.delete' || 'lineup.delete', 'lastWriterWins': true} =>
+        true,
+      _ => false,
+    };
 
 final class ReadCall {
   ReadCall(this.strategyId, this.page, this.account);
@@ -160,13 +188,35 @@ final class FakeServer {
     return answer;
   }
 
-  StoreBatchOutcome applyAll(ServerCall call) => StoreBatchAnswered(
-        [
-          for (final op in call.ops)
-            _applyOne(call.strategyId, call.clientId, op),
-        ],
-        complete: true,
-      );
+  int get serverNow =>
+      (clock?.call() ?? DateTime.now()).millisecondsSinceEpoch + skew;
+
+  var skew = 0;
+
+  StoreBatchOutcome applyAll(ServerCall call) {
+    final now = serverNow;
+    final asked = call.serverTime is ServerTimeAsked;
+    switch (call.basis) {
+      case null when asked && call.unchecked.isNotEmpty:
+        return const StoreBatchOutsideWindow(
+          'An unchecked change needs a live basis',
+        );
+      case final basis? when basis > now || now - basis > 30000:
+        return const StoreBatchOutsideWindow(
+          'The batch arrived too long after its live basis',
+        );
+      case _:
+        break;
+    }
+    return StoreBatchAnswered(
+      [
+        for (final op in call.ops)
+          _applyOne(call.strategyId, call.clientId, op),
+      ],
+      complete: true,
+      serverTime: asked ? now : null,
+    );
+  }
 
   OpAnswer teammate(String strategyId, StrategyOp op) =>
       _applyOne(strategyId, 'teammate', op);
@@ -178,7 +228,13 @@ final class FakeServer {
     required Account account,
     required ServerTimeAsk serverTime,
   }) {
-    final call = ServerCall(strategyPublicId, clientId, account, ops);
+    final call = ServerCall(
+      strategyPublicId,
+      clientId,
+      account,
+      ops,
+      serverTime,
+    );
     calls.add(call);
     onCall?.call(call);
     if (owners[strategyPublicId] case final owner? when owner != account) {
@@ -357,6 +413,10 @@ final class _Flag {
   var value = false;
 }
 
+final class _Slept {
+  var value = Duration.zero;
+}
+
 final class SlowSenderStore extends SenderStore {
   SlowSenderStore(super.store) : super(keepsAllReports: true);
 
@@ -424,6 +484,13 @@ final class World {
   final FakeServer server;
   final CloudSender sender;
   late _Flag dropsConnectionLost;
+  late _Slept _slept;
+
+  void sleep(Duration time) {
+    _slept.value += time;
+    async.elapse(time);
+  }
+
   late Account? _account;
   late int? _connection;
   late int _authChanges;
@@ -486,6 +553,7 @@ final class World {
     final inputs = startingWith ??
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
     final dropsConnectionLost = _Flag();
+    final slept = _Slept();
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
     LibraryStore? store;
     LibraryStore.open(
@@ -514,11 +582,13 @@ final class World {
       inputs: inputs,
       timing: timing,
       clock: () => start.add(async.elapsed),
+      elapsed: () => async.elapsed - slept.value,
       recordsConnectionLost: () => !dropsConnectionLost.value,
     );
     fake.whyNow = () => sender.reading;
     final world = World._(async, engine, store!, fake, sender)
       ..dropsConnectionLost = dropsConnectionLost
+      .._slept = slept
       .._account = inputs.account
       .._connection = inputs.connection
       .._authChanges = inputs.signIns

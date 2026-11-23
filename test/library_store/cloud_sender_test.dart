@@ -1817,6 +1817,132 @@ void main() {
     });
   });
 
+  group('the server\'s window for unchecked sends', () {
+    List<ServerCall> callsOf(World world, String opId) => [
+          for (final call in world.server.calls)
+            if (call.opIds.contains(opId)) call,
+        ];
+
+    test(
+        'the first edit after a quiet start goes checked; the next, within '
+        '20 s of an answer, goes unchecked on that answer\'s server time', () {
+      inWorld((world) {
+        final before = world.server.serverNow;
+        world.commitMerge(1);
+        world.settle();
+        final [first] = callsOf(world, 'merge-1');
+        expect(first.serverTime, isA<ServerTimeAsked>());
+        expect(first.unchecked, isEmpty);
+        expect(first.basis, isNull);
+        final answeredAt = world.server.serverNow;
+        world.async.elapse(const Duration(seconds: 5));
+        world.commitMerge(2);
+        world.settle();
+        final [second] = callsOf(world, 'merge-2');
+        expect(second.unchecked, ['merge-2']);
+        expect(second.basis, inInclusiveRange(before, answeredAt));
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
+        'a batch refused as late is sent again at once, checked, under the '
+        'same op id, and a same-field edit right after it goes checked too',
+        () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        world.sleep(const Duration(seconds: 40));
+        var editedDuringTheResend = false;
+        world.server.onCall = (call) {
+          if (call.opIds.contains('merge-2') &&
+              call.unchecked.isEmpty &&
+              !editedDuringTheResend) {
+            editedDuringTheResend = true;
+            world.commitMerge(3);
+          }
+        };
+        world.commitMerge(2);
+        world.settle();
+        expect(editedDuringTheResend, isTrue);
+        final [late, again] = callsOf(world, 'merge-2');
+        expect(late.unchecked, ['merge-2']);
+        expect(again.unchecked, isEmpty);
+        expect(again.basis, isNull);
+        expect(
+          world.written(),
+          contains(
+            isA<BatchRefused>().having(
+              (refused) => refused.refusal,
+              'refusal',
+              BatchRefusal.uncheckedTooLate,
+            ),
+          ),
+        );
+        world.settle();
+        final [third] = callsOf(world, 'merge-3');
+        expect(third.unchecked, isEmpty);
+        expect(world.queueLength(), 0);
+        expect(
+          world.sender.store.reports.whereType<UncheckedWithoutBasis>(),
+          isEmpty,
+        );
+      });
+    });
+
+    test(
+        'a server time answered after the connection changed is not held, '
+        'so the next edit goes checked', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        final answer = Completer<StoreBatchOutcome>();
+        world.server.answerNext(strategyId, (call) {
+          final outcome = world.server.applyAll(call);
+          world.connection = 2;
+          answer.complete(outcome);
+          return answer.future;
+        });
+        world.async.elapse(const Duration(seconds: 1));
+        world.commitMerge(2);
+        world.settle();
+        world.commitMerge(3);
+        world.settle();
+        final [third] = callsOf(world, 'merge-3');
+        expect(third.unchecked, isEmpty);
+      });
+    });
+
+    test('a send in flight at a restart is retried checked', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        server.answerNext(strategyId, (call) {
+          world.sender.dispose();
+          return Completer<StoreBatchOutcome>().future;
+        });
+        world.commitMerge(2);
+        world.settle();
+        expect(callsOf(world, 'merge-2').single.unchecked, ['merge-2']);
+      }, storage: storage, server: server);
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          final [_, retry] = callsOf(world, 'merge-2');
+          expect(retry.unchecked, isEmpty);
+          expect(retry.basis, isNull);
+          expect(world.queueLength(), 0);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+  });
+
   group('through the real provider', () {
     test(
         'disposing the container during a call ends quietly: nothing throws, '
