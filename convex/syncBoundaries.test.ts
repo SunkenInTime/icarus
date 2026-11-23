@@ -39,6 +39,8 @@ const deletePage = makeFunctionReference<"mutation">("pages:delete");
 const reorderPages = makeFunctionReference<"mutation">("pages:reorder");
 const createShare = makeFunctionReference<"mutation">("shares:create");
 const redeemShare = makeFunctionReference<"mutation">("shares:redeem");
+const leaveShare = makeFunctionReference<"mutation">("shares:leave");
+const deleteStrategy = makeFunctionReference<"mutation">("strategies:delete");
 
 const identity = {
   issuer: "https://sync-boundaries.test",
@@ -2155,6 +2157,98 @@ describe("a batch bound to its account", () => {
 
     expect(response.results).toMatchObject([{ status: "applied" }]);
     expect(await elementIds(owner)).toEqual(["owner-element"]);
+  });
+
+  function readingMismatch(accountSubject: string) {
+    return { ...boundBatch(accountSubject), readsAccountMismatch: true };
+  }
+
+  async function refusedCode(promise: Promise<unknown>) {
+    return errorCode(await promise.catch((error: unknown) => error));
+  }
+
+  test("a client that reads the mismatch is told the batch is another account's, and nothing is recorded", async () => {
+    const { t, owner, editor } = await createSharedHarness();
+
+    expect(
+      await refusedCode(
+        editor.mutation(applyBatch, readingMismatch(identity.subject)),
+      ),
+    ).toBe("ACCOUNT_MISMATCH");
+    expect(await elementIds(owner)).toEqual([]);
+    expect(
+      await t.run((ctx) => ctx.db.query("operationEvents").collect()),
+    ).toEqual([]);
+
+    const resent = (await owner.mutation(
+      applyBatch,
+      readingMismatch(identity.subject),
+    )) as { results: Array<Record<string, unknown>> };
+    expect(resent.results).toMatchObject([{ status: "applied" }]);
+  });
+
+  test("for a client that reads the mismatch, FORBIDDEN means its own account may not edit", async () => {
+    const { owner, editor } = await createSharedHarness();
+    await editor.mutation(leaveShare, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      targetType: "strategy",
+      targetPublicId: strategyPublicId,
+    });
+
+    expect(
+      await refusedCode(
+        editor.mutation(applyBatch, readingMismatch(editorIdentity.subject)),
+      ),
+    ).toBe("FORBIDDEN");
+    expect(
+      await refusedCode(
+        editor.mutation(applyBatch, readingMismatch(identity.subject)),
+      ),
+    ).toBe("ACCOUNT_MISMATCH");
+    expect(await elementIds(owner)).toEqual([]);
+  });
+
+  test("for a client that reads the mismatch, NOT_FOUND means the strategy is gone, after the account is checked", async () => {
+    vi.useFakeTimers();
+    const { t, owner, editor } = await createSharedHarness();
+    const revision = await t.run(
+      async (ctx) =>
+        (await ctx.db
+          .query("strategies")
+          .withIndex("by_publicId", (q) => q.eq("publicId", strategyPublicId))
+          .first())!.revision,
+    );
+    await owner.mutation(deleteStrategy, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+      strategyPublicId,
+      expectedRevision: revision,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    vi.useRealTimers();
+
+    expect(
+      await refusedCode(
+        owner.mutation(applyBatch, readingMismatch(identity.subject)),
+      ),
+    ).toBe("NOT_FOUND");
+    expect(
+      await refusedCode(
+        editor.mutation(applyBatch, readingMismatch(identity.subject)),
+      ),
+    ).toBe("ACCOUNT_MISMATCH");
+  });
+
+  test("a client that does not read the mismatch still gets FORBIDDEN under another account", async () => {
+    const { editor } = await createSharedHarness();
+
+    expect(
+      await refusedCode(
+        editor.mutation(applyBatch, {
+          ...boundBatch(identity.subject),
+          readsAccountMismatch: false,
+        }),
+      ),
+    ).toBe("FORBIDDEN");
   });
 });
 

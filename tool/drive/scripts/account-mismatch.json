@@ -1,0 +1,19 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 4},
+  {"newCloudFolder": "Folder {run}"},
+  {"openCloudFolder": "Folder {run}"},
+  {"wait": 3},
+  {"newCloud": "Mismatch {run}", "map": "bind"},
+  {"wait": 4},
+  {"tapText": "Mismatch {run}"},
+  {"wait": 12},
+  {"tapIcon": "x", "optional": true},
+  {"waitSettled": 60},
+  {"expectPageListRefusedNaming": "2ded1e73-7313-4657-82fd-fbc771b45e83"},
+  {"expectBatchRefusedNaming": "2ded1e73-7313-4657-82fd-fbc771b45e83", "readsAccountMismatch": true},
+  {"expectBatchRefusedNaming": "2ded1e73-7313-4657-82fd-fbc771b45e83", "readsAccountMismatch": false},
+  {"exit": 1}
+]

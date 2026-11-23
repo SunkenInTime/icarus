@@ -690,6 +690,21 @@ class ConvexStrategyRepository {
     return result.results.map(_opAck).toList(growable: false);
   }
 
+  Future<void> sendEmptyBatch({
+    required String strategyPublicId,
+    required String accountSubject,
+    required bool readsAccountMismatch,
+  }) async {
+    await _api.ops.applyBatch(
+      strategyPublicId: strategyPublicId,
+      clientId: 'empty-batch',
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      ops: const [],
+      accountSubject: ConvexOptional.present(accountSubject),
+      readsAccountMismatch: ConvexOptional.present(readsAccountMismatch),
+    );
+  }
+
   Future<void> createFolder({
     required String publicId,
     required String name,
@@ -1247,6 +1262,13 @@ bool isShareLinkRevokedError(Object error) {
           error.code == ConvexErrorCode.shareLinkRevoked) ||
       (error is ConvexClientFunctionError &&
           error.rawCode == ConvexErrorCode.shareLinkRevoked.wireName);
+}
+
+bool isAccountMismatchError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.accountMismatch) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode == ConvexErrorCode.accountMismatch.wireName);
 }
 
 bool isTypedConvexForbiddenError(Object error) {

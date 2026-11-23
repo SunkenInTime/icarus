@@ -5,6 +5,7 @@
 import '../transport/convex_transport.dart';
 
 enum ConvexErrorCode {
+  accountMismatch('ACCOUNT_MISMATCH'),
   clientUpgradeRequired('CLIENT_UPGRADE_REQUIRED'),
   conflict('CONFLICT'),
   elementStrategyMismatch('ELEMENT_STRATEGY_MISMATCH'),

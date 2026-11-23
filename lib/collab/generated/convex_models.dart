@@ -7176,6 +7176,7 @@ ConvexObject encodeOpsApplyBatchArgs({
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
   required List<OpsApplyBatchArgsOpsItem> ops,
+  ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
   if (acceptsPictureIds.isPresent)
@@ -7209,6 +7210,8 @@ ConvexObject encodeOpsApplyBatchArgs({
         )
         .toList(growable: false),
   ),
+  if (readsAccountMismatch.isPresent)
+    'readsAccountMismatch': ConvexBoolean(readsAccountMismatch.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 

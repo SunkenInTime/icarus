@@ -89,7 +89,11 @@ function read(
 function refusal(promise: Promise<unknown>) {
   return promise.then(
     () => null,
-    (error: Error) => error.message,
+    (error: Error & { data?: unknown }) => {
+      const data =
+        typeof error.data === "string" ? JSON.parse(error.data) : error.data;
+      return `${data?.code ?? ""} ${error.message}`;
+    },
   );
 }
 
@@ -111,7 +115,7 @@ describe.each(Object.keys(reads) as Read[])("%s naming an account", (name) => {
     expect(await read(editor, name)).not.toBeNull();
     expect(
       await refusal(read(editor, name, { accountSubject: "owner" })),
-    ).toContain("Forbidden: signed in as a different account");
+    ).toContain("ACCOUNT_MISMATCH");
   });
 
   test("is refused when no one is signed in, even through a share link", async () => {
@@ -127,7 +131,7 @@ describe.each(Object.keys(reads) as Read[])("%s naming an account", (name) => {
     const named = { accountSubject: "owner" };
     await read(owner, name, named);
     expect(await refusal(read(editor, name, named))).toContain(
-      "Forbidden: signed in as a different account",
+      "ACCOUNT_MISMATCH",
     );
   });
 
@@ -135,12 +139,12 @@ describe.each(Object.keys(reads) as Read[])("%s naming an account", (name) => {
     const { editor } = await createHarness();
     const missing = { strategyPublicId: "no-such-strategy" };
     expect(await refusal(read(editor, name, missing))).not.toContain(
-      "signed in as a different account",
+      "ACCOUNT_MISMATCH",
     );
     expect(
       await refusal(
         read(editor, name, { ...missing, accountSubject: "owner" }),
       ),
-    ).toContain("Forbidden: signed in as a different account");
+    ).toContain("ACCOUNT_MISMATCH");
   });
 });

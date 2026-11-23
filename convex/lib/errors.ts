@@ -1,6 +1,7 @@
 import { ConvexError } from 'convex/values';
 
 export const errorCodes = [
+  "ACCOUNT_MISMATCH",
   "CLIENT_UPGRADE_REQUIRED",
   "CONFLICT",
   "ELEMENT_STRATEGY_MISMATCH",
