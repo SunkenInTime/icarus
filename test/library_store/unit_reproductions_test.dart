@@ -141,7 +141,9 @@ void main() {
     final settings = container.read(strategySettingsProvider.notifier);
     final now = container.read(strategySettingsProvider);
     final turn = await h.measure(() {
+      ActionProvider.editFollower = null;
       settings.updateNeutralTeamColors(!now.useNeutralTeamColors);
+      ActionProvider.editFollower = h.follower;
       actions().performTransaction(
         groups: const [ActionGroup.strategySettings],
         mutation: () => settings.updateAgentSize(now.agentSize + 4),
@@ -155,8 +157,9 @@ void main() {
   });
 
   test(
-      'the first rename of the open strategy is a change no action reported, '
-      'never an equal save compared with itself', () async {
+      'the first rename of the open strategy is declared and its op lands, '
+      'and with its op dropped it reads ops wrong, never an equal save '
+      'compared with itself', () async {
     final h = await open();
     final id = container.read(strategyProvider).strategyId!;
     final committed = h.tally.opsCommitted;
@@ -164,10 +167,17 @@ void main() {
         .read(strategyProvider.notifier)
         .renameStrategy(id, 'Renamed by the test'));
 
-    expect(renamed.outcomes, {UnitOutcome.changedWithoutAction},
-        reason: '$renamed');
-    expect(renamed.uncovered, ['strategy $id name']);
-    expect(h.tally.opsCommitted, committed);
+    expect(renamed.outcomes, {UnitOutcome.noFinding}, reason: '$renamed');
+    expect(h.tally.opsCommitted, greaterThan(committed));
+
+    h.journal.alterOps =
+        (label, ops) => label == 'strategy name' ? const [] : ops;
+    final dropped = await h.measure(() => container
+        .read(strategyProvider.notifier)
+        .renameStrategy(id, 'Renamed again'));
+
+    expect(dropped.outcomes, {UnitOutcome.opsWrong}, reason: '$dropped');
+    expect(dropped.wrong, ['strategy $id name']);
   });
 
   test(

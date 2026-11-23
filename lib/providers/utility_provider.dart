@@ -10,6 +10,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:uuid/uuid.dart';
+import 'package:icarus/library_store/canvas_changes.dart';
 
 final utilityProvider =
     NotifierProvider<UtilityProvider, List<PlacedUtility>>(UtilityProvider.new);
@@ -106,6 +107,10 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
+    ActionProvider.editFollower?.onEdit(
+      (pageId) => [ObjectRaised(pageId, ActionObjectKind.utility, id)],
+      'raise utility',
+    );
   }
 
   void updateRotation(int index, double rotation, double length) {

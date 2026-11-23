@@ -153,6 +153,10 @@ Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
       page.id: (name: page.name, isAutoNamed: page.isAutoNamed),
   };
   final sides = {for (final page in start.pages) page.id: page.isAttack};
+  var name = start.name;
+  var map = start.mapData;
+  var themeProfileId = start.themeProfileId;
+  var themeOverridePalette = start.themeOverridePalette;
   final order = [
     for (final page in [
       ...start.pages
@@ -284,11 +288,34 @@ Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
         }
       case PageSideSet(:final isAttack):
         if (sides.containsKey(pageId)) sides[pageId] = isAttack;
+      case ObjectRaised(:final id):
+        final list = objects[pageId];
+        if (list == null) continue;
+        final index = list.indexWhere((o) => o.id == id);
+        if (index < 0) continue;
+        list.add(list.removeAt(index));
+      case StrategyFieldsChanged(
+          name: final newName,
+          map: final newMap,
+          :final theme
+        ):
+        if (newName != null) name = newName;
+        if (newMap != null) map = newMap;
+        if (theme != null) {
+          themeProfileId = theme.profileId;
+          themeOverridePalette = theme.overridePalette;
+        }
     }
   }
 
   return Replayed(
     start.copyWith(
+      name: name,
+      mapData: map,
+      themeProfileId: themeProfileId,
+      clearThemeProfileId: themeProfileId == null,
+      themeOverridePalette: themeOverridePalette,
+      clearThemeOverridePalette: themeOverridePalette == null,
       pages: [
         for (final (index, id) in order.indexed)
           pageOf(
@@ -308,7 +335,8 @@ Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
 }
 
 Set<String> pagesNamedBy(List<CanvasChange> changes) => {
-      for (final change in changes) change.pageId,
+      for (final change in changes)
+        if (change is! StrategyFieldsChanged) change.pageId,
     };
 
 StrategyData? inRowTerms(StrategyData strategy) =>

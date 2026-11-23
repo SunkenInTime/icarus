@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
@@ -30,6 +33,8 @@ final class OutcomeCase {
     this.kind,
     this.perform, {
     required this.names,
+    this.dropLabel,
+    this.setup,
     this.turnsWithNoAction = 1,
     this.asIs = _covered,
     this.notJudgedAsIs,
@@ -38,6 +43,8 @@ final class OutcomeCase {
   final String kind;
   final Perform perform;
   final Pattern names;
+  final String? dropLabel;
+  final Perform? setup;
   final int turnsWithNoAction;
   final Set<UnitOutcome> asIs;
   final String? notJudgedAsIs;
@@ -241,6 +248,123 @@ List<OutcomeCase> _objectCases() => [
       }, names: '-p0-text '),
     ];
 
+Perform _raise<T>(
+  List<String> Function(ProviderContainer c) ids,
+  void Function(ProviderContainer c, String id) drag,
+) =>
+    (c) => drag(c, ids(c).first);
+
+List<OutcomeCase> _editsWithoutUndoStepCases() => [
+      OutcomeCase('tag colour text', (c) {
+        c
+            .read(textProvider.notifier)
+            .updateTagColor(_first(c.read(textProvider)).id, 0xFF0EA5E9);
+      }, names: '-p0-text tagColorValue'),
+      OutcomeCase('tag colour image', (c) {
+        c.read(placedImageProvider.notifier).updateTagColor(
+            _first(c.read(placedImageProvider).images).id, 0xFF0EA5E9);
+      }, names: '-p0-image tagColorValue'),
+      OutcomeCase('resize text', (c) {
+        final text = _first(c.read(textProvider));
+        c.read(textProvider.notifier).resize(text.id,
+            size: text.size + 40, position: text.position + const Offset(5, 5));
+      }, names: '-p0-text size'),
+      OutcomeCase('resize image', (c) {
+        final image = _first(c.read(placedImageProvider).images);
+        c.read(placedImageProvider.notifier).resize(image.id,
+            scale: image.scale * 1.5,
+            position: image.position + const Offset(5, 5));
+      }, names: '-p0-image scale'),
+      OutcomeCase('side of the page on screen', (c) async {
+        await c.read(strategyProvider.notifier).switchSide(allPages: false);
+      }, names: RegExp(r'^page \S+-p0 isAttack$')),
+      OutcomeCase('neutral colours of the page on screen', (c) {
+        c.read(strategySettingsProvider.notifier).updateNeutralTeamColors(
+            !c.read(strategySettingsProvider).useNeutralTeamColors);
+      }, names: '-p0 useNeutralTeamColors'),
+      OutcomeCase('map', (c) {
+        c.read(mapProvider.notifier).updateMap(MapValue.bind);
+      }, names: RegExp(r'^strategy \S+ map$')),
+      OutcomeCase('theme', (c) {
+        c.read(strategyProvider.notifier).setThemeProfileForCurrentStrategy(
+            MapThemeProfilesProvider.immutableValorantProfileId);
+      }, names: RegExp(r'^strategy \S+ themeProfile$')),
+      OutcomeCase('strategy name', (c) async {
+        await c.read(strategyProvider.notifier).renameStrategy(
+            c.read(strategyProvider).strategyId!, 'Renamed by the test');
+      }, names: RegExp(r'^strategy \S+ name$')),
+      OutcomeCase(
+        'edit agent + raise agent',
+        _raise((c) => [for (final a in c.read(agentProvider)) a.id], (c, id) {
+          final agent = c.read(agentProvider).singleWhere((a) => a.id == id);
+          c
+              .read(agentProvider.notifier)
+              .updatePosition(agent.position + const Offset(12, 7), id);
+        }),
+        names: RegExp(r'^agent list \S+ order$'),
+        dropLabel: 'raise agent',
+      ),
+      OutcomeCase(
+        'edit ability + raise ability',
+        _raise((c) => [for (final a in c.read(abilityProvider)) a.id], (c, id) {
+          final ability =
+              c.read(abilityProvider).singleWhere((a) => a.id == id);
+          c
+              .read(abilityProvider.notifier)
+              .updatePosition(ability.position + const Offset(12, 7), id);
+        }),
+        names: RegExp(r'^ability list \S+ order$'),
+        dropLabel: 'raise ability',
+      ),
+      OutcomeCase(
+        'edit utility + raise utility',
+        _raise((c) => [for (final u in c.read(utilityProvider)) u.id], (c, id) {
+          final utility =
+              c.read(utilityProvider).singleWhere((u) => u.id == id);
+          c
+              .read(utilityProvider.notifier)
+              .updatePosition(utility.position + const Offset(12, 7), id);
+        }),
+        names: RegExp(r'^utility list \S+ order$'),
+        dropLabel: 'raise utility',
+      ),
+      OutcomeCase(
+        'edit text + raise text',
+        _raise((c) => [for (final t in c.read(textProvider)) t.id], (c, id) {
+          final text = c.read(textProvider).singleWhere((t) => t.id == id);
+          c
+              .read(textProvider.notifier)
+              .updatePosition(text.position + const Offset(12, 7), id);
+        }),
+        setup: (c) {
+          final text = _first(c.read(textProvider));
+          c.read(textProvider.notifier).addText(
+              _renamed(ActionObjectState.text(text), 'second-text').text!);
+        },
+        names: RegExp(r'^text list \S+ order$'),
+        dropLabel: 'raise text',
+      ),
+      OutcomeCase(
+        'edit image + raise image',
+        _raise(
+            (c) => [for (final i in c.read(placedImageProvider).images) i.id],
+            (c, id) {
+          final image =
+              c.read(placedImageProvider).images.singleWhere((i) => i.id == id);
+          c
+              .read(placedImageProvider.notifier)
+              .updatePosition(image.position + const Offset(12, 7), id);
+        }),
+        setup: (c) {
+          final image = _first(c.read(placedImageProvider).images);
+          c.read(placedImageProvider.notifier).addImageCopy(
+              _renamed(ActionObjectState.image(image), 'second-image').image!);
+        },
+        names: RegExp(r'^image list \S+ order$'),
+        dropLabel: 'raise image',
+      ),
+    ];
+
 final _clearAll = OutcomeCase(
   'bulkDeletion: deletion agent, deletion ability, deletion drawing, '
   'deletion text, deletion image, deletion utility, lineups deletion',
@@ -271,9 +395,9 @@ List<OutcomeCase> _pageCases() => [
       OutcomeCase('page reorder', (c) async {
         await c.read(strategyProvider.notifier).reorderPage(0, 2);
       }, names: RegExp(r'^pages \S+ order$')),
-      OutcomeCase('side on all pages', (c) async {
+      OutcomeCase('side of the page on screen + side on all pages', (c) async {
         await c.read(strategyProvider.notifier).switchSide(allPages: true);
-      }, names: '-p2 isAttack', asIs: {UnitOutcome.changedWithoutAction}),
+      }, names: '-p2 isAttack', dropLabel: 'side on all pages'),
       OutcomeCase('settings on all pages', (c) async {
         final value = !c.read(strategySettingsProvider).useNeutralTeamColors;
         c
@@ -333,7 +457,25 @@ Set<String> everyActionKind() => {
       'settings on all pages',
       'copy item to page',
       'copy lineups to page',
+      ...editsWithoutUndoStep,
     };
+
+const editsWithoutUndoStep = [
+  'tag colour text',
+  'tag colour image',
+  'resize text',
+  'resize image',
+  'side of the page on screen',
+  'neutral colours of the page on screen',
+  'map',
+  'theme',
+  'strategy name',
+  'raise agent',
+  'raise ability',
+  'raise text',
+  'raise image',
+  'raise utility',
+];
 
 final class _Observed {
   _Observed(this.tally, this.kind)
@@ -410,14 +552,15 @@ void main() {
   }) async {
     final h = await openInEditor(container, strategy());
     try {
-      for (final step in before) {
+      for (final step in [if (c.setup case final setup?) setup, ...before]) {
         await step(container);
         await h.settle();
       }
       final measured = silently ? 'no action' : kind;
       final start = _Observed(h.tally, measured);
       if (dropOps) {
-        h.journal.alterOps = (label, ops) => label == kind ? const [] : ops;
+        final dropped = c.dropLabel ?? kind;
+        h.journal.alterOps = (label, ops) => label == dropped ? const [] : ops;
       }
       if (silently) {
         await h.silently(() => c.perform(container));
@@ -498,12 +641,19 @@ void main() {
     ];
   }
 
-  final cases = [..._objectCases(), _clearAll, ..._pageCases()];
+  final cases = [
+    ..._objectCases(),
+    _clearAll,
+    ..._pageCases(),
+    ..._editsWithoutUndoStepCases(),
+  ];
 
   test('every action kind has its three cases', () {
     expect(
-      everyActionKind().where((kind) =>
-          !cases.any((c) => c.kind == kind || c.kind.startsWith('$kind: '))),
+      everyActionKind().where((kind) => !cases.any((c) =>
+          c.kind == kind ||
+          c.kind.startsWith('$kind: ') ||
+          c.kind.split(' + ').contains(kind))),
       isEmpty,
     );
   });
