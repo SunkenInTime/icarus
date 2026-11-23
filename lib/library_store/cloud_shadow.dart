@@ -4,12 +4,17 @@ import 'dart:collection';
 import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
+import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 enum SkipReason {
   receivedOffline('received while the app counted itself offline'),
   endedConnection('read on a connection that has since ended'),
-  endedSession('the queue answered that its session had ended');
+  endedSession('the queue answered that its session had ended'),
+  staleForSender('the sender found it stale: it arrived under a connection '
+      'or sign-in that has since changed, or before the store held its '
+      'strategy'),
+  ownWorkInFlight('this device\'s own work was still on its way');
 
   const SkipReason(this.words);
 
@@ -53,11 +58,12 @@ final class ReadFailed extends Verdict {
 }
 
 final class LedgerEntry {
-  LedgerEntry(this.strategyId, this.what, {this.pageId});
+  LedgerEntry(this.strategyId, this.what, {this.pageId, this.stamp});
 
   final String strategyId;
   final String what;
   final String? pageId;
+  final Snapshot? stamp;
   Verdict verdict = const NotProcessed();
 }
 
@@ -211,12 +217,14 @@ final class CloudShadow {
     required this.build,
     required this.canRead,
     required Future<void> Function() breathe,
+    this.intake,
   }) : _breathe = breathe;
 
   final LibraryStore store;
   final String build;
   final CanRead canRead;
   final Future<void> Function() _breathe;
+  final ResultIntake? intake;
 
   final reports = <CloudShadowReport>[];
   final ledger = <LedgerEntry>[];
@@ -263,17 +271,32 @@ final class CloudShadow {
   Account _serving() =>
       _account ?? (throw StateError('the shadow serves no account yet'));
 
-  void page(String strategyId, RemotePageSnapshot snapshot, int? connection) {
+  void page(
+    String strategyId,
+    RemotePageSnapshot snapshot,
+    int? connection, {
+    Snapshot? stamp,
+  }) {
     if (!_taking) return;
     final pageId = snapshot.page.publicId;
-    final entry = LedgerEntry(strategyId, 'page $pageId', pageId: pageId);
+    final entry = LedgerEntry(
+      strategyId,
+      'page $pageId',
+      pageId: pageId,
+      stamp: stamp,
+    );
     ledger.add(entry);
     _add(_PageJob(entry, snapshot, connection));
   }
 
-  void pageList(String strategyId, RemotePageList list, int? connection) {
+  void pageList(
+    String strategyId,
+    RemotePageList list,
+    int? connection, {
+    Snapshot? stamp,
+  }) {
     if (!_taking) return;
-    final entry = LedgerEntry(strategyId, 'the page list');
+    final entry = LedgerEntry(strategyId, 'the page list', stamp: stamp);
     ledger.add(entry);
     _add(_ListJob(entry, list, connection));
   }
@@ -357,6 +380,7 @@ final class CloudShadow {
   }
 
   Future<void> _lost() async {
+    if (intake != null) return;
     for (final MapEntry(key: strategyId, value: state) in _strategies.entries) {
       final bound = state.bound;
       if (!state.inStore || bound == null) continue;
@@ -375,6 +399,34 @@ final class CloudShadow {
   ) async {
     if (!_admit(entry, connection)) return;
     final state = _of(entry.strategyId);
+    if (intake != null && !state.inStore) {
+      state.waiting.add(_PageJob(entry, snapshot, connection));
+      return;
+    }
+    if (intake != null) {
+      final PageRead handed;
+      switch (pageRead(snapshot, canRead)) {
+        case RowsRead(:final value):
+          handed = value;
+        case RowsUnreadable(:final problem):
+          entry.verdict =
+              ReadFailed('the server rows could not be read: $problem');
+          return;
+      }
+      final stamp = entry.stamp;
+      if (stamp == null ||
+          !await _handed(
+            entry,
+            state,
+            connection!,
+            PageResultForStore(entry.strategyId, stamp, handed),
+          )) {
+        return;
+      }
+      state.expected.page(handed);
+      await _compare(entry, pages: {handed.page.publicId});
+      return;
+    }
     if (!state.inStore) {
       state.waiting.add(_PageJob(entry, snapshot, connection));
       return;
@@ -411,6 +463,25 @@ final class CloudShadow {
             ReadFailed('the server rows could not be read: $problem');
         return;
     }
+    if (intake != null) {
+      final stamp = entry.stamp;
+      if (stamp == null ||
+          !await _handed(
+            entry,
+            state,
+            connection!,
+            ListResultForStore(entry.strategyId, stamp, header),
+          )) {
+        return;
+      }
+      state.expected.header(header);
+      await _compare(entry, pages: const {});
+      for (final waiting in state.waiting.reversed) {
+        _add(waiting, first: true);
+      }
+      state.waiting.clear();
+      return;
+    }
     if (!state.inStore) {
       await _start(entry, state, header, connection!);
       if (!state.inStore) return;
@@ -424,6 +495,35 @@ final class CloudShadow {
     if (await _arrive(entry, header)) {
       state.expected.header(header);
       await _compare(entry, pages: const {});
+    }
+  }
+
+  Future<bool> _handed(
+    LedgerEntry entry,
+    _Strategy state,
+    int connection,
+    ResultForStore result,
+  ) async {
+    switch (await intake!.take(result)) {
+      case ResultRecorded(:final session, :final added):
+        state.inStore = true;
+        if (state.bound != connection) {
+          state.bound = connection;
+          reports.add(
+            ShadowSessionOpened(
+              entry.strategyId,
+              session,
+              added ? 'the strategy was added' : 'the sender opened it',
+            ),
+          );
+        }
+        return true;
+      case ResultStale():
+        entry.verdict = const Skipped(SkipReason.staleForSender);
+        return false;
+      case ResultNotRecorded(:final why):
+        entry.verdict = RefusedByStore('the sender did not record it: $why');
+        return false;
     }
   }
 
@@ -609,6 +709,13 @@ final class CloudShadow {
   }
 
   Future<void> _compare(LedgerEntry entry, {required Set<String> pages}) async {
+    if (await _read(() => store.readStrategy(entry.strategyId))
+        case Found(
+          value: StrategyContent(sync: CloudStrategy(:final queue)),
+        ) when queue.entries.isNotEmpty || queue.landed.isNotEmpty) {
+      entry.verdict = const Skipped(SkipReason.ownWorkInFlight);
+      return;
+    }
     final differences = await _read(
       () => _differences(store, entry.strategyId, pages: pages),
     );

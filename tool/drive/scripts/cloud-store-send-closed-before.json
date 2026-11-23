@@ -1,0 +1,23 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 4},
+  {"newCloudFolder": "Closed folder {run}"},
+  {"openCloudFolder": "Closed folder {run}"},
+  {"wait": 3},
+  {"newCloud": "Closed send {run}", "map": "bind"},
+  {"wait": 4},
+  {"tapText": "Closed send {run}"},
+  {"wait": 12},
+  {"tapIcon": "x", "optional": true},
+  {"waitSettled": 60},
+  {"addAgent": "k1-{run}", "at": [600, 400]},
+  {"addAgent": "k2-{run}", "at": [700, 300]},
+  {"waitSettled": 60},
+  {"wait": 4},
+  {"holdSender": true},
+  {"storeMove": "k1-{run}", "by": [40, 40]},
+  {"storeSyncState": true},
+  {"killNow": true}
+]

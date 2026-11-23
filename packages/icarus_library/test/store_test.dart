@@ -605,6 +605,20 @@ void main() {
       await subscription.cancel();
     });
 
+    test('a store says it is closing from the moment close is called, before '
+        'its turn runs', () async {
+      final disk = MemoryStorage(seeded);
+      final store = await openStore(MemoryEngine(disk));
+      final queued = store.commit(strategyId, moveJett);
+      expect(store.isClosing, isFalse);
+      final closing = store.close();
+      expect(store.isClosing, isTrue);
+      expect(store.library, isA<LibraryOpen>());
+      expect(describeSaving(await queued), 'saved');
+      await closing;
+      expect(store.isClosing, isTrue);
+    });
+
     test('a closed store saves and reads nothing', () async {
       final disk = MemoryStorage(seeded);
       final store = await openStore(MemoryEngine(disk));
