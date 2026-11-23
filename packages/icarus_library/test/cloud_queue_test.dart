@@ -92,7 +92,7 @@ void main() {
           OwnedBy(testAccount),
           Tally.of(client.queue, now),
           network: Network.online,
-          signedIn: testAccount,
+          signedIn: SignedInAs(testAccount),
         ),
         isA<AllSaved>(),
       );
@@ -745,7 +745,7 @@ void main() {
           OwnedBy(testAccount),
           Tally.of(client.queue, now),
           network: Network.online,
-          signedIn: testAccount,
+          signedIn: SignedInAs(testAccount),
         ),
         isA<Outstanding>(),
       );

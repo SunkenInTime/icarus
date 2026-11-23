@@ -580,6 +580,20 @@ Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
     'upgradeTold': {'build': build, 'attempt': attempt},
 };
 
+CloudOwner ownerFromText(String text) => switch (admit(text)) {
+  NotAdmitted() => const OwnerUnreadable(),
+  Admitted(:final json) => switch (JsonFields.read(json, 'cloud facts', (
+    fields,
+  ) {
+    final account = fields.string('account');
+    if (account.isEmpty) fields.reject('expected the account the work is for');
+    return () => account;
+  })) {
+    Read(:final value) => OwnedBy(Account(value)),
+    CouldNotRead() => const OwnerUnreadable(),
+  },
+};
+
 CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
   text,
   (json) => JsonFields.read(json, 'cloud facts', (fields) {

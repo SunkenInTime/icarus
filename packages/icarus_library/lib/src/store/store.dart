@@ -1280,8 +1280,10 @@ final class LibraryStore {
     return null;
   }
 
-  Future<BatchResult> commitAll(String strategyPublicId, List<StrategyOp> ops) =>
-      _commitAll(null, strategyPublicId, ops);
+  Future<BatchResult> commitAll(
+    String strategyPublicId,
+    List<StrategyOp> ops,
+  ) => _commitAll(null, strategyPublicId, ops);
 
   Future<BatchResult> commitAllAs(
     Account account,
@@ -1310,6 +1312,23 @@ final class LibraryStore {
         case InUnreadableStrategy(:final listing):
           return Refused(StrategyNotReadable(listing.ref));
       }
+      if (strategy.keeping == Keeping.cloud) {
+        if (account == null) return Refused(AccountNeeded(strategyPublicId));
+        final open = await _openCloud(strategyPublicId);
+        if (_anotherAccountOpening(strategyPublicId, open, account)
+            case final refusal?) {
+          return Refused(refusal);
+        }
+        return switch (open) {
+          final _CloudReady cloud => await _commitCloud(cloud, asked),
+          _CloudHeld(:final rows) => Refused(QueueHeld(rows)),
+          _CloudUnread(:final failure) => NotSaved(failure),
+          _CloudRefused(:final refusal) => Refused(refusal),
+        };
+      }
+      if (account != null) {
+        return Refused(NotACloudStrategy(strategyPublicId));
+      }
       final digest = strategy.digest;
       final ReadableStrategy header;
       switch (strategy.header) {
@@ -1319,21 +1338,6 @@ final class LibraryStore {
           return Refused(UnreadableRowInTheWay(row));
         case HeaderUnplaced() || HeaderAbsent():
           return Refused(NoSuchStrategy(strategyPublicId));
-      }
-      if (strategy.keeping == Keeping.cloud) {
-        if (account == null) return Refused(AccountNeeded(strategyPublicId));
-        return switch (await _openCloud(strategyPublicId)) {
-          final _CloudReady cloud => switch (_notOwnedBy(cloud, account)) {
-            final refusal? => Refused(refusal),
-            null => await _commitCloud(cloud, asked),
-          },
-          _CloudHeld(:final rows) => Refused(QueueHeld(rows)),
-          _CloudUnread(:final failure) => NotSaved(failure),
-          _CloudRefused(:final refusal) => Refused(refusal),
-        };
-      }
-      if (account != null) {
-        return Refused(NotACloudStrategy(strategyPublicId));
       }
       for (final op in asked) {
         if (await _loadPages(strategy, _pagesFor(op, strategy))

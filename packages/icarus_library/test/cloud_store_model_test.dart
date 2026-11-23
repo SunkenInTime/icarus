@@ -1068,6 +1068,7 @@ final class StoreModel {
     }
     await listMatchesPages('a newer row held the queue');
     count('held queues compared against the list');
+    await anotherAccountTries();
     final before = storage.contents;
     final refused = await store.commitAs(
       testAccount,
@@ -1185,75 +1186,134 @@ final class StoreModel {
     }
   }
 
+  Future<Object> observedState() async {
+    final content = strategyOf(
+      await reading(() => store.readStrategy(strategyId)),
+    );
+    return [
+      switch (content.sync) {
+        CloudStrategy(:final owner, :final queue) => [owner, queue],
+        CloudHeld(:final owner, :final rows) => [
+          owner,
+          [for (final row in rows) '${row.ref.name}: ${row.problem}'],
+        ],
+        LocalStrategy() => throw StateError('the strategy reads as local'),
+      },
+      rowsWithRevisions(await visible()),
+    ];
+  }
+
   Future<void> anotherAccountTries() async {
-    final cloud = await sync();
-    final before = await snapshot();
-    final disk = const DeepCollectionEquality().equals;
+    final content = strategyOf(
+      await reading(() => store.readStrategy(strategyId)),
+    );
+    final held = content.sync is CloudHeld;
+    final entries = switch (content.sync) {
+      CloudStrategy(:final queue) => [
+        for (final entry in queue.entries) entry.id,
+      ],
+      _ => <String>[],
+    };
+    final before = await observedState();
     final stored = {
       for (final MapEntry(:key, :value) in storage.contents.entries)
         key: {...value},
     };
     final commitsBefore = commits;
     final (_, live) = await livePagesAndElements();
-    final sendable = [
-      for (final entry in cloud.queue.entries)
-        if (cloud.views[entry.id]?.sendable ?? false) entry.id,
-    ];
-    final StrategyOp? op = live.isEmpty
-        ? null
+    final target = live.isEmpty ? null : pick(live);
+    final StrategyOp op = target == null
+        ? pageAdd(fresh('b'), fresh('page-b'))
         : movePatch(
             fresh('b'),
-            elementId: pick(live).publicId,
-            expected: pick(live).revision,
+            elementId: target.publicId,
+            expected: target.revision,
             rotation: 45,
           );
-    final String label;
-    final Saving<Object?, CommitRefusal> result;
-    switch (random.nextInt(op == null ? 4 : 6)) {
-      case 0:
-        label = 'another account records that the account changed';
-        result = await store.record(otherAccount, strategyId, [
-          const AccountChanged(),
-        ]);
-      case 1:
-        label = 'another account records a connection';
-        result = await store.record(otherAccount, strategyId, [
+    final attempt = inFlight.isEmpty ? 1 : inFlight.first.$1;
+    final someEntry = entries.isEmpty ? 'op0' : pick(entries);
+    final calls = <(String, Future<Saving<Object?, CommitRefusal>> Function())>[
+      (
+        'another account edits',
+        () => store.commitAs(otherAccount, strategyId, op),
+      ),
+      (
+        'another account edits in a batch',
+        () => store.commitAllAs(otherAccount, strategyId, [op]),
+      ),
+      ('an edit naming no account', () => store.commit(strategyId, op)),
+      (
+        'another account claims $entries',
+        () => store.record(otherAccount, strategyId, [
+          BatchClaimed(clientId: clientId, opIds: entries, at: clock),
+        ]),
+      ),
+      (
+        'another account answers attempt $attempt',
+        () => store.record(otherAccount, strategyId, [
+          OpAnswered(
+            attempt,
+            AppliedAnswer(someEntry, revision: target?.revision ?? 1),
+          ),
+        ]),
+      ),
+      (
+        'another account chooses for $someEntry',
+        () => store.record(otherAccount, strategyId, [
+          random.nextBool() ? UserRetried(someEntry) : UserDiscarded(someEntry),
+        ]),
+      ),
+      (
+        'another account discards the queue',
+        () => store.discardUnreadableQueue(
+          otherAccount,
+          strategyId,
+          const DiscardsUnsentWork(),
+        ),
+      ),
+      (
+        'another account records that the account changed',
+        () => store.record(otherAccount, strategyId, [const AccountChanged()]),
+      ),
+      (
+        'another account records a connection',
+        () => store.record(otherAccount, strategyId, [
           const ConnectionReturned(),
-        ]);
-      case 2 when sendable.isNotEmpty:
-        label = 'another account claims $sendable';
-        result = await store.record(otherAccount, strategyId, [
-          BatchClaimed(clientId: clientId, opIds: sendable, at: clock),
-        ]);
-      case 2 || 3:
-        label = 'another account records a header read';
-        result = await store.record(otherAccount, strategyId, [
+        ]),
+      ),
+      (
+        'another account records a result of the current session',
+        () => store.record(otherAccount, strategyId, [
           BaseArrived(headerReadOf(server.rows), session: this.live),
-        ]);
-      case 4:
-        label = 'another account edits';
-        result = await store.commitAs(otherAccount, strategyId, op!);
-      case _:
-        label = 'an edit naming no account';
-        result = await store.commit(strategyId, op!);
-    }
-    log.add('$label -> ${describeSaving(result)}');
+        ]),
+      ),
+    ];
+    final (label, call) = pick(calls);
+    final result = await call();
+    log.add('$label${held ? ' (held)' : ''} -> ${describeSaving(result)}');
     switch (result) {
       case Refused(reason: WorkOfAnotherAccount(:final owner))
           when owner == OwnedBy(testAccount):
-        count('refused for another account');
+        count(
+          held
+              ? 'refused for another account while held'
+              : 'refused for another account',
+        );
+        count(
+          'refused for another account: ${label.split(' ').take(3).join(' ')}',
+        );
       case Refused(reason: AccountNeeded()):
         count('refused for naming no account');
-      case Refused(reason: QueueHeld()):
-        count('refused for another account while held');
       case _:
         throw StateError('$label was not refused: ${describeSaving(result)}');
     }
     if (commits != commitsBefore) throw StateError('$label made a commit');
-    if (!disk(storage.contents, stored)) {
+    if (!const DeepCollectionEquality().equals(storage.contents, stored)) {
       throw StateError('$label changed what is stored');
     }
-    await memoryAsBefore(before, label);
+    if (!const DeepCollectionEquality().equals(await observedState(), before)) {
+      throw StateError('$label changed what a read shows');
+    }
   }
 
   void accountsCountedApart() {
@@ -1272,16 +1332,20 @@ final class StoreModel {
     if (owner != OwnedBy(testAccount)) {
       throw StateError('the strategy is listed as $owner');
     }
-    final asMine = accountSyncState(
-      strategies,
-      network: Network.online,
-      signedIn: testAccount,
-    );
-    final asOther = accountSyncState(
-      strategies,
-      network: Network.online,
-      signedIn: otherAccount,
-    );
+    final asMine =
+        accountSyncState(
+              strategies,
+              network: Network.online,
+              signedIn: SignedInAs(testAccount),
+            )
+            as SignedInSync;
+    final asOther =
+        accountSyncState(
+              strategies,
+              network: Network.online,
+              signedIn: SignedInAs(otherAccount),
+            )
+            as SignedInSync;
     if (asMine.others.isNotEmpty ||
         !sameState(
           asMine.mine,
@@ -1289,7 +1353,7 @@ final class StoreModel {
             OwnedBy(testAccount),
             tally,
             network: Network.online,
-            signedIn: testAccount,
+            signedIn: SignedInAs(testAccount),
           ),
         ) ||
         asOther.mine is! AllSaved ||
@@ -1547,6 +1611,7 @@ void main() {
       'strategies gone',
       'refused for another account',
       'refused for naming no account',
+      'refused for another account while held',
       'accounts counted apart',
     ]) {
       expect(counted[what] ?? 0, greaterThan(0), reason: what);

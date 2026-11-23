@@ -1832,43 +1832,59 @@ void main() {
         );
       });
 
-      test(
-        'a refused result does not load the queue or refresh the list',
-        () async {
-          final storage = MemoryStorage();
-          var store = await openCloudStore(MemoryEngine(storage));
-          await addCloud(store, initialRows());
-          final session = await sessionOf(store);
-          await store.close();
-          store = await openCloudStore(MemoryEngine(storage));
-          expect(listOf(store).strategies.single.sync, isA<CloudUnverified>());
-          final changes = <StoreChange>[];
-          final listening = store.changes.listen(changes.add);
-          final result = await store.record(testAccount, strategyId, [
-            BaseArrived(
-              PageRead(
-                page: initialRows().page('page-a')!,
-                elements: [
-                  LiveElement(
-                    publicId: 'stray',
-                    pagePublicId: 'page-b',
-                    payload: agentPayload('stray', const {}),
-                    sortIndex: 0,
-                    revision: 1,
-                  ),
-                ],
-                lineupGroups: const [],
-              ),
-              session: session,
+      test('a refused result commits nothing and leaves the store as a read '
+          'of the strategy would', () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        final session = await sessionOf(store);
+        await store.close();
+        final saved = editable(storage.contents);
+        store = await openCloudStore(MemoryEngine(storage));
+        expect(listOf(store).strategies.single.sync, isA<CloudUnverified>());
+        final changes = <StoreChange>[];
+        final listening = store.changes.listen(changes.add);
+        final result = await store.record(testAccount, strategyId, [
+          BaseArrived(
+            PageRead(
+              page: initialRows().page('page-a')!,
+              elements: [
+                LiveElement(
+                  publicId: 'stray',
+                  pagePublicId: 'page-b',
+                  payload: agentPayload('stray', const {}),
+                  sortIndex: 0,
+                  revision: 1,
+                ),
+              ],
+              lineupGroups: const [],
             ),
-          ]);
-          await Future<void>.delayed(Duration.zero);
-          await listening.cancel();
-          expect(result, isA<Refused<Recorded, CommitRefusal>>());
-          expect(changes, isEmpty);
-          expect(listOf(store).strategies.single.sync, isA<CloudUnverified>());
-        },
-      );
+            session: session,
+          ),
+        ]);
+        await Future<void>.delayed(Duration.zero);
+        await listening.cancel();
+        expect(
+          result,
+          isA<Refused<Recorded, CommitRefusal>>().having(
+            (refused) => refused.reason,
+            'reason',
+            isA<ResultOutOfPlace>(),
+          ),
+        );
+        expect(sameContents(storage.contents, saved), isTrue);
+        final reader = await openCloudStore(
+          MemoryEngine(MemoryStorage(editable(saved))),
+        );
+        await reader.readStrategy(strategyId);
+        expect(
+          listOf(store).strategies.single.toJson(),
+          listOf(reader).strategies.single.toJson(),
+        );
+        expect(changes.map((change) => change.runtimeType), [
+          StrategyRefreshed,
+        ]);
+      });
 
       test('a damaged row repaired and then removed in one call leaves '
           'nothing on disk', () async {

@@ -275,7 +275,7 @@ final class Model {
       OwnedBy(testAccount),
       Tally.of(client.queue, clock),
       network: Network.online,
-      signedIn: testAccount,
+      signedIn: SignedInAs(testAccount),
     );
     final quiet =
         client.queue.entries.isEmpty &&
