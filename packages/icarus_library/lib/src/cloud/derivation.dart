@@ -892,8 +892,11 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
         if (until == null || deadline.isBefore(until)) until = deadline;
       case _NameAt():
         break;
-      case _AwaitRow(:final page):
+      case _AwaitRow(:final page, until: final deadline):
         holds.add(AwaitingResult(RowResult(_rowTarget(op), page)));
+        if (deadline != null && (until == null || deadline.isBefore(until))) {
+          until = deadline;
+        }
       case _AskUser(reason: RowPageGone()) when entry.work is CheckedDelete:
         break;
       case _AskUser(:final reason):
