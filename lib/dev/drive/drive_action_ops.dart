@@ -36,6 +36,12 @@ Map<String, int> opsCounts(ActionOpsTally t) => {
       'lineupsChangingGroups': t.lineupsChangingGroups,
     };
 
+String actionOpsInFlight(ProviderContainer c) => switch (_journal(c)) {
+      final journal? => 'actions journaled ${journal.tally.actions}, '
+          'ops landed in the store ${journal.tally.opsCommitted}',
+      null => 'this run does not journal action ops',
+    };
+
 List<String> actionOpsLines(String label, ActionOpsTally t) => [
       'OPS $label actions ${t.actions}, ${t.actionsWithOps} with ops; '
           'commits ${t.commits}, ${t.opsCommitted} ops, '

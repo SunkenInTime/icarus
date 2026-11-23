@@ -792,6 +792,7 @@ Future<void> _drag(
   int stepsPerLeg = 30,
   String? shotWhileHeld,
   String? markAtRelease,
+  void Function()? firstFrameAfterRelease,
 }) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
@@ -841,6 +842,11 @@ Future<void> _drag(
       position: last,
     ),
   );
+  if (firstFrameAfterRelease != null) {
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) => firstFrameAfterRelease())
+      ..scheduleFrame();
+  }
   await Future<void>.delayed(const Duration(milliseconds: 300));
   await _frames();
 }
@@ -1314,7 +1320,17 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _drag([
         for (final p in (value as List).cast<List>())
           Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-      ], stepsPerLeg: 6, shotWhileHeld: step['held'] as String?);
+      ],
+          stepsPerLeg: 6,
+          shotWhileHeld: step['held'] as String?,
+          firstFrameAfterRelease: switch (step['firstFrame']) {
+            final String label => () => _log(
+                  'FIRST FRAME after releasing $label: drawings on screen '
+                  '${c.read(drawingProvider).elements.length}; '
+                  '${actionOpsInFlight(c)}',
+                ),
+            _ => null,
+          });
     case 'scrollAt':
       final xy = (value as List).cast<num>();
       GestureBinding.instance.handlePointerEvent(
