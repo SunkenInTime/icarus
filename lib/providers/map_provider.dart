@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/library_store/canvas_changes.dart';
 
 final mapProvider = NotifierProvider<MapProvider, MapState>(MapProvider.new);
 
@@ -72,6 +74,10 @@ class MapProvider extends Notifier<MapState> {
 
   void updateMap(MapValue map) {
     state = state.copyWith(currentMap: map);
+    ActionProvider.editFollower?.onEdit(
+      (_) => [StrategyFieldsChanged(map: map)],
+      'map',
+    );
   }
 
   void fromHive(MapValue map, bool isAttack) {

@@ -5,6 +5,8 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:json_annotation/json_annotation.dart';
+import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/library_store/canvas_changes.dart';
 part "strategy_settings_provider.g.dart";
 
 @JsonSerializable()
@@ -86,6 +88,14 @@ class StrategySettingsProvider extends Notifier<StrategySettings> {
 
   void updateNeutralTeamColors(bool value) {
     if (!ref.canEditPages) return;
+    final before = ActionProvider.editFollower == null ? null : state;
     state = state.copyWith(useNeutralTeamColors: value);
+    if (before != null) {
+      final after = state;
+      ActionProvider.editFollower?.onEdit(
+        (pageId) => [PageSettingsChanged(pageId, before: before, after: after)],
+        'neutral colours of the page on screen',
+      );
+    }
   }
 }

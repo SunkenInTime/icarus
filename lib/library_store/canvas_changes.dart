@@ -1,12 +1,14 @@
 import 'dart:ui';
 
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 
 sealed class CanvasChange {
   const CanvasChange(this.pageId);
@@ -121,6 +123,31 @@ final class PageSideSet extends CanvasChange {
   final bool isAttack;
 }
 
+final class ObjectRaised extends CanvasChange {
+  const ObjectRaised(super.pageId, this.kind, this.id);
+
+  final ActionObjectKind kind;
+  final String id;
+}
+
+final class StrategyThemeChoice {
+  const StrategyThemeChoice({
+    required this.profileId,
+    required this.overridePalette,
+  });
+
+  final String? profileId;
+  final MapThemePalette? overridePalette;
+}
+
+final class StrategyFieldsChanged extends CanvasChange {
+  const StrategyFieldsChanged({this.name, this.map, this.theme}) : super('');
+
+  final String? name;
+  final MapValue? map;
+  final StrategyThemeChoice? theme;
+}
+
 enum ActionWay { done, undone, redone }
 
 abstract interface class EditFollower {
@@ -129,6 +156,8 @@ abstract interface class EditFollower {
   void onAction(UserAction action, {required ActionWay way});
 
   void onPagesChanged(List<CanvasChange> Function() changes, String label);
+
+  void onEdit(List<CanvasChange> Function(String pageId) changes, String label);
 }
 
 final class EditorNow {
