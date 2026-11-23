@@ -1,0 +1,18 @@
+[
+  {"wait": 2},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"libraryStore": "copied", "seconds": 600},
+  {"wait": 1},
+  {"logLibrary": "before"},
+  {"watchLibraryText": "Kept", "gone": true, "since": "move"},
+  {"dragAt": [165, 330, 165, 130], "mark": "move"},
+  {"wait": 2},
+  {"logLibrary": "moved"},
+  {"tapText": "Retakes"},
+  {"wait": 2},
+  {"logLibrary": "inside Retakes"},
+  {"expectText": "Kept", "count": 1},
+  {"gridRowFromStore": "Kept"},
+  {"exit": 1}
+]

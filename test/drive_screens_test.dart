@@ -56,6 +56,32 @@ void main() {
     );
   });
 
+  testWidgets(
+      'rows under a page pushed over them are not on screen, rows under a dialog are',
+      (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: navigator, home: rows(count: 3)),
+    );
+    expect(drawnOnScreen(rowKind), hasLength(3));
+    showDialog<void>(
+      context: navigator.currentContext!,
+      builder: (_) => const Text('over'),
+    );
+    await tester.pumpAndSettle();
+    expect(drawnOnScreen(rowKind), hasLength(3));
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    navigator.currentState!.push(
+      MaterialPageRoute<void>(builder: (_) => const Text('editor')),
+    );
+    await tester.pumpAndSettle();
+    expect(drawnOnScreen(rowKind), isEmpty);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(drawnOnScreen(rowKind), hasLength(3));
+  });
+
   test('a listener added twice is heard until it is removed twice', () {
     final source = ValueNotifier(0);
     final counted = countedForDrive(source, 'twice');

@@ -345,11 +345,26 @@ final class LibraryStore {
     ),
   };
   final _unsaved = <String>{};
+  var _summariesRebuiltAtOpen = 0;
   final _unchecked = <String>{};
   final _sessions = <String, ({QueueSession session, Shown shown})>{};
   final _changes = StreamController<StoreChange>.broadcast();
 
   Stream<StoreChange> get changes => _changes.stream;
+
+  int get summariesRebuiltAtOpen => _summariesRebuiltAtOpen;
+
+  bool get isOpen => _settle() is Done;
+
+  StrategySummary? summaryOf(String strategyPublicId) => switch (_settle()) {
+    Done() => _summaries[digestOf(strategyPublicId)],
+    StorageFailed() => null,
+  };
+
+  FolderRow? folderOf(String folderPublicId) => switch (_settle()) {
+    Done() => _folders[digestOf(folderPublicId)],
+    StorageFailed() => null,
+  };
 
   LibraryState get library {
     _settle();
@@ -630,6 +645,7 @@ final class LibraryStore {
     for (final digest in toRebuild) {
       await _repair(digest);
     }
+    _summariesRebuiltAtOpen = toRebuild.length;
     return Done(origin);
   }
 

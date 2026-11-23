@@ -1,8 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/dev/drive/drive_screens.dart';
+import 'package:icarus/library_store/hive_naming.dart';
+import 'package:icarus/library_store/library_listing.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
@@ -11,6 +16,7 @@ import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/startup/launch_clock.dart';
+import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:path/path.dart' as path;
 
@@ -27,6 +33,7 @@ String switchName(LibraryStoreSwitch choice) => switch (choice) {
       StoreSwitchOff() => 'off',
       StoreSwitchShadow() => 'shadow',
       StoreSwitchMirror() => 'mirror',
+      StoreSwitchRead() => 'read',
     };
 
 Future<String> firstFrameLine(ProviderContainer c) async {
@@ -105,7 +112,16 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
               'not mirrored ${checked.notMirrored.length}; folder '
               'problems ${checked.folderProblems.length}; names this build '
               'does not know ${checked.foreignNames.length}; unplaced rows '
-              '${checked.unplaced.length}; ${took.inMilliseconds} ms',
+              '${checked.unplaced.length}; kept on Hive '
+              '${checked.keptOnHive.strategies.kept.length} strategies '
+              '${checked.keptOnHive.folders.kept.length} folders; '
+              '${took.inMilliseconds} ms',
+          for (final (kind, names) in [
+            ('strategy', checked.keptOnHive.strategies),
+            ('folder', checked.keptOnHive.folders),
+          ])
+            for (final (:key, :id, :reason) in names.kept)
+              'STORE kept on Hive $kind $id at key $key: $reason',
           for (final problem in checked.strategyProblems)
             ...switch (problem) {
               StrategySame() => const <String>[],
@@ -372,5 +388,269 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
     ...describeCheck(check, checkClock.elapsed),
   ];
   if (check case StoreChecked(isExact: true)) return lines;
+  if (check case final StoreChecked checked
+      when storeRefusalsExpected.isNotEmpty &&
+          _exactBut(checked, storeRefusalsExpected)) {
+    return [
+      ...lines,
+      'STORE exact but for the strategies the script expects the store to '
+          'refuse: ${(storeRefusalsExpected.toList()..sort()).join(', ')}',
+    ];
+  }
   throw StoreStepFailed([...lines, 'the store differs from Hive']);
+}
+
+var storeRefusalsExpected = <String>{};
+
+bool _exactBut(StoreChecked check, Set<String> refused) =>
+    check.foreignNames.isEmpty &&
+    check.unplaced.isEmpty &&
+    check.folderProblems.isEmpty &&
+    check.sameFolders == check.hiveFolders &&
+    setEquals({for (final c in check.notMirrored) c.strategyId}, refused) &&
+    setEquals(
+        {for (final c in check.strategyProblems) c.strategyId}, refused) &&
+    check.sameStrategies == check.hiveStrategies - refused.length;
+
+StoreLibraryListing? _storeListing(ProviderContainer c) =>
+    switch (c.read(localLibraryListingProvider)) {
+      final StoreLibraryListing listing => listing,
+      _ => null,
+    };
+
+String? listSourceName(ProviderContainer c) =>
+    switch (_storeListing(c)?.source) {
+      ListFromStore() => 'the store',
+      ListFromHive() => 'Hive',
+      null => null,
+    };
+
+String? _keptBecause(BoxNames names, String id) => [
+      for (final record in names.kept)
+        if (record.id == id) 'kept on Hive: ${record.reason}',
+    ].firstOrNull;
+
+String _refusalOf(LibraryStore store, StoreMirror mirror, String strategyId) =>
+    switch (mirror.refusedStrategies[strategyId]) {
+      final reason? => '$reason',
+      null => _keptBecause(mirror.reads.names.strategies, strategyId) ??
+          switch (store.summaryOf(strategyId)?.sync) {
+            null || KeptHere() => 'this build cannot show its stored summary',
+            _ => 'kept in the cloud, so not mirrored',
+          },
+    };
+
+String _folderRefusalOf(StoreMirror mirror, String folderId) =>
+    switch (mirror.refusedFolders[folderId]) {
+      final reason? => '$reason',
+      null => _keptBecause(mirror.reads.names.folders, folderId) ??
+          'this build cannot show its stored row',
+    };
+
+Future<List<String>> waitForStoreList(
+  ProviderContainer c, {
+  required Duration patience,
+  required Map<String, Object?> expected,
+}) async {
+  final listing = _storeListing(c) ??
+      (throw StoreStepFailed(
+          ['this run does not read the list from the store']));
+  final deadline = DateTime.now().add(patience);
+  while (listing.source is! ListFromStore) {
+    if (DateTime.now().isAfter(deadline)) {
+      final phase = switch (c.read(shadowProvider.notifier).mode) {
+        Mirroring(:final mirror) => _describePhase(mirror.phase),
+        ShadowOnly() => 'not mirroring',
+      };
+      throw StoreStepFailed([
+        'the list was still drawn from Hive after ${patience.inSeconds} s; '
+            'the mirror is $phase; '
+            '${_describeState(c.read(shadowProvider))}',
+      ]);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  final (:store, :mirror) = switch (listing.source) {
+    ListFromStore(:final store, :final mirror) => (
+        store: store,
+        mirror: mirror
+      ),
+    ListFromHive() => throw StateError('the list went back to Hive'),
+  };
+  final strategies = listing.strategiesNotInStore;
+  final folders = listing.foldersNotInStore;
+  final counts = <String, Object>{
+    'rebuiltAtOpen': store.summariesRebuiltAtOpen,
+    'fromHive': strategies.length,
+    'foldersFromHive': folders.length,
+  };
+  final lines = [
+    'STORE list drawn from the store ${listing.firstFromStore!.inMilliseconds} '
+        'ms after launch; summaries rebuilt at open '
+        '${store.summariesRebuiltAtOpen}; not in the store '
+        '${strategies.length} strategies, ${folders.length} folders',
+    for (final id in strategies.toList()..sort())
+      'STORE listed from Hive $id: ${_refusalOf(store, mirror, id)}',
+    for (final id in folders.toList()..sort())
+      'STORE folder listed from Hive $id: ${_folderRefusalOf(mirror, id)}',
+  ];
+  final problems = [
+    for (final MapEntry(:key, :value) in expected.entries)
+      if (counts[key] != value) '$key is ${counts[key]}, expected $value',
+  ];
+  if (problems.isNotEmpty) throw StoreStepFailed([...lines, ...problems]);
+  return lines;
+}
+
+typedef GridSources = ({
+  bool readMode,
+  List<GridRow> fromStore,
+  List<GridRow> fromHive,
+});
+
+GridSources? gridSources(ProviderContainer c) {
+  final listing = _storeListing(c);
+  if (listing == null) return null;
+  final rows = gridRowsOnScreen();
+  return (
+    readMode: listing.source is ListFromStore,
+    fromStore: [
+      for (final row in rows)
+        if (listing.drewFromStore(row.row)) row,
+    ],
+    fromHive: [
+      for (final row in rows)
+        if (!listing.drewFromStore(row.row)) row,
+    ],
+  );
+}
+
+List<String> gridLines(String label, GridSources grid) {
+  int count(List<GridRow> rows, String kind) =>
+      rows.where((row) => row.kind == kind).length;
+  return [
+    'GRID $label from the store ${count(grid.fromStore, 'strategy')} '
+        'strategies, ${count(grid.fromStore, 'folder')} folders; from Hive '
+        '${count(grid.fromHive, 'strategy')} strategies, '
+        '${count(grid.fromHive, 'folder')} folders',
+    if (grid.readMode)
+      for (final row in grid.fromHive)
+        'GRID $label from Hive ${row.kind} "${row.name}"',
+  ];
+}
+
+Future<void> _nextFrame() {
+  SchedulerBinding.instance.scheduleFrame();
+  return SchedulerBinding.instance.endOfFrame;
+}
+
+Future<List<String>> waitForGridFromStore(
+  ProviderContainer c, {
+  required String label,
+  Duration patience = const Duration(seconds: 2),
+}) async {
+  final listing = _storeListing(c) ??
+      (throw StoreStepFailed(
+          ['this run does not read the list from the store']));
+  bool onlyMarkedFromHive(GridSources grid) => grid.fromHive.every(
+        (row) => switch (row.kind) {
+          'strategy' => listing.strategiesNotInStore.contains(row.id),
+          _ => listing.foldersNotInStore.contains(row.id),
+        },
+      );
+  final deadline = DateTime.now().add(patience);
+  while (true) {
+    await _nextFrame();
+    final grid = gridSources(c)!;
+    if (grid.fromStore.isNotEmpty && onlyMarkedFromHive(grid)) {
+      return gridLines(label, grid);
+    }
+    if (DateTime.now().isAfter(deadline)) {
+      throw StoreStepFailed([
+        ...gridLines(label, grid),
+        'the grid on screen was not built from store rows '
+            '${patience.inMilliseconds} ms after the list was drawn from the '
+            'store',
+      ]);
+    }
+  }
+}
+
+Future<GridRow> waitForGridRowFromStore(
+  ProviderContainer c, {
+  required String name,
+  required Duration patience,
+}) async {
+  final listing = _storeListing(c) ??
+      (throw StoreStepFailed(
+          ['this run does not read the list from the store']));
+  final deadline = DateTime.now().add(patience);
+  while (true) {
+    await _nextFrame();
+    final named = [
+      for (final row in gridRowsOnScreen())
+        if (row.name == name) row,
+    ];
+    if (named case [final row] when listing.drewFromStore(row.row)) return row;
+    if (DateTime.now().isAfter(deadline)) {
+      throw StoreStepFailed([
+        switch (named) {
+          [] => '"$name" is not on the grid on screen',
+          [_] => '"$name" is on the grid on screen from a Hive row',
+          _ => '"$name" is on the grid on screen ${named.length} times',
+        },
+      ]);
+    }
+  }
+}
+
+void holdListAtLaunch(ProviderContainer c) => _storeListing(c)?.holdOnHive();
+
+String holdListOnHive(ProviderContainer c) {
+  final listing = _storeListing(c) ??
+      (throw StoreStepFailed(
+          ['this run does not read the list from the store']));
+  listing.holdOnHive();
+  return 'STORE list held on Hive; it is drawn from ${listSourceName(c)}';
+}
+
+String letListGo(ProviderContainer c) {
+  final listing = _storeListing(c) ??
+      (throw StoreStepFailed(
+          ['this run does not read the list from the store']));
+  listing.letGo();
+  return 'STORE list let go';
+}
+
+enum MirrorWait { notMirroring, drained, stillBusy }
+
+Future<MirrorWait> mirrorDrained(ProviderContainer c) async {
+  if (c.read(shadowProvider.notifier).mode case Mirroring(:final mirror)
+      when mirror.phase is MirrorFollowing) {
+    final drained = await mirror
+        .drained()
+        .then((_) => true)
+        .timeout(const Duration(seconds: 30), onTimeout: () => false);
+    if (!drained) return MirrorWait.stillBusy;
+    await WidgetsBinding.instance.endOfFrame;
+    return MirrorWait.drained;
+  }
+  return MirrorWait.notMirroring;
+}
+
+List<String> listEndLines(ProviderContainer c) {
+  final listing = _storeListing(c);
+  if (listing == null) return const [];
+  final line = 'STORE list drawn from ${listSourceName(c)} at the end; it '
+      'moved ${listing.switches} times';
+  return switch ((listing.source, c.read(shadowProvider.notifier).mode)) {
+    (ListFromStore(), _) => [line],
+    (ListFromHive(), Mirroring(mirror: StoreMirror(phase: MirrorHeld()))) => [
+        line,
+      ],
+    (ListFromHive(), _) => throw StoreStepFailed([
+        line,
+        'the run reads the list from the store, yet it ended drawn from Hive',
+      ]),
+  };
 }

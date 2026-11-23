@@ -249,7 +249,19 @@ void startDrive() {
     previous?.call(details);
   };
   _runFrames.start();
+  if (_startsByHoldingTheList(script)) holdListAtLaunch(appProviderContainer);
   unawaited(_play(script));
+}
+
+bool _startsByHoldingTheList(String script) {
+  try {
+    return switch (jsonDecode(File(script).readAsStringSync())) {
+      [{'holdListOnHive': true}, ...] => true,
+      _ => false,
+    };
+  } on Object {
+    return false;
+  }
 }
 
 final _runFrames = RunFrames();
@@ -343,6 +355,15 @@ Future<void> _play(String script) async {
       _log('FAIL checking items: $error');
     }
     _logScreensIfChanged('step $_steps');
+    switch (await mirrorDrained(appProviderContainer)) {
+      case MirrorWait.drained:
+        _logScreensIfChanged('step $_steps after the mirror drained');
+      case MirrorWait.stillBusy:
+        _failedSteps++;
+        _log('FAIL step $_steps: the mirror had not drained 30 s after it');
+      case MirrorWait.notMirroring:
+        break;
+    }
     _logCloudStore(_cloudStore.drain(appProviderContainer));
     await _flush();
   }
@@ -354,6 +375,12 @@ Future<void> _play(String script) async {
   _log(buildsLine());
   try {
     (await mirrorEndLines(appProviderContainer)).forEach(_log);
+  } on StoreStepFailed catch (failed) {
+    _failedSteps++;
+    failed.problems.forEach(_log);
+  }
+  try {
+    listEndLines(appProviderContainer).forEach(_log);
   } on StoreStepFailed catch (failed) {
     _failedSteps++;
     failed.problems.forEach(_log);
@@ -381,13 +408,34 @@ Future<void> _play(String script) async {
 
 var _libraryLogged = <String>[];
 var _pagesBarLogged = <String>[];
+String? _listSourceLogged;
+
+void _logListSource(String label) {
+  final source = listSourceName(appProviderContainer);
+  if (source == null || source == _listSourceLogged) return;
+  _listSourceLogged = source;
+  _log('LISTING $label drawn from $source');
+}
 
 void _logLibrary(String label, List<String> library) {
+  _logListSource(label);
   _libraryLogged = library;
   _log('LIBRARY $label ${library.length} on screen');
   for (final line in library) {
     _log('LIBRARY $label $line');
   }
+  _logGrid(label, always: true);
+}
+
+var _gridLogged = <String>[];
+
+void _logGrid(String label, {bool always = false}) {
+  final grid = gridSources(appProviderContainer);
+  if (grid == null) return;
+  final lines = gridLines('', grid);
+  if (!always && listEquals(lines, _gridLogged)) return;
+  _gridLogged = lines;
+  gridLines(label, grid).forEach(_log);
 }
 
 void _logPagesBar(String label, List<String> bar) {
@@ -410,8 +458,13 @@ void _countLibraryBoxEvents() {
 }
 
 void _logScreensIfChanged(String label) {
+  _logListSource(label);
   final library = libraryOnScreen();
-  if (!listEquals(library, _libraryLogged)) _logLibrary(label, library);
+  if (!listEquals(library, _libraryLogged)) {
+    _logLibrary(label, library);
+  } else {
+    _logGrid(label);
+  }
   final bar = pagesBarOnScreen();
   if (!listEquals(bar, _pagesBarLogged)) _logPagesBar(label, bar);
   final builds = buildCounts();
@@ -700,6 +753,7 @@ Future<void> _tap(
   Duration hold = const Duration(milliseconds: 60),
   int times = 1,
   bool touch = false,
+  String? markAtRelease,
 }) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
@@ -722,6 +776,7 @@ Future<void> _tap(
       ),
     );
     await Future<void>.delayed(hold);
+    if (markAtRelease != null) _marks[markAtRelease] = Stopwatch()..start();
     binding.handlePointerEvent(
       PointerUpEvent(pointer: pointer, kind: kind, position: at),
     );
@@ -734,6 +789,7 @@ Future<void> _drag(
   List<Offset> points, {
   int stepsPerLeg = 30,
   String? shotWhileHeld,
+  String? markAtRelease,
 }) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
@@ -775,6 +831,7 @@ Future<void> _drag(
   }
   await Future<void>.delayed(const Duration(milliseconds: 300));
   if (shotWhileHeld != null) await _run({'shot': shotWhileHeld});
+  if (markAtRelease != null) _marks[markAtRelease] = Stopwatch()..start();
   binding.handlePointerEvent(
     PointerUpEvent(
       pointer: pointer,
@@ -1109,6 +1166,47 @@ Future<void> _run(Map<String, dynamic> step) async {
         ),
       );
       lines.forEach(_log);
+    case 'libraryFromStore':
+      final lines = await _storeLines(
+        waitForStoreList(
+          c,
+          patience: Duration(seconds: (step['seconds'] ?? 600) as int),
+          expected: {...?(step['expect'] as Map<String, dynamic>?)},
+        ),
+      );
+      lines.forEach(_log);
+      _logListSource('$value');
+      (await _storeLines(waitForGridFromStore(c, label: '$value')))
+          .forEach(_log);
+    case 'gridRowFromStore':
+      final mark = step['since'] as String?;
+      final row = await _storeLines(
+        waitForGridRowFromStore(
+          c,
+          name: value as String,
+          patience: Duration(seconds: (step['seconds'] ?? 10) as int),
+        ).then((row) => [row.kind]),
+      );
+      _log('GRID "$value" ${row.single} drawn from a store row'
+          '${switch (_marks[mark]) {
+        final since? => ' ${since.elapsedMilliseconds} ms after $mark',
+        null => '',
+      }}');
+    case 'holdListOnHive':
+      _log(holdListOnHive(c));
+    case 'letListGo':
+      _log(letListGo(c));
+    case 'expectStoreRefuses':
+      storeRefusalsExpected = {...(value as List).cast<String>()};
+    case 'watchLibraryText':
+      _pictureWatches.add(
+        _watchLibraryText(
+          value as String,
+          gone: step['gone'] == true,
+          mark: step['since'] as String,
+          seconds: (step['seconds'] ?? 10) as num,
+        ),
+      );
     case 'holdLibraryStore':
       _log(holdStore(c));
     case 'checkLibraryStore':
@@ -1155,11 +1253,13 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _tap(
         _centerOf((w) => _isText(w, value as String), nth: nth),
         secondary: step['button'] == 'secondary',
+        markAtRelease: step['mark'] as String?,
       );
     case 'tapKey':
       await _tap(
         _centerOf((w) => _hasKey(w, value as String), nth: nth),
         secondary: step['button'] == 'secondary',
+        markAtRelease: step['mark'] as String?,
       );
     case 'tapIcon':
       final icon = _icons[value as String]!;
@@ -1191,7 +1291,10 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'hoverDoor':
       await _hover(_doorPoint(value as String));
     case 'dragAt':
-      await _drag([_point(step, name), _point(step, name, 2)]);
+      await _drag(
+        [_point(step, name), _point(step, name, 2)],
+        markAtRelease: step['mark'] as String?,
+      );
     case 'path':
       await _drag([
         for (final p in (value as List).cast<List>())
@@ -1217,6 +1320,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'key':
       await _expectKeyFocus();
+      if (step['mark'] case final String mark) {
+        _marks[mark] = Stopwatch()..start();
+      }
       _press([value as String]);
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await _frames();
@@ -1648,9 +1754,17 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _shot(value as String);
     case 'framesStart':
       _frameTimings.clear();
+      forgetNoticeFrames();
       SchedulerBinding.instance.addTimingsCallback(_frameTimings.addAll);
     case 'framesLog':
+      final counted = _frameTimings.length;
+      final reported = DateTime.now().add(const Duration(seconds: 2));
+      while (noticeFramesUntimed(_frameTimings) &&
+          DateTime.now().isBefore(reported)) {
+        await _frames(1);
+      }
       SchedulerBinding.instance.removeTimingsCallback(_frameTimings.addAll);
+      final timings = _frameTimings.take(counted);
       String times(Iterable<Duration> durations) {
         final ms = [for (final d in durations) d.inMicroseconds / 1000]..sort();
         if (ms.isEmpty) return 'none';
@@ -1658,9 +1772,14 @@ Future<void> _run(Map<String, dynamic> step) async {
             ms[((ms.length - 1) * share).round()].toStringAsFixed(2);
         return 'p50 ${at(.5)} p90 ${at(.9)} p99 ${at(.99)} worst ${at(1)}';
       }
-      _log('FRAMES $value n=${_frameTimings.length} '
-          'build ${times(_frameTimings.map((t) => t.buildDuration))} '
-          'raster ${times(_frameTimings.map((t) => t.rasterDuration))}');
+      _log('FRAMES $value n=${timings.length} '
+          'build ${times(timings.map((t) => t.buildDuration))} '
+          'raster ${times(timings.map((t) => t.rasterDuration))}');
+      _log(
+          'FRAMES $value after a list notice ${switch (noticeFramesLine(_frameTimings)) {
+        '' => 'none',
+        final line => line,
+      }}');
     case 'burst':
       // Its failure is held until the shots are in, then fails this step.
       final during = step['during'] == null
@@ -2059,6 +2178,47 @@ Future<void> _run(Map<String, dynamic> step) async {
 
 final _marks = <String, Stopwatch>{};
 final _pictureWatches = <Future<void>>[];
+
+Future<void> _watchLibraryText(
+  String text, {
+  required bool gone,
+  required String mark,
+  required num seconds,
+}) async {
+  bool settled() =>
+      libraryOnScreen().any((line) => line.contains('"$text"')) != gone;
+  void fail(String why) {
+    _failedSteps++;
+    _log('FAIL "$text" $why');
+  }
+
+  if (settled()) {
+    fail('was already ${gone ? 'gone from' : 'on'} the library screen '
+        'before $mark');
+    return;
+  }
+  final before = _marks[mark];
+  final markBy = DateTime.now().add(const Duration(minutes: 2));
+  while (identical(_marks[mark], before) && DateTime.now().isBefore(markBy)) {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  final since = _marks[mark];
+  if (since == null || identical(since, before)) {
+    fail('was watched for, but $mark never happened');
+    return;
+  }
+  final patience = Duration(milliseconds: (seconds * 1000).round());
+  while (since.elapsed < patience && !settled()) {
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+  if (!settled()) {
+    fail('never ${gone ? 'left' : 'reached'} the library on screen within '
+        '$seconds s of $mark');
+    return;
+  }
+  _log('TIMED $mark "$text" ${gone ? 'gone from' : 'on'} the library screen '
+      '${since.elapsedMilliseconds} ms after the action');
+}
 
 /// Waits for a pasted picture to be drawn: the only image this large on
 /// screen, whether in a dialog or on the canvas.

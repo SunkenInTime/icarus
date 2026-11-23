@@ -295,11 +295,8 @@ class _SideToggle extends ConsumerWidget {
     final library = ref.watch(localLibraryViewProvider);
 
     return ValueListenableBuilder(
-      valueListenable: library.strategyImageChanges(strategyId),
-      builder: (context, LocalStrategyImage image, _) {
-        final pages = image.current?.pages ?? const [];
-        final mixed =
-            pages.any((page) => page.isAttack != pages.first.isAttack);
+      valueListenable: library.mixesSides(strategyId),
+      builder: (context, bool mixed, _) {
         final l10n = context.l10n;
         final tooltip = !mixed
             ? l10n.mapSelectorSideTooltip

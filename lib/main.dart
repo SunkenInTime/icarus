@@ -46,6 +46,7 @@ import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/library_store/library_store_start.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/welcome_tour_provider.dart';
 import 'package:icarus/share/current_share_origin.dart';
@@ -189,12 +190,15 @@ Future<void> main(List<String> args) async {
         args,
         mayShadow: shadowReachable,
       );
+      final storeStart = LibraryStoreStart.of(
+        storeLaunch.choice,
+        clock: () => launchClock.elapsed,
+      );
       appProviderContainer = ProviderContainer(overrides: [
         guardedSignOutRequestProvider.overrideWith(
           (ref) => ref.watch(cloudSignOutRequestProvider),
         ),
-        if (storeLaunch.choice case StoreSwitchShadow() || StoreSwitchMirror())
-          libraryStoreSwitchProvider.overrideWithValue(storeLaunch.choice),
+        ...storeStart.overrides,
       ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
@@ -297,14 +301,14 @@ Future<void> main(List<String> args) async {
         allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
         build: Settings.versionName,
       );
-      final shadowStore = switch ((hiveDirectoryPath, stores.opening)) {
-        (final String directory, final opening?) when stores.localShadow => (
+      final shadowStore =
+          switch ((hiveDirectoryPath, stores.opening, storeStart.mode)) {
+        (final String directory, final opening?, final mode?)
+            when stores.localShadow =>
+          (
             opening: opening,
             directory: directory,
-            mode: switch (storeLaunch.choice) {
-              StoreSwitchMirror() => Mirroring(storeMirror()),
-              StoreSwitchShadow() || StoreSwitchOff() => const ShadowOnly(),
-            },
+            mode: mode,
           ),
         _ => null,
       };

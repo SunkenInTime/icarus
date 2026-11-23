@@ -30,7 +30,7 @@ param(
   [string]$AccountsFile = (Join-Path $HOME '.agents\secrets\icarus\test-accounts.md'),
   [int]$TimeoutSeconds = 900,
   [string]$HiveStore,
-  [ValidateSet('off', 'shadow', 'mirror')] [string]$LibraryStore,
+  [ValidateSet('off', 'shadow', 'mirror', 'read')] [string]$LibraryStore,
   [ValidateSet('shadow')] [string]$CloudStore
 )
 $ErrorActionPreference = 'Stop'

@@ -232,6 +232,15 @@ void main() {
     );
   });
 
+  test(
+      'in read mode the list and folders are drawn by a file the check covers, and it reaches no box',
+      () {
+    const listing = 'lib/library_store/library_listing.dart';
+    expect(File(listing).existsSync(), isTrue);
+    expect(_mayTouchTheBoxes(listing), isFalse);
+    expect(reads[listing], isNull);
+  });
+
   test('the check sees each way of reaching those boxes that its fixture holds',
       () {
     expect(reads[_fixture], [

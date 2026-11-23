@@ -1040,7 +1040,9 @@ void main() {
     test(
       'a summary written by the build before this one is rebuilt on open with the tile\'s fields',
       () async {
-        final current = listOf(await openOn(seeded)).strategies.single;
+        final opened = await openOn(seeded);
+        final current = listOf(opened).strategies.single;
+        expect(opened.summariesRebuiltAtOpen, 0);
         final written =
             jsonDecode(seeded['library']![summaryName(strategyId)]!)
                 as Map<String, Object?>;
@@ -1055,7 +1057,7 @@ void main() {
                     key: {
                       for (final MapEntry(:key, value: field)
                           in (value! as Map<String, Object?>).entries)
-                        if (key != 'placed' && key != 'origins') key: field,
+                        if (key != 'order') key: field,
                     },
                 },
                 _ => value,
@@ -1069,6 +1071,7 @@ void main() {
           },
         });
         expect(listOf(store).strategies.single, current);
+        expect(store.summariesRebuiltAtOpen, 1);
         expect(current.agentsInOrder, ['jett', 'sova', 'omen', 'kayo']);
         expect(current.firstPageIsAttack, isTrue);
       },

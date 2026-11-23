@@ -356,7 +356,7 @@ class _ControlledFolderProvider extends FolderProvider {
   @override
   Future<CloudLibraryActionResult> editFolder({
     required Folder folder,
-    LocalFolderEntry? local,
+    HiveFolderRecord? local,
     required String newName,
     required int newIconId,
     required FolderColor newColor,

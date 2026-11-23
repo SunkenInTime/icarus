@@ -56,6 +56,16 @@ final class MirrorStopped extends MirrorPhase {
   final MirrorStop stop;
 }
 
+final class MirrorWrote {
+  const MirrorWrote({required this.strategies, required this.folders});
+
+  static const nothing =
+      MirrorWrote(strategies: <String>{}, folders: <String>{});
+
+  final Set<String> strategies;
+  final Set<String> folders;
+}
+
 final class StoreMirror extends LocalLibraryFollower {
   StoreMirror({required this.reads, required this.betweenAnimations});
 
@@ -71,8 +81,18 @@ final class StoreMirror extends LocalLibraryFollower {
   var _batches = 0;
   var _noticed = 0;
   var _idle = Completer<void>()..complete();
+  var _strategiesInFlight = const <String>{};
+  var _foldersInFlight = const <String>{};
+  final _updates = StreamController<MirrorWrote>.broadcast(sync: true);
 
   MirrorPhase get phase => _phase;
+
+  Stream<MirrorWrote> get updates => _updates.stream;
+
+  void _phaseIs(MirrorPhase phase) {
+    _phase = phase;
+    _updates.add(MirrorWrote.nothing);
+  }
 
   int get batches => _batches;
 
@@ -94,8 +114,9 @@ final class StoreMirror extends LocalLibraryFollower {
   void onAnswered(LibraryTouch touch) {
     _noticed++;
     reads.answered(touch);
-    _strategies.addAll(touch.strategies);
-    _folders.addAll(touch.folders);
+    _strategies
+        .addAll(touch.strategies.where(reads.names.strategies.namesById));
+    _folders.addAll(touch.folders.where(reads.names.folders.namesById));
     _kick();
   }
 
@@ -104,10 +125,26 @@ final class StoreMirror extends LocalLibraryFollower {
       _stop(MirrorFaulted(error, stackTrace));
 
   void _stop(MirrorStop stop) {
-    _phase = MirrorStopped(stop);
     _working = false;
+    _phaseIs(MirrorStopped(stop));
     if (!_idle.isCompleted) _idle.complete();
   }
+
+  Set<String> get strategiesNotKnownEqual => {
+        ..._strategies,
+        ..._strategiesInFlight,
+        ...reads.strategiesBeingWritten,
+        ..._refusedStrategies.keys,
+        ...reads.names.strategies.keptIds,
+      };
+
+  Set<String> get foldersNotKnownEqual => {
+        ..._folders,
+        ..._foldersInFlight,
+        ...reads.foldersBeingWritten,
+        ..._refusedFolders.keys,
+        ...reads.names.folders.keptIds,
+      };
 
   Future<ShadowCopy> copyThenFollow(
     LibraryStore store, {
@@ -142,14 +179,14 @@ final class StoreMirror extends LocalLibraryFollower {
           ShadowCopyFinished() || ShadowCopyRaced(),
           LibraryOpen(:final list)
         ):
-        _phase = MirrorFollowing(store, StoreHolds.of(list));
+        _phaseIs(MirrorFollowing(store, StoreHolds.of(list)));
     }
     _kick();
     return copy;
   }
 
   void hold() {
-    if (_phase case MirrorFollowing()) _phase = const MirrorHeld();
+    if (_phase case MirrorFollowing()) _phaseIs(const MirrorHeld());
   }
 
   Future<void> drained() => _idle.future;
@@ -233,19 +270,27 @@ final class StoreMirror extends LocalLibraryFollower {
       final (:strategies, :folders) = _choose();
       _strategies.removeAll(strategies);
       _folders.removeAll(folders);
-      final batch = await mirrorIds(
-        reads,
-        store,
-        holds,
-        strategies: strategies,
-        folders: folders,
-      );
+      _strategiesInFlight = strategies;
+      _foldersInFlight = folders;
+      final ShadowCopy batch;
+      try {
+        batch = await mirrorIds(
+          reads,
+          store,
+          holds,
+          strategies: strategies,
+          folders: folders,
+        );
+      } finally {
+        _strategiesInFlight = const {};
+        _foldersInFlight = const {};
+      }
       _batches++;
-      _record(batch, strategies, folders);
       if (batch case ShadowCopyStopped(:final stop)) {
         _stop(MirrorStoreStopped(stop));
-        return;
       }
+      _record(batch, strategies, folders);
+      if (batch is ShadowCopyStopped) return;
     }
   }
 
@@ -289,5 +334,6 @@ final class StoreMirror extends LocalLibraryFollower {
           _refusedFolders.remove(folderId);
       }
     }
+    _updates.add(MirrorWrote(strategies: strategies, folders: folders));
   }
 }

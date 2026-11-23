@@ -29,6 +29,7 @@ import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 
 import '../library_rows/library_sources.dart';
+import 'aged_summaries.dart';
 import 'hive_scratch.dart';
 import 'tile_parity.dart';
 
@@ -191,6 +192,12 @@ Future<void> _checkOne(
   }
 }
 
+List<Directory> _storesIn(String corpus) {
+  final stores = hiveStoresUnder(Directory(corpus));
+  expect(stores, isNotEmpty, reason: '$corpusVariable names $corpus');
+  return stores;
+}
+
 Future<(List<StrategyData>, List<Folder>)> _corpusLibrary(
   List<Directory> stores,
   Directory scratchRoot, {
@@ -237,6 +244,7 @@ Future<(List<StrategyData>, List<Folder>)> _corpusLibrary(
       await scratch.delete(recursive: true);
     }
   }
+  expect(strategies, isNotEmpty, reason: 'the corpus holds no strategy');
   return (strategies, folders);
 }
 
@@ -257,58 +265,6 @@ Future<void> _writeHiveLibrary(
     await folderBox.put(folder.id, folderAsHiveHoldsIt(folder));
   }
   await Hive.close();
-}
-
-Map<String, Object?> _summaryAsTheBuildBeforeWroteIt(
-  Map<String, Object?> summary,
-) =>
-    {
-      for (final MapEntry(:key, :value) in summary.entries)
-        if (key != 'agentsInOrder' && key != 'firstPageIsAttack')
-          key: switch (key) {
-            'summaryVersion' => 5,
-            'tallies' => {
-                for (final MapEntry(:key, :value)
-                    in (value! as Map<String, Object?>).entries)
-                  key: _tallyAsTheBuildBeforeWroteIt(value),
-              },
-            'elsewhere' => _tallyAsTheBuildBeforeWroteIt(value),
-            _ => value,
-          },
-    };
-
-Map<String, Object?> _tallyAsTheBuildBeforeWroteIt(Object? tally) => {
-      for (final MapEntry(:key, :value)
-          in (tally! as Map<String, Object?>).entries)
-        if (key != 'order') key: value,
-    };
-
-Future<int> _ageSummaries(SqliteEngine engine) async {
-  final lease = switch (await engine.lease()) {
-    Leased(:final lease) => lease,
-    final other => fail('$other'),
-  };
-  final entries = switch (await lease.entries('library', 'summary/')) {
-    Done(:final value) => value,
-    final other => fail('$other'),
-  };
-  expect(
-    await lease.commit([
-      for (final (:key, :value) in entries)
-        Put(
-          'library',
-          key,
-          jsonEncode(
-            _summaryAsTheBuildBeforeWroteIt(
-              jsonDecode(value) as Map<String, Object?>,
-            ),
-          ),
-        ),
-    ]),
-    isA<CommitApplied>(),
-  );
-  await lease.release();
-  return entries.length;
 }
 
 Future<Set<Object?>> _storedSummaryVersions(File file) async {
@@ -464,7 +420,7 @@ void main() {
     timeout: const Timeout(Duration(hours: 2)),
     () async {
       final totals = CorpusTotals();
-      for (final store in hiveStoresUnder(Directory(corpus!))) {
+      for (final store in _storesIn(corpus!)) {
         await _checkOne(store, scratchRoot, totals);
       }
       debugPrint(totals.render());
@@ -482,7 +438,7 @@ void main() {
     timeout: const Timeout(Duration(hours: 1)),
     () async {
       final (strategies, folders) = await _corpusLibrary(
-        hiveStoresUnder(Directory(corpus!)),
+        _storesIn(corpus!),
         scratchRoot,
       );
       await _writeHiveLibrary(
@@ -500,7 +456,7 @@ void main() {
         : false,
     timeout: const Timeout(Duration(hours: 2)),
     () async {
-      final stores = hiveStoresUnder(Directory(corpus!));
+      final stores = _storesIn(corpus!);
       final (first, firstFolders) = await _corpusLibrary(stores, scratchRoot);
       final (second, secondFolders) =
           await _corpusLibrary(stores, scratchRoot, round: 'second/');
@@ -521,7 +477,7 @@ void main() {
     () async {
       final problems = <String>[];
       var stores = 0;
-      for (final store in hiveStoresUnder(Directory(corpus!))) {
+      for (final store in _storesIn(corpus!)) {
         stores++;
         problems.addAll(await _editEachThroughMirror(store, scratchRoot));
       }
@@ -539,7 +495,7 @@ void main() {
     timeout: const Timeout(Duration(hours: 1)),
     () async {
       final (strategies, folders) = await _corpusLibrary(
-        hiveStoresUnder(Directory(corpus!)),
+        _storesIn(corpus!),
         scratchRoot,
       );
       final store = await openStoreOn(MemoryEngine(MemoryStorage()));
@@ -620,7 +576,7 @@ void main() {
     timeout: const Timeout(Duration(hours: 1)),
     () async {
       final (strategies, folders) = await _corpusLibrary(
-        hiveStoresUnder(Directory(corpus!)),
+        _storesIn(corpus!),
         scratchRoot,
       );
       final scratch = await scratchRoot.createTemp('summary-rebuild-');
@@ -636,7 +592,7 @@ void main() {
         await engine.close();
         final (current, _) = await _timedOpen(file);
         final aging = SqliteEngine(file.path);
-        final aged = await _ageSummaries(aging);
+        final aged = await ageSummaries(aging);
         await aging.close();
         final (rebuilding, withAgents) = await _timedOpen(file);
         final (again, _) = await _timedOpen(file);

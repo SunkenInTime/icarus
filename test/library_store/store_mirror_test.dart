@@ -14,6 +14,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
@@ -144,6 +145,14 @@ final class _Boxes implements LibraryBoxes {
 
   @override
   Iterable<Folder> get folders => _folders.values;
+
+  @override
+  Iterable<HiveRecordName> get strategyNames =>
+      const LocalLibrary().storedStrategyNames;
+
+  @override
+  Iterable<HiveRecordName> get folderNames =>
+      const LocalLibrary().storedFolderNames;
 }
 
 final class _Thrown implements LibraryBoxes {
@@ -163,6 +172,14 @@ final class _Thrown implements LibraryBoxes {
 
   @override
   Iterable<Folder> get folders => _folders.values;
+
+  @override
+  Iterable<HiveRecordName> get strategyNames =>
+      const LocalLibrary().storedStrategyNames;
+
+  @override
+  Iterable<HiveRecordName> get folderNames =>
+      const LocalLibrary().storedFolderNames;
 }
 
 final class _Recorder extends LocalLibraryFollower {

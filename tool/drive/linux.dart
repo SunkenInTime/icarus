@@ -13,7 +13,7 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
   dart tool/drive/linux.dart run --script FILE [--account EMAIL]
       [--companion FILE] [--companion-account EMAIL] [--exe DIR] [--out DIR]
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
-      [--hive-store DIR] [--library-store off|shadow|mirror]
+      [--hive-store DIR] [--library-store off|shadow|mirror|read]
       [--cloud-store shadow] [--kill-after-seconds S]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
@@ -31,7 +31,8 @@ run     Runs --script, and --companion beside it when given, against the
         --hive-store starts the main instance on a copy of DIR, which is
         never opened itself. --library-store passes --library-store=VALUE to
         every instance; shadow copies the library into the store as it
-        starts, and mirror also writes the store after every save.
+        starts, mirror also writes the store after every save, and read
+        also draws the library list and folders from the store.
         --cloud-store shadow passes --cloud-store=shadow to every instance:
         the open cloud strategy's results go into the store too, and the
         driver compares the open page with them.
@@ -349,9 +350,9 @@ Future<int> _run(Map<String, String> options) async {
   Directory('${out.path}/signals').createSync();
   final libraryStore = options['library-store'];
   if (libraryStore != null &&
-      !const {'off', 'shadow', 'mirror'}.contains(libraryStore)) {
+      !const {'off', 'shadow', 'mirror', 'read'}.contains(libraryStore)) {
     throw UsageError(
-      '--library-store is off, shadow or mirror, not "$libraryStore"',
+      '--library-store is off, shadow, mirror or read, not "$libraryStore"',
     );
   }
   final cloudStore = options['cloud-store'];
