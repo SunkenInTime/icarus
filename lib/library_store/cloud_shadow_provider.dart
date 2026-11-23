@@ -13,6 +13,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus_library/icarus_library.dart' show Account;
 
 sealed class CloudShadowState {
   const CloudShadowState();
@@ -153,6 +154,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
         if (named == null) return false;
         _account = auth.changes;
         subject = named;
+        shadow.serve(Account(named));
         return true;
       case final account when account != auth.changes:
         shadow.end('the account changed');

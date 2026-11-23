@@ -1438,8 +1438,10 @@ A cloud strategy lives in the same area as a local one. Its cached rows (the
 rows the server's results last showed) sit under the usual names, and these
 rows sit beside them, each versioned and each read back before it is written:
 
-- `cloud`: the strategy's facts (deleted on the server, edit access lost or
-  confirmed after attempt N, upgrade asked of build X by attempt N).
+- `cloud`: the account the strategy's work belongs to (the identity subject
+  the app sends as `accountSubject`), and the strategy's facts (deleted on the
+  server, edit access lost or confirmed after attempt N, upgrade asked of
+  build X by attempt N).
 - `pending/<place>`: one row per entry.
 - `attempt/<number>`: one row per attempt.
 - `landed/<attempt>/<position>`: one row per piece of landed work.
@@ -1471,16 +1473,16 @@ fresh store as in a warm one. An edit finds its row the same way, so an
 element shown only by landed or queued work can be edited. A page whose
 content no stored result covers, and every page of a held strategy, says
 `ContentNotRead` instead of looking empty, and copying such a page is
-refused (`CopyNeedsContent`). `commit` and `commitAll` add edits. `record`
-takes a list of events and first records any passed resend window, so
-`record(id, [])` is the store's `look`: it writes the expiry, and a view can
+refused (`CopyNeedsContent`). `commitAs` and `commitAllAs` add edits.
+`record` takes a list of events and first records any passed resend window, so
+`record(account, id, [])` is the store's `look`: it writes the expiry, and a view can
 never show one that is not on disk. A strategy's current session, and what
 that session has been shown (including the freshness the page-delete rule
 reads), are kept at the library level in memory, so unloading the strategy,
 or a call that reads its queue back from disk, does not end them: a strategy
 loaded again in the same run takes results issued under its session and keeps
 what it was shown. A full reopen starts a new session, where nothing stored
-counts, so none of this is persisted. The sender calls `record(id, [])` on its
+counts, so none of this is persisted. The sender calls `record(account, id, [])` on its
 timer and before it shows the sync state. Loading a queue opens no session: until
 a call records `AppRestarted` or `ConnectionReturned` (which commits the new
 session number and returns it), the queue is in session 0, which is never
@@ -1532,7 +1534,7 @@ each row it could not read. Nothing is recorded, sent or rewritten: `commit`
 and `record` are refused with `QueueHeld`, and so is `rebuildSummary`. Held is a standing of its own in
 the summary, kept in memory when the store finds it and saved with the next
 commit; a summary from a newer build also reads as held. A newer build reads
-the queue; otherwise the only way out is `discardUnreadableQueue(id, const
+the queue; otherwise the only way out is `discardUnreadableQueue(account, id, const
 DiscardsUnsentWork())`, which deletes the queue rows and writes fresh facts
 and the rebuilt summary in one commit, or changes nothing. On a queue that is
 not held it refuses with `QueueNotHeld` and writes nothing; it does load the
@@ -1584,6 +1586,35 @@ row shown only by landed work, deletes the source page of a queued move, and
 compares a held queue's pages with the list. No element may be drawn on two
 pages. At the end it drains against a server model with teammates and
 requires the drawn rows to equal the server's.
+
+**Whose work it is.** A cloud strategy belongs to one account, given to
+`addCloudStrategy` and kept in its `cloud` row. Damage never widens what a call
+may do. The account is read from that row by itself, so damage to another
+field holds the queue and leaves its owner known, and the owner can still
+discard their own held work. A row whose account cannot be read has an
+unreadable owner (`OwnerUnreadable`), and that permits nothing: its strategy is
+held, and no account may discard it (`OwnerNotRead`). Every call that changes
+or sends a cloud strategy's work names the account asking: `commitAs`,
+`commitAllAs`, `record` (which also carries claims, answers, results, user
+choices and session events) and `discardUnreadableQueue`. Each keeps the order
+it reads in: it finds the strategy and checks its row, then loads the queue.
+Once the queue is loaded and the owner known, another account is refused with
+`WorkOfAnotherAccount`, ahead of every other queue refusal (`QueueHeld`,
+`ResultOutOfPlace`, `QueueNotHeld`). A refusal found before that point
+(`NoSuchStrategy`, `StrategyNotReadable`, a failed read) comes first, because
+it is the first true thing the store knows. In every case a call from another
+account applies no event, issues no session or attempt number, and commits
+nothing; it may load the strategy exactly as a read does, which can move a
+listed strategy from `CloudUnverified` to `KeptInCloud` and send
+`StrategyRefreshed`. `commit` and `commitAll` take no account: they are for
+strategies kept on this device, and refuse a cloud strategy (`AccountNeeded`),
+as `commitAs` refuses a local one (`NotACloudStrategy`). Reading names no
+account, so the list and the sync state can show another account's work.
+Nothing moves work from one account to another, and nothing in the store
+clears it: removing a strategy is refused while it has outstanding work or a
+held queue, so another account's work, and held work whose owner cannot be
+read, stay until their owner, or a newer build that reads the queue, acts on
+them.
 
 ### Cloud strategies: the queue
 
@@ -1837,8 +1868,20 @@ carried ones, and at the end requires the server to hold the user's edits.
 answer and a transport failure on queues of 100, 1,000 and 3,000 entries.
 
 **The sync state** (`Tally`, `syncStateOf`, `accountSyncState`) is derived
-from the entries and the standing. Waiting for a result counts as underway,
-not as unsent. An empty queue reads as all saved only in good standing.
+from the entries, the standing and who owns the work, in one order with
+ownership first, whether or not anything is waiting to be sent: held work
+whose owner cannot be read (`ownerUnreadable`); anything while nobody is
+signed in (`signedOut`); another account's strategy, held
+(`heldForAnotherAccount`) or not (`notThisAccount`); and only then the
+signed-in owner's own states, from deleted on the server down to waiting for a
+result, offline among them. `AllSaved` is a promise made to the owner only:
+an empty queue reads as all saved only to its owner and only in good
+standing. Someone else's work cannot be sent even online, so ownership
+outranks the connection. Waiting for a result counts as underway, not as
+unsent. `accountSyncState` is `SignedInSync` (with `mine`, the signed-in
+account's strategies only) or `SignedOutSync`; both list every other account
+that holds work in `others` with its own tally, and keep held work whose owner
+cannot be read apart in `ownerUnreadable`.
 
 ### Measuring it
 

@@ -68,6 +68,7 @@ export 'src/store/summary.dart'
         SomeUnreadable,
         StrategySummary,
         SummarySync;
+export 'src/cloud/account.dart';
 export 'src/cloud/events.dart';
 export 'src/cloud/held_page_delete.dart';
 export 'src/cloud/shown.dart';

@@ -289,7 +289,8 @@ final class CloudStoreLog {
             if (differences.isEmpty)
               CloudStoreLine(
                 'CLOUDSTORE read back after reopening the store: $strategyId '
-                'equal, whole',
+                'equal, whole, the work of account '
+                '${state.shadow.account?.subject}',
                 problem: false,
               ),
             for (final difference in differences)

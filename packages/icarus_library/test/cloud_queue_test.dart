@@ -89,9 +89,10 @@ void main() {
       expect(client.queue.landed.single.revision, 2);
       expect(
         syncStateOf(
+          OwnedBy(testAccount),
           Tally.of(client.queue, now),
           network: Network.online,
-          signedIn: SignedIn.thisAccount,
+          signedIn: SignedInAs(testAccount),
         ),
         isA<AllSaved>(),
       );
@@ -741,9 +742,10 @@ void main() {
       client.arrive(const StrategyGone());
       expect(
         syncStateOf(
+          OwnedBy(testAccount),
           Tally.of(client.queue, now),
           network: Network.online,
-          signedIn: SignedIn.thisAccount,
+          signedIn: SignedInAs(testAccount),
         ),
         isA<Outstanding>(),
       );

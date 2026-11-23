@@ -25,7 +25,8 @@ Future<({int rows, int groups})> oneFieldEdit(int pages) async {
   }
   storeWork.reset();
   savedValue(
-    await store.commit(
+    await store.commitAs(
+      testAccount,
       strategyId,
       movePatch(
         'drag',
@@ -59,6 +60,7 @@ void main() {
       final id = 'strategy-$i';
       savedValue(
         await store.addCloudStrategy(
+          testAccount,
           HeaderRead(
             strategy: strategyRow(publicId: id),
             pages: [

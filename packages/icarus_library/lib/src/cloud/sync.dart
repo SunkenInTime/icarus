@@ -1,5 +1,6 @@
 import '../json.dart';
 import '../wire.dart';
+import 'account.dart';
 import 'pending.dart';
 import 'queue.dart';
 
@@ -134,8 +135,6 @@ final class Tally {
 
 enum Network { online, offline }
 
-enum SignedIn { thisAccount, notThisAccount }
-
 sealed class SyncState {
   const SyncState();
 }
@@ -158,53 +157,167 @@ final class Outstanding extends SyncState {
 }
 
 enum Face {
+  ownerUnreadable,
+  signedOut,
+  heldForAnotherAccount,
+  notThisAccount,
   deletedOnServer,
   editAccessLost,
   unreadableWork,
   needsYou,
   upgradeRequired,
   offline,
-  notThisAccount,
   answerUnknown,
   sending,
   awaitingResult,
 }
 
+sealed class SignedIn {
+  const SignedIn();
+}
+
+final class SignedInAs extends SignedIn {
+  const SignedInAs(this.account);
+
+  final Account account;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SignedInAs && other.account == account;
+
+  @override
+  int get hashCode => account.hashCode;
+
+  @override
+  String toString() => 'SignedInAs(${account.subject})';
+}
+
+final class SignedOut extends SignedIn {
+  const SignedOut();
+
+  @override
+  bool operator ==(Object other) => other is SignedOut;
+
+  @override
+  int get hashCode => (SignedOut).hashCode;
+
+  @override
+  String toString() => 'SignedOut';
+}
+
 SyncState syncStateOf(
+  CloudOwner owner,
   Tally tally, {
   required Network network,
   required SignedIn signedIn,
 }) {
-  final face = switch (tally) {
-    Tally(standing: Standing.deletedOnServer) => Face.deletedOnServer,
-    Tally(standing: Standing.editAccessLost) => Face.editAccessLost,
-    Tally(standing: Standing.held) => Face.unreadableWork,
-    Tally(unreadable: > 0) => Face.unreadableWork,
-    Tally(needingYou: > 0) => Face.needsYou,
-    Tally(total: 0) => null,
-    Tally(standing: Standing.upgradeRequired) => Face.upgradeRequired,
-    _ when network == Network.offline => Face.offline,
-    _ when signedIn == SignedIn.notThisAccount => Face.notThisAccount,
-    Tally(:final waiting) when waiting.containsKey(Underway.answerUnknown) =>
-      Face.answerUnknown,
-    Tally(:final waiting)
-        when waiting.containsKey(Underway.unsent) ||
-            waiting.containsKey(Underway.sending) =>
-      Face.sending,
-    _ => Face.awaitingResult,
+  final face = switch ((owner, signedIn)) {
+    (OwnerUnreadable(), _) => Face.ownerUnreadable,
+    (_, SignedOut()) => Face.signedOut,
+    (OwnedBy(account: final whose), SignedInAs(:final account))
+        when whose != account =>
+      tally.standing == Standing.held
+          ? Face.heldForAnotherAccount
+          : Face.notThisAccount,
+    _ => _ownFace(tally, network),
   };
   return face == null ? const AllSaved() : Outstanding(face, tally);
 }
 
-SyncState accountSyncState(
-  Iterable<Tally> strategies, {
+Face? _ownFace(Tally tally, Network network) => switch (tally) {
+  Tally(standing: Standing.deletedOnServer) => Face.deletedOnServer,
+  Tally(standing: Standing.editAccessLost) => Face.editAccessLost,
+  Tally(standing: Standing.held) => Face.unreadableWork,
+  Tally(unreadable: > 0) => Face.unreadableWork,
+  Tally(needingYou: > 0) => Face.needsYou,
+  Tally(total: 0) => null,
+  Tally(standing: Standing.upgradeRequired) => Face.upgradeRequired,
+  _ when network == Network.offline => Face.offline,
+  Tally(:final waiting) when waiting.containsKey(Underway.answerUnknown) =>
+    Face.answerUnknown,
+  Tally(:final waiting)
+      when waiting.containsKey(Underway.unsent) ||
+          waiting.containsKey(Underway.sending) =>
+    Face.sending,
+  _ => Face.awaitingResult,
+};
+
+typedef OwnedTally = ({CloudOwner owner, Tally tally});
+
+sealed class AccountSync {
+  AccountSync({
+    required Map<Account, Tally> others,
+    required this.ownerUnreadable,
+  }) : others = Map.unmodifiable(others);
+
+  final Map<Account, Tally> others;
+  final Tally ownerUnreadable;
+}
+
+final class SignedInSync extends AccountSync {
+  SignedInSync({
+    required this.account,
+    required this.mine,
+    required super.others,
+    required super.ownerUnreadable,
+  });
+
+  final Account account;
+  final SyncState mine;
+
+  @override
+  String toString() =>
+      'SignedInSync(${account.subject}, mine: $mine, others: $others, '
+      'ownerUnreadable: $ownerUnreadable)';
+}
+
+final class SignedOutSync extends AccountSync {
+  SignedOutSync({required super.others, required super.ownerUnreadable});
+
+  @override
+  String toString() =>
+      'SignedOutSync(others: $others, ownerUnreadable: $ownerUnreadable)';
+}
+
+AccountSync accountSyncState(
+  Iterable<OwnedTally> strategies, {
   required Network network,
   required SignedIn signedIn,
-}) => syncStateOf(
-  strategies.fold(Tally.empty, (sum, tally) => sum.plus(tally)),
-  network: network,
-  signedIn: signedIn,
-);
+}) {
+  final signedInAs = switch (signedIn) {
+    SignedInAs(:final account) => account,
+    SignedOut() => null,
+  };
+  var mine = Tally.empty;
+  var ownerUnreadable = Tally.empty;
+  final others = <Account, Tally>{};
+  for (final (:owner, :tally) in strategies) {
+    switch (owner) {
+      case OwnedBy(:final account) when account == signedInAs:
+        mine = mine.plus(tally);
+      case OwnedBy(:final account) when tally.total > 0:
+        others[account] = (others[account] ?? Tally.empty).plus(tally);
+      case OwnedBy():
+        break;
+      case OwnerUnreadable():
+        ownerUnreadable = ownerUnreadable.plus(tally);
+    }
+  }
+  return switch (signedInAs) {
+    final account? => SignedInSync(
+      account: account,
+      mine: syncStateOf(
+        OwnedBy(account),
+        mine,
+        network: network,
+        signedIn: signedIn,
+      ),
+      others: others,
+      ownerUnreadable: ownerUnreadable,
+    ),
+    null => SignedOutSync(others: others, ownerUnreadable: ownerUnreadable),
+  };
+}
 
 final class QueueLook {
   QueueLook(this.queue, this.now)

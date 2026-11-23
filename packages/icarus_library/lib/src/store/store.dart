@@ -17,6 +17,7 @@ import 'layout.dart';
 import 'loaded_strategy.dart';
 import 'results.dart';
 import 'summary.dart';
+import '../cloud/account.dart';
 import '../cloud/codec.dart';
 import '../cloud/events.dart';
 import '../cloud/shown.dart';
@@ -359,9 +360,12 @@ final class LibraryStore {
           strategies: [
             for (final MapEntry(key: digest, value: summary)
                 in _summaries.entries)
-              _unchecked.contains(digest)
-                  ? summary.withSync(const CloudUnverified())
-                  : summary,
+              switch ((_unchecked.contains(digest), summary.sync)) {
+                (true, KeptInCloud(:final owner)) => summary.withSync(
+                  CloudUnverified(owner),
+                ),
+                _ => summary,
+              },
           ],
           unreadableStrategies: _unreadable.values.toList(),
           folders: _folders.values.toList(),
@@ -746,13 +750,18 @@ final class LibraryStore {
         _QueueLoaded(:final queue) => switch (await _cloudSummaryAll(
           strategy,
           header,
+          queue.owner,
           queue.current,
         )) {
           Done(:final value) => _RebuiltSummary(value),
           StorageFailed(:final failure) => _RebuildNotRead(failure),
         },
-        _QueueHeld(:final rows) => _RebuiltSummary(
-          _summaryOf(strategy, header, const {}).withSync(_heldSync(rows)),
+        _QueueHeld(:final rows, :final owner) => _RebuiltSummary(
+          _summaryOf(
+            strategy,
+            header,
+            const {},
+          ).withSync(_heldSync(owner, rows)),
         ),
         _QueueNotRead(:final failure) => _RebuildNotRead(failure),
       };
@@ -1223,8 +1232,17 @@ final class LibraryStore {
     return stamped;
   }
 
-  Future<CommitResult> commit(String strategyPublicId, StrategyOp op) async =>
-      switch (await commitAll(strategyPublicId, [op])) {
+  Future<CommitResult> commit(String strategyPublicId, StrategyOp op) =>
+      _single(commitAll(strategyPublicId, [op]));
+
+  Future<CommitResult> commitAs(
+    Account account,
+    String strategyPublicId,
+    StrategyOp op,
+  ) => _single(commitAllAs(account, strategyPublicId, [op]));
+
+  static Future<CommitResult> _single(Future<BatchResult> batch) async =>
+      switch (await batch) {
         Saved(:final value) => Saved(value.single),
         NothingToSave() => const NothingToSave(),
         Refused(:final reason) => Refused(reason),
@@ -1262,7 +1280,22 @@ final class LibraryStore {
     return null;
   }
 
-  Future<BatchResult> commitAll(String strategyPublicId, List<StrategyOp> ops) {
+  Future<BatchResult> commitAll(
+    String strategyPublicId,
+    List<StrategyOp> ops,
+  ) => _commitAll(null, strategyPublicId, ops);
+
+  Future<BatchResult> commitAllAs(
+    Account account,
+    String strategyPublicId,
+    List<StrategyOp> ops,
+  ) => _commitAll(account, strategyPublicId, ops);
+
+  Future<BatchResult> _commitAll(
+    Account? account,
+    String strategyPublicId,
+    List<StrategyOp> ops,
+  ) {
     final asked = List<StrategyOp>.of(ops);
     return _inTurn(() async {
       if (_settle() case StorageFailed(:final failure)) {
@@ -1290,12 +1323,21 @@ final class LibraryStore {
           return Refused(NoSuchStrategy(strategyPublicId));
       }
       if (strategy.keeping == Keeping.cloud) {
-        return switch (await _openCloud(strategyPublicId)) {
+        if (account == null) return Refused(AccountNeeded(strategyPublicId));
+        final open = await _openCloud(strategyPublicId);
+        if (_anotherAccountOpened(strategyPublicId, open, account)
+            case final refusal?) {
+          return Refused(refusal);
+        }
+        return switch (open) {
           final _CloudReady cloud => await _commitCloud(cloud, asked),
           _CloudHeld(:final rows) => Refused(QueueHeld(rows)),
           _CloudUnread(:final failure) => NotSaved(failure),
           _CloudRefused(:final refusal) => Refused(refusal),
         };
+      }
+      if (account != null) {
+        return Refused(NotACloudStrategy(strategyPublicId));
       }
       for (final op in asked) {
         if (await _loadPages(strategy, _pagesFor(op, strategy))
@@ -1529,6 +1571,7 @@ final class LibraryStore {
   });
 
   Future<RecordResult> record(
+    Account account,
     String strategyPublicId,
     List<QueueEvent> events,
   ) {
@@ -1537,11 +1580,12 @@ final class LibraryStore {
       if (_settle() case StorageFailed(:final failure)) {
         return NotSaved(failure);
       }
-      return _recordCloud(strategyPublicId, asked);
+      return _recordCloud(account, strategyPublicId, asked);
     });
   }
 
   Future<Saving<StrategySummary, LibraryRefusal>> addCloudStrategy(
+    Account account,
     HeaderRead header,
     List<PageRead> pages,
   ) {
@@ -1550,7 +1594,7 @@ final class LibraryStore {
       if (_settle() case StorageFailed(:final failure)) {
         return NotSaved(failure);
       }
-      final result = await _addCloud(header, asked);
+      final result = await _addCloud(account, header, asked);
       if (result case Saved(:final value)) {
         _emit(
           LibraryEdited(
@@ -1567,11 +1611,12 @@ final class LibraryStore {
   }
 
   Future<Saving<StrategySummary, CommitRefusal>> discardUnreadableQueue(
+    Account account,
     String strategyPublicId,
     DiscardsUnsentWork acknowledged,
   ) => _inTurn(() async {
     if (_settle() case StorageFailed(:final failure)) return NotSaved(failure);
-    final result = await _discardHeld(strategyPublicId);
+    final result = await _discardHeld(account, strategyPublicId);
     if (result case Saved(:final value)) {
       _emit(
         LibraryEdited(

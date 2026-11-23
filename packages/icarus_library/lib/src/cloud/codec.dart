@@ -3,6 +3,7 @@ import '../ops.dart';
 import '../outcome.dart';
 import '../rows.dart';
 import '../wire.dart';
+import 'account.dart';
 import 'events.dart';
 import 'op_facts.dart';
 import 'pending.dart';
@@ -555,8 +556,23 @@ CloudRowReading<AttemptFact> attemptFromText(int number, String text) =>
       }),
     );
 
-Map<String, Object?> factsToJson(StrategyFacts facts) => {
+final class CloudFacts {
+  const CloudFacts(this.owner, this.facts);
+
+  final Account owner;
+  final StrategyFacts facts;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CloudFacts && other.owner == owner && other.facts == facts;
+
+  @override
+  int get hashCode => Object.hash(owner, facts);
+}
+
+Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
   'version': cloudRowVersion,
+  'account': owner.subject,
   'presence': facts.presence.name,
   'accessLostAt': facts.accessLostAt,
   'accessConfirmedAt': facts.accessConfirmedAt,
@@ -564,10 +580,26 @@ Map<String, Object?> factsToJson(StrategyFacts facts) => {
     'upgradeTold': {'build': build, 'attempt': attempt},
 };
 
-CloudRowReading<StrategyFacts> factsFromText(String text) => _fromText(
+CloudOwner ownerFromText(String text) => switch (admit(text)) {
+  NotAdmitted() => const OwnerUnreadable(),
+  Admitted(:final json) => switch (JsonFields.read(json, 'cloud facts', (
+    fields,
+  ) {
+    final account = fields.string('account');
+    if (account.isEmpty) fields.reject('expected the account the work is for');
+    return () => account;
+  })) {
+    Read(:final value) => OwnedBy(Account(value)),
+    CouldNotRead() => const OwnerUnreadable(),
+  },
+};
+
+CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
   text,
   (json) => JsonFields.read(json, 'cloud facts', (fields) {
     _versioned(fields, 'cloud facts');
+    final account = fields.string('account');
+    if (account.isEmpty) fields.reject('expected the account the work is for');
     final presence = _named(fields, 'presence', Presence.values);
     final lost = fields.whole('accessLostAt');
     final confirmed = fields.whole('accessConfirmedAt');
@@ -582,11 +614,14 @@ CloudRowReading<StrategyFacts> factsFromText(String text) => _fromText(
         return const NoUpgradeTold();
       }(),
     };
-    return () => StrategyFacts(
-      presence: presence!,
-      accessLostAt: lost,
-      accessConfirmedAt: confirmed,
-      upgradeTold: upgrade,
+    return () => CloudFacts(
+      Account(account),
+      StrategyFacts(
+        presence: presence!,
+        accessLostAt: lost,
+        accessConfirmedAt: confirmed,
+        upgradeTold: upgrade,
+      ),
     );
   }),
 );
