@@ -32,7 +32,10 @@ String actionLabel(UserAction action, ActionWay way) {
     LineUpEditAction(:final field) => 'lineup ${field.name}',
     WeaponSelectionAction(:final group) => 'weapon of ${group.name}',
     StrategySettingsAction() => 'strategy settings',
-    _ when action.group == ActionGroup.bulk => action.type.name,
+    _ when action.group == ActionGroup.bulk => '${action.type.name}: ${{
+        for (final change in action.changes)
+          actionLabel(change, ActionWay.done),
+      }.join(', ')}',
     _ => '${action.type.name} ${action.group.name}',
   };
   return switch (way) {
@@ -58,7 +61,8 @@ final class OpsFollower implements EditFollower {
   var _scheduled = false;
   var _faulted = false;
   String? _takenUp;
-  String? _pageOnScreen;
+  String? _appliedPage;
+  var _loadPending = false;
   StrategyData? _last;
   final _seen = <String, StrategyPage>{};
 
@@ -84,8 +88,17 @@ final class OpsFollower implements EditFollower {
       watch(mapProvider);
       watch(strategyThemeProvider);
       watch(strategyProvider);
-      watch(strategyPageSessionProvider);
       watch(textDraftProvider);
+      _subscriptions.add(container.listen<StrategyPageSessionState>(
+        strategyPageSessionProvider,
+        (previous, next) => _guarded('page session', () {
+          if ((previous?.isApplyingPage ?? false) && !next.isApplyingPage) {
+            _appliedPage = next.activePageId;
+            _loadPending = true;
+          }
+          _noteChange();
+        }),
+      ));
       _mirror.actions?.onHiveWrite =
           (_) => _guarded('library write', _noteChange);
       GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
@@ -188,20 +201,25 @@ final class OpsFollower implements EditFollower {
     if (_unit == null || _held) return;
     final session = _container().read(strategyPageSessionProvider);
     if (session.isApplyingPage) return;
-    final unit = _unit!;
-    _unit = null;
     final id = _localStrategy();
     final pageId = session.activePageId;
     if (_takenUp != null && _takenUp != id) {
       _release(_takenUp!);
     }
-    if (id == null || pageId == null) return;
+    if (id == null || pageId == null) {
+      _unit = null;
+      return;
+    }
+    if (pageId != _appliedPage) return;
+    final unit = _unit!;
+    _unit = null;
     if (_takenUp == null) {
+      _loadPending = false;
       _takeUp(id, pageId);
       return;
     }
-    if (pageId != _pageOnScreen) {
-      _pageOnScreen = pageId;
+    if (_loadPending) {
+      _loadPending = false;
       final clock = Stopwatch()..start();
       final snapshot = _capture(id, pageId, everyPage: true);
       _mirror.unit(
@@ -259,7 +277,6 @@ final class OpsFollower implements EditFollower {
     final canvas = _capture(id, pageId, everyPage: true);
     if (canvas == null) return;
     _takenUp = id;
-    _pageOnScreen = pageId;
     _mirror.takeUp(id, cloneStrategy(hive), canvas);
   }
 
@@ -267,7 +284,6 @@ final class OpsFollower implements EditFollower {
     final hive = const LocalLibrary().storedStrategy(id);
     _mirror.release(id, hive == null ? null : cloneStrategy(hive));
     _takenUp = null;
-    _pageOnScreen = null;
     _last = null;
     _seen.clear();
   }

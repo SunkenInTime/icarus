@@ -64,7 +64,11 @@ List<String> actionOpsLines(String label, ActionOpsTally t) => [
           '${t.opsCommitted}, commits refused ${t.commitsRefused.length}; '
           'taken up ${t.takenUp}, released ${t.released} (Hive put back '
           '${t.releasesThatPutHiveBack}), store put right from the canvas '
-          '${t.repairsFromCanvas}; follower faults ${t.followerFaults.length}',
+          '${t.repairsFromCanvas} after a unit and ${t.repairsAtLoad} at a '
+          'page load; follower faults ${t.followerFaults.length}',
+      'OPS $label opened with the canvas different from Hive '
+          '${t.openedDifferentFromHive} times'
+          '${t.openedDifferences.isEmpty ? '' : ': ${_counted(t.openedDifferences)}'}',
       'OPS $label hive saves ${t.hiveSaves}: equal to the store '
           '${t.hiveSavesEqualToStore}, different ${t.hiveSavesDifferent}, '
           'failed ${t.hiveSavesFailed}'

@@ -135,6 +135,9 @@ final class ActionOpsTally {
   var released = 0;
   var releasesThatPutHiveBack = 0;
   var repairsFromCanvas = 0;
+  var repairsAtLoad = 0;
+  var openedDifferentFromHive = 0;
+  final openedDifferences = <String, int>{};
   final followerFaults = <String>[];
   final costs = <UnitCost>[];
   var hiveSaves = 0;
@@ -257,9 +260,24 @@ final class ActionJournal {
   Future<JournalStep> _runTakeUp(LibraryStore store, _TakeUpJob job) async {
     tally.takenUp += 1;
     _previous[job.strategyId] = job.canvas;
+    final opened = differencesOn(
+      job.hive,
+      job.canvas,
+      {for (final page in job.canvas.pages) page.id},
+    );
+    if (opened != null && opened.isNotEmpty) {
+      tally.openedDifferentFromHive += 1;
+      for (final d in opened) {
+        tally.openedDifferences.update(
+          '${d.what} ${d.field}',
+          (n) => n + 1,
+          ifAbsent: () => 1,
+        );
+      }
+    }
     return JournalPut(
       job.strategyId,
-      rowsOf(job.hive),
+      rowsOf(job.canvas),
       removeFirst: await _holdsWhatAnImageCannotDrop(store, job.strategyId),
     );
   }
@@ -311,7 +329,21 @@ final class ActionJournal {
     if (job.kind == UnitKind.load) {
       _previous[id] = snapshot;
       _notJudged(kind, 'a page loading');
-      return const JournalContinues();
+      final read = await _readStore(store, id);
+      final behind = read == null
+          ? null
+          : differencesOn(
+              snapshot,
+              read,
+              {for (final page in snapshot.pages) page.id},
+            );
+      if (behind != null && behind.isEmpty) return const JournalContinues();
+      tally.repairsAtLoad += 1;
+      return JournalPut(
+        id,
+        rowsOf(snapshot),
+        removeFirst: await _holdsWhatAnImageCannotDrop(store, id),
+      );
     }
     final previous = _previous[id];
     if (previous == null) {
