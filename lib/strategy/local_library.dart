@@ -33,16 +33,23 @@ final class LibraryWriteFailed extends LibraryWrite {
 }
 
 final class LibraryTouch {
-  const LibraryTouch({required this.strategies, required this.folders});
+  const LibraryTouch({
+    required this.strategies,
+    required this.folders,
+    this.wrote,
+  });
 
   final List<String> strategies;
   final List<String> folders;
+  final StrategyData? wrote;
 }
 
 abstract base class LocalLibraryFollower {
   void onWriting(LibraryTouch touch);
 
   void onAnswered(LibraryTouch touch);
+
+  void onWriteFailed(LibraryTouch touch) {}
 
   void onFault(Object error, StackTrace stackTrace);
 
@@ -68,12 +75,16 @@ abstract base class LocalLibraryFollower {
     try {
       writing = write();
     } on Object {
+      _told(onWriteFailed, touch);
       _told(onAnswered, touch);
       rethrow;
     }
     writing.then(
       (_) => _told(onAnswered, touch),
-      onError: (Object _) => _told(onAnswered, touch),
+      onError: (Object _) {
+        _told(onWriteFailed, touch);
+        _told(onAnswered, touch);
+      },
     );
     return writing;
   }
@@ -141,7 +152,11 @@ final class LocalLibrary {
         null => _write(() => _strategies.put(strategy.id, strategy)),
         final following => _write(
             () => following._tracked(
-              LibraryTouch(strategies: [strategy.id], folders: const []),
+              LibraryTouch(
+                strategies: [strategy.id],
+                folders: const [],
+                wrote: strategy,
+              ),
               () => _strategies.put(strategy.id, strategy),
             ),
           ),
@@ -153,7 +168,11 @@ final class LocalLibrary {
       null => _write(stored.save),
       final following => _write(
           () => following._tracked(
-            LibraryTouch(strategies: [stored.id], folders: const []),
+            LibraryTouch(
+              strategies: [stored.id],
+              folders: const [],
+              wrote: stored,
+            ),
             stored.save,
           ),
         ),
@@ -166,7 +185,11 @@ final class LocalLibrary {
       null => _write(stored.save),
       final following => _write(
           () => following._tracked(
-            LibraryTouch(strategies: [stored.id], folders: const []),
+            LibraryTouch(
+              strategies: [stored.id],
+              folders: const [],
+              wrote: stored,
+            ),
             stored.save,
           ),
         ),

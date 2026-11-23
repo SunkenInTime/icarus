@@ -5,6 +5,7 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/weapons.dart';
+import 'package:icarus/library_store/canvas_changes.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -140,6 +141,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
   static const historyLimit = 200;
 
+  static EditFollower? editFollower;
+
   List<UserAction> poppedItems = [];
 
   /// While a transaction's mutation runs, the changes it records.
@@ -168,6 +171,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
     state = history.length > historyLimit
         ? history.sublist(history.length - historyLimit)
         : history;
+    editFollower?.onAction(action, way: ActionWay.done);
   }
 
   /// Redoes the most recent undone step that still changes something. Steps
@@ -180,6 +184,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
       final action = poppedItems.removeLast();
       final undo = _redo(action);
       if (undo == null) continue;
+      editFollower?.onAction(undo, way: ActionWay.redone);
       DebugBreadcrumbs.add('canvas', 'redo ${action.group.name}');
       state = [...state, undo];
       return;
@@ -195,6 +200,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
       state = state.sublist(0, state.length - 1);
       final redo = _undo(action);
       if (redo == null) continue;
+      editFollower?.onAction(redo, way: ActionWay.undone);
       DebugBreadcrumbs.add('canvas', 'undo ${action.group.name}');
       poppedItems.add(redo);
       return;

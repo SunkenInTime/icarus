@@ -120,6 +120,37 @@ At the end of a run the driver closes the store and logs `STORE closed`.
 
 `--kill-after-seconds S` (Linux only) kills the main instance with SIGKILL S seconds after it starts, as a crash would. Start the next run with `--hive-store <that run's out>/store-main` and `scripts/library-store-shadow.json` to see the copy pick up where it stopped.
 
+## Editor actions as ops
+
+With `--library-store ops` (`-LibraryStore ops`) the app mirrors as above, and also turns every editor action on a local strategy into the ops that would change its rows, committing each action's ops to the store in one `commitAll`, in the mirror's queue. Hive stays the truth and nothing on screen reads these rows. Only this flag creates the follower that does this; without it the editor's hooks are null and do nothing.
+
+The checker is a gap finder. A finding is evidence of a gap. A unit with no finding is evidence of nothing, and its counts are a list of gaps found, not a coverage figure: nothing may use them as a gate.
+
+The follower works in units. A unit is everything that happened in one turn of the event loop: the actions the editor reported, and any change to the canvas without one. While a pointer is down, or a text box holds a draft, turns join one unit until the pointer is released or the draft is gone. At the end of a unit the follower copies what the canvas holds (the page on screen, the strategy's name, map and theme, and the other pages as Hive holds them) and hands the journal the copy and the actions. The journal builds and commits each action's ops, replays the actions onto the previous copy, each from its own before and after, and looks for three kinds of finding:
+
+- **Changed without an action.** The new copy differs from the replay: the canvas changed and no action declared it.
+- **The action's before did not match the canvas.** An action's before for a field differs from what the previous copy held. The action may still have declared and written the right final value.
+- **Ops wrong.** The store, read back, differs from the replay.
+
+A unit is counted when it opens. Each one ends in exactly one disposition: with a finding (one or more of the three), no finding, no change, not judged with its reason (a follower fault, a page loading, the strategy opening or closing, a refused commit, a store that could not be read), or discarded with its reason (actions inside a page switch, actions as the strategy changed, actions before the mirror was following, a unit still open at the end, the mirror stopping). After the checks the store is put right from the canvas if it differs, so one miss does not spoil the next unit. The counts must add up: units opened equals the units given a disposition plus the units still open. The `actionOps` step fails when they don't, and so does the end of the run, where nothing may be left open.
+
+A unit with no finding does not establish that nothing was missed. In particular:
+
+- the store is compared once, at the end of the unit, so an add and its undo inside one held unit leave nothing to find even with both ops dropped;
+- `before` is not checked for every field (link details and landing visibility are skipped), so a later edit can hide an undeclared one;
+- only the page on screen is compared after an ordinary unit, so an op that writes to another page is not found;
+- the text draft, a drawing in progress and lineup previews are not part of the canvas copy;
+- replay and the builders treat a landing's visibility toggles as one field, where the editor merges them one by one.
+
+The strategy is taken up when it opens, once its page is drawn: the store gets the canvas, and how the canvas differed from Hive at that moment is counted. A page switch puts the store right if the store is behind. Closing releases the strategy and puts Hive's value back, so a "Don't save" leaves the store as Hive holds it. A Hive save of a taken-up strategy never moves the store; after the turn it was made in, it is compared with the store and reported as a second table. While a strategy is taken up, read mode treats it as not known equal and draws it from Hive. A fault in the follower never reaches the edit: it is counted, the follower stops taking actions, and its units are not judged until the strategy is opened again.
+
+At the end of the run the driver saves the open local strategy, closes out any unit still open, releases the strategy and logs the `OPS run` lines: units by disposition, findings by kind, the same per action kind, every finding with the fields it names, commits and refusals, follower faults, how the canvas differed from Hive at open, the Hive save report, and the time the copy, the replay and the comparison took, grouped by how many items the page held.
+
+- `{"actionOps": label, "expect": {...}?, "expectKinds": {...}?}` waits for the queue to drain and logs the `OPS` lines so far. It fails if the units do not add up. `expect` can name counts that must match: `unitsOpened`, `unitsWithFindings`, `noFinding`, `changedWithoutAction`, `beforeNotOnCanvas`, `opsWrong`, `notJudged`, `discarded`, `commitsRefused`, `followerFaults`, `hiveSavesDifferent`. `expectKinds` maps an action kind, as the `OPS` lines name it, to the number of units of that kind the run must have opened so far.
+- `{"fillPage": n}` adds agents and texts to the page on screen in one transaction until it holds n items. `scripts/ops-cost-24-local.json`, `ops-cost-240-local.json` and `ops-cost-960-local.json` time the checker on pages of those sizes.
+- `{"slowStoreCommits": ms}` makes every store commit wait that long first (driver builds only), to show that nothing in the editor waits for one. `scripts/ops-strokes-with-slow-commits.json` draws three strokes with commits at 200 ms.
+- `{"path": [...], "firstFrame": label, "opStillPending": true?}` logs, in the first frame after the release, the drawings on screen and whether the commit of the stroke's own action has returned; with `opStillPending` the step fails unless it had not.
+
 ## Keeping the two in step
 
 `run.ps1` and `linux.dart` are two launchers for the same driver. The driver decides pass or fail and writes the `SUMMARY` line; the launchers only set it up and read the log. `test/drive_linux_runner_test.dart` fails when the driver reads an `ICARUS_DRIVE_*` variable one launcher doesn't set, when Linux refuses a step the driver no longer has, or when either build stops refusing production. A change to what an instance gets goes into both launchers in the same commit.

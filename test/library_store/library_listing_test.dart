@@ -594,6 +594,7 @@ void main() {
       const StoreSwitchShadow(),
       const StoreSwitchMirror(),
       const StoreSwitchRead(),
+      const StoreSwitchOps(),
     ]) {
       final start = LibraryStoreStart.of(choice, clock: () => Duration.zero);
       final container = ProviderContainer(overrides: start.overrides);
@@ -606,9 +607,14 @@ void main() {
           expect(start.mode, isNull);
         case StoreSwitchShadow():
           expect(start.mode, isA<ShadowOnly>());
-        case StoreSwitchMirror() || StoreSwitchRead():
+        case StoreSwitchMirror() || StoreSwitchRead() || StoreSwitchOps():
           expect(start.mode, isA<Mirroring>());
       }
+      expect(
+        start.editFollower != null,
+        choice is StoreSwitchOps,
+        reason: '$choice',
+      );
       final reads = choice is StoreSwitchRead;
       expect(start.listing != null, reads, reason: '$choice');
       expect(

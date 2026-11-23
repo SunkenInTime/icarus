@@ -238,12 +238,59 @@ final class StoreHolds {
   final Map<String, FolderRow> folders;
 }
 
+Future<CopyStop?> _putImage(
+  LibraryStore store,
+  StoreHolds holds,
+  String id,
+  StrategyToRows image,
+  List<StrategyCopy> results,
+) async {
+  switch (image) {
+    case StrategyRowsRefused(:final problems):
+      results.add(StrategyNotMirrored(id, ConverterRefused(problems)));
+    case StrategyRowsMade(:final rows):
+      switch (_saving(await store.putStrategy(rows))) {
+        case _Wrote():
+          results.add(
+            holds.strategies.contains(id)
+                ? StrategyTookHiveVersion(id)
+                : StrategyCopied(id),
+          );
+          holds.strategies.add(id);
+        case _NothingToWrite():
+          holds.strategies.add(id);
+          results.add(StrategyUnchanged(id));
+        case _NotWritten(:final reason):
+          results.add(StrategyNotMirrored(id, reason));
+        case _Stop(:final stop):
+          return stop;
+      }
+  }
+  return null;
+}
+
+Future<ShadowCopy> mirrorImage(
+  LibraryStore store,
+  StoreHolds holds,
+  String strategyId,
+  StrategyToRows image,
+) async {
+  final results = <StrategyCopy>[];
+  return switch (await _putImage(store, holds, strategyId, image, results)) {
+    final stop? => ShadowCopyStopped(results, const [], stop),
+    null => ShadowCopyFinished(results, const []),
+  };
+}
+
+bool _keptHere(String strategyId) => false;
+
 Future<ShadowCopy> mirrorIds(
   HiveReads reads,
   LibraryStore store,
   StoreHolds holds, {
   required Set<String> strategies,
   required Set<String> folders,
+  bool Function(String strategyId) handedOff = _keptHere,
 }) async {
   final strategyResults = <StrategyCopy>[];
   final folderResults = <FolderCopy>[];
@@ -279,29 +326,13 @@ Future<ShadowCopy> mirrorIds(
   }
 
   for (final id in strategies) {
+    if (handedOff(id)) continue;
     switch (reads.strategy(id)) {
       case InHive(value: final strategy):
-        switch (strategyToRows(strategy)) {
-          case StrategyRowsRefused(:final problems):
-            strategyResults
-                .add(StrategyNotMirrored(id, ConverterRefused(problems)));
-          case StrategyRowsMade(:final rows):
-            switch (_saving(await store.putStrategy(rows))) {
-              case _Wrote():
-                strategyResults.add(
-                  holds.strategies.contains(id)
-                      ? StrategyTookHiveVersion(id)
-                      : StrategyCopied(id),
-                );
-                holds.strategies.add(id);
-              case _NothingToWrite():
-                holds.strategies.add(id);
-                strategyResults.add(StrategyUnchanged(id));
-              case _NotWritten(:final reason):
-                strategyResults.add(StrategyNotMirrored(id, reason));
-              case _Stop(:final stop):
-                return stopped(stop);
-            }
+        if (await _putImage(
+                store, holds, id, strategyToRows(strategy), strategyResults)
+            case final stop?) {
+          return stopped(stop);
         }
       case NotInHive() when holds.strategies.contains(id):
         final removal = switch (await store.editLibrary([RemoveStrategy(id)])) {

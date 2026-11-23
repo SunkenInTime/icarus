@@ -170,12 +170,15 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
+import 'package:icarus/library_store/slowed_engine.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
@@ -795,6 +798,7 @@ Future<void> _drag(
   int stepsPerLeg = 30,
   String? shotWhileHeld,
   String? markAtRelease,
+  void Function()? firstFrameAfterRelease,
 }) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
@@ -844,6 +848,11 @@ Future<void> _drag(
       position: last,
     ),
   );
+  if (firstFrameAfterRelease != null) {
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) => firstFrameAfterRelease())
+      ..scheduleFrame();
+  }
   await Future<void>.delayed(const Duration(milliseconds: 300));
   await _frames();
 }
@@ -1112,7 +1121,20 @@ String _probe() {
     'deletedPage': c.read(strategyPageSessionProvider).deletedPage?.name,
     'page': c.read(strategyPageSessionProvider).activePageId,
     'canvasHeld': c.read(strategySaveStateProvider.notifier).canvasHeld,
+    'agentsOnPageInHive': _agentsOnPageInHive(c),
   });
+}
+
+int? _agentsOnPageInHive(ProviderContainer c) {
+  final id = c.read(strategyProvider).strategyId;
+  final pageId = c.read(strategyPageSessionProvider).activePageId;
+  if (id == null || pageId == null) return null;
+  final stored = const LocalLibrary().storedStrategy(id);
+  return stored?.pages
+      .where((page) => page.id == pageId)
+      .firstOrNull
+      ?.agentData
+      .length;
 }
 
 /// Puts a just-added item, which starts at (500, 500), so that its middle is
@@ -1216,6 +1238,22 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(holdStore(c));
     case 'checkLibraryStore':
       (await _storeLines(checkStoreAgain(c))).forEach(_log);
+    case 'slowStoreCommits':
+      SlowedEngine.commitDelay = Duration(milliseconds: (value as num).round());
+      _log(
+          'STORE commits now wait ${SlowedEngine.commitDelay.inMilliseconds} ms');
+    case 'actionOps':
+      (await _storeLines(
+        actionOpsStep(
+          c,
+          label: '$value',
+          expected: {...?(step['expect'] as Map<String, dynamic>?)},
+          expectedKinds: {
+            ...?(step['expectKinds'] as Map<String, dynamic>?),
+          },
+        ),
+      ))
+          .forEach(_log);
     case 'soak':
       final until = DateTime.now().add(
         Duration(milliseconds: ((value as num) * 1000).round()),
@@ -1301,10 +1339,33 @@ Future<void> _run(Map<String, dynamic> step) async {
         markAtRelease: step['mark'] as String?,
       );
     case 'path':
+      final expectOpPending = step['opStillPending'] == true;
+      String? firstFrame;
       await _drag([
         for (final p in (value as List).cast<List>())
           Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-      ], stepsPerLeg: 6, shotWhileHeld: step['held'] as String?);
+      ],
+          stepsPerLeg: 6,
+          shotWhileHeld: step['held'] as String?,
+          firstFrameAfterRelease: switch (step['firstFrame']) {
+            final String label => () {
+                _log(
+                  'FIRST FRAME after releasing $label: drawings on screen '
+                  '${c.read(drawingProvider).elements.length}; '
+                  '${actionOpsInFlight(c)}',
+                );
+                firstFrame = opStillPendingProblem(c) ?? '';
+              },
+            _ => null,
+          });
+      if (expectOpPending) {
+        switch (firstFrame) {
+          case null:
+            throw StateError('no frame was seen after the release');
+          case final String problem when problem.isNotEmpty:
+            throw StateError(problem);
+        }
+      }
     case 'scrollAt':
       final xy = (value as List).cast<num>();
       GestureBinding.instance.handlePointerEvent(
@@ -1390,6 +1451,47 @@ Future<void> _run(Map<String, dynamic> step) async {
               ),
       );
       await _place(id, _point(step, 'at'), (p) => agents.updatePosition(p, id));
+    case 'fillPage':
+      int onPage() =>
+          c.read(agentProvider).length +
+          c.read(abilityProvider).length +
+          c.read(drawingProvider).elements.length +
+          c.read(textProvider).length +
+          c.read(placedImageProvider).images.length +
+          c.read(utilityProvider).length;
+      final from = onPage();
+      final target = (value as num).toInt();
+      final agents = c.read(agentProvider.notifier);
+      final texts = c.read(textProvider.notifier);
+      const types = [
+        AgentType.jett,
+        AgentType.sova,
+        AgentType.sage,
+        AgentType.omen,
+      ];
+      c.read(actionProvider.notifier).performTransaction(
+        groups: const [],
+        mutation: () {
+          for (var n = from; n < target; n++) {
+            final at = Offset(60.0 + (n % 40) * 22, 60.0 + (n ~/ 40) * 22);
+            if (n.isEven) {
+              agents.addAgent(PlacedAgent(
+                id: 'fill-$n',
+                type: types[(n ~/ 2) % types.length],
+                position: at,
+              ));
+            } else {
+              texts.addText(PlacedText(
+                id: 'fill-$n',
+                position: at,
+                sizeVersion: worldSizedMediaVersion,
+              )..text = 'Fill $n');
+            }
+          }
+        },
+      );
+      await _frames(2);
+      _log('FILL the page went from $from to ${onPage()} items');
     case 'addSmoke':
       final id = value as String;
       final abilities = c.read(abilityProvider.notifier);
