@@ -23,7 +23,6 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/local_library.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 String actionLabel(UserAction action, ActionWay way) {

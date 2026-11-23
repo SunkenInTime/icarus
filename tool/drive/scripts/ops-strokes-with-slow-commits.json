@@ -21,7 +21,7 @@
   {"logPage": "after the third stroke"},
   {"framesLog": "strokes with commits at 200 ms"},
   {"wait": 3},
-  {"actionOps": "slowed", "expect": {"commitsRefused": 0, "gaps": 0}},
+  {"actionOps": "slowed", "expect": {"commitsRefused": 0, "opsWrong": 0, "followerFaults": 0}},
   {"slowStoreCommits": 0},
   {"wait": 1},
   {"exit": 1}

@@ -267,6 +267,41 @@ class ConvexStrategyRepository {
         );
   }
 
+  Future<RemotePageList> readPageListAs(
+    String strategyPublicId, {
+    required String accountSubject,
+  }) async {
+    final result = await _api.strategy
+        .getPageList(
+          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+          strategyPublicId: strategyPublicId,
+          accountSubject: ConvexOptional.present(accountSubject),
+        )
+        .fetch();
+    return RemotePageList(
+      header: _strategyHeader(result.header),
+      pages: result.pages.map(_fullPage).toList(growable: false),
+    );
+  }
+
+  Future<RemotePageSnapshot> readPageAs({
+    required String strategyPublicId,
+    required String pagePublicId,
+    required String accountSubject,
+  }) async =>
+      _pageSnapshot(
+        await _api.page
+            .getSnapshot(
+              clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+              strategyPublicId: strategyPublicId,
+              pagePublicId: pagePublicId,
+              accountSubject: ConvexOptional.present(accountSubject),
+              acceptsPictureIds: const ConvexOptional.present(true),
+              elementFieldLevel: _elementFieldLevel,
+            )
+            .fetch(),
+      );
+
   /// The pages watched in slices right now (see [watchPageSnapshot]), by
   /// [_pageKey]: the page the watch last handed on from its slices, or none
   /// while they fail, and how many watch it.

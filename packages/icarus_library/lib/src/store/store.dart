@@ -402,6 +402,8 @@ final class LibraryStore {
     if (!_changes.isClosed) _changes.add(change);
   }
 
+  bool get isClosing => _closing != null || _state is _Shut;
+
   Future<Releasing> close() => _closing ??= _inTurn(() async {
     _shut(const StoreClosed());
     return _released!;

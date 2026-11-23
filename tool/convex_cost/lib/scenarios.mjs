@@ -124,7 +124,7 @@ export class Device {
     return unsubscribe;
   }
 
-  async applyBatch(strategyPublicId, clientId, ops, { includeWasApplied } = {}) {
+  async applyBatch(strategyPublicId, clientId, ops, { includeWasApplied, readsAccountMismatch } = {}) {
     const { results } = await this.mutation("ops:applyBatch", {
       strategyPublicId,
       clientId,
@@ -134,6 +134,7 @@ export class Device {
       acceptsPictureIds: true,
       elementFieldLevel: ELEMENT_FIELD_LEVEL,
       includeWasApplied,
+      readsAccountMismatch,
     });
     const refused = results.filter((result) => result.status !== "applied");
     if (refused.length > 0) throw new Error(`applyBatch refused ops: ${JSON.stringify(refused[0])}`);

@@ -7,6 +7,8 @@ import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
+import 'package:icarus/collab/store_batch.dart';
+import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -16,6 +18,7 @@ import 'package:icarus/library_store/store_startup.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus_library/icarus_library.dart' show LibraryOpen;
 
 import 'cloud_shadow_test.dart'
     show at, pageList, pageSnapshot, serverRows, strategyId;
@@ -93,6 +96,8 @@ class _Repository implements ConvexStrategyRepository {
 
 final _connected = StateProvider<bool>((ref) => true);
 
+final _signedInAs = StateProvider<String?>((ref) => 'account-a');
+
 Future<void> _settled() async {
   for (var round = 0; round < 6; round++) {
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -161,14 +166,19 @@ void main() {
     late Directory directory;
     late File file;
     late AuthChanges auth;
+    late StreamController<bool> signInChanges;
 
-    Future<CloudShadow> begin({Future<LibraryStoreOpened>? opening}) async {
+    Future<CloudShadow> begin({
+      Future<LibraryStoreOpened>? opening,
+      bool sends = false,
+    }) async {
       await container.read(cloudShadowProvider.notifier).begin(
             opening: opening ??
                 container
                     .read(libraryStoreProvider.notifier)
                     .open(file, build: 'b'),
             build: 'b',
+            sends: sends,
           );
       return (container.read(cloudShadowProvider) as CloudShadowRunning).shadow;
     }
@@ -203,7 +213,17 @@ void main() {
       editor = _Editor();
       lists = _Lists();
       repository = _Repository(lists);
+      signInChanges = StreamController<bool>.broadcast();
       container = ProviderContainer(overrides: [
+        storeBatchSendProvider.overrideWithValue(({
+          required strategyPublicId,
+          required clientId,
+          required ops,
+          required account,
+        }) =>
+            Completer<StoreBatchOutcome>().future),
+        convexSignInsProvider.overrideWithValue(signInChanges.stream),
+        senderSignInWatchProvider.overrideWithValue(_signedInAs),
         strategyOpQueueProvider.overrideWith(() => queue),
         remoteEditorSnapshotProvider.overrideWith(() => editor),
         convexStrategyRepositoryProvider.overrideWithValue(repository),
@@ -243,6 +263,34 @@ void main() {
       editor.open(null);
       await _settled();
       expect(lists.controllers.single.hasListener, isFalse);
+    });
+
+    test(
+        'a page list whose watch named one account adds nothing when another '
+        'account signed in before its first result was taken', () async {
+      final shadow = await begin(sends: true);
+      editor.open(strategyId);
+      await _settled();
+      expect(lists.subjects, ['account-a']);
+
+      auth = (changes: 2, authenticated: true, subject: 'account-b');
+      container.read(_signedInAs.notifier).state = 'account-b';
+      signInChanges.add(true);
+      await _settled();
+      lists.controllers.single.add(pageList(serverRows()));
+      await _settled();
+      await shadow.idle;
+
+      final ready = container.read(libraryStoreProvider) as LibraryStoreReady;
+      expect((ready.store.library as LibraryOpen).list.strategies, isEmpty);
+      expect(
+        shadow.ledger.single.verdict,
+        isA<Skipped>().having(
+          (skipped) => skipped.reason,
+          'reason',
+          SkipReason.staleForSender,
+        ),
+      );
     });
 
     test('nothing is taken before the first sign-in', () async {

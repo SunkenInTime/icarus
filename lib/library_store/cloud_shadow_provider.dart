@@ -6,9 +6,11 @@ import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_store.dart';
+import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -88,6 +90,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
   Future<void> begin({
     required Future<LibraryStoreOpened> opening,
     required String build,
+    bool sends = false,
   }) async {
     final LibraryStoreOpened opened;
     try {
@@ -107,6 +110,11 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
           build: build,
           canRead: appCanRead,
           breathe: ref.read(cloudShadowBreatheProvider),
+          intake: sends
+              ? ref
+                  .read(cloudSenderProvider.notifier)
+                  .begin(store, build: build)
+              : null,
         );
         state = CloudShadowRunning(shadow, file);
         _guarded(() {
@@ -155,8 +163,9 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
         _account = auth.changes;
         subject = named;
         shadow.serve(Account(named));
+        shadow.intake?.resultsFrom(auth.changes);
         return true;
-      case final account when account != auth.changes:
+      case final account when account != auth.changes && shadow.intake == null:
         shadow.end('the account changed');
         _closeList();
         return false;
@@ -197,13 +206,21 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
 
   void _watchList(CloudShadow shadow, String strategyId) {
     if (_listed != strategyId || _list != null || !_serving()) return;
+    final named = subject!;
     _list = ref
         .read(convexStrategyRepositoryProvider)
-        .watchPageList(strategyId, accountSubject: subject!)
+        .watchPageList(strategyId, accountSubject: named)
         .listen(
           (list) => _guarded(() {
             if (!_serving()) return;
-            shadow.pageList(strategyId, list, _connection());
+            final now = _stamp();
+            final stamp = (
+              account: Account(named),
+              connection: now.connection,
+              signIns: now.signIns,
+              signOuts: now.signOuts,
+            );
+            shadow.pageList(strategyId, list, stamp.connection, stamp: stamp);
           }),
           onError: (Object _) => _notTaken('a page list read failed'),
         );
@@ -214,7 +231,21 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
   void _notTaken(String why) => notTaken[why] = (notTaken[why] ?? 0) + 1;
 
   @override
-  Object? heard() => _connection();
+  Object? heard() => _stamp();
+
+  Snapshot _stamp() {
+    final auth = ref.read(authChangesProvider)();
+    return (
+      account: switch (auth) {
+        (authenticated: true, subject: final named?, changes: _) =>
+          Account(named),
+        _ => null,
+      },
+      connection: _connection(),
+      signIns: auth.changes,
+      signOuts: ref.read(cloudSenderProvider)?.inputs.signOuts ?? 0,
+    );
+  }
 
   @override
   void pageArrived(
@@ -233,7 +264,8 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
           ? 'handed over before the first sign-in'
           : 'handed over after the shadow stopped taking results');
     } else {
-      shadow.page(strategyId, page, heard as int?);
+      final stamp = heard as Snapshot?;
+      shadow.page(strategyId, page, stamp?.connection, stamp: stamp);
     }
   }
 
