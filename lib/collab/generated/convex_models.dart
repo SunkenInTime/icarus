@@ -3333,8 +3333,10 @@ final class OpsApplyBatchResult {
   const OpsApplyBatchResult({
     required this.results,
     required this.strategyPublicId,
+    this.serverTime = const ConvexOptional.absent(),
   });
   final List<OpsApplyBatchResultResultsItem> results;
+  final ConvexOptional<double> serverTime;
   final String strategyPublicId;
 
   factory OpsApplyBatchResult.decode(ConvexValue value, String path) {
@@ -3352,6 +3354,11 @@ final class OpsApplyBatchResult {
                 ),
               )
               .toList(growable: false),
+      serverTime: object.value.containsKey('serverTime')
+          ? ConvexOptional.present(
+              _decodeNumber(object.value['serverTime']!, '$path.serverTime'),
+            )
+          : const ConvexOptional.absent(),
       strategyPublicId: _decodeString(
         object.value['strategyPublicId'] ?? _missing(path, 'strategyPublicId'),
         '$path.strategyPublicId',
@@ -3368,6 +3375,8 @@ final class OpsApplyBatchResult {
             )
             .toList(growable: false),
       ),
+      if (serverTime.isPresent)
+        'serverTime': _encodeNumber(serverTime.value, '$path.serverTime'),
       'strategyPublicId': ConvexString(strategyPublicId),
     });
   }
@@ -7175,8 +7184,10 @@ ConvexObject encodeOpsApplyBatchArgs({
   required double clientProtocolVersion,
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
+  ConvexOptional<double> liveBasis = const ConvexOptional.absent(),
   required List<OpsApplyBatchArgsOpsItem> ops,
   ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
+  ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
   if (acceptsPictureIds.isPresent)
@@ -7201,6 +7212,11 @@ ConvexObject encodeOpsApplyBatchArgs({
     ),
   if (includeWasApplied.isPresent)
     'includeWasApplied': ConvexBoolean(includeWasApplied.value),
+  if (liveBasis.isPresent)
+    'liveBasis': _encodeNumber(
+      liveBasis.value,
+      'ops.js:applyBatch.args.liveBasis',
+    ),
   'ops': ConvexArray(
     ops.indexed
         .map(
@@ -7212,6 +7228,8 @@ ConvexObject encodeOpsApplyBatchArgs({
   ),
   if (readsAccountMismatch.isPresent)
     'readsAccountMismatch': ConvexBoolean(readsAccountMismatch.value),
+  if (sendsLiveBasis.isPresent)
+    'sendsLiveBasis': ConvexBoolean(sendsLiveBasis.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 

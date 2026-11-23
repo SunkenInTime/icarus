@@ -1639,6 +1639,15 @@ Future<void> _run(Map<String, dynamic> step) async {
           readsAccountMismatch: step['readsAccountMismatch'] as bool,
         ),
       );
+    case 'sendUncheckedDelete':
+      _log(
+        await uncheckedDelete(
+          c,
+          value as String,
+          basisAgeMs: step['basisAgeMs'] as int,
+          expectRefused: step['expectRefused'] as bool,
+        ),
+      );
     case 'expectStoredPayloadVersion':
       _log(
         await storedPayloadVersion(

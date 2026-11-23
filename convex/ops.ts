@@ -1853,6 +1853,50 @@ async function reconcileExpectedAssets(
   }
 }
 
+export const UNCHECKED_WINDOW_MS = 30_000;
+
+function isUnchecked(op: WireStrategyOp): boolean {
+  switch (op.type) {
+    case "element.patch":
+    case "lineup.patch":
+      return op.merge !== undefined && op.merge.base === undefined;
+    case "element.delete":
+    case "lineup.delete":
+      return op.lastWriterWins === true;
+    default:
+      return false;
+  }
+}
+
+function assertUncheckedInWindow(
+  ops: WireStrategyOp[],
+  liveBasis: number | undefined,
+  sendsLiveBasis: boolean,
+  now: number,
+): void {
+  if (liveBasis === undefined) {
+    if (sendsLiveBasis && ops.some(isUnchecked)) {
+      throw errorWithCode(
+        "UNCHECKED_OUTSIDE_WINDOW",
+        "An unchecked change needs a live basis",
+      );
+    }
+    return;
+  }
+  if (!Number.isFinite(liveBasis) || liveBasis > now) {
+    throw errorWithCode(
+      "UNCHECKED_OUTSIDE_WINDOW",
+      "The live basis is not a time the server has reached",
+    );
+  }
+  if (now - liveBasis > UNCHECKED_WINDOW_MS) {
+    throw errorWithCode(
+      "UNCHECKED_OUTSIDE_WINDOW",
+      "The batch arrived too long after its live basis",
+    );
+  }
+}
+
 export const applyBatch = mutation({
   args: {
     ...cloudProtocolArgs,
@@ -1889,6 +1933,8 @@ export const applyBatch = mutation({
     // that revision is the client's own write and its waiting work can move
     // onto it. Older clients get the noop without it.
     includeWasApplied: v.optional(v.boolean()),
+    sendsLiveBasis: v.optional(v.boolean()),
+    liveBasis: v.optional(v.number()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
@@ -1900,6 +1946,13 @@ export const applyBatch = mutation({
         args.readsAccountMismatch === true ? "ACCOUNT_MISMATCH" : "FORBIDDEN",
       );
     }
+    const serverTime = Date.now();
+    assertUncheckedInWindow(
+      args.ops,
+      args.liveBasis,
+      args.sendsLiveBasis === true,
+      serverTime,
+    );
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user } = await assertStrategyRole(ctx, strategy, "editor");
     const results: PublicOperationResult[] = [];
@@ -2120,6 +2173,8 @@ export const applyBatch = mutation({
       await refreshStrategyAgentSummary(ctx, strategy._id);
     }
 
-    return { strategyPublicId: strategy.publicId, results };
+    return args.sendsLiveBasis === true
+      ? { strategyPublicId: strategy.publicId, results, serverTime }
+      : { strategyPublicId: strategy.publicId, results };
   },
 });
