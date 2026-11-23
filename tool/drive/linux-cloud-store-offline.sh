@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ $# -ne 3 ]; then
-  echo "usage: $0 <exe dir> <new out dir> <account email>" >&2
+if [ $# -lt 3 ] || [ $# -gt 6 ]; then
+  echo "usage: $0 <exe dir> <new out dir> <account email> [script] [shadow|send] [store to start on]" >&2
   exit 2
 fi
 exe=$(realpath "$1")
 out=$(realpath -m "$2")
 account=$3
 repo=$(realpath "$(dirname "$0")/../..")
-script=$repo/tool/drive/scripts/cloud-store-shadow-offline.json
+script=$(realpath "${4:-$repo/tool/drive/scripts/cloud-store-shadow-offline.json}")
+mode=${5:-shadow}
+seed=()
+if [ $# -ge 6 ]; then seed=(--hive-store "$(realpath "$6")"); fi
 unit=icarus-cloud-store-offline-$$
 table=icarus_cloud_store_offline_$$
 parent=$(dirname "$out")
@@ -35,7 +38,7 @@ trap cleanup EXIT
 
 systemd-run --user --scope --unit="$unit" --quiet \
   dart "$repo/tool/drive/linux.dart" run --exe "$exe" --script "$script" \
-  --cloud-store shadow --account "$account" --out "$out" \
+  --cloud-store "$mode" --account "$account" --out "$out" "${seed[@]}" \
   > "$parent/$(basename "$out")-run.log" 2>&1 &
 run_pid=$!
 

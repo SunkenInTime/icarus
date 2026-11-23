@@ -10,6 +10,7 @@ typedef StoreStartup = ({
   Future<LibraryStoreOpened>? opening,
   bool localShadow,
   bool cloudShadow,
+  bool cloudSends,
 });
 
 StoreStartup openStores(
@@ -30,6 +31,10 @@ StoreStartup openStores(
     },
     localShadow: localShadow,
     cloudShadow: cloudShadow,
+    cloudSends: switch (launch.cloud) {
+      CloudStoreShadow(:final sends) => sends,
+      CloudStoreOff() => false,
+    },
   );
 }
 
@@ -39,11 +44,16 @@ void beginCloudShadow(
   required String build,
 }) {
   if (startup
-      case (opening: final opening?, cloudShadow: true, localShadow: _)) {
+      case (
+        opening: final opening?,
+        cloudShadow: true,
+        localShadow: _,
+        :final cloudSends,
+      )) {
     unawaited(
       container
           .read(cloudShadowProvider.notifier)
-          .begin(opening: opening, build: build),
+          .begin(opening: opening, build: build, sends: cloudSends),
     );
   }
 }

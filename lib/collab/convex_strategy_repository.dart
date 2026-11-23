@@ -131,9 +131,7 @@ class ConvexStrategyRepository {
           scope: const ConvexOptional.present(FoldersListTreeArgsScope.all),
         )
         .watch()
-        .map(
-          (folders) => folders.map(_folderEntry).toList(growable: false),
-        );
+        .map((folders) => folders.map(_folderEntry).toList(growable: false));
   }
 
   Stream<List<CloudStrategyEntry>> watchStrategiesForFolder(
@@ -273,7 +271,10 @@ class ConvexStrategyRepository {
   final _slicedPages = <String, (RemotePageSnapshot?, int)>{};
 
   String _pageKey(
-          String strategyPublicId, String pagePublicId, String? token) =>
+    String strategyPublicId,
+    String pagePublicId,
+    String? token,
+  ) =>
       '$strategyPublicId|$pagePublicId|${token ?? ''}';
 
   /// [pagePublicId], read once. A page watched in slices answers with the
@@ -395,11 +396,14 @@ class ConvexStrategyRepository {
       // least as new; a later answer of the whole page could arrive after
       // it, and the page shown would go back.
       slicing = true;
-      final (frame, slices) =
-          _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
-      sliced = assembledPages(
-        ConvexQuery.watchTogether([frame, ...slices]),
-      ).listen(
+      final (frame, slices) = _pageParts(
+        strategyPublicId,
+        pagePublicId,
+        shareToken,
+        starts,
+      );
+      sliced =
+          assembledPages(ConvexQuery.watchTogether([frame, ...slices])).listen(
         (assembled) {
           final page = _pageSnapshot(assembled);
           final (_, watchers) = _slicedPages[key] ?? (null, 0);
@@ -434,19 +438,16 @@ class ConvexStrategyRepository {
       onListen: () {
         whole = _wholePage(strategyPublicId, pagePublicId, shareToken)
             .watch()
-            .listen(
-          (page) {
-            lastWhole = page;
-            if (slicing) return;
-            deliver(_pageSnapshot(page));
-            // The web client can hand over its cached answer and then the
-            // same one from the server: only different rows are a change.
-            final version = _pageVersion(page);
-            firstVersion ??= version;
-            if (version != firstVersion && sliced == null) watchSlices(page);
-          },
-          onError: controller.addError,
-        );
+            .listen((page) {
+          lastWhole = page;
+          if (slicing) return;
+          deliver(_pageSnapshot(page));
+          // The web client can hand over its cached answer and then the
+          // same one from the server: only different rows are a change.
+          final version = _pageVersion(page);
+          firstVersion ??= version;
+          if (version != firstVersion && sliced == null) watchSlices(page);
+        }, onError: controller.addError);
       },
       onPause: () {
         whole?.pause();
@@ -509,23 +510,25 @@ class ConvexStrategyRepository {
     String? shareToken,
     bool forOfflineCopy = false,
   }) async {
-    return upgradeRemoteFullSnapshot(_fullSnapshot(
-      await _api.strategy
-          .getFullSnapshot(
-            clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-            strategyPublicId: strategyPublicId,
-            shareToken: _optional(shareToken),
-            // This client checks image references apart, so it can take a
-            // snapshot without the pages in the server's trash.
-            acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
-            acceptsPictureIds: const ConvexOptional.present(true),
-            elementFieldLevel: _elementFieldLevel,
-            includeContentVersion: forOfflineCopy
-                ? const ConvexOptional.present(true)
-                : const ConvexOptional.absent(),
-          )
-          .fetch(),
-    ));
+    return upgradeRemoteFullSnapshot(
+      _fullSnapshot(
+        await _api.strategy
+            .getFullSnapshot(
+              clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+              strategyPublicId: strategyPublicId,
+              shareToken: _optional(shareToken),
+              // This client checks image references apart, so it can take a
+              // snapshot without the pages in the server's trash.
+              acceptsTrashedPagesLeftOut: const ConvexOptional.present(true),
+              acceptsPictureIds: const ConvexOptional.present(true),
+              elementFieldLevel: _elementFieldLevel,
+              includeContentVersion: forOfflineCopy
+                  ? const ConvexOptional.present(true)
+                  : const ConvexOptional.absent(),
+            )
+            .fetch(),
+      ),
+    );
   }
 
   /// Most strategies [strategyPublicIds] asks about at once.
@@ -664,10 +667,42 @@ class ConvexStrategyRepository {
       throw StateError('Cloud operation batch exceeds the payload policy.');
     }
 
+    return _applyBatch(
+      strategyPublicId,
+      clientId,
+      [for (final op in ops) op.toConvexJson()],
+      accountSubject,
+      readsAccountMismatch: false,
+    );
+  }
+
+  Future<List<OpAck>> applyWireBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<Map<String, Object?>> ops,
+    required String accountSubject,
+  }) async {
+    if (ops.isEmpty) return const [];
+    return _applyBatch(
+      strategyPublicId,
+      clientId,
+      ops,
+      accountSubject,
+      readsAccountMismatch: true,
+    );
+  }
+
+  Future<List<OpAck>> _applyBatch(
+    String strategyPublicId,
+    String clientId,
+    List<Map<String, Object?>> ops,
+    String? accountSubject, {
+    required bool readsAccountMismatch,
+  }) async {
     final typedOps = ops.indexed
         .map(
           (entry) => OpsApplyBatchArgsOpsItem.decode(
-            ConvexValue.fromDart(entry.$2.toConvexJson()),
+            ConvexValue.fromDart(entry.$2),
             'ops[${entry.$1}]',
           ),
         )
@@ -686,6 +721,9 @@ class ConvexStrategyRepository {
       // This client moves its waiting work onto the revision a resent op
       // made (StrategyOpQueueNotifier._ownRevision).
       includeWasApplied: const ConvexOptional.present(true),
+      readsAccountMismatch: readsAccountMismatch
+          ? const ConvexOptional.present(true)
+          : const ConvexOptional.absent(),
     );
     return result.results.map(_opAck).toList(growable: false);
   }
@@ -1358,9 +1396,7 @@ List<CloudStrategyEntry> _listedStrategyEntries(
   ];
 }
 
-CloudStrategyEntry _strategyEntry(
-  StrategiesListForFolderResultItem strategy,
-) {
+CloudStrategyEntry _strategyEntry(StrategiesListForFolderResultItem strategy) {
   return (
     strategy: StrategyData(
       id: strategy.publicId,
@@ -1579,7 +1615,7 @@ OpAck _opAck(OpsApplyBatchResultResultsItem result) {
   return switch (result) {
     OpsApplyBatchResultResultsItemApplied(
       :final opId,
-      :final appliedRevision
+      :final appliedRevision,
     ) =>
       AppliedOpAck(opId: opId, revision: appliedRevision.toInt()),
     OpsApplyBatchResultResultsItemNoop(
@@ -1609,12 +1645,7 @@ OpAck _opAck(OpsApplyBatchResultResultsItem result) {
       :final rawCode,
       :final message,
     ) =>
-      FailedOpAck(
-        opId: opId,
-        code: code,
-        rawCode: rawCode,
-        message: message,
-      ),
+      FailedOpAck(opId: opId, code: code, rawCode: rawCode, message: message),
   };
 }
 

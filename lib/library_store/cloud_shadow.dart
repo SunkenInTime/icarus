@@ -4,12 +4,15 @@ import 'dart:collection';
 import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
+import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 enum SkipReason {
   receivedOffline('received while the app counted itself offline'),
   endedConnection('read on a connection that has since ended'),
-  endedSession('the queue answered that its session had ended');
+  endedSession('the queue answered that its session had ended'),
+  noSession('the sender had no session open on its connection'),
+  ownWorkInFlight('this device\'s own work was still on its way');
 
   const SkipReason(this.words);
 
@@ -211,12 +214,14 @@ final class CloudShadow {
     required this.build,
     required this.canRead,
     required Future<void> Function() breathe,
+    this.sessions,
   }) : _breathe = breathe;
 
   final LibraryStore store;
   final String build;
   final CanRead canRead;
   final Future<void> Function() _breathe;
+  final StoreSessions? sessions;
 
   final reports = <CloudShadowReport>[];
   final ledger = <LedgerEntry>[];
@@ -357,6 +362,7 @@ final class CloudShadow {
   }
 
   Future<void> _lost() async {
+    if (sessions != null) return;
     for (final MapEntry(key: strategyId, value: state) in _strategies.entries) {
       final bound = state.bound;
       if (!state.inStore || bound == null) continue;
@@ -433,6 +439,9 @@ final class CloudShadow {
     int connection,
   ) async {
     if (state.bound == connection) return true;
+    if (sessions != null) {
+      return _adopt(entry, state, connection, 'the sender opened it');
+    }
     return _open(
       entry,
       state,
@@ -452,6 +461,25 @@ final class CloudShadow {
     state.bound = null;
     state.newest = connection;
     if (await _record(entry.strategyId, entry, events) == null) return false;
+    final session = await _sessionOf(entry);
+    if (session == null) return false;
+    state.bound = connection;
+    reports.add(ShadowSessionOpened(entry.strategyId, session, because));
+    return true;
+  }
+
+  Future<bool> _adopt(
+    LedgerEntry entry,
+    _Strategy state,
+    int connection,
+    String because,
+  ) async {
+    state.bound = null;
+    state.newest = connection;
+    if (!await sessions!.sessionOn(entry.strategyId, connection)) {
+      entry.verdict = const Skipped(SkipReason.noSession);
+      return false;
+    }
     final session = await _sessionOf(entry);
     if (session == null) return false;
     state.bound = connection;
@@ -487,6 +515,7 @@ final class CloudShadow {
         );
         switch (added) {
           case Saved():
+            sessions?.addedOn(strategyId, connection);
             final session = await _sessionOf(entry);
             if (session == null) return;
             state.bound = connection;
@@ -516,6 +545,15 @@ final class CloudShadow {
         entry.verdict = const RefusedByStore(
           'the store holds this id as a strategy kept on this device',
         );
+      case KeptInCloud() || CloudUnverified() when sessions != null:
+        if (!await _adopt(entry, state, connection, 'the sender opened it')) {
+          return;
+        }
+        state.inStore = true;
+        if (await _arrive(entry, header)) {
+          state.expected.header(header);
+          await _compare(entry, pages: const {});
+        }
       case KeptInCloud() || CloudUnverified():
         final restarted = _openedThisRun.add(strategyId);
         if (!await _open(
@@ -609,6 +647,13 @@ final class CloudShadow {
   }
 
   Future<void> _compare(LedgerEntry entry, {required Set<String> pages}) async {
+    if (await _read(() => store.readStrategy(entry.strategyId))
+        case Found(
+          value: StrategyContent(sync: CloudStrategy(:final queue)),
+        ) when queue.entries.isNotEmpty || queue.landed.isNotEmpty) {
+      entry.verdict = const Skipped(SkipReason.ownWorkInFlight);
+      return;
+    }
     final differences = await _read(
       () => _differences(store, entry.strategyId, pages: pages),
     );

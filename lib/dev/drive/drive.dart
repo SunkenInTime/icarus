@@ -178,6 +178,7 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
@@ -1453,8 +1454,19 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _hover(
         _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id)),
       );
+    case 'signOut':
+      final signingOut = c.read(guardedSignOutRequestProvider)(
+        appNavigatorKey.currentContext!,
+      );
+      await _waitFor(() => _countOf((w) => _isText(w, 'Sign out?')) > 0, 30);
+      await _tap(_centerOf((w) => _isText(w, 'Sign Out')));
+      if (!await signingOut) throw StateError('the sign-out was not done');
+      await _waitFor(() => c.read(authProvider).user == null, 60);
     case 'signIn':
-      final email = Platform.environment['ICARUS_DRIVE_EMAIL']!;
+      final second = value == 'second';
+      final email = second
+          ? Platform.environment['ICARUS_DRIVE_EMAIL_2']!
+          : Platform.environment['ICARUS_DRIVE_EMAIL']!;
       final signedIn = Supabase.instance.client.auth.currentUser?.email;
       if (signedIn != null && signedIn != email) {
         throw StateError('signed in as $signedIn, not $email');
@@ -1463,7 +1475,9 @@ Future<void> _run(Map<String, dynamic> step) async {
         final error =
             await c.read(authProvider.notifier).signInWithEmailPassword(
                   email: email,
-                  password: Platform.environment['ICARUS_DRIVE_PASSWORD']!,
+                  password: second
+                      ? Platform.environment['ICARUS_DRIVE_PASSWORD_2']!
+                      : Platform.environment['ICARUS_DRIVE_PASSWORD']!,
                 );
         if (error != null) throw StateError(error);
       }
@@ -1523,6 +1537,44 @@ Future<void> _run(Map<String, dynamic> step) async {
           ),
         ),
       );
+    case 'breakConvexSignIn':
+      _log(await breakConvexSignIn());
+    case 'restoreConvexSignIn':
+      await c
+          .read(authProvider.notifier)
+          .reinitializeConvexAuth(source: 'driver');
+      _log('CLOUDSTORE the app set up its Convex sign-in again');
+    case 'holdSender':
+      _log(holdSender(c));
+    case 'releaseSender':
+      _log(releaseSender(c));
+    case 'storeMove':
+      final by = step['by'] as List;
+      _log(
+        await storeMove(
+          c,
+          value as String,
+          ((by[0] as num).toDouble(), (by[1] as num).toDouble()),
+          startingWith: step['startingWith'] == true,
+        ),
+      );
+    case 'waitStoreSent':
+      _log(
+        await waitStoreSent(
+          c,
+          Duration(seconds: (value as num).toInt()),
+          landedMayWait: step['landed'] == 'may wait',
+        ),
+      );
+    case 'expectStoreNeedsYou':
+      (await storeNeedsYou(c)).forEach(_log);
+    case 'storeUseCloud':
+      _log(await storeUseCloud(c));
+    case 'storeSyncState':
+      (await storeSyncStates(c)).forEach(_log);
+    case 'killNow':
+      _log('KILLED by the script');
+      exit(9);
     case 'expectPageListRefusedNaming':
       _log(await pageListRefusal(c, value as String));
     case 'expectBatchRefusedNaming':

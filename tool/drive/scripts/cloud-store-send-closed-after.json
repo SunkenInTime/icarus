@@ -1,0 +1,22 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 6},
+  {"waitStoreSent": 120, "landed": "may wait"},
+  {"storeSyncState": true},
+  {"holdSender": true},
+  {"storeMove": "k2-", "startingWith": true, "by": [-30, 20]},
+  {"signal": "ready"},
+  {"waitSignal": "cut", "seconds": 120},
+  {"wait": 50},
+  {"releaseSender": true},
+  {"wait": 10},
+  {"storeSyncState": true},
+  {"signal": "edited-offline"},
+  {"waitSignal": "restored", "seconds": 120},
+  {"wait": 20},
+  {"waitStoreSent": 180, "landed": "may wait"},
+  {"storeSyncState": true},
+  {"exit": 1}
+]

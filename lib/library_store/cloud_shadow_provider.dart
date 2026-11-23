@@ -6,6 +6,7 @@ import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_store.dart';
@@ -88,6 +89,7 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
   Future<void> begin({
     required Future<LibraryStoreOpened> opening,
     required String build,
+    bool sends = false,
   }) async {
     final LibraryStoreOpened opened;
     try {
@@ -107,6 +109,11 @@ class CloudShadowNotifier extends Notifier<CloudShadowState>
           build: build,
           canRead: appCanRead,
           breathe: ref.read(cloudShadowBreatheProvider),
+          sessions: sends
+              ? ref
+                  .read(cloudSenderProvider.notifier)
+                  .begin(store, build: build)
+              : null,
         );
         state = CloudShadowRunning(shadow, file);
         _guarded(() {

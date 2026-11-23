@@ -1,0 +1,18 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 4},
+  {"waitSignal": "owner-ready", "seconds": 300},
+  {"openShareLink": "{out}/edit-code.txt"},
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"expectItem": "o1-{run}"},
+  {"dragAgent": "o1-{run}", "by": [0, 80]},
+  {"waitSettled": 60},
+  {"signal": "mate-edited"},
+  {"waitSignal": "owner-done", "seconds": 300},
+  {"wait": 6},
+  {"shot": "{out}/teammate-end.png"},
+  {"exit": 1}
+]

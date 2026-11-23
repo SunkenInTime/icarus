@@ -566,6 +566,86 @@
           "budget": 2
         }
       }
+    },
+    "soloSessionStore": {
+      "title": "Edit alone, sent by the cloud store's sender",
+      "about": "soloSession's 50 moves, each sent as the cloud store's sender sends it: claimed 180 ms after the edit and sent as one applyBatch per claim, in the op's live form. Beside soloSession, it shows the sender makes no more calls, sends no more argument bytes and loses no write conflicts.",
+      "metrics": {
+        "functionCalls": {
+          "today": 105,
+          "budget": 126
+        },
+        "readBytes": {
+          "today": 971362,
+          "budget": 1214203
+        },
+        "writeBytes": {
+          "today": 115698,
+          "budget": 144623
+        },
+        "sentBytes": {
+          "today": 48238,
+          "budget": 60298
+        },
+        "returnBytes": {
+          "today": 635105,
+          "budget": 793882
+        },
+        "queryReruns": {
+          "today": 50,
+          "budget": 60
+        },
+        "listReruns": {
+          "today": 0,
+          "budget": 2
+        },
+        "applyBatchCalls": {
+          "today": 50,
+          "budget": 50
+        },
+        "conflictRetries": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "twoPeopleStore": {
+      "title": "Two people on one page, sent by the cloud store's sender",
+      "about": "twoPeople's 20 moves by the owner, each sent as the cloud store's sender sends it: claimed 180 ms after the edit and sent as one applyBatch per claim, in the op's live form, while the teammate watches the page.",
+      "metrics": {
+        "functionCalls": {
+          "today": 45,
+          "budget": 54
+        },
+        "readBytes": {
+          "today": 445701,
+          "budget": 557127
+        },
+        "writeBytes": {
+          "today": 46275,
+          "budget": 57844
+        },
+        "sentBytes": {
+          "today": 19822,
+          "budget": 24778
+        },
+        "returnBytes": {
+          "today": 294246,
+          "budget": 367808
+        },
+        "queryReruns": {
+          "today": 20,
+          "budget": 24
+        },
+        "applyBatchCalls": {
+          "today": 20,
+          "budget": 20
+        },
+        "conflictRetries": {
+          "today": 0,
+          "budget": 0
+        }
+      }
     }
   }
 }

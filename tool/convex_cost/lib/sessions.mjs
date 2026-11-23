@@ -237,6 +237,19 @@ async function sendLive(device, strategyPublicId, clientId, op) {
   return result.appliedRevision;
 }
 
+const STORE_SENDER_WAIT_MS = 180;
+
+async function sendFromStore(device, strategyPublicId, clientId, op) {
+  await new Promise((resolve) => setTimeout(resolve, STORE_SENDER_WAIT_MS));
+  return sendLive(device, strategyPublicId, clientId, op);
+}
+
+function withSenderCounts(result) {
+  result.metrics.applyBatchCalls = result.summary.byFunction.get("ops:applyBatch")?.runs ?? 0;
+  result.metrics.conflictRetries = result.summary.total.conflictRetries;
+  return result;
+}
+
 async function makeStrategy(
   device,
   rng,
@@ -583,6 +596,45 @@ async function idleRun(env, admin, job) {
   throw new Error(`${job.job} still had work waiting after ${IDLE_ATTEMPTS} tries`);
 }
 
+async function soloSession({ env, world, rng }, send) {
+  const coach = world.coach;
+  const lists = await watchMyLibrary(coach);
+  const editor = await new Editor(coach, world.session, { desktop: false }).open();
+  const order = editor.page.elements.slice(0, SESSION_EDITS).map((row) => row.publicId);
+  const clientId = rng.uuid();
+  const result = await metered([coach], env, async () => {
+    for (const id of order) {
+      await send(coach, world.session.publicId, clientId, liveMove(editor.page.row(id), rng));
+      await editor.page.settle();
+    }
+  });
+  editor.close();
+  lists.forEach((unsubscribe) => unsubscribe());
+  result.metrics.listReruns = ["folders:listTree", "strategies:listForFolder"].reduce(
+    (sum, name) => sum + (result.summary.byFunction.get(name)?.runs ?? 0) + (result.summary.byFunction.get(name)?.cachedRuns ?? 0),
+    0,
+  );
+  return result;
+}
+
+async function twoPeople({ env, world, rng }, send) {
+  const { coach, teammate, session } = world;
+  const lists = await watchSharedLibrary(teammate);
+  const peer = await new Editor(teammate, session, { desktop: false }).open();
+  const rows = (await coach.query("page:getSnapshot", wholePageArgs(session.publicId, session.pages[0]))).elements;
+  const clientId = rng.uuid();
+  const result = await metered([coach, teammate], env, async () => {
+    for (const row of rows.slice(0, PEER_EDITS)) {
+      const revision = await send(coach, session.publicId, clientId, liveMove(row, rng));
+      await peer.page.waitFor((elements) => elements.some((seen) => seen.publicId === row.publicId && seen.revision >= revision));
+      await peer.page.settle();
+    }
+  });
+  peer.close();
+  lists.forEach((unsubscribe) => unsubscribe());
+  return result;
+}
+
 export const SESSIONS = {
   libraryOpen: {
     title: "Open the library",
@@ -721,26 +773,18 @@ export const SESSIONS = {
       "after the last: one live element.patch carrying the whole payload and the names of the moved fields. The first " +
       "edit re-runs the whole page and the editor switches to watching it in slices, as watchPageSnapshot does.",
     world: "team",
-    async run({ env, world, rng }) {
-      const coach = world.coach;
-      const lists = await watchMyLibrary(coach);
-      const editor = await new Editor(coach, world.session, { desktop: false }).open();
-      const order = editor.page.elements.slice(0, SESSION_EDITS).map((row) => row.publicId);
-      const clientId = rng.uuid();
-      const result = await metered([coach], env, async () => {
-        for (const id of order) {
-          await sendLive(coach, world.session.publicId, clientId, liveMove(editor.page.row(id), rng));
-          await editor.page.settle();
-        }
-      });
-      editor.close();
-      lists.forEach((unsubscribe) => unsubscribe());
-      result.metrics.listReruns = ["folders:listTree", "strategies:listForFolder"].reduce(
-        (sum, name) => sum + (result.summary.byFunction.get(name)?.runs ?? 0) + (result.summary.byFunction.get(name)?.cachedRuns ?? 0),
-        0,
-      );
-      return result;
-    },
+    run: (context) => soloSession(context, sendLive),
+  },
+
+  soloSessionStore: {
+    title: "Edit alone, sent by the cloud store's sender",
+    about:
+      "soloSession's 50 moves, each sent 180 ms after it is made by the same helper soloSession uses, one applyBatch " +
+      "per move in the op's live form. It measures what the server spends on the cloud store's sender's call pattern; " +
+      "it does not run the Dart sender, whose own call count for these moves test/library_store/cloud_sender_test.dart " +
+      "checks.",
+    world: "team",
+    run: async (context) => withSenderCounts(await soloSession(context, sendFromStore)),
   },
 
   drawingMove: {
@@ -773,23 +817,17 @@ export const SESSIONS = {
       "re-run counted is the teammate's; the owner's own are soloSession's. Each edit waits until the teammate's page " +
       "shows it.",
     world: "team",
-    async run({ env, world, rng }) {
-      const { coach, teammate, session } = world;
-      const lists = await watchSharedLibrary(teammate);
-      const peer = await new Editor(teammate, session, { desktop: false }).open();
-      const rows = (await coach.query("page:getSnapshot", wholePageArgs(session.publicId, session.pages[0]))).elements;
-      const clientId = rng.uuid();
-      const result = await metered([coach, teammate], env, async () => {
-        for (const row of rows.slice(0, PEER_EDITS)) {
-          const revision = await sendLive(coach, session.publicId, clientId, liveMove(row, rng));
-          await peer.page.waitFor((elements) => elements.some((seen) => seen.publicId === row.publicId && seen.revision >= revision));
-          await peer.page.settle();
-        }
-      });
-      peer.close();
-      lists.forEach((unsubscribe) => unsubscribe());
-      return result;
-    },
+    run: (context) => twoPeople(context, sendLive),
+  },
+
+  twoPeopleStore: {
+    title: "Two people on one page, sent by the cloud store's sender",
+    about:
+      "twoPeople's 20 moves by the owner, each sent 180 ms after it is made by the same helper twoPeople uses, one " +
+      "applyBatch per move in the op's live form, while the teammate watches the page. It measures the server's side " +
+      "of that call pattern, not the Dart sender, whose own call count test/library_store/cloud_sender_test.dart checks.",
+    world: "team",
+    run: async (context) => withSenderCounts(await twoPeople(context, sendFromStore)),
   },
 
   editorIdleHour: {

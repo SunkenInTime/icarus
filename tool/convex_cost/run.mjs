@@ -61,6 +61,7 @@ const METRICS = {
   pageReadBytes: { label: "bytes read by page part re-runs", unit: "B", headroom: 0.25 },
   otherReruns: { label: "other live query re-runs", unit: "", headroom: 0 },
   conflictRetries: { label: "write-conflict retries", unit: "", headroom: 0 },
+  applyBatchCalls: { label: "applyBatch calls", unit: "", headroom: 0 },
   functionCalls: { label: "function calls", unit: "", headroom: 0.2 },
   writeBytes: { label: "bytes written in all", unit: "B", headroom: 0.25 },
   sentBytes: { label: "bytes of call arguments the client sent", unit: "B", headroom: 0.25 },
