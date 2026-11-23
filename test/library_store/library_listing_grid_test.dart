@@ -66,7 +66,10 @@ void main() {
     );
   });
 
-  tearDownAll(() => directory.deleteSync(recursive: true));
+  tearDownAll(() async {
+    await Hive.close();
+    await directory.delete(recursive: true);
+  });
 
   testWidgets(
       'the mounted grid holds Hive rows until the start-up copy, store rows after it, and an edited tile moves to a store row once the mirror writes it',
