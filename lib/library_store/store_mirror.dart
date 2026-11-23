@@ -79,6 +79,7 @@ final class StoreMirror extends LocalLibraryFollower {
   final Future<void> Function() betweenAnimations;
   final ActionJournal? actions;
   final _journaled = <LibraryTouch>{};
+  final _failed = <LibraryTouch>{};
 
   MirrorPhase _phase = const MirrorWaitingForStore();
   final _strategies = <String>{};
@@ -122,14 +123,20 @@ final class StoreMirror extends LocalLibraryFollower {
   }
 
   @override
+  void onWriteFailed(LibraryTouch touch) {
+    if (_journaled.contains(touch)) _failed.add(touch);
+  }
+
+  @override
   void onAnswered(LibraryTouch touch) {
     _noticed++;
     reads.answered(touch);
     if (_journaled.remove(touch)) {
-      actions!.answered(touch);
+      actions!.answered(touch, written: !_failed.remove(touch));
     } else {
-      _strategies
-          .addAll(touch.strategies.where(reads.names.strategies.namesById));
+      _strategies.addAll(touch.strategies
+          .where(reads.names.strategies.namesById)
+          .where((id) => !_handedOff(id)));
     }
     _folders.addAll(touch.folders.where(reads.names.folders.namesById));
     _kick();
@@ -153,13 +160,19 @@ final class StoreMirror extends LocalLibraryFollower {
   void journal(
     String strategyId,
     String label,
-    Future<List<CanvasChange>> changes,
+    List<CanvasChange> changes,
   ) {
     final journal = actions;
     if (journal == null || _phase is! MirrorFollowing) return;
     journal.action(strategyId, label, changes);
+    _strategies.remove(strategyId);
     _kick();
   }
+
+  void followerFaulted(String label, Object error, StackTrace stackTrace) =>
+      actions?.faulted(label, error);
+
+  bool _handedOff(String strategyId) => actions?.follows(strategyId) ?? false;
 
   @override
   void onFault(Object error, StackTrace stackTrace) =>
@@ -169,6 +182,7 @@ final class StoreMirror extends LocalLibraryFollower {
     _working = false;
     actions?.forget();
     _journaled.clear();
+    _failed.clear();
     _phaseIs(MirrorStopped(stop));
     if (!_idle.isCompleted) _idle.complete();
   }
@@ -260,19 +274,23 @@ final class StoreMirror extends LocalLibraryFollower {
   bool get _hasWork =>
       _phase is MirrorFollowing &&
       ((actions?.hasDue ?? false) ||
-          _strategies.any((id) => !reads.strategyWriting(id)) ||
+          _strategies
+              .any((id) => !reads.strategyWriting(id) && !_handedOff(id)) ||
           _folders.any((id) => !reads.folderWriting(id)));
 
-  ({Set<String> strategies, Set<String> folders}) _choose() => (
-        strategies: {
-          for (final id in {..._strategies, ..._refusedStrategies.keys})
-            if (!reads.strategyWriting(id)) id,
-        },
-        folders: {
-          for (final id in {..._folders, ..._refusedFolders.keys})
-            if (!reads.folderWriting(id)) id,
-        },
-      );
+  ({Set<String> strategies, Set<String> folders}) _choose() {
+    _strategies.removeWhere(_handedOff);
+    return (
+      strategies: {
+        for (final id in {..._strategies, ..._refusedStrategies.keys})
+          if (!reads.strategyWriting(id) && !_handedOff(id)) id,
+      },
+      folders: {
+        for (final id in {..._folders, ..._refusedFolders.keys})
+          if (!reads.folderWriting(id)) id,
+      },
+    );
+  }
 
   void _kick() {
     if (_working) return;
@@ -358,6 +376,7 @@ final class StoreMirror extends LocalLibraryFollower {
           holds,
           strategies: strategies,
           folders: folders,
+          handedOff: _handedOff,
         );
       } finally {
         _strategiesInFlight = const {};

@@ -1115,7 +1115,20 @@ String _probe() {
     'deletedPage': c.read(strategyPageSessionProvider).deletedPage?.name,
     'page': c.read(strategyPageSessionProvider).activePageId,
     'canvasHeld': c.read(strategySaveStateProvider.notifier).canvasHeld,
+    'agentsOnPageInHive': _agentsOnPageInHive(c),
   });
+}
+
+int? _agentsOnPageInHive(ProviderContainer c) {
+  final id = c.read(strategyProvider).strategyId;
+  final pageId = c.read(strategyPageSessionProvider).activePageId;
+  if (id == null || pageId == null) return null;
+  final stored = const LocalLibrary().storedStrategy(id);
+  return stored?.pages
+      .where((page) => page.id == pageId)
+      .firstOrNull
+      ?.agentData
+      .length;
 }
 
 /// Puts a just-added item, which starts at (500, 500), so that its middle is
@@ -1317,6 +1330,8 @@ Future<void> _run(Map<String, dynamic> step) async {
         markAtRelease: step['mark'] as String?,
       );
     case 'path':
+      final expectOpPending = step['opStillPending'] == true;
+      String? firstFrame;
       await _drag([
         for (final p in (value as List).cast<List>())
           Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
@@ -1324,13 +1339,24 @@ Future<void> _run(Map<String, dynamic> step) async {
           stepsPerLeg: 6,
           shotWhileHeld: step['held'] as String?,
           firstFrameAfterRelease: switch (step['firstFrame']) {
-            final String label => () => _log(
+            final String label => () {
+                _log(
                   'FIRST FRAME after releasing $label: drawings on screen '
                   '${c.read(drawingProvider).elements.length}; '
                   '${actionOpsInFlight(c)}',
-                ),
+                );
+                firstFrame = opStillPendingProblem(c) ?? '';
+              },
             _ => null,
           });
+      if (expectOpPending) {
+        switch (firstFrame) {
+          case null:
+            throw StateError('no frame was seen after the release');
+          case final String problem when problem.isNotEmpty:
+            throw StateError(problem);
+        }
+      }
     case 'scrollAt':
       final xy = (value as List).cast<num>();
       GestureBinding.instance.handlePointerEvent(

@@ -6,6 +6,10 @@
   {"tapText": "Lineup ops {run}", "optional": true},
   {"wait": 6},
   {"tapIcon": "x", "optional": true},
+  {"key": "keyC"},
+  {"wait": 3},
+  {"key": "keyA"},
+  {"wait": 3},
 
   {"tapAt": [1545, 131]},
   {"wait": 1},
@@ -79,5 +83,14 @@
   {"logLineups": "delete redone"},
   {"shot": "{out}/4-end.png"},
   {"actionOps": "lineups"},
+
+  {"tapAt": [300, 760], "button": "secondary"},
+  {"wait": 1},
+  {"shot": "{out}/5-lone-group-menu.png"},
+  {"tapText": "Copy to next page"},
+  {"wait": 2},
+  {"hoverAt": [60, 700]},
+  {"wait": 1},
+  {"actionOps": "after copying a lone lineup group to the blank next page"},
   {"exit": 1}
 ]

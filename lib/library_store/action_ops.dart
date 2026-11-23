@@ -1,4 +1,5 @@
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/library_rows/page_items.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/canvas_changes.dart';
@@ -173,6 +174,23 @@ PageSettings pageSettingsOf(StrategySettings settings) => PageSettings(
       useNeutralTeamColors: settings.useNeutralTeamColors,
     );
 
+Map<String, Object?> changedFieldsOnto(
+  Map<String, Object?> before,
+  Map<String, Object?> after,
+  Map<String, Object?> stored,
+) {
+  final written = {...stored};
+  for (final key in {...before.keys, ...after.keys}) {
+    if (cloudJsonEquivalent(before[key], after[key])) continue;
+    if (after.containsKey(key)) {
+      written[key] = after[key];
+    } else {
+      written.remove(key);
+    }
+  }
+  return written;
+}
+
 Set<String> _partIds(LiveLineupGroup group) => {
       for (final part in ['origins', 'landings', 'links'])
         ...idsIn(group.payload.data, part),
@@ -324,9 +342,9 @@ final class OpsBuilder {
         if (await _page(pageId, 'removed') case final page?) {
           _objectRemoved(page, pageId, object);
         }
-      case ObjectChanged(:final pageId, :final after):
+      case ObjectChanged(:final pageId, :final before, :final after):
         if (await _page(pageId, 'changed') case final page?) {
-          _objectChanged(page, after);
+          _objectChanged(page, before, after);
         }
       case LineupsChanged(
           :final pageId,
@@ -457,15 +475,32 @@ final class OpsBuilder {
       ..revision += 1;
   }
 
-  void _objectChanged(_Page page, ActionObjectState after) {
+  void _objectChanged(
+    _Page page,
+    ActionObjectState before,
+    ActionObjectState after,
+  ) {
     final existing = page.elements[after.id];
     if (existing == null || !existing.live) {
       _gaps.add(ObjectNotInStore(after.kind, after.id, 'changed'));
       return;
     }
-    final payload = _payloadOf(after);
-    if (payload == null) return;
+    final from = _payloadOf(before);
+    final to = _payloadOf(after);
+    if (from == null || to == null) return;
     final base = existing.row;
+    final payload = ElementPayload(
+      kind: base.payload.kind,
+      payloadVersion: from.payloadVersion == to.payloadVersion
+          ? base.payload.payloadVersion
+          : to.payloadVersion,
+      data: changedFieldsOnto(
+        from.data.toJson(),
+        to.data.toJson(),
+        base.payload.data.toJson(),
+      ),
+      unknownFields: base.payload.unknownFields.toJson(),
+    );
     if (base.payload == payload) return;
     _ops.add(elementEditOp(
       opId: _opId(),
@@ -521,6 +556,7 @@ final class OpsBuilder {
               after: groupsAfter.keys.toSet(),
             ),
     );
+    final freed = <({Set<String> parts, int sortIndex})>[];
     for (final id in groupsBefore.keys) {
       if (groupsAfter.containsKey(id)) continue;
       final existing = page.groups[id];
@@ -528,6 +564,7 @@ final class OpsBuilder {
         _gaps.add(LineupGroupNotInStore(id, id));
         continue;
       }
+      freed.add((parts: _partIds(existing.row), sortIndex: existing.sortIndex));
       _ops.add(LineupGroupDeleteOp(
         opId: _opId(),
         lineupPublicId: id,
@@ -549,12 +586,31 @@ final class OpsBuilder {
           _Tracked(live: true) => 1,
           _ => 2,
         };
+    final takesPlaceOf = <String, int>{};
+    for (final group in groupsAfter.values) {
+      if (page.groups[group.publicId]?.live ?? false) continue;
+      final parts = _partIds(group);
+      final replaced = [
+        for (final slot in freed)
+          if (slot.parts.any(parts.contains)) slot,
+      ];
+      if (replaced.isEmpty) continue;
+      final first =
+          replaced.reduce((a, b) => a.sortIndex <= b.sortIndex ? a : b);
+      freed.remove(first);
+      takesPlaceOf[group.publicId] = first.sortIndex;
+    }
     for (final group in [...changed]..sort((a, b) => phase(a) - phase(b))) {
-      _putGroup(page, pageId, group);
+      _putGroup(page, pageId, group, sortIndex: takesPlaceOf[group.publicId]);
     }
   }
 
-  void _putGroup(_Page page, String pageId, LiveLineupGroup group) {
+  void _putGroup(
+    _Page page,
+    String pageId,
+    LiveLineupGroup group, {
+    int? sortIndex,
+  }) {
     final existing = page.groups[group.publicId];
     if (existing != null && existing.live) {
       if (existing.row.payload == group.payload) return;
@@ -578,13 +634,13 @@ final class OpsBuilder {
         );
       return;
     }
-    final sortIndex = page.nextGroupIndex();
+    final number = sortIndex ?? page.nextGroupIndex();
     _ops.add(LineupGroupAddOp(
       opId: _opId(),
       lineupPublicId: group.publicId,
       pagePublicId: pageId,
       payload: group.payload,
-      sortIndex: sortIndex,
+      sortIndex: number,
       expectedLineupRevision: existing?.revision,
     ));
     final revision = existing == null ? 1 : existing.revision + 1;
@@ -594,11 +650,11 @@ final class OpsBuilder {
         strategyPublicId: _strategyId,
         pagePublicId: pageId,
         payload: group.payload,
-        sortIndex: sortIndex,
+        sortIndex: number,
         revision: revision,
       ),
       revision: revision,
-      sortIndex: sortIndex,
+      sortIndex: number,
     );
   }
 

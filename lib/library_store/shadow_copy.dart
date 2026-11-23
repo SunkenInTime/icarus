@@ -282,12 +282,15 @@ Future<ShadowCopy> mirrorImage(
   };
 }
 
+bool _keptHere(String strategyId) => false;
+
 Future<ShadowCopy> mirrorIds(
   HiveReads reads,
   LibraryStore store,
   StoreHolds holds, {
   required Set<String> strategies,
   required Set<String> folders,
+  bool Function(String strategyId) handedOff = _keptHere,
 }) async {
   final strategyResults = <StrategyCopy>[];
   final folderResults = <FolderCopy>[];
@@ -323,6 +326,7 @@ Future<ShadowCopy> mirrorIds(
   }
 
   for (final id in strategies) {
+    if (handedOff(id)) continue;
     switch (reads.strategy(id)) {
       case InHive(value: final strategy):
         if (await _putImage(

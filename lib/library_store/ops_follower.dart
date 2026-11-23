@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/library_store/canvas_changes.dart';
@@ -44,7 +42,7 @@ final class OpsFollower implements EditFollower {
     final container = _container();
     final agents = container.read(agentProvider);
     return EditorNow(
-      lineups: container.read(lineUpProvider).graph,
+      lineups: () => container.read(lineUpProvider).graph.deepCopy(),
       agent: (id) {
         for (final agent in agents) {
           if (agent.id == id) return agent;
@@ -54,42 +52,52 @@ final class OpsFollower implements EditFollower {
     );
   }
 
-  static const _nothingRead =
-      EditorNow(lineups: LineUpGraph.empty, agent: _none);
-
-  static Null _none(String id) => null;
-
   @override
   void onAction(UserAction action, {required ActionWay way}) {
-    final strategyId = _localStrategy();
-    final pageId = _container().read(strategyPageSessionProvider).activePageId;
-    if (strategyId == null || pageId == null) return;
-    final kept = action.copy();
-    final undone = way == ActionWay.undone;
-    final changes = readsTheEditor(kept)
-        ? Future.microtask(
-            () => canvasChangesOf(
-              kept,
-              pageId: pageId,
-              reversed: undone,
-              now: _now(),
-            ),
-          )
-        : Future.value(
-            canvasChangesOf(
-              kept,
-              pageId: pageId,
-              reversed: undone,
-              now: _nothingRead,
-            ),
-          );
-    _mirror.journal(strategyId, actionLabel(kept, way), changes);
+    _following('${action.type.name} ${action.group.name}', () {
+      final kept = action.copy();
+      final strategyId = _localStrategy();
+      final pageId =
+          _container().read(strategyPageSessionProvider).activePageId;
+      if (strategyId == null || pageId == null) return;
+      _mirror.journal(
+        strategyId,
+        actionLabel(kept, way),
+        canvasChangesOf(
+          kept,
+          pageId: pageId,
+          reversed: way == ActionWay.undone,
+          now: _now(),
+        ),
+      );
+    });
   }
 
   @override
   void onPagesChanged(List<CanvasChange> Function() changes, String label) {
-    final strategyId = _localStrategy();
-    if (strategyId == null) return;
-    _mirror.journal(strategyId, label, Future.value(changes()));
+    _following(label, () {
+      final strategyId = _localStrategy();
+      if (strategyId == null) return;
+      _mirror.journal(strategyId, label, changes());
+    });
+  }
+
+  bool isOpenInEditor(String strategyId) {
+    try {
+      return _localStrategy() == strategyId;
+    } on Object {
+      return false;
+    }
+  }
+
+  void _following(String label, void Function() follow) {
+    try {
+      follow();
+    } on Object catch (error, stackTrace) {
+      if (identical(ActionProvider.editFollower, this)) {
+        ActionProvider.editFollower = null;
+      }
+      _mirror.followerFaulted(label, error, stackTrace);
+    }
   }
 }

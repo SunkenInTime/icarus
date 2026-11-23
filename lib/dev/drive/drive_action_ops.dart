@@ -25,6 +25,8 @@ Map<String, int> opsCounts(ActionOpsTally t) => {
       'commitsRefused': t.commitsRefused.length,
       'gaps': t.gaps.length,
       'saves': t.saves,
+      'savesFailed': t.savesFailed,
+      'followerFaults': t.followerFaults.length,
       'readBackEqual': t.readBackEqual,
       'readBackUnequal': t.readBackUnequal,
       'imageWroteNothing': t.imageWroteNothing,
@@ -43,6 +45,15 @@ String actionOpsInFlight(ProviderContainer c) => switch (_journal(c)) {
       null => 'this run does not journal action ops',
     };
 
+String? opStillPendingProblem(ProviderContainer c) => switch (_journal(c)) {
+      final journal? when journal.tally.opsCommitted < journal.tally.actions =>
+        null,
+      final journal? => 'the stroke\'s op had already landed by the first '
+          'frame after its release: ${journal.tally.opsCommitted} ops for '
+          '${journal.tally.actions} actions',
+      null => 'this run does not journal action ops',
+    };
+
 List<String> actionOpsLines(String label, ActionOpsTally t) => [
       'OPS $label actions ${t.actions}, ${t.actionsWithOps} with ops; '
           'commits ${t.commits}, ${t.opsCommitted} ops, '
@@ -50,14 +61,16 @@ List<String> actionOpsLines(String label, ActionOpsTally t) => [
           '${t.commitsRefused.length} refused; saves ${t.saves}: read back '
           'equal ${t.readBackEqual}, unequal ${t.readBackUnequal}, not in the '
           'store ${t.savesNotInStore}, not read ${t.savesNotRead}; image saves '
-          'wrote nothing ${t.imageWroteNothing}, only the header time '
-          '${t.imageWroteHeaderTimeOnly}, other rows ${t.imageWroteRows}',
+          'that differed in nothing ${t.imageWroteNothing}, only the header '
+          'time ${t.imageWroteHeaderTimeOnly}, other rows ${t.imageWroteRows}; '
+          'failed Hive saves ${t.savesFailed}; strategies followed '
+          '${t.followed}; follower faults ${t.followerFaults.length}',
       'OPS $label strategies removed before an image save because the '
           'store held what an image may not drop: trashed pages '
           '${t.trashedPagesRemoved}, deleted rows ${t.deletedRowsRemoved}; strategies repaired from Hive at the end '
           '${t.repairedAtEnd}, after ${t.actionsAfterLastSave} actions made '
           'after their last save',
-      'OPS $label rows the image saves wrote: ${[
+      'OPS $label rows that differed before each image save: ${[
         for (final rowClass in ImageRowClass.values)
           '${rowClass.words} ${t.rowsByClass[rowClass] ?? 0}',
       ].join(', ')}',
@@ -71,6 +84,7 @@ List<String> actionOpsLines(String label, ActionOpsTally t) => [
       for (final refused in t.commitsRefused)
         'OPS $label refused ${refused.action}: ${refused.reason}',
       for (final gap in t.gaps) 'OPS $label gap ${gap.action}: ${gap.gap}',
+      for (final fault in t.followerFaults) 'OPS $label follower fault $fault',
       for (final lineup in t.lineups)
         if (lineup.shape case LineupGroupsChanged(:final before, :final after))
           'OPS $label lineup ${lineup.action}: groups ${before.length} -> '

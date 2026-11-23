@@ -49,6 +49,8 @@ abstract base class LocalLibraryFollower {
 
   void onAnswered(LibraryTouch touch);
 
+  void onWriteFailed(LibraryTouch touch) {}
+
   void onFault(Object error, StackTrace stackTrace);
 
   void _told(void Function(LibraryTouch touch) notice, LibraryTouch touch) {
@@ -73,12 +75,16 @@ abstract base class LocalLibraryFollower {
     try {
       writing = write();
     } on Object {
+      _told(onWriteFailed, touch);
       _told(onAnswered, touch);
       rethrow;
     }
     writing.then(
       (_) => _told(onAnswered, touch),
-      onError: (Object _) => _told(onAnswered, touch),
+      onError: (Object _) {
+        _told(onWriteFailed, touch);
+        _told(onAnswered, touch);
+      },
     );
     return writing;
   }

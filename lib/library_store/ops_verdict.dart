@@ -183,6 +183,24 @@ void _lineups(
     }
   }
 
+  final groupsExpected = _groupParts(expected);
+  final groupsRead = _groupParts(read);
+  final commonGroups = [
+    for (final id in groupsExpected.keys)
+      if (groupsRead.containsKey(id)) id,
+  ];
+  final commonGroupsRead = [
+    for (final id in groupsRead.keys)
+      if (groupsExpected.containsKey(id)) id,
+  ];
+  if (!_sameOrder(commonGroups, commonGroupsRead)) {
+    differ('lineup groups', expected.id, 'order');
+  }
+  for (final id in commonGroups) {
+    if (!_sameOrder(groupsExpected[id]!, groupsRead[id]!)) {
+      differ('lineup group', id, 'order');
+    }
+  }
   compare(
     'lineup origin',
     [for (final o in expected.lineUpOrigins) (o.id, _jsonOf(o.toJson()))],
@@ -199,6 +217,21 @@ void _lineups(
     [for (final l in read.lineUpLinks) (l.id, _jsonOf(l.toJson()))],
   );
 }
+
+Map<String, List<String>> _groupParts(StrategyPage page) => {
+      for (final group in lineupGroupRowsOf(
+        strategyId: '',
+        pageId: page.id,
+        graph: page.lineUpGraph,
+        takenGroupIds: {},
+        everyLinkId: {for (final link in page.lineUpLinks) link.id},
+      ))
+        group.publicId: [
+          for (final collection in const ['origins', 'landings', 'links'])
+            for (final id in idsIn(group.payload.data, collection))
+              '$collection/$id',
+        ],
+    };
 
 enum ImageRowClass {
   number,
@@ -268,9 +301,8 @@ ImageRowClass _classOf(Set<String> fields, {required String numberField}) =>
 
 List<ImageRowWrite> imageRowWrites(
   StrategyRowSet image,
-  StrategyRowSet stored, {
-  required StrategyData saved,
-}) {
+  StrategyRowSet stored,
+) {
   final writes = <ImageRowWrite>[];
   final header = _strategyFields(image.strategy, stored.strategy);
   if (header.isNotEmpty) {
@@ -330,12 +362,21 @@ List<ImageRowWrite> imageRowWrites(
     ));
   }
 
-  final itemIds = {
-    for (final page in saved.pages)
-      for (final item in pageItemsOf(page)) item.id,
-  };
   final storedElements = {for (final row in stored.elements) row.publicId: row};
   final imageElements = {for (final row in image.elements) row.publicId: row};
+  bool hasTwin(LiveElement row, Map<String, ElementRow> elsewhere) =>
+      elsewhere.values.any((other) =>
+          other is LiveElement &&
+          other.pagePublicId == row.pagePublicId &&
+          other.payload == row.payload);
+  final storedTwins = {
+    for (final MapEntry(:key, :value) in storedElements.entries)
+      if (!imageElements.containsKey(key)) key: value,
+  };
+  final imageTwins = {
+    for (final MapEntry(:key, :value) in imageElements.entries)
+      if (!storedElements.containsKey(key)) key: value,
+  };
   for (final MapEntry(key: id, value: row) in imageElements.entries) {
     if (row is! LiveElement) continue;
     final other = storedElements[id];
@@ -343,7 +384,9 @@ List<ImageRowWrite> imageRowWrites(
       writes.add(ImageRowWrite(
         'element',
         id,
-        itemIds.contains(id) ? ImageRowClass.real : ImageRowClass.derivedId,
+        hasTwin(row, storedTwins)
+            ? ImageRowClass.derivedId
+            : ImageRowClass.real,
         {'missing'},
       ));
       continue;
@@ -365,10 +408,6 @@ List<ImageRowWrite> imageRowWrites(
     for (final page in stored.pages)
       if (page is TrashedPage) page.publicId,
   };
-  final derivedImageIds = {
-    for (final id in imageElements.keys)
-      if (!itemIds.contains(id)) id,
-  };
   for (final MapEntry(key: id, value: row) in storedElements.entries) {
     if (imageElements.containsKey(id)) continue;
     writes.add(ImageRowWrite(
@@ -377,8 +416,7 @@ List<ImageRowWrite> imageRowWrites(
       switch (row) {
         _ when trashedPages.contains(row.pagePublicId) =>
           ImageRowClass.trashedPage,
-        LiveElement() when derivedImageIds.isNotEmpty =>
-          ImageRowClass.derivedId,
+        LiveElement() when hasTwin(row, imageTwins) => ImageRowClass.derivedId,
         LiveElement() => ImageRowClass.real,
         _ => ImageRowClass.deletedRow,
       },
@@ -405,6 +443,30 @@ Set<String> _linksOf(LineupGroupRow row) => switch (row) {
       _ => const {},
     };
 
+Map<String, Object?> _partsOf(Iterable<LineupGroupRow> rows) => {
+      for (final row in rows)
+        if (row case LiveLineupGroup(:final payload))
+          for (final collection in const ['origins', 'landings', 'links'])
+            if (payload.data[collection] case final Iterable<Object?> parts)
+              for (final part in parts)
+                if (part case final JsonObject object)
+                  if (object['id'] case final String id)
+                    '$collection/$id': object.toJson(),
+    };
+
+Set<String> _partsDiffering(
+  LineupGroupRow row,
+  Map<String, Object?> otherSide,
+) {
+  final own = _partsOf([row]);
+  return {
+    for (final MapEntry(:key, :value) in own.entries)
+      if (!otherSide.containsKey(key) ||
+          !cloudJsonEquivalent(otherSide[key], value))
+        key,
+  };
+}
+
 List<ImageRowWrite> _groupWrites(
   StrategyRowSet image,
   StrategyRowSet stored,
@@ -417,46 +479,62 @@ List<ImageRowWrite> _groupWrites(
   final imageGroups = {
     for (final row in image.lineupGroups) row.publicId: row,
   };
+  final storedParts = _partsOf(storedGroups.values);
+  final imageParts = _partsOf(imageGroups.values);
+  ImageRowWrite regroupedOrReal(
+    String id,
+    LineupGroupRow row,
+    Map<String, Object?> otherSide,
+    Set<String> fields,
+  ) {
+    final differing = _partsDiffering(row, otherSide);
+    return ImageRowWrite(
+      'lineup group',
+      id,
+      differing.isEmpty ? ImageRowClass.lineupRegrouping : ImageRowClass.real,
+      differing.isEmpty ? fields : differing,
+    );
+  }
+
   for (final MapEntry(key: id, value: row) in imageGroups.entries) {
     if (row is! LiveLineupGroup) continue;
     final other = storedGroups[id];
     if (other is! LiveLineupGroup) {
-      writes.add(ImageRowWrite(
-        'lineup group',
-        id,
-        ImageRowClass.lineupRegrouping,
-        {'missing'},
-      ));
+      writes.add(regroupedOrReal(id, row, storedParts, {'missing'}));
       continue;
     }
-    final regrouped = !_sameSet(_linksOf(row), _linksOf(other));
     final fields = {
       ..._payloadFields(row.payload.toJson(), other.payload.toJson()),
       if (row.sortIndex != other.sortIndex) 'sortIndex',
     };
     if (fields.isEmpty) continue;
-    writes.add(ImageRowWrite(
-      'lineup group',
-      id,
-      regrouped
-          ? ImageRowClass.lineupRegrouping
-          : _classOf(fields, numberField: 'sortIndex'),
-      fields,
-    ));
+    writes.add(_sameSet(_linksOf(row), _linksOf(other))
+        ? ImageRowWrite(
+            'lineup group',
+            id,
+            _classOf(fields, numberField: 'sortIndex'),
+            fields,
+          )
+        : regroupedOrReal(id, row, storedParts, fields));
   }
   for (final MapEntry(key: id, value: row) in storedGroups.entries) {
     if (imageGroups.containsKey(id)) continue;
-    writes.add(ImageRowWrite(
-      'lineup group',
-      id,
-      switch (row) {
-        _ when trashedPages.contains(row.pagePublicId) =>
+    writes.add(switch (row) {
+      _ when trashedPages.contains(row.pagePublicId) => ImageRowWrite(
+          'lineup group',
+          id,
           ImageRowClass.trashedPage,
-        LiveLineupGroup() => ImageRowClass.lineupRegrouping,
-        _ => ImageRowClass.deletedRow,
-      },
-      {'not in the image'},
-    ));
+          {'not in the image'},
+        ),
+      LiveLineupGroup() =>
+        regroupedOrReal(id, row, imageParts, {'not in the image'}),
+      _ => ImageRowWrite(
+          'lineup group',
+          id,
+          ImageRowClass.deletedRow,
+          {'not in the image'},
+        ),
+    });
   }
   return writes;
 }

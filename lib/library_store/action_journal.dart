@@ -22,19 +22,29 @@ final class _ActionJob extends _Job {
   _ActionJob(super.strategyId, this.label, this.changes);
 
   final String label;
-  final Future<List<CanvasChange>> changes;
+  final List<CanvasChange> changes;
 }
+
+enum _SaveState { writing, written, failed }
 
 final class _SaveJob extends _Job {
-  _SaveJob(this.touch, this.saved, {this.compares = true})
-      : answered = touch == null,
-        super(saved.id);
+  _SaveJob.of(this.touch, super.strategyId, this.image)
+      : compares = true,
+        state = _SaveState.writing;
+
+  _SaveJob.image(super.strategyId, this.image)
+      : touch = null,
+        compares = false,
+        state = _SaveState.written;
 
   final LibraryTouch? touch;
-  final StrategyData saved;
+  final StrategyToRows image;
   final bool compares;
-  bool answered;
+  _SaveState state;
 }
+
+StrategyToRows _rowsOf(StrategyData strategy) =>
+    strategyToRows(strategyAsHiveHoldsIt(strategy));
 
 final class SaveFinding {
   SaveFinding({
@@ -81,7 +91,9 @@ final class ActionOpsTally {
   final gaps = <GapFinding>[];
   final lineups = <LineupFinding>[];
   final actionKinds = <String, int>{};
+  var followed = 0;
   var saves = 0;
+  var savesFailed = 0;
   var savesNotInStore = 0;
   var savesNotRead = 0;
   var readBackEqual = 0;
@@ -96,6 +108,7 @@ final class ActionOpsTally {
   var actionsAfterLastSave = 0;
   final findings = <SaveFinding>[];
   final differencesByField = <String, int>{};
+  final followerFaults = <String>[];
 
   int get lineupsInsideGroups =>
       lineups.where((l) => l.shape is LineupsInsideGroups).length;
@@ -105,25 +118,40 @@ final class ActionOpsTally {
 }
 
 final class ActionJournal {
+  ActionJournal({StrategyData? Function(String id)? hiveNow})
+      : _hiveNow = hiveNow ?? const LocalLibrary().storedStrategy;
+
+  final StrategyData? Function(String id) _hiveNow;
   final _jobs = Queue<_Job>();
   final _following = <String>{};
   final _sinceSave = <String, List<String>>{};
   final tally = ActionOpsTally();
+  bool Function(String strategyId) inEditor = _nowhere;
+
+  static bool _nowhere(String strategyId) => false;
 
   bool follows(String strategyId) => _following.contains(strategyId);
 
   bool get hasDue => switch (_jobs.firstOrNull) {
         null => false,
-        final _SaveJob save => save.answered,
+        final _SaveJob save => save.state != _SaveState.writing,
         _ActionJob() => true,
       };
+
+  void _follow(String strategyId) {
+    if (!_following.add(strategyId)) return;
+    tally.followed += 1;
+    if (_hiveNow(strategyId) case final current?) {
+      _jobs.add(_SaveJob.image(strategyId, _rowsOf(current)));
+    }
+  }
 
   void action(
     String strategyId,
     String label,
-    Future<List<CanvasChange>> changes,
+    List<CanvasChange> changes,
   ) {
-    _following.add(strategyId);
+    _follow(strategyId);
     _jobs.add(_ActionJob(strategyId, label, changes));
     tally
       ..actions += 1
@@ -132,15 +160,31 @@ final class ActionJournal {
 
   bool takesSave(LibraryTouch touch) {
     final saved = touch.wrote;
-    if (saved == null || !_following.contains(saved.id)) return false;
-    _jobs.add(_SaveJob(touch, saved));
+    if (saved == null) {
+      touch.strategies.forEach(_following.remove);
+      return false;
+    }
+    if (!_following.contains(saved.id)) {
+      if (!inEditor(saved.id)) return false;
+      _follow(saved.id);
+    }
+    _jobs.add(_SaveJob.of(touch, saved.id, _rowsOf(saved)));
     return true;
   }
 
-  void answered(LibraryTouch touch) {
+  void answered(LibraryTouch touch, {required bool written}) {
     for (final job in _jobs) {
-      if (job is _SaveJob && identical(job.touch, touch)) job.answered = true;
+      if (job is _SaveJob &&
+          identical(job.touch, touch) &&
+          job.state == _SaveState.writing) {
+        job.state = written ? _SaveState.written : _SaveState.failed;
+      }
     }
+  }
+
+  void faulted(String label, Object error) {
+    tally.followerFaults.add('$label: $error');
+    _following.clear();
   }
 
   void forget() => _jobs.clear();
@@ -154,7 +198,7 @@ final class ActionJournal {
     tally
       ..repairedAtEnd += 1
       ..actionsAfterLastSave += _sinceSave.remove(current.id)?.length ?? 0;
-    _jobs.add(_SaveJob(null, current, compares: false));
+    _jobs.add(_SaveJob.image(current.id, _rowsOf(current)));
   }
 
   Future<JournalStep> runDue(LibraryStore store) async {
@@ -167,7 +211,7 @@ final class ActionJournal {
 
   Future<JournalStep> _runAction(LibraryStore store, _ActionJob job) async {
     (_sinceSave[job.strategyId] ??= []).add(job.label);
-    final changes = await job.changes;
+    final changes = job.changes;
     if (changes.isEmpty) return const JournalContinues();
     final builder = await OpsBuilder.read(store, job.strategyId);
     if (builder == null) {
@@ -204,8 +248,11 @@ final class ActionJournal {
   }
 
   Future<JournalStep> _runSave(LibraryStore store, _SaveJob job) async {
-    final saved = strategyAsHiveHoldsIt(job.saved);
-    final image = strategyToRows(saved);
+    final image = job.image;
+    if (job.state == _SaveState.failed) {
+      tally.savesFailed += 1;
+      return const JournalContinues();
+    }
     var trashed = false;
     if (!job.compares) {
       if (await readStoredRows(store, job.strategyId)
@@ -218,7 +265,7 @@ final class ActionJournal {
     tally.saves += 1;
     switch (await readStoredRows(store, job.strategyId)) {
       case StoredRowsRead(:final rows):
-        _compare(saved, image, rows, actions);
+        _compare(image, rows, actions);
         trashed = _holdsWhatAnImageCannotDrop(rows);
         if (rows.pages.any((page) => page is TrashedPage)) {
           tally.trashedPagesRemoved += 1;
@@ -239,7 +286,6 @@ final class ActionJournal {
       rows.lineupGroups.any((row) => row is DeletedLineupGroup);
 
   void _compare(
-    StrategyData saved,
     StrategyToRows image,
     StrategyRowSet stored,
     List<String> actions,
@@ -256,12 +302,16 @@ final class ActionJournal {
     final List<ImageRowWrite> writes;
     switch (image) {
       case StrategyRowsMade(:final rows):
-        final expected = switch (strategyFromRows(rows)) {
-          StrategyDataMade(:final strategy) => strategy,
-          StrategyDataRefused() => saved,
-        };
+        final StrategyData expected;
+        switch (strategyFromRows(rows)) {
+          case StrategyDataMade(:final strategy):
+            expected = strategy;
+          case StrategyDataRefused():
+            tally.savesNotRead += 1;
+            return;
+        }
         differences = readBackDifferences(expected, read);
-        writes = imageRowWrites(rows, stored, saved: saved);
+        writes = imageRowWrites(rows, stored);
       case StrategyRowsRefused():
         tally.savesNotRead += 1;
         return;

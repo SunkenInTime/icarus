@@ -36,16 +36,19 @@ final class LibraryStoreStart {
           ..follow(mirroring.mirror);
         return LibraryStoreStart._(choice, mirroring, listing);
       case StoreSwitchOps():
+        final journal = ActionJournal();
         final journaling = StoreMirror(
           reads: HiveReads(),
           betweenAnimations: betweenAnimations,
-          actions: ActionJournal(),
+          actions: journal,
         );
+        final follower = OpsFollower(journaling, () => appProviderContainer);
+        journal.inEditor = follower.isOpenInEditor;
         return LibraryStoreStart._(
           choice,
           Mirroring(journaling),
           null,
-          editFollower: OpsFollower(journaling, () => appProviderContainer),
+          editFollower: follower,
         );
     }
   }

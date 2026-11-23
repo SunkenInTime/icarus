@@ -1,5 +1,8 @@
+import 'dart:ui';
+
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -96,9 +99,11 @@ abstract interface class EditFollower {
 }
 
 final class EditorNow {
-  const EditorNow({required this.lineups, required this.agent});
+  EditorNow({required LineUpGraph Function() lineups, required this.agent})
+      : _lineups = lineups;
 
-  final LineUpGraph lineups;
+  final LineUpGraph Function() _lineups;
+  late final LineUpGraph lineups = _lineups();
   final PlacedAgentNode? Function(String id) agent;
 }
 
@@ -124,16 +129,6 @@ ActionObjectState? objectOnPage(StrategyPage page, String id) {
   return null;
 }
 
-bool readsTheEditor(UserAction action) => switch (action) {
-      LineUpGraphAction() ||
-      LineUpEditAction() ||
-      WeaponSelectionAction() =>
-        true,
-      _ when action.group == ActionGroup.bulk =>
-        action.changes.any(readsTheEditor),
-      _ => false,
-    };
-
 List<CanvasChange> canvasChangesOf(
   UserAction action, {
   required String pageId,
@@ -146,11 +141,12 @@ List<CanvasChange> canvasChangesOf(
     var lineups = now.lineups;
     final changes = <List<CanvasChange>>[];
     for (final change in performed.reversed) {
+      final atThisStep = lineups;
       changes.add(canvasChangesOf(
         change,
         pageId: pageId,
         reversed: reversed,
-        now: EditorNow(lineups: lineups, agent: now.agent),
+        now: EditorNow(lineups: () => atThisStep, agent: now.agent),
       ));
       lineups = lineupsBefore(change, reversed: reversed, after: lineups);
     }
@@ -172,17 +168,15 @@ List<CanvasChange> canvasChangesOf(
     case WeaponSelectionAction(:final id)
         when action.group == ActionGroup.lineUp:
       return [LineupPartChanged(pageId, id, now.lineups)];
-    case WeaponSelectionAction(:final id):
-      return switch (now.agent(id)) {
-        final agent? => [
-            ObjectChanged(
-              pageId,
-              ActionObjectState.agent(agent),
-              ActionObjectState.agent(agent),
-            ),
-          ],
-        null => const [],
-      };
+    case WeaponSelectionAction(:final id, :final before, :final after):
+      final agent = now.agent(id);
+      if (agent == null) return const [];
+      final (from, to) = reversed ? (after, before) : (before, after);
+      final changedFrom = ActionObjectState.agent(agent);
+      changedFrom.agent!.weapon = from;
+      final changedTo = ActionObjectState.agent(agent);
+      changedTo.agent!.weapon = to;
+      return [ObjectChanged(pageId, changedFrom, changedTo)];
     case StrategySettingsAction(:final before, :final after):
       return [PageSettingsChanged(pageId, reversed ? before : after)];
   }
@@ -231,9 +225,31 @@ LineUpGraph lineupsBefore(
     }
     return lineups;
   }
-  if (action is! LineUpGraphAction) return after;
-  final (removed, added) =
-      reversed ? (action.after, action.before) : (action.before, action.after);
+  switch (action) {
+    case LineUpEditAction(:final field, :final targetId, :final before):
+      return lineupsWithField(
+        after,
+        field,
+        targetId,
+        reversed ? action.after : before,
+      );
+    case WeaponSelectionAction(:final id, :final before)
+        when action.group == ActionGroup.lineUp:
+      return lineupsWithWeapon(after, id, reversed ? action.after : before);
+    case LineUpGraphAction(before: final graphBefore, after: final graphAfter):
+      return reversed
+          ? _withoutAdded(after, removed: graphAfter, added: graphBefore)
+          : _withoutAdded(after, removed: graphBefore, added: graphAfter);
+    default:
+      return after;
+  }
+}
+
+LineUpGraph _withoutAdded(
+  LineUpGraph after, {
+  required LineUpGraph removed,
+  required LineUpGraph added,
+}) {
   final addedLinks = {for (final link in added.links) link.id};
   final links = [
     for (final link in after.links)
@@ -263,3 +279,71 @@ LineUpGraph lineupsBefore(
     links: links,
   );
 }
+
+LineUpGraph lineupsWithField(
+  LineUpGraph graph,
+  LineUpEditField field,
+  String targetId,
+  Object value,
+) =>
+    switch (field) {
+      LineUpEditField.originPosition => LineUpGraph(
+          origins: [
+            for (final origin in graph.origins)
+              origin.id == targetId
+                  ? origin.copyWith(
+                      agent: origin.agent.copyWith(position: value as Offset)
+                        ..isDeleted = origin.agent.isDeleted,
+                    )
+                  : origin,
+          ],
+          landings: graph.landings,
+          links: graph.links,
+        ),
+      LineUpEditField.landingPosition ||
+      LineUpEditField.landingVisibility =>
+        LineUpGraph(
+          origins: graph.origins,
+          landings: [
+            for (final landing in graph.landings)
+              landing.id == targetId
+                  ? landing.copyWith(
+                      ability: (field == LineUpEditField.landingPosition
+                          ? landing.ability.copyWith(position: value as Offset)
+                          : landing.ability.copyWith(
+                              visualState: (value as AbilityVisibilityChange)
+                                  .writeTo(landing.ability.visualState),
+                            ))
+                        ..isDeleted = landing.ability.isDeleted,
+                    )
+                  : landing,
+          ],
+          links: graph.links,
+        ),
+      LineUpEditField.linkDetails => LineUpGraph(
+          origins: graph.origins,
+          landings: graph.landings,
+          links: [
+            for (final link in graph.links)
+              link.id == targetId
+                  ? (value as LineUpLinkChange).writeTo(link)
+                  : link,
+          ],
+        ),
+    };
+
+LineUpGraph lineupsWithWeapon(
+  LineUpGraph graph,
+  String originId,
+  WeaponType weapon,
+) =>
+    LineUpGraph(
+      origins: [
+        for (final origin in graph.origins)
+          origin.id == originId
+              ? origin.copyWith(agent: origin.agent.copyWith(weapon: weapon))
+              : origin,
+      ],
+      landings: graph.landings,
+      links: graph.links,
+    );

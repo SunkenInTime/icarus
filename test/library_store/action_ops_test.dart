@@ -17,6 +17,7 @@ import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart' hide UserAction;
 
 import '../library_rows/generated_strategies.dart';
+import 'object_variants.dart';
 
 LineUpGraph _interleaved(LineUpGraph graph) {
   final links = [...graph.links];
@@ -71,21 +72,13 @@ List<ActionObjectState> _objectsOf(StrategyPage page) => [
 ActionObjectState _withId(ActionObjectState object, String id) =>
     ActionObjectState.fromJson(object.kind, {...object.toJson(), 'id': id});
 
-ActionObjectState _moved(ActionObjectState object) {
-  final json = object.toJson();
-  if (json['position'] case final Map<String, dynamic> position) {
-    json['position'] = {
-      ...position,
-      'dx': ((position['dx'] as num?) ?? 0) + 7,
-    };
-  } else if (json['color'] case final int color) {
-    json['color'] = color ^ 0x00FF00;
-  } else if (json['text'] case final String text) {
-    json['text'] = '$text!';
-  } else {
-    json['isDotted'] = !(json['isDotted'] as bool? ?? false);
-  }
-  return ActionObjectState.fromJson(object.kind, json);
+final _variedFields = <ActionObjectKind, Set<String>>{};
+
+ActionObjectState _edited(ActionObjectState object, Random random) {
+  final varied =
+      variedObject(object, random) ?? fail('no variant of ${object.id}');
+  (_variedFields[object.kind] ??= {}).addAll(varied.fields);
+  return varied.object;
 }
 
 StrategyPage _withObjects(StrategyPage page, List<ActionObjectState> objects) =>
@@ -226,11 +219,13 @@ _Step? _step(StrategyData strategy, Random random, int step) {
       );
     case 3 || 4 when objects.isNotEmpty:
       final before = objects[random.nextInt(objects.length)];
-      final after = _moved(before);
+      final edited = _withObjects(page, [
+        for (final o in objects)
+          o.id == before.id ? _edited(before, random) : o,
+      ]);
+      final after = _objectsOf(edited).singleWhere((o) => o.id == before.id);
       return _Step(
-        withPage(_withObjects(page, [
-          for (final o in objects) o.id == before.id ? after : o,
-        ])),
+        withPage(edited),
         ObjectChanged(page.id, before, after),
         'change ${before.kind.name}',
       );
@@ -398,6 +393,20 @@ LineUpGraphAction _lineupDeleted(LineUpGraph graph, String linkId) =>
       before: _part(graph, linkId),
     );
 
+StrategyData _takingLineupOrder(StrategyData strategy, StrategyData read) {
+  final readById = {for (final page in read.pages) page.id: page};
+  return strategy.copyWith(pages: [
+    for (final page in strategy.pages)
+      switch (readById[page.id]) {
+        final other? => page.copyWith(lineUpGraph: other.lineUpGraph),
+        null => page,
+      },
+  ]);
+}
+
+bool _isGroupOrder(ReadBackDifference difference) =>
+    difference.what == 'lineup groups' && difference.field == 'order';
+
 void main() {
   test(
       'before rows plus the ops built for each change, read back, equal the after state, for every kind of object, lineups sharing spots in interleaved order, and a page list out of sort order',
@@ -429,14 +438,17 @@ void main() {
           );
         }
         strategy = next.after;
+        final read = await _readBack(store, strategy.id);
+        final differences = readBackDifferences(_readable(strategy), read);
         expect(
-          readBackDifferences(
-            _readable(strategy),
-            await _readBack(store, strategy.id),
-          ),
+          differences.where((d) => !_isGroupOrder(d)),
           isEmpty,
           reason: 'seed $seed step $step ${next.what}',
         );
+        if (differences.any(_isGroupOrder)) {
+          counts.update('group order', (n) => n + 1, ifAbsent: () => 1);
+          strategy = _takingLineupOrder(strategy, read);
+        }
         counts.update(next.what, (n) => n + 1, ifAbsent: () => 1);
       }
       await store.close();
@@ -445,6 +457,13 @@ void main() {
       if (kind == ActionObjectKind.lineUp) continue;
       expect(counts['add ${kind.name}'], greaterThan(5), reason: kind.name);
       expect(counts['change ${kind.name}'], greaterThan(5), reason: kind.name);
+    }
+    for (final MapEntry(key: kind, value: fields) in variableFields().entries) {
+      expect(
+        fields.difference(_variedFields[kind] ?? const {}),
+        isEmpty,
+        reason: 'fields of ${kind.name} no edit changed',
+      );
     }
     for (final what in [
       'lineups',
@@ -484,13 +503,14 @@ void main() {
       UserAction action, {
       required LineUpGraph now,
       bool reversed = false,
+      bool splitOffGroupReadsBackLast = false,
     }) async {
       final builder = (await OpsBuilder.read(store, strategy.id))!;
       final built = await builder.build(canvasChangesOf(
         action,
         pageId: pageId,
         reversed: reversed,
-        now: EditorNow(lineups: now, agent: (_) => null),
+        now: EditorNow(lineups: () => now, agent: (_) => null),
       ));
       expect(built.gaps, isEmpty, reason: what);
       final result = await store.commitAll(strategy.id, built.ops);
@@ -503,12 +523,13 @@ void main() {
       strategy = strategy.copyWith(pages: [
         strategy.pages.single.copyWith(lineUpGraph: now),
       ]);
+      final differences = readBackDifferences(
+        _readable(strategy),
+        await _readBack(store, strategy.id),
+      );
       expect(
-        readBackDifferences(
-          _readable(strategy),
-          await _readBack(store, strategy.id),
-        ),
-        isEmpty,
+        [for (final difference in differences) '$difference'],
+        splitOffGroupReadsBackLast ? ['lineup groups $pageId order'] : isEmpty,
         reason: what,
       );
     }
@@ -516,7 +537,9 @@ void main() {
     final added = _lineupAdded(whole, 'pl-link-b');
     await act('add at a shared spot', added, now: whole);
     await act('undo the add', added,
-        now: _without(whole, {'pl-link-b'}), reversed: true);
+        now: _without(whole, {'pl-link-b'}),
+        reversed: true,
+        splitOffGroupReadsBackLast: true);
     await act('redo the add', added, now: whole);
     final withoutD = _without(whole, {'pl-link-d'});
     await act('delete', _lineupDeleted(whole, 'pl-link-d'), now: withoutD);
@@ -542,6 +565,48 @@ void main() {
       'undo two deletes inside',
       'undo two deletes groups',
     ]);
+    await store.close();
+  });
+
+  test(
+      'deleting the lineup whose id named its group leaves the renamed group where the old one was, so the group order reads back equal',
+      () async {
+    final whole = sharedSpotLineups('pl');
+    const pageId = 'lineup-page';
+    final strategy = generatedStrategy(Optionals.unset).copyWith(
+      id: 'renamed-group',
+      pages: [
+        generatedPage(
+          id: pageId,
+          sortIndex: 0,
+          optionals: Optionals.unset,
+          isAttack: true,
+          lineups: whole,
+        ).copyWith(),
+      ],
+    );
+    final store = await _storeWith(strategy);
+    final now = _without(whole, {'pl-link-a'});
+    final built = await (await OpsBuilder.read(store, strategy.id))!.build(
+      canvasChangesOf(
+        _lineupDeleted(whole, 'pl-link-a'),
+        pageId: pageId,
+        reversed: false,
+        now: EditorNow(lineups: () => now, agent: (_) => null),
+      ),
+    );
+    expect(await store.commitAll(strategy.id, built.ops),
+        isA<Saved<List<Committed>, CommitRefusal>>());
+    final after = strategy.copyWith(pages: [
+      strategy.pages.single.copyWith(lineUpGraph: now),
+    ]);
+    expect(
+      readBackDifferences(
+        _readable(after),
+        await _readBack(store, strategy.id),
+      ),
+      isEmpty,
+    );
     await store.close();
   });
 }
