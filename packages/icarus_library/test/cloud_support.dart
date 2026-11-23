@@ -186,7 +186,13 @@ final class Client {
         holdsServerTime &&
         queue.session.connected &&
         queue.session.basis == null) {
-      _transition(ServerTimeHeld(heldServerTime, at: elapsed));
+      _transition(
+        ServerTimeHeld(
+          heldServerTime,
+          at: elapsed,
+          session: queue.session.number,
+        ),
+      );
     }
     return _transition(switch (event) {
       BatchClaimed(:final clientId, :final opIds, :final at, elapsed: null)

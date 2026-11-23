@@ -1732,7 +1732,14 @@ overwrite a teammate's newer work.
   30 s of every live op's own basis.
 - A batch refused for lateness (`BatchRefused`, `uncheckedTooLate`) did
   nothing on the server. Its ops wait again with no retry delay, and since the
-  attempt stays on record, they go checked, under the same op ids.
+  attempt stays on record, they go checked, under the same op ids. An edit to
+  the same fields does not fold into them (folding needs an op never claimed).
+  The refusal also drops the server time the queue held: it proved older than
+  the device's clock said (a device whose monotonic clock stopped while it
+  slept), so edits go checked until an answer brings a new one.
+- A server time is held only by the session that asked for it
+  (`ServerTimeHeld.session`); one that arrives in another session is
+  ignored.
 - The 10 s between `liveFor` and the server's 30 s covers the server reading
   its clock when the mutation starts (so the device's count runs about half a
   round trip behind) and the call's own trip.
@@ -1855,7 +1862,8 @@ copy reaches the queue as ordinary adds under ids derived on this device. A
 result saying the strategy is gone stops every claim for that strategy.
 
 **Folding.** One rule: a field edit folds into an earlier field edit of the
-same row only when the earlier one is unsent and unclaimed, both name exactly
+same row only when the earlier one has never been claimed (no attempt on
+record, so not one given back or refused whole either), both name exactly
 the same fields (and both carry a field base or neither does), and nothing
 else for that row is queued between them. The folded edit keeps the earlier
 one's place, base and what it was authored against, with the later one's

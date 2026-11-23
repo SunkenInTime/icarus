@@ -23,8 +23,14 @@ Client quietClient() => Client()
   ..holdsServerTime = false
   ..must(const ConnectionReturned());
 
-void hold(Client client, int serverTime, Duration at) =>
-    client.must(ServerTimeHeld(serverTime, at: at));
+void hold(Client client, int serverTime, Duration at, {int? session}) =>
+    client.must(
+      ServerTimeHeld(
+        serverTime,
+        at: at,
+        session: session ?? client.queue.session.number,
+      ),
+    );
 
 SendBatch claimAt(Client client, List<String> ids, Duration? elapsed) {
   client.must(
@@ -174,6 +180,43 @@ void main() {
     hold(client, 3000, heldAt);
     client.must(const AppRestarted(build: build));
     expect(client.queue.session.basis, isNull);
+  });
+
+  test('a server time from a session that has ended is not held, so an edit '
+      'after an account change goes checked', () {
+    final client = quietClient();
+    client.read(initialRows());
+    final asked = client.queue.session.number;
+    client.must(const AccountChanged());
+    hold(client, 1000, heldAt, session: asked);
+    expect(client.queue.session.basis, isNull);
+    client.edit(elementDelete('drop', elementId: 'e2'));
+    final sent = claimAt(client, ['drop'], heldAt);
+    expect((sent.ops.single as ElementDeleteOp).lastWriterWins, isFalse);
+    expect(sent.basis, isNull);
+  });
+
+  test('an edit to the same fields after a late refusal does not fold into the '
+      'refused op, which goes checked; the edit has no basis, since the '
+      'refusal drops the server time the queue held', () {
+    final client = quietClient();
+    client.read(initialRows());
+    hold(client, 1000, heldAt);
+    client.edit(
+      movePatch('a', x: 20, merge: FieldMerge(fields: const ['position'])),
+    );
+    final first = claimAt(client, ['a'], heldAt);
+    expect(isUncheckedSend(first.ops.single), isTrue);
+    client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate));
+    client.edit(
+      movePatch('b', x: 30, merge: FieldMerge(fields: const ['position'])),
+    );
+    expect([for (final entry in client.queue.entries) entry.id], ['a', 'b']);
+    expect(client.queue.session.basis, isNull);
+    expect((client.queue.entries.last as PendingOp).basis, isNull);
+    final again = claimAt(client, ['a'], heldAt);
+    expect(isUncheckedSend(again.ops.single), isFalse);
+    expect(again.basis, isNull);
   });
 
   test('an op keeps the basis it was written with; a fold keeps the older '

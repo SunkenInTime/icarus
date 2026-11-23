@@ -1064,9 +1064,10 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       return _userEdited(edit, change, now);
     case BatchClaimed(:final clientId, :final opIds, :final at, :final elapsed):
       return _claim(edit, clientId, opIds, at, elapsed, now);
-    case ServerTimeHeld(:final serverTime, :final at):
+    case ServerTimeHeld(:final serverTime, :final at, :final session):
       final held = edit.session.basis;
       if (edit.session.connected &&
+          session == edit.session.number &&
           (held == null || serverTime > held.serverTime)) {
         edit.session = QueueSession(
           connected: true,
@@ -1188,7 +1189,11 @@ Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
     case BatchRefusal.strategyDeleted:
       edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
     case BatchRefusal.uncheckedTooLate:
-      break;
+      edit.session = QueueSession(
+        connected: edit.session.connected,
+        build: edit.session.build,
+        number: edit.session.number,
+      );
   }
   return edit.done();
 }
@@ -1377,6 +1382,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
           last,
         ).any((page) => queue._index.anyAfter(_OnPage(page), last.place));
     if (alone &&
+        (queue._index.attemptsByOp[last.id] ?? const []).isEmpty &&
         last.work is OpWork &&
         last.scope == change.scope &&
         last.authoredIn == edit.session.number &&

@@ -142,10 +142,15 @@ final class BatchClaimed extends QueueEvent {
 }
 
 final class ServerTimeHeld extends QueueEvent {
-  const ServerTimeHeld(this.serverTime, {required this.at});
+  const ServerTimeHeld(
+    this.serverTime, {
+    required this.at,
+    required this.session,
+  });
 
   final int serverTime;
   final Duration at;
+  final int session;
 }
 
 final class ClaimReleased extends QueueEvent {
