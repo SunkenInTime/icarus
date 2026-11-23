@@ -210,6 +210,46 @@ List<RowsProblem> _lineupProblems(StrategyPage page) {
   return problems;
 }
 
+List<LiveLineupGroup> lineupGroupRowsOf({
+  required String strategyId,
+  required String pageId,
+  required LineUpGraph graph,
+  required Set<String> takenGroupIds,
+  required Set<String> everyLinkId,
+}) {
+  final groups = <LiveLineupGroup>[];
+  final made = cloudLineupRows(graph, takenGroupIds: takenGroupIds).rows;
+  for (final (sortIndex, row) in made.indexed) {
+    final data = Map<String, Object?>.from(row.payload['data'] as Map);
+    final linkIds = [
+      for (final link in data['links'] as List)
+        (link as Map<String, dynamic>)['id'] as String,
+    ];
+    final groupId =
+        linkIds.contains(row.publicId) && !takenGroupIds.contains(row.publicId)
+            ? row.publicId
+            : _derivedId(
+                {...takenGroupIds, ...everyLinkId},
+                [strategyId, pageId, 'lineups', ...linkIds],
+              );
+    takenGroupIds.add(groupId);
+    groups.add(
+      LiveLineupGroup(
+        publicId: groupId,
+        strategyPublicId: strategyId,
+        pagePublicId: pageId,
+        payload: LineupGroupPayload(
+          payloadVersion: lineupGroupPayloadVersion,
+          data: {...data, 'id': groupId},
+        ),
+        sortIndex: sortIndex,
+        revision: _rowRevision,
+      ),
+    );
+  }
+  return groups;
+}
+
 StrategyToRows strategyToRows(
   StrategyData strategy, {
   Iterable<UnreadableElement> carried = const [],
@@ -308,45 +348,21 @@ StrategyToRows strategyToRows(
     final lineupProblems = _lineupProblems(page);
     problems.addAll(lineupProblems);
     if (lineupProblems.isNotEmpty) continue;
-    final List<CloudLineupRow> made;
+    final List<LiveLineupGroup> made;
     try {
-      made = cloudLineupRows(
-        page.lineUpGraph,
+      made = lineupGroupRowsOf(
+        strategyId: strategy.id,
+        pageId: page.id,
+        graph: page.lineUpGraph,
         takenGroupIds: takenGroupIds,
-      ).rows;
+        everyLinkId: everyLinkId,
+      );
     } on JsonUnsupportedObjectError catch (error) {
       problems.add(LineupNotJson(page.id, '$error'));
       continue;
     }
-    for (final (sortIndex, row) in made.indexed) {
-      final data = Map<String, Object?>.from(row.payload['data'] as Map);
-      final linkIds = [
-        for (final link in data['links'] as List)
-          (link as Map<String, dynamic>)['id'] as String,
-      ];
-      final groupId = linkIds.contains(row.publicId) &&
-              !takenGroupIds.contains(row.publicId)
-          ? row.publicId
-          : _derivedId(
-              {...takenGroupIds, ...everyLinkId},
-              [strategy.id, page.id, 'lineups', ...linkIds],
-            );
-      takenGroupIds.add(groupId);
-      lineupCount += linkIds.length;
-      lineupGroups.add(
-        LiveLineupGroup(
-          publicId: groupId,
-          strategyPublicId: strategy.id,
-          pagePublicId: page.id,
-          payload: LineupGroupPayload(
-            payloadVersion: lineupGroupPayloadVersion,
-            data: {...data, 'id': groupId},
-          ),
-          sortIndex: sortIndex,
-          revision: _rowRevision,
-        ),
-      );
-    }
+    lineupCount += page.lineUpLinks.length;
+    lineupGroups.addAll(made);
   }
 
   if (problems.isNotEmpty) return StrategyRowsRefused(strategy.id, problems);

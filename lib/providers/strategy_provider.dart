@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:icarus/library_store/canvas_changes.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -984,6 +985,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final updated =
         strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
+    ActionProvider.editFollower?.onPagesChanged(
+      () => [PageMoved(moved.id, targetIndex)],
+      'page reorder',
+    );
     (await const LocalLibrary().changePages(updated)).orThrow();
   }
 
@@ -1137,6 +1142,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     final updated = strat.copyWith(
       pages: updatedPages,
       lastEdited: DateTime.now(),
+    );
+    ActionProvider.editFollower?.onPagesChanged(
+      () => [
+        if (objectOnPage(sourcePage, widgetId) case final object?)
+          ObjectAdded(targetPage.id, object),
+      ],
+      'copy item to page',
     );
     (await const LocalLibrary().changePages(updated)).orThrow();
     return PageCopyResult.copied;
@@ -1579,6 +1591,18 @@ class StrategyProvider extends Notifier<StrategyState> {
       ],
       lastEdited: DateTime.now(),
     );
+    ActionProvider.editFollower?.onPagesChanged(
+      () => [
+        for (final page in strat.pages)
+          if (page.id == target.id)
+            LineupsChanged(
+              page.id,
+              page.lineUpGraph,
+              lineUpsInGroupOrder(page.lineUpGraph.followedBy(lineUps)),
+            ),
+      ],
+      'copy lineups to page',
+    );
     try {
       (await const LocalLibrary().changePages(updated)).orThrow();
     } catch (error, stackTrace) {
@@ -1967,6 +1991,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       pages: reindexed,
       lastEdited: DateTime.now(),
     );
+    ActionProvider.editFollower?.onPagesChanged(
+      () => [PageAdded(newPage, index: insertionIndex, copyOf: source.id)],
+      'page add',
+    );
     (await const LocalLibrary().changePages(updated)).orThrow();
 
     await setActivePageAnimated(newPage.id);
@@ -2039,6 +2067,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         else
           page,
     ];
+    ActionProvider.editFollower?.onPagesChanged(
+      () => [PageRenamed(pageId, trimmed, isAutoNamed: false)],
+      'page rename',
+    );
     (await const LocalLibrary().changePages(
       strat.copyWith(pages: updatedPages, lastEdited: DateTime.now()),
     ))
@@ -2117,6 +2149,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     final nextActivePageId =
         activePageId == pageId ? reindexed.first.id : activePageId;
 
+    ActionProvider.editFollower?.onPagesChanged(
+      () => [PageRemoved(pageId)],
+      'page delete',
+    );
     (await const LocalLibrary().changePages(
       strat.copyWith(pages: reindexed, lastEdited: DateTime.now()),
     ))
@@ -2767,6 +2803,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       ],
       lastEdited: DateTime.now(),
     );
+    ActionProvider.editFollower?.onPagesChanged(
+      () => [
+        for (final page in strat.pages)
+          if (page.id != resolvedActiveId)
+            PageSideSet(page.id, isAttack: isAttack),
+      ],
+      'side on all pages',
+    );
     (await const LocalLibrary().changePages(updated)).orThrow();
   }
 
@@ -2873,6 +2917,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeOverridePalette: strategyTheme.overridePalette,
       clearThemeOverridePalette: strategyTheme.overridePalette == null,
       lastEdited: DateTime.now(),
+    );
+    ActionProvider.editFollower?.onPagesChanged(
+      () => [
+        for (final page in strat.pages)
+          PageSettingsChanged(page.id, transform(page.settings)),
+      ],
+      'settings on all pages',
     );
     (await const LocalLibrary().changePages(updated)).orThrow();
     setUnsaved();

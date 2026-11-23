@@ -33,10 +33,15 @@ final class LibraryWriteFailed extends LibraryWrite {
 }
 
 final class LibraryTouch {
-  const LibraryTouch({required this.strategies, required this.folders});
+  const LibraryTouch({
+    required this.strategies,
+    required this.folders,
+    this.wrote,
+  });
 
   final List<String> strategies;
   final List<String> folders;
+  final StrategyData? wrote;
 }
 
 abstract base class LocalLibraryFollower {
@@ -141,7 +146,11 @@ final class LocalLibrary {
         null => _write(() => _strategies.put(strategy.id, strategy)),
         final following => _write(
             () => following._tracked(
-              LibraryTouch(strategies: [strategy.id], folders: const []),
+              LibraryTouch(
+                strategies: [strategy.id],
+                folders: const [],
+                wrote: strategy,
+              ),
               () => _strategies.put(strategy.id, strategy),
             ),
           ),
@@ -153,7 +162,11 @@ final class LocalLibrary {
       null => _write(stored.save),
       final following => _write(
           () => following._tracked(
-            LibraryTouch(strategies: [stored.id], folders: const []),
+            LibraryTouch(
+              strategies: [stored.id],
+              folders: const [],
+              wrote: stored,
+            ),
             stored.save,
           ),
         ),
@@ -166,7 +179,11 @@ final class LocalLibrary {
       null => _write(stored.save),
       final following => _write(
           () => following._tracked(
-            LibraryTouch(strategies: [stored.id], folders: const []),
+            LibraryTouch(
+              strategies: [stored.id],
+              folders: const [],
+              wrote: stored,
+            ),
             stored.save,
           ),
         ),

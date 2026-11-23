@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:icarus/library_store/action_journal.dart';
+import 'package:icarus/library_store/canvas_changes.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
@@ -67,10 +69,16 @@ final class MirrorWrote {
 }
 
 final class StoreMirror extends LocalLibraryFollower {
-  StoreMirror({required this.reads, required this.betweenAnimations});
+  StoreMirror({
+    required this.reads,
+    required this.betweenAnimations,
+    this.actions,
+  });
 
   final HiveReads reads;
   final Future<void> Function() betweenAnimations;
+  final ActionJournal? actions;
+  final _journaled = <LibraryTouch>{};
 
   MirrorPhase _phase = const MirrorWaitingForStore();
   final _strategies = <String>{};
@@ -108,15 +116,48 @@ final class StoreMirror extends LocalLibraryFollower {
   void onWriting(LibraryTouch touch) {
     _noticed++;
     reads.writing(touch);
+    if (_phase is MirrorFollowing && (actions?.takesSave(touch) ?? false)) {
+      _journaled.add(touch);
+    }
   }
 
   @override
   void onAnswered(LibraryTouch touch) {
     _noticed++;
     reads.answered(touch);
-    _strategies
-        .addAll(touch.strategies.where(reads.names.strategies.namesById));
+    if (_journaled.remove(touch)) {
+      actions!.answered(touch);
+    } else {
+      _strategies
+          .addAll(touch.strategies.where(reads.names.strategies.namesById));
+    }
     _folders.addAll(touch.folders.where(reads.names.folders.namesById));
+    _kick();
+  }
+
+  Future<int> repairJournaled() async {
+    final journal = actions;
+    if (journal == null || _phase is! MirrorFollowing) return 0;
+    await drained();
+    final unsaved = journal.unsaved;
+    for (final id in unsaved) {
+      if (const LocalLibrary().storedStrategy(id) case final current?) {
+        journal.repair(current);
+      }
+    }
+    _kick();
+    await drained();
+    return unsaved.length;
+  }
+
+  void journal(
+    String strategyId,
+    String label,
+    Future<List<CanvasChange>> changes,
+  ) {
+    final journal = actions;
+    if (journal == null || _phase is! MirrorFollowing) return;
+    journal.action(strategyId, label, changes);
     _kick();
   }
 
@@ -126,6 +167,8 @@ final class StoreMirror extends LocalLibraryFollower {
 
   void _stop(MirrorStop stop) {
     _working = false;
+    actions?.forget();
+    _journaled.clear();
     _phaseIs(MirrorStopped(stop));
     if (!_idle.isCompleted) _idle.complete();
   }
@@ -216,7 +259,8 @@ final class StoreMirror extends LocalLibraryFollower {
 
   bool get _hasWork =>
       _phase is MirrorFollowing &&
-      (_strategies.any((id) => !reads.strategyWriting(id)) ||
+      ((actions?.hasDue ?? false) ||
+          _strategies.any((id) => !reads.strategyWriting(id)) ||
           _folders.any((id) => !reads.folderWriting(id)));
 
   ({Set<String> strategies, Set<String> folders}) _choose() => (
@@ -266,6 +310,40 @@ final class StoreMirror extends LocalLibraryFollower {
           holds = held;
         case MirrorWaitingForStore() || MirrorHeld() || MirrorStopped():
           return;
+      }
+      if (actions case final journal? when journal.hasDue) {
+        switch (await journal.runDue(store)) {
+          case JournalContinues():
+            break;
+          case JournalStopped(:final stop):
+            _stop(MirrorStoreStopped(stop));
+            return;
+          case JournalSaved(
+              :final strategyId,
+              :final image,
+              :final removeFirst,
+            ):
+            if (removeFirst) {
+              switch (await store.editLibrary([RemoveStrategy(strategyId)])) {
+                case NotSaved(:final failure):
+                  _stop(MirrorStoreStopped(StoreDidNotSave(failure)));
+                  return;
+                case SaveInDoubt(:final failure):
+                  _stop(MirrorStoreStopped(StoreSaveInDoubt(failure)));
+                  return;
+                case Saved() || NothingToSave() || Refused():
+                  holds.strategies.remove(strategyId);
+              }
+            }
+            final written = await mirrorImage(store, holds, strategyId, image);
+            _batches++;
+            if (written case ShadowCopyStopped(:final stop)) {
+              _stop(MirrorStoreStopped(stop));
+            }
+            _record(written, {strategyId}, const {});
+            if (written is ShadowCopyStopped) return;
+        }
+        continue;
       }
       final (:strategies, :folders) = _choose();
       _strategies.removeAll(strategies);

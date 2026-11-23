@@ -1,12 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/app_provider_container.dart';
+import 'package:icarus/library_store/action_journal.dart';
+import 'package:icarus/library_store/canvas_changes.dart';
+import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_listing.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
+import 'package:icarus/library_store/ops_follower.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 
 final class LibraryStoreStart {
-  const LibraryStoreStart._(this.choice, this.mode, this.listing);
+  const LibraryStoreStart._(
+    this.choice,
+    this.mode,
+    this.listing, {
+    this.editFollower,
+  });
 
   factory LibraryStoreStart.of(
     LibraryStoreSwitch choice, {
@@ -25,12 +35,25 @@ final class LibraryStoreStart {
         final listing = StoreLibraryListing(HiveLibraryListing(), clock: clock)
           ..follow(mirroring.mirror);
         return LibraryStoreStart._(choice, mirroring, listing);
+      case StoreSwitchOps():
+        final journaling = StoreMirror(
+          reads: HiveReads(),
+          betweenAnimations: betweenAnimations,
+          actions: ActionJournal(),
+        );
+        return LibraryStoreStart._(
+          choice,
+          Mirroring(journaling),
+          null,
+          editFollower: OpsFollower(journaling, () => appProviderContainer),
+        );
     }
   }
 
   final LibraryStoreSwitch choice;
   final ShadowMode? mode;
   final StoreLibraryListing? listing;
+  final EditFollower? editFollower;
 
   List<Override> get overrides => [
         if (mode != null) libraryStoreSwitchProvider.overrideWithValue(choice),

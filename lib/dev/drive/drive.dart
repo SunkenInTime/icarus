@@ -170,8 +170,10 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/dev/drive/drive_checks.dart';
 import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
+import 'package:icarus/library_store/slowed_engine.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/interactive_map.dart';
@@ -1211,6 +1213,19 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(holdStore(c));
     case 'checkLibraryStore':
       (await _storeLines(checkStoreAgain(c))).forEach(_log);
+    case 'slowStoreCommits':
+      SlowedEngine.commitDelay = Duration(milliseconds: (value as num).round());
+      _log(
+          'STORE commits now wait ${SlowedEngine.commitDelay.inMilliseconds} ms');
+    case 'actionOps':
+      (await _storeLines(
+        actionOpsStep(
+          c,
+          label: '$value',
+          expected: {...?(step['expect'] as Map<String, dynamic>?)},
+        ),
+      ))
+          .forEach(_log);
     case 'soak':
       final until = DateTime.now().add(
         Duration(milliseconds: ((value as num) * 1000).round()),
