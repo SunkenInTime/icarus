@@ -284,6 +284,8 @@ final events = <String, QueueEvent Function(Client)>{
   'app restarted, new build': (c) => const AppRestarted(build: 'build-2'),
   'connection lost': (c) => const ConnectionLost(),
   'connection returned': (c) => const ConnectionReturned(),
+  'server time held': (c) =>
+      const ServerTimeHeld(1764000000000, at: Duration.zero),
   'account changed': (c) => const AccountChanged(),
   'edit access confirmed after attempt 5': (c) =>
       const EditAccessConfirmed(afterAttempt: 5),

@@ -73,6 +73,11 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     },
     if (entry.window is WindowPassed) 'windowPassed': true,
     if (entry.behindOwn) 'behindOwn': true,
+    if (entry.basis case final basis?)
+      'basis': {
+        'serverTime': basis.serverTime,
+        'heldAtMicros': basis.heldAt.inMicroseconds,
+      },
   },
   RetiredOp(:final opId, :final clientId, :final landing, :final stored) => {
     'version': cloudRowVersion,
@@ -250,7 +255,20 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
             return false;
           }(),
         };
+        final basis = switch (fields.json['basis']) {
+          null => null,
+          {
+            'serverTime': final int serverTime,
+            'heldAtMicros': final int heldAt,
+          } =>
+            ServerTimeBasis(serverTime, heldAt: Duration(microseconds: heldAt)),
+          _ => () {
+            fields.reject('an unreadable basis');
+            return null;
+          }(),
+        };
         return () => PendingOp(
+          basis: basis,
           behindOwn: behindOwn,
           place: place,
           work: work!,

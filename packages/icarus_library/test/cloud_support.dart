@@ -161,6 +161,8 @@ StrategyOp rebasedForTest(StrategyOp op, int revision) =>
 StrategyRowSet visibleOf(StrategyRowSet base, CloudQueue queue) =>
     visibleOver(base, queue, const AllPages());
 
+const heldServerTime = 1764000000000;
+
 final class Client {
   Client({StrategyRowSet? base, this.clock}) : base = base ?? initialRows() {
     queue = CloudQueue.start(build: build);
@@ -176,7 +178,30 @@ final class Client {
 
   StrategyRowSet get visible => visibleOf(base, queue);
 
+  Duration elapsed = Duration.zero;
+  bool holdsServerTime = true;
+
   Step step(QueueEvent event) {
+    if (event is UserEdited &&
+        holdsServerTime &&
+        queue.session.connected &&
+        queue.session.basis == null) {
+      _transition(ServerTimeHeld(heldServerTime, at: elapsed));
+    }
+    return _transition(switch (event) {
+      BatchClaimed(:final clientId, :final opIds, :final at, elapsed: null)
+          when holdsServerTime =>
+        BatchClaimed(
+          clientId: clientId,
+          opIds: opIds,
+          at: at,
+          elapsed: elapsed,
+        ),
+      _ => event,
+    });
+  }
+
+  Step _transition(QueueEvent event) {
     final result = transition(queue, event, now: at);
     queue = result.queue;
     if (result case Stepped(effects: final made)) effects.addAll(made);
@@ -229,14 +254,8 @@ final class Client {
 
   int claim(List<String> ids, {String client = clientId}) {
     final result = stepped(
-      transition(
-        queue,
-        BatchClaimed(clientId: client, opIds: ids, at: at),
-        now: at,
-      ),
+      step(BatchClaimed(clientId: client, opIds: ids, at: at)),
     );
-    queue = result.queue;
-    effects.addAll(result.effects);
     return result.effects.whereType<SendBatch>().single.attempt;
   }
 

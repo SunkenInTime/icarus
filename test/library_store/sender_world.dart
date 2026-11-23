@@ -603,6 +603,25 @@ final class World {
         ),
       );
 
+  OpAnswer teammateRotates(int n) {
+    final first = serverRows().elements.whereType<LiveElement>().first;
+    final onServer =
+        server.rows[strategyId]!.element(first.publicId)! as LiveElement;
+    return server.teammate(
+      strategyId,
+      ElementPatchOp(
+        opId: 'teammate-rotates-$n',
+        elementPublicId: onServer.publicId,
+        expectedElementRevision: onServer.revision,
+        payload: ElementPayload(
+          kind: onServer.payload.kind,
+          payloadVersion: onServer.payload.payloadVersion,
+          data: {...onServer.payload.data.toJson(), 'rotation': n.toDouble()},
+        ),
+      ),
+    );
+  }
+
   OpAnswer teammateMoves(int n) {
     final first = serverRows().elements.whereType<LiveElement>().first;
     final onServer =

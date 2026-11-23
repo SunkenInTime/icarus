@@ -17,21 +17,24 @@ final class QueueSession {
     required this.connected,
     required this.build,
     required this.number,
+    this.basis,
   });
 
   final bool connected;
   final String build;
   final int number;
+  final ServerTimeBasis? basis;
 
   @override
   bool operator ==(Object other) =>
       other is QueueSession &&
       other.connected == connected &&
       other.build == build &&
-      other.number == number;
+      other.number == number &&
+      other.basis == basis;
 
   @override
-  int get hashCode => Object.hash(connected, build, number);
+  int get hashCode => Object.hash(connected, build, number, basis);
 }
 
 final class CloudQueue {
@@ -613,15 +616,18 @@ final class OpRemoved extends QueueEffect {
 }
 
 final class SendBatch extends QueueEffect {
-  SendBatch(this.attempt, this.clientId, List<StrategyOp> ops)
+  SendBatch(this.attempt, this.clientId, List<StrategyOp> ops, {this.basis})
     : ops = List.unmodifiable(ops);
 
   final int attempt;
   final String clientId;
   final List<StrategyOp> ops;
+  final int? basis;
 
   @override
-  String toString() => 'SendBatch($attempt, ${ops.map((op) => op.opId)})';
+  String toString() =>
+      'SendBatch($attempt, ${ops.map((op) => op.opId)}'
+      '${basis == null ? '' : ', basis $basis'})';
 }
 
 final class SessionOpened extends QueueEffect {
@@ -1056,8 +1062,20 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
   switch (event) {
     case UserEdited(edit: final change):
       return _userEdited(edit, change, now);
-    case BatchClaimed(:final clientId, :final opIds, :final at):
-      return _claim(edit, clientId, opIds, at, now);
+    case BatchClaimed(:final clientId, :final opIds, :final at, :final elapsed):
+      return _claim(edit, clientId, opIds, at, elapsed, now);
+    case ServerTimeHeld(:final serverTime, :final at):
+      final held = edit.session.basis;
+      if (edit.session.connected &&
+          (held == null || serverTime > held.serverTime)) {
+        edit.session = QueueSession(
+          connected: true,
+          build: edit.session.build,
+          number: edit.session.number,
+          basis: ServerTimeBasis(serverTime, heldAt: at),
+        );
+      }
+      return edit.done();
     case ClaimReleased(:final attempt):
       return _closeAttempt(edit, attempt, const AttemptReleased());
     case TransportFailed(:final attempt, :final failure, :final at):
@@ -1169,6 +1187,8 @@ Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
       }
     case BatchRefusal.strategyDeleted:
       edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
+    case BatchRefusal.uncheckedTooLate:
+      break;
   }
   return edit.done();
 }
@@ -1413,6 +1433,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       refusal: const NotRefused(),
       retriedAfter: edit.lastAttempt,
       behindOwn: behindOwn,
+      basis: edit.session.basis,
     ),
   );
   return edit.done();
@@ -1757,6 +1778,7 @@ Step _claim(
   String clientId,
   List<String> opIds,
   DateTime at,
+  Duration? elapsed,
   DateTime now,
 ) {
   final queue = edit.original;
@@ -1768,6 +1790,7 @@ Step _claim(
   final views = entryViews(queue, now);
   var previous = -1;
   final ops = <StrategyOp>[];
+  int? basis;
   for (final opId in opIds) {
     final index = edit.indexOf(opId);
     if (index == -1) return NotApplicable(queue, NoSuchOp(opId));
@@ -1793,7 +1816,12 @@ Step _claim(
       (Waiting(), _NameAt(:final revision?)) => _named(edit, entry, revision),
       _ => entry,
     };
-    ops.add(sendable(queue, named));
+    final sent = sendable(queue, named, elapsed);
+    ops.add(sent);
+    if (isUncheckedSend(sent)) {
+      final own = named.basis!.serverTime;
+      if (basis == null || own < basis) basis = own;
+    }
   }
   final number = edit.nextAttempt++;
   edit.setAttempt(
@@ -1806,18 +1834,46 @@ Step _claim(
       outcome: const AttemptOpen(),
     ),
   );
-  edit.effects.add(SendBatch(number, clientId, ops));
+  edit.effects.add(SendBatch(number, clientId, ops, basis: basis));
   return edit.done();
 }
 
-StrategyOp sendable(CloudQueue queue, PendingOp entry) {
-  final sent = (queue._index.attemptsByOp[entry.id] ?? const []).isNotEmpty;
-  final live =
-      !sent &&
-      queue.session.connected &&
-      entry.authoredIn == queue.session.number;
-  return sendForm(entry.op, live ? SendPolicy.live : SendPolicy.checked);
-}
+StrategyOp sendable(CloudQueue queue, PendingOp entry, Duration? elapsed) =>
+    sendForm(
+      entry.op,
+      sendPolicy(
+        attempted: (queue._index.attemptsByOp[entry.id] ?? const []).isNotEmpty,
+        connected: queue.session.connected,
+        writtenThisSession: entry.authoredIn == queue.session.number,
+        basis: entry.basis,
+        elapsed: elapsed,
+      ),
+    );
+
+SendPolicy sendPolicy({
+  required bool attempted,
+  required bool connected,
+  required bool writtenThisSession,
+  required ServerTimeBasis? basis,
+  required Duration? elapsed,
+}) => switch ((attempted, connected && writtenThisSession, basis, elapsed)) {
+  (true, _, _, _) => SendPolicy.checked,
+  (false, false, _, _) => SendPolicy.checked,
+  (false, true, null, _) => SendPolicy.checked,
+  (false, true, _?, null) => SendPolicy.checked,
+  (false, true, final basis?, final elapsed?)
+      when elapsed - basis.heldAt > liveFor =>
+    SendPolicy.checked,
+  (false, true, _?, _?) => SendPolicy.live,
+};
+
+bool isUncheckedSend(StrategyOp sent) => switch (sent) {
+  ElementPatchOp(merge: FieldMerge(base: null)) ||
+  LineupGroupPatchOp(merge: FieldMerge(base: null)) ||
+  ElementDeleteOp(lastWriterWins: true) ||
+  LineupGroupDeleteOp(lastWriterWins: true) => true,
+  _ => false,
+};
 
 Step _answered(_Edit edit, int attempt, OpAnswer answer) {
   final queue = edit.original;
