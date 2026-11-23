@@ -1244,7 +1244,7 @@ Map<(Target, String), String> fieldsOf(StrategyRowSet rows) => {
       'payload': {'data': final Map<String, Object?> data},
     })
       for (final MapEntry(:key, :value) in data.entries)
-        (target, '$key'): '$value',
+        (target, key): '$value',
   },
 };
 
