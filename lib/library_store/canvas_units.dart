@@ -102,15 +102,28 @@ int itemsOn(StrategyPage page) =>
     page.utilityData.length;
 
 final class StaleBefore {
-  const StaleBefore(this.what, this.id, this.field);
+  const StaleBefore(
+    this.what,
+    this.id,
+    this.field, {
+    required this.declared,
+    required this.held,
+  });
 
   final String what;
   final String id;
   final String field;
+  final Object? declared;
+  final Object? held;
+
+  static String _short(Object? value) {
+    final text = '$value';
+    return text.length <= 60 ? text : '${text.substring(0, 57)}...';
+  }
 
   @override
-  String toString() => '$what $id $field: the action\'s before is not what '
-      'the canvas held';
+  String toString() => '$what $id $field: the action\'s before is '
+      '${_short(declared)}, the canvas held ${_short(held)}';
 }
 
 final class Replayed {
@@ -169,7 +182,8 @@ Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
         for (final key in {...from.keys, ...to.keys}) {
           if (cloudJsonEquivalent(from[key], to[key])) continue;
           if (!cloudJsonEquivalent(current[key], from[key])) {
-            stale.add(StaleBefore(after.kind.name, after.id, key));
+            stale.add(StaleBefore(after.kind.name, after.id, key,
+                declared: from[key], held: current[key]));
           }
           if (to.containsKey(key)) {
             current[key] = to[key];
@@ -205,7 +219,8 @@ Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
           _ => null,
         };
         if (before is Offset && current != null && current != before) {
-          stale.add(StaleBefore('lineup', targetId, field.name));
+          stale.add(StaleBefore('lineup', targetId, field.name,
+              declared: before, held: current));
         }
         graphs[pageId] = lineupsWithField(graph, field, targetId, after);
       case LineupWeaponChanged(:final originId, :final before, :final after):
@@ -217,7 +232,8 @@ Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
             ?.agent
             .weapon;
         if (current != null && current != before) {
-          stale.add(StaleBefore('lineup origin', originId, 'weapon'));
+          stale.add(StaleBefore('lineup origin', originId, 'weapon',
+              declared: before.name, held: current.name));
         }
         graphs[pageId] = lineupsWithWeapon(graph, originId, after);
       case PageSettingsChanged(:final before, :final after):
@@ -226,14 +242,16 @@ Replayed replayDeclared(StrategyData start, List<CanvasChange> changes) {
         double pick(double was, double from, double to, String field) {
           if (from == to) return was;
           if (was != from)
-            stale.add(StaleBefore('page settings', pageId, field));
+            stale.add(StaleBefore('page settings', pageId, field,
+                declared: from, held: was));
           return to;
         }
         var neutral = now.useNeutralTeamColors;
         if (before.useNeutralTeamColors != after.useNeutralTeamColors) {
           if (neutral != before.useNeutralTeamColors) {
-            stale.add(
-                StaleBefore('page settings', pageId, 'useNeutralTeamColors'));
+            stale.add(StaleBefore(
+                'page settings', pageId, 'useNeutralTeamColors',
+                declared: before.useNeutralTeamColors, held: neutral));
           }
           neutral = after.useNeutralTeamColors;
         }

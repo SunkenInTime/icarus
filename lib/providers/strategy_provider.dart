@@ -986,7 +986,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     final updated =
         strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
     ActionProvider.editFollower?.onPagesChanged(
-      () => [PageMoved(moved.id, targetIndex)],
+      () => [
+        PageMoved(moved.id, targetIndex),
+        ...pagesRenamedBetween(strat.pages, reindexed),
+      ],
       'page reorder',
     );
     (await const LocalLibrary().changePages(updated)).orThrow();
@@ -1992,7 +1995,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
     );
     ActionProvider.editFollower?.onPagesChanged(
-      () => [PageAdded(newPage, index: insertionIndex, copyOf: source.id)],
+      () => [
+        PageAdded(newPage, index: insertionIndex, copyOf: source.id),
+        ...pagesRenamedBetween([...strat.pages, newPage], reindexed),
+      ],
       'page add',
     );
     (await const LocalLibrary().changePages(updated)).orThrow();
@@ -2150,7 +2156,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         activePageId == pageId ? reindexed.first.id : activePageId;
 
     ActionProvider.editFollower?.onPagesChanged(
-      () => [PageRemoved(pageId)],
+      () => [
+        PageRemoved(pageId),
+        ...pagesRenamedBetween(strat.pages, reindexed),
+      ],
       'page delete',
     );
     (await const LocalLibrary().changePages(

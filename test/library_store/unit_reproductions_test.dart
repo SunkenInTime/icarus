@@ -314,6 +314,42 @@ void main() {
 
     expect(edited.outcomes, {UnitOutcome.coveredAndCorrect}, reason: '$edited');
   });
+
+  test(
+      'reordering, deleting and adding auto-named pages declares the pages '
+      'they rename; the added page differs only by its copies\' ids', () async {
+    opened += 1;
+    final id = 'repro-$opened';
+    final h = await open(generatedStrategy(Optionals.unset).copyWith(
+      id: id,
+      pages: [
+        for (var n = 0; n < 3; n++)
+          generatedPage(
+            id: '$id-p$n',
+            sortIndex: n,
+            optionals: Optionals.set,
+            isAttack: true,
+            isAutoNamed: true,
+          ).copyWith(name: 'Page ${n + 1}'),
+      ],
+    ));
+    final strategies = container.read(strategyProvider.notifier);
+    final steps = {
+      'reorder': () => strategies.reorderPage(0, 2),
+      'delete': () => strategies.deletePage('$id-p1'),
+    };
+    for (final MapEntry(key: step, value: perform) in steps.entries) {
+      final unit = await h.measure(perform);
+      expect(unit.outcomes, {UnitOutcome.coveredAndCorrect},
+          reason: '$step: $unit');
+    }
+    final added = await h.measure(() => strategies.addPage());
+    expect(added.uncovered, isEmpty, reason: '$added');
+    expect(added.wrong.where((line) => line.contains(' name')), isEmpty,
+        reason: '$added');
+    expect(added.wrong, everyElement(matches(r' (missing|extra)$')),
+        reason: 'only the copies\' ids differ: $added');
+  });
 }
 
 final class _SignedOut extends AuthProvider {

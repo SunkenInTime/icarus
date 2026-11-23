@@ -92,6 +92,19 @@ final class PageRenamed extends CanvasChange {
   final bool isAutoNamed;
 }
 
+List<CanvasChange> pagesRenamedBetween(
+  Iterable<StrategyPage> before,
+  Iterable<StrategyPage> after,
+) {
+  final named = {for (final page in before) page.id: page};
+  return [
+    for (final page in after)
+      if (named[page.id] case final was?
+          when was.name != page.name || was.isAutoNamed != page.isAutoNamed)
+        PageRenamed(page.id, page.name, isAutoNamed: page.isAutoNamed ?? false),
+  ];
+}
+
 final class PageRemoved extends CanvasChange {
   const PageRemoved(super.pageId);
 }
