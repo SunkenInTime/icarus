@@ -63,6 +63,7 @@ class FolderCardViewData {
     required this.folder,
     required List<LocalStrategySummary> strategies,
     required this.folderCount,
+    this.local,
   })  : strategyCount = strategies.length,
         mapPeeks = _collectMapPeeks(strategies),
         agentTypes = _collectAgents(strategies);
@@ -75,12 +76,15 @@ class FolderCardViewData {
     this.strategyCount,
     List<MapValue> maps = const [],
     this.agentTypes = const [],
-  }) : mapPeeks = [
+  })  : local = null,
+        mapPeeks = [
           for (final map in maps.take(2))
             'assets/maps/thumbnails/${Maps.mapNames[map]}_thumbnail.webp',
         ];
 
   final Folder folder;
+
+  final LocalFolderEntry? local;
 
   /// Null when the folder's strategies are not known here.
   final int? strategyCount;
@@ -789,6 +793,7 @@ class _FolderCardState extends ConsumerState<FolderCard>
                   builder: (context) {
                     return FolderEditDialog(
                       folder: _folder,
+                      local: widget.data.local,
                       store: widget.store,
                     );
                   },

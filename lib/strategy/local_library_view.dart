@@ -9,6 +9,19 @@ import 'package:icarus/strategy/strategy_models.dart';
 
 enum LocalSides { attack, defend, mixed, unknown }
 
+sealed class LocalFolderEntry {
+  const LocalFolderEntry();
+
+  Folder get folder;
+}
+
+final class HiveFolderRecord extends LocalFolderEntry {
+  const HiveFolderRecord(this.folder);
+
+  @override
+  final Folder folder;
+}
+
 abstract interface class LocalStrategySummary {
   factory LocalStrategySummary.fromHive(StrategyData strategy) =
       _HiveStrategySummary;
