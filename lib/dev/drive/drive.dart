@@ -882,13 +882,17 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     _click(item);
     secondClick = clock.elapsedMicroseconds;
     _click(page);
-    await _waitFor(
-      () =>
-          c.read(strategyProvider).strategyId == opened.id &&
-          !c.read(strategyPageSessionProvider).isApplyingPage,
-      30,
-    );
+    final settleBy = DateTime.now().add(const Duration(seconds: 10));
+    while (DateTime.now().isBefore(settleBy) &&
+        !(c.read(strategyProvider).strategyId == opened.id &&
+            !c.read(strategyPageSessionProvider).isApplyingPage)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
     await Future<void>.delayed(const Duration(seconds: 1));
+    final endedOn = c.read(strategyProvider).strategyId == opened.id
+        ? openedName
+        : c.read(strategyProvider).strategyName;
+    final session = c.read(strategyPageSessionProvider);
     await _frames();
     for (final subscription in subscriptions) {
       subscription.close();
@@ -909,7 +913,9 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
         'canvas cleared ${cleared == null ? 'never' : '${ms(cleared!)} ms'} after the first click, '
         'second click ${ms(secondClick)} ms after it, '
         '$openedName published ${openedAt == null ? 'never' : '${ms(openedAt!)} ms'} after it; '
-        'window ${window == null ? 'not measured' : '${ms(window)} ms'}');
+        'window ${window == null ? 'not measured' : '${ms(window)} ms'}; '
+        'ended on $endedOn page ${session.activePageId}'
+        '${session.isApplyingPage ? ' still applying' : ''}');
   }
   windows.sort();
   _log('RACE summary: $runs runs, the left page saved empty $emptied times; '
