@@ -2382,6 +2382,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _mapThenOpen(step);
     case 'cloudOpenTime':
       await _cloudOpenTime(step);
+    case 'pressBack':
+      _pressMouse(_point(step, 'pressBack'), buttons: kBackMouseButton);
+      await _frames();
     case 'autosave':
       await c
           .read(appPreferencesProvider.notifier)
