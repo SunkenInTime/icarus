@@ -476,6 +476,9 @@ void main() {
           .setActivePage('b');
       await mediaQueue.reconciled();
 
+      expect(container.read(placedImageProvider).images.map((i) => i.id),
+          ['image-a']);
+      expect(mediaQueue.checked.last, 'images [], assets []');
       expect(mediaQueue.enqueued, isEmpty);
     });
 
@@ -1544,6 +1547,7 @@ class _IdleMediaQueue extends CloudMediaUploadQueueNotifier {
 /// upload it queues instead of sending it.
 class _EnqueueRecordingMediaQueue extends CloudMediaUploadQueueNotifier {
   final List<String> enqueued = [];
+  final List<String> checked = [];
   final List<Future<void>> _reconciles = [];
 
   /// Waits for every page check started so far, file reads included.
@@ -1555,6 +1559,8 @@ class _EnqueueRecordingMediaQueue extends CloudMediaUploadQueueNotifier {
     required Iterable<PlacedImage> placedImages,
     required Map<String, RemoteImageAsset> assetsById,
   }) {
+    checked.add('images ${[for (final image in placedImages) image.id]}, '
+        'assets ${assetsById.keys.toList()}');
     final reconcile = super.reconcilePageMedia(
       strategyPublicId: strategyPublicId,
       placedImages: placedImages,
