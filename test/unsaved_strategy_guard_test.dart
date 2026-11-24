@@ -502,6 +502,56 @@ void main() {
     });
 
     testWidgets(
+        'the save dialog closes without saving or leaving once another '
+        'strategy is the open one', (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'strategy-a',
+          strategyName: 'Strategy A',
+          source: StrategySource.local,
+          storageDirectory: null,
+          isOpen: true,
+        ),
+        flushResult: false,
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-strategy-changed',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+
+      notifier.setFromState(const StrategyState(
+        strategyId: 'strategy-b',
+        strategyName: 'Strategy B',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Save changes?'), findsNothing);
+      expect(await guardFuture, isFalse);
+      expect(notifier.forceSaveCalls, 0);
+      expect(notifier.cancelPendingSaveCalls, 0);
+      expect(continueCalls, 0);
+    });
+
+    testWidgets(
         'dirty autosave-disabled exit keeps dont-save branch behavior intact',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(
