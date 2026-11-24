@@ -18,7 +18,7 @@
   {"tapAt": [201, 656]},
   {"wait": 2},
   {"shot": "{out}/b2-delete-asked.png"},
-  {"tapText": "Delete"},
+  {"tapText": "Delete anyway"},
   {"wait": 3},
   {"waitSettled": 60},
   {"signal": "mate-deleted"},
