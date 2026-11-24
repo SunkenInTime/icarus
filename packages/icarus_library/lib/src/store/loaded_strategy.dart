@@ -51,6 +51,8 @@ final class LoadedPage {
       unknownKinds.isEmpty &&
       unplaced.isEmpty;
 
+  int get rows => elements.length + lineupGroups.length;
+
   PageTally tally() => PageTally.count(
     elements: elements.values,
     lineupGroups: lineupGroups.values,
@@ -241,6 +243,20 @@ final class LoadedStrategy {
     return tally;
   }
 
+  int rowsCounted = 0;
+
+  PageTally _counted(LoadedPage page) {
+    rowsCounted += page.rows;
+    return page.tally();
+  }
+
+  bool countedAs(String pageDigest, Map<String, PageTally> listed) {
+    final page = _pages[pageDigest];
+    final loaded = _loaded[pageDigest];
+    if (page == null || loaded == null) return true;
+    return (listed[page.publicId] ?? PageTally.empty) == _counted(loaded);
+  }
+
   Map<String, PageTally> talliesOver(Map<String, PageTally> stored) {
     final tallies = {...stored};
     for (final MapEntry(key: digest, value: loaded) in _loaded.entries) {
@@ -249,7 +265,7 @@ final class LoadedStrategy {
       if (loaded.isEmpty) {
         tallies.remove(page.publicId);
       } else {
-        tallies[page.publicId] = loaded.tally();
+        tallies[page.publicId] = _counted(loaded);
       }
     }
     return tallies;

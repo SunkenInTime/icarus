@@ -354,6 +354,9 @@ final class LibraryStore {
 
   int get summariesRebuiltAtOpen => _summariesRebuiltAtOpen;
 
+  int rowsCountedFor(String strategyPublicId) =>
+      _strategies[digestOf(strategyPublicId)]?.rowsCounted ?? 0;
+
   bool get isOpen => _settle() is Done;
 
   StrategySummary? summaryOf(String strategyPublicId) => switch (_settle()) {
@@ -726,6 +729,13 @@ final class LibraryStore {
     elsewhere: strategy.elsewhere,
   );
 
+  bool _listedAsLoaded(LoadedStrategy strategy, String pageDigest) =>
+      switch (_summaries[strategy.digest]) {
+        null => true,
+        _ when strategy.keeping == Keeping.cloud => true,
+        final listed => strategy.countedAs(pageDigest, listed.tallies),
+      };
+
   void _refresh(LoadedStrategy strategy) {
     final current = _summaries[strategy.digest];
     if (current == null || strategy.keeping == Keeping.cloud) return;
@@ -973,7 +983,7 @@ final class LibraryStore {
         }
     }
     strategy.addLoadedPage(pageDigest, page);
-    _refresh(strategy);
+    if (!_listedAsLoaded(strategy, pageDigest)) _refresh(strategy);
     return done;
   }
 
