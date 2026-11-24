@@ -99,6 +99,100 @@ void main() {
       'strategy-a': unorderedEquals(['earlier', 'page-edit']),
     });
   });
+  test(
+      'a change stored under a strategy that is no longer active is the '
+      'record a released build writes and reads', () async {
+    await earlierWriteHeldWhile(() => queue.syncDesiredGenericOp(
+          strategyPublicId: 'strategy-a',
+          entityKey: const EntitySyncKey.strategy(),
+          desiredOp: const StrategyPatchOp(
+            opId: 'map-to-lotus',
+            expectedStrategyRevision: 1,
+            payload: {'mapData': 'lotus'},
+          ),
+        ));
+
+    final stored = Map<String, dynamic>.from(store.values.values
+        .map((value) => Map<String, dynamic>.from(value as Map))
+        .firstWhere((json) => json['opId'] == 'map-to-lotus'));
+    expect(stored.keys.toSet(), {
+      'outboxVersion',
+      'accountId',
+      'strategyPublicId',
+      'entityKey',
+      'clientId',
+      'opId',
+      'op',
+      'attempts',
+      'status',
+      'createdAt',
+      'updatedAt',
+    });
+    expect(stored['outboxVersion'], 2);
+    expect(stored['accountId'], 'account-a');
+    expect(stored['strategyPublicId'], 'strategy-a');
+    expect(stored['entityKey'], const EntitySyncKey.strategy().toString());
+    expect(stored['status'], 'queued');
+    expect(
+      stored['op'],
+      const StrategyPatchOp(
+        opId: 'map-to-lotus',
+        expectedStrategyRevision: 1,
+        payload: {'mapData': 'lotus'},
+      ).toConvexJson(),
+    );
+    expect(DurableOutboxRecord.fromJson(stored).strategyPublicId, 'strategy-a');
+  });
+
+  test(
+      'a record a released build wrote for a strategy that is not active '
+      'loads under that strategy', () async {
+    final released = <String, Object?>{
+      'outboxVersion': 2,
+      'accountId': 'account-a',
+      'strategyPublicId': 'strategy-a',
+      'entityKey': const EntitySyncKey.strategy().toString(),
+      'clientId': 'released-client',
+      'opId': 'released-patch',
+      'op': const StrategyPatchOp(
+        opId: 'released-patch',
+        expectedStrategyRevision: 3,
+        payload: {'mapData': 'bind'},
+      ).toConvexJson(),
+      'attempts': 0,
+      'status': 'queued',
+      'createdAt': '2026-11-01T10:00:00.000Z',
+      'updatedAt': '2026-11-01T10:00:00.000Z',
+    };
+    final storageKey = DurableOutboxRecord.fromJson(
+      Map<String, dynamic>.from(released),
+    ).storageKey;
+    final reopened = _GatedStore()..values[storageKey] = released;
+    final container = ProviderContainer(overrides: [
+      durableStrategyOutboxStoreProvider.overrideWithValue(reopened),
+      convexStrategyRepositoryProvider.overrideWithValue(_Offline()),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      convexConnectionSnapshotProvider.overrideWithValue(false),
+      convexConnectionProvider.overrideWith((ref) => Stream.value(false)),
+    ]);
+    addTearDown(container.dispose);
+    final reopenedQueue = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('strategy-b', accountId: 'account-a');
+    expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+    expect(
+      container.read(strategyOpQueueProvider).accountOutbox.strategies.keys,
+      contains('strategy-a'),
+    );
+
+    reopenedQueue.setActiveStrategy('strategy-a', accountId: 'account-a');
+    expect(
+      [
+        for (final pending in container.read(strategyOpQueueProvider).pending)
+          pending.op.opId,
+      ],
+      ['released-patch'],
+    );
+  });
 }
 
 final class _GatedStore extends MemoryDurableStrategyOutboxStore {
