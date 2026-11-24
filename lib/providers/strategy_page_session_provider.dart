@@ -1197,6 +1197,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         return _PageSwitch.stayed;
       case NothingShown() when !_anythingUnsavedOnCanvas():
         break;
+      case NothingShown()
+          when source == StrategySource.cloud &&
+              leftPageId != null &&
+              _deletedOnThisDevice(leftPageId):
+        break;
       case NothingShown():
         AppErrorReporter.reportInfo(
           'Page $leftPageId is not on the canvas, and the canvas has unsaved '

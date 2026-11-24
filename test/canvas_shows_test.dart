@@ -498,6 +498,26 @@ void main() {
     expect(container.read(mapProvider).currentMap, MapValue.haven);
   });
 
+  test(
+      'a strategy closed while its Save writes the page keeps its saved '
+      'theme', () async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final a = stored('closed-while-saving');
+    expect(saved(a.id).themeProfileId, 'profile-custom');
+    expect(await editor().loadFromHive(a.id), isTrue);
+    editor().setUnsaved();
+
+    final ahead = box.put('written-ahead', stored('written-ahead', pages: 400));
+    final saving = editor().saveToHive(a.id);
+    await editor().clearCurrentStrategy();
+    await ahead;
+    await saving.then((_) {}, onError: (Object _) {});
+
+    expect(saved(a.id).themeProfileId, 'profile-custom');
+    expect(saved(a.id).themeOverridePalette, isNotNull);
+    expect(canvas(), isA<ShowsNothing>());
+  });
+
   group('with the canvas not showing the page on screen', () {
     String fingerprint(String id) {
       final strategy = saved(id);

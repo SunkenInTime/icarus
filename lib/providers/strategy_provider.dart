@@ -926,6 +926,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     _openAttempt += 1;
     _settledAttempt = _openAttempt;
     cancelPendingSave();
+    ref.read(canvasShowsProvider.notifier).emptied();
     ref.read(strategyThemeProvider.notifier).fromStrategy();
     ref.read(strategySaveStateProvider.notifier).reset();
     ref.read(strategyPageSessionProvider.notifier).reset();

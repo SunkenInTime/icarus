@@ -873,6 +873,44 @@ void main() {
       expect(container.read(placedImageProvider).images, isEmpty);
     });
 
+    test(
+        'a page deleted while it is selected but not drawn, after an edit to '
+        'what is on screen, leaves the editor on the page before it', () async {
+      final repository = _Repository()..pageIds = ['a', 'b'];
+      final queue = _RecordingOpQueue();
+      final (container, _) = await desktop(repository, queue: () => queue);
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+
+      final drawingB = Completer<void>();
+      repository.unwatchGate = drawingB;
+      final selecting = strategies.selectPage('b');
+      await repository.unwatchHeld.future;
+      expect(container.read(strategyPageSessionProvider).activePageId, 'b');
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            type: AgentType.jett,
+            position: const Offset(300, 300),
+            id: 'made-while-b-reads',
+          ));
+      strategies.setUnsaved();
+      final deleting = strategies.deletePage('b');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      drawingB.complete();
+      await selecting.then((_) {}, onError: (Object _) {});
+      await deleting;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+          queue.queued.whereType<PageDeleteOp>().map((op) => op.pagePublicId),
+          ['b']);
+      expect(container.read(strategyPageSessionProvider).activePageId, 'a');
+      expect(
+        container.read(canvasShowsProvider),
+        isA<ShowsPage>().having((shows) => shows.pageId, 'page', 'a'),
+      );
+    });
+
     group('with the canvas not showing the page on screen', () {
       final writers = <String, Future<Object?> Function(ProviderContainer)>{
         'a save': (container) => container
@@ -1401,6 +1439,10 @@ class _IdleOpQueue extends StrategyOpQueueNotifier {
 class _RecordingOpQueue extends _IdleOpQueue {
   final desired = <Map<EntitySyncKey, StrategyOp>>[];
   final queued = <StrategyOp>[];
+
+  @override
+  bool isDeletedHere(String pageId) =>
+      queued.any((op) => op is PageDeleteOp && op.pagePublicId == pageId);
 
   @override
   Future<void> enqueue(StrategyOp op, {bool flushImmediately = false}) async =>

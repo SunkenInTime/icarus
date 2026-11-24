@@ -2680,6 +2680,52 @@ void main() {
     expect(op.toConvexJson()['expectedElementRevision'], 4);
   });
 
+  test('syncLocalPage diffs the canvas it was given, not the one drawn since',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page),
+    ));
+    final container = await _syncContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
+        );
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'in-the-read', position: const Offset(10, 20))
+        ..text = 'read',
+    ]);
+    final read = _drawn(container, 'cloud-strategy', page.publicId);
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'drawn-after', position: const Offset(30, 40))
+        ..text = 'later',
+    ]);
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+              canvas: read,
+            );
+
+    expect(
+      [
+        for (final MapEntry(:key, :value) in desired!.entries)
+          if (value != null) key.entityId,
+      ],
+      contains('in-the-read'),
+    );
+    expect(
+      [for (final key in desired.keys) key.entityId],
+      isNot(contains('drawn-after')),
+    );
+  });
+
   test('active page update rehydrates without a strategy revision change',
       () async {
     final page = _page('page-1', 0);
