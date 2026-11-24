@@ -1,14 +1,3 @@
-// Deletes a strategy on a preview and uploads it again under the same ids,
-// as its owner, the way a second device of that owner would: the strategy
-// and its page come back at revision 1 in a new life. Its elements do not:
-// the deleted strategy's element rows stay on the server and keep their ids,
-// so adding one again is refused as element_strategy_mismatch.
-// Run through preview-reupload.ps1, which holds the deploy key.
-//
-//   node tool/drive/preview-reupload.mjs <preview name> <strategy name> [show]
-//
-// Prints the strategy's rows before and after as JSON lines; with show, only
-// prints them as they are now.
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 

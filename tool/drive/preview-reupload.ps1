@@ -1,7 +1,3 @@
-# Runs preview-reupload.mjs against a preview with the preview deploy key,
-# which never leaves this machine.
-#
-#   tool\drive\preview-reupload.ps1 -Name <preview> -Strategy <strategy name> [-Show]
 param(
   [Parameter(Mandatory)] [string]$Name,
   [Parameter(Mandatory)] [string]$Strategy,
