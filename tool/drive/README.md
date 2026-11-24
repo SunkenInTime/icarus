@@ -33,6 +33,15 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## How long an open takes to show
+
+`{"openFirstFrame": "largest", "runs": 12}` (`scripts/open-first-frame-local.json`) times opening a local strategy the way a player does, from its tile in the library. It picks the strategy with the most items in the library it was started on (`"median"` picks the middle one, and a name picks that strategy), among those with a unique name and agents or abilities on their first page. Each run:
+1. goes back to the library;
+2. searches for the strategy;
+3. presses its tile and lets go.
+
+It then watches every frame until the editor is on top, showing that strategy's first page with all of its agents and abilities. From the pointer-up it logs when that frame was built and when it was rasterised. Raster times come from the engine's frame timings, matched by frame number. The summary gives the median and worst of each, with the strategy's size and the library store's mode. Start the run with `-HiveStore` on the library to measure and, if wanted, `-LibraryStore`.
+
 ## A change in one cloud strategy, then another opened
 
 `{"mapThenOpen": B, "from": A, "runs": 50, "by": "back", "maps": [...], "restAt": [x, y]}` measures whether a map change made in cloud strategy A can be stored under B when B is opened at once (`scripts/map-then-open-cloud.json`). Each run:

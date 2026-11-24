@@ -205,6 +205,10 @@ import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/widgets/replay/replay_dock.dart';
 import 'package:icarus/widgets/replay/replay_library_content.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/const/routes.dart';
+import 'package:icarus/library_store/library_store_switch.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
@@ -706,6 +710,181 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
         '${outcomes['the opened strategy took the change'] ?? 0} times, '
         'expected $expected');
   }
+}
+
+int _markersOn(StrategyPage page) =>
+    page.agentData.length + page.abilityData.length;
+
+int _itemsIn(StrategyData strategy) => [
+      for (final page in strategy.pages)
+        page.agentData.length +
+            page.abilityData.length +
+            page.drawingData.length +
+            page.textData.length +
+            page.imageData.length +
+            page.utilityData.length,
+    ].fold(0, (sum, items) => sum + items);
+
+StrategyPage _firstPageOf(StrategyData strategy) => ([
+      ...strategy.pages,
+    ]..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)))
+        .first;
+
+Future<void> _openFirstFrame(Map<String, dynamic> step) async {
+  final c = appProviderContainer;
+  final pick = step['openFirstFrame'] as String;
+  final runs = (step['runs'] ?? 10) as int;
+  final openable = [
+    for (final strategy in const LocalLibrary().storedStrategies)
+      if (strategy.pages.isNotEmpty && _markersOn(_firstPageOf(strategy)) > 0)
+        strategy,
+  ]..sort((a, b) => _itemsIn(a).compareTo(_itemsIn(b)));
+  final names = {for (final strategy in openable) strategy.name: 0};
+  for (final strategy in openable) {
+    names[strategy.name] = names[strategy.name]! + 1;
+  }
+  final unique = [
+    for (final strategy in openable)
+      if (names[strategy.name] == 1) strategy,
+  ];
+  if (unique.isEmpty) throw StateError('no strategy to open');
+  final target = switch (pick) {
+    'largest' => unique.last,
+    'median' => unique[unique.length ~/ 2],
+    _ => unique.firstWhere((strategy) => strategy.name == pick),
+  };
+  final firstPage = _firstPageOf(target);
+  final markers = _markersOn(firstPage);
+  final label = '$pick (${target.pages.length} pages, '
+      '${_itemsIn(target)} items, $markers markers on the first page)';
+  String ms(int micros) => (micros / 1000).toStringAsFixed(1);
+
+  final timings = <int, FrameTiming>{};
+  void heard(List<FrameTiming> frames) {
+    for (final frame in frames) {
+      timings[frame.frameNumber] = frame;
+    }
+  }
+
+  SchedulerBinding.instance.addTimingsCallback(heard);
+  final clock = Stopwatch();
+  var watching = false;
+  int? submittedAt;
+  int? frameNumber;
+  bool shown() {
+    final session = c.read(strategyPageSessionProvider);
+    return c.read(strategyProvider).strategyId == target.id &&
+        session.activePageId == firstPage.id &&
+        !session.isApplyingPage &&
+        mouseNavigationRouteObserver.topRoute?.settings.name ==
+            Routes.strategyView &&
+        c.read(agentProvider).length + c.read(abilityProvider).length ==
+            markers;
+  }
+
+  SchedulerBinding.instance.addPersistentFrameCallback((_) {
+    if (!watching || frameNumber != null || !shown()) return;
+    frameNumber =
+        SchedulerBinding.instance.platformDispatcher.frameData.frameNumber;
+    SchedulerBinding.instance.addPostFrameCallback(
+      (_) => submittedAt = clock.elapsedMicroseconds,
+    );
+  });
+
+  final built = <int>[];
+  final painted = <int>[];
+  for (var run = 1; run <= runs; run++) {
+    if (c.read(strategyProvider).strategyId != null) {
+      await c.read(strategyProvider.notifier).clearCurrentStrategy();
+      appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+      await _seconds(1);
+      await _frames();
+    }
+    _typeInto(target.name);
+    await _waitFor(() => _countOf((w) => _isText(w, target.name)) > 0, 10);
+    await _seconds(1);
+    final tile = _centerOf((w) => _isText(w, target.name));
+    final pointer = _pointer++;
+    final binding = GestureBinding.instance;
+    _addMouse(pointer, tile);
+    binding.handlePointerEvent(
+      PointerHoverEvent(
+        pointer: pointer,
+        kind: PointerDeviceKind.mouse,
+        position: tile,
+      ),
+    );
+    await _frames(2);
+    binding.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        kind: PointerDeviceKind.mouse,
+        buttons: kPrimaryMouseButton,
+        position: tile,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    frameNumber = null;
+    submittedAt = null;
+    clock
+      ..reset()
+      ..start();
+    watching = true;
+    binding.handlePointerEvent(
+      PointerUpEvent(
+        pointer: pointer,
+        kind: PointerDeviceKind.mouse,
+        position: tile,
+      ),
+    );
+    try {
+      await _waitFor(() => submittedAt != null, 30);
+      await _waitFor(() => timings.containsKey(frameNumber), 5);
+    } finally {
+      watching = false;
+    }
+    final frame = timings[frameNumber]!;
+    final raster = frame.timestampInMicroseconds(ui.FramePhase.rasterFinish) -
+        frame.timestampInMicroseconds(ui.FramePhase.buildFinish);
+    built.add(submittedAt!);
+    painted.add(submittedAt! + raster);
+    _log(
+      'OPENFRAME run $run, $label: built ${ms(submittedAt!)} ms, painted '
+      '${ms(submittedAt! + raster)} ms after the pointer-up '
+      '(that frame rasterised in ${ms(raster)} ms)',
+    );
+    await _seconds(1);
+  }
+  SchedulerBinding.instance.removeTimingsCallback(heard);
+  String spread(List<int> values) {
+    final sorted = [...values]..sort();
+    return 'median ${ms(sorted[sorted.length ~/ 2])} ms, '
+        'worst ${ms(sorted.last)} ms';
+  }
+
+  _log(
+    'OPENFRAME summary, $label, store ${switchName(c.read(libraryStoreSwitchProvider))}, '
+    '$runs runs: painted ${spread(painted)}; built ${spread(built)}',
+  );
+}
+
+void _typeInto(String text) {
+  EditableTextState? field;
+  void visit(Element element) {
+    if (element case StatefulElement(:final EditableTextState state)) {
+      field = state;
+    }
+    element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  field!.userUpdateTextEditingValue(
+    TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    ),
+    SelectionChangedCause.keyboard,
+  );
 }
 
 Future<void> _frames([int count = 3]) async {
@@ -1767,22 +1946,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       _sendKeys([_keyUp(value as String)]);
       await _frames();
     case 'typeText':
-      EditableTextState? field;
-      void visit(Element element) {
-        if (element case StatefulElement(:final EditableTextState state)) {
-          field = state;
-        }
-        element.visitChildElements(visit);
-      }
-      WidgetsBinding.instance.rootElement?.visitChildElements(visit);
-      final text = value as String;
-      field!.userUpdateTextEditingValue(
-        TextEditingValue(
-          text: text,
-          selection: TextSelection.collapsed(offset: text.length),
-        ),
-        SelectionChangedCause.keyboard,
-      );
+      _typeInto(value as String);
       await _frames();
     case 'resize':
       final wh = (value as List).cast<num>();
@@ -2106,6 +2270,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       await File(step['file'] as String).writeAsString(code);
     case 'mapThenOpen':
       await _mapThenOpen(step);
+    case 'openFirstFrame':
+      await _openFirstFrame(step);
     case 'openStoredCloudStrategy':
       unawaited(
         Navigator.of(appNavigatorKey.currentContext!).push(
