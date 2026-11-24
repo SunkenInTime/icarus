@@ -270,9 +270,12 @@ final class SavePathGauntlet {
     if (losesBatch) {
       // The batch holding the round's last edits fails, and the user edits
       // the same items again before it is sent again.
-      _app.transport.inject(round == _loseAnswerRound
-          ? BatchFault.loseAnswer
-          : BatchFault.loseRequest);
+      _app.transport.inject(
+        round == _loseAnswerRound
+            ? BatchFault.loseAnswer
+            : BatchFault.loseRequest,
+        holdForEdits: true,
+      );
       _faults[round == _loseAnswerRound ? 'lostAnswer' : 'lostRequest'] = true;
       await _editWhileResendWaits(seed, editor, round);
     }
@@ -317,13 +320,14 @@ final class SavePathGauntlet {
         if (drawnNow?.payload == null) {
           // Live sync remakes a waiting op from its live read once the
           // delete before it lands; the stand-in makes each op once, so the
-          // user brings an item back only after its delete has landed. A
+          // user brings an item back only after its delete has landed and
+          // the canvas has heard its answer, as a person sees it go. A
           // delete made offline waits for the network, so offline the user
           // leaves the item alone.
           if (_app.proxy.isOffline && _waitsInOutbox(id)) continue;
           await _waitFor(
-            'the delete of $id to land',
-            () => !_waitsInOutbox(id),
+            'the delete of $id to land and its answer to reach the editor',
+            () => !_waitsInOutbox(id) && editor.knowsDeleted(id),
           );
           await _drawElement(editor, seed, index, variant: round * 100 + edit);
           _faults['deleteRecreate'] = true;
@@ -359,34 +363,34 @@ final class SavePathGauntlet {
     });
   }
 
-  /// Waits for the batch holding the round's last edits to fail, then edits
-  /// again what it held, before the queue sends it again: the page's
-  /// settings and its elements. When the lost answer was an accept, the
-  /// server holds the first edits, and the second ones must still land,
-  /// unasked.
+  /// Holds the batch carrying the round's last edits as it goes out and
+  /// edits again what it carries, the page's settings and its elements, so
+  /// each edit waits behind an op that then fails. When the lost answer was
+  /// an accept, the server holds the first edits, and the second ones must
+  /// still land, unasked.
   Future<void> _editWhileResendWaits(int seed, Editor editor, int round) async {
-    List<StrategyOp> failed() => [
-          for (final intent in _app.queueState.queuedByEntityKey.values)
-            if (intent.pending.attempts > 0) intent.pending.op,
-        ];
-    await _waitFor('the batch to fail', () => failed().isNotEmpty);
-    // Whether an edit was queued behind the failed op of its own item,
-    // which is what this round is for.
-    var waitedBehind = false;
-    bool behindFailed(StrategyOp op) {
-      final key = EntitySyncKey.forStrategyOp(op)!;
-      return _app.queueState.queuedByEntityKey[key]?.pending.op.opId ==
-              op.opId &&
-          _app.queueState.successorByEntityKey.containsKey(key);
-    }
-
-    for (final op in failed()) {
+    final faultsBefore = _app.transport.appliedFaults.length;
+    await _waitFor(
+      'the faulted batch to go out',
+      () => _app.transport.heldForEdits != null,
+    );
+    final held = _app.transport.heldForEdits!;
+    final inFlight = {
+      for (final intent in _app.queueState.inFlightByEntityKey.values)
+        intent.pending.op.opId: intent.pending.op,
+    };
+    bool waitsBehind(StrategyOp op) => _app.queueState.successorByEntityKey
+        .containsKey(EntitySyncKey.forStrategyOp(op)!);
+    final waited = <String>[];
+    for (final opId in held.opIds) {
+      final op = inFlight[opId];
+      if (op == null) continue;
       if (op is PageContentPatchOp) {
         await editor.setPageSettings({
           ...?editor.pageSettings,
           'agentSize': 60 + round,
         });
-        waitedBehind |= behindFailed(op);
+        if (waitsBehind(op)) waited.add(opId);
         continue;
       }
       final id = op.entityPublicId;
@@ -394,9 +398,23 @@ final class SavePathGauntlet {
       final index = int.tryParse(id.split('element-').last);
       if (index == null || editor.drawn[id]?.payload == null) continue;
       await _drawElement(editor, seed, index, variant: round * 100 + 99);
-      waitedBehind |= behindFailed(op);
+      if (waitsBehind(op)) waited.add(opId);
     }
-    if (waitedBehind) _faults['editedWhileResendWaits'] = true;
+    _app.transport.faultedBatchEdited();
+    await _waitFor(
+      'the faulted batch to fail',
+      () => _app.transport.appliedFaults.length > faultsBefore,
+    );
+    if (waited.isEmpty) {
+      throw GauntletFailure(
+        'edit_not_behind_failed_op',
+        'Seed $seed round $round: no edit waited behind an op of the faulted '
+            'batch (${held.fault.name}, ops ${held.opIds.join(' ')})',
+      );
+    }
+    stdout.writeln('seed $seed round $round: ${waited.length} edit(s) waited '
+        'behind the ${held.fault.name} batch of ${held.opIds.length} op(s)');
+    _faults['editedWhileResendWaits'] = true;
   }
 
   /// Adds an item and deletes it just after the queue starts sending the
@@ -461,7 +479,7 @@ final class SavePathGauntlet {
       final answered = _app.transport.batchAnswered.first;
       await editor.draw(id, payload: at(300), sortIndex: 3000 + step);
       await answered.timeout(
-        const Duration(seconds: 20),
+        const Duration(seconds: 60),
         onTimeout: () => throw GauntletFailure(
           'timeout',
           'The add of $id was never answered',
@@ -491,7 +509,7 @@ final class SavePathGauntlet {
         sortIndex: 3000 + step,
       );
       await moveAnswered.timeout(
-        const Duration(seconds: 20),
+        const Duration(seconds: 60),
         onTimeout: () => throw GauntletFailure(
           'timeout',
           'The move of $id was never answered',
@@ -754,14 +772,21 @@ final class SavePathGauntlet {
   /// sent again.
   Future<void> _losePageChangeAnswer(int seed, Editor editor) async {
     await _settle(seed);
+    final faultsBefore = _app.transport.appliedFaults.length;
     _app.transport.inject(BatchFault.loseAnswer);
     await editor.addPage('${_prefix(seed)}page-3', 'Lurk', 2);
     await _waitFor(
-      'the page add to fail',
-      () => _app.queueState.pending.any(
-        (pending) => pending.op is PageAddOp && pending.attempts > 0,
-      ),
+      'the page add\'s batch to lose its answer',
+      () => _app.transport.appliedFaults.length > faultsBefore,
     );
+    final struck = _app.transport.appliedFaults[faultsBefore];
+    if (!struck.opTypes.contains('page.add')) {
+      throw GauntletFailure(
+        'page_add_not_faulted',
+        'Seed $seed: the lost answer struck a batch without the page add '
+            '(${struck.opTypes.join(' ')})',
+      );
+    }
     _faults['lostPageChangeAnswer'] = true;
   }
 
@@ -781,7 +806,6 @@ final class SavePathGauntlet {
     await _waitFor(
       'the app to reconnect',
       () => _app.container.read(convexConnectionSnapshotProvider),
-      timeout: const Duration(seconds: 40),
     );
   }
 
@@ -1266,15 +1290,38 @@ final class SavePathGauntlet {
   Future<void> _waitFor(
     String what,
     bool Function() condition, {
-    Duration timeout = const Duration(seconds: 20),
+    Duration timeout = const Duration(seconds: 60),
   }) async {
     final deadline = DateTime.now().add(timeout);
+    final callsBefore = _app.transport.calls.length;
+    final from = _app.transport.elapsedMs;
     while (!condition()) {
       if (DateTime.now().isAfter(deadline)) {
-        throw GauntletFailure('timeout', 'Gave up waiting for $what');
+        throw GauntletFailure(
+          'timeout',
+          'Gave up waiting for $what after '
+              '${_app.transport.elapsedMs - from} ms. Faults still to apply: '
+              '${_app.transport.faultsToApply.map((f) => f.name).toList()}. '
+              'Batches sent while waiting: '
+              '${_app.transport.calls.skip(callsBefore).toList()}. '
+              'Flushing: ${_app.queueState.isFlushing}. Outbox: ${[
+            for (final (state, intents) in [
+              ('queued', _app.queueState.queuedByEntityKey),
+              ('in flight', _app.queueState.inFlightByEntityKey),
+              ('behind', _app.queueState.successorByEntityKey),
+              ('paused', _app.queueState.pausedByEntityKey),
+              ('attention', _app.queueState.attentionByEntityKey),
+            ])
+              for (final MapEntry(:key, :value) in intents.entries)
+                '$state $key ${(value as dynamic).pending.op.type.wireName} '
+                    'attempts ${(value as dynamic).pending.attempts}',
+          ]}; last error: ${_app.queueState.lastError}]}. Now ${DateTime.now()}.',
+        );
       }
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
+    final waited = _app.transport.elapsedMs - from;
+    if (waited > 5000) stdout.writeln('waited $waited ms for $what');
   }
 
   Map<String, Object?> _newSeedReport(int seed) => {

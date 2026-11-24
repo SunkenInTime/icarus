@@ -4,6 +4,7 @@
 // native client connects through, which the gauntlet can cut to take the app
 // offline.
 import 'dart:async';
+
 import 'dart:io';
 
 import 'package:icarus/collab/transport/convex_transport.dart';
@@ -30,6 +31,14 @@ enum BatchFault {
   holdUntilReleased,
 }
 
+final class AppliedFault {
+  AppliedFault(this.fault, this.opIds, this.opTypes);
+
+  final BatchFault fault;
+  final List<String> opIds;
+  final List<String> opTypes;
+}
+
 /// One ops:applyBatch the server answered, as the transport saw it, whether
 /// or not the app got the answer.
 final class SeenBatch {
@@ -45,8 +54,20 @@ final class FaultyTransport implements ConvexTransport {
   FaultyTransport(this._inner);
 
   final ConvexTransport _inner;
-  final List<BatchFault> _pending = [];
+  final List<(BatchFault, bool)> _pending = [];
+  Completer<void>? _editsMade;
+
+  final List<AppliedFault> appliedFaults = [];
+
+  AppliedFault? heldForEdits;
   Completer<void>? _held;
+  final _clock = Stopwatch()..start();
+
+  final List<String> calls = [];
+
+  List<BatchFault> get faultsToApply => [for (final (f, _) in _pending) f];
+
+  int get elapsedMs => _clock.elapsedMilliseconds;
 
   /// Every ops:applyBatch the server answered, in order.
   final List<SeenBatch> seen = [];
@@ -61,7 +82,14 @@ final class FaultyTransport implements ConvexTransport {
   Stream<void> get batchAnswered => _answered.stream;
 
   /// Applies [fault] to the next ops:applyBatch the app sends.
-  void inject(BatchFault fault) => _pending.add(fault);
+  void inject(BatchFault fault, {bool holdForEdits = false}) =>
+      _pending.add((fault, holdForEdits));
+
+  void faultedBatchEdited() {
+    heldForEdits = null;
+    _editsMade?.complete();
+    _editsMade = null;
+  }
 
   bool get isClear => _pending.isEmpty && _held == null;
 
@@ -72,7 +100,40 @@ final class FaultyTransport implements ConvexTransport {
   Future<ConvexValue> mutation(String name, ConvexObject args) async {
     if (name != 'ops:applyBatch') return _inner.mutation(name, args);
     _sent.add(null);
-    final fault = _pending.isEmpty ? null : _pending.removeAt(0);
+    final (fault, holdForEdits) =
+        _pending.isEmpty ? (null, false) : _pending.removeAt(0);
+    final sent = [
+      for (final op in (args.toDart() as Map)['ops'] as List? ?? const [])
+        op as Map,
+    ];
+    final ops = [for (final op in sent) '${op['opId']}'];
+    final types = [for (final op in sent) '${op['type']}'];
+    if (holdForEdits &&
+        (fault == BatchFault.loseAnswer || fault == BatchFault.loseRequest)) {
+      final edited = _editsMade = Completer<void>();
+      heldForEdits = AppliedFault(fault!, ops, types);
+      await edited.future;
+    }
+    final call = calls.length;
+    calls.add(
+      '${_clock.elapsedMilliseconds} ms: ${fault?.name ?? 'clean'} '
+      '${ops.join(' ')}',
+    );
+    try {
+      final result = await _apply(fault, args);
+      calls[call] += ', answered at ${_clock.elapsedMilliseconds} ms';
+      return result;
+    } catch (error) {
+      calls[call] += ', threw at ${_clock.elapsedMilliseconds} ms';
+      rethrow;
+    } finally {
+      if (fault != null) {
+        appliedFaults.add(AppliedFault(fault, ops, types));
+      }
+    }
+  }
+
+  Future<ConvexValue> _apply(BatchFault? fault, ConvexObject args) async {
     switch (fault) {
       case null:
         return _send(args);

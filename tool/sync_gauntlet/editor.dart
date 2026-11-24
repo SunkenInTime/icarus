@@ -72,6 +72,8 @@ final class Editor {
 
   static bool isLineup(String id) => id.contains('lineup-');
 
+  bool knowsDeleted(String id) => _known[id]?.deleted ?? true;
+
   /// Reads the strategy as opening it does, and starts following the
   /// queue's answers.
   void hydrate(Map<String, Object?> snapshot) {
