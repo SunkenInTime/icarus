@@ -94,6 +94,33 @@ server writes only the named fields onto the row as it is now:
 An edit to an item a teammate deleted is still refused as `deleted`, and Keep
 mine still brings the item back.
 
+## Which row an edit means
+
+A revision names a version of a row only within one life of it. The server
+purges an item's or a lineup group's tombstone, and a trashed page, 30 days
+after the delete, and deletes a strategy with its rows at once; the same id can
+then be added again, and its revisions start over. An edit made on a copy of
+the earlier row would then land on a row the player never saw: a revision check
+passes, because revision 1 is revision 1.
+
+A row's life is its `createdAt`, which the server sets when it inserts the row
+and never changes: bringing a deleted item back, restoring a page from the
+trash and moving an item all keep it, and a copy is a new row with a new id.
+Every row the server sends carries it.
+
+A client that sets `sendsLives` on `ops:applyBatch` may put `expectedLife`, the
+`createdAt` of the row whose revision the op checks (the strategy for a page
+add, delete or reorder), on each op. The server refuses an op whose row is
+there under another `createdAt` as `row_replaced`, with the row as it is now,
+before it looks at the revision, and a put-back whose row is gone as
+`not_found` instead of adding it again. Its answers name the life of the row
+they belong to (`appliedLife`, `currentLife`, and `life` on a refusal's
+`current`), and so does the receipt it keeps for the op id, which a resend
+replays. An op that names a page only as a place, to add an item onto or move
+one to, carries no life for that page, so an item can still land on a page
+re-created under the same id. Clients that do not set `sendsLives` send nothing
+new and are answered as before; an `expectedLife` without it is ignored.
+
 ## Which fields move together
 
 A merge must never combine half of one edit with half of another. The client
