@@ -250,6 +250,14 @@ final class LoadedStrategy {
     return page.tally();
   }
 
+  bool countedAs(String pageDigest, Map<String, PageTally> listed) {
+    final page = _pages[pageDigest];
+    final loaded = _loaded[pageDigest];
+    if (page == null || loaded == null) return true;
+    final counted = listed[page.publicId];
+    return loaded.isEmpty ? counted == null : counted == _counted(loaded);
+  }
+
   Map<String, PageTally> talliesOver(Map<String, PageTally> stored) {
     final tallies = {...stored};
     for (final MapEntry(key: digest, value: loaded) in _loaded.entries) {
