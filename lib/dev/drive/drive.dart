@@ -578,6 +578,29 @@ int _countOf(bool Function(Widget) test) {
 
 /// The middle of the [nth] widget passing [test] that is laid out, in the
 /// order the tree holds them: a screen under another comes first.
+List<Offset> _centersOf(bool Function(Widget) test) {
+  final found = <Offset>[];
+  void visit(Element element) {
+    if (test(element.widget)) {
+      final box = element.findRenderObject();
+      if (box is RenderBox && box.hasSize && box.attached) {
+        found.add(box.localToGlobal(box.size.center(Offset.zero)));
+      }
+    }
+    element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  return found;
+}
+
+Offset _nearest(List<Offset> points, Offset to) {
+  if (points.isEmpty) throw StateError('found 0');
+  return points.reduce(
+    (a, b) => (a - to).distanceSquared <= (b - to).distanceSquared ? a : b,
+  );
+}
+
 Offset _centerOf(bool Function(Widget) test, {int nth = 0}) {
   final found = <Offset>[];
   void visit(Element element) {
@@ -862,8 +885,9 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       File(path.join(images.path, 'race-unused-$run-$i.png'))
           .writeAsBytesSync(List.filled(16384, run % 251));
     }
-    await _tap(_point(step, 'switcherAt'));
-    final item = _centerOf((w) => _isText(w, openedName));
+    final switcher = _point(step, 'switcherAt');
+    await _tap(switcher);
+    final item = _nearest(_centersOf((w) => _isText(w, openedName)), switcher);
     final page = _centerOf((w) => _isText(w, pageName));
     final clock = Stopwatch();
     int? cleared;
