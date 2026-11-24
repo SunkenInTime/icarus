@@ -43,13 +43,15 @@ void main() {
     final server = _Server(row: text('a'));
     final (container, queue) = _start(server);
 
-    await queue.enqueue(patch('first', 'a', 'b', 1));
+    await queue.enqueue(patch('first', 'a', 'b', 1),
+        strategyPublicId: 'strategy-1');
     server.loseNextAnswer = true;
     await queue.flushNow();
     expect(server.row, text('b'), reason: 'the server applied it');
 
     // Offline, the canvas still knows the element at revision 1, holding a.
     await queue.syncDesiredOpsForPage(
+      strategyPublicId: 'strategy-1',
       pageId: 'page-1',
       desiredOpsByEntityKey: {key: patch('second', 'a', 'c', 1)},
     );
@@ -88,6 +90,7 @@ void main() {
     // revision 1 holding a (the live read has not come), and the user
     // edits it before the queue sends first again.
     await queue.syncDesiredOpsForPage(
+      strategyPublicId: 'strategy-1',
       pageId: 'page-1',
       desiredOpsByEntityKey: {key: patch('second', 'a', 'c', 1)},
     );
@@ -130,6 +133,7 @@ void main() {
 
     await queue.retryPaused(flushImmediately: false);
     await queue.syncDesiredOpsForPage(
+      strategyPublicId: 'strategy-1',
       pageId: 'page-1',
       desiredOpsByEntityKey: {
         key: const ElementDeleteOp(
@@ -178,6 +182,7 @@ void main() {
     final (container, queue) = _start(server, store: store);
 
     await queue.syncDesiredOpsForPage(
+      strategyPublicId: 'strategy-1',
       pageId: 'page-1',
       desiredOpsByEntityKey: {
         key: const ElementDeleteOp(
@@ -225,7 +230,8 @@ void main() {
     final (_, queue) = _start(server, store: store);
 
     await queue.retryPaused(flushImmediately: false);
-    await queue.enqueuePageChange(renamePage('second', 'Retakes'));
+    await queue.enqueuePageChange(renamePage('second', 'Retakes'),
+        strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(() => server.received.isNotEmpty);
 
@@ -238,18 +244,21 @@ void main() {
     final server = _Server();
     final (container, queue) = _start(server);
 
-    await queue.enqueue(ElementAddOp(
-      opId: 'add',
-      elementPublicId: 'element-1',
-      pagePublicId: 'page-1',
-      payload: text('a'),
-      sortIndex: 0,
-    ));
+    await queue.enqueue(
+        ElementAddOp(
+          opId: 'add',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: text('a'),
+          sortIndex: 0,
+        ),
+        strategyPublicId: 'strategy-1');
     server.loseNextAnswer = true;
     await queue.flushNow();
     expect(server.row, text('a'), reason: 'the server added it');
 
     await queue.syncDesiredOpsForPage(
+      strategyPublicId: 'strategy-1',
       pageId: 'page-1',
       desiredOpsByEntityKey: {
         key: const ElementDeleteOp(

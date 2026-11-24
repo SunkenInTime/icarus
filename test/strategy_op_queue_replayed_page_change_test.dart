@@ -36,12 +36,12 @@ void main() {
     final server = _Server();
     final (container, queue) = _start(server);
 
-    await queue.enqueuePageChange(addPage);
+    await queue.enqueuePageChange(addPage, strategyPublicId: 'strategy-1');
     server.loseNextAnswer = true;
     await queue.flushNow();
     expect(server.revision, 6, reason: 'the server added the page');
 
-    await queue.enqueue(rename);
+    await queue.enqueue(rename, strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
 
@@ -55,20 +55,22 @@ void main() {
     final server = _Server();
     final (container, queue) = _start(server);
 
-    await queue.enqueuePageChange(addPage);
+    await queue.enqueuePageChange(addPage, strategyPublicId: 'strategy-1');
     server.loseNextAnswer = true;
     await queue.flushNow();
 
     // Offline, the user renames another page and the strategy. The page
     // rename goes before the add is sent again, and the strategy rename
     // must not go with it.
-    await queue.enqueuePageChange(const PagePatchOp(
-      opId: 'rename-page',
-      pagePublicId: 'page-1',
-      payload: {'name': 'Defaults'},
-      expectedPageRevision: 1,
-    ));
-    await queue.enqueue(rename);
+    await queue.enqueuePageChange(
+        const PagePatchOp(
+          opId: 'rename-page',
+          pagePublicId: 'page-1',
+          payload: {'name': 'Defaults'},
+          expectedPageRevision: 1,
+        ),
+        strategyPublicId: 'strategy-1');
+    await queue.enqueue(rename, strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
 
@@ -100,7 +102,7 @@ void main() {
     ));
     final (container, queue) = _start(server, store: store);
 
-    await queue.enqueue(rename);
+    await queue.enqueue(rename, strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await Future<void>.delayed(const Duration(milliseconds: 100));
     expect(server.refused, isEmpty, reason: 'the rename waits for the add');
@@ -123,12 +125,14 @@ void main() {
           expectedPageRevision: 1,
         );
 
-    await queue.enqueuePageChange(renamePage('first', 'Defaults'));
+    await queue.enqueuePageChange(renamePage('first', 'Defaults'),
+        strategyPublicId: 'strategy-1');
     server.loseNextAnswer = true;
     await queue.flushNow();
     expect(server.pageName, 'Defaults', reason: 'the server renamed it');
 
-    await queue.enqueuePageChange(renamePage('second', 'Retakes'));
+    await queue.enqueuePageChange(renamePage('second', 'Retakes'),
+        strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
 
@@ -141,12 +145,12 @@ void main() {
     final server = _Server();
     final (container, queue) = _start(server);
 
-    await queue.enqueue(rename);
+    await queue.enqueue(rename, strategyPublicId: 'strategy-1');
     server.loseNextAnswer = true;
     await queue.flushNow();
     expect(server.name, 'Offline name', reason: 'the server renamed it');
 
-    await queue.enqueuePageChange(addPage);
+    await queue.enqueuePageChange(addPage, strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
 
@@ -159,10 +163,10 @@ void main() {
     final server = _Server()..appliedReplays = false;
     final (container, queue) = _start(server);
 
-    await queue.enqueuePageChange(addPage);
+    await queue.enqueuePageChange(addPage, strategyPublicId: 'strategy-1');
     server.loseNextAnswer = true;
     await queue.flushNow();
-    await queue.enqueue(rename);
+    await queue.enqueue(rename, strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(
       () => container.read(strategyOpQueueProvider).needsAttention,

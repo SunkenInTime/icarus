@@ -134,7 +134,8 @@ void main() {
 
     test('restart after enqueue and before send restores the intent', () async {
       final notifier = start();
-      await notifier.enqueue(elementOp(), flushImmediately: false);
+      await notifier.enqueue(elementOp(),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       expect(store.values, hasLength(1));
 
       start();
@@ -164,6 +165,7 @@ void main() {
           expectedStrategyRevision: 4,
           copyContentFromPagePublicId: 'page-1',
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       expect(store.values, hasLength(1));
@@ -209,7 +211,7 @@ void main() {
 
     test('strategy switch retains another page pending op', () async {
       final notifier = start();
-      await notifier.enqueue(elementOp());
+      await notifier.enqueue(elementOp(), strategyPublicId: 'strategy-1');
       notifier.setActiveStrategy('strategy-2', accountId: 'account-a');
       expect(container!.read(strategyOpQueueProvider).pending, isEmpty);
       notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
@@ -218,7 +220,7 @@ void main() {
 
     test('sign-out and same-account recovery restores work', () async {
       final notifier = start();
-      await notifier.enqueue(elementOp());
+      await notifier.enqueue(elementOp(), strategyPublicId: 'strategy-1');
       notifier.setActiveStrategy(null, accountId: null);
       expect(container!.read(strategyOpQueueProvider).pending, isEmpty);
       notifier.setActiveStrategy('strategy-1', accountId: 'account-a');
@@ -227,7 +229,7 @@ void main() {
 
     test('different account cannot see or submit saved work', () async {
       final notifier = start();
-      await notifier.enqueue(elementOp());
+      await notifier.enqueue(elementOp(), strategyPublicId: 'strategy-1');
       notifier.setActiveStrategy('strategy-1', accountId: 'account-b');
       expect(container!.read(strategyOpQueueProvider).pending, isEmpty);
       expect(store.values, hasLength(1));
@@ -282,6 +284,7 @@ void main() {
       await store.put(saved);
       var notifier = start();
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           const EntitySyncKey.element('page-1', 'element-1'):
@@ -303,6 +306,7 @@ void main() {
       expect(current.attentionByEntityKey, hasLength(1));
       expect(current.successorByEntityKey, hasLength(1));
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           const EntitySyncKey.element('page-1', 'element-1'):
@@ -348,6 +352,7 @@ void main() {
       await store.put(saved);
       final notifier = start();
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: const {},
         flushImmediately: false,
@@ -446,6 +451,7 @@ void main() {
       );
 
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           selectedKey: elementOp(opId: 'stale-reconciliation'),
@@ -642,8 +648,10 @@ void main() {
 
     test('coalesces add and patch only after durable replacement', () async {
       final notifier = start();
-      await notifier.enqueue(elementOp(kind: StrategyOpKind.add));
-      await notifier.enqueue(elementOp(opId: 'patch', value: 'b'));
+      await notifier.enqueue(elementOp(kind: StrategyOpKind.add),
+          strategyPublicId: 'strategy-1');
+      await notifier.enqueue(elementOp(opId: 'patch', value: 'b'),
+          strategyPublicId: 'strategy-1');
       final pending = container!.read(strategyOpQueueProvider).pending.single;
       expect(pending.op.kind, StrategyOpKind.add);
       expect(pending.op.opId, isNot(anyOf('op-1', 'patch')));
@@ -654,9 +662,11 @@ void main() {
 
     test('byte-for-byte equivalent work keeps its durable op ID', () async {
       final notifier = start();
-      await notifier.enqueue(elementOp(), flushImmediately: false);
+      await notifier.enqueue(elementOp(),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.enqueue(
         elementOp(opId: 'unused-equivalent-id'),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
 
@@ -667,9 +677,11 @@ void main() {
 
     test('patch replacement gets a new durable op ID', () async {
       final notifier = start();
-      await notifier.enqueue(elementOp(), flushImmediately: false);
+      await notifier.enqueue(elementOp(),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.enqueue(
         elementOp(opId: 'desired-patch', value: 'b'),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
 
@@ -693,8 +705,10 @@ void main() {
         sortIndex: 3,
         expectedStrategyRevision: 2,
       );
-      await notifier.enqueue(first, flushImmediately: false);
-      await notifier.enqueue(second, flushImmediately: false);
+      await notifier.enqueue(first,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
+      await notifier.enqueue(second,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
 
       final pending = container!.read(strategyOpQueueProvider).pending.single;
       expect(pending.op.opId, isNot(anyOf('reorder-a', 'reorder-b')));
@@ -706,10 +720,12 @@ void main() {
       final notifier = start();
       await notifier.enqueue(
         elementOp(kind: StrategyOpKind.add),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       await notifier.enqueue(
         elementOp(opId: 'delete', kind: StrategyOpKind.delete),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
 
@@ -722,10 +738,12 @@ void main() {
       final notifier = start();
       await notifier.enqueue(
         elementOp(opId: 'delete', kind: StrategyOpKind.delete),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       await notifier.enqueue(
         elementOp(opId: 'restore', kind: StrategyOpKind.add, value: 'restored'),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
 
@@ -744,6 +762,7 @@ void main() {
 
       await notifier.enqueue(
         elementOp(opId: 'work-b', value: 'b'),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
 
@@ -784,13 +803,15 @@ void main() {
     container
         .read(cloudCollabModeProvider.notifier)
         .setForceLocalFallback(true);
-    final enqueue = notifier.enqueue(const ElementPatchOp(
-      opId: 'op-1',
-      elementPublicId: 'element-1',
-      pagePublicId: 'page-1',
-      payload: {'value': 'safe'},
-      expectedElementRevision: 1,
-    ));
+    final enqueue = notifier.enqueue(
+        const ElementPatchOp(
+          opId: 'op-1',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {'value': 'safe'},
+          expectedElementRevision: 1,
+        ),
+        strategyPublicId: 'strategy-1');
     await Future<void>.delayed(Duration.zero);
     expect(container.read(strategyOpQueueProvider).pending, isEmpty);
     store.allowWrite.complete();
@@ -831,9 +852,11 @@ void main() {
       payload: {'value': 'b'},
       expectedElementRevision: 1,
     );
-    await notifier.enqueue(first, flushImmediately: false);
+    await notifier.enqueue(first,
+        strategyPublicId: 'strategy-1', flushImmediately: false);
 
-    final replacement = notifier.enqueue(desired, flushImmediately: false);
+    final replacement = notifier.enqueue(desired,
+        strategyPublicId: 'strategy-1', flushImmediately: false);
     await Future<void>.delayed(Duration.zero);
     final beforeWrite = container.read(strategyOpQueueProvider).pending.single;
     expect(beforeWrite.op.opId, 'first');
@@ -876,13 +899,15 @@ void main() {
     final notifier = container.read(strategyOpQueueProvider.notifier)
       ..setActiveStrategy('strategy-1', accountId: 'account-a');
     const inFlightKey = EntitySyncKey.element('page-1', 'element-2');
-    await notifier.enqueue(const ElementPatchOp(
-      opId: 'unrelated-in-flight',
-      elementPublicId: 'element-2',
-      pagePublicId: 'page-1',
-      payload: {'value': 'other'},
-      expectedElementRevision: 1,
-    ));
+    await notifier.enqueue(
+        const ElementPatchOp(
+          opId: 'unrelated-in-flight',
+          elementPublicId: 'element-2',
+          pagePublicId: 'page-1',
+          payload: {'value': 'other'},
+          expectedElementRevision: 1,
+        ),
+        strategyPublicId: 'strategy-1');
     final flush = notifier.flushNow();
     await repository.firstStarted.future;
 
@@ -936,7 +961,8 @@ void main() {
       );
       const key = EntitySyncKey.element('page-1', 'element-1');
 
-      await notifier.enqueue(op, flushImmediately: false);
+      await notifier.enqueue(op,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
 
       var current = container.read(strategyOpQueueProvider);
       expect(current.attentionByEntityKey[key]!.pending.op, op);
@@ -946,7 +972,8 @@ void main() {
       expect(current.lastError, contains('could not be saved'));
       expect(store.values, isEmpty);
 
-      await notifier.enqueue(op, flushImmediately: false);
+      await notifier.enqueue(op,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
 
       current = container.read(strategyOpQueueProvider);
       expect(current.queuedByEntityKey, contains(key));
@@ -969,7 +996,8 @@ void main() {
       final lineup = _lineupAdd(opId: 'add-lineup', pageId: 'page-2');
       final key = EntitySyncKey.forStrategyOp(lineup)!;
 
-      await notifier.enqueue(lineup, flushImmediately: false);
+      await notifier.enqueue(lineup,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
 
       final current = container.read(strategyOpQueueProvider);
@@ -1003,7 +1031,8 @@ void main() {
       final lineup = _lineupAdd(opId: 'add-group');
       final key = EntitySyncKey.forStrategyOp(lineup)!;
 
-      await notifier.enqueue(lineup, flushImmediately: false);
+      await notifier.enqueue(lineup,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
 
       final current = container.read(strategyOpQueueProvider);
@@ -1059,15 +1088,18 @@ void main() {
           _lineupAdd(opId: 'add-$name', name: name);
       final key = EntitySyncKey.forStrategyOp(lineup('first'))!;
 
-      await notifier.enqueue(lineup('first'), flushImmediately: false);
+      await notifier.enqueue(lineup('first'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
       await notifier.syncDesiredGenericOp(
+        strategyPublicId: 'strategy-1',
         entityKey: key,
         desiredOp: lineup('edited'),
       );
       expect(container.read(strategyOpQueueProvider).successorByEntityKey,
           contains(key));
       await notifier.syncDesiredGenericOp(
+        strategyPublicId: 'strategy-1',
         entityKey: key,
         desiredOp: lineup('first'),
       );
@@ -1279,6 +1311,7 @@ void main() {
           sortIndex: 0,
         );
         await notifier.syncDesiredOpsForPage(
+          strategyPublicId: 'strategy-1',
           pageId: 'page-1',
           desiredOpsByEntityKey: {
             EntitySyncKey.forStrategyOp(element)!: element,
@@ -1443,8 +1476,10 @@ void main() {
         serializedCloudOperationUtf8Bytes(oversized),
         greaterThan(maxCloudOperationBytes),
       );
-      await notifier.enqueue(oversized, flushImmediately: false);
-      await notifier.enqueue(valid, flushImmediately: false);
+      await notifier.enqueue(oversized,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
+      await notifier.enqueue(valid,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container
           .read(cloudCollabModeProvider.notifier)
           .setForceLocalFallback(false);
@@ -1509,7 +1544,8 @@ void main() {
         lessThan(maxCloudOperationBytes),
       );
       expect(cloudOperationExceedsPolicy(wide), isTrue);
-      await notifier.enqueue(wide, flushImmediately: false);
+      await notifier.enqueue(wide,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.enqueue(
         const ElementPatchOp(
           opId: 'wide-array-sibling',
@@ -1518,6 +1554,7 @@ void main() {
           payload: {'value': 'safe'},
           expectedElementRevision: 1,
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
 
@@ -1551,6 +1588,7 @@ void main() {
           opId: 'oversized-write-failure',
           elementId: 'element-large',
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       await notifier.enqueue(
@@ -1561,6 +1599,7 @@ void main() {
           payload: {'value': 'safe'},
           expectedElementRevision: 1,
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
 
@@ -1598,6 +1637,7 @@ void main() {
           opId: 'oversized-missing-record',
           elementId: 'element-large',
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       await notifier.enqueue(
@@ -1608,6 +1648,7 @@ void main() {
           payload: {'value': 'safe'},
           expectedElementRevision: 1,
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
 
@@ -1707,6 +1748,7 @@ void main() {
           opId: 'oversized-explicit-discard',
           elementId: 'element-large',
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       await notifier.flushNow();
@@ -1745,6 +1787,7 @@ void main() {
           opId: 'oversized-failed-discard',
           elementId: 'element-large',
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       await notifier.flushNow();
@@ -1781,6 +1824,7 @@ void main() {
             elementId: 'element-$index',
             value: _repeat('x', 820 * 1024),
           ),
+          strategyPublicId: 'strategy-1',
           flushImmediately: false,
         );
       }
@@ -1838,11 +1882,13 @@ void main() {
       var notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.element('page-1', 'element-1');
-      await notifier.enqueue(_elementPatch(
-        opId: 'safe-predecessor',
-        value: 'safe',
-        expectedRevision: 1,
-      ));
+      await notifier.enqueue(
+          _elementPatch(
+            opId: 'safe-predecessor',
+            value: 'safe',
+            expectedRevision: 1,
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
       final oversizedSuccessor = _largeElementPatch(
@@ -1850,6 +1896,7 @@ void main() {
         elementId: 'element-1',
       );
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {key: oversizedSuccessor},
       );
@@ -1921,10 +1968,12 @@ void main() {
           },
           sortIndex: 0,
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       await notifier.flushNow();
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: const ElementAddOp(
@@ -1986,7 +2035,8 @@ void main() {
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
 
-      await notifier.enqueue(_cloudElementOp(), flushImmediately: false);
+      await notifier.enqueue(_cloudElementOp(),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
 
       _expectBatchRestored(container, store);
@@ -2002,7 +2052,8 @@ void main() {
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
 
-      await notifier.enqueue(_cloudElementOp(), flushImmediately: false);
+      await notifier.enqueue(_cloudElementOp(),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
 
       _expectBatchRestored(container, store);
@@ -2023,15 +2074,18 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.pageDescriptor('page-1');
 
-      await notifier.enqueue(_pageSideOp(
-        opId: 'defense',
-        isAttack: false,
-        expectedRevision: 1,
-      ));
+      await notifier.enqueue(
+          _pageSideOp(
+            opId: 'defense',
+            isAttack: false,
+            expectedRevision: 1,
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
 
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: _pageSideOp(
@@ -2090,14 +2144,17 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.pageDescriptor('page-1');
 
-      await notifier.enqueue(_pageSideOp(
-        opId: 'defense-before-restart',
-        isAttack: false,
-        expectedRevision: 4,
-      ));
+      await notifier.enqueue(
+          _pageSideOp(
+            opId: 'defense-before-restart',
+            isAttack: false,
+            expectedRevision: 4,
+          ),
+          strategyPublicId: 'strategy-1');
       unawaited(notifier.flushNow());
       await firstRepository.firstStarted.future;
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: _pageSideOp(
@@ -2162,15 +2219,18 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.element('page-1', 'element-1');
 
-      await notifier.enqueue(_elementPatch(
-        opId: 'first-edit',
-        value: 'first',
-        expectedRevision: 1,
-      ));
+      await notifier.enqueue(
+          _elementPatch(
+            opId: 'first-edit',
+            value: 'first',
+            expectedRevision: 1,
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
 
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: _elementPatch(
@@ -2234,14 +2294,17 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.element('page-1', 'element-1');
 
-      await notifier.enqueue(_elementPatch(
-        opId: 'first-edit',
-        value: 'first',
-        expectedRevision: 1,
-      ));
+      await notifier.enqueue(
+          _elementPatch(
+            opId: 'first-edit',
+            value: 'first',
+            expectedRevision: 1,
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: _elementPatch(
@@ -2310,14 +2373,17 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.element('page-1', 'element-1');
 
-      await notifier.enqueue(_elementPatch(
-        opId: 'first-before-restart',
-        value: 'first',
-        expectedRevision: 4,
-      ));
+      await notifier.enqueue(
+          _elementPatch(
+            opId: 'first-before-restart',
+            value: 'first',
+            expectedRevision: 4,
+          ),
+          strategyPublicId: 'strategy-1');
       unawaited(notifier.flushNow());
       await firstRepository.firstStarted.future;
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: _elementPatch(
@@ -2381,12 +2447,15 @@ void main() {
         );
         var notifier = container.read(strategyOpQueueProvider.notifier)
           ..setActiveStrategy('strategy-1', accountId: 'account-a');
-        await notifier.enqueue(_elementPatch(
-          opId: 'first',
-          value: 'first',
-          expectedRevision: 4,
-        ));
+        await notifier.enqueue(
+            _elementPatch(
+              opId: 'first',
+              value: 'first',
+              expectedRevision: 4,
+            ),
+            strategyPublicId: 'strategy-1');
         Future<void> editAgain() => notifier.syncDesiredOpsForPage(
+              strategyPublicId: 'strategy-1',
               pageId: 'page-1',
               desiredOpsByEntityKey: {
                 key: _elementPatch(
@@ -2490,6 +2559,7 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       await notifier.enqueue(
         _elementPatch(opId: 'first', value: 'first', expectedRevision: 4),
+        strategyPublicId: 'strategy-1',
       );
       unawaited(notifier.flushNow());
       await repository.firstStarted.future;
@@ -2498,6 +2568,7 @@ void main() {
       notifier.forgetCanvasWork();
       expect(notifier.canvasWorkCount, 0);
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           const EntitySyncKey.element('page-1', 'element-1'): _elementPatch(
@@ -2563,6 +2634,7 @@ void main() {
         'recovered',
       );
       final kept = notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {key: recovered},
       );
@@ -2589,6 +2661,7 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       await notifier.enqueue(
         _elementPatch(opId: 'edit', value: 'edit', expectedRevision: 1),
+        strategyPublicId: 'strategy-1',
       );
       unawaited(notifier.flushNow());
       await repository.firstStarted.future;
@@ -2620,15 +2693,18 @@ void main() {
             'payloadVersion': 1,
             'data': {'id': 'element-1', 'position': position, 'weapon': weapon},
           };
-      await notifier.enqueue(ElementPatchOp(
-        opId: 'move',
-        elementPublicId: 'element-1',
-        pagePublicId: 'page-1',
-        payload: agent('B', 'none'),
-        sortIndex: 0,
-        expectedElementRevision: 1,
-        merge: const FieldMerge(fields: ['position'], base: {'position': 'A'}),
-      ));
+      await notifier.enqueue(
+          ElementPatchOp(
+            opId: 'move',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: agent('B', 'none'),
+            sortIndex: 0,
+            expectedElementRevision: 1,
+            merge:
+                const FieldMerge(fields: ['position'], base: {'position': 'A'}),
+          ),
+          strategyPublicId: 'strategy-1');
       unawaited(notifier.flushNow());
       await repository.firstStarted.future;
       repository.completeFirst(const AppliedOpAck(opId: 'move', revision: 2));
@@ -2639,15 +2715,18 @@ void main() {
       notifier.forgetCanvasWork();
       store.releaseRemove.complete();
       await Future<void>.delayed(Duration.zero);
-      await notifier.enqueue(ElementPatchOp(
-        opId: 'weapon',
-        elementPublicId: 'element-1',
-        pagePublicId: 'page-1',
-        payload: agent('A', 'vandal'),
-        sortIndex: 0,
-        expectedElementRevision: 1,
-        merge: const FieldMerge(fields: ['weapon'], base: {'weapon': 'none'}),
-      ));
+      await notifier.enqueue(
+          ElementPatchOp(
+            opId: 'weapon',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: agent('A', 'vandal'),
+            sortIndex: 0,
+            expectedElementRevision: 1,
+            merge:
+                const FieldMerge(fields: ['weapon'], base: {'weapon': 'none'}),
+          ),
+          strategyPublicId: 'strategy-1');
       unawaited(notifier.flushNow());
       await repository.secondStarted.future;
 
@@ -2668,6 +2747,7 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       await notifier.enqueue(
         _elementPatch(opId: 'edit', value: 'edit', expectedRevision: 1),
+        strategyPublicId: 'strategy-1',
       );
       await notifier.flushNow();
       const key = EntitySyncKey.element('page-1', 'element-1');
@@ -2693,14 +2773,17 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.element('page-1', 'element-1');
 
-      await notifier.enqueue(_elementPatch(
-        opId: 'conflicting-first',
-        value: 'first',
-        expectedRevision: 1,
-      ));
+      await notifier.enqueue(
+          _elementPatch(
+            opId: 'conflicting-first',
+            value: 'first',
+            expectedRevision: 1,
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: _elementPatch(
@@ -2735,6 +2818,7 @@ void main() {
       expect(durable.latestServerRevision, 2);
 
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: _elementPatch(
@@ -2791,16 +2875,19 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.element('page-1', 'element-1');
 
-      await notifier.enqueue(const ElementAddOp(
-        opId: 'element-add-in-flight',
-        elementPublicId: 'element-1',
-        pagePublicId: 'page-1',
-        payload: {'value': 'first'},
-        sortIndex: 0,
-      ));
+      await notifier.enqueue(
+          const ElementAddOp(
+            opId: 'element-add-in-flight',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'first'},
+            sortIndex: 0,
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: const ElementAddOp(
@@ -2848,14 +2935,17 @@ void main() {
         name: 'second',
       );
 
-      await notifier.enqueue(_lineupAdd(
-        opId: 'lineup-add-in-flight',
-        id: 'lineup-1',
-        name: 'first',
-      ));
+      await notifier.enqueue(
+          _lineupAdd(
+            opId: 'lineup-add-in-flight',
+            id: 'lineup-1',
+            name: 'first',
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {key: successor},
       );
@@ -2890,15 +2980,18 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.element('page-1', 'element-1');
 
-      await notifier.enqueue(const ElementDeleteOp(
-        opId: 'element-delete-in-flight',
-        elementPublicId: 'element-1',
-        pagePublicId: 'page-1',
-        expectedElementRevision: 1,
-      ));
+      await notifier.enqueue(
+          const ElementDeleteOp(
+            opId: 'element-delete-in-flight',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            expectedElementRevision: 1,
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: const ElementAddOp(
@@ -2941,17 +3034,20 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.element('page-1', 'element-1');
 
-      await notifier.enqueue(const ElementAddOp(
-        opId: 'element-add-in-flight',
-        elementPublicId: 'element-1',
-        pagePublicId: 'page-1',
-        payload: {'value': 'first'},
-        sortIndex: 0,
-      ));
+      await notifier.enqueue(
+          const ElementAddOp(
+            opId: 'element-add-in-flight',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'first'},
+            sortIndex: 0,
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
 
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: const ElementAddOp(
@@ -2964,6 +3060,7 @@ void main() {
         },
       );
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: const ElementDeleteOp(
@@ -3009,15 +3106,18 @@ void main() {
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       const key = EntitySyncKey.lineup('page-1', 'lineup-1');
 
-      await notifier.enqueue(_lineupAdd(
-        opId: 'lineup-add-in-flight',
-        id: 'lineup-1',
-        name: 'first',
-      ));
+      await notifier.enqueue(
+          _lineupAdd(
+            opId: 'lineup-add-in-flight',
+            id: 'lineup-1',
+            name: 'first',
+          ),
+          strategyPublicId: 'strategy-1');
       final firstFlush = notifier.flushNow();
       await repository.firstStarted.future;
 
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: _lineupAdd(
@@ -3028,6 +3128,7 @@ void main() {
         },
       );
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: const LineupDeleteOp(
@@ -3076,7 +3177,8 @@ void main() {
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
       for (final op in ops) {
-        await notifier.enqueue(op, flushImmediately: false);
+        await notifier.enqueue(op,
+            strategyPublicId: 'strategy-1', flushImmediately: false);
       }
       await notifier.flushNow();
       await _settle();
@@ -3328,6 +3430,7 @@ void main() {
         expectedElementRevision: 2,
       );
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {elementKey: restore},
         clearMissing: false,
@@ -3384,8 +3487,10 @@ void main() {
       addTearDown(container.dispose);
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
-      await notifier.enqueue(elementPatch, flushImmediately: false);
-      await notifier.enqueue(staleAdd, flushImmediately: false);
+      await notifier.enqueue(elementPatch,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
+      await notifier.enqueue(staleAdd,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
       await _settle();
       expect(
@@ -3445,6 +3550,7 @@ void main() {
 
       // Then the user edits element-2 again; it waits behind the refusal.
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           secondKey: const ElementPatchOp(
@@ -3504,6 +3610,7 @@ void main() {
 
       await notifier.discardRejected({key});
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {
           key: const ElementAddOp(
@@ -3563,7 +3670,9 @@ void main() {
         );
         final notifier = container.read(strategyOpQueueProvider.notifier)
           ..setActiveStrategy('strategy-1', accountId: 'account-a');
-        if (start == 0) await notifier.enqueue(_cloudElementOp());
+        if (start == 0)
+          await notifier.enqueue(_cloudElementOp(),
+              strategyPublicId: 'strategy-1');
         await notifier.flushNow();
         await _settle();
         // Held after the refusal: no second send in this process.
@@ -3672,7 +3781,7 @@ void main() {
       addTearDown(container.dispose);
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
-      await notifier.enqueue(_cloudElementOp());
+      await notifier.enqueue(_cloudElementOp(), strategyPublicId: 'strategy-1');
       await notifier.flushNow();
       await _settle();
       expect(container.read(clientUpgradeRequiredProvider), isTrue);
@@ -3740,8 +3849,10 @@ void main() {
       final (_, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
 
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
-      await notifier.enqueue(delete, flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
+      await notifier.enqueue(delete,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
 
       final sent = repository.calls.expand((batch) => batch).toList();
@@ -3755,8 +3866,10 @@ void main() {
       final (container, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
 
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
-      await notifier.enqueue(delete, flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
+      await notifier.enqueue(delete,
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container.read(online.notifier).state = true;
       await notifier.flushNow();
 
@@ -3773,7 +3886,8 @@ void main() {
       final (container, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
 
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container.read(online.notifier).state = false;
       await Future<void>.delayed(Duration.zero);
       container.read(online.notifier).state = true;
@@ -3792,10 +3906,11 @@ void main() {
       final (container, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
 
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container.read(online.notifier).state = true;
       await notifier.enqueue(patch('op-2', isAlly: true),
-          flushImmediately: false);
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
 
       expect(repository.calls.single.single.merge?.base, isNotNull);
@@ -3805,7 +3920,8 @@ void main() {
       final online = StateProvider<bool>((ref) => true);
       final store = MemoryDurableStrategyOutboxStore();
       final (first, firstQueue) = open(store, _ScriptedRepository(), online);
-      await firstQueue.enqueue(patch('op-1'), flushImmediately: false);
+      await firstQueue.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       first.dispose();
 
       final repository = _ScriptedRepository();
@@ -3830,7 +3946,8 @@ void main() {
           _ScriptedRepository(refusals: [OpRejectionReason.fieldConflict]);
       final (container, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container.read(online.notifier).state = true;
       await notifier.flushNow();
       expect(container.read(strategyOpQueueProvider).attentionByEntityKey,
@@ -3854,7 +3971,8 @@ void main() {
           _ScriptedRepository(refusals: [OpRejectionReason.mergeInvalid]);
       final (container, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
 
       await notifier.retryRejected(flushImmediately: false);
@@ -3874,7 +3992,8 @@ void main() {
       final repository = _ScriptedRepository(hold: gate);
       final (container, notifier) = open(store, repository, online);
       // Queued offline, so both stay checked.
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container.read(online.notifier).state = true;
       final sending = notifier.flushNow();
       await repository.started.future;
@@ -3889,6 +4008,7 @@ void main() {
           expectedElementRevision: 1,
           merge: merge,
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       gate.complete();
@@ -3906,7 +4026,8 @@ void main() {
       final repository = _ScriptedRepository(hold: gate);
       final store = MemoryDurableStrategyOutboxStore();
       final (_, notifier) = open(store, repository, online);
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       final sending = notifier.flushNow();
       await repository.started.future;
       // Set back to what the user first saw: against that, nothing changed.
@@ -3920,6 +4041,7 @@ void main() {
           expectedElementRevision: 1,
           merge: const FieldMerge(fields: [], base: {}),
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       gate.complete();
@@ -3945,7 +4067,8 @@ void main() {
       final (container, notifier) = open(store, repository, online);
 
       // Made offline; its write waits behind the store.
-      final queued = notifier.enqueue(patch('op-1'), flushImmediately: false);
+      final queued = notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container.read(online.notifier).state = true;
       await Future<void>.delayed(Duration.zero);
       gate.complete();
@@ -3963,7 +4086,8 @@ void main() {
       final gate = Completer<void>();
       final repository = _ScriptedRepository(hold: gate);
       final (container, notifier) = open(store, repository, online);
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container.read(online.notifier).state = true;
       final sending = notifier.flushNow();
       await repository.started.future;
@@ -3990,6 +4114,7 @@ void main() {
             base: {'isAlly': true, placeMergeField: 0},
           ),
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       gate.complete();
@@ -4013,7 +4138,8 @@ void main() {
       final (container, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
       // Made offline: the side changes.
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       container.read(online.notifier).state = true;
       final sending = notifier.flushNow();
       await repository.started.future;
@@ -4035,6 +4161,7 @@ void main() {
             base: {'isAlly': true},
           ),
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       gate.complete();
@@ -4057,7 +4184,8 @@ void main() {
       final gate = Completer<void>();
       final repository = _ScriptedRepository(hold: gate);
       final (_, notifier) = open(store, repository, online);
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       final sending = notifier.flushNow();
       await repository.started.future;
       // The element is turned into something else: a whole write.
@@ -4074,6 +4202,7 @@ void main() {
           sortIndex: 0,
           expectedElementRevision: 1,
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       gate.complete();
@@ -4091,7 +4220,8 @@ void main() {
       final store = MemoryDurableStrategyOutboxStore();
       final (first, firstQueue) = open(store, _ScriptedRepository(), online);
       // Saved before a restart: it changed the side.
-      await firstQueue.enqueue(patch('op-1'), flushImmediately: false);
+      await firstQueue.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       first.dispose();
 
       final gate = Completer<void>();
@@ -4118,6 +4248,7 @@ void main() {
           expectedElementRevision: 1,
           merge: const FieldMerge(fields: ['position'], base: {}),
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       gate.complete();
@@ -4139,6 +4270,7 @@ void main() {
           open(MemoryDurableStrategyOutboxStore(), repository, online);
 
       await notifier.syncDesiredOpsForPage(
+        strategyPublicId: 'strategy-1',
         pageId: 'page-1',
         desiredOpsByEntityKey: {key: patch('op-1')},
         clearMissing: false,
@@ -4155,7 +4287,8 @@ void main() {
           _ScriptedRepository(refusals: [OpRejectionReason.fieldConflict]);
       final (_, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
       expect(repository.calls.single.single.merge?.base, isNull);
 
@@ -4171,7 +4304,8 @@ void main() {
       final gate = Completer<void>();
       final (first, firstQueue) =
           open(store, _ScriptedRepository(hold: gate), online);
-      await firstQueue.enqueue(patch('op-1'), flushImmediately: false);
+      await firstQueue.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       unawaited(firstQueue.flushNow());
       for (var i = 0;
           i < 50 &&
@@ -4192,6 +4326,7 @@ void main() {
           expectedElementRevision: 1,
           merge: const FieldMerge(fields: [], base: {}),
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       first.dispose();
@@ -4218,6 +4353,7 @@ void main() {
       // A whole write, as Keep mine sends after a merge that could not stand.
       await firstQueue.enqueue(
         patch('op-1').withMerge(null),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       unawaited(firstQueue.flushNow());
@@ -4240,6 +4376,7 @@ void main() {
           expectedElementRevision: 1,
           merge: const FieldMerge(fields: [], base: {}),
         ),
+        strategyPublicId: 'strategy-1',
         flushImmediately: false,
       );
       first.dispose();
@@ -4265,7 +4402,8 @@ void main() {
       final repository = _ScriptedRepository(failFirst: true);
       final (_, notifier) =
           open(MemoryDurableStrategyOutboxStore(), repository, online);
-      await notifier.enqueue(patch('op-1'), flushImmediately: false);
+      await notifier.enqueue(patch('op-1'),
+          strategyPublicId: 'strategy-1', flushImmediately: false);
       await notifier.flushNow();
       for (var i = 0; i < 100 && repository.calls.length < 2; i++) {
         await notifier.flushNow();
@@ -4291,7 +4429,7 @@ void main() {
       addTearDown(container.dispose);
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
-      await notifier.enqueue(_cloudElementOp());
+      await notifier.enqueue(_cloudElementOp(), strategyPublicId: 'strategy-1');
       await notifier.flushNow();
       await _settle();
       return (container, store);
@@ -4412,7 +4550,7 @@ void main() {
       addTearDown(container.dispose);
       final notifier = container.read(strategyOpQueueProvider.notifier)
         ..setActiveStrategy('strategy-1', accountId: 'account-a');
-      await notifier.enqueue(_cloudElementOp());
+      await notifier.enqueue(_cloudElementOp(), strategyPublicId: 'strategy-1');
       return (notifier, store, auth);
     }
 

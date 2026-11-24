@@ -572,6 +572,7 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
       MapValue.values.byName(name),
   ];
   final restAt = _point(step, 'restAt');
+  final shots = step['shots'] as String?;
   String ms(int micros) => (micros / 1000).toStringAsFixed(1);
   Future<String> serverMap(String id) async =>
       (await repository.fetchShell(id)).header.mapData;
@@ -601,13 +602,22 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
           map != c.read(mapProvider).currentMap,
     );
     final targetName = Maps.mapNames[target]!;
-    await _tap(_centerOf(
-      (w) => _isText(
-        w,
-        Maps.mapNames[c.read(mapProvider).currentMap]!.toUpperCase(),
-      ),
+    Future<Offset> shown(String text, String shot) async {
+      try {
+        return _centerOf((w) => _isText(w, text));
+      } on StateError {
+        if (shots != null) await _shot('$shots/maprace-$run-$shot.png');
+        rethrow;
+      }
+    }
+
+    await _tap(await shown(
+      Maps.mapNames[c.read(mapProvider).currentMap]!.toUpperCase(),
+      'no-map-button',
     ));
-    final tile = _centerOf((w) => _isText(w, targetName.toUpperCase()));
+    final tile = await shown(targetName.toUpperCase(), 'no-tile');
+    if (shots != null && run <= 2)
+      await _shot('$shots/maprace-$run-picker.png');
     final clock = Stopwatch();
     int? patchAt;
     String? patchUnder;
@@ -629,6 +639,7 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
     _pressMouse(tile);
     SchedulerBinding.instance.scheduleFrame();
     await SchedulerBinding.instance.endOfFrame;
+    final mapAfterTap = c.read(mapProvider).currentMap;
     if (byBackButton) {
       _pressMouse(restAt, buttons: kBackMouseButton);
     } else {
@@ -650,6 +661,7 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
       if (leftAfter == targetName || openedAfter == targetName) break;
     }
     subscription.close();
+    if (shots != null && run <= 2) await _shot('$shots/maprace-$run-after.png');
     final outcome = openedAfter == targetName
         ? 'the opened strategy took the change'
         : leftAfter == targetName
@@ -659,7 +671,7 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
     if (patchAt case final at?) patchWaits.add(at);
     if (openAt case final at?) openStarts.add(at);
     _log('MAPRACE run $run (${byBackButton ? 'back button' : 'direct open'}): '
-        '$left $leftBefore -> $targetName; '
+        '$left $leftBefore -> $targetName (canvas ${Maps.mapNames[mapAfterTap]} a frame after the tap); '
         'patch queued ${patchAt == null ? 'never seen' : '${ms(patchAt!)} ms after the tap, under ${patchUnder == opened ? opened : patchUnder == left ? left : patchUnder}'}; '
         'open began ${openAt == null ? 'never' : '${ms(openAt!)} ms'} after the tap; '
         '$outcome ($left $leftAfter, $opened $openedAfter)');

@@ -41,13 +41,15 @@ void main() {
 
   Future<void> earlierWriteHeldWhile(Future<void> Function() edit) async {
     final held = store.holdNextPut();
-    final earlier = queue.enqueue(const ElementAddOp(
-      opId: 'earlier',
-      elementPublicId: 'element-earlier',
-      pagePublicId: 'page-a',
-      payload: {'value': 'a'},
-      sortIndex: 0,
-    ));
+    final earlier = queue.enqueue(
+        const ElementAddOp(
+          opId: 'earlier',
+          elementPublicId: 'element-earlier',
+          pagePublicId: 'page-a',
+          payload: {'value': 'a'},
+          sortIndex: 0,
+        ),
+        strategyPublicId: 'strategy-a');
     await held.reached;
     final editing = edit();
     queue.setActiveStrategy('strategy-b', accountId: 'account-a');
@@ -60,6 +62,7 @@ void main() {
       'a map change made in one strategy while another write waits its turn '
       'is stored under that strategy, not the one opened next', () async {
     await earlierWriteHeldWhile(() => queue.syncDesiredGenericOp(
+          strategyPublicId: 'strategy-a',
           entityKey: const EntitySyncKey.strategy(),
           desiredOp: const StrategyPatchOp(
             opId: 'map-to-lotus',
@@ -77,6 +80,7 @@ void main() {
       'a page edit made in one strategy while another write waits its turn '
       'is stored under that strategy, not the one opened next', () async {
     await earlierWriteHeldWhile(() => queue.syncDesiredOpsForPage(
+          strategyPublicId: 'strategy-a',
           pageId: 'page-a',
           clearMissing: false,
           desiredOpsByEntityKey: {

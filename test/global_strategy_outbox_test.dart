@@ -199,6 +199,7 @@ void main() {
 
     await notifier.enqueue(
       _op(opId: 'active', elementId: 'active-element'),
+      strategyPublicId: 'active-strategy',
       flushImmediately: false,
     );
     await Future<void>.delayed(const Duration(milliseconds: 220));
@@ -229,6 +230,7 @@ void main() {
         elementId: 'element-one',
         value: 'final',
       ),
+      strategyPublicId: 'opening',
     );
     await store.successorWriteStarted.future;
     repository.releaseFirst();
@@ -377,6 +379,7 @@ void main() {
 
     await notifier.enqueue(
       _op(opId: 'failed-write', elementId: 'failed-element'),
+      strategyPublicId: 'failed-strategy',
       flushImmediately: false,
     );
     notifier.setActiveStrategy('other-strategy', accountId: 'account-a');
@@ -735,6 +738,7 @@ void main() {
       ..setActiveStrategy('active', accountId: 'account-a');
     await notifier.enqueue(
       _op(opId: 'unverified', elementId: 'element-one'),
+      strategyPublicId: 'active',
       flushImmediately: false,
     );
     expect(container.read(strategyOpQueueProvider).attentionByEntityKey,

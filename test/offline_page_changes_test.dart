@@ -86,6 +86,7 @@ void main() {
   /// A side change of [pageId], as the canvas syncs one.
   Future<void> flipSide(StrategyOpQueueNotifier notifier, String pageId) =>
       notifier.syncDesiredOpsForPage(
+        strategyPublicId: _strategyId,
         pageId: pageId,
         desiredOpsByEntityKey: {
           EntitySyncKey.pageDescriptor(pageId): PagePatchOp(
@@ -108,8 +109,9 @@ void main() {
 
   test('a rename then a move of the same page both land', () async {
     final notifier = open();
-    await notifier.enqueue(rename('page-2', 'Retake'));
-    await notifier.enqueue(move('page-2', 0));
+    await notifier.enqueue(rename('page-2', 'Retake'),
+        strategyPublicId: _strategyId);
+    await notifier.enqueue(move('page-2', 0), strategyPublicId: _strategyId);
 
     open();
     await reconnectAndSend(container!.read(strategyOpQueueProvider.notifier));
@@ -122,8 +124,9 @@ void main() {
 
   test('a move then a rename of the same page both land', () async {
     final notifier = open();
-    await notifier.enqueue(move('page-2', 0));
-    await notifier.enqueue(rename('page-2', 'Retake'));
+    await notifier.enqueue(move('page-2', 0), strategyPublicId: _strategyId);
+    await notifier.enqueue(rename('page-2', 'Retake'),
+        strategyPublicId: _strategyId);
 
     await reconnectAndSend(notifier);
 
@@ -135,7 +138,7 @@ void main() {
   test('a delete then a side change of the same page: the delete lands',
       () async {
     final notifier = open();
-    await notifier.enqueue(delete('page-2'));
+    await notifier.enqueue(delete('page-2'), strategyPublicId: _strategyId);
     await flipSide(notifier, 'page-2');
 
     await reconnectAndSend(notifier);
@@ -148,7 +151,8 @@ void main() {
 
   test('a rename and a side change of one page both land', () async {
     final notifier = open();
-    await notifier.enqueue(rename('page-2', 'Retake'));
+    await notifier.enqueue(rename('page-2', 'Retake'),
+        strategyPublicId: _strategyId);
     await flipSide(notifier, 'page-2');
 
     await reconnectAndSend(notifier);
@@ -171,8 +175,8 @@ void main() {
     server = _PageServer(['z-first', 'a-second', 'm-third']);
 
     final notifier = open();
-    await notifier.enqueue(move('z-first', 2));
-    await notifier.enqueue(move('a-second', 2));
+    await notifier.enqueue(move('z-first', 2), strategyPublicId: _strategyId);
+    await notifier.enqueue(move('a-second', 2), strategyPublicId: _strategyId);
     container!.dispose();
     container = null;
     await Hive.close();
@@ -189,9 +193,10 @@ void main() {
       'changes made offline draw over the server pages until a read shows '
       'them', () async {
     final notifier = open();
-    await notifier.enqueue(rename('page-2', 'Retake'));
-    await notifier.enqueue(move('page-3', 0));
-    await notifier.enqueue(delete('page-1'));
+    await notifier.enqueue(rename('page-2', 'Retake'),
+        strategyPublicId: _strategyId);
+    await notifier.enqueue(move('page-3', 0), strategyPublicId: _strategyId);
+    await notifier.enqueue(delete('page-1'), strategyPublicId: _strategyId);
     final before = server.snapshot();
     List<String> drawn(RemoteEditorSnapshot snapshot) => [
           for (final page in drawPages(
@@ -216,14 +221,16 @@ void main() {
 
   test('a delete waits for the edits made on its page before it', () async {
     final notifier = open();
-    await notifier.enqueue(const ElementPatchOp(
-      opId: 'edit',
-      elementPublicId: 'element-1',
-      pagePublicId: 'page-2',
-      payload: {'value': 'last stroke'},
-      expectedElementRevision: 1,
-    ));
-    await notifier.enqueue(delete('page-2'));
+    await notifier.enqueue(
+        const ElementPatchOp(
+          opId: 'edit',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-2',
+          payload: {'value': 'last stroke'},
+          expectedElementRevision: 1,
+        ),
+        strategyPublicId: _strategyId);
+    await notifier.enqueue(delete('page-2'), strategyPublicId: _strategyId);
 
     await reconnectAndSend(notifier);
 
@@ -237,22 +244,26 @@ void main() {
       'before "+", even when they take more than one batch', () async {
     final notifier = open();
     for (var i = 0; i < 41; i++) {
-      await notifier.enqueue(ElementPatchOp(
-        opId: 'before-$i',
-        elementPublicId: 'element-$i',
-        pagePublicId: 'page-1',
-        payload: const {'value': 'made before +'},
-        expectedElementRevision: 1,
-      ));
+      await notifier.enqueue(
+          ElementPatchOp(
+            opId: 'before-$i',
+            elementPublicId: 'element-$i',
+            pagePublicId: 'page-1',
+            payload: const {'value': 'made before +'},
+            expectedElementRevision: 1,
+          ),
+          strategyPublicId: _strategyId);
     }
-    await notifier.enqueue(const PageAddOp(
-      opId: 'copy',
-      pagePublicId: 'page-copy',
-      payload: {'name': 'Copy', 'isAutoNamed': false},
-      sortIndex: 3,
-      expectedStrategyRevision: 1,
-      copyContentFromPagePublicId: 'page-1',
-    ));
+    await notifier.enqueue(
+        const PageAddOp(
+          opId: 'copy',
+          pagePublicId: 'page-copy',
+          payload: {'name': 'Copy', 'isAutoNamed': false},
+          sortIndex: 3,
+          expectedStrategyRevision: 1,
+          copyContentFromPagePublicId: 'page-1',
+        ),
+        strategyPublicId: _strategyId);
 
     await reconnectAndSend(notifier);
 
@@ -277,12 +288,15 @@ void main() {
 
   test('a delete of a page whose add has not landed waits behind it', () async {
     final notifier = open();
-    await notifier.enqueue(add('page-new', at: 3, revision: 1));
-    await notifier.enqueue(const PageDeleteOp(
-      opId: 'delete-new',
-      pagePublicId: 'page-new',
-      expectedStrategyRevision: 1,
-    ));
+    await notifier.enqueue(add('page-new', at: 3, revision: 1),
+        strategyPublicId: _strategyId);
+    await notifier.enqueue(
+        const PageDeleteOp(
+          opId: 'delete-new',
+          pagePublicId: 'page-new',
+          expectedStrategyRevision: 1,
+        ),
+        strategyPublicId: _strategyId);
     expect(queue().pending.map((pending) => pending.op.opId),
         ['add-page-new', 'delete-new']);
 
@@ -300,7 +314,7 @@ void main() {
       StrategyOpQueueNotifier notifier, StrategyOp op) async {
     online.state = true;
     await _settle();
-    await notifier.enqueue(op);
+    await notifier.enqueue(op, strategyPublicId: _strategyId);
     server.loseNextReply = true;
     await notifier.flushNow();
     await _settle();
@@ -317,11 +331,13 @@ void main() {
 
     // The bar still shows the page as waiting; the user deletes it, against
     // the revision they saw.
-    await notifier.enqueue(const PageDeleteOp(
-      opId: 'delete-new',
-      pagePublicId: 'page-new',
-      expectedStrategyRevision: 1,
-    ));
+    await notifier.enqueue(
+        const PageDeleteOp(
+          opId: 'delete-new',
+          pagePublicId: 'page-new',
+          expectedStrategyRevision: 1,
+        ),
+        strategyPublicId: _strategyId);
     await reconnectAndSend(notifier);
 
     // The add's answer, sent again, cannot say the revision it moved to was
@@ -346,7 +362,7 @@ void main() {
     final notifier = open();
     await answerLost(notifier, add('page-new', at: 3, revision: 1));
     // A read showed the page; the user deletes page 1 against it.
-    await notifier.enqueue(delete('page-1'));
+    await notifier.enqueue(delete('page-1'), strategyPublicId: _strategyId);
     server.teammateMoves('page-2', 0);
     server.expireOpRecords();
 
@@ -365,18 +381,23 @@ void main() {
     final notifier = open();
     // [1, 2, 3] -> add X second: [1, X, 2, 3] -> move 3 after X:
     // [1, X, 3, 2] -> delete X: [1, 3, 2].
-    await notifier.enqueue(add('page-x', at: 1, revision: 1));
-    await notifier.enqueue(const PageReorderOp(
-      opId: 'move-3',
-      pagePublicId: 'page-3',
-      sortIndex: 2,
-      expectedStrategyRevision: 1,
-    ));
-    await notifier.enqueue(const PageDeleteOp(
-      opId: 'delete-x',
-      pagePublicId: 'page-x',
-      expectedStrategyRevision: 1,
-    ));
+    await notifier.enqueue(add('page-x', at: 1, revision: 1),
+        strategyPublicId: _strategyId);
+    await notifier.enqueue(
+        const PageReorderOp(
+          opId: 'move-3',
+          pagePublicId: 'page-3',
+          sortIndex: 2,
+          expectedStrategyRevision: 1,
+        ),
+        strategyPublicId: _strategyId);
+    await notifier.enqueue(
+        const PageDeleteOp(
+          opId: 'delete-x',
+          pagePublicId: 'page-x',
+          expectedStrategyRevision: 1,
+        ),
+        strategyPublicId: _strategyId);
     final drawn = drawPages(
       server.snapshot().pages,
       notifier.pageChangesToDraw(server.snapshot()),
@@ -393,9 +414,10 @@ void main() {
   group('a rename and a side change made after a page\'s delete', () {
     Future<StrategyOpQueueNotifier> deleteThenEdit() async {
       final notifier = open();
-      await notifier.enqueue(delete('page-2'));
+      await notifier.enqueue(delete('page-2'), strategyPublicId: _strategyId);
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      await notifier.enqueue(rename('page-2', 'Retake'));
+      await notifier.enqueue(rename('page-2', 'Retake'),
+          strategyPublicId: _strategyId);
       await flipSide(notifier, 'page-2');
       return notifier;
     }
@@ -449,7 +471,8 @@ void main() {
       'one landed at', () async {
     final notifier = open();
     final read = server.snapshot();
-    await notifier.enqueue(rename('page-2', 'Retake'));
+    await notifier.enqueue(rename('page-2', 'Retake'),
+        strategyPublicId: _strategyId);
     await reconnectAndSend(notifier);
 
     // No read since: the page as the bar draws it.
@@ -459,12 +482,14 @@ void main() {
       pageRevisions: notifier.landedPageRevisions(read),
     ).firstWhere((page) => page.publicId == 'page-2');
     expect((drawn.name, drawn.revision), ('Retake', 2));
-    await notifier.enqueue(PagePatchOp(
-      opId: 'rename-again',
-      pagePublicId: 'page-2',
-      payload: const {'name': 'Execute', 'isAutoNamed': false},
-      expectedPageRevision: drawn.revision!,
-    ));
+    await notifier.enqueue(
+        PagePatchOp(
+          opId: 'rename-again',
+          pagePublicId: 'page-2',
+          payload: const {'name': 'Execute', 'isAutoNamed': false},
+          expectedPageRevision: drawn.revision!,
+        ),
+        strategyPublicId: _strategyId);
     await notifier.flushNow();
     await _settle();
 
@@ -478,21 +503,25 @@ void main() {
     final notifier = open();
     online.state = true;
     await _settle();
-    await notifier.enqueue(const ElementPatchOp(
-      opId: 'edit',
-      elementPublicId: 'element-1',
-      pagePublicId: 'page-1',
-      payload: {'value': 'last stroke'},
-      expectedElementRevision: 1,
-    ));
-    await notifier.enqueue(const PageAddOp(
-      opId: 'add-copy',
-      pagePublicId: 'page-new',
-      payload: {'name': 'Page 2', 'isAutoNamed': true},
-      sortIndex: 1,
-      expectedStrategyRevision: 1,
-      copyContentFromPagePublicId: 'page-1',
-    ));
+    await notifier.enqueue(
+        const ElementPatchOp(
+          opId: 'edit',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {'value': 'last stroke'},
+          expectedElementRevision: 1,
+        ),
+        strategyPublicId: _strategyId);
+    await notifier.enqueue(
+        const PageAddOp(
+          opId: 'add-copy',
+          pagePublicId: 'page-new',
+          payload: {'name': 'Page 2', 'isAutoNamed': true},
+          sortIndex: 1,
+          expectedStrategyRevision: 1,
+          copyContentFromPagePublicId: 'page-1',
+        ),
+        strategyPublicId: _strategyId);
     await notifier.flushNow();
     await _settle();
 
@@ -506,8 +535,8 @@ void main() {
 
   test('a refused move holds the moves made after it, and says so', () async {
     final notifier = open();
-    await notifier.enqueue(move('page-1', 2));
-    await notifier.enqueue(move('page-2', 0));
+    await notifier.enqueue(move('page-1', 2), strategyPublicId: _strategyId);
+    await notifier.enqueue(move('page-2', 0), strategyPublicId: _strategyId);
     server.teammateMoves('page-3', 0);
 
     await reconnectAndSend(notifier);
@@ -524,6 +553,7 @@ void main() {
       final read = server.pageSnapshot(pageId);
       return notifier.enqueuePageChange(
         delete(pageId),
+        strategyPublicId: _strategyId,
         seenPage: SeenPage.of(
           DrawnPage(
             publicId: pageId,
@@ -545,7 +575,8 @@ void main() {
       final notifier = open();
       await deleteSeen(notifier, 'page-2');
       await Future<void>.delayed(const Duration(milliseconds: 5));
-      await notifier.enqueue(rename('page-2', 'Retake'));
+      await notifier.enqueue(rename('page-2', 'Retake'),
+          strategyPublicId: _strategyId);
       server.teammateEdits('page-2', 'element-1');
 
       await reconnectAndSend(notifier);
@@ -679,21 +710,25 @@ void main() {
       final notifier = open();
       // More edits than one batch takes, so some land before the delete's
       // batch is read for.
-      await notifier.enqueue(const ElementPatchOp(
-        opId: 'edit',
-        elementPublicId: 'element-1',
-        pagePublicId: 'page-2',
-        payload: {'value': 'mine'},
-        expectedElementRevision: 1,
-      ));
+      await notifier.enqueue(
+          const ElementPatchOp(
+            opId: 'edit',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-2',
+            payload: {'value': 'mine'},
+            expectedElementRevision: 1,
+          ),
+          strategyPublicId: _strategyId);
       for (var i = 0; i < 45; i++) {
-        await notifier.enqueue(ElementAddOp(
-          opId: 'add-$i',
-          elementPublicId: 'element-new-$i',
-          pagePublicId: 'page-2',
-          payload: const {'value': 'mine'},
-          sortIndex: i,
-        ));
+        await notifier.enqueue(
+            ElementAddOp(
+              opId: 'add-$i',
+              elementPublicId: 'element-new-$i',
+              pagePublicId: 'page-2',
+              payload: const {'value': 'mine'},
+              sortIndex: i,
+            ),
+            strategyPublicId: _strategyId);
       }
       await deleteSeen(notifier, 'page-2');
 
@@ -733,6 +768,7 @@ void main() {
       final read = server.pageSnapshot('page-2');
       await notifier.enqueuePageChange(
         delete('page-2'),
+        strategyPublicId: _strategyId,
         seenPage: SeenPage.of(
           DrawnPage(
             publicId: 'page-2',
@@ -935,7 +971,7 @@ void main() {
         () => delete('page-3'),
       ]) {
         final made = op();
-        await notifier.enqueue(made);
+        await notifier.enqueue(made, strategyPublicId: _strategyId);
         await notifier.flushNow();
         expect(
           queue().lastAcks.map((ack) => (ack.opId, ack.isAck)),
@@ -1048,14 +1084,16 @@ void main() {
           ];
       expect(drawn(), ['page-2', 'page-3', 'page-1']);
       // Made after the upgrade, offline, against the pages as drawn.
-      await notifier.enqueue(PageReorderOp(
-        opId: 'move-3-first',
-        pagePublicId: 'page-3',
-        sortIndex: 0,
-        expectedStrategyRevision: notifier.drawnStrategyRevision(
-          server.snapshot(),
-        ),
-      ));
+      await notifier.enqueue(
+          PageReorderOp(
+            opId: 'move-3-first',
+            pagePublicId: 'page-3',
+            sortIndex: 0,
+            expectedStrategyRevision: notifier.drawnStrategyRevision(
+              server.snapshot(),
+            ),
+          ),
+          strategyPublicId: _strategyId);
       expect(drawn(), ['page-3', 'page-2', 'page-1']);
       expect(oldOnDisk(), before);
 
@@ -1099,12 +1137,14 @@ void main() {
           record.storageKey: stored(record),
       });
       final notifier = open();
-      await notifier.enqueue(const PagePatchOp(
-        opId: 'rename-x',
-        pagePublicId: 'page-x',
-        payload: {'name': 'New X', 'isAutoNamed': false},
-        expectedPageRevision: 1,
-      ));
+      await notifier.enqueue(
+          const PagePatchOp(
+            opId: 'rename-x',
+            pagePublicId: 'page-x',
+            payload: {'name': 'New X', 'isAutoNamed': false},
+            expectedPageRevision: 1,
+          ),
+          strategyPublicId: _strategyId);
 
       await reconnectAndSend(notifier);
 

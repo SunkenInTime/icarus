@@ -13,7 +13,7 @@
   {"tapText": "Map race A {run}"},
   {"wait": 8},
   {"tapIcon": "x", "optional": true},
-  {"mapThenOpen": "Map race B {run}", "from": "Map race A {run}", "runs": 50, "by": "back", "maps": ["ascent", "bind", "breeze"], "restAt": [600, 450]},
-  {"mapThenOpen": "Map race B {run}", "from": "Map race A {run}", "runs": 50, "by": "open", "maps": ["ascent", "bind", "breeze"], "restAt": [600, 450]},
+  {"mapThenOpen": "Map race B {run}", "from": "Map race A {run}", "runs": 50, "by": "back", "maps": ["ascent", "bind", "breeze"], "restAt": [600, 450], "shots": "{out}"},
+  {"mapThenOpen": "Map race B {run}", "from": "Map race A {run}", "runs": 50, "by": "open", "maps": ["ascent", "bind", "breeze"], "restAt": [600, 450], "shots": "{out}"},
   {"exit": 1}
 ]

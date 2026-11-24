@@ -90,6 +90,7 @@ class _MoveWaitingQueue extends StrategyOpQueueNotifier {
 
   @override
   Future<OutboxWrite> syncDesiredOpsForPage({
+    required String strategyPublicId,
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,

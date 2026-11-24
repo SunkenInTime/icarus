@@ -381,6 +381,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     }
     return switch (
         await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+              strategyPublicId: strategyId,
               pageId: pageId,
               desiredOpsByEntityKey: desiredOpsByEntityKey,
               flushImmediately: false,

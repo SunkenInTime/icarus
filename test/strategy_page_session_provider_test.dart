@@ -260,6 +260,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
 
   @override
   Future<void> syncDesiredGenericOp({
+    required String strategyPublicId,
     required EntitySyncKey entityKey,
     required StrategyOp? desiredOp,
     bool flushImmediately = false,
@@ -291,6 +292,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
 
   @override
   Future<OutboxWrite> syncDesiredOpsForPage({
+    required String strategyPublicId,
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
@@ -359,6 +361,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   @override
   Future<void> enqueuePageChange(
     StrategyOp op, {
+    required String strategyPublicId,
     bool flushImmediately = false,
     SeenPage? seenPage,
   }) async {
@@ -395,11 +398,13 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   @override
   Future<bool> enqueueOffCanvas(
     StrategyOp op, {
+    required String strategyPublicId,
     bool flushImmediately = false,
   }) async {
     if (offCanvasStoreFails) return false;
     final key = EntitySyncKey.forStrategyOp(op)!;
     await syncDesiredOpsForPage(
+      strategyPublicId: strategyPublicId,
       pageId: key.pageId!,
       desiredOpsByEntityKey: {key: op},
       clearMissing: false,
@@ -2156,14 +2161,16 @@ void main() {
     );
     // A page added second for the server to copy, its add not landed:
     // [page-1, added, page-2]. (One this computer copied would open.)
-    await queue.enqueuePageChange(const PageAddOp(
-      opId: 'add-x',
-      pagePublicId: 'page-x',
-      payload: {'name': 'Page 2', 'isAutoNamed': true},
-      sortIndex: 1,
-      expectedStrategyRevision: 1,
-      copyContentFromPagePublicId: 'page-1',
-    ));
+    await queue.enqueuePageChange(
+        const PageAddOp(
+          opId: 'add-x',
+          pagePublicId: 'page-x',
+          payload: {'name': 'Page 2', 'isAutoNamed': true},
+          sortIndex: 1,
+          expectedStrategyRevision: 1,
+          copyContentFromPagePublicId: 'page-1',
+        ),
+        strategyPublicId: 'cloud-strategy');
 
     await container.read(strategyProvider.notifier).deletePage('page-1');
 
@@ -3663,6 +3670,7 @@ void main() {
         await strokeOnDeletedPage(mediaQueue: mediaQueue);
     // Work queued before the deletion goes too.
     await queue.syncDesiredGenericOp(
+      strategyPublicId: 'cloud-strategy',
       entityKey: EntitySyncKey.element(one.publicId, 'old'),
       desiredOp: ElementDeleteOp(
         opId: 'old-op',
@@ -3695,6 +3703,7 @@ void main() {
     // Another page's edit, waiting on the server (paused, say).
     const otherKey = EntitySyncKey.element('page-3', 'other');
     await queue.syncDesiredGenericOp(
+      strategyPublicId: 'cloud-strategy',
       entityKey: otherKey,
       desiredOp: const ElementDeleteOp(
         opId: 'other-op',
@@ -3729,6 +3738,7 @@ void main() {
         await strokeOnDeletedPage();
     container.read(mapProvider.notifier).updateMap(MapValue.haven);
     await queue.syncDesiredGenericOp(
+      strategyPublicId: 'cloud-strategy',
       entityKey: const EntitySyncKey.strategy(),
       desiredOp: StrategyPatchOp(
         opId: 'map-change',
@@ -4009,6 +4019,7 @@ void main() {
     // answer was lost, so it waits to be replayed under its own op id.
     final lost = EntitySyncKey.element(one.publicId, 'lost');
     await queue.syncDesiredGenericOp(
+      strategyPublicId: 'cloud-strategy',
       entityKey: lost,
       desiredOp: ElementDeleteOp(
         opId: 'lost-op',
@@ -4119,6 +4130,7 @@ void main() {
     // answer was lost, so it waits to be replayed under its own op id.
     const lost = EntitySyncKey.element('page-1', 'lost');
     await queue.syncDesiredGenericOp(
+      strategyPublicId: 'cloud-strategy',
       entityKey: lost,
       desiredOp: const ElementDeleteOp(
         opId: 'lost-op',
@@ -4293,6 +4305,7 @@ void main() {
       );
 
       await queue.syncDesiredGenericOp(
+        strategyPublicId: 'cloud-strategy',
         entityKey: EntitySyncKey.pageDescriptor(one.publicId),
         desiredOp: PageDeleteOp(
           opId: 'delete-one',
@@ -5732,6 +5745,7 @@ void main() {
     expect(desired, isNotNull);
     expect(desired, isNot(contains(key)));
     await queue.syncDesiredOpsForPage(
+      strategyPublicId: 'cloud-strategy',
       pageId: page.publicId,
       desiredOpsByEntityKey: desired!,
       flushImmediately: false,
@@ -5808,7 +5822,9 @@ void main() {
                 pageId: 'page-1',
               )!;
       await queue.syncDesiredOpsForPage(
-          pageId: 'page-1', desiredOpsByEntityKey: desired);
+          strategyPublicId: 'cloud-strategy',
+          pageId: 'page-1',
+          desiredOpsByEntityKey: desired);
       expect(canvas['unrelated'], 'keep-my-edit');
       expect(
           canvas['conflicted'], failDiscard ? 'local-loser' : 'server-winner');
@@ -6368,7 +6384,8 @@ void main() {
         .setForceLocalFallback(true);
     final firstQueue = firstContainer.read(strategyOpQueueProvider.notifier)
       ..setActiveStrategy('cloud-strategy', accountId: 'account-a');
-    await firstQueue.enqueue(add, flushImmediately: false);
+    await firstQueue.enqueue(add,
+        strategyPublicId: 'cloud-strategy', flushImmediately: false);
     expect(store.load().records.single.pending.op.opId, 'add-before-restart');
     firstContainer.dispose();
 
@@ -6410,6 +6427,7 @@ void main() {
     expect(retained.opId, 'add-before-restart');
     expect(retained.payload, add.payload);
     await restartedQueue.syncDesiredOpsForPage(
+      strategyPublicId: 'cloud-strategy',
       pageId: page.publicId,
       desiredOpsByEntityKey: desired,
       flushImmediately: false,
@@ -15929,6 +15947,7 @@ void main() {
         _textElement('page-3', 'text-page-2', 'two'),
       ]);
       await queue.syncDesiredOpsForPage(
+        strategyPublicId: 'cloud-strategy',
         pageId: 'page-3',
         desiredOpsByEntityKey: {
           const EntitySyncKey.element('page-3', 'text-page-2'):
