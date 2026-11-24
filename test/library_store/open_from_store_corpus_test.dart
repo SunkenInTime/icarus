@@ -263,9 +263,11 @@ void main() {
       for (final load in served.loads) {
         totals.count(
           totals.served,
-          '${load.kind.name} ${switch (load.served) {
+          '${load.kind.name} ${switch (load.outcome) {
             ServedFromStore() => 'from the store',
             ServedFromHive(:final reason) => 'from Hive: ${reason.name}',
+            GaveWay() => 'never shown',
+            NoPageToShow() => 'no page to show',
           }}',
         );
       }
