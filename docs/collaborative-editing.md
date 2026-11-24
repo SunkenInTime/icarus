@@ -94,6 +94,63 @@ server writes only the named fields onto the row as it is now:
 An edit to an item a teammate deleted is still refused as `deleted`, and Keep
 mine still brings the item back.
 
+## Which row an edit means
+
+A revision names a version of a row only within one life of it. The server
+purges an item's or a lineup group's tombstone, and a trashed page, 30 days
+after the delete, and deletes a strategy with its rows at once; the same id can
+then be added again, and its revisions start over. An edit made on a copy of
+the earlier row would then land on a row the player never saw: a revision check
+passes, because revision 1 is revision 1.
+
+A row's life is its `createdAt`, which the server sets when it inserts the row
+and never changes: bringing a deleted item back, restoring a page from the
+trash and moving an item all keep it, and a copy is a new row with a new id.
+Every row the server sends carries it.
+
+A client that sets `sendsLives` on `ops:applyBatch` may put `expectedLife`, the
+`createdAt` of the row whose revision the op checks (the strategy for a page
+add, delete or reorder), on each op. The server refuses an op whose row is
+there under another `createdAt` as `row_replaced`, with the row as it is now,
+before it looks at the revision, and a put-back whose row is gone as
+`not_found` instead of adding it again. Its answers name the life of the row
+they belong to (`appliedLife`, `currentLife`, and `life` on a refusal's
+`current`), and so does the receipt it keeps for the op id, which a resend
+replays. A page in the trash meets the trash first, as it does today, so a first
+`row_replaced` answer carries the row as it is now. A replayed refusal, like
+every replayed refusal, keeps the reason it was given and reads the row fresh:
+it carries the row while the row is live, and none once the row is gone or in
+the trash. In a batch that sets `sendsLives`, an add that names an expected
+revision or an expected life is a put-back, and a put-back of a row that is
+gone is `not_found`. `expectedLife` does not count toward an op's size limit.
+
+A caller that does not set `sendsLives` and replays an op id first sent with it
+is told `revision_mismatch` instead of `row_replaced`, a reason it knows; the
+shipped-clients check cannot see replays, so a test in
+`convex/rowLives.test.ts` guards that. A released build told
+`revision_mismatch` acts as it does on any stale edit (a page add reloads the
+strategy and is sent again under a new op id); it can only meet this by
+replaying an op id an opted-in build sent, which needs both builds sharing
+stored ops, so look at this choice again before any build that shares stored
+ops with released builds turns `sendsLives` on.
+
+A batch that sets `sendsLives` may also name `strategyLife`, the `createdAt` of
+the strategy its ops were made in. A strategy deleted and made again under the
+same id is another life, so when the strategy's `createdAt` is another, the
+whole call is refused with `STRATEGY_REPLACED`, after the account, window and
+access checks and before any op or receipt is read or written. Nothing is
+stored, so a resend or a caller without `sendsLives` never meets it. The client
+then reads the page list and asks its user about every op made in the old
+life. This covers what `expectedLife` cannot: an add of a new item, and an edit
+of a page this device added, which name no life of their own.
+
+Known limits: an op that names a page only as a place, to add an item onto or
+move one to, carries no life for that page, so within one strategy life an item
+can still land on a page re-created under the same id. Two rows created under one id within the same
+millisecond share a life; no client can delete and re-create a row that fast.
+Clients that do not set `sendsLives` send nothing new and are answered as
+before; an `expectedLife` or a `strategyLife` without it is ignored.
+
 ## Which fields move together
 
 A merge must never combine half of one edit with half of another. The client

@@ -461,10 +461,11 @@ export function readOptIns(path) {
       typeof entry.path === "string" &&
       Array.isArray(entry.sentOnlyWith) &&
       entry.sentOnlyWith.length > 0 &&
-      entry.sentOnlyWith.every((arg) => typeof arg === "string");
+      entry.sentOnlyWith.every((arg) => typeof arg === "string") &&
+      (entry.literal === undefined || typeof entry.literal === "string");
     if (!valid) {
       throw new Error(
-        `${path}: every opt-in needs "function", "path", and a non-empty "sentOnlyWith" list of argument paths`,
+        `${path}: every opt-in needs "function", "path", and a non-empty "sentOnlyWith" list of argument paths, and a "literal" that is a string if it has one`,
       );
     }
   }
@@ -557,7 +558,12 @@ export function applyOptIns(issues, optIns, oldSpec) {
   for (const issue of issues) {
     const path = issue.path.join("");
     const entry = optIns.find(
-      (optIn) => optIn.function === issue.function && optIn.path === path,
+      (optIn) =>
+        optIn.function === issue.function &&
+        optIn.path === path &&
+        (issue.kind === "literal"
+          ? optIn.literal === issue.value
+          : optIn.literal === undefined),
     );
     const gateable =
       issue.side === "result" &&

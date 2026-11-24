@@ -10,11 +10,14 @@ import {
 } from "./payloadValidators";
 import { fieldMergeValidator } from "./fieldMerge";
 
+const expectedLife = v.optional(v.number());
+
 const strategyPatchOpValidator = v.object({
   opId: v.string(),
   type: v.literal("strategy.patch"),
   payload: strategyPatchPayloadValidator,
   expectedStrategyRevision: v.number(),
+  expectedLife,
 });
 
 const pageAddOpValidator = v.object({
@@ -24,6 +27,7 @@ const pageAddOpValidator = v.object({
   payload: pagePayloadValidator,
   sortIndex: v.number(),
   expectedStrategyRevision: v.number(),
+  expectedLife,
   // Set by "+": the page to copy onto the new one. The server copies its
   // live content as the page is added, in the same transaction, so the
   // new page never shows up without its content.
@@ -36,6 +40,7 @@ const pagePatchOpValidator = v.object({
   pagePublicId: v.string(),
   payload: pagePayloadValidator,
   expectedPageRevision: v.number(),
+  expectedLife,
 });
 
 const pageDeleteOpValidator = v.object({
@@ -43,6 +48,7 @@ const pageDeleteOpValidator = v.object({
   type: v.literal("page.delete"),
   pagePublicId: v.string(),
   expectedStrategyRevision: v.number(),
+  expectedLife,
 });
 
 const pageReorderOpValidator = v.object({
@@ -51,6 +57,7 @@ const pageReorderOpValidator = v.object({
   pagePublicId: v.string(),
   sortIndex: v.number(),
   expectedStrategyRevision: v.number(),
+  expectedLife,
 });
 
 const pageContentPatchOpValidator = v.object({
@@ -59,6 +66,7 @@ const pageContentPatchOpValidator = v.object({
   pagePublicId: v.string(),
   settings: strategySettingsValidator,
   expectedPageContentRevision: v.number(),
+  expectedLife,
 });
 
 const elementAddOpValidator = v.object({
@@ -69,6 +77,7 @@ const elementAddOpValidator = v.object({
   payload: elementPayloadValidator,
   sortIndex: v.number(),
   expectedElementRevision: v.optional(v.number()),
+  expectedLife,
 });
 
 const elementPatchOpValidator = v.object({
@@ -79,6 +88,7 @@ const elementPatchOpValidator = v.object({
   payload: v.optional(elementPayloadValidator),
   sortIndex: v.optional(v.number()),
   expectedElementRevision: v.number(),
+  expectedLife,
   // Writes only these fields of payload (see fieldMerge.ts). The revision is
   // then checked only if the patch cannot be merged by field.
   merge: v.optional(fieldMergeValidator),
@@ -90,6 +100,7 @@ const elementDeleteOpValidator = v.object({
   elementPublicId: v.string(),
   pagePublicId: v.string(),
   expectedElementRevision: v.number(),
+  expectedLife,
   // Deletes whatever the row holds now, without checking the revision: a
   // live delete wins over a teammate's edit made a moment before it.
   lastWriterWins: v.optional(v.boolean()),
@@ -102,6 +113,7 @@ const elementReorderOpValidator = v.object({
   pagePublicId: v.string(),
   sortIndex: v.number(),
   expectedElementRevision: v.number(),
+  expectedLife,
 });
 
 const lineupAddOpValidator = v.object({
@@ -112,6 +124,7 @@ const lineupAddOpValidator = v.object({
   payload: lineupOpPayloadValidator,
   sortIndex: v.number(),
   expectedLineupRevision: v.optional(v.number()),
+  expectedLife,
 });
 
 const lineupPatchOpValidator = v.object({
@@ -122,6 +135,7 @@ const lineupPatchOpValidator = v.object({
   payload: v.optional(lineupOpPayloadValidator),
   sortIndex: v.optional(v.number()),
   expectedLineupRevision: v.number(),
+  expectedLife,
   // Writes only these items of payload (see fieldMerge.ts).
   merge: v.optional(fieldMergeValidator),
 });
@@ -132,6 +146,7 @@ const lineupDeleteOpValidator = v.object({
   lineupPublicId: v.string(),
   pagePublicId: v.string(),
   expectedLineupRevision: v.number(),
+  expectedLife,
   lastWriterWins: v.optional(v.boolean()),
 });
 
@@ -142,6 +157,7 @@ const lineupReorderOpValidator = v.object({
   pagePublicId: v.string(),
   sortIndex: v.number(),
   expectedLineupRevision: v.number(),
+  expectedLife,
 });
 
 export const strategyOpValidator = v.union(
@@ -180,11 +196,13 @@ export const opRejectionReasonValidator = v.union(
   // Only for a lineup merge: the group it would leave is not one that can
   // be stored, say a lineup whose spot a teammate removed.
   v.literal("merge_invalid"),
+  v.literal("row_replaced"),
 );
 
 const strategyCurrentValidator = v.object({
   type: v.literal("strategy"),
   revision: v.number(),
+  life: v.optional(v.number()),
   value: v.object({
     name: v.string(),
     mapData: v.string(),
@@ -196,6 +214,7 @@ const strategyCurrentValidator = v.object({
 const pageCurrentValidator = v.object({
   type: v.literal("page"),
   revision: v.number(),
+  life: v.optional(v.number()),
   value: v.object({
     name: v.string(),
     isAutoNamed: v.optional(v.boolean()),
@@ -207,6 +226,7 @@ const pageCurrentValidator = v.object({
 const pageContentCurrentValidator = v.object({
   type: v.literal("pageContent"),
   revision: v.number(),
+  life: v.optional(v.number()),
   value: v.object({
     settings: v.union(strategySettingsValidator, v.null()),
   }),
@@ -215,12 +235,14 @@ const pageContentCurrentValidator = v.object({
 const elementCurrentValidator = v.object({
   type: v.literal("element"),
   revision: v.number(),
+  life: v.optional(v.number()),
   value: elementPayloadValidator,
 });
 
 const lineupCurrentValidator = v.object({
   type: v.literal("lineup"),
   revision: v.number(),
+  life: v.optional(v.number()),
   value: lineupPayloadValidator,
 });
 
@@ -237,6 +259,7 @@ export const operationResultValidator = v.union(
     opId: v.string(),
     status: v.literal("applied"),
     appliedRevision: v.number(),
+    appliedLife: v.optional(v.number()),
   }),
   v.object({
     opId: v.string(),
@@ -246,6 +269,7 @@ export const operationResultValidator = v.union(
     // op ID was applied when the server first received it, and
     // currentRevision is the revision that write made.
     wasApplied: v.optional(v.boolean()),
+    currentLife: v.optional(v.number()),
   }),
   v.object({
     opId: v.string(),

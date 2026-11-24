@@ -50210,6 +50210,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedStrategyRevision": {
                         "fieldType": {
                           "type": "number"
@@ -50304,6 +50310,12 @@
                         },
                         "optional": true
                       },
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedStrategyRevision": {
                         "fieldType": {
                           "type": "number"
@@ -50392,6 +50404,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedPageRevision": {
                         "fieldType": {
                           "type": "number"
@@ -50474,6 +50492,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedStrategyRevision": {
                         "fieldType": {
                           "type": "number"
@@ -50504,6 +50528,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedStrategyRevision": {
                         "fieldType": {
                           "type": "number"
@@ -50540,6 +50570,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedPageContentRevision": {
                         "fieldType": {
                           "type": "number"
@@ -50603,6 +50639,12 @@
                         "optional": false
                       },
                       "expectedElementRevision": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
+                      "expectedLife": {
                         "fieldType": {
                           "type": "number"
                         },
@@ -70217,6 +70259,12 @@
                           "type": "number"
                         },
                         "optional": false
+                      },
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
                       },
                       "merge": {
                         "fieldType": {
@@ -93095,6 +93143,12 @@
                         },
                         "optional": false
                       },
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "lastWriterWins": {
                         "fieldType": {
                           "type": "boolean"
@@ -93137,6 +93191,12 @@
                         },
                         "optional": false
                       },
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "opId": {
                         "fieldType": {
                           "type": "string"
@@ -93167,6 +93227,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedLineupRevision": {
                         "fieldType": {
                           "type": "number"
@@ -106257,6 +106323,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedLineupRevision": {
                         "fieldType": {
                           "type": "number"
@@ -122614,6 +122686,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedLineupRevision": {
                         "fieldType": {
                           "type": "number"
@@ -122656,6 +122734,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedLineupRevision": {
                         "fieldType": {
                           "type": "number"
@@ -122712,6 +122796,18 @@
             },
             "optional": true
           },
+          "sendsLives": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
+          },
+          "strategyLife": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -122734,6 +122830,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "appliedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "appliedRevision": {
                         "fieldType": {
                           "type": "number"
@@ -122758,6 +122860,12 @@
                   {
                     "type": "object",
                     "value": {
+                      "currentLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "currentRevision": {
                         "fieldType": {
                           "type": "number"
@@ -122795,6 +122903,12 @@
                             {
                               "type": "object",
                               "value": {
+                                "life": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": true
+                                },
                                 "revision": {
                                   "fieldType": {
                                     "type": "number"
@@ -122881,6 +122995,12 @@
                             {
                               "type": "object",
                               "value": {
+                                "life": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": true
+                                },
                                 "revision": {
                                   "fieldType": {
                                     "type": "number"
@@ -122931,6 +123051,12 @@
                             {
                               "type": "object",
                               "value": {
+                                "life": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": true
+                                },
                                 "revision": {
                                   "fieldType": {
                                     "type": "number"
@@ -122991,6 +123117,12 @@
                             {
                               "type": "object",
                               "value": {
+                                "life": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": true
+                                },
                                 "revision": {
                                   "fieldType": {
                                     "type": "number"
@@ -142577,6 +142709,12 @@
                             {
                               "type": "object",
                               "value": {
+                                "life": {
+                                  "fieldType": {
+                                    "type": "number"
+                                  },
+                                  "optional": true
+                                },
                                 "revision": {
                                   "fieldType": {
                                     "type": "number"
@@ -145908,6 +146046,10 @@
                             {
                               "type": "literal",
                               "value": "merge_invalid"
+                            },
+                            {
+                              "type": "literal",
+                              "value": "row_replaced"
                             }
                           ]
                         },

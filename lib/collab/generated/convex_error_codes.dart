@@ -41,6 +41,7 @@ enum ConvexErrorCode {
   r2ObjectKeyMismatch('R2_OBJECT_KEY_MISMATCH'),
   rateLimited('RATE_LIMITED'),
   shareLinkRevoked('SHARE_LINK_REVOKED'),
+  strategyReplaced('STRATEGY_REPLACED'),
   strategyTooLargeToDuplicate('STRATEGY_TOO_LARGE_TO_DUPLICATE'),
   unauthenticated('UNAUTHENTICATED'),
   uncheckedOutsideWindow('UNCHECKED_OUTSIDE_WINDOW'),

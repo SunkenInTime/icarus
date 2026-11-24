@@ -782,6 +782,24 @@
           "budget": 0
         }
       }
+    },
+    "storeLivesReads": {
+      "title": "An op that names its row's life reads nothing more",
+      "about": "One op of each kind (an element and a lineup group added, patched and deleted, a page's settings and name patched, the strategy renamed, a page added and reordered), sent once without sendsLives and once with it and the life of the row whose revision the op checks, on two strategies made alike. The server takes each row's life from the row its apply already reads, so each op with lives reads the same documents as without; the run fails if any reads more.",
+      "metrics": {
+        "documentsReadWithLives": {
+          "today": 100,
+          "budget": 100
+        },
+        "documentsReadWithout": {
+          "today": 100,
+          "budget": 100
+        },
+        "extraDocumentsRead": {
+          "today": 0,
+          "budget": 0
+        }
+      }
     }
   }
 }

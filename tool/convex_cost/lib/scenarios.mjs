@@ -128,7 +128,7 @@ export class Device {
     strategyPublicId,
     clientId,
     ops,
-    { includeWasApplied, readsAccountMismatch, sendsLiveBasis, liveBasis } = {},
+    { includeWasApplied, readsAccountMismatch, sendsLiveBasis, liveBasis, sendsLives } = {},
   ) {
     const { results, serverTime } = await this.mutation("ops:applyBatch", {
       strategyPublicId,
@@ -142,6 +142,7 @@ export class Device {
       readsAccountMismatch,
       sendsLiveBasis,
       liveBasis,
+      sendsLives,
     });
     results.serverTime = serverTime;
     const refused = results.filter((result) => result.status !== "applied");
