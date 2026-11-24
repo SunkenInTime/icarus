@@ -73,6 +73,11 @@ void main() {
         server.rows.page('page-a')!.toJson(),
       );
       expect(client.visible.element('e1'), isNull);
+      for (final opId in ['move', 'remove', 'rename', 'page']) {
+        client.must(UserUsedCloud(opId));
+      }
+      expect(entryViews(client.queue, client.at), isEmpty);
+      expect(attentionOf(client), isEmpty);
     });
 
     test('a batch sent before the device reads the new list is refused '

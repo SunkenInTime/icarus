@@ -2439,7 +2439,8 @@ bool _userMayReplace(EntryView view) => switch (view.state) {
     reason: RefusedByServer() ||
         ChangedUnseen() ||
         WindowClosed() ||
-        RowPageGone(),
+        RowPageGone() ||
+        MadeInAReplacedStrategy(),
   ) =>
     true,
   _ => false,
@@ -2503,7 +2504,8 @@ Step _keepMine(
       authoredAt: now,
       refusal: const NotRefused(),
       retriedAfter: edit.lastAttempt,
-      strategyLife: entry.strategyLife,
+      strategyLife:
+          queue.shown.strategyVersion?.lifeOnTheWire ?? entry.strategyLife,
     ),
   );
   edit.effects.add(
