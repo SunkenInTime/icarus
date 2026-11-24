@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,7 @@ import 'package:icarus/library_store/landed_retiring.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/codec.dart' show livedRowVersion;
 
 import 'cloud_shadow_test.dart'
     show
@@ -77,6 +79,42 @@ void main() {
           expect(world.queueLength(), 0);
         });
       }
+    });
+
+    test(
+        'a queue stored by a build from before rows carried lives is '
+        'discarded, and the strategy is read again from the server', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld((world) {
+        world.sender.hold('x');
+        world.commitMove(1);
+        world.settle();
+      }, storage: storage, server: server);
+      final contents = {
+        for (final MapEntry(key: area, value: rows) in storage.contents.entries)
+          area: {
+            for (final MapEntry(:key, :value) in rows.entries)
+              key: switch (jsonDecode(value)) {
+                final Map<String, Object?> row
+                    when row['version'] == livedRowVersion =>
+                  jsonEncode({...row, 'version': 1}),
+                _ => value,
+              },
+          },
+      };
+      inWorld(
+        (world) {
+          world.settle(const Duration(seconds: 5));
+          final cloud = world.cloud();
+          expect(cloud.queue.entries, isEmpty);
+          expect(cloud.queue.shown.strategy, isNotNull);
+          expect(server.calls, isEmpty);
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
     });
 
     test('a start with saved work sends it with no wake from outside', () {

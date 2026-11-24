@@ -87,6 +87,12 @@ final class QueueFound extends QueueRead {
   final CloudStrategy cloud;
 }
 
+final class QueueWrittenBeforeLives extends QueueRead {
+  const QueueWrittenBeforeLives(this.owner);
+
+  final Account owner;
+}
+
 final class QueueTroubled extends QueueRead {
   const QueueTroubled(this.trouble);
 
@@ -272,6 +278,15 @@ base class SenderStore {
     return switch (reading) {
       Found(value: StrategyContent(sync: final CloudStrategy cloud)) =>
         QueueFound(cloud),
+      Found(
+        value: StrategyContent(
+          sync: CloudHeld(
+            owner: OwnedBy(account: final owner),
+            writtenBeforeLives: true,
+          ),
+        ),
+      ) =>
+        QueueWrittenBeforeLives(owner),
       Found() || NotFound() => const QueueTroubled(
           StrategyHeld('the store holds no cloud queue for it'),
         ),
@@ -280,6 +295,30 @@ base class SenderStore {
         ),
       NotRead(:final failure) =>
         QueueTroubled(_failed(failure, StoreStep.read)),
+    };
+  }
+
+  Future<StoreTrouble?> discardWrittenBeforeLives(
+    Account owner,
+    String strategyId,
+  ) async {
+    final Saving<StrategySummary, CommitRefusal> result;
+    try {
+      result = await store.discardUnreadableQueue(
+        owner,
+        strategyId,
+        const DiscardsUnsentWork(),
+      );
+    } catch (error) {
+      return StoreShut('the store threw: $error');
+    }
+    return switch (result) {
+      Saved() || NothingToSave() => null,
+      Refused(:final reason) =>
+        StrategyHeld('the store would not discard it: $reason'),
+      NotSaved(:final failure) => _failed(failure, StoreStep.refusedSave),
+      SaveInDoubt(:final failure) =>
+        StoreShut(storageFailureWords(failure, StoreStep.saveInDoubt)),
     };
   }
 

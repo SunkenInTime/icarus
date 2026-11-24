@@ -362,8 +362,17 @@ extension _CloudStore on LibraryStore {
     final storeArea = StrategyArea(strategy.digest);
     final listed = _summaries[strategy.digest];
     final unreadable = <UnreadableQueueRow>[];
-    void cannotRead(String name, String problem) =>
-        unreadable.add(UnreadableQueueRow(strategy.refOf(name), problem));
+    final lived = <String, String>{};
+    void cannotRead(String name, String problem) => unreadable.add(
+      UnreadableQueueRow(
+        strategy.refOf(name),
+        problem,
+        beforeLives: switch (lived[name]) {
+          final text? => writtenBeforeLives(text),
+          null => false,
+        },
+      ),
+    );
     var facts = StrategyFacts.fresh;
     CloudOwner owner = const OwnerUnreadable();
     switch (await _lease.read(area, const CloudName().name)) {
@@ -388,6 +397,7 @@ extension _CloudStore on LibraryStore {
         for (final (:key, :value) in value) {
           switch (readName(storeArea, key)) {
             case PendingName(:final place):
+              lived[key] = value;
               stored.add((place, value));
             case _:
               cannotRead(key, 'a queue row this build does not name');
@@ -421,6 +431,7 @@ extension _CloudStore on LibraryStore {
         for (final (:key, :value) in value) {
           switch (readName(storeArea, key)) {
             case LandedName(:final attempt, :final position):
+              lived[key] = value;
               switch (landedFromText(attempt, position, value)) {
                 case CloudRowRead(:final value):
                   landed.add(value);
@@ -441,8 +452,10 @@ extension _CloudStore on LibraryStore {
         for (final (:key, :value) in value) {
           switch (readName(storeArea, key)) {
             case HeaderReadName():
+              lived[key] = value;
               groups[null] = value;
             case final PageReadName name:
+              lived[key] = value;
               switch (_groupPage(name, value)) {
                 case final page?:
                   groups[page] = value;

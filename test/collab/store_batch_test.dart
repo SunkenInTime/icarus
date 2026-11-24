@@ -335,12 +335,12 @@ void main() {
       );
       expect(
         storeAnswerOf(
-          app.RejectedOpAck(
+          const app.RejectedOpAck(
             opId: 'a',
             rejectionReason: app.OpRejectionReason.revisionMismatch,
             current: app.ElementCurrentSnapshot(
               revision: 5,
-              value: const {'payload': {}},
+              value: {'payload': {}},
             ),
           ),
         ),
@@ -375,13 +375,13 @@ void main() {
       );
       expect(
         storeAnswerOf(
-          app.RejectedOpAck(
+          const app.RejectedOpAck(
             opId: 'a',
             rejectionReason: app.OpRejectionReason.revisionMismatch,
             current: app.ElementCurrentSnapshot(
               revision: 5,
               life: life,
-              value: const {'payload': {}},
+              value: {'payload': {}},
             ),
           ),
         ),

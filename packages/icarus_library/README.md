@@ -1837,6 +1837,45 @@ and `_judge` is the only place an outgoing revision is chosen.
   its first send (`WindowClosed`). Keep mine starts the 29 days again.
 - Live sends: a delete sent live is last writer wins, as in the shipped app.
 
+**A row's life.** A revision orders writes within one life of a row. A
+row's life is its `createdAt`, which the server sets on insert and never
+rewrites, so a strategy deleted and uploaded again under the same id, or a
+purged tombstone whose id comes back, is a new life even at revision 1. The
+queue orders what it knows of a row by `Version(life, revision)`: life
+first, then revision. A `Version` always has a life; nothing is compared by
+revision alone across lives.
+
+- Every batch opts in to lives (`sendsLives`) and names, for each op that
+  checks a revision, the life of the row it checks (`expectedLife`): the
+  strategy for a strategy patch and for page adds, deletes and reorders, the
+  row itself otherwise. The server refuses another life with `row_replaced`,
+  which asks the user like any refusal; with or without the server's copy.
+- Every row a result shows carries its life, and so does every answer that
+  applied or found its row, with one exception: a replay of a receipt the
+  server wrote before it sent lives. That answer is its own kind
+  (`ReplayWithoutLife`). Its landed record holds no version: it outranks
+  nothing, nothing outranks it by number, a later edit of its row waits for
+  the row's result, and the first result of that row after the answer
+  retires it. An applied answer or a server copy without a life is not read
+  at all (the batch is lost and sent again, and the replay then carries the
+  life). A refusal without a copy and a noop without a revision carry no
+  version, so need no life.
+- A row this device created has no life until the server names it: an
+  element or lineup add's answer names its row's life, which passes to every
+  queued edit made on that add's prediction; a page add's answer names the
+  strategy's life, so a new page takes its life from the first page list that
+  shows it. Ids of rows this device creates are made on this device, so the
+  first result that shows that id is the row the add created.
+- A page list that shows the strategy in another life drops everything the
+  queue knew of the old one (results and landed work) and every page the
+  store held, from memory and disk. Queued edits stay: they go out naming the
+  old life and ask. Until each page of the new life is read, it is listed
+  with its content not read, and nothing of the old life is drawn.
+- Entries, landed work and stored results are written at `livedRowVersion`
+  2. A store from a build before lives reads as held
+  (`CloudHeld.writtenBeforeLives`), and the sender discards that queue and
+  reads the strategy again from the server. Only test builds wrote it.
+
 **Landed work.** An answered op is drawn on top of the latest results until
 a result shows its row at the answered revision or later. The queue keeps
 the highest revision any result has shown for each row, so a page trashed and

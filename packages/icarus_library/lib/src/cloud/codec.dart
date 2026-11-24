@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
@@ -12,6 +14,19 @@ import 'version.dart';
 
 const cloudRowVersion = 1;
 
+const livedRowVersion = 2;
+
+bool writtenBeforeLives(String text) {
+  try {
+    return switch (jsonDecode(text)) {
+      {'version': final int version} => version < livedRowVersion,
+      _ => false,
+    };
+  } on FormatException {
+    return false;
+  }
+}
+
 T? _named<T extends Enum>(JsonFields fields, String key, List<T> values) {
   final found = values.asNameMap()[fields.json[key]];
   if (found == null) fields.reject('expected "$key" to be a known name');
@@ -20,6 +35,12 @@ T? _named<T extends Enum>(JsonFields fields, String key, List<T> values) {
 
 void _versioned(JsonFields fields, String what) {
   if (fields.whole('version') != cloudRowVersion) {
+    fields.reject('a $what version this build does not read');
+  }
+}
+
+void _lived(JsonFields fields, String what) {
+  if (fields.whole('version') != livedRowVersion) {
     fields.reject('a $what version this build does not read');
   }
 }
@@ -44,7 +65,7 @@ DateTime _time(num value) =>
 
 Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
   PendingOp() => {
-    'version': cloudRowVersion,
+    'version': livedRowVersion,
     'kind': 'op',
     'op': entry.op.toJson(),
     'scope': switch (entry.scope) {
@@ -84,7 +105,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
       },
   },
   RetiredOp(:final opId, :final clientId, :final landing, :final stored) => {
-    'version': cloudRowVersion,
+    'version': livedRowVersion,
     'kind': 'retired',
     'opId': opId,
     'clientId': clientId,
@@ -217,7 +238,7 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
   json,
   'pending entry',
   (fields) {
-    _versioned(fields, 'entry');
+    _lived(fields, 'entry');
     switch (fields.json['kind']) {
       case 'retired':
         final opId = fields.string('opId');
@@ -704,7 +725,7 @@ CloudRowReading<Counters> countersFromText(String text) => _fromText(
 );
 
 Map<String, Object?> landedToJson(LandedWork work) => {
-  'version': cloudRowVersion,
+  'version': livedRowVersion,
   'op': work.op.toJson(),
   'revision': work.revision,
   'life': ?work.life,
@@ -723,7 +744,7 @@ CloudRowReading<LandedWork> landedFromText(
 ) => _fromText(
   text,
   (json) => JsonFields.read(json, 'landed work', (fields) {
-    _versioned(fields, 'landed work');
+    _lived(fields, 'landed work');
     if (attempt < 1 || position < 0) fields.reject('an impossible landing');
     final op = fields.decoded('op', StrategyOp.decode);
     final revision = fields.whole('revision');
@@ -827,7 +848,7 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
   };
   return {
     null: {
-      'version': cloudRowVersion,
+      'version': livedRowVersion,
       'strategy': [
         if (shown.strategy case final strategy?)
           _shownRow('strategy', strategy),
@@ -847,7 +868,7 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
     },
     for (final page in pages)
       page: {
-        'version': cloudRowVersion,
+        'version': livedRowVersion,
         'page': page,
         'content': switch (shown.content[page]) {
           null => null,
@@ -892,7 +913,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
     final reading = _fromText<void>(
       text,
       (json) => JsonFields.read(json, 'shown results', (fields) {
-        _versioned(fields, 'shown results');
+        _lived(fields, 'shown results');
         if (group == null) {
           final strategyRows = _shownRows(fields.json['strategy']);
           if (strategyRows == null ||

@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/codec.dart'
+    show cloudRowVersion, livedRowVersion;
 import 'package:icarus_library/src/json.dart' show canonicalJson;
 import 'package:icarus_library/src/store/layout.dart'
     show AttemptName, PendingName;
@@ -442,7 +444,8 @@ void main() {
         canonicalJson({...entryJson(), ...changes});
 
     for (final (label, changes) in <(String, Map<String, Object?>)>[
-      ('a newer version', {'version': 2}),
+      ('a newer version', {'version': livedRowVersion + 1}),
+      ('a version written before rows had lives', {'version': 1}),
       (
         'a checked delete of an element op',
         {
@@ -494,7 +497,7 @@ void main() {
       await expectHeld(
         AttemptName(9).name,
         canonicalJson({
-          'version': 1,
+          'version': cloudRowVersion,
           'clientId': clientId,
           'build': build,
           'at': 0,
@@ -2116,7 +2119,7 @@ void main() {
         await store.close();
         final contents = editable(storage.contents);
         contents[area]![name] = canonicalJson({
-          'version': 1,
+          'version': cloudRowVersion,
           'clientId': clientId,
           'build': build,
           'at': 0,
@@ -2270,7 +2273,7 @@ void main() {
 }
 
 Map<String, Object?> entryJson() => {
-  'version': 1,
+  'version': livedRowVersion,
   'kind': 'op',
   'op': movePatch('other', elementId: 'e2').toJson(),
   'scope': {'page': 'page-a'},

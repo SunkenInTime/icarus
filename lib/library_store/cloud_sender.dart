@@ -734,6 +734,8 @@ final class CloudSender {
     switch (await _store.read(id)) {
       case QueueFound(cloud: final found):
         cloud = found;
+      case QueueWrittenBeforeLives(:final owner):
+        return _discardWrittenBeforeLives(id, owner);
       case QueueTroubled(:final trouble):
         return _troubled(id, trouble);
     }
@@ -783,6 +785,8 @@ final class CloudSender {
           switch (await _store.read(id)) {
             case QueueFound(cloud: final fresh):
               cloud = fresh;
+            case QueueWrittenBeforeLives(:final owner):
+              return _discardWrittenBeforeLives(id, owner);
             case QueueTroubled(:final trouble):
               return _troubled(id, trouble);
           }
@@ -863,6 +867,9 @@ final class CloudSender {
         return (planned: (read: _readOf(need), why: _Why.need), due: null);
       }
       later(at);
+    }
+    if (cloud.queue.shown.strategy == null) {
+      return (planned: (read: const _ReadList(), why: _Why.adopt), due: null);
     }
     if (_unreadPages(cloud).firstOrNull case final page?) {
       return (planned: (read: _ReadPage(page), why: _Why.adopt), due: null);
@@ -1317,6 +1324,19 @@ final class CloudSender {
       case WriteTroubled(:final trouble):
         return _troubled(id, trouble);
     }
+  }
+
+  Future<_Step> _discardWrittenBeforeLives(String id, Account owner) async {
+    final trouble = await _store.discardWrittenBeforeLives(owner, id);
+    if (disposed) return const _Ended();
+    if (trouble != null) return _troubled(id, trouble);
+    _forget(id);
+    _unread.add(id);
+    _note(
+        id,
+        'its queue was stored by a build from before rows carried lives; '
+        'it was discarded and the strategy is read again');
+    return const _Acted();
   }
 
   _Step _troubled(String id, StoreTrouble trouble) {
