@@ -220,6 +220,7 @@ import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/services/image_file_name.dart' show strategyFolderPath;
 import 'package:icarus/services/strategy_folders.dart';
 import 'package:icarus/library_store/canvas_units.dart' show cloneStrategy;
@@ -396,6 +397,15 @@ Future<void> _play(String script) async {
   } on StoreStepFailed catch (failed) {
     _failedSteps++;
     failed.problems.forEach(_log);
+  }
+  final refusals =
+      appProviderContainer.read(canvasShowsProvider.notifier).refusals;
+  _log('CANVAS nothing shown '
+      '${refusals.where((r) => r.what == 'nothing shown').length} times, a '
+      'switch stayed '
+      '${refusals.where((r) => r.what == 'switch stayed').length} times');
+  for (final refusal in refusals) {
+    _log('CANVAS $refusal');
   }
   try {
     if (await closeStoreLine(appProviderContainer) case final line?) {

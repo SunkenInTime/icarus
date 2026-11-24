@@ -73,8 +73,12 @@ PageHandover _settled(PageHandover handover, {required bool anythingUnsaved}) =>
         ? const NothingToHandOver()
         : handover;
 
-bool _canvasShows(Ref ref, String strategyId, String? pageId) =>
-    ref.read(canvasShowsProvider.notifier).shows(strategyId, pageId);
+bool _canvasShows(Ref ref, String strategyId, String? pageId) {
+  final canvas = ref.read(canvasShowsProvider.notifier);
+  if (canvas.shows(strategyId, pageId)) return true;
+  canvas.refused(strategyId, pageId);
+  return false;
+}
 
 bool _anythingUnsaved(Ref ref) =>
     ref.read(strategySaveStateProvider).isDirty ||
