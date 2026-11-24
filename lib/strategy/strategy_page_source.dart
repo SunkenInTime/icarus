@@ -22,6 +22,7 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -119,6 +120,14 @@ class LocalStrategyPageSource implements StrategyPageSource {
     final migrated = StrategyMigrator.migrateToCurrentVersion(current);
     if (!identical(current, migrated)) {
       (await const LocalLibrary().replaceAfterMigration(migrated)).orThrow();
+    }
+    if (ref.read(localPageReadsProvider) case final reads?) {
+      final fromStore = await reads.page(
+        strategyId,
+        pageId,
+        migrated: !identical(current, migrated),
+      );
+      if (fromStore != null) return fromStore;
     }
 
     final orderedPages = [...migrated.pages]

@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -2317,6 +2318,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         isOpen: true,
       ));
       ref.read(strategySaveStateProvider.notifier).reset();
+      ref.read(localPageReadsProvider)?.opening(
+            migratedStrategy.id,
+            migrated: migratedStrategy != newStrat,
+          );
       await opening.wait(
         ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
               strategyId: migratedStrategy.id,

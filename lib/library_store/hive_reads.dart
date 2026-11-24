@@ -94,6 +94,9 @@ final class HiveReads {
   );
   final _strategiesWriting = <String, int>{};
   final _foldersWriting = <String, int>{};
+  final _strategyWritesBegun = <String, int>{};
+
+  int strategyWritesBegun(String id) => _strategyWritesBegun[id] ?? 0;
 
   bool strategyWriting(String id) => _strategiesWriting.containsKey(id);
 
@@ -106,6 +109,7 @@ final class HiveReads {
   void writing(LibraryTouch touch) {
     for (final id in touch.strategies) {
       _strategiesWriting[id] = (_strategiesWriting[id] ?? 0) + 1;
+      _strategyWritesBegun[id] = strategyWritesBegun(id) + 1;
     }
     for (final id in touch.folders) {
       _foldersWriting[id] = (_foldersWriting[id] ?? 0) + 1;

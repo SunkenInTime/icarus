@@ -16,8 +16,10 @@ import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
+import 'package:icarus/library_store/store_page_reads.dart';
 import 'package:icarus/startup/launch_clock.dart';
 import 'package:icarus/strategy/local_library_view.dart';
+import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:path/path.dart' as path;
 
@@ -663,4 +665,74 @@ List<String> listEndLines(ProviderContainer c) {
         'the run reads the list from the store, yet it ended drawn from Hive',
       ]),
   };
+}
+
+StorePageReads? _pageReads(ProviderContainer c) =>
+    switch (c.read(localPageReadsProvider)) {
+      final StorePageReads reads => reads,
+      _ => null,
+    };
+
+var _pageLoadsLogged = 0;
+
+Map<String, int> pageLoadCounts(List<PageLoad> loads) {
+  final counts = <String, int>{};
+  void count(String key) => counts[key] = (counts[key] ?? 0) + 1;
+  for (final load in loads) {
+    final kind = switch (load.kind) {
+      PageLoadKind.open => 'open',
+      PageLoadKind.pageSwitch => 'switch',
+    };
+    switch (load.served) {
+      case ServedFromStore():
+        count('${kind}FromStore');
+      case ServedFromHive(:final reason):
+        count('${kind}FromHive');
+        count(reason.name);
+    }
+  }
+  return counts;
+}
+
+String _countsLine(Map<String, int> counts) => counts.isEmpty
+    ? 'none'
+    : [
+        for (final key in counts.keys.toList()..sort()) '$key ${counts[key]}',
+      ].join(', ');
+
+List<String> pageReadLines(
+  ProviderContainer c, {
+  required String tag,
+  required Map<String, Object?> expected,
+}) {
+  final reads = _pageReads(c);
+  if (reads == null) {
+    const line = 'STORE page loads: this run reads pages from Hive only';
+    if (expected.isEmpty) return const [line];
+    throw StoreStepFailed(const [line]);
+  }
+  final loads = reads.loads;
+  final counts = pageLoadCounts(loads);
+  final lines = [
+    for (final load in loads.skip(_pageLoadsLogged)) 'STORE page $load',
+    'STORE page loads at $tag: ${_countsLine(counts)}',
+  ];
+  _pageLoadsLogged = loads.length;
+  final problems = [
+    for (final MapEntry(:key, :value) in expected.entries)
+      if ((counts[key] ?? 0) != value)
+        '$key is ${counts[key] ?? 0}, expected $value',
+  ];
+  if (problems.isNotEmpty) throw StoreStepFailed([...lines, ...problems]);
+  return lines;
+}
+
+List<String> pageReadEndLines(ProviderContainer c) {
+  final reads = _pageReads(c);
+  if (reads == null) return const [];
+  final loads = reads.loads;
+  return [
+    for (final load in loads.skip(_pageLoadsLogged)) 'STORE page $load',
+    'STORE page loads in the run: ${_countsLine(pageLoadCounts(loads))}',
+  ];
 }

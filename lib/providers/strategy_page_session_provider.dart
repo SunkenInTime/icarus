@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library_view.dart';
+import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -1337,9 +1338,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // The open this page is read for, if it is one: a page read for an open
     // that gave way must not replace the canvas of what took its place.
     final opening = attempt ?? OpenAttempt.unchallenged;
-    final availablePageIds = await opening.wait(
-      _resolvePageSource(strategyId, source).listPageIds(),
-    );
+    final served = ref.read(localPageReadsProvider)?.servedWith(pageData);
+    final availablePageIds = served != null
+        ? served.pageIds
+        : await opening.wait(
+            _resolvePageSource(strategyId, source).listPageIds(),
+          );
     if (canApply != null && !canApply()) return;
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
@@ -1347,10 +1351,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final preservedTheme = preservedMetadata?.theme;
     final themeProfileId = preservedTheme != null
         ? preservedTheme.profileId
-        : _resolveThemeProfileId(source, strategyId);
+        : served != null
+            ? served.themeProfileId
+            : _resolveThemeProfileId(source, strategyId);
     final themeOverridePalette = preservedTheme != null
         ? preservedTheme.overridePalette
-        : _resolveThemeOverridePalette(source, strategyId);
+        : served != null
+            ? served.themeOverridePalette
+            : _resolveThemeOverridePalette(source, strategyId);
 
     state = state.copyWith(
       isApplyingPage: true,
