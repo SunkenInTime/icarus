@@ -904,6 +904,8 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     ];
     clock.start();
     _click(item);
+    SchedulerBinding.instance.scheduleFrame();
+    await SchedulerBinding.instance.endOfFrame;
     secondClick = clock.elapsedMicroseconds;
     _click(page);
     final settleBy = DateTime.now().add(const Duration(seconds: 10));
