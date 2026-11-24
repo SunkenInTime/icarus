@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -105,8 +104,6 @@ void main() {
     final held = gate.holdNext();
     final opening = editor.loadFromHive(b.id);
     await held;
-    expect(container.read(agentProvider), isEmpty,
-        reason: 'the open has cleared the canvas and is waiting');
     final switching = editor.setActivePageAnimated(a.pages[1].id);
     await Future<void>.delayed(const Duration(milliseconds: 50));
     gate.release();

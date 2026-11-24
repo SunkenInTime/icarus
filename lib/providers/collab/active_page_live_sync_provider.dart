@@ -15,19 +15,13 @@ import 'package:icarus_library/icarus_library.dart' show withFieldDefaults;
 import 'package:icarus/collab/page_made_here.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
-import 'package:icarus/providers/ability_provider.dart';
-import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
-import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
-import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:uuid/uuid.dart';
 
@@ -351,16 +345,22 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final entry in remoteEntities.entries) {
       remoteRevisions[entry.key] = entry.value.revision;
     }
+    final canvas = switch (readCanvas(ref, strategyPublicId, pageId)) {
+      final CanvasOf shown => shown,
+      CanvasNotShown() => throw StateError(
+          'Page $pageId was marked drawn while the canvas does not show it.',
+        ),
+    };
     _hydratedPositionByKey
       ..removeWhere((key, _) => key.pageId == pageId)
       ..addAll({
         for (final (position, envelope)
-            in _collectLocalElementEnvelopes().indexed)
+            in _collectLocalElementEnvelopes(canvas).indexed)
           EntitySyncKey.element(pageId, envelope.publicId): position,
       });
     state = state.copyWith(
       hydratedPageId: pageId,
-      hydratedEntityKeys: _normalizedLocalEntities(pageId).keys.toSet(),
+      hydratedEntityKeys: _normalizedLocalEntities(pageId, canvas).keys.toSet(),
       remoteBaseRevisionByEntity: remoteRevisions,
     );
   }
@@ -531,7 +531,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   /// that differs from the one last drawn from (or accepted by) the server,
   /// or an op for the page still in the queue.
   bool hasUnsentWork(String pageId) {
-    final local = _normalizedLocalEntities(pageId);
+    final strategyPublicId = state.strategyPublicId;
+    final canvas = strategyPublicId == null
+        ? const CanvasNotShown()
+        : readCanvas(ref, strategyPublicId, pageId);
+    if (canvas is! CanvasOf) return true;
+    final local = _normalizedLocalEntities(pageId, canvas);
     final keys = {
       ...local.keys,
       ..._hydratedBaseByEntityKey.keys.where((key) => key.pageId == pageId),
@@ -559,6 +564,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     String pageId,
   ) {
     if (state.hydratedPageId != pageId) return null;
+    final strategyPublicId = state.strategyPublicId;
+    if (strategyPublicId == null) return null;
+    final canvas = readCanvas(ref, strategyPublicId, pageId);
+    if (canvas is! CanvasOf) return null;
     final elements = <DrawnRow>[];
     final lineups = <DrawnRow>[];
     DrawnRow row(_NormalizedEntity entity) => (
@@ -566,7 +575,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           payload: Map<String, dynamic>.from(entity.payload as Map),
           sortIndex: entity.sortIndex ?? 0,
         );
-    for (final entity in _normalizedLocalEntities(pageId).values) {
+    for (final entity in _normalizedLocalEntities(pageId, canvas).values) {
       switch (entity.overlayEntityType) {
         case ActivePageOverlayEntityType.element:
           elements.add(row(entity));
@@ -871,7 +880,11 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   Map<EntitySyncKey, StrategyOp>? syncLocalPage({
     required String strategyPublicId,
     required String pageId,
+    required CanvasOf canvas,
   }) {
+    if (canvas.strategyId != strategyPublicId || canvas.pageId != pageId) {
+      return null;
+    }
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
     if (state.hydratedPageId != pageId) {
       _debugLog('sync.skip page=$pageId reason=page_not_hydrated');
@@ -891,7 +904,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
     final queueState = ref.read(strategyOpQueueProvider);
     final remoteEntities = _normalizedRemoteEntities(snapshot, pageId);
-    final localEntities = _normalizedLocalEntities(pageId);
+    final localEntities = _normalizedLocalEntities(pageId, canvas);
 
     final pageKeys = <EntitySyncKey>{
       ...remoteEntities.keys,
@@ -1849,7 +1862,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   Map<EntitySyncKey, _NormalizedEntity> _normalizedLocalEntities(
-      String pageId) {
+    String pageId,
+    CanvasOf canvas,
+  ) {
     final entities = <EntitySyncKey, _NormalizedEntity>{};
 
     final descriptorKey = EntitySyncKey.pageDescriptor(pageId);
@@ -1857,14 +1872,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       key: descriptorKey,
       overlayEntityType: ActivePageOverlayEntityType.pageDescriptor,
       payload: <String, dynamic>{
-        'isAttack': ref.read(mapProvider).isAttack,
+        'isAttack': canvas.isAttack,
       },
       sortIndex: null,
       revision: 0,
       deleted: false,
     );
-    final unshown = ref.read(unshownCloudContentProvider);
-    final settings = ref.read(strategySettingsProvider).toJson();
+    final unshown = canvas.unshown;
+    final settings = canvas.settings.toJson();
     final contentKey = EntitySyncKey.pageContent(pageId);
     entities[contentKey] = _NormalizedEntity(
       key: contentKey,
@@ -1928,7 +1943,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       return sortIndex;
     }
 
-    for (final envelope in _collectLocalElementEnvelopes()) {
+    for (final envelope in _collectLocalElementEnvelopes(canvas)) {
       final key = EntitySyncKey.element(pageId, envelope.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
@@ -1960,7 +1975,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final freshLineupSortIndex = freshSortIndexes(EntitySyncKeyKind.lineup);
     final lineupGroupOf = _lineupGroupOfByPage[pageId] ??= {};
     final lineupRows = cloudLineupRows(
-      ref.read(lineUpProvider).graph,
+      canvas.lineUpGraph,
       groupOf: lineupGroupOf,
       takenGroupIds: {
         for (final key in [
@@ -1987,10 +2002,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     return entities;
   }
 
-  List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {
+  List<_CollabElementEnvelope> _collectLocalElementEnvelopes(CanvasOf canvas) {
     final envelopes = <_CollabElementEnvelope>[];
 
-    for (final agent in ref.read(agentProvider)) {
+    for (final agent in canvas.agents) {
       final payload = Map<String, dynamic>.from(agent.toJson())
         ..putIfAbsent('elementType', () => _CollabElementKind.agent.name);
       envelopes.add(
@@ -2002,7 +2017,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    for (final ability in ref.read(abilityProvider)) {
+    for (final ability in canvas.abilities) {
       final payload = Map<String, dynamic>.from(ability.toJson())
         ..putIfAbsent('elementType', () => _CollabElementKind.ability.name);
       envelopes.add(
@@ -2014,7 +2029,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    for (final drawing in ref.read(drawingProvider).elements) {
+    for (final drawing in canvas.drawings) {
       final encoded =
           jsonDecode(DrawingProvider.objectToJson([drawing])) as List;
       final payload = Map<String, dynamic>.from(
@@ -2029,8 +2044,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    for (final text
-        in ref.read(textProvider.notifier).snapshotForPersistence()) {
+    for (final text in canvas.texts) {
       final payload = Map<String, dynamic>.from(text.toJson())
         ..putIfAbsent('elementType', () => _CollabElementKind.text.name);
       envelopes.add(
@@ -2042,7 +2056,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    for (final image in ref.read(placedImageProvider).images) {
+    for (final image in canvas.images) {
       final payload = Map<String, dynamic>.from(
         cloudImagePayloadFromPlacedImage(image),
       )..putIfAbsent('elementType', () => _CollabElementKind.image.name);
@@ -2055,7 +2069,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    for (final utility in ref.read(utilityProvider)) {
+    for (final utility in canvas.utilities) {
       final payload = Map<String, dynamic>.from(utility.toJson())
         ..putIfAbsent('elementType', () => _CollabElementKind.utility.name);
       envelopes.add(

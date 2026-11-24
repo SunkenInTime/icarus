@@ -402,8 +402,8 @@ Future<void> _play(String script) async {
       appProviderContainer.read(canvasShowsProvider.notifier).refusals;
   _log('CANVAS nothing shown '
       '${refusals.where((r) => r.what == 'nothing shown').length} times, a '
-      'switch stayed '
-      '${refusals.where((r) => r.what == 'switch stayed').length} times');
+      'click ignored during an open '
+      '${refusals.where((r) => r.what != 'nothing shown').length} times');
   for (final refusal in refusals) {
     _log('CANVAS $refusal');
   }
@@ -879,6 +879,18 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
   String ms(int micros) => (micros / 1000).toStringAsFixed(1);
   var emptied = 0;
   final windows = <int>[];
+  final leftAgents = <String>{};
+  var mixedFrames = 0;
+  var framesWatched = 0;
+  var watching = false;
+  SchedulerBinding.instance.addPersistentFrameCallback((_) {
+    if (!watching) return;
+    framesWatched++;
+    if (c.read(strategyProvider).strategyId == opened.id &&
+        c.read(agentProvider).any((agent) => leftAgents.contains(agent.id))) {
+      mixedFrames++;
+    }
+  });
   for (var run = 1; run <= runs; run++) {
     final original =
         cloneStrategy(const LocalLibrary().storedStrategy(left.id)!);
@@ -887,6 +899,9 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     }
     await _frames();
     final before = agentsOnFirstPage();
+    leftAgents
+      ..clear()
+      ..addAll([for (final agent in c.read(agentProvider)) agent.id]);
     final root = await strategyFoldersRoot();
     final images = Directory(
       path.join(strategyFolderPath(root.path, opened.id), 'images'),
@@ -913,6 +928,7 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       }),
     ];
     clock.start();
+    watching = true;
     _click(item);
     SchedulerBinding.instance.scheduleFrame();
     await SchedulerBinding.instance.endOfFrame;
@@ -925,6 +941,7 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     await Future<void>.delayed(const Duration(seconds: 1));
+    watching = false;
     final endedOn = c.read(strategyProvider).strategyId == opened.id
         ? openedName
         : c.read(strategyProvider).strategyName;
@@ -956,7 +973,9 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
   windows.sort();
   _log('RACE summary: $runs runs, the left page saved empty $emptied times; '
       'window median ${windows.isEmpty ? '-' : ms(windows[windows.length ~/ 2])} ms, '
-      'worst ${windows.isEmpty ? '-' : ms(windows.last)} ms');
+      'worst ${windows.isEmpty ? '-' : ms(windows.last)} ms; '
+      '$mixedFrames of $framesWatched frames drawn showed the left '
+      'strategy\'s agents with the other strategy open');
   if (step['expectEmptied'] case final int expected when expected != emptied) {
     _failedSteps++;
     _log('FAIL raceLeave: the left page was saved empty $emptied times, '

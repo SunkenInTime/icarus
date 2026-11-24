@@ -232,7 +232,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
 
   Future<void> _selectPage(String id) async {
     if (id == ref.read(strategyPageSessionProvider).activePageId) return;
-    await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
+    await ref.read(strategyProvider.notifier).selectPage(id);
   }
 
   Future<void> _renamePage(PageListItemViewModel page) async {
@@ -381,6 +381,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       );
       return;
     }
+    if (ref.read(strategyProvider.notifier).ignoresClick(page.id)) return;
     try {
       await session.setActivePageAnimated(
         page.id,

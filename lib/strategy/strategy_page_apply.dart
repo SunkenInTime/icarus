@@ -20,7 +20,7 @@ import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
-Future<String?> applyStrategyEditorPageData(
+Future<void> applyStrategyEditorPageData(
   Ref ref,
   StrategyEditorPageData data, {
   required String strategyId,
@@ -58,15 +58,13 @@ Future<String?> applyStrategyEditorPageData(
   if (preserveHistory) {
     ref.read(actionProvider.notifier).reconcileHistory();
   }
-  final wanted =
-      ref.read(canvasShowsProvider.notifier).shown(strategyId, data.pageId);
+  ref.read(canvasShowsProvider.notifier).shown(strategyId, data.pageId);
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     ref
         .read(drawingProvider.notifier)
         .rebuildAllPaths(CoordinateSystem.instance);
   });
-  return wanted;
 }
 
 /// Brings the page on screen to the server's copy without reloading it.

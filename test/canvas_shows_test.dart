@@ -8,12 +8,13 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 
@@ -27,24 +28,32 @@ final class _SignedOut extends AuthProvider {
   AppAuthState build() => AppAuthState.fromSession(null);
 }
 
+final class _Hold {
+  final reached = Completer<void>();
+  final released = Completer<void>();
+  var fails = false;
+}
+
 final class _DiskGate {
   _DiskGate(this.directory);
 
   final Directory directory;
-  Completer<void>? _held;
-  Completer<void>? _reached;
+  final _armed = <_Hold>[];
 
-  Future<void> holdNext() {
-    _held = Completer<void>();
-    return (_reached = Completer<void>()).future;
+  _Hold holdNext({bool fails = false}) {
+    final hold = _Hold()..fails = fails;
+    _armed.add(hold);
+    return hold;
   }
 
-  void release() => _held?.complete();
-
   Future<Object?> answer(MethodCall call) async {
-    if (_reached case final reached? when !reached.isCompleted) {
-      reached.complete();
-      await _held!.future;
+    if (_armed.isNotEmpty) {
+      final hold = _armed.removeAt(0);
+      hold.reached.complete();
+      await hold.released.future;
+      if (hold.fails) {
+        throw PlatformException(code: 'disk', message: 'the disk is gone');
+      }
     }
     return directory.path;
   }
@@ -72,9 +81,15 @@ void main() {
 
   StrategyProvider editor() => container.read(strategyProvider.notifier);
   CanvasShows canvas() => container.read(canvasShowsProvider);
+  String? activePage() =>
+      container.read(strategyPageSessionProvider).activePageId;
 
-  StrategyData stored(String id, {int pages = 2}) {
-    final strategy = generatedStrategy(Optionals.set).copyWith(
+  StrategyData stored(
+    String id, {
+    int pages = 2,
+    Optionals optionals = Optionals.set,
+  }) {
+    final strategy = generatedStrategy(optionals).copyWith(
       id: id,
       pages: [
         for (var index = 0; index < pages; index++)
@@ -93,168 +108,280 @@ void main() {
     return strategy;
   }
 
+  StrategyData saved(String id) => const LocalLibrary().storedStrategy(id)!;
+
   List<String> agentsSaved(String strategyId, String pageId) => [
-        for (final agent in const LocalLibrary()
-            .storedStrategy(strategyId)!
+        for (final agent in saved(strategyId)
             .pages
             .firstWhere((page) => page.id == pageId)
             .agentData)
           agent.id,
       ];
 
-  void expectShowsActivePage(String step) {
-    final strategyId = container.read(strategyProvider).strategyId;
-    final pageId = container.read(strategyPageSessionProvider).activePageId;
+  List<String> agentsOnCanvas() => [
+        for (final agent in container.read(agentProvider)) agent.id,
+      ];
+
+  void expectShows(String strategyId, String pageId, String step) {
     expect(
       switch (canvas()) {
         ShowsPage(strategyId: final shown, pageId: final page) =>
           shown == strategyId && page == pageId,
-        _ => false,
+        ShowsNothing() => false,
       },
       isTrue,
       reason: 'after $step the canvas shows $strategyId page $pageId',
     );
   }
 
+  void expectShowsActivePage(String step) => expectShows(
+        container.read(strategyProvider).strategyId!,
+        activePage()!,
+        step,
+      );
+
   test(
-      'after every page path the editor has today, the canvas shows the '
-      'active page of the open strategy, so every flush writes as before',
-      () async {
+      'after every page path the editor has, the canvas shows the active page '
+      'and the pages left are saved with what they held', () async {
     final a = stored('paths-a', pages: 3);
     final b = stored('paths-b');
     expect(canvas(), isA<ShowsNothing>(), reason: 'before any open');
 
     expect(await editor().loadFromHive(a.id), isTrue);
     expectShowsActivePage('an open');
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          type: AgentType.jett,
+          position: const Offset(300, 300),
+          id: 'added-on-p0',
+        ));
     await editor().setActivePage(a.pages[1].id);
     expectShowsActivePage('a page switch');
+    expect(agentsSaved(a.id, a.pages[0].id), contains('added-on-p0'));
     await editor().setActivePageAnimated(a.pages[2].id);
     expectShowsActivePage('an animated page switch');
+    expect(agentsSaved(a.id, a.pages[1].id),
+        [for (final agent in a.pages[1].agentData) agent.id]);
     await editor().addPage();
     expectShowsActivePage('adding a page');
     await editor().reorderPage(0, 2);
     expectShowsActivePage('moving a page');
-    final active = container.read(strategyPageSessionProvider).activePageId!;
+    final active = activePage()!;
+    final onScreen = agentsOnCanvas();
     expect(await editor().deletePage(active), isTrue);
     expectShowsActivePage('deleting the page on screen');
+    expect(saved(a.id).pages.any((page) => page.id == active), isFalse);
+    expect(agentsOnCanvas(), agentsSaved(a.id, activePage()!));
+    expect(onScreen, isNotEmpty);
     await editor().saveToHive(a.id);
     expectShowsActivePage('a save');
+    expect(agentsSaved(a.id, a.pages[0].id), contains('added-on-p0'));
     expect(await editor().loadFromHive(b.id), isTrue);
     expectShowsActivePage('opening another strategy');
-    await editor().clearCurrentStrategy();
-    expect(canvas(), isA<ShowsPage>(),
-        reason: 'closing leaves the canvas as it is');
+    expect(agentsOnCanvas(), agentsSaved(b.id, b.pages[0].id));
   });
 
   test(
-      'a page of the open strategy clicked while it is being opened again is '
-      'shown once the open has applied, and the page on screen keeps what it '
-      'had', () async {
-    final a = stored('again-a');
+      'during an open\'s disk work the strategy left is still open, its '
+      'canvas whole and saved as it is; once the other strategy is open its '
+      'page is shown', () async {
+    final a = stored('whole-a');
+    final b = stored('whole-b');
     expect(await editor().loadFromHive(a.id), isTrue);
     final before = agentsSaved(a.id, a.pages[0].id);
 
-    final held = gate.holdNext();
-    final opening = editor().loadFromHive(a.id);
-    await held;
-    final switching = editor().setActivePageAnimated(a.pages[1].id);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(canvas(), isA<WaitsToShow>());
-    gate.release();
-    await opening;
-    await switching;
-
-    expect(agentsSaved(a.id, a.pages[0].id), before);
-    expect(container.read(strategyPageSessionProvider).activePageId,
-        a.pages[1].id);
-    expectShowsActivePage('the open and the page it waited to show');
-  });
-
-  test(
-      'a page wanted during an open is dropped when the strategy is closed '
-      'or another open begins', () {
-    final shows = container.read(canvasShowsProvider.notifier);
-    shows.emptied();
-    shows.want('a', 'a-p1');
-    shows.dropWanted();
-    expect(shows.shown('a', 'a-p0'), isNull);
-
-    shows.emptied();
-    shows.want('a', 'a-p1');
-    shows.emptied();
-    expect(shows.shown('a', 'a-p0'), isNull);
-
-    shows.emptied();
-    shows.want('a', 'a-p1');
-    expect(shows.shown('b', 'b-p0'), isNull,
-        reason: 'a page of the strategy left is not shown in the one opened');
-
-    shows.emptied();
-    shows.want('a', 'a-p1');
-    expect(shows.shown('a', 'a-p0'), 'a-p1');
-    expect(shows.shown('a', 'a-p1'), isNull, reason: 'it runs once');
-  });
-
-  test(
-      'a save while an open has emptied the canvas writes nothing; with '
-      'nothing unsaved it ends quietly, and the strategy left is as it was',
-      () async {
-    final a = stored('save-a');
-    final b = stored('save-b');
-    expect(await editor().loadFromHive(a.id), isTrue);
-    final record = const LocalLibrary().storedStrategy(a.id)!;
-    final edited = record.lastEdited;
-
-    final held = gate.holdNext();
+    final hold = gate.holdNext();
     final opening = editor().loadFromHive(b.id);
-    await held;
+    await hold.reached.future;
+    expect(container.read(strategyProvider).strategyId, a.id);
+    expect(agentsOnCanvas(), before);
+    expectShows(a.id, a.pages[0].id, 'the open began');
     await editor().saveToHive(a.id);
-    gate.release();
-    await opening;
+    expect(agentsSaved(a.id, a.pages[0].id), before);
+    hold.released.complete();
+    expect(await opening, isTrue);
 
-    expect(const LocalLibrary().storedStrategy(a.id)!.lastEdited, edited);
-    expect(agentsSaved(a.id, a.pages[0].id), isNotEmpty);
+    expectShowsActivePage('the open');
+    expect(agentsOnCanvas(), agentsSaved(b.id, b.pages[0].id));
   });
 
   test(
-      'work put on the emptied canvas during an open is not reported saved: '
-      'a save fails loudly, the strategy stays unsaved, and closing is not '
-      'safe until the open has replaced the canvas', () async {
-    final a = stored('unsaved-a');
-    final b = stored('unsaved-b');
+      'a page clicked during an open is ignored and writes nothing; the open '
+      'ends on its own first page', () async {
+    final a = stored('click-a');
+    final b = stored('click-b');
+    expect(await editor().loadFromHive(a.id), isTrue);
+    final before = saved(a.id).lastEdited;
+
+    final hold = gate.holdNext();
+    final opening = editor().loadFromHive(b.id);
+    await hold.reached.future;
+    await editor().selectPage(a.pages[1].id);
+    expect(activePage(), a.pages[0].id);
+    hold.released.complete();
+    expect(await opening, isTrue);
+
+    expect(saved(a.id).lastEdited, before);
+    expect(activePage(), b.pages[0].id);
+    await editor().selectPage(b.pages[1].id);
+    expect(activePage(), b.pages[1].id, reason: 'clicks work once it opened');
+  });
+
+  test(
+      'an open that fails during its disk work leaves the strategy left open '
+      'and usable', () async {
+    final a = stored('failed-a');
+    final b = stored('failed-b');
+    expect(await editor().loadFromHive(a.id), isTrue);
+    final before = agentsSaved(a.id, a.pages[0].id);
+
+    final hold = gate.holdNext(fails: true);
+    final opening = editor().loadFromHive(b.id);
+    await hold.reached.future;
+    hold.released.complete();
+    await expectLater(opening, throwsA(isA<PlatformException>()));
+
+    expect(container.read(strategyProvider).strategyId, a.id);
+    expectShows(a.id, a.pages[0].id, 'the failed open');
+    expect(agentsOnCanvas(), before);
+    expect(editor().isOpening, isFalse);
+    await editor().selectPage(a.pages[1].id);
+    expect(activePage(), a.pages[1].id);
+    expect(agentsSaved(a.id, a.pages[0].id), before);
+  });
+
+  test(
+      'an open that gives way to an open of a missing strategy leaves the '
+      'strategy left open and usable', () async {
+    final a = stored('superseded-a');
+    final b = stored('superseded-b');
+    expect(await editor().loadFromHive(a.id), isTrue);
+    final before = agentsSaved(a.id, a.pages[0].id);
+
+    final hold = gate.holdNext();
+    final opening = editor().loadFromHive(b.id);
+    await hold.reached.future;
+    expect(await editor().loadFromHive('not-in-the-library'), isFalse);
+    hold.released.complete();
+    expect(await opening, isFalse);
+
+    expect(container.read(strategyProvider).strategyId, a.id);
+    expectShows(a.id, a.pages[0].id, 'the superseded open');
+    expect(agentsOnCanvas(), before);
+    expect(editor().isOpening, isFalse);
+    await editor().selectPage(a.pages[1].id);
+    expect(activePage(), a.pages[1].id);
+  });
+
+  test(
+      'with two opens overlapping, a click stays ignored until the later one '
+      'has ended, though the earlier one ended first', () async {
+    final a = stored('overlap-a');
+    final b = stored('overlap-b');
+    final c = stored('overlap-c');
     expect(await editor().loadFromHive(a.id), isTrue);
 
-    final held = gate.holdNext();
+    final holdB = gate.holdNext();
+    final holdC = gate.holdNext();
+    final openingB = editor().loadFromHive(b.id);
+    await holdB.reached.future;
+    final openingC = editor().loadFromHive(c.id);
+    holdB.released.complete();
+    expect(await openingB, isFalse);
+    await holdC.reached.future;
+
+    expect(editor().isOpening, isTrue);
+    expect(editor().ignoresClick(a.pages[1].id), isTrue);
+    holdC.released.complete();
+    expect(await openingC, isTrue);
+
+    expect(editor().isOpening, isFalse);
+    await editor().selectPage(c.pages[1].id);
+    expect(activePage(), c.pages[1].id);
+  });
+
+  test('closing during an open ends the open and leaves nothing open',
+      () async {
+    final a = stored('close-a');
+    final b = stored('close-b');
+    expect(await editor().loadFromHive(a.id), isTrue);
+    final before = agentsSaved(a.id, a.pages[0].id);
+
+    final hold = gate.holdNext();
     final opening = editor().loadFromHive(b.id);
-    await held;
-    container.read(agentProvider.notifier).addAgent(
-          PlacedAgent(
-            type: AgentType.jett,
-            position: const Offset(400, 400),
-            id: 'put-in-the-window',
-          ),
-        );
-    editor().setUnsaved();
-    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
-    await expectLater(editor().saveToHive(a.id), throwsStateError);
-    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
-    await expectLater(
-      editor().flushPendingAutosaveBeforeExit(),
-      throwsStateError,
-      reason: 'the unsaved-work guard catches this, says the save failed and '
-          'does not close',
-    );
-    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
-    gate.release();
+    await hold.reached.future;
+    await editor().clearCurrentStrategy();
+    hold.released.complete();
+
+    expect(await opening, isFalse);
+    expect(container.read(strategyProvider).strategyId, isNull);
+    expect(editor().isOpening, isFalse);
+    expect(agentsSaved(a.id, a.pages[0].id), before);
+  });
+
+  test(
+      'a strategy whose record is gone by the time it becomes open is left '
+      'open over an empty canvas that nothing can be saved from', () async {
+    final a = stored('gone-a');
+    final b = stored('gone-b');
+    expect(await editor().loadFromHive(a.id), isTrue);
+    final before = saved(a.id).lastEdited;
+
+    final hold = gate.holdNext();
+    final opening = editor().loadFromHive(b.id);
+    await hold.reached.future;
+    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(b.id);
+    hold.released.complete();
     await opening;
 
-    expect(agentsSaved(a.id, a.pages[0].id), isNotEmpty);
+    expect(container.read(strategyProvider).strategyId, b.id);
+    expect(canvas(), isA<ShowsNothing>());
+    expect(agentsOnCanvas(), isEmpty);
+    await editor().saveToHive(b.id);
+    expect(const LocalLibrary().storedStrategy(b.id), isNull);
+    expect(saved(a.id).lastEdited, before);
+  });
+
+  test(
+      'two page clicks at once end on the second, and the page left keeps '
+      'what it held', () async {
+    final a = stored('fast-a', pages: 3);
+    expect(await editor().loadFromHive(a.id), isTrue);
+    final p0 = agentsSaved(a.id, a.pages[0].id);
+    final p1 = agentsSaved(a.id, a.pages[1].id);
+
+    final first = editor().selectPage(a.pages[1].id);
+    final second = editor().selectPage(a.pages[2].id);
+    await first;
+    await second;
+
+    expect(activePage(), a.pages[2].id);
+    expectShowsActivePage('two quick clicks');
+    expect(agentsSaved(a.id, a.pages[0].id), p0);
+    expect(agentsSaved(a.id, a.pages[1].id), p1);
+  });
+
+  test(
+      'a Save asked for a strategy that is no longer open writes nothing to '
+      'it, and fails loudly when there is unsaved work', () async {
+    final a = stored('stale-a', optionals: Optionals.unset);
+    final b = stored('stale-b');
+    expect(a.mapData, isNot(b.mapData));
+    expect(await editor().loadFromHive(a.id), isTrue);
+    expect(await editor().loadFromHive(b.id), isTrue);
+    final before = saved(a.id);
+
+    await editor().saveToHive(a.id);
+    container.read(mapProvider.notifier).fromHive(MapValue.haven, true);
+    editor().setUnsaved();
+    await expectLater(editor().saveToHive(a.id), throwsStateError);
+
+    final after = saved(a.id);
+    expect(after.mapData, before.mapData);
+    expect(after.themeProfileId, before.themeProfileId);
+    expect(after.lastEdited, before.lastEdited);
     expect(
-        agentsSaved(a.id, a.pages[0].id), isNot(contains('put-in-the-window')));
-    expect(
-      [for (final agent in container.read(agentProvider)) agent.id],
-      isNot(contains('put-in-the-window')),
-      reason: 'the open replaces the canvas, as it does on main',
+      [for (final page in after.pages) page.agentData.length],
+      [for (final page in before.pages) page.agentData.length],
     );
   });
 }

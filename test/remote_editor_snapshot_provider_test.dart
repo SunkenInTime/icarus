@@ -25,6 +25,13 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'library_rows/generated_strategies.dart';
+import 'library_store/unit_harness.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -398,8 +405,9 @@ void main() {
 
     // Like every desktop, this one keeps the image files of the strategy.
     Future<(ProviderContainer, _EnqueueRecordingMediaQueue)> desktop(
-      _Repository repository,
-    ) async {
+      _Repository repository, {
+      StrategyOpQueueNotifier Function()? queue,
+    }) async {
       final dir = await Directory.systemTemp.createTemp('remote_editor_media');
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -420,7 +428,7 @@ void main() {
       final container = ProviderContainer(overrides: [
         convexStrategyRepositoryProvider.overrideWithValue(repository),
         authProvider.overrideWith(_ReadyAuthProvider.new),
-        strategyOpQueueProvider.overrideWith(_IdleOpQueue.new),
+        strategyOpQueueProvider.overrideWith(queue ?? _IdleOpQueue.new),
         cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
         cloudMediaAccountIdProvider.overrideWithValue('account-a'),
         durableCloudMediaOutboxStoreProvider
@@ -548,7 +556,7 @@ void main() {
       await reached.future;
       expect(container.read(strategyProvider).strategyId, 'strategy',
           reason: 'while the open waits, the strategy left is still open');
-      final switching = strategies.setActivePageAnimated('b');
+      final switching = strategies.selectPage('b');
       await Future<void>.delayed(const Duration(milliseconds: 50));
       held.complete();
       await opening;
@@ -572,6 +580,139 @@ void main() {
             .having((shows) => shows.strategyId, 'strategy', 'other')
             .having((shows) => shows.pageId, 'page', 'other-a'),
       );
+    });
+
+    test(
+        'a cloud edit is handed over once on an ordinary page switch, as the '
+        'page left holds it', () async {
+      final repository = _Repository();
+      final queue = _RecordingOpQueue();
+      final (container, _) = await desktop(repository, queue: () => queue);
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            type: AgentType.jett,
+            position: const Offset(300, 300),
+            id: 'edited-on-a',
+          ));
+      queue.desired.clear();
+
+      await strategies.setActivePage('b');
+
+      final handedOver = [
+        for (final desired in queue.desired)
+          for (final MapEntry(:key, :value) in desired.entries)
+            if (key.entityId == 'edited-on-a') value,
+      ];
+      expect(handedOver, hasLength(1));
+      expect(handedOver.single, isA<ElementAddOp>());
+      expect(container.read(strategyPageSessionProvider).activePageId, 'b');
+    });
+
+    test(
+        'while a local open does its disk work, a cloud save that was waiting '
+        'on the strategy\'s fields and an acknowledgment both find the cloud '
+        'page whole, and queue no delete', () async {
+      final repository = _Repository();
+      repository.pageSnapshots['a'] = _page(
+        'a',
+        images: [_image('image-a')],
+        assets: [_activeAsset('image-a')],
+      );
+      final queue = _RecordingOpQueue();
+      final (container, _) = await desktop(repository, queue: () => queue);
+      final disk = await openUnitHive();
+      addTearDown(Hive.close);
+      final local = generatedStrategy(Optionals.set).copyWith(id: 'local');
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .put(local.id, local);
+      var holdDisk = false;
+      final diskReached = Completer<void>();
+      final diskReleased = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (_) async {
+        if (holdDisk && !diskReached.isCompleted) {
+          diskReached.complete();
+          await diskReleased.future;
+        }
+        return disk.path;
+      });
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+      expect(container.read(placedImageProvider).images, isNotEmpty);
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            type: AgentType.jett,
+            position: const Offset(300, 300),
+            id: 'sent-before',
+          ));
+      final session = container.read(strategyPageSessionProvider.notifier);
+      await session.handOverForSyncStatus();
+      final sent = queue.desired.last.values.whereType<ElementAddOp>().first;
+      queue.desired.clear();
+
+      queue.holdMetadata();
+      final saving = session.handOverForSyncStatus();
+      await queue.metadataReached!.future;
+      holdDisk = true;
+      final opening = strategies.loadFromHive(local.id);
+      await diskReached.future;
+      queue.releaseMetadata();
+      await saving;
+      queue.acknowledge(
+        AckedEntityIntent(
+          entityKey: EntitySyncKey.element('a', sent.elementPublicId),
+          op: sent,
+          ack: AppliedOpAck(opId: sent.opId, revision: 2),
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      diskReleased.complete();
+      expect(await opening, isTrue);
+
+      final queued = [
+        for (final desired in queue.desired) ...desired.values,
+      ];
+      expect(queued.whereType<ElementDeleteOp>(), isEmpty);
+      expect(container.read(strategyProvider).strategyId, local.id);
+    });
+
+    test(
+        'two page clicks at once end on the second page, with nothing handed '
+        'over from a canvas that does not show the page asked for', () async {
+      final repository = _Repository()..pageIds = ['a', 'b', 'c'];
+      final queue = _RecordingOpQueue();
+      final (container, _) = await desktop(repository, queue: () => queue);
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            type: AgentType.jett,
+            position: const Offset(300, 300),
+            id: 'edited-on-a',
+          ));
+      queue.desired.clear();
+
+      final first = strategies.selectPage('b');
+      final second = strategies.selectPage('c');
+      await first;
+      await second;
+
+      expect(container.read(strategyPageSessionProvider).activePageId, 'c');
+      expect(
+        container.read(canvasShowsProvider),
+        isA<ShowsPage>().having((shows) => shows.pageId, 'page', 'c'),
+      );
+      final handedOver = [
+        for (final desired in queue.desired)
+          for (final MapEntry(:key, :value) in desired.entries)
+            if (key.entityId == 'edited-on-a') (key.pageId, value),
+      ];
+      expect(handedOver, isNotEmpty);
+      expect({for (final (page, _) in handedOver) page}, {'a'});
+      expect(handedOver.map((handed) => handed.$2),
+          everyElement(isA<ElementAddOp>()));
     });
 
     test('a strategy that cannot be read does not open as the one before it',
@@ -854,6 +995,8 @@ class _Repository extends ConvexStrategyRepository {
 
   int shellRevision = 1;
 
+  List<String> pageIds = ['a', 'b'];
+
   /// While set, the next page read waits for it, then answers as usual.
   Completer<void>? pageReadGate;
 
@@ -885,7 +1028,7 @@ class _Repository extends ConvexStrategyRepository {
         publicId: strategyPublicId,
       );
     }
-    return _shell(failPageReads ? ['b'] : ['a', 'b'], revision: shellRevision);
+    return _shell(failPageReads ? ['b'] : pageIds, revision: shellRevision);
   }
 
   @override
@@ -1005,6 +1148,48 @@ class _IdleOpQueue extends StrategyOpQueueNotifier {
     String? strategyPublicId, {
     required String? accountId,
   }) {}
+}
+
+class _RecordingOpQueue extends _IdleOpQueue {
+  final desired = <Map<EntitySyncKey, StrategyOp>>[];
+  Completer<void>? metadataReached;
+  Completer<void>? _metadataReleased;
+
+  void holdMetadata() {
+    metadataReached = Completer<void>();
+    _metadataReleased = Completer<void>();
+  }
+
+  void releaseMetadata() => _metadataReleased?.complete();
+
+  void acknowledge(AckedEntityIntent acked) => state = state.copyWith(
+        lastAcks: [acked.ack],
+        lastAckBatch: [acked],
+      );
+
+  @override
+  Future<OutboxWrite> syncDesiredOpsForPage({
+    required String pageId,
+    required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
+    bool clearMissing = true,
+    bool flushImmediately = false,
+    int? madeLive,
+  }) async {
+    desired.add(Map.of(desiredOpsByEntityKey));
+    return OutboxWrite.written;
+  }
+
+  @override
+  Future<void> syncDesiredGenericOp({
+    required EntitySyncKey entityKey,
+    required StrategyOp? desiredOp,
+    bool flushImmediately = false,
+  }) async {
+    if (metadataReached case final reached? when !reached.isCompleted) {
+      reached.complete();
+      await _metadataReleased!.future;
+    }
+  }
 }
 
 /// The queue, its connection stamp set by the test (see

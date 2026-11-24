@@ -251,9 +251,8 @@ class _ViewerPages extends ConsumerWidget {
       itemBuilder: (context, index) {
         final page = pages[index];
         final active = page.publicId == (activePageId ?? pages.first.publicId);
-        void open() => ref
-            .read(strategyProvider.notifier)
-            .setActivePageAnimated(page.publicId);
+        void open() =>
+            ref.read(strategyProvider.notifier).selectPage(page.publicId);
         return Semantics(
           label: page.name,
           button: true,
