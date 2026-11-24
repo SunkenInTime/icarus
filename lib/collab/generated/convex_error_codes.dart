@@ -81,6 +81,7 @@ final class ConvexFunctionException implements Exception {
   final ConvexValue? data;
 
   @override
-  String toString() => 'ConvexFunctionException('
+  String toString() =>
+      'ConvexFunctionException('
       '$rawCode, $message)';
 }

@@ -15,10 +15,10 @@ final class ConvexQuery<T> {
     required String name,
     required ConvexObject args,
     required T Function(ConvexValue) decode,
-  })  : _transport = transport,
-        _name = name,
-        _args = args,
-        _decode = decode;
+  }) : _transport = transport,
+       _name = name,
+       _args = args,
+       _decode = decode;
 
   final ConvexTransport _transport;
   final String _name;
@@ -139,21 +139,21 @@ abstract interface class IcarusConvexApi {
 
 final class _IcarusConvexApi implements IcarusConvexApi {
   _IcarusConvexApi(ConvexTransport transport)
-      : community = _CommunityModule(transport),
-        elements = _ElementsModule(transport),
-        folders = _FoldersModule(transport),
-        health = _HealthModule(transport),
-        images = _ImagesModule(transport),
-        invites = _InvitesModule(transport),
-        lineups = _LineupsModule(transport),
-        ops = _OpsModule(transport),
-        page = _PageModule(transport),
-        pages = _PagesModule(transport),
-        presence = _PresenceModule(transport),
-        shares = _SharesModule(transport),
-        strategies = _StrategiesModule(transport),
-        strategy = _StrategyModule(transport),
-        users = _UsersModule(transport);
+    : community = _CommunityModule(transport),
+      elements = _ElementsModule(transport),
+      folders = _FoldersModule(transport),
+      health = _HealthModule(transport),
+      images = _ImagesModule(transport),
+      invites = _InvitesModule(transport),
+      lineups = _LineupsModule(transport),
+      ops = _OpsModule(transport),
+      page = _PageModule(transport),
+      pages = _PagesModule(transport),
+      presence = _PresenceModule(transport),
+      shares = _SharesModule(transport),
+      strategies = _StrategiesModule(transport),
+      strategy = _StrategyModule(transport),
+      users = _UsersModule(transport);
   @override
   final CommunityModule community;
   @override
@@ -1808,8 +1808,10 @@ abstract interface class StrategiesModule {
     required String name,
     required String publicId,
     ConvexOptional<
-            OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-        themeOverridePalette = const ConvexOptional.absent(),
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   });
   Future<ConvexValue> createWithInitialPage({
@@ -1820,13 +1822,16 @@ abstract interface class StrategiesModule {
     required String initialPageName,
     required String initialPagePublicId,
     ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings>
-        initialPageSettings = const ConvexOptional.absent(),
+        initialPageSettings =
+        const ConvexOptional.absent(),
     required String mapData,
     required String name,
     required String publicId,
     ConvexOptional<
-            OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-        themeOverridePalette = const ConvexOptional.absent(),
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
     ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
   });
@@ -1877,8 +1882,10 @@ abstract interface class StrategiesModule {
     ConvexOptional<String> name = const ConvexOptional.absent(),
     required String strategyPublicId,
     ConvexOptional<
-            OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-        themeOverridePalette = const ConvexOptional.absent(),
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   });
 }
@@ -1909,8 +1916,10 @@ final class _StrategiesModule implements StrategiesModule {
     required String name,
     required String publicId,
     ConvexOptional<
-            OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-        themeOverridePalette = const ConvexOptional.absent(),
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   }) {
     final args = encodeStrategiesCreateArgs(
@@ -1937,13 +1946,16 @@ final class _StrategiesModule implements StrategiesModule {
     required String initialPageName,
     required String initialPagePublicId,
     ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings>
-        initialPageSettings = const ConvexOptional.absent(),
+        initialPageSettings =
+        const ConvexOptional.absent(),
     required String mapData,
     required String name,
     required String publicId,
     ConvexOptional<
-            OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-        themeOverridePalette = const ConvexOptional.absent(),
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
     ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
   }) {
@@ -2116,8 +2128,10 @@ final class _StrategiesModule implements StrategiesModule {
     ConvexOptional<String> name = const ConvexOptional.absent(),
     required String strategyPublicId,
     ConvexOptional<
-            OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-        themeOverridePalette = const ConvexOptional.absent(),
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   }) {
     final args = encodeStrategiesUpdateArgs(

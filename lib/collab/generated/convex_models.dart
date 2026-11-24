@@ -8,12 +8,8 @@ import '../convex_payload_codecs.dart';
 import '../transport/convex_transport.dart';
 
 final class ConvexOptional<T> {
-  const ConvexOptional.absent()
-      : isPresent = false,
-        _value = null;
-  const ConvexOptional.present(T value)
-      : isPresent = true,
-        _value = value;
+  const ConvexOptional.absent() : isPresent = false, _value = null;
+  const ConvexOptional.present(T value) : isPresent = true, _value = value;
 
   final bool isPresent;
   final T? _value;
@@ -511,9 +507,9 @@ sealed class ImagesCompleteUploadResult {
       'convex' => ImagesCompleteUploadResultConvex.decode(value, path),
       'r2' => ImagesCompleteUploadResultR2.decode(value, path),
       _ => throw ConvexDecodingException(
-          path,
-          'unknown discriminator $discriminator',
-        ),
+        path,
+        'unknown discriminator $discriminator',
+      ),
     };
   }
 
@@ -531,44 +527,44 @@ sealed class OpsApplyBatchArgsOpsItem {
     );
     return switch (discriminator) {
       'strategy.patch' => OpsApplyBatchArgsOpsItemStrategyPatch.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       'page.add' => OpsApplyBatchArgsOpsItemPageAdd.decode(value, path),
       'page.patch' => OpsApplyBatchArgsOpsItemPagePatch.decode(value, path),
       'page.delete' => OpsApplyBatchArgsOpsItemPageDelete.decode(value, path),
       'page.reorder' => OpsApplyBatchArgsOpsItemPageReorder.decode(value, path),
       'pageContent.patch' => OpsApplyBatchArgsOpsItemPageContentPatch.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       'element.add' => OpsApplyBatchArgsOpsItemElementAdd.decode(value, path),
       'element.patch' => OpsApplyBatchArgsOpsItemElementPatch.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       'element.delete' => OpsApplyBatchArgsOpsItemElementDelete.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       'element.reorder' => OpsApplyBatchArgsOpsItemElementReorder.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       'lineup.add' => OpsApplyBatchArgsOpsItemLineupAdd.decode(value, path),
       'lineup.patch' => OpsApplyBatchArgsOpsItemLineupPatch.decode(value, path),
       'lineup.delete' => OpsApplyBatchArgsOpsItemLineupDelete.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       'lineup.reorder' => OpsApplyBatchArgsOpsItemLineupReorder.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       _ => throw ConvexDecodingException(
-          path,
-          'unknown discriminator $discriminator',
-        ),
+        path,
+        'unknown discriminator $discriminator',
+      ),
     };
   }
 
@@ -593,9 +589,9 @@ sealed class OpsApplyBatchResultResultsItem {
       'rejected' => OpsApplyBatchResultResultsItemRejected.decode(value, path),
       'failed' => OpsApplyBatchResultResultsItemFailed.decode(value, path),
       _ => throw ConvexDecodingException(
-          path,
-          'unknown discriminator $discriminator',
-        ),
+        path,
+        'unknown discriminator $discriminator',
+      ),
     };
   }
 
@@ -621,26 +617,26 @@ sealed class OpsApplyBatchResultResultsItemRejectedCurrent {
           path,
         ),
       'page' => OpsApplyBatchResultResultsItemRejectedCurrentPage.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       'pageContent' =>
         OpsApplyBatchResultResultsItemRejectedCurrentPageContent.decode(
           value,
           path,
         ),
       'element' => OpsApplyBatchResultResultsItemRejectedCurrentElement.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       'lineup' => OpsApplyBatchResultResultsItemRejectedCurrentLineup.decode(
-          value,
-          path,
-        ),
+        value,
+        path,
+      ),
       _ => throw ConvexDecodingException(
-          path,
-          'unknown discriminator $discriminator',
-        ),
+        path,
+        'unknown discriminator $discriminator',
+      ),
     };
   }
 
@@ -660,9 +656,9 @@ sealed class SharesPreviewResult {
       'strategy' => SharesPreviewResultStrategy.decode(value, path),
       'folder' => SharesPreviewResultFolder.decode(value, path),
       _ => throw ConvexDecodingException(
-          path,
-          'unknown discriminator $discriminator',
-        ),
+        path,
+        'unknown discriminator $discriminator',
+      ),
     };
   }
 
@@ -682,9 +678,9 @@ sealed class SharesRedeemResult {
       'strategy' => SharesRedeemResultStrategy.decode(value, path),
       'folder' => SharesRedeemResultFolder.decode(value, path),
       _ => throw ConvexDecodingException(
-          path,
-          'unknown discriminator $discriminator',
-        ),
+        path,
+        'unknown discriminator $discriminator',
+      ),
     };
   }
 
@@ -704,9 +700,9 @@ sealed class SharesResolveResult {
       'strategy' => SharesResolveResultStrategy.decode(value, path),
       'folder' => SharesResolveResultFolder.decode(value, path),
       _ => throw ConvexDecodingException(
-          path,
-          'unknown discriminator $discriminator',
-        ),
+        path,
+        'unknown discriminator $discriminator',
+      ),
     };
   }
 
@@ -729,9 +725,9 @@ sealed class StrategyListContentVersionsResultItem {
       'found' => StrategyListContentVersionsResultItemFound.decode(value, path),
       'gone' => StrategyListContentVersionsResultItemGone.decode(value, path),
       _ => throw ConvexDecodingException(
-          path,
-          'unknown discriminator $discriminator',
-        ),
+        path,
+        'unknown discriminator $discriminator',
+      ),
     };
   }
 
@@ -753,19 +749,18 @@ final class CommunityGetPostPreviewResult {
   factory CommunityGetPostPreviewResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return CommunityGetPostPreviewResult(
-      agentTypes: _decodeArray(
-        object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
-        '$path.agentTypes',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => _decodeString(
-              entry.$2,
-              _indexPath('$path.agentTypes', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      agentTypes:
+          _decodeArray(
+                object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
+                '$path.agentTypes',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.agentTypes', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       mapData: _decodeString(
         object.value['mapData'] ?? _missing(path, 'mapData'),
         '$path.mapData',
@@ -861,28 +856,29 @@ final class CommunityGetPostResultPost {
   factory CommunityGetPostResultPost.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return CommunityGetPostResultPost(
-      agentTypes: _decodeArray(
-        object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
-        '$path.agentTypes',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => _decodeString(
-              entry.$2,
-              _indexPath('$path.agentTypes', entry.$1),
-            ),
-          )
-          .toList(growable: false),
-      authorAvatarUrl: (object.value['authorAvatarUrl'] ??
-              _missing(path, 'authorAvatarUrl')) is ConvexNull
+      agentTypes:
+          _decodeArray(
+                object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
+                '$path.agentTypes',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.agentTypes', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      authorAvatarUrl:
+          (object.value['authorAvatarUrl'] ?? _missing(path, 'authorAvatarUrl'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['authorAvatarUrl'] ??
                   _missing(path, 'authorAvatarUrl'),
               '$path.authorAvatarUrl',
             ),
-      authorName: (object.value['authorName'] ?? _missing(path, 'authorName'))
+      authorName:
+          (object.value['authorName'] ?? _missing(path, 'authorName'))
               is ConvexNull
           ? null
           : _decodeString(
@@ -945,8 +941,9 @@ final class CommunityGetPostResultPost {
       'authorAvatarUrl': authorAvatarUrl == null
           ? const ConvexNull()
           : ConvexString(authorAvatarUrl!),
-      'authorName':
-          authorName == null ? const ConvexNull() : ConvexString(authorName!),
+      'authorName': authorName == null
+          ? const ConvexNull()
+          : ConvexString(authorName!),
       'lineupCount': _encodeNumber(lineupCount, '$path.lineupCount'),
       'mapData': ConvexString(mapData),
       'pageCount': _encodeNumber(pageCount, '$path.pageCount'),
@@ -978,19 +975,18 @@ final class CommunityGetReportsResultItem {
         object.value['count'] ?? _missing(path, 'count'),
         '$path.count',
       ),
-      notes: _decodeArray(
-        object.value['notes'] ?? _missing(path, 'notes'),
-        '$path.notes',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => _decodeString(
-              entry.$2,
-              _indexPath('$path.notes', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      notes:
+          _decodeArray(
+                object.value['notes'] ?? _missing(path, 'notes'),
+                '$path.notes',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.notes', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       reason: CommunityGetReportsResultItemReason.fromWireName(
         _decodeString(
           object.value['reason'] ?? _missing(path, 'reason'),
@@ -1060,7 +1056,8 @@ final class CommunityGetViewerResult {
   factory CommunityGetViewerResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return CommunityGetViewerResult(
-      authorName: (object.value['authorName'] ?? _missing(path, 'authorName'))
+      authorName:
+          (object.value['authorName'] ?? _missing(path, 'authorName'))
               is ConvexNull
           ? null
           : _decodeString(
@@ -1080,8 +1077,9 @@ final class CommunityGetViewerResult {
 
   ConvexObject encode(String path) {
     return ConvexObject({
-      'authorName':
-          authorName == null ? const ConvexNull() : ConvexString(authorName!),
+      'authorName': authorName == null
+          ? const ConvexNull()
+          : ConvexString(authorName!),
       'canPost': ConvexBoolean(canPost),
       'isReviewer': ConvexBoolean(isReviewer),
     });
@@ -1244,8 +1242,9 @@ final class CommunityListPostableResultItem {
         object.value['name'] ?? _missing(path, 'name'),
         '$path.name',
       ),
-      postPublicId: (object.value['postPublicId'] ??
-              _missing(path, 'postPublicId')) is ConvexNull
+      postPublicId:
+          (object.value['postPublicId'] ?? _missing(path, 'postPublicId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['postPublicId'] ?? _missing(path, 'postPublicId'),
@@ -1286,33 +1285,34 @@ final class CommunityListPostsResult {
   factory CommunityListPostsResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return CommunityListPostsResult(
-      nextCursor: (object.value['nextCursor'] ?? _missing(path, 'nextCursor'))
+      nextCursor:
+          (object.value['nextCursor'] ?? _missing(path, 'nextCursor'))
               is ConvexNull
           ? null
           : _decodeString(
               object.value['nextCursor'] ?? _missing(path, 'nextCursor'),
               '$path.nextCursor',
             ),
-      posts: _decodeArray(
-        object.value['posts'] ?? _missing(path, 'posts'),
-        '$path.posts',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => CommunityGetPostResultPost.decode(
-              entry.$2,
-              _indexPath('$path.posts', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      posts:
+          _decodeArray(
+                object.value['posts'] ?? _missing(path, 'posts'),
+                '$path.posts',
+              ).value.indexed
+              .map(
+                (entry) => CommunityGetPostResultPost.decode(
+                  entry.$2,
+                  _indexPath('$path.posts', entry.$1),
+                ),
+              )
+              .toList(growable: false),
     );
   }
 
   ConvexObject encode(String path) {
     return ConvexObject({
-      'nextCursor':
-          nextCursor == null ? const ConvexNull() : ConvexString(nextCursor!),
+      'nextCursor': nextCursor == null
+          ? const ConvexNull()
+          : ConvexString(nextCursor!),
       'posts': ConvexArray(
         posts.indexed
             .map(
@@ -1503,19 +1503,18 @@ final class FoldersListTreeResultItem {
   factory FoldersListTreeResultItem.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return FoldersListTreeResultItem(
-      agentTypes: _decodeArray(
-        object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
-        '$path.agentTypes',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => _decodeString(
-              entry.$2,
-              _indexPath('$path.agentTypes', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      agentTypes:
+          _decodeArray(
+                object.value['agentTypes'] ?? _missing(path, 'agentTypes'),
+                '$path.agentTypes',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.agentTypes', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       color: (object.value['color'] ?? _missing(path, 'color')) is ConvexNull
           ? null
           : _decodeString(
@@ -1526,31 +1525,36 @@ final class FoldersListTreeResultItem {
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
         '$path.createdAt',
       ),
-      customColorValue: (object.value['customColorValue'] ??
-              _missing(path, 'customColorValue')) is ConvexNull
+      customColorValue:
+          (object.value['customColorValue'] ??
+                  _missing(path, 'customColorValue'))
+              is ConvexNull
           ? null
           : _decodeNumber(
               object.value['customColorValue'] ??
                   _missing(path, 'customColorValue'),
               '$path.customColorValue',
             ),
-      iconCodePoint: (object.value['iconCodePoint'] ??
-              _missing(path, 'iconCodePoint')) is ConvexNull
+      iconCodePoint:
+          (object.value['iconCodePoint'] ?? _missing(path, 'iconCodePoint'))
+              is ConvexNull
           ? null
           : _decodeNumber(
               object.value['iconCodePoint'] ?? _missing(path, 'iconCodePoint'),
               '$path.iconCodePoint',
             ),
-      iconFontFamily: (object.value['iconFontFamily'] ??
-              _missing(path, 'iconFontFamily')) is ConvexNull
+      iconFontFamily:
+          (object.value['iconFontFamily'] ?? _missing(path, 'iconFontFamily'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['iconFontFamily'] ??
                   _missing(path, 'iconFontFamily'),
               '$path.iconFontFamily',
             ),
-      iconFontPackage: (object.value['iconFontPackage'] ??
-              _missing(path, 'iconFontPackage')) is ConvexNull
+      iconFontPackage:
+          (object.value['iconFontPackage'] ?? _missing(path, 'iconFontPackage'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['iconFontPackage'] ??
@@ -1563,25 +1567,26 @@ final class FoldersListTreeResultItem {
               object.value['iconId'] ?? _missing(path, 'iconId'),
               '$path.iconId',
             ),
-      mapPeeks: _decodeArray(
-        object.value['mapPeeks'] ?? _missing(path, 'mapPeeks'),
-        '$path.mapPeeks',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => _decodeString(
-              entry.$2,
-              _indexPath('$path.mapPeeks', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      mapPeeks:
+          _decodeArray(
+                object.value['mapPeeks'] ?? _missing(path, 'mapPeeks'),
+                '$path.mapPeeks',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.mapPeeks', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       name: _decodeString(
         object.value['name'] ?? _missing(path, 'name'),
         '$path.name',
       ),
-      parentFolderPublicId: (object.value['parentFolderPublicId'] ??
-              _missing(path, 'parentFolderPublicId')) is ConvexNull
+      parentFolderPublicId:
+          (object.value['parentFolderPublicId'] ??
+                  _missing(path, 'parentFolderPublicId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['parentFolderPublicId'] ??
@@ -1754,11 +1759,11 @@ final class ImagesGenerateUploadUrlResult {
           object.value['requiredHeaders'] ?? _missing(path, 'requiredHeaders'),
           '$path.requiredHeaders',
         ).value.map(
-              (key, item) => MapEntry(
-                key,
-                _decodeString(item, _fieldPath('$path.requiredHeaders', key)),
-              ),
-            ),
+          (key, item) => MapEntry(
+            key,
+            _decodeString(item, _fieldPath('$path.requiredHeaders', key)),
+          ),
+        ),
       ),
       uploadId: _decodeString(
         object.value['uploadId'] ?? _missing(path, 'uploadId'),
@@ -1843,11 +1848,11 @@ final class ImagesListForStrategyResultItem {
     return ImagesListForStrategyResultItem(
       byteSize:
           (object.value['byteSize'] ?? _missing(path, 'byteSize')) is ConvexNull
-              ? null
-              : _decodeNumber(
-                  object.value['byteSize'] ?? _missing(path, 'byteSize'),
-                  '$path.byteSize',
-                ),
+          ? null
+          : _decodeNumber(
+              object.value['byteSize'] ?? _missing(path, 'byteSize'),
+              '$path.byteSize',
+            ),
       fileExtension: _decodeString(
         object.value['fileExtension'] ?? _missing(path, 'fileExtension'),
         '$path.fileExtension',
@@ -1858,8 +1863,10 @@ final class ImagesListForStrategyResultItem {
               object.value['height'] ?? _missing(path, 'height'),
               '$path.height',
             ),
-      legacyStoragePath: (object.value['legacyStoragePath'] ??
-              _missing(path, 'legacyStoragePath')) is ConvexNull
+      legacyStoragePath:
+          (object.value['legacyStoragePath'] ??
+                  _missing(path, 'legacyStoragePath'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['legacyStoragePath'] ??
@@ -1868,11 +1875,11 @@ final class ImagesListForStrategyResultItem {
             ),
       mimeType:
           (object.value['mimeType'] ?? _missing(path, 'mimeType')) is ConvexNull
-              ? null
-              : _decodeString(
-                  object.value['mimeType'] ?? _missing(path, 'mimeType'),
-                  '$path.mimeType',
-                ),
+          ? null
+          : _decodeString(
+              object.value['mimeType'] ?? _missing(path, 'mimeType'),
+              '$path.mimeType',
+            ),
       provider: ImagesCompleteUploadArgsProvider.fromWireName(
         _decodeString(
           object.value['provider'] ?? _missing(path, 'provider'),
@@ -1884,7 +1891,8 @@ final class ImagesListForStrategyResultItem {
         object.value['publicId'] ?? _missing(path, 'publicId'),
         '$path.publicId',
       ),
-      uploadedAt: (object.value['uploadedAt'] ?? _missing(path, 'uploadedAt'))
+      uploadedAt:
+          (object.value['uploadedAt'] ?? _missing(path, 'uploadedAt'))
               is ConvexNull
           ? null
           : _decodeNumber(
@@ -1925,8 +1933,9 @@ final class ImagesListForStrategyResultItem {
       'legacyStoragePath': legacyStoragePath == null
           ? const ConvexNull()
           : ConvexString(legacyStoragePath!),
-      'mimeType':
-          mimeType == null ? const ConvexNull() : ConvexString(mimeType!),
+      'mimeType': mimeType == null
+          ? const ConvexNull()
+          : ConvexString(mimeType!),
       'provider': ConvexString(provider.wireName),
       'publicId': ConvexString(publicId),
       'uploadedAt': uploadedAt == null
@@ -2097,13 +2106,13 @@ final class OpsApplyBatchArgsOpsItemElementAdd
       ),
       expectedElementRevision:
           object.value.containsKey('expectedElementRevision')
-              ? ConvexOptional.present(
-                  _decodeNumber(
-                    object.value['expectedElementRevision']!,
-                    '$path.expectedElementRevision',
-                  ),
-                )
-              : const ConvexOptional.absent(),
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedElementRevision']!,
+                '$path.expectedElementRevision',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedLife: object.value.containsKey('expectedLife')
           ? ConvexOptional.present(
               _decodeNumber(
@@ -2344,7 +2353,7 @@ final class OpsApplyBatchArgsOpsItemElementPatchMerge {
     this.baseValue = const ConvexOptional.absent(),
   });
   final ConvexOptional<List<OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem>>
-      baseValue;
+  baseValue;
   final List<String> fields;
 
   factory OpsApplyBatchArgsOpsItemElementPatchMerge.decode(
@@ -2355,32 +2364,29 @@ final class OpsApplyBatchArgsOpsItemElementPatchMerge {
     return OpsApplyBatchArgsOpsItemElementPatchMerge(
       baseValue: object.value.containsKey('base')
           ? ConvexOptional.present(
-              _decodeArray(object.value['base']!, '$path.base')
-                  .value
-                  .indexed
+              _decodeArray(object.value['base']!, '$path.base').value.indexed
                   .map(
-                    (entry) => OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem
-                        .decode(
-                      entry.$2,
-                      _indexPath('$path.base', entry.$1),
-                    ),
+                    (entry) =>
+                        OpsApplyBatchArgsOpsItemElementPatchMergeBaseItem.decode(
+                          entry.$2,
+                          _indexPath('$path.base', entry.$1),
+                        ),
                   )
                   .toList(growable: false),
             )
           : const ConvexOptional.absent(),
-      fields: _decodeArray(
-        object.value['fields'] ?? _missing(path, 'fields'),
-        '$path.fields',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => _decodeString(
-              entry.$2,
-              _indexPath('$path.fields', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      fields:
+          _decodeArray(
+                object.value['fields'] ?? _missing(path, 'fields'),
+                '$path.fields',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.fields', entry.$1),
+                ),
+              )
+              .toList(growable: false),
     );
   }
 
@@ -2888,13 +2894,13 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
     return OpsApplyBatchArgsOpsItemPageAdd(
       copyContentFromPagePublicId:
           object.value.containsKey('copyContentFromPagePublicId')
-              ? ConvexOptional.present(
-                  _decodeString(
-                    object.value['copyContentFromPagePublicId']!,
-                    '$path.copyContentFromPagePublicId',
-                  ),
-                )
-              : const ConvexOptional.absent(),
+          ? ConvexOptional.present(
+              _decodeString(
+                object.value['copyContentFromPagePublicId']!,
+                '$path.copyContentFromPagePublicId',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedLife: object.value.containsKey('expectedLife')
           ? ConvexOptional.present(
               _decodeNumber(
@@ -3375,8 +3381,9 @@ final class OpsApplyBatchArgsOpsItemStrategyPatchPayload {
   final ConvexOptional<String> mapData;
   final ConvexOptional<String> name;
   final ConvexOptional<
-          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-      themeOverridePalette;
+    OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+  >
+  themeOverridePalette;
   final ConvexOptional<String> themeProfileId;
 
   factory OpsApplyBatchArgsOpsItemStrategyPatchPayload.decode(
@@ -3387,13 +3394,13 @@ final class OpsApplyBatchArgsOpsItemStrategyPatchPayload {
     return OpsApplyBatchArgsOpsItemStrategyPatchPayload(
       clearThemeOverridePalette:
           object.value.containsKey('clearThemeOverridePalette')
-              ? ConvexOptional.present(
-                  _decodeBoolean(
-                    object.value['clearThemeOverridePalette']!,
-                    '$path.clearThemeOverridePalette',
-                  ),
-                )
-              : const ConvexOptional.absent(),
+          ? ConvexOptional.present(
+              _decodeBoolean(
+                object.value['clearThemeOverridePalette']!,
+                '$path.clearThemeOverridePalette',
+              ),
+            )
+          : const ConvexOptional.absent(),
       clearThemeProfileId: object.value.containsKey('clearThemeProfileId')
           ? ConvexOptional.present(
               _decodeBoolean(
@@ -3414,8 +3421,7 @@ final class OpsApplyBatchArgsOpsItemStrategyPatchPayload {
           : const ConvexOptional.absent(),
       themeOverridePalette: object.value.containsKey('themeOverridePalette')
           ? ConvexOptional.present(
-              OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
-                  .decode(
+              OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette.decode(
                 object.value['themeOverridePalette']!,
                 '$path.themeOverridePalette',
               ),
@@ -3505,19 +3511,18 @@ final class OpsApplyBatchResult {
   factory OpsApplyBatchResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchResult(
-      results: _decodeArray(
-        object.value['results'] ?? _missing(path, 'results'),
-        '$path.results',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => OpsApplyBatchResultResultsItem.decode(
-              entry.$2,
-              _indexPath('$path.results', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      results:
+          _decodeArray(
+                object.value['results'] ?? _missing(path, 'results'),
+                '$path.results',
+              ).value.indexed
+              .map(
+                (entry) => OpsApplyBatchResultResultsItem.decode(
+                  entry.$2,
+                  _indexPath('$path.results', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       serverTime: object.value.containsKey('serverTime')
           ? ConvexOptional.present(
               _decodeNumber(object.value['serverTime']!, '$path.serverTime'),
@@ -3923,9 +3928,9 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageContent
       ),
       value:
           OpsApplyBatchResultResultsItemRejectedCurrentPageContentValue.decode(
-        object.value['value'] ?? _missing(path, 'value'),
-        '$path.value',
-      ),
+            object.value['value'] ?? _missing(path, 'value'),
+            '$path.value',
+          ),
     );
   }
 
@@ -3954,11 +3959,11 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageContentValue {
     return OpsApplyBatchResultResultsItemRejectedCurrentPageContentValue(
       settings:
           (object.value['settings'] ?? _missing(path, 'settings')) is ConvexNull
-              ? null
-              : OpsApplyBatchArgsOpsItemPageAddPayloadSettings.decode(
-                  object.value['settings'] ?? _missing(path, 'settings'),
-                  '$path.settings',
-                ),
+          ? null
+          : OpsApplyBatchArgsOpsItemPageAddPayloadSettings.decode(
+              object.value['settings'] ?? _missing(path, 'settings'),
+              '$path.settings',
+            ),
     );
   }
 
@@ -4074,7 +4079,7 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategyValue {
   final String mapData;
   final String name;
   final OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette?
-      themeOverridePalette;
+  themeOverridePalette;
   final String? themeProfileId;
 
   factory OpsApplyBatchResultResultsItemRejectedCurrentStrategyValue.decode(
@@ -4091,17 +4096,19 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategyValue {
         object.value['name'] ?? _missing(path, 'name'),
         '$path.name',
       ),
-      themeOverridePalette: (object.value['themeOverridePalette'] ??
-              _missing(path, 'themeOverridePalette')) is ConvexNull
+      themeOverridePalette:
+          (object.value['themeOverridePalette'] ??
+                  _missing(path, 'themeOverridePalette'))
+              is ConvexNull
           ? null
-          : OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
-              .decode(
+          : OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette.decode(
               object.value['themeOverridePalette'] ??
                   _missing(path, 'themeOverridePalette'),
               '$path.themeOverridePalette',
             ),
-      themeProfileId: (object.value['themeProfileId'] ??
-              _missing(path, 'themeProfileId')) is ConvexNull
+      themeProfileId:
+          (object.value['themeProfileId'] ?? _missing(path, 'themeProfileId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['themeProfileId'] ??
@@ -4136,32 +4143,30 @@ final class PageGetElementSliceResult {
   factory PageGetElementSliceResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return PageGetElementSliceResult(
-      assets: _decodeArray(
-        object.value['assets'] ?? _missing(path, 'assets'),
-        '$path.assets',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => ImagesListForStrategyResultItem.decode(
-              entry.$2,
-              _indexPath('$path.assets', entry.$1),
-            ),
-          )
-          .toList(growable: false),
-      elements: _decodeArray(
-        object.value['elements'] ?? _missing(path, 'elements'),
-        '$path.elements',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => ElementsListForPageResultItem.decode(
-              entry.$2,
-              _indexPath('$path.elements', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      assets:
+          _decodeArray(
+                object.value['assets'] ?? _missing(path, 'assets'),
+                '$path.assets',
+              ).value.indexed
+              .map(
+                (entry) => ImagesListForStrategyResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.assets', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      elements:
+          _decodeArray(
+                object.value['elements'] ?? _missing(path, 'elements'),
+                '$path.elements',
+              ).value.indexed
+              .map(
+                (entry) => ElementsListForPageResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.elements', entry.$1),
+                ),
+              )
+              .toList(growable: false),
     );
   }
 
@@ -4201,36 +4206,34 @@ final class PageGetFrameResult {
   factory PageGetFrameResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return PageGetFrameResult(
-      assets: _decodeArray(
-        object.value['assets'] ?? _missing(path, 'assets'),
-        '$path.assets',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => ImagesListForStrategyResultItem.decode(
-              entry.$2,
-              _indexPath('$path.assets', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      assets:
+          _decodeArray(
+                object.value['assets'] ?? _missing(path, 'assets'),
+                '$path.assets',
+              ).value.indexed
+              .map(
+                (entry) => ImagesListForStrategyResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.assets', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       content: PageGetFrameResultContent.decode(
         object.value['content'] ?? _missing(path, 'content'),
         '$path.content',
       ),
-      lineups: _decodeArray(
-        object.value['lineups'] ?? _missing(path, 'lineups'),
-        '$path.lineups',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => LineupsListForPageResultItem.decode(
-              entry.$2,
-              _indexPath('$path.lineups', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      lineups:
+          _decodeArray(
+                object.value['lineups'] ?? _missing(path, 'lineups'),
+                '$path.lineups',
+              ).value.indexed
+              .map(
+                (entry) => LineupsListForPageResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.lineups', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       page: PageGetFrameResultPage.decode(
         object.value['page'] ?? _missing(path, 'page'),
         '$path.page',
@@ -4285,11 +4288,11 @@ final class PageGetFrameResultContent {
       ),
       settings:
           (object.value['settings'] ?? _missing(path, 'settings')) is ConvexNull
-              ? null
-              : OpsApplyBatchArgsOpsItemPageAddPayloadSettings.decode(
-                  object.value['settings'] ?? _missing(path, 'settings'),
-                  '$path.settings',
-                ),
+          ? null
+          : OpsApplyBatchArgsOpsItemPageAddPayloadSettings.decode(
+              object.value['settings'] ?? _missing(path, 'settings'),
+              '$path.settings',
+            ),
       updatedAt: _decodeNumber(
         object.value['updatedAt'] ?? _missing(path, 'updatedAt'),
         '$path.updatedAt',
@@ -4407,49 +4410,46 @@ final class PageGetSnapshotResult {
   factory PageGetSnapshotResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return PageGetSnapshotResult(
-      assets: _decodeArray(
-        object.value['assets'] ?? _missing(path, 'assets'),
-        '$path.assets',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => ImagesListForStrategyResultItem.decode(
-              entry.$2,
-              _indexPath('$path.assets', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      assets:
+          _decodeArray(
+                object.value['assets'] ?? _missing(path, 'assets'),
+                '$path.assets',
+              ).value.indexed
+              .map(
+                (entry) => ImagesListForStrategyResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.assets', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       content: PageGetFrameResultContent.decode(
         object.value['content'] ?? _missing(path, 'content'),
         '$path.content',
       ),
-      elements: _decodeArray(
-        object.value['elements'] ?? _missing(path, 'elements'),
-        '$path.elements',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => ElementsListForPageResultItem.decode(
-              entry.$2,
-              _indexPath('$path.elements', entry.$1),
-            ),
-          )
-          .toList(growable: false),
-      lineups: _decodeArray(
-        object.value['lineups'] ?? _missing(path, 'lineups'),
-        '$path.lineups',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => LineupsListForPageResultItem.decode(
-              entry.$2,
-              _indexPath('$path.lineups', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      elements:
+          _decodeArray(
+                object.value['elements'] ?? _missing(path, 'elements'),
+                '$path.elements',
+              ).value.indexed
+              .map(
+                (entry) => ElementsListForPageResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.elements', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      lineups:
+          _decodeArray(
+                object.value['lineups'] ?? _missing(path, 'lineups'),
+                '$path.lineups',
+              ).value.indexed
+              .map(
+                (entry) => LineupsListForPageResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.lineups', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       page: PageGetFrameResultPage.decode(
         object.value['page'] ?? _missing(path, 'page'),
         '$path.page',
@@ -4510,8 +4510,9 @@ final class PagesListTrashedResultItem {
         object.value['deletedAt'] ?? _missing(path, 'deletedAt'),
         '$path.deletedAt',
       ),
-      deletedByName: (object.value['deletedByName'] ??
-              _missing(path, 'deletedByName')) is ConvexNull
+      deletedByName:
+          (object.value['deletedByName'] ?? _missing(path, 'deletedByName'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['deletedByName'] ?? _missing(path, 'deletedByName'),
@@ -4646,19 +4647,18 @@ final class SharesListLinkJoinsResultItem {
         object.value['more'] ?? _missing(path, 'more'),
         '$path.more',
       ),
-      names: _decodeArray(
-        object.value['names'] ?? _missing(path, 'names'),
-        '$path.names',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => _decodeString(
-              entry.$2,
-              _indexPath('$path.names', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      names:
+          _decodeArray(
+                object.value['names'] ?? _missing(path, 'names'),
+                '$path.names',
+              ).value.indexed
+              .map(
+                (entry) => _decodeString(
+                  entry.$2,
+                  _indexPath('$path.names', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       token: _decodeString(
         object.value['token'] ?? _missing(path, 'token'),
         '$path.token',
@@ -4691,20 +4691,20 @@ final class SharesListMembersResult {
   factory SharesListMembersResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return SharesListMembersResult(
-      members: _decodeArray(
-        object.value['members'] ?? _missing(path, 'members'),
-        '$path.members',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => SharesListMembersResultMembersItem.decode(
-              entry.$2,
-              _indexPath('$path.members', entry.$1),
-            ),
-          )
-          .toList(growable: false),
-      nextCursor: (object.value['nextCursor'] ?? _missing(path, 'nextCursor'))
+      members:
+          _decodeArray(
+                object.value['members'] ?? _missing(path, 'members'),
+                '$path.members',
+              ).value.indexed
+              .map(
+                (entry) => SharesListMembersResultMembersItem.decode(
+                  entry.$2,
+                  _indexPath('$path.members', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      nextCursor:
+          (object.value['nextCursor'] ?? _missing(path, 'nextCursor'))
               is ConvexNull
           ? null
           : _decodeString(
@@ -4723,8 +4723,9 @@ final class SharesListMembersResult {
             )
             .toList(growable: false),
       ),
-      'nextCursor':
-          nextCursor == null ? const ConvexNull() : ConvexString(nextCursor!),
+      'nextCursor': nextCursor == null
+          ? const ConvexNull()
+          : ConvexString(nextCursor!),
     });
   }
 }
@@ -4751,15 +4752,17 @@ final class SharesListMembersResultMembersItem {
   ) {
     final object = _decodeObject(value, path);
     return SharesListMembersResultMembersItem(
-      avatarUrl: (object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'))
+      avatarUrl:
+          (object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'))
               is ConvexNull
           ? null
           : _decodeString(
               object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'),
               '$path.avatarUrl',
             ),
-      displayName: (object.value['displayName'] ??
-              _missing(path, 'displayName')) is ConvexNull
+      displayName:
+          (object.value['displayName'] ?? _missing(path, 'displayName'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['displayName'] ?? _missing(path, 'displayName'),
@@ -4780,8 +4783,9 @@ final class SharesListMembersResultMembersItem {
         ),
         '$path.role',
       ),
-      shareLinkToken: (object.value['shareLinkToken'] ??
-              _missing(path, 'shareLinkToken')) is ConvexNull
+      shareLinkToken:
+          (object.value['shareLinkToken'] ?? _missing(path, 'shareLinkToken'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['shareLinkToken'] ??
@@ -4793,10 +4797,12 @@ final class SharesListMembersResultMembersItem {
 
   ConvexObject encode(String path) {
     return ConvexObject({
-      'avatarUrl':
-          avatarUrl == null ? const ConvexNull() : ConvexString(avatarUrl!),
-      'displayName':
-          displayName == null ? const ConvexNull() : ConvexString(displayName!),
+      'avatarUrl': avatarUrl == null
+          ? const ConvexNull()
+          : ConvexString(avatarUrl!),
+      'displayName': displayName == null
+          ? const ConvexNull()
+          : ConvexString(displayName!),
       'joinedAt': _encodeNumber(joinedAt, '$path.joinedAt'),
       'memberId': ConvexString(memberId),
       'role': ConvexString(role.wireName),
@@ -4826,7 +4832,8 @@ final class SharesListResultItem {
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
         '$path.createdAt',
       ),
-      revokedAt: (object.value['revokedAt'] ?? _missing(path, 'revokedAt'))
+      revokedAt:
+          (object.value['revokedAt'] ?? _missing(path, 'revokedAt'))
               is ConvexNull
           ? null
           : _decodeNumber(
@@ -4906,8 +4913,9 @@ final class SharesPreviewResultFolder extends SharesPreviewResult {
     return ConvexObject({
       'targetType': ConvexString('folder'),
       'linkRole': ConvexString(linkRole.wireName),
-      'myRole':
-          myRole == null ? const ConvexNull() : ConvexString(myRole!.wireName),
+      'myRole': myRole == null
+          ? const ConvexNull()
+          : ConvexString(myRole!.wireName),
       'name': ConvexString(name),
       'publicId': ConvexString(publicId),
     });
@@ -4961,8 +4969,9 @@ final class SharesPreviewResultStrategy extends SharesPreviewResult {
     return ConvexObject({
       'targetType': ConvexString('strategy'),
       'linkRole': ConvexString(linkRole.wireName),
-      'myRole':
-          myRole == null ? const ConvexNull() : ConvexString(myRole!.wireName),
+      'myRole': myRole == null
+          ? const ConvexNull()
+          : ConvexString(myRole!.wireName),
       'name': ConvexString(name),
       'publicId': ConvexString(publicId),
     });
@@ -5049,8 +5058,9 @@ final class SharesRedeemResultStrategy extends SharesRedeemResult {
               ),
             )
           : const ConvexOptional.absent(),
-      folderPublicId: (object.value['folderPublicId'] ??
-              _missing(path, 'folderPublicId')) is ConvexNull
+      folderPublicId:
+          (object.value['folderPublicId'] ?? _missing(path, 'folderPublicId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['folderPublicId'] ??
@@ -5203,7 +5213,7 @@ final class StrategiesGetHeaderResult {
   final double revision;
   final FoldersListTreeResultItemRole role;
   final OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette?
-      themeOverridePalette;
+  themeOverridePalette;
   final String? themeProfileId;
   final double updatedAt;
 
@@ -5237,17 +5247,19 @@ final class StrategiesGetHeaderResult {
         ),
         '$path.role',
       ),
-      themeOverridePalette: (object.value['themeOverridePalette'] ??
-              _missing(path, 'themeOverridePalette')) is ConvexNull
+      themeOverridePalette:
+          (object.value['themeOverridePalette'] ??
+                  _missing(path, 'themeOverridePalette'))
+              is ConvexNull
           ? null
-          : OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
-              .decode(
+          : OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette.decode(
               object.value['themeOverridePalette'] ??
                   _missing(path, 'themeOverridePalette'),
               '$path.themeOverridePalette',
             ),
-      themeProfileId: (object.value['themeProfileId'] ??
-              _missing(path, 'themeProfileId')) is ConvexNull
+      themeProfileId:
+          (object.value['themeProfileId'] ?? _missing(path, 'themeProfileId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['themeProfileId'] ??
@@ -5305,7 +5317,7 @@ final class StrategiesListForFolderResultItem {
   final double revision;
   final FoldersListTreeResultItemRole role;
   final OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette?
-      themeOverridePalette;
+  themeOverridePalette;
   final String? themeProfileId;
   final double updatedAt;
 
@@ -5340,8 +5352,9 @@ final class StrategiesListForFolderResultItem {
         object.value['createdAt'] ?? _missing(path, 'createdAt'),
         '$path.createdAt',
       ),
-      folderPublicId: (object.value['folderPublicId'] ??
-              _missing(path, 'folderPublicId')) is ConvexNull
+      folderPublicId:
+          (object.value['folderPublicId'] ?? _missing(path, 'folderPublicId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['folderPublicId'] ??
@@ -5371,17 +5384,19 @@ final class StrategiesListForFolderResultItem {
         ),
         '$path.role',
       ),
-      themeOverridePalette: (object.value['themeOverridePalette'] ??
-              _missing(path, 'themeOverridePalette')) is ConvexNull
+      themeOverridePalette:
+          (object.value['themeOverridePalette'] ??
+                  _missing(path, 'themeOverridePalette'))
+              is ConvexNull
           ? null
-          : OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
-              .decode(
+          : OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette.decode(
               object.value['themeOverridePalette'] ??
                   _missing(path, 'themeOverridePalette'),
               '$path.themeOverridePalette',
             ),
-      themeProfileId: (object.value['themeProfileId'] ??
-              _missing(path, 'themeProfileId')) is ConvexNull
+      themeProfileId:
+          (object.value['themeProfileId'] ?? _missing(path, 'themeProfileId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['themeProfileId'] ??
@@ -5435,32 +5450,30 @@ final class StrategiesListInventoryResult {
   factory StrategiesListInventoryResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return StrategiesListInventoryResult(
-      folders: _decodeArray(
-        object.value['folders'] ?? _missing(path, 'folders'),
-        '$path.folders',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => StrategiesListInventoryResultFoldersItem.decode(
-              entry.$2,
-              _indexPath('$path.folders', entry.$1),
-            ),
-          )
-          .toList(growable: false),
-      strategies: _decodeArray(
-        object.value['strategies'] ?? _missing(path, 'strategies'),
-        '$path.strategies',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => StrategiesListInventoryResultStrategiesItem.decode(
-              entry.$2,
-              _indexPath('$path.strategies', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      folders:
+          _decodeArray(
+                object.value['folders'] ?? _missing(path, 'folders'),
+                '$path.folders',
+              ).value.indexed
+              .map(
+                (entry) => StrategiesListInventoryResultFoldersItem.decode(
+                  entry.$2,
+                  _indexPath('$path.folders', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      strategies:
+          _decodeArray(
+                object.value['strategies'] ?? _missing(path, 'strategies'),
+                '$path.strategies',
+              ).value.indexed
+              .map(
+                (entry) => StrategiesListInventoryResultStrategiesItem.decode(
+                  entry.$2,
+                  _indexPath('$path.strategies', entry.$1),
+                ),
+              )
+              .toList(growable: false),
     );
   }
 
@@ -5499,8 +5512,10 @@ final class StrategiesListInventoryResultFoldersItem {
   ) {
     final object = _decodeObject(value, path);
     return StrategiesListInventoryResultFoldersItem(
-      parentFolderPublicId: (object.value['parentFolderPublicId'] ??
-              _missing(path, 'parentFolderPublicId')) is ConvexNull
+      parentFolderPublicId:
+          (object.value['parentFolderPublicId'] ??
+                  _missing(path, 'parentFolderPublicId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['parentFolderPublicId'] ??
@@ -5538,8 +5553,9 @@ final class StrategiesListInventoryResultStrategiesItem {
   ) {
     final object = _decodeObject(value, path);
     return StrategiesListInventoryResultStrategiesItem(
-      folderPublicId: (object.value['folderPublicId'] ??
-              _missing(path, 'folderPublicId')) is ConvexNull
+      folderPublicId:
+          (object.value['folderPublicId'] ?? _missing(path, 'folderPublicId'))
+              is ConvexNull
           ? null
           : _decodeString(
               object.value['folderPublicId'] ??
@@ -5582,19 +5598,18 @@ final class StrategyGetFullSnapshotResult {
   factory StrategyGetFullSnapshotResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return StrategyGetFullSnapshotResult(
-      assets: _decodeArray(
-        object.value['assets'] ?? _missing(path, 'assets'),
-        '$path.assets',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => ImagesListForStrategyResultItem.decode(
-              entry.$2,
-              _indexPath('$path.assets', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      assets:
+          _decodeArray(
+                object.value['assets'] ?? _missing(path, 'assets'),
+                '$path.assets',
+              ).value.indexed
+              .map(
+                (entry) => ImagesListForStrategyResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.assets', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       contentVersion: object.value.containsKey('contentVersion')
           ? ConvexOptional.present(
               _decodeNumber(
@@ -5603,49 +5618,46 @@ final class StrategyGetFullSnapshotResult {
               ),
             )
           : const ConvexOptional.absent(),
-      elements: _decodeArray(
-        object.value['elements'] ?? _missing(path, 'elements'),
-        '$path.elements',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => ElementsListForPageResultItem.decode(
-              entry.$2,
-              _indexPath('$path.elements', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      elements:
+          _decodeArray(
+                object.value['elements'] ?? _missing(path, 'elements'),
+                '$path.elements',
+              ).value.indexed
+              .map(
+                (entry) => ElementsListForPageResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.elements', entry.$1),
+                ),
+              )
+              .toList(growable: false),
       header: StrategiesGetHeaderResult.decode(
         object.value['header'] ?? _missing(path, 'header'),
         '$path.header',
       ),
-      lineups: _decodeArray(
-        object.value['lineups'] ?? _missing(path, 'lineups'),
-        '$path.lineups',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => LineupsListForPageResultItem.decode(
-              entry.$2,
-              _indexPath('$path.lineups', entry.$1),
-            ),
-          )
-          .toList(growable: false),
-      pages: _decodeArray(
-        object.value['pages'] ?? _missing(path, 'pages'),
-        '$path.pages',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => StrategyGetFullSnapshotResultPagesItem.decode(
-              entry.$2,
-              _indexPath('$path.pages', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      lineups:
+          _decodeArray(
+                object.value['lineups'] ?? _missing(path, 'lineups'),
+                '$path.lineups',
+              ).value.indexed
+              .map(
+                (entry) => LineupsListForPageResultItem.decode(
+                  entry.$2,
+                  _indexPath('$path.lineups', entry.$1),
+                ),
+              )
+              .toList(growable: false),
+      pages:
+          _decodeArray(
+                object.value['pages'] ?? _missing(path, 'pages'),
+                '$path.pages',
+              ).value.indexed
+              .map(
+                (entry) => StrategyGetFullSnapshotResultPagesItem.decode(
+                  entry.$2,
+                  _indexPath('$path.pages', entry.$1),
+                ),
+              )
+              .toList(growable: false),
     );
   }
 
@@ -5765,11 +5777,11 @@ final class StrategyGetFullSnapshotResultPagesItem {
       ),
       settings:
           (object.value['settings'] ?? _missing(path, 'settings')) is ConvexNull
-              ? null
-              : OpsApplyBatchArgsOpsItemPageAddPayloadSettings.decode(
-                  object.value['settings'] ?? _missing(path, 'settings'),
-                  '$path.settings',
-                ),
+          ? null
+          : OpsApplyBatchArgsOpsItemPageAddPayloadSettings.decode(
+              object.value['settings'] ?? _missing(path, 'settings'),
+              '$path.settings',
+            ),
       sortIndex: _decodeNumber(
         object.value['sortIndex'] ?? _missing(path, 'sortIndex'),
         '$path.sortIndex',
@@ -5828,19 +5840,18 @@ final class StrategyGetPageListResult {
         object.value['header'] ?? _missing(path, 'header'),
         '$path.header',
       ),
-      pages: _decodeArray(
-        object.value['pages'] ?? _missing(path, 'pages'),
-        '$path.pages',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => StrategyGetFullSnapshotResultPagesItem.decode(
-              entry.$2,
-              _indexPath('$path.pages', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      pages:
+          _decodeArray(
+                object.value['pages'] ?? _missing(path, 'pages'),
+                '$path.pages',
+              ).value.indexed
+              .map(
+                (entry) => StrategyGetFullSnapshotResultPagesItem.decode(
+                  entry.$2,
+                  _indexPath('$path.pages', entry.$1),
+                ),
+              )
+              .toList(growable: false),
     );
   }
 
@@ -5870,19 +5881,18 @@ final class StrategyGetShellResult {
         object.value['header'] ?? _missing(path, 'header'),
         '$path.header',
       ),
-      pages: _decodeArray(
-        object.value['pages'] ?? _missing(path, 'pages'),
-        '$path.pages',
-      )
-          .value
-          .indexed
-          .map(
-            (entry) => PageGetFrameResultPage.decode(
-              entry.$2,
-              _indexPath('$path.pages', entry.$1),
-            ),
-          )
-          .toList(growable: false),
+      pages:
+          _decodeArray(
+                object.value['pages'] ?? _missing(path, 'pages'),
+                '$path.pages',
+              ).value.indexed
+              .map(
+                (entry) => PageGetFrameResultPage.decode(
+                  entry.$2,
+                  _indexPath('$path.pages', entry.$1),
+                ),
+              )
+              .toList(growable: false),
     );
   }
 
@@ -5991,7 +6001,8 @@ final class UsersMeResult {
   factory UsersMeResult.decode(ConvexValue value, String path) {
     final object = _decodeObject(value, path);
     return UsersMeResult(
-      avatarUrl: (object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'))
+      avatarUrl:
+          (object.value['avatarUrl'] ?? _missing(path, 'avatarUrl'))
               is ConvexNull
           ? null
           : _decodeString(
@@ -6020,8 +6031,9 @@ final class UsersMeResult {
 
   ConvexObject encode(String path) {
     return ConvexObject({
-      'avatarUrl':
-          avatarUrl == null ? const ConvexNull() : ConvexString(avatarUrl!),
+      'avatarUrl': avatarUrl == null
+          ? const ConvexNull()
+          : ConvexString(avatarUrl!),
       'createdAt': _encodeNumber(createdAt, '$path.createdAt'),
       'displayName': ConvexString(displayName),
       'externalId': ConvexString(externalId),
@@ -6042,30 +6054,30 @@ CloudPayload _decodeElementsListForPageResultItemPayload(
   );
   return switch (tag) {
     'agent' => _decodePayload(
-        () => const AgentConvexCodec().decode(value),
-        path,
-      ),
+      () => const AgentConvexCodec().decode(value),
+      path,
+    ),
     'ability' => _decodePayload(
-        () => const AbilityConvexCodec().decode(value),
-        path,
-      ),
+      () => const AbilityConvexCodec().decode(value),
+      path,
+    ),
     'drawing' => _decodePayload(
-        () => const DrawingConvexCodec().decode(value),
-        path,
-      ),
+      () => const DrawingConvexCodec().decode(value),
+      path,
+    ),
     'text' => _decodePayload(() => const TextConvexCodec().decode(value), path),
     'image' => _decodePayload(
-        () => const ImageConvexCodec().decode(value),
-        path,
-      ),
+      () => const ImageConvexCodec().decode(value),
+      path,
+    ),
     'utility' => _decodePayload(
-        () => const UtilityConvexCodec().decode(value),
-        path,
-      ),
+      () => const UtilityConvexCodec().decode(value),
+      path,
+    ),
     _ => throw ConvexDecodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6076,30 +6088,30 @@ ConvexValue _encodeElementsListForPageResultItemPayload(
   final tag = value['kind'];
   return switch (tag) {
     'agent' => _encodePayload(
-        () => const AgentConvexCodec().encode(value),
-        path,
-      ),
+      () => const AgentConvexCodec().encode(value),
+      path,
+    ),
     'ability' => _encodePayload(
-        () => const AbilityConvexCodec().encode(value),
-        path,
-      ),
+      () => const AbilityConvexCodec().encode(value),
+      path,
+    ),
     'drawing' => _encodePayload(
-        () => const DrawingConvexCodec().encode(value),
-        path,
-      ),
+      () => const DrawingConvexCodec().encode(value),
+      path,
+    ),
     'text' => _encodePayload(() => const TextConvexCodec().encode(value), path),
     'image' => _encodePayload(
-        () => const ImageConvexCodec().encode(value),
-        path,
-      ),
+      () => const ImageConvexCodec().encode(value),
+      path,
+    ),
     'utility' => _encodePayload(
-        () => const UtilityConvexCodec().encode(value),
-        path,
-      ),
+      () => const UtilityConvexCodec().encode(value),
+      path,
+    ),
     _ => throw ConvexEncodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6114,30 +6126,30 @@ CloudPayload _decodeOpsApplyBatchArgsOpsItemElementAddPayload(
   );
   return switch (tag) {
     'agent' => _decodePayload(
-        () => const AgentConvexCodec().decode(value),
-        path,
-      ),
+      () => const AgentConvexCodec().decode(value),
+      path,
+    ),
     'ability' => _decodePayload(
-        () => const AbilityConvexCodec().decode(value),
-        path,
-      ),
+      () => const AbilityConvexCodec().decode(value),
+      path,
+    ),
     'drawing' => _decodePayload(
-        () => const DrawingConvexCodec().decode(value),
-        path,
-      ),
+      () => const DrawingConvexCodec().decode(value),
+      path,
+    ),
     'text' => _decodePayload(() => const TextConvexCodec().decode(value), path),
     'image' => _decodePayload(
-        () => const ImageConvexCodec().decode(value),
-        path,
-      ),
+      () => const ImageConvexCodec().decode(value),
+      path,
+    ),
     'utility' => _decodePayload(
-        () => const UtilityConvexCodec().decode(value),
-        path,
-      ),
+      () => const UtilityConvexCodec().decode(value),
+      path,
+    ),
     _ => throw ConvexDecodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6148,30 +6160,30 @@ ConvexValue _encodeOpsApplyBatchArgsOpsItemElementAddPayload(
   final tag = value['kind'];
   return switch (tag) {
     'agent' => _encodePayload(
-        () => const AgentConvexCodec().encode(value),
-        path,
-      ),
+      () => const AgentConvexCodec().encode(value),
+      path,
+    ),
     'ability' => _encodePayload(
-        () => const AbilityConvexCodec().encode(value),
-        path,
-      ),
+      () => const AbilityConvexCodec().encode(value),
+      path,
+    ),
     'drawing' => _encodePayload(
-        () => const DrawingConvexCodec().encode(value),
-        path,
-      ),
+      () => const DrawingConvexCodec().encode(value),
+      path,
+    ),
     'text' => _encodePayload(() => const TextConvexCodec().encode(value), path),
     'image' => _encodePayload(
-        () => const ImageConvexCodec().encode(value),
-        path,
-      ),
+      () => const ImageConvexCodec().encode(value),
+      path,
+    ),
     'utility' => _encodePayload(
-        () => const UtilityConvexCodec().encode(value),
-        path,
-      ),
+      () => const UtilityConvexCodec().encode(value),
+      path,
+    ),
     _ => throw ConvexEncodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6186,30 +6198,30 @@ CloudPayload _decodeOpsApplyBatchArgsOpsItemElementPatchPayload(
   );
   return switch (tag) {
     'agent' => _decodePayload(
-        () => const AgentConvexCodec().decode(value),
-        path,
-      ),
+      () => const AgentConvexCodec().decode(value),
+      path,
+    ),
     'ability' => _decodePayload(
-        () => const AbilityConvexCodec().decode(value),
-        path,
-      ),
+      () => const AbilityConvexCodec().decode(value),
+      path,
+    ),
     'drawing' => _decodePayload(
-        () => const DrawingConvexCodec().decode(value),
-        path,
-      ),
+      () => const DrawingConvexCodec().decode(value),
+      path,
+    ),
     'text' => _decodePayload(() => const TextConvexCodec().decode(value), path),
     'image' => _decodePayload(
-        () => const ImageConvexCodec().decode(value),
-        path,
-      ),
+      () => const ImageConvexCodec().decode(value),
+      path,
+    ),
     'utility' => _decodePayload(
-        () => const UtilityConvexCodec().decode(value),
-        path,
-      ),
+      () => const UtilityConvexCodec().decode(value),
+      path,
+    ),
     _ => throw ConvexDecodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6220,30 +6232,30 @@ ConvexValue _encodeOpsApplyBatchArgsOpsItemElementPatchPayload(
   final tag = value['kind'];
   return switch (tag) {
     'agent' => _encodePayload(
-        () => const AgentConvexCodec().encode(value),
-        path,
-      ),
+      () => const AgentConvexCodec().encode(value),
+      path,
+    ),
     'ability' => _encodePayload(
-        () => const AbilityConvexCodec().encode(value),
-        path,
-      ),
+      () => const AbilityConvexCodec().encode(value),
+      path,
+    ),
     'drawing' => _encodePayload(
-        () => const DrawingConvexCodec().encode(value),
-        path,
-      ),
+      () => const DrawingConvexCodec().encode(value),
+      path,
+    ),
     'text' => _encodePayload(() => const TextConvexCodec().encode(value), path),
     'image' => _encodePayload(
-        () => const ImageConvexCodec().encode(value),
-        path,
-      ),
+      () => const ImageConvexCodec().encode(value),
+      path,
+    ),
     'utility' => _encodePayload(
-        () => const UtilityConvexCodec().encode(value),
-        path,
-      ),
+      () => const UtilityConvexCodec().encode(value),
+      path,
+    ),
     _ => throw ConvexEncodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6258,25 +6270,25 @@ CloudPayload _decodeOpsApplyBatchArgsOpsItemLineupAddPayload(
   );
   return switch (tag) {
     'lineups' => _decodePayload(
-        () => const LineupsConvexCodec().decode(value),
-        path,
-      ),
+      () => const LineupsConvexCodec().decode(value),
+      path,
+    ),
     'lineupOrigin' => _decodePayload(
-        () => const LineupOriginConvexCodec().decode(value),
-        path,
-      ),
+      () => const LineupOriginConvexCodec().decode(value),
+      path,
+    ),
     'lineupLanding' => _decodePayload(
-        () => const LineupLandingConvexCodec().decode(value),
-        path,
-      ),
+      () => const LineupLandingConvexCodec().decode(value),
+      path,
+    ),
     'lineupLink' => _decodePayload(
-        () => const LineupLinkConvexCodec().decode(value),
-        path,
-      ),
+      () => const LineupLinkConvexCodec().decode(value),
+      path,
+    ),
     _ => throw ConvexDecodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6287,25 +6299,25 @@ ConvexValue _encodeOpsApplyBatchArgsOpsItemLineupAddPayload(
   final tag = value['kind'];
   return switch (tag) {
     'lineups' => _encodePayload(
-        () => const LineupsConvexCodec().encode(value),
-        path,
-      ),
+      () => const LineupsConvexCodec().encode(value),
+      path,
+    ),
     'lineupOrigin' => _encodePayload(
-        () => const LineupOriginConvexCodec().encode(value),
-        path,
-      ),
+      () => const LineupOriginConvexCodec().encode(value),
+      path,
+    ),
     'lineupLanding' => _encodePayload(
-        () => const LineupLandingConvexCodec().encode(value),
-        path,
-      ),
+      () => const LineupLandingConvexCodec().encode(value),
+      path,
+    ),
     'lineupLink' => _encodePayload(
-        () => const LineupLinkConvexCodec().encode(value),
-        path,
-      ),
+      () => const LineupLinkConvexCodec().encode(value),
+      path,
+    ),
     _ => throw ConvexEncodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6320,25 +6332,25 @@ CloudPayload _decodeOpsApplyBatchArgsOpsItemLineupPatchPayload(
   );
   return switch (tag) {
     'lineups' => _decodePayload(
-        () => const LineupsConvexCodec().decode(value),
-        path,
-      ),
+      () => const LineupsConvexCodec().decode(value),
+      path,
+    ),
     'lineupOrigin' => _decodePayload(
-        () => const LineupOriginConvexCodec().decode(value),
-        path,
-      ),
+      () => const LineupOriginConvexCodec().decode(value),
+      path,
+    ),
     'lineupLanding' => _decodePayload(
-        () => const LineupLandingConvexCodec().decode(value),
-        path,
-      ),
+      () => const LineupLandingConvexCodec().decode(value),
+      path,
+    ),
     'lineupLink' => _decodePayload(
-        () => const LineupLinkConvexCodec().decode(value),
-        path,
-      ),
+      () => const LineupLinkConvexCodec().decode(value),
+      path,
+    ),
     _ => throw ConvexDecodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6349,25 +6361,25 @@ ConvexValue _encodeOpsApplyBatchArgsOpsItemLineupPatchPayload(
   final tag = value['kind'];
   return switch (tag) {
     'lineups' => _encodePayload(
-        () => const LineupsConvexCodec().encode(value),
-        path,
-      ),
+      () => const LineupsConvexCodec().encode(value),
+      path,
+    ),
     'lineupOrigin' => _encodePayload(
-        () => const LineupOriginConvexCodec().encode(value),
-        path,
-      ),
+      () => const LineupOriginConvexCodec().encode(value),
+      path,
+    ),
     'lineupLanding' => _encodePayload(
-        () => const LineupLandingConvexCodec().encode(value),
-        path,
-      ),
+      () => const LineupLandingConvexCodec().encode(value),
+      path,
+    ),
     'lineupLink' => _encodePayload(
-        () => const LineupLinkConvexCodec().encode(value),
-        path,
-      ),
+      () => const LineupLinkConvexCodec().encode(value),
+      path,
+    ),
     _ => throw ConvexEncodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6382,30 +6394,30 @@ CloudPayload _decodeOpsApplyBatchResultResultsItemRejectedCurrentElementValue(
   );
   return switch (tag) {
     'agent' => _decodePayload(
-        () => const AgentConvexCodec().decode(value),
-        path,
-      ),
+      () => const AgentConvexCodec().decode(value),
+      path,
+    ),
     'ability' => _decodePayload(
-        () => const AbilityConvexCodec().decode(value),
-        path,
-      ),
+      () => const AbilityConvexCodec().decode(value),
+      path,
+    ),
     'drawing' => _decodePayload(
-        () => const DrawingConvexCodec().decode(value),
-        path,
-      ),
+      () => const DrawingConvexCodec().decode(value),
+      path,
+    ),
     'text' => _decodePayload(() => const TextConvexCodec().decode(value), path),
     'image' => _decodePayload(
-        () => const ImageConvexCodec().decode(value),
-        path,
-      ),
+      () => const ImageConvexCodec().decode(value),
+      path,
+    ),
     'utility' => _decodePayload(
-        () => const UtilityConvexCodec().decode(value),
-        path,
-      ),
+      () => const UtilityConvexCodec().decode(value),
+      path,
+    ),
     _ => throw ConvexDecodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6416,30 +6428,30 @@ ConvexValue _encodeOpsApplyBatchResultResultsItemRejectedCurrentElementValue(
   final tag = value['kind'];
   return switch (tag) {
     'agent' => _encodePayload(
-        () => const AgentConvexCodec().encode(value),
-        path,
-      ),
+      () => const AgentConvexCodec().encode(value),
+      path,
+    ),
     'ability' => _encodePayload(
-        () => const AbilityConvexCodec().encode(value),
-        path,
-      ),
+      () => const AbilityConvexCodec().encode(value),
+      path,
+    ),
     'drawing' => _encodePayload(
-        () => const DrawingConvexCodec().encode(value),
-        path,
-      ),
+      () => const DrawingConvexCodec().encode(value),
+      path,
+    ),
     'text' => _encodePayload(() => const TextConvexCodec().encode(value), path),
     'image' => _encodePayload(
-        () => const ImageConvexCodec().encode(value),
-        path,
-      ),
+      () => const ImageConvexCodec().encode(value),
+      path,
+    ),
     'utility' => _encodePayload(
-        () => const UtilityConvexCodec().encode(value),
-        path,
-      ),
+      () => const UtilityConvexCodec().encode(value),
+      path,
+    ),
     _ => throw ConvexEncodingException(
-        '$path.kind',
-        'unknown payload tag $tag',
-      ),
+      '$path.kind',
+      'unknown payload tag $tag',
+    ),
   };
 }
 
@@ -6515,10 +6527,10 @@ bool _matchesRaw13(ConvexValue value) =>
 
 bool _validateOpsApplyBatchArgsOpsItemElementPatchMergeBaseItemValue(
   ConvexValue value,
-) =>
-    (_matchesRaw14(value) || _matchesRaw15(value) || _matchesRaw31(value));
+) => (_matchesRaw14(value) || _matchesRaw15(value) || _matchesRaw31(value));
 
-bool _matchesRaw14(ConvexValue value) => (_matchesRaw6(value) ||
+bool _matchesRaw14(ConvexValue value) =>
+    (_matchesRaw6(value) ||
     _matchesRaw7(value) ||
     _matchesRaw4(value) ||
     _matchesRaw11(value));
@@ -6617,74 +6629,66 @@ ConvexObject encodeCommunityCopyPostArgs({
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
   required String postPublicId,
   required String publicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'community.js:copyPost.args.clientProtocolVersion',
-      ),
-      if (folderPublicId.isPresent)
-        'folderPublicId': ConvexString(folderPublicId.value),
-      'postPublicId': ConvexString(postPublicId),
-      'publicId': ConvexString(publicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:copyPost.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'postPublicId': ConvexString(postPublicId),
+  'publicId': ConvexString(publicId),
+});
 
 ConvexValue decodeCommunityCopyPostResult(ConvexValue value) => _decodeRaw(
-      value,
-      'community.js:copyPost.returns',
-      _validateCommunityCopyPostResult,
-    );
+  value,
+  'community.js:copyPost.returns',
+  _validateCommunityCopyPostResult,
+);
 
 ConvexObject encodeCommunityGetPostArgs({required String postPublicId}) =>
     ConvexObject({'postPublicId': ConvexString(postPublicId)});
 
 CommunityGetPostResult? decodeCommunityGetPostResult(ConvexValue value) =>
     (value) is ConvexNull
-        ? null
-        : CommunityGetPostResult.decode(value, 'community.js:getPost.returns');
+    ? null
+    : CommunityGetPostResult.decode(value, 'community.js:getPost.returns');
 
 ConvexObject encodeCommunityGetPostPreviewArgs({
   required String strategyPublicId,
-}) =>
-    ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
 
 CommunityGetPostPreviewResult decodeCommunityGetPostPreviewResult(
   ConvexValue value,
-) =>
-    CommunityGetPostPreviewResult.decode(
-      value,
-      'community.js:getPostPreview.returns',
-    );
+) => CommunityGetPostPreviewResult.decode(
+  value,
+  'community.js:getPostPreview.returns',
+);
 
 ConvexObject encodeCommunityGetReportsArgs({required String postPublicId}) =>
     ConvexObject({'postPublicId': ConvexString(postPublicId)});
 
 List<CommunityGetReportsResultItem> decodeCommunityGetReportsResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'community.js:getReports.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => CommunityGetReportsResultItem.decode(
-            entry.$2,
-            _indexPath('community.js:getReports.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'community.js:getReports.returns').value.indexed
+    .map(
+      (entry) => CommunityGetReportsResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:getReports.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeCommunityGetSourceChangedArgs({
   required String postPublicId,
-}) =>
-    ConvexObject({'postPublicId': ConvexString(postPublicId)});
+}) => ConvexObject({'postPublicId': ConvexString(postPublicId)});
 
 CommunityGetSourceChangedResult decodeCommunityGetSourceChangedResult(
   ConvexValue value,
-) =>
-    CommunityGetSourceChangedResult.decode(
-      value,
-      'community.js:getSourceChanged.returns',
-    );
+) => CommunityGetSourceChangedResult.decode(
+  value,
+  'community.js:getSourceChanged.returns',
+);
 
 ConvexObject encodeCommunityGetViewerArgs() => ConvexObject({});
 
@@ -6695,56 +6699,45 @@ ConvexObject encodeCommunityListForReviewArgs() => ConvexObject({});
 
 List<CommunityListForReviewResultItem> decodeCommunityListForReviewResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'community.js:listForReview.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => CommunityListForReviewResultItem.decode(
-            entry.$2,
-            _indexPath('community.js:listForReview.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'community.js:listForReview.returns').value.indexed
+    .map(
+      (entry) => CommunityListForReviewResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listForReview.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeCommunityListMineArgs() => ConvexObject({});
 
 List<CommunityListMineResultItem> decodeCommunityListMineResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'community.js:listMine.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => CommunityListMineResultItem.decode(
-            entry.$2,
-            _indexPath('community.js:listMine.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'community.js:listMine.returns').value.indexed
+    .map(
+      (entry) => CommunityListMineResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listMine.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeCommunityListMyCopiesArgs() => ConvexObject({});
 
 List<CommunityListMyCopiesResultItem> decodeCommunityListMyCopiesResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'community.js:listMyCopies.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => CommunityListMyCopiesResultItem.decode(
-            entry.$2,
-            _indexPath('community.js:listMyCopies.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'community.js:listMyCopies.returns').value.indexed
+    .map(
+      (entry) => CommunityListMyCopiesResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listMyCopies.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeCommunityListMyStarsArgs() => ConvexObject({});
 
 List<String> decodeCommunityListMyStarsResult(ConvexValue value) =>
-    _decodeArray(value, 'community.js:listMyStars.returns')
-        .value
-        .indexed
+    _decodeArray(value, 'community.js:listMyStars.returns').value.indexed
         .map(
           (entry) => _decodeString(
             entry.$2,
@@ -6757,17 +6750,14 @@ ConvexObject encodeCommunityListPostableArgs() => ConvexObject({});
 
 List<CommunityListPostableResultItem> decodeCommunityListPostableResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'community.js:listPostable.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => CommunityListPostableResultItem.decode(
-            entry.$2,
-            _indexPath('community.js:listPostable.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'community.js:listPostable.returns').value.indexed
+    .map(
+      (entry) => CommunityListPostableResultItem.decode(
+        entry.$2,
+        _indexPath('community.js:listPostable.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeCommunityListPostsArgs({
   ConvexOptional<List<String>> agentTypes = const ConvexOptional.absent(),
@@ -6777,20 +6767,19 @@ ConvexObject encodeCommunityListPostsArgs({
       const ConvexOptional.absent(),
   required CommunityListPostsArgsSort sort,
   ConvexOptional<String> text = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (agentTypes.isPresent)
-        'agentTypes': ConvexArray(
-          agentTypes.value.indexed
-              .map((entry) => ConvexString(entry.$2))
-              .toList(growable: false),
-        ),
-      if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
-      if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
-      if (side.isPresent) 'side': ConvexString(side.value.wireName),
-      'sort': ConvexString(sort.wireName),
-      if (text.isPresent) 'text': ConvexString(text.value),
-    });
+}) => ConvexObject({
+  if (agentTypes.isPresent)
+    'agentTypes': ConvexArray(
+      agentTypes.value.indexed
+          .map((entry) => ConvexString(entry.$2))
+          .toList(growable: false),
+    ),
+  if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
+  if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
+  if (side.isPresent) 'side': ConvexString(side.value.wireName),
+  'sort': ConvexString(sort.wireName),
+  if (text.isPresent) 'text': ConvexString(text.value),
+});
 
 CommunityListPostsResult decodeCommunityListPostsResult(ConvexValue value) =>
     CommunityListPostsResult.decode(value, 'community.js:listPosts.returns');
@@ -6802,19 +6791,18 @@ ConvexObject encodeCommunityListStarredArgs({
   ConvexOptional<CommunityListPostsArgsSide> side =
       const ConvexOptional.absent(),
   ConvexOptional<String> text = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (agentTypes.isPresent)
-        'agentTypes': ConvexArray(
-          agentTypes.value.indexed
-              .map((entry) => ConvexString(entry.$2))
-              .toList(growable: false),
-        ),
-      if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
-      if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
-      if (side.isPresent) 'side': ConvexString(side.value.wireName),
-      if (text.isPresent) 'text': ConvexString(text.value),
-    });
+}) => ConvexObject({
+  if (agentTypes.isPresent)
+    'agentTypes': ConvexArray(
+      agentTypes.value.indexed
+          .map((entry) => ConvexString(entry.$2))
+          .toList(growable: false),
+    ),
+  if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
+  if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
+  if (side.isPresent) 'side': ConvexString(side.value.wireName),
+  if (text.isPresent) 'text': ConvexString(text.value),
+});
 
 CommunityListPostsResult decodeCommunityListStarredResult(ConvexValue value) =>
     CommunityListPostsResult.decode(value, 'community.js:listStarred.returns');
@@ -6824,16 +6812,15 @@ ConvexObject encodeCommunityPublishArgs({
   required String postPublicId,
   required String strategyPublicId,
   required String title,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'community.js:publish.args.clientProtocolVersion',
-      ),
-      'postPublicId': ConvexString(postPublicId),
-      'strategyPublicId': ConvexString(strategyPublicId),
-      'title': ConvexString(title),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:publish.args.clientProtocolVersion',
+  ),
+  'postPublicId': ConvexString(postPublicId),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  'title': ConvexString(title),
+});
 
 CommunityPublishResult decodeCommunityPublishResult(ConvexValue value) =>
     CommunityPublishResult.decode(value, 'community.js:publish.returns');
@@ -6843,16 +6830,15 @@ ConvexObject encodeCommunityReportArgs({
   ConvexOptional<String> note = const ConvexOptional.absent(),
   required String postPublicId,
   required CommunityGetReportsResultItemReason reason,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'community.js:report.args.clientProtocolVersion',
-      ),
-      if (note.isPresent) 'note': ConvexString(note.value),
-      'postPublicId': ConvexString(postPublicId),
-      'reason': ConvexString(reason.wireName),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:report.args.clientProtocolVersion',
+  ),
+  if (note.isPresent) 'note': ConvexString(note.value),
+  'postPublicId': ConvexString(postPublicId),
+  'reason': ConvexString(reason.wireName),
+});
 
 CommunityReportResult decodeCommunityReportResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'community.js:report.returns');
@@ -6861,15 +6847,14 @@ ConvexObject encodeCommunityReviewArgs({
   required double clientProtocolVersion,
   required CommunityReviewArgsDecision decision,
   required String postPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'community.js:review.args.clientProtocolVersion',
-      ),
-      'decision': ConvexString(decision.wireName),
-      'postPublicId': ConvexString(postPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:review.args.clientProtocolVersion',
+  ),
+  'decision': ConvexString(decision.wireName),
+  'postPublicId': ConvexString(postPublicId),
+});
 
 CommunityReportResult decodeCommunityReviewResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'community.js:review.returns');
@@ -6878,15 +6863,14 @@ ConvexObject encodeCommunitySetStarArgs({
   required double clientProtocolVersion,
   required String postPublicId,
   required bool starred,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'community.js:setStar.args.clientProtocolVersion',
-      ),
-      'postPublicId': ConvexString(postPublicId),
-      'starred': ConvexBoolean(starred),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:setStar.args.clientProtocolVersion',
+  ),
+  'postPublicId': ConvexString(postPublicId),
+  'starred': ConvexBoolean(starred),
+});
 
 CommunityReportResult decodeCommunitySetStarResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'community.js:setStar.returns');
@@ -6894,14 +6878,13 @@ CommunityReportResult decodeCommunitySetStarResult(ConvexValue value) =>
 ConvexObject encodeCommunityTakeDownArgs({
   required double clientProtocolVersion,
   required String postPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'community.js:takeDown.args.clientProtocolVersion',
-      ),
-      'postPublicId': ConvexString(postPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:takeDown.args.clientProtocolVersion',
+  ),
+  'postPublicId': ConvexString(postPublicId),
+});
 
 CommunityReportResult decodeCommunityTakeDownResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'community.js:takeDown.returns');
@@ -6911,16 +6894,15 @@ ConvexObject encodeCommunityUpdatePostArgs({
   required String postPublicId,
   ConvexOptional<bool> refresh = const ConvexOptional.absent(),
   ConvexOptional<String> title = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'community.js:updatePost.args.clientProtocolVersion',
-      ),
-      'postPublicId': ConvexString(postPublicId),
-      if (refresh.isPresent) 'refresh': ConvexBoolean(refresh.value),
-      if (title.isPresent) 'title': ConvexString(title.value),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'community.js:updatePost.args.clientProtocolVersion',
+  ),
+  'postPublicId': ConvexString(postPublicId),
+  if (refresh.isPresent) 'refresh': ConvexBoolean(refresh.value),
+  if (title.isPresent) 'title': ConvexString(title.value),
+});
 
 CommunityReportResult decodeCommunityUpdatePostResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'community.js:updatePost.returns');
@@ -6930,66 +6912,58 @@ ConvexObject encodeElementsListForPageArgs({
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required String pagePublicId,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'elements.js:listForPage.args.clientProtocolVersion',
-      ),
-      if (elementFieldLevel.isPresent)
-        'elementFieldLevel': _encodeNumber(
-          elementFieldLevel.value,
-          'elements.js:listForPage.args.elementFieldLevel',
-        ),
-      'pagePublicId': ConvexString(pagePublicId),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'elements.js:listForPage.args.clientProtocolVersion',
+  ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'elements.js:listForPage.args.elementFieldLevel',
+    ),
+  'pagePublicId': ConvexString(pagePublicId),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 List<ElementsListForPageResultItem> decodeElementsListForPageResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'elements.js:listForPage.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => ElementsListForPageResultItem.decode(
-            entry.$2,
-            _indexPath('elements.js:listForPage.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'elements.js:listForPage.returns').value.indexed
+    .map(
+      (entry) => ElementsListForPageResultItem.decode(
+        entry.$2,
+        _indexPath('elements.js:listForPage.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeElementsListForStrategyArgs({
   required double clientProtocolVersion,
   ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'elements.js:listForStrategy.args.clientProtocolVersion',
-      ),
-      if (elementFieldLevel.isPresent)
-        'elementFieldLevel': _encodeNumber(
-          elementFieldLevel.value,
-          'elements.js:listForStrategy.args.elementFieldLevel',
-        ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'elements.js:listForStrategy.args.clientProtocolVersion',
+  ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'elements.js:listForStrategy.args.elementFieldLevel',
+    ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 List<ElementsListForPageResultItem> decodeElementsListForStrategyResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'elements.js:listForStrategy.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => ElementsListForPageResultItem.decode(
-            entry.$2,
-            _indexPath('elements.js:listForStrategy.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'elements.js:listForStrategy.returns').value.indexed
+    .map(
+      (entry) => ElementsListForPageResultItem.decode(
+        entry.$2,
+        _indexPath('elements.js:listForStrategy.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeFoldersCreateArgs({
   required double clientProtocolVersion,
@@ -7002,55 +6976,53 @@ ConvexObject encodeFoldersCreateArgs({
   required String name,
   ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
   required String publicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'folders.js:create.args.clientProtocolVersion',
-      ),
-      if (color.isPresent) 'color': ConvexString(color.value),
-      if (customColorValue.isPresent)
-        'customColorValue': _encodeNumber(
-          customColorValue.value,
-          'folders.js:create.args.customColorValue',
-        ),
-      if (iconCodePoint.isPresent)
-        'iconCodePoint': _encodeNumber(
-          iconCodePoint.value,
-          'folders.js:create.args.iconCodePoint',
-        ),
-      if (iconFontFamily.isPresent)
-        'iconFontFamily': ConvexString(iconFontFamily.value),
-      if (iconFontPackage.isPresent)
-        'iconFontPackage': ConvexString(iconFontPackage.value),
-      if (iconId.isPresent)
-        'iconId': _encodeNumber(iconId.value, 'folders.js:create.args.iconId'),
-      'name': ConvexString(name),
-      if (parentFolderPublicId.isPresent)
-        'parentFolderPublicId': ConvexString(parentFolderPublicId.value),
-      'publicId': ConvexString(publicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'folders.js:create.args.clientProtocolVersion',
+  ),
+  if (color.isPresent) 'color': ConvexString(color.value),
+  if (customColorValue.isPresent)
+    'customColorValue': _encodeNumber(
+      customColorValue.value,
+      'folders.js:create.args.customColorValue',
+    ),
+  if (iconCodePoint.isPresent)
+    'iconCodePoint': _encodeNumber(
+      iconCodePoint.value,
+      'folders.js:create.args.iconCodePoint',
+    ),
+  if (iconFontFamily.isPresent)
+    'iconFontFamily': ConvexString(iconFontFamily.value),
+  if (iconFontPackage.isPresent)
+    'iconFontPackage': ConvexString(iconFontPackage.value),
+  if (iconId.isPresent)
+    'iconId': _encodeNumber(iconId.value, 'folders.js:create.args.iconId'),
+  'name': ConvexString(name),
+  if (parentFolderPublicId.isPresent)
+    'parentFolderPublicId': ConvexString(parentFolderPublicId.value),
+  'publicId': ConvexString(publicId),
+});
 
 ConvexValue decodeFoldersCreateResult(ConvexValue value) => _decodeRaw(
-      value,
-      'folders.js:create.returns',
-      _validateCommunityCopyPostResult,
-    );
+  value,
+  'folders.js:create.returns',
+  _validateCommunityCopyPostResult,
+);
 
 ConvexObject encodeFoldersDeleteArgs({
   required double clientProtocolVersion,
   required String folderPublicId,
   ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'folders.js:delete.args.clientProtocolVersion',
-      ),
-      'folderPublicId': ConvexString(folderPublicId),
-      if (withinFolderPublicId.isPresent)
-        'withinFolderPublicId': ConvexString(withinFolderPublicId.value),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'folders.js:delete.args.clientProtocolVersion',
+  ),
+  'folderPublicId': ConvexString(folderPublicId),
+  if (withinFolderPublicId.isPresent)
+    'withinFolderPublicId': ConvexString(withinFolderPublicId.value),
+});
 
 CommunityReportResult decodeFoldersDeleteResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'folders.js:delete.returns');
@@ -7058,39 +7030,34 @@ CommunityReportResult decodeFoldersDeleteResult(ConvexValue value) =>
 ConvexObject encodeFoldersListTreeArgs({
   ConvexOptional<FoldersListTreeArgsScope> scope =
       const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (scope.isPresent) 'scope': ConvexString(scope.value.wireName),
-    });
+}) => ConvexObject({
+  if (scope.isPresent) 'scope': ConvexString(scope.value.wireName),
+});
 
 List<FoldersListTreeResultItem> decodeFoldersListTreeResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'folders.js:listTree.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => FoldersListTreeResultItem.decode(
-            entry.$2,
-            _indexPath('folders.js:listTree.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'folders.js:listTree.returns').value.indexed
+    .map(
+      (entry) => FoldersListTreeResultItem.decode(
+        entry.$2,
+        _indexPath('folders.js:listTree.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeFoldersMoveArgs({
   required double clientProtocolVersion,
   required String folderPublicId,
   ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'folders.js:move.args.clientProtocolVersion',
-      ),
-      'folderPublicId': ConvexString(folderPublicId),
-      if (parentFolderPublicId.isPresent)
-        'parentFolderPublicId': ConvexString(parentFolderPublicId.value),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'folders.js:move.args.clientProtocolVersion',
+  ),
+  'folderPublicId': ConvexString(folderPublicId),
+  if (parentFolderPublicId.isPresent)
+    'parentFolderPublicId': ConvexString(parentFolderPublicId.value),
+});
 
 CommunityReportResult decodeFoldersMoveResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'folders.js:move.returns');
@@ -7108,52 +7075,50 @@ ConvexObject encodeFoldersUpdateArgs({
   ConvexOptional<String> iconFontPackage = const ConvexOptional.absent(),
   ConvexOptional<double> iconId = const ConvexOptional.absent(),
   ConvexOptional<String> name = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (clearCustomColorValue.isPresent)
-        'clearCustomColorValue': ConvexBoolean(clearCustomColorValue.value),
-      if (clearIconFontFamily.isPresent)
-        'clearIconFontFamily': ConvexBoolean(clearIconFontFamily.value),
-      if (clearIconFontPackage.isPresent)
-        'clearIconFontPackage': ConvexBoolean(clearIconFontPackage.value),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'folders.js:update.args.clientProtocolVersion',
-      ),
-      if (color.isPresent) 'color': ConvexString(color.value),
-      if (customColorValue.isPresent)
-        'customColorValue': _encodeNumber(
-          customColorValue.value,
-          'folders.js:update.args.customColorValue',
-        ),
-      'folderPublicId': ConvexString(folderPublicId),
-      if (iconCodePoint.isPresent)
-        'iconCodePoint': _encodeNumber(
-          iconCodePoint.value,
-          'folders.js:update.args.iconCodePoint',
-        ),
-      if (iconFontFamily.isPresent)
-        'iconFontFamily': ConvexString(iconFontFamily.value),
-      if (iconFontPackage.isPresent)
-        'iconFontPackage': ConvexString(iconFontPackage.value),
-      if (iconId.isPresent)
-        'iconId': _encodeNumber(iconId.value, 'folders.js:update.args.iconId'),
-      if (name.isPresent) 'name': ConvexString(name.value),
-    });
+}) => ConvexObject({
+  if (clearCustomColorValue.isPresent)
+    'clearCustomColorValue': ConvexBoolean(clearCustomColorValue.value),
+  if (clearIconFontFamily.isPresent)
+    'clearIconFontFamily': ConvexBoolean(clearIconFontFamily.value),
+  if (clearIconFontPackage.isPresent)
+    'clearIconFontPackage': ConvexBoolean(clearIconFontPackage.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'folders.js:update.args.clientProtocolVersion',
+  ),
+  if (color.isPresent) 'color': ConvexString(color.value),
+  if (customColorValue.isPresent)
+    'customColorValue': _encodeNumber(
+      customColorValue.value,
+      'folders.js:update.args.customColorValue',
+    ),
+  'folderPublicId': ConvexString(folderPublicId),
+  if (iconCodePoint.isPresent)
+    'iconCodePoint': _encodeNumber(
+      iconCodePoint.value,
+      'folders.js:update.args.iconCodePoint',
+    ),
+  if (iconFontFamily.isPresent)
+    'iconFontFamily': ConvexString(iconFontFamily.value),
+  if (iconFontPackage.isPresent)
+    'iconFontPackage': ConvexString(iconFontPackage.value),
+  if (iconId.isPresent)
+    'iconId': _encodeNumber(iconId.value, 'folders.js:update.args.iconId'),
+  if (name.isPresent) 'name': ConvexString(name.value),
+});
 
 CommunityReportResult decodeFoldersUpdateResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'folders.js:update.returns');
 
 ConvexObject encodeHealthPingArgs({
   ConvexOptional<double> clientProtocolVersion = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (clientProtocolVersion.isPresent)
-        'clientProtocolVersion': _encodeNumber(
-          clientProtocolVersion.value,
-          'health.js:ping.args.clientProtocolVersion',
-        ),
-    });
+}) => ConvexObject({
+  if (clientProtocolVersion.isPresent)
+    'clientProtocolVersion': _encodeNumber(
+      clientProtocolVersion.value,
+      'health.js:ping.args.clientProtocolVersion',
+    ),
+});
 
 HealthPingResult decodeHealthPingResult(ConvexValue value) =>
     HealthPingResult.fromWireName(
@@ -7176,58 +7141,54 @@ ConvexObject encodeImagesCompleteUploadArgs({
   required String strategyPublicId,
   ConvexOptional<String> uploadId = const ConvexOptional.absent(),
   ConvexOptional<double> width = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      'assetPublicId': ConvexString(assetPublicId),
-      if (byteSize.isPresent)
-        'byteSize': _encodeNumber(
-          byteSize.value,
-          'images.js:completeUpload.args.byteSize',
-        ),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'images.js:completeUpload.args.clientProtocolVersion',
-      ),
-      if (etag.isPresent) 'etag': ConvexString(etag.value),
-      if (fileExtension.isPresent)
-        'fileExtension': ConvexString(fileExtension.value),
-      if (height.isPresent)
-        'height': _encodeNumber(
-          height.value,
-          'images.js:completeUpload.args.height',
-        ),
-      if (mimeType.isPresent) 'mimeType': ConvexString(mimeType.value),
-      if (objectKey.isPresent) 'objectKey': ConvexString(objectKey.value),
-      if (provider.isPresent) 'provider': ConvexString(provider.value.wireName),
-      if (storageId.isPresent) 'storageId': ConvexString(storageId.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-      if (uploadId.isPresent) 'uploadId': ConvexString(uploadId.value),
-      if (width.isPresent)
-        'width':
-            _encodeNumber(width.value, 'images.js:completeUpload.args.width'),
-    });
+}) => ConvexObject({
+  'assetPublicId': ConvexString(assetPublicId),
+  if (byteSize.isPresent)
+    'byteSize': _encodeNumber(
+      byteSize.value,
+      'images.js:completeUpload.args.byteSize',
+    ),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'images.js:completeUpload.args.clientProtocolVersion',
+  ),
+  if (etag.isPresent) 'etag': ConvexString(etag.value),
+  if (fileExtension.isPresent)
+    'fileExtension': ConvexString(fileExtension.value),
+  if (height.isPresent)
+    'height': _encodeNumber(
+      height.value,
+      'images.js:completeUpload.args.height',
+    ),
+  if (mimeType.isPresent) 'mimeType': ConvexString(mimeType.value),
+  if (objectKey.isPresent) 'objectKey': ConvexString(objectKey.value),
+  if (provider.isPresent) 'provider': ConvexString(provider.value.wireName),
+  if (storageId.isPresent) 'storageId': ConvexString(storageId.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  if (uploadId.isPresent) 'uploadId': ConvexString(uploadId.value),
+  if (width.isPresent)
+    'width': _encodeNumber(width.value, 'images.js:completeUpload.args.width'),
+});
 
 ImagesCompleteUploadResult decodeImagesCompleteUploadResult(
   ConvexValue value,
-) =>
-    ImagesCompleteUploadResult.decode(
-      value,
-      'images.js:completeUpload.returns',
-    );
+) => ImagesCompleteUploadResult.decode(
+  value,
+  'images.js:completeUpload.returns',
+);
 
 ConvexObject encodeImagesDeleteAssetRefArgs({
   required String assetPublicId,
   required double clientProtocolVersion,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'assetPublicId': ConvexString(assetPublicId),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'images.js:deleteAssetRef.args.clientProtocolVersion',
-      ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'assetPublicId': ConvexString(assetPublicId),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'images.js:deleteAssetRef.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 CommunityReportResult decodeImagesDeleteAssetRefResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'images.js:deleteAssetRef.returns');
@@ -7241,101 +7202,92 @@ ConvexObject encodeImagesGenerateUploadUrlArgs({
   required String mimeType,
   required String strategyPublicId,
   ConvexOptional<double> width = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      'assetPublicId': ConvexString(assetPublicId),
-      if (byteSize.isPresent)
-        'byteSize': _encodeNumber(
-          byteSize.value,
-          'images.js:generateUploadUrl.args.byteSize',
-        ),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'images.js:generateUploadUrl.args.clientProtocolVersion',
-      ),
-      'fileExtension': ConvexString(fileExtension),
-      if (height.isPresent)
-        'height': _encodeNumber(
-          height.value,
-          'images.js:generateUploadUrl.args.height',
-        ),
-      'mimeType': ConvexString(mimeType),
-      'strategyPublicId': ConvexString(strategyPublicId),
-      if (width.isPresent)
-        'width': _encodeNumber(
-          width.value,
-          'images.js:generateUploadUrl.args.width',
-        ),
-    });
+}) => ConvexObject({
+  'assetPublicId': ConvexString(assetPublicId),
+  if (byteSize.isPresent)
+    'byteSize': _encodeNumber(
+      byteSize.value,
+      'images.js:generateUploadUrl.args.byteSize',
+    ),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'images.js:generateUploadUrl.args.clientProtocolVersion',
+  ),
+  'fileExtension': ConvexString(fileExtension),
+  if (height.isPresent)
+    'height': _encodeNumber(
+      height.value,
+      'images.js:generateUploadUrl.args.height',
+    ),
+  'mimeType': ConvexString(mimeType),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  if (width.isPresent)
+    'width': _encodeNumber(
+      width.value,
+      'images.js:generateUploadUrl.args.width',
+    ),
+});
 
 ImagesGenerateUploadUrlResult decodeImagesGenerateUploadUrlResult(
   ConvexValue value,
-) =>
-    ImagesGenerateUploadUrlResult.decode(
-      value,
-      'images.js:generateUploadUrl.returns',
-    );
+) => ImagesGenerateUploadUrlResult.decode(
+  value,
+  'images.js:generateUploadUrl.returns',
+);
 
 ConvexObject encodeImagesGetAssetUrlArgs({
   required String assetPublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'assetPublicId': ConvexString(assetPublicId),
-      if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'assetPublicId': ConvexString(assetPublicId),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 ImagesGetAssetUrlResult decodeImagesGetAssetUrlResult(ConvexValue value) =>
     ImagesGetAssetUrlResult.decode(value, 'images.js:getAssetUrl.returns');
 
 ConvexObject encodeImagesListForStrategyArgs({
   required String strategyPublicId,
-}) =>
-    ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
 
 List<ImagesListForStrategyResultItem> decodeImagesListForStrategyResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'images.js:listForStrategy.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => ImagesListForStrategyResultItem.decode(
-            entry.$2,
-            _indexPath('images.js:listForStrategy.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'images.js:listForStrategy.returns').value.indexed
+    .map(
+      (entry) => ImagesListForStrategyResultItem.decode(
+        entry.$2,
+        _indexPath('images.js:listForStrategy.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeImagesListReferencedAssetIdsArgs({
   required List<String> assetPublicIds,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'assetPublicIds': ConvexArray(
-        assetPublicIds.indexed
-            .map((entry) => ConvexString(entry.$2))
-            .toList(growable: false),
-      ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'assetPublicIds': ConvexArray(
+    assetPublicIds.indexed
+        .map((entry) => ConvexString(entry.$2))
+        .toList(growable: false),
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 List<String>? decodeImagesListReferencedAssetIdsResult(ConvexValue value) =>
     (value) is ConvexNull
-        ? null
-        : _decodeArray(value, 'images.js:listReferencedAssetIds.returns')
-            .value
-            .indexed
-            .map(
-              (entry) => _decodeString(
-                entry.$2,
-                _indexPath(
-                    'images.js:listReferencedAssetIds.returns', entry.$1),
-              ),
-            )
-            .toList(growable: false);
+    ? null
+    : _decodeArray(value, 'images.js:listReferencedAssetIds.returns')
+          .value
+          .indexed
+          .map(
+            (entry) => _decodeString(
+              entry.$2,
+              _indexPath('images.js:listReferencedAssetIds.returns', entry.$1),
+            ),
+          )
+          .toList(growable: false);
 
 ConvexObject encodeInvitesCreateArgs({
   required double clientProtocolVersion,
@@ -7343,21 +7295,20 @@ ConvexObject encodeInvitesCreateArgs({
   required InvitesCreateArgsRole role,
   required String strategyPublicId,
   required String token,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'invites.js:create.args.clientProtocolVersion',
-      ),
-      if (expiresAt.isPresent)
-        'expiresAt': _encodeNumber(
-          expiresAt.value,
-          'invites.js:create.args.expiresAt',
-        ),
-      'role': ConvexString(role.wireName),
-      'strategyPublicId': ConvexString(strategyPublicId),
-      'token': ConvexString(token),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'invites.js:create.args.clientProtocolVersion',
+  ),
+  if (expiresAt.isPresent)
+    'expiresAt': _encodeNumber(
+      expiresAt.value,
+      'invites.js:create.args.expiresAt',
+    ),
+  'role': ConvexString(role.wireName),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  'token': ConvexString(token),
+});
 
 CommunityReportResult decodeInvitesCreateResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'invites.js:create.returns');
@@ -7365,12 +7316,11 @@ CommunityReportResult decodeInvitesCreateResult(ConvexValue value) =>
 ConvexObject encodeInvitesGetArgs({
   ConvexOptional<String> strategyPublicId = const ConvexOptional.absent(),
   ConvexOptional<String> token = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (strategyPublicId.isPresent)
-        'strategyPublicId': ConvexString(strategyPublicId.value),
-      if (token.isPresent) 'token': ConvexString(token.value),
-    });
+}) => ConvexObject({
+  if (strategyPublicId.isPresent)
+    'strategyPublicId': ConvexString(strategyPublicId.value),
+  if (token.isPresent) 'token': ConvexString(token.value),
+});
 
 ConvexValue decodeInvitesGetResult(ConvexValue value) =>
     _decodeRaw(value, 'invites.js:get.returns', _validateInvitesGetResult);
@@ -7378,14 +7328,13 @@ ConvexValue decodeInvitesGetResult(ConvexValue value) =>
 ConvexObject encodeInvitesRedeemArgs({
   required double clientProtocolVersion,
   required String token,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'invites.js:redeem.args.clientProtocolVersion',
-      ),
-      'token': ConvexString(token),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'invites.js:redeem.args.clientProtocolVersion',
+  ),
+  'token': ConvexString(token),
+});
 
 InvitesRedeemResult decodeInvitesRedeemResult(ConvexValue value) =>
     InvitesRedeemResult.decode(value, 'invites.js:redeem.returns');
@@ -7394,15 +7343,14 @@ ConvexObject encodeInvitesRevokeArgs({
   required double clientProtocolVersion,
   required String strategyPublicId,
   required String token,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'invites.js:revoke.args.clientProtocolVersion',
-      ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-      'token': ConvexString(token),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'invites.js:revoke.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  'token': ConvexString(token),
+});
 
 CommunityReportResult decodeInvitesRevokeResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'invites.js:revoke.returns');
@@ -7411,55 +7359,47 @@ ConvexObject encodeLineupsListForPageArgs({
   required double clientProtocolVersion,
   required String pagePublicId,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'lineups.js:listForPage.args.clientProtocolVersion',
-      ),
-      'pagePublicId': ConvexString(pagePublicId),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'lineups.js:listForPage.args.clientProtocolVersion',
+  ),
+  'pagePublicId': ConvexString(pagePublicId),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 List<LineupsListForPageResultItem> decodeLineupsListForPageResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'lineups.js:listForPage.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => LineupsListForPageResultItem.decode(
-            entry.$2,
-            _indexPath('lineups.js:listForPage.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'lineups.js:listForPage.returns').value.indexed
+    .map(
+      (entry) => LineupsListForPageResultItem.decode(
+        entry.$2,
+        _indexPath('lineups.js:listForPage.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeLineupsListForStrategyArgs({
   required double clientProtocolVersion,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'lineups.js:listForStrategy.args.clientProtocolVersion',
-      ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'lineups.js:listForStrategy.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 List<LineupsListForPageResultItem> decodeLineupsListForStrategyResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'lineups.js:listForStrategy.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => LineupsListForPageResultItem.decode(
-            entry.$2,
-            _indexPath('lineups.js:listForStrategy.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'lineups.js:listForStrategy.returns').value.indexed
+    .map(
+      (entry) => LineupsListForPageResultItem.decode(
+        entry.$2,
+        _indexPath('lineups.js:listForStrategy.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeOpsApplyBatchArgs({
   ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
@@ -7477,51 +7417,50 @@ ConvexObject encodeOpsApplyBatchArgs({
   ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
   ConvexOptional<bool> sendsLives = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      if (acceptsPictureIds.isPresent)
-        'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
-      if (accountSubject.isPresent)
-        'accountSubject': ConvexString(accountSubject.value),
-      if (checkLineupEndDeletes.isPresent)
-        'checkLineupEndDeletes': ConvexBoolean(checkLineupEndDeletes.value),
-      if (checkLineupLinkEnds.isPresent)
-        'checkLineupLinkEnds': ConvexBoolean(checkLineupLinkEnds.value),
-      if (checkTrashedPageDeletes.isPresent)
-        'checkTrashedPageDeletes': ConvexBoolean(checkTrashedPageDeletes.value),
-      'clientId': ConvexString(clientId),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'ops.js:applyBatch.args.clientProtocolVersion',
-      ),
-      if (elementFieldLevel.isPresent)
-        'elementFieldLevel': _encodeNumber(
-          elementFieldLevel.value,
-          'ops.js:applyBatch.args.elementFieldLevel',
-        ),
-      if (includeWasApplied.isPresent)
-        'includeWasApplied': ConvexBoolean(includeWasApplied.value),
-      if (liveBasis.isPresent)
-        'liveBasis': _encodeNumber(
-          liveBasis.value,
-          'ops.js:applyBatch.args.liveBasis',
-        ),
-      'ops': ConvexArray(
-        ops.indexed
-            .map(
-              (entry) => entry.$2.encode(
-                _indexPath('ops.js:applyBatch.args.ops', entry.$1),
-              ),
-            )
-            .toList(growable: false),
-      ),
-      if (readsAccountMismatch.isPresent)
-        'readsAccountMismatch': ConvexBoolean(readsAccountMismatch.value),
-      if (sendsLiveBasis.isPresent)
-        'sendsLiveBasis': ConvexBoolean(sendsLiveBasis.value),
-      if (sendsLives.isPresent) 'sendsLives': ConvexBoolean(sendsLives.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  if (acceptsPictureIds.isPresent)
+    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
+  if (checkLineupEndDeletes.isPresent)
+    'checkLineupEndDeletes': ConvexBoolean(checkLineupEndDeletes.value),
+  if (checkLineupLinkEnds.isPresent)
+    'checkLineupLinkEnds': ConvexBoolean(checkLineupLinkEnds.value),
+  if (checkTrashedPageDeletes.isPresent)
+    'checkTrashedPageDeletes': ConvexBoolean(checkTrashedPageDeletes.value),
+  'clientId': ConvexString(clientId),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'ops.js:applyBatch.args.clientProtocolVersion',
+  ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'ops.js:applyBatch.args.elementFieldLevel',
+    ),
+  if (includeWasApplied.isPresent)
+    'includeWasApplied': ConvexBoolean(includeWasApplied.value),
+  if (liveBasis.isPresent)
+    'liveBasis': _encodeNumber(
+      liveBasis.value,
+      'ops.js:applyBatch.args.liveBasis',
+    ),
+  'ops': ConvexArray(
+    ops.indexed
+        .map(
+          (entry) => entry.$2.encode(
+            _indexPath('ops.js:applyBatch.args.ops', entry.$1),
+          ),
+        )
+        .toList(growable: false),
+  ),
+  if (readsAccountMismatch.isPresent)
+    'readsAccountMismatch': ConvexBoolean(readsAccountMismatch.value),
+  if (sendsLiveBasis.isPresent)
+    'sendsLiveBasis': ConvexBoolean(sendsLiveBasis.value),
+  if (sendsLives.isPresent) 'sendsLives': ConvexBoolean(sendsLives.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 OpsApplyBatchResult decodeOpsApplyBatchResult(ConvexValue value) =>
     OpsApplyBatchResult.decode(value, 'ops.js:applyBatch.returns');
@@ -7535,25 +7474,24 @@ ConvexObject encodePageGetElementSliceArgs({
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
   ConvexOptional<String> toPublicId = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (accountSubject.isPresent)
-        'accountSubject': ConvexString(accountSubject.value),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'page.js:getElementSlice.args.clientProtocolVersion',
-      ),
-      if (elementFieldLevel.isPresent)
-        'elementFieldLevel': _encodeNumber(
-          elementFieldLevel.value,
-          'page.js:getElementSlice.args.elementFieldLevel',
-        ),
-      'fromPublicId': ConvexString(fromPublicId),
-      'pagePublicId': ConvexString(pagePublicId),
-      if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-      if (toPublicId.isPresent) 'toPublicId': ConvexString(toPublicId.value),
-    });
+}) => ConvexObject({
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'page.js:getElementSlice.args.clientProtocolVersion',
+  ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'page.js:getElementSlice.args.elementFieldLevel',
+    ),
+  'fromPublicId': ConvexString(fromPublicId),
+  'pagePublicId': ConvexString(pagePublicId),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  if (toPublicId.isPresent) 'toPublicId': ConvexString(toPublicId.value),
+});
 
 PageGetElementSliceResult decodePageGetElementSliceResult(ConvexValue value) =>
     PageGetElementSliceResult.decode(value, 'page.js:getElementSlice.returns');
@@ -7564,18 +7502,17 @@ ConvexObject encodePageGetFrameArgs({
   required String pagePublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      if (accountSubject.isPresent)
-        'accountSubject': ConvexString(accountSubject.value),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'page.js:getFrame.args.clientProtocolVersion',
-      ),
-      'pagePublicId': ConvexString(pagePublicId),
-      if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'page.js:getFrame.args.clientProtocolVersion',
+  ),
+  'pagePublicId': ConvexString(pagePublicId),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 PageGetFrameResult decodePageGetFrameResult(ConvexValue value) =>
     PageGetFrameResult.decode(value, 'page.js:getFrame.returns');
@@ -7588,25 +7525,24 @@ ConvexObject encodePageGetSnapshotArgs({
   required String pagePublicId,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      if (acceptsPictureIds.isPresent)
-        'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
-      if (accountSubject.isPresent)
-        'accountSubject': ConvexString(accountSubject.value),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'page.js:getSnapshot.args.clientProtocolVersion',
-      ),
-      if (elementFieldLevel.isPresent)
-        'elementFieldLevel': _encodeNumber(
-          elementFieldLevel.value,
-          'page.js:getSnapshot.args.elementFieldLevel',
-        ),
-      'pagePublicId': ConvexString(pagePublicId),
-      if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  if (acceptsPictureIds.isPresent)
+    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'page.js:getSnapshot.args.clientProtocolVersion',
+  ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'page.js:getSnapshot.args.elementFieldLevel',
+    ),
+  'pagePublicId': ConvexString(pagePublicId),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 PageGetSnapshotResult decodePageGetSnapshotResult(ConvexValue value) =>
     PageGetSnapshotResult.decode(value, 'page.js:getSnapshot.returns');
@@ -7622,26 +7558,24 @@ ConvexObject encodePagesAddArgs({
       const ConvexOptional.absent(),
   required double sortIndex,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'pages.js:add.args.clientProtocolVersion',
-      ),
-      'expectedRevision': _encodeNumber(
-        expectedRevision,
-        'pages.js:add.args.expectedRevision',
-      ),
-      'isAttack': ConvexBoolean(isAttack),
-      if (isAutoNamed.isPresent)
-        'isAutoNamed': ConvexBoolean(isAutoNamed.value),
-      'name': ConvexString(name),
-      'pagePublicId': ConvexString(pagePublicId),
-      if (settings.isPresent)
-        'settings': settings.value.encode('pages.js:add.args.settings'),
-      'sortIndex': _encodeNumber(sortIndex, 'pages.js:add.args.sortIndex'),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:add.args.clientProtocolVersion',
+  ),
+  'expectedRevision': _encodeNumber(
+    expectedRevision,
+    'pages.js:add.args.expectedRevision',
+  ),
+  'isAttack': ConvexBoolean(isAttack),
+  if (isAutoNamed.isPresent) 'isAutoNamed': ConvexBoolean(isAutoNamed.value),
+  'name': ConvexString(name),
+  'pagePublicId': ConvexString(pagePublicId),
+  if (settings.isPresent)
+    'settings': settings.value.encode('pages.js:add.args.settings'),
+  'sortIndex': _encodeNumber(sortIndex, 'pages.js:add.args.sortIndex'),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 ConvexValue decodePagesAddResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:add.returns', _validatePagesAddResult);
@@ -7651,58 +7585,50 @@ ConvexObject encodePagesDeleteArgs({
   required double expectedRevision,
   required String pagePublicId,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'pages.js:delete.args.clientProtocolVersion',
-      ),
-      'expectedRevision': _encodeNumber(
-        expectedRevision,
-        'pages.js:delete.args.expectedRevision',
-      ),
-      'pagePublicId': ConvexString(pagePublicId),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:delete.args.clientProtocolVersion',
+  ),
+  'expectedRevision': _encodeNumber(
+    expectedRevision,
+    'pages.js:delete.args.expectedRevision',
+  ),
+  'pagePublicId': ConvexString(pagePublicId),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 ConvexValue decodePagesDeleteResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:delete.returns', _validatePagesAddResult);
 
 ConvexObject encodePagesListForStrategyArgs({
   required String strategyPublicId,
-}) =>
-    ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
 
 List<PageGetFrameResultPage> decodePagesListForStrategyResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'pages.js:listForStrategy.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => PageGetFrameResultPage.decode(
-            entry.$2,
-            _indexPath('pages.js:listForStrategy.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'pages.js:listForStrategy.returns').value.indexed
+    .map(
+      (entry) => PageGetFrameResultPage.decode(
+        entry.$2,
+        _indexPath('pages.js:listForStrategy.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodePagesListTrashedArgs({required String strategyPublicId}) =>
     ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
 
 List<PagesListTrashedResultItem> decodePagesListTrashedResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'pages.js:listTrashed.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => PagesListTrashedResultItem.decode(
-            entry.$2,
-            _indexPath('pages.js:listTrashed.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'pages.js:listTrashed.returns').value.indexed
+    .map(
+      (entry) => PagesListTrashedResultItem.decode(
+        entry.$2,
+        _indexPath('pages.js:listTrashed.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodePagesRenameArgs({
   required double clientProtocolVersion,
@@ -7711,22 +7637,20 @@ ConvexObject encodePagesRenameArgs({
   required String name,
   required String pagePublicId,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'pages.js:rename.args.clientProtocolVersion',
-      ),
-      'expectedRevision': _encodeNumber(
-        expectedRevision,
-        'pages.js:rename.args.expectedRevision',
-      ),
-      if (isAutoNamed.isPresent)
-        'isAutoNamed': ConvexBoolean(isAutoNamed.value),
-      'name': ConvexString(name),
-      'pagePublicId': ConvexString(pagePublicId),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:rename.args.clientProtocolVersion',
+  ),
+  'expectedRevision': _encodeNumber(
+    expectedRevision,
+    'pages.js:rename.args.expectedRevision',
+  ),
+  if (isAutoNamed.isPresent) 'isAutoNamed': ConvexBoolean(isAutoNamed.value),
+  'name': ConvexString(name),
+  'pagePublicId': ConvexString(pagePublicId),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 ConvexValue decodePagesRenameResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:rename.returns', _validatePagesAddResult);
@@ -7736,23 +7660,22 @@ ConvexObject encodePagesReorderArgs({
   required double expectedRevision,
   required List<String> orderedPagePublicIds,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'pages.js:reorder.args.clientProtocolVersion',
-      ),
-      'expectedRevision': _encodeNumber(
-        expectedRevision,
-        'pages.js:reorder.args.expectedRevision',
-      ),
-      'orderedPagePublicIds': ConvexArray(
-        orderedPagePublicIds.indexed
-            .map((entry) => ConvexString(entry.$2))
-            .toList(growable: false),
-      ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:reorder.args.clientProtocolVersion',
+  ),
+  'expectedRevision': _encodeNumber(
+    expectedRevision,
+    'pages.js:reorder.args.expectedRevision',
+  ),
+  'orderedPagePublicIds': ConvexArray(
+    orderedPagePublicIds.indexed
+        .map((entry) => ConvexString(entry.$2))
+        .toList(growable: false),
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 ConvexValue decodePagesReorderResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:reorder.returns', _validatePagesAddResult);
@@ -7761,15 +7684,14 @@ ConvexObject encodePagesRestoreArgs({
   required double clientProtocolVersion,
   required String pagePublicId,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'pages.js:restore.args.clientProtocolVersion',
-      ),
-      'pagePublicId': ConvexString(pagePublicId),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:restore.args.clientProtocolVersion',
+  ),
+  'pagePublicId': ConvexString(pagePublicId),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 ConvexValue decodePagesRestoreResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:restore.returns', _validatePagesAddResult);
@@ -7777,24 +7699,22 @@ ConvexValue decodePagesRestoreResult(ConvexValue value) =>
 ConvexObject encodePresenceIssueRoomPassArgs({
   required double clientProtocolVersion,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'presence.js:issueRoomPass.args.clientProtocolVersion',
-      ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'presence.js:issueRoomPass.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 PresenceIssueRoomPassResult? decodePresenceIssueRoomPassResult(
   ConvexValue value,
-) =>
-    (value) is ConvexNull
-        ? null
-        : PresenceIssueRoomPassResult.decode(
-            value,
-            'presence.js:issueRoomPass.returns',
-          );
+) => (value) is ConvexNull
+    ? null
+    : PresenceIssueRoomPassResult.decode(
+        value,
+        'presence.js:issueRoomPass.returns',
+      );
 
 ConvexObject encodeSharesCreateArgs({
   required double clientProtocolVersion,
@@ -7802,17 +7722,16 @@ ConvexObject encodeSharesCreateArgs({
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
   required String token,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'shares.js:create.args.clientProtocolVersion',
-      ),
-      'role': ConvexString(role.wireName),
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-      'token': ConvexString(token),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:create.args.clientProtocolVersion',
+  ),
+  'role': ConvexString(role.wireName),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+  'token': ConvexString(token),
+});
 
 CommunityReportResult decodeSharesCreateResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'shares.js:create.returns');
@@ -7821,15 +7740,14 @@ ConvexObject encodeSharesLeaveArgs({
   required double clientProtocolVersion,
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'shares.js:leave.args.clientProtocolVersion',
-      ),
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:leave.args.clientProtocolVersion',
+  ),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
 
 CommunityReportResult decodeSharesLeaveResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'shares.js:leave.returns');
@@ -7837,16 +7755,13 @@ CommunityReportResult decodeSharesLeaveResult(ConvexValue value) =>
 ConvexObject encodeSharesListArgs({
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
-}) =>
-    ConvexObject({
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-    });
+}) => ConvexObject({
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
 
 List<SharesListResultItem> decodeSharesListResult(ConvexValue value) =>
-    _decodeArray(value, 'shares.js:list.returns')
-        .value
-        .indexed
+    _decodeArray(value, 'shares.js:list.returns').value.indexed
         .map(
           (entry) => SharesListResultItem.decode(
             entry.$2,
@@ -7858,59 +7773,50 @@ List<SharesListResultItem> decodeSharesListResult(ConvexValue value) =>
 ConvexObject encodeSharesListFolderAccessArgs({
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
-}) =>
-    ConvexObject({
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-    });
+}) => ConvexObject({
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
 
 List<SharesListFolderAccessResultItem> decodeSharesListFolderAccessResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'shares.js:listFolderAccess.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => SharesListFolderAccessResultItem.decode(
-            entry.$2,
-            _indexPath('shares.js:listFolderAccess.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'shares.js:listFolderAccess.returns').value.indexed
+    .map(
+      (entry) => SharesListFolderAccessResultItem.decode(
+        entry.$2,
+        _indexPath('shares.js:listFolderAccess.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeSharesListLinkJoinsArgs({
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
-}) =>
-    ConvexObject({
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-    });
+}) => ConvexObject({
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
 
 List<SharesListLinkJoinsResultItem> decodeSharesListLinkJoinsResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'shares.js:listLinkJoins.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => SharesListLinkJoinsResultItem.decode(
-            entry.$2,
-            _indexPath('shares.js:listLinkJoins.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'shares.js:listLinkJoins.returns').value.indexed
+    .map(
+      (entry) => SharesListLinkJoinsResultItem.decode(
+        entry.$2,
+        _indexPath('shares.js:listLinkJoins.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeSharesListMembersArgs({
   ConvexOptional<String> cursor = const ConvexOptional.absent(),
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
-}) =>
-    ConvexObject({
-      if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-    });
+}) => ConvexObject({
+  if (cursor.isPresent) 'cursor': ConvexString(cursor.value),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
 
 SharesListMembersResult decodeSharesListMembersResult(ConvexValue value) =>
     SharesListMembersResult.decode(value, 'shares.js:listMembers.returns');
@@ -7924,14 +7830,13 @@ SharesPreviewResult decodeSharesPreviewResult(ConvexValue value) =>
 ConvexObject encodeSharesRedeemArgs({
   required double clientProtocolVersion,
   required String token,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'shares.js:redeem.args.clientProtocolVersion',
-      ),
-      'token': ConvexString(token),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:redeem.args.clientProtocolVersion',
+  ),
+  'token': ConvexString(token),
+});
 
 SharesRedeemResult decodeSharesRedeemResult(ConvexValue value) =>
     SharesRedeemResult.decode(value, 'shares.js:redeem.returns');
@@ -7941,16 +7846,15 @@ ConvexObject encodeSharesRemoveMemberArgs({
   required String memberId,
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'shares.js:removeMember.args.clientProtocolVersion',
-      ),
-      'memberId': ConvexString(memberId),
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:removeMember.args.clientProtocolVersion',
+  ),
+  'memberId': ConvexString(memberId),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
 
 CommunityReportResult decodeSharesRemoveMemberResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'shares.js:removeMember.returns');
@@ -7967,18 +7871,17 @@ ConvexObject encodeSharesRevokeArgs({
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
   required String token,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'shares.js:revoke.args.clientProtocolVersion',
-      ),
-      if (removeMembers.isPresent)
-        'removeMembers': ConvexBoolean(removeMembers.value),
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-      'token': ConvexString(token),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:revoke.args.clientProtocolVersion',
+  ),
+  if (removeMembers.isPresent)
+    'removeMembers': ConvexBoolean(removeMembers.value),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+  'token': ConvexString(token),
+});
 
 CommunityReportResult decodeSharesRevokeResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'shares.js:revoke.returns');
@@ -7989,17 +7892,16 @@ ConvexObject encodeSharesSetMemberRoleArgs({
   required InvitesCreateArgsRole role,
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'shares.js:setMemberRole.args.clientProtocolVersion',
-      ),
-      'memberId': ConvexString(memberId),
-      'role': ConvexString(role.wireName),
-      'targetPublicId': ConvexString(targetPublicId),
-      'targetType': ConvexString(targetType.wireName),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:setMemberRole.args.clientProtocolVersion',
+  ),
+  'memberId': ConvexString(memberId),
+  'role': ConvexString(role.wireName),
+  'targetPublicId': ConvexString(targetPublicId),
+  'targetType': ConvexString(targetType.wireName),
+});
 
 CommunityReportResult decodeSharesSetMemberRoleResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'shares.js:setMemberRole.returns');
@@ -8007,22 +7909,20 @@ CommunityReportResult decodeSharesSetMemberRoleResult(ConvexValue value) =>
 ConvexObject encodeStrategiesAbandonMoveArgs({
   required double clientProtocolVersion,
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategies.js:abandonMove.args.clientProtocolVersion',
-      ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:abandonMove.args.clientProtocolVersion',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 StrategiesAbandonMoveResult decodeStrategiesAbandonMoveResult(
   ConvexValue value,
-) =>
-    StrategiesAbandonMoveResult.decode(
-      value,
-      'strategies.js:abandonMove.returns',
-    );
+) => StrategiesAbandonMoveResult.decode(
+  value,
+  'strategies.js:abandonMove.returns',
+);
 
 ConvexObject encodeStrategiesCreateArgs({
   required double clientProtocolVersion,
@@ -8031,33 +7931,34 @@ ConvexObject encodeStrategiesCreateArgs({
   required String name,
   required String publicId,
   ConvexOptional<
-          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-      themeOverridePalette = const ConvexOptional.absent(),
+        OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+      >
+      themeOverridePalette =
+      const ConvexOptional.absent(),
   ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategies.js:create.args.clientProtocolVersion',
-      ),
-      if (folderPublicId.isPresent)
-        'folderPublicId': ConvexString(folderPublicId.value),
-      'mapData': ConvexString(mapData),
-      'name': ConvexString(name),
-      'publicId': ConvexString(publicId),
-      if (themeOverridePalette.isPresent)
-        'themeOverridePalette': themeOverridePalette.value.encode(
-          'strategies.js:create.args.themeOverridePalette',
-        ),
-      if (themeProfileId.isPresent)
-        'themeProfileId': ConvexString(themeProfileId.value),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:create.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'mapData': ConvexString(mapData),
+  'name': ConvexString(name),
+  'publicId': ConvexString(publicId),
+  if (themeOverridePalette.isPresent)
+    'themeOverridePalette': themeOverridePalette.value.encode(
+      'strategies.js:create.args.themeOverridePalette',
+    ),
+  if (themeProfileId.isPresent)
+    'themeProfileId': ConvexString(themeProfileId.value),
+});
 
 ConvexValue decodeStrategiesCreateResult(ConvexValue value) => _decodeRaw(
-      value,
-      'strategies.js:create.returns',
-      _validateCommunityCopyPostResult,
-    );
+  value,
+  'strategies.js:create.returns',
+  _validateCommunityCopyPostResult,
+);
 
 ConvexObject encodeStrategiesCreateWithInitialPageArgs({
   required double clientProtocolVersion,
@@ -8067,44 +7968,46 @@ ConvexObject encodeStrategiesCreateWithInitialPageArgs({
   required String initialPageName,
   required String initialPagePublicId,
   ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings>
-      initialPageSettings = const ConvexOptional.absent(),
+      initialPageSettings =
+      const ConvexOptional.absent(),
   required String mapData,
   required String name,
   required String publicId,
   ConvexOptional<
-          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-      themeOverridePalette = const ConvexOptional.absent(),
+        OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+      >
+      themeOverridePalette =
+      const ConvexOptional.absent(),
   ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
   ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategies.js:createWithInitialPage.args.clientProtocolVersion',
-      ),
-      if (folderPublicId.isPresent)
-        'folderPublicId': ConvexString(folderPublicId.value),
-      'initialPageIsAttack': ConvexBoolean(initialPageIsAttack),
-      if (initialPageIsAutoNamed.isPresent)
-        'initialPageIsAutoNamed': ConvexBoolean(initialPageIsAutoNamed.value),
-      'initialPageName': ConvexString(initialPageName),
-      'initialPagePublicId': ConvexString(initialPagePublicId),
-      if (initialPageSettings.isPresent)
-        'initialPageSettings': initialPageSettings.value.encode(
-          'strategies.js:createWithInitialPage.args.initialPageSettings',
-        ),
-      'mapData': ConvexString(mapData),
-      'name': ConvexString(name),
-      'publicId': ConvexString(publicId),
-      if (themeOverridePalette.isPresent)
-        'themeOverridePalette': themeOverridePalette.value.encode(
-          'strategies.js:createWithInitialPage.args.themeOverridePalette',
-        ),
-      if (themeProfileId.isPresent)
-        'themeProfileId': ConvexString(themeProfileId.value),
-      if (unfinishedMove.isPresent)
-        'unfinishedMove': ConvexBoolean(unfinishedMove.value),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:createWithInitialPage.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'initialPageIsAttack': ConvexBoolean(initialPageIsAttack),
+  if (initialPageIsAutoNamed.isPresent)
+    'initialPageIsAutoNamed': ConvexBoolean(initialPageIsAutoNamed.value),
+  'initialPageName': ConvexString(initialPageName),
+  'initialPagePublicId': ConvexString(initialPagePublicId),
+  if (initialPageSettings.isPresent)
+    'initialPageSettings': initialPageSettings.value.encode(
+      'strategies.js:createWithInitialPage.args.initialPageSettings',
+    ),
+  'mapData': ConvexString(mapData),
+  'name': ConvexString(name),
+  'publicId': ConvexString(publicId),
+  if (themeOverridePalette.isPresent)
+    'themeOverridePalette': themeOverridePalette.value.encode(
+      'strategies.js:createWithInitialPage.args.themeOverridePalette',
+    ),
+  if (themeProfileId.isPresent)
+    'themeProfileId': ConvexString(themeProfileId.value),
+  if (unfinishedMove.isPresent)
+    'unfinishedMove': ConvexBoolean(unfinishedMove.value),
+});
 
 ConvexValue decodeStrategiesCreateWithInitialPageResult(ConvexValue value) =>
     _decodeRaw(
@@ -8118,20 +8021,19 @@ ConvexObject encodeStrategiesDeleteArgs({
   required double expectedRevision,
   required String strategyPublicId,
   ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategies.js:delete.args.clientProtocolVersion',
-      ),
-      'expectedRevision': _encodeNumber(
-        expectedRevision,
-        'strategies.js:delete.args.expectedRevision',
-      ),
-      'strategyPublicId': ConvexString(strategyPublicId),
-      if (withinFolderPublicId.isPresent)
-        'withinFolderPublicId': ConvexString(withinFolderPublicId.value),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:delete.args.clientProtocolVersion',
+  ),
+  'expectedRevision': _encodeNumber(
+    expectedRevision,
+    'strategies.js:delete.args.expectedRevision',
+  ),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  if (withinFolderPublicId.isPresent)
+    'withinFolderPublicId': ConvexString(withinFolderPublicId.value),
+});
 
 CommunityReportResult decodeStrategiesDeleteResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'strategies.js:delete.returns');
@@ -8142,47 +8044,44 @@ ConvexObject encodeStrategiesDuplicateArgs({
   required String name,
   required String publicId,
   required String sourceStrategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategies.js:duplicate.args.clientProtocolVersion',
-      ),
-      if (folderPublicId.isPresent)
-        'folderPublicId': ConvexString(folderPublicId.value),
-      'name': ConvexString(name),
-      'publicId': ConvexString(publicId),
-      'sourceStrategyPublicId': ConvexString(sourceStrategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:duplicate.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'name': ConvexString(name),
+  'publicId': ConvexString(publicId),
+  'sourceStrategyPublicId': ConvexString(sourceStrategyPublicId),
+});
 
 ConvexValue decodeStrategiesDuplicateResult(ConvexValue value) => _decodeRaw(
-      value,
-      'strategies.js:duplicate.returns',
-      _validateCommunityCopyPostResult,
-    );
+  value,
+  'strategies.js:duplicate.returns',
+  _validateCommunityCopyPostResult,
+);
 
 ConvexObject encodeStrategiesFinishMoveArgs({
   required double clientProtocolVersion,
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategies.js:finishMove.args.clientProtocolVersion',
-      ),
-      if (folderPublicId.isPresent)
-        'folderPublicId': ConvexString(folderPublicId.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:finishMove.args.clientProtocolVersion',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 CommunityReportResult decodeStrategiesFinishMoveResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'strategies.js:finishMove.returns');
 
 ConvexObject encodeStrategiesGetHeaderArgs({
   required String strategyPublicId,
-}) =>
-    ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
+}) => ConvexObject({'strategyPublicId': ConvexString(strategyPublicId)});
 
 StrategiesGetHeaderResult decodeStrategiesGetHeaderResult(ConvexValue value) =>
     StrategiesGetHeaderResult.decode(value, 'strategies.js:getHeader.returns');
@@ -8192,80 +8091,70 @@ ConvexObject encodeStrategiesListForFolderArgs({
   ConvexOptional<bool> includeAgentTypes = const ConvexOptional.absent(),
   ConvexOptional<FoldersListTreeArgsScope> scope =
       const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (folderPublicId.isPresent)
-        'folderPublicId': ConvexString(folderPublicId.value),
-      if (includeAgentTypes.isPresent)
-        'includeAgentTypes': ConvexBoolean(includeAgentTypes.value),
-      if (scope.isPresent) 'scope': ConvexString(scope.value.wireName),
-    });
+}) => ConvexObject({
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  if (includeAgentTypes.isPresent)
+    'includeAgentTypes': ConvexBoolean(includeAgentTypes.value),
+  if (scope.isPresent) 'scope': ConvexString(scope.value.wireName),
+});
 
 List<StrategiesListForFolderResultItem> decodeStrategiesListForFolderResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'strategies.js:listForFolder.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => StrategiesListForFolderResultItem.decode(
-            entry.$2,
-            _indexPath('strategies.js:listForFolder.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'strategies.js:listForFolder.returns').value.indexed
+    .map(
+      (entry) => StrategiesListForFolderResultItem.decode(
+        entry.$2,
+        _indexPath('strategies.js:listForFolder.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeStrategiesListInventoryArgs() => ConvexObject({});
 
 StrategiesListInventoryResult decodeStrategiesListInventoryResult(
   ConvexValue value,
-) =>
-    StrategiesListInventoryResult.decode(
-      value,
-      'strategies.js:listInventory.returns',
-    );
+) => StrategiesListInventoryResult.decode(
+  value,
+  'strategies.js:listInventory.returns',
+);
 
 ConvexObject encodeStrategiesListSharedWithMeArgs({
   ConvexOptional<bool> includeAgentTypes = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (includeAgentTypes.isPresent)
-        'includeAgentTypes': ConvexBoolean(includeAgentTypes.value),
-    });
+}) => ConvexObject({
+  if (includeAgentTypes.isPresent)
+    'includeAgentTypes': ConvexBoolean(includeAgentTypes.value),
+});
 
 List<StrategiesListForFolderResultItem> decodeStrategiesListSharedWithMeResult(
   ConvexValue value,
-) =>
-    _decodeArray(value, 'strategies.js:listSharedWithMe.returns')
-        .value
-        .indexed
-        .map(
-          (entry) => StrategiesListForFolderResultItem.decode(
-            entry.$2,
-            _indexPath('strategies.js:listSharedWithMe.returns', entry.$1),
-          ),
-        )
-        .toList(growable: false);
+) => _decodeArray(value, 'strategies.js:listSharedWithMe.returns').value.indexed
+    .map(
+      (entry) => StrategiesListForFolderResultItem.decode(
+        entry.$2,
+        _indexPath('strategies.js:listSharedWithMe.returns', entry.$1),
+      ),
+    )
+    .toList(growable: false);
 
 ConvexObject encodeStrategiesMoveArgs({
   required double clientProtocolVersion,
   required double expectedRevision,
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategies.js:move.args.clientProtocolVersion',
-      ),
-      'expectedRevision': _encodeNumber(
-        expectedRevision,
-        'strategies.js:move.args.expectedRevision',
-      ),
-      if (folderPublicId.isPresent)
-        'folderPublicId': ConvexString(folderPublicId.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:move.args.clientProtocolVersion',
+  ),
+  'expectedRevision': _encodeNumber(
+    expectedRevision,
+    'strategies.js:move.args.expectedRevision',
+  ),
+  if (folderPublicId.isPresent)
+    'folderPublicId': ConvexString(folderPublicId.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 ConvexValue decodeStrategiesMoveResult(ConvexValue value) =>
     _decodeRaw(value, 'strategies.js:move.returns', _validatePagesAddResult);
@@ -8280,34 +8169,34 @@ ConvexObject encodeStrategiesUpdateArgs({
   ConvexOptional<String> name = const ConvexOptional.absent(),
   required String strategyPublicId,
   ConvexOptional<
-          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette>
-      themeOverridePalette = const ConvexOptional.absent(),
+        OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+      >
+      themeOverridePalette =
+      const ConvexOptional.absent(),
   ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
-}) =>
-    ConvexObject({
-      if (clearThemeOverridePalette.isPresent)
-        'clearThemeOverridePalette':
-            ConvexBoolean(clearThemeOverridePalette.value),
-      if (clearThemeProfileId.isPresent)
-        'clearThemeProfileId': ConvexBoolean(clearThemeProfileId.value),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategies.js:update.args.clientProtocolVersion',
-      ),
-      'expectedRevision': _encodeNumber(
-        expectedRevision,
-        'strategies.js:update.args.expectedRevision',
-      ),
-      if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
-      if (name.isPresent) 'name': ConvexString(name.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-      if (themeOverridePalette.isPresent)
-        'themeOverridePalette': themeOverridePalette.value.encode(
-          'strategies.js:update.args.themeOverridePalette',
-        ),
-      if (themeProfileId.isPresent)
-        'themeProfileId': ConvexString(themeProfileId.value),
-    });
+}) => ConvexObject({
+  if (clearThemeOverridePalette.isPresent)
+    'clearThemeOverridePalette': ConvexBoolean(clearThemeOverridePalette.value),
+  if (clearThemeProfileId.isPresent)
+    'clearThemeProfileId': ConvexBoolean(clearThemeProfileId.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:update.args.clientProtocolVersion',
+  ),
+  'expectedRevision': _encodeNumber(
+    expectedRevision,
+    'strategies.js:update.args.expectedRevision',
+  ),
+  if (mapData.isPresent) 'mapData': ConvexString(mapData.value),
+  if (name.isPresent) 'name': ConvexString(name.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+  if (themeOverridePalette.isPresent)
+    'themeOverridePalette': themeOverridePalette.value.encode(
+      'strategies.js:update.args.themeOverridePalette',
+    ),
+  if (themeProfileId.isPresent)
+    'themeProfileId': ConvexString(themeProfileId.value),
+});
 
 ConvexValue decodeStrategiesUpdateResult(ConvexValue value) =>
     _decodeRaw(value, 'strategies.js:update.returns', _validatePagesAddResult);
@@ -8321,53 +8210,50 @@ ConvexObject encodeStrategyGetFullSnapshotArgs({
   ConvexOptional<bool> includeContentVersion = const ConvexOptional.absent(),
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      if (acceptsPictureIds.isPresent)
-        'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
-      if (acceptsTrashedPagesLeftOut.isPresent)
-        'acceptsTrashedPagesLeftOut': ConvexBoolean(
-          acceptsTrashedPagesLeftOut.value,
-        ),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategy.js:getFullSnapshot.args.clientProtocolVersion',
-      ),
-      if (elementFieldLevel.isPresent)
-        'elementFieldLevel': _encodeNumber(
-          elementFieldLevel.value,
-          'strategy.js:getFullSnapshot.args.elementFieldLevel',
-        ),
-      if (includeContentVersion.isPresent)
-        'includeContentVersion': ConvexBoolean(includeContentVersion.value),
-      if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  if (acceptsPictureIds.isPresent)
+    'acceptsPictureIds': ConvexBoolean(acceptsPictureIds.value),
+  if (acceptsTrashedPagesLeftOut.isPresent)
+    'acceptsTrashedPagesLeftOut': ConvexBoolean(
+      acceptsTrashedPagesLeftOut.value,
+    ),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategy.js:getFullSnapshot.args.clientProtocolVersion',
+  ),
+  if (elementFieldLevel.isPresent)
+    'elementFieldLevel': _encodeNumber(
+      elementFieldLevel.value,
+      'strategy.js:getFullSnapshot.args.elementFieldLevel',
+    ),
+  if (includeContentVersion.isPresent)
+    'includeContentVersion': ConvexBoolean(includeContentVersion.value),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 StrategyGetFullSnapshotResult decodeStrategyGetFullSnapshotResult(
   ConvexValue value,
-) =>
-    StrategyGetFullSnapshotResult.decode(
-      value,
-      'strategy.js:getFullSnapshot.returns',
-    );
+) => StrategyGetFullSnapshotResult.decode(
+  value,
+  'strategy.js:getFullSnapshot.returns',
+);
 
 ConvexObject encodeStrategyGetPageListArgs({
   ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
   required double clientProtocolVersion,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      if (accountSubject.isPresent)
-        'accountSubject': ConvexString(accountSubject.value),
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategy.js:getPageList.args.clientProtocolVersion',
-      ),
-      if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  if (accountSubject.isPresent)
+    'accountSubject': ConvexString(accountSubject.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategy.js:getPageList.args.clientProtocolVersion',
+  ),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 StrategyGetPageListResult decodeStrategyGetPageListResult(ConvexValue value) =>
     StrategyGetPageListResult.decode(value, 'strategy.js:getPageList.returns');
@@ -8376,15 +8262,14 @@ ConvexObject encodeStrategyGetShellArgs({
   required double clientProtocolVersion,
   ConvexOptional<String> shareToken = const ConvexOptional.absent(),
   required String strategyPublicId,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategy.js:getShell.args.clientProtocolVersion',
-      ),
-      if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
-      'strategyPublicId': ConvexString(strategyPublicId),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategy.js:getShell.args.clientProtocolVersion',
+  ),
+  if (shareToken.isPresent) 'shareToken': ConvexString(shareToken.value),
+  'strategyPublicId': ConvexString(strategyPublicId),
+});
 
 StrategyGetShellResult decodeStrategyGetShellResult(ConvexValue value) =>
     StrategyGetShellResult.decode(value, 'strategy.js:getShell.returns');
@@ -8392,41 +8277,37 @@ StrategyGetShellResult decodeStrategyGetShellResult(ConvexValue value) =>
 ConvexObject encodeStrategyListContentVersionsArgs({
   required double clientProtocolVersion,
   required List<String> strategyPublicIds,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'strategy.js:listContentVersions.args.clientProtocolVersion',
-      ),
-      'strategyPublicIds': ConvexArray(
-        strategyPublicIds.indexed
-            .map((entry) => ConvexString(entry.$2))
-            .toList(growable: false),
-      ),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategy.js:listContentVersions.args.clientProtocolVersion',
+  ),
+  'strategyPublicIds': ConvexArray(
+    strategyPublicIds.indexed
+        .map((entry) => ConvexString(entry.$2))
+        .toList(growable: false),
+  ),
+});
 
 List<StrategyListContentVersionsResultItem>
-    decodeStrategyListContentVersionsResult(ConvexValue value) =>
-        _decodeArray(value, 'strategy.js:listContentVersions.returns')
-            .value
-            .indexed
-            .map(
-              (entry) => StrategyListContentVersionsResultItem.decode(
-                entry.$2,
-                _indexPath('strategy.js:listContentVersions.returns', entry.$1),
-              ),
-            )
-            .toList(growable: false);
+decodeStrategyListContentVersionsResult(ConvexValue value) =>
+    _decodeArray(value, 'strategy.js:listContentVersions.returns').value.indexed
+        .map(
+          (entry) => StrategyListContentVersionsResultItem.decode(
+            entry.$2,
+            _indexPath('strategy.js:listContentVersions.returns', entry.$1),
+          ),
+        )
+        .toList(growable: false);
 
 ConvexObject encodeUsersEnsureCurrentUserArgs({
   required double clientProtocolVersion,
-}) =>
-    ConvexObject({
-      'clientProtocolVersion': _encodeNumber(
-        clientProtocolVersion,
-        'users.js:ensureCurrentUser.args.clientProtocolVersion',
-      ),
-    });
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'users.js:ensureCurrentUser.args.clientProtocolVersion',
+  ),
+});
 
 CommunityReportResult decodeUsersEnsureCurrentUserResult(ConvexValue value) =>
     CommunityReportResult.decode(value, 'users.js:ensureCurrentUser.returns');
