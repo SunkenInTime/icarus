@@ -243,7 +243,9 @@ const LIVE_FOR_MS = 20000;
 
 const heldTimes = new Map();
 
-function storeForm(clientId, op, row) {
+function storeForm(clientId, unnamed, row) {
+  if (row.createdAt === undefined) throw new Error(`${row.publicId} came with no life`);
+  const op = { ...unnamed, expectedLife: row.createdAt };
   const held = heldTimes.get(clientId);
   const fresh = held !== undefined && performance.now() - held.at <= LIVE_FOR_MS;
   if (fresh) return { op, liveBasis: held.serverTime };
@@ -261,6 +263,7 @@ async function sendFromStore(device, strategyPublicId, clientId, op, row) {
     readsAccountMismatch: true,
     sendsLiveBasis: true,
     liveBasis,
+    sendsLives: true,
   });
   if (results.serverTime !== undefined) {
     heldTimes.set(clientId, { serverTime: results.serverTime, at: performance.now() });
@@ -814,7 +817,7 @@ export const SESSIONS = {
   soloSessionStore: {
     title: "Edit alone, sent by the cloud store's sender",
     about:
-      "soloSession's 50 moves, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH, one applyBatch " +
+      "soloSession's 50 moves, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH and to lives, one applyBatch " +
       "per move in the op's live form. It measures what the server spends on the cloud store's sender's call pattern; " +
       "it does not run the Dart sender, whose own call count for these moves test/library_store/cloud_sender_test.dart " +
       "checks.",
@@ -989,7 +992,7 @@ export const SESSIONS = {
   storeSoloSessionRetire: {
     title: "Edit alone with no editor open, sent and retired by the store's sender",
     about:
-      "soloSession's 50 moves sent by the store's sender with nothing watching: five bursts of ten with a minute's " +
+      "soloSession's 50 moves sent by the store's sender, opted in to lives, with nothing watching: five bursts of ten with a minute's " +
       "pause after each. The loop does not wait the pauses out; it does what they change for the sender: after each " +
       "pause the server time it held is too old, so the burst's first move goes checked, and the touched page is read " +
       "to retire landed work after the first pause and the last, not again within five minutes, so twice in all " +
@@ -1020,7 +1023,7 @@ export const SESSIONS = {
   storeLiveBasis: {
     title: "The store's sender inside and outside the server's window",
     about:
-      "Ten moves on one page sent by the store's sender, opted in to the server's window for unchecked changes. The " +
+      "Ten moves on one page sent by the store's sender, opted in to the server's window for unchecked changes and to lives. The " +
       "first, after a quiet start, goes checked with its fields' values as the base; the next nine go unchecked, each " +
       "carrying the server time from the answer before it. Then one move whose call is held past the window: the " +
       "server refuses it whole (UNCHECKED_OUTSIDE_WINDOW) before reading the strategy, and the sender sends it again " +
@@ -1039,11 +1042,12 @@ export const SESSIONS = {
         const held = liveMove(row, rng);
         let refused = false;
         try {
-          await coach.applyBatch(session.publicId, clientId, [held], {
+          await coach.applyBatch(session.publicId, clientId, [{ ...held, expectedLife: row.createdAt }], {
             includeWasApplied: true,
             readsAccountMismatch: true,
             sendsLiveBasis: true,
             liveBasis: heldTimes.get(clientId).serverTime - 31000,
+            sendsLives: true,
           });
         } catch (error) {
           if (!String(error).includes("UNCHECKED_OUTSIDE_WINDOW")) throw error;
@@ -1061,7 +1065,7 @@ export const SESSIONS = {
   twoPeopleStore: {
     title: "Two people on one page, sent by the cloud store's sender",
     about:
-      "twoPeople's 20 moves by the owner, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH, one " +
+      "twoPeople's 20 moves by the owner, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH and to lives, one " +
       "applyBatch per move in the op's live form, while the teammate watches the page. It measures the server's side " +
       "of that call pattern, not the Dart sender, whose own call count test/library_store/cloud_sender_test.dart checks.",
     world: "team",
