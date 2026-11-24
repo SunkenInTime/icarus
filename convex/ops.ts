@@ -2062,6 +2062,7 @@ export const applyBatch = mutation({
     sendsLiveBasis: v.optional(v.boolean()),
     liveBasis: v.optional(v.number()),
     sendsLives: v.optional(v.boolean()),
+    strategyLife: v.optional(v.number()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
@@ -2082,6 +2083,16 @@ export const applyBatch = mutation({
     );
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user } = await assertStrategyRole(ctx, strategy, "editor");
+    if (
+      args.sendsLives === true &&
+      args.strategyLife !== undefined &&
+      args.strategyLife !== strategy.createdAt
+    ) {
+      throw errorWithCode(
+        "STRATEGY_REPLACED",
+        "This strategy was deleted and made again since these changes were made",
+      );
+    }
     const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;
     // Whether an accepted op may have changed which agents the strategy
