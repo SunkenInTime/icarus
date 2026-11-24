@@ -1865,7 +1865,11 @@ revision alone across lives.
   queued edit made on that add's prediction; a page add's answer names the
   strategy's life, so a new page takes its life from the first page list that
   shows it. Ids of rows this device creates are made on this device, so the
-  first result that shows that id is the row the add created.
+  first result that shows that id is the row the add created. When the
+  strategy was replaced in between, a page of that id can come from the
+  upload instead; the page add names the strategy's life and is refused
+  first, and every edit of the page waits behind that add, so none is sent
+  before the user decides.
 - A page list that shows the strategy in another life drops everything the
   queue knew of the old one (results and landed work) and every page the
   store held, from memory and disk. Queued edits stay: they go out naming the

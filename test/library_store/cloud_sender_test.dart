@@ -117,6 +117,60 @@ void main() {
       );
     });
 
+    test(
+        'a queue held for any other unreadable row is not discarded: it '
+        'stays held, with the row as it was, and nothing is sent', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld((world) {
+        world.sender.hold('x');
+        world.commitMove(1);
+        world.settle();
+      }, storage: storage, server: server);
+      final contents = {
+        for (final MapEntry(key: area, value: rows) in storage.contents.entries)
+          area: {
+            for (final MapEntry(:key, :value) in rows.entries)
+              key: key.startsWith('pending/')
+                  ? '{"version": $livedRowVersion, "kind": "op"}'
+                  : value,
+          },
+      };
+      final damaged = MemoryStorage(contents);
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 5));
+          expect(server.calls, isEmpty);
+          Reading<StrategyContent>? read;
+          world.store.readStrategy(strategyId).then((value) => read = value);
+          world.async.flushMicrotasks();
+          expect(
+            (read! as Found<StrategyContent>).value.sync,
+            isA<CloudHeld>().having(
+              (held) => held.writtenBeforeLives,
+              'written before lives',
+              isFalse,
+            ),
+          );
+        },
+        storage: damaged,
+        server: server,
+        addStrategy: false,
+      );
+      expect(
+        {
+          for (final MapEntry(:key, :value)
+              in damaged.contents[strategyArea(strategyId)]!.entries)
+            if (key.startsWith('pending/')) key: value,
+        },
+        {
+          for (final MapEntry(:key, :value)
+              in contents[strategyArea(strategyId)]!.entries)
+            if (key.startsWith('pending/')) key: value,
+        },
+      );
+    });
+
     test('a start with saved work sends it with no wake from outside', () {
       final storage = MemoryStorage();
       final server = FakeServer();

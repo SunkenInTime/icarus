@@ -69,7 +69,7 @@ void main() {
         ),
       );
     }
-    expect(entryViews(client.queue, now).keys, ['move', 'rename']);
+    expect(entryViews(client.queue, client.at).keys, ['move', 'rename']);
     for (final opId in ['move', 'rename']) {
       expect(
         client.view(opId).state,
@@ -226,4 +226,112 @@ void main() {
       'rename': pageLife,
     });
   });
+
+  test('a page added here whose answer was lost, in a strategy deleted and '
+      'uploaded again with a page of that id: on reconnect the page add is '
+      'refused for the strategy\'s life, a rename of the page waits behind '
+      'it, and giving the add up takes the rename with it, leaving the new '
+      'page untouched', () {
+    final server = Server();
+    final client = Client()..must(const ConnectionReturned());
+    client.read(initialRows());
+    client.edit(pageAdd('add', 'page-c'));
+    final lost = client.claim(['add']);
+    server.apply(clientId, client.lastSent().single);
+    client.must(TransportFailed(lost, TransportFailure.network, at: now));
+    client.edit(
+      PagePatchOp(
+        opId: 'rename',
+        pagePublicId: 'page-c',
+        expectedPageRevision: 1,
+        name: 'B site',
+      ),
+    );
+    server
+      ..rows = relivedRows(server.rows, secondLife)
+      ..recorded.clear()
+      ..firstClient.clear();
+    client
+      ..must(const ConnectionLost())
+      ..must(const ConnectionReturned());
+    client.read(server.rows);
+    client.clock = now.add(const Duration(seconds: 1));
+    final uploaded = server.rows;
+    expect(client.view('rename').sendable, isFalse);
+    final attempt = client.claim(['add']);
+    final sent = client.effects.whereType<SendBatch>().last;
+    expect(sent.ops.map((op) => op.opId), ['add']);
+    expect(sent.lives, {'add': fixtureLife});
+    client.must(
+      OpAnswered(
+        attempt,
+        server.apply(clientId, sent.ops.single, expectedLife: fixtureLife),
+      ),
+    );
+    expect(
+      client.view('add').state,
+      const NeedsUser(
+        RefusedByServer(
+          RejectedByServer(RejectionReason.rowReplaced, NoServerCopy()),
+        ),
+      ),
+    );
+    expect(client.view('rename').sendable, isFalse);
+    expect(
+      server.rows.page('page-c')!.toJson(),
+      uploaded.page('page-c')!.toJson(),
+    );
+    client.must(const UserDiscarded('add'));
+    expect(entryViews(client.queue, client.at), isEmpty);
+    expect(
+      server.rows.page('page-c')!.toJson(),
+      uploaded.page('page-c')!.toJson(),
+    );
+  });
 }
+
+Row relived(Row row, int life) {
+  final born = jsonObject({'createdAt': life});
+  return switch (row) {
+    LivePage() => LivePage(
+      publicId: row.publicId,
+      strategyPublicId: row.strategyPublicId,
+      name: row.name,
+      isAutoNamed: row.isAutoNamed,
+      sortIndex: row.sortIndex,
+      isAttack: row.isAttack,
+      revision: 1,
+      unknownFields: born,
+    ),
+    ReadablePageSettings() => ReadablePageSettings(
+      pagePublicId: row.pagePublicId,
+      settings: row.settings,
+      revision: 1,
+      unknownFields: born,
+    ),
+    LiveElement() => LiveElement(
+      publicId: row.publicId,
+      pagePublicId: row.pagePublicId,
+      payload: row.payload,
+      sortIndex: row.sortIndex,
+      revision: 1,
+      unknownFields: born,
+    ),
+    _ => row,
+  };
+}
+
+StrategyRowSet relivedRows(StrategyRowSet rows, int life) => StrategyRowSet(
+  strategy: strategyRow(
+    createdAt: DateTime.fromMillisecondsSinceEpoch(life, isUtc: true),
+  ),
+  pages: [for (final row in rows.pages) relived(row, life) as PageRow],
+  settings: [
+    for (final row in rows.settings) relived(row, life) as PageSettingsRow,
+  ],
+  elements: [
+    for (final row in rows.elements)
+      if (row is LiveElement) relived(row, life) as ElementRow,
+  ],
+  lineupGroups: const [],
+);
