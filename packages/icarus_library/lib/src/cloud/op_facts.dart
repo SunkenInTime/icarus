@@ -451,6 +451,11 @@ String strategyDigest(StrategyRow strategy, Iterable<PageRow> pages) {
   });
 }
 
+RowLife lifeOf(Row row) => switch (createdAtOf(row)) {
+  final life? => BornAt(life),
+  null => const NotYetBorn(),
+};
+
 Version? versionOfRow(Row row) =>
     switch ((createdAtOf(row), revisionOfRow(row))) {
       (final life?, final revision?) => Version(life, revision),
@@ -492,7 +497,7 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
   if (targetOf(op) is StrategyTarget) {
     return AuthoredRow(
       revision: rows.strategy.revision,
-      life: createdAtOf(rows.strategy),
+      life: lifeOf(rows.strategy),
       digest: strategyDigest(rows.strategy, rows.pages),
       produces: producedBy(rows, op),
     );
@@ -500,7 +505,7 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
   return switch ((row, row == null ? null : revisionOfRow(row))) {
     (final row?, final revision?) => AuthoredRow(
       revision: revision,
-      life: createdAtOf(row),
+      life: lifeOf(row),
       digest: rowDigest(row),
       payloadVersion: switch (row) {
         ReadableElementRow(:final payload) => payload.payloadVersion,
@@ -543,7 +548,7 @@ ProducedRow? producedBy(StrategyRows rows, StrategyOp op) {
     return ProducedRow(
       page: null,
       revision: strategy.revision,
-      life: createdAtOf(strategy),
+      life: lifeOf(strategy),
       digest: strategyDigest(strategy, [
         for (final page in rows.pages) changed.remove(page.publicId) ?? page,
         ...changed.values,
@@ -562,7 +567,7 @@ ProducedRow? producedBy(StrategyRows rows, StrategyOp op) {
     final revision = revisionOfRow(row);
     if (revision == null) return null;
     return ProducedRow(
-      life: createdAtOf(row),
+      life: lifeOf(row),
       page: switch (row) {
         PageRow(:final publicId) => publicId,
         PageSettingsRow(:final pagePublicId) => pagePublicId,

@@ -422,8 +422,9 @@ void main() {
     });
 
     test(
-        'a page list that drops the open page is compared as the page being '
-        'gone', () async {
+        'a page list that drops the open page leaves it in the store, since '
+        'only a read the sender starts shows a page gone, and the comparison '
+        'does not count it', () async {
       final store = await openStore(MemoryStorage());
       final rows = serverRows();
       final shadow = shadowOn(store)
@@ -437,7 +438,7 @@ void main() {
       await shadow.idle;
 
       expect(verdicts(shadow), allEqual);
-      expect(await store.readPage(strategyId, pageId), isA<NotFound<Object>>());
+      expect(await store.readPage(strategyId, pageId), isA<Found<Object>>());
     });
 
     test(

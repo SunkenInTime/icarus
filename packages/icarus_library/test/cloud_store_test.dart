@@ -2279,6 +2279,7 @@ Map<String, Object?> entryJson() => {
   'op': movePatch('other', elementId: 'e2').toJson(),
   'scope': {'page': 'page-a'},
   'authored': {'noRow': true},
+  'strategyLife': fixtureLife,
   'authoredIn': 1,
   'authoredAt': 0,
   'retriedAfter': 0,

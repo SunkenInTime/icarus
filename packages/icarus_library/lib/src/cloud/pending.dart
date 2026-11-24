@@ -57,6 +57,7 @@ final class PendingOp extends QueueEntry {
     required this.authoredAt,
     required this.refusal,
     required this.retriedAfter,
+    required this.strategyLife,
     this.window = const WindowOpen(),
     this.behindOwn = false,
     this.basis,
@@ -69,6 +70,7 @@ final class PendingOp extends QueueEntry {
   final DateTime authoredAt;
   final RefusalRecord refusal;
   final int retriedAfter;
+  final int strategyLife;
   final ResendWindow window;
   final bool behindOwn;
   final ServerTimeBasis? basis;
@@ -96,6 +98,7 @@ final class PendingOp extends QueueEntry {
     authoredAt: authoredAt,
     refusal: refusal ?? this.refusal,
     retriedAfter: retriedAfter ?? this.retriedAfter,
+    strategyLife: strategyLife,
     window: window ?? this.window,
     behindOwn: behindOwn,
     basis: dropBasis ? null : basis,
@@ -112,6 +115,7 @@ final class PendingOp extends QueueEntry {
       other.authoredAt == authoredAt &&
       other.refusal == refusal &&
       other.retriedAfter == retriedAfter &&
+      other.strategyLife == strategyLife &&
       other.window == window &&
       other.behindOwn == behindOwn &&
       other.basis == basis;
@@ -368,25 +372,94 @@ sealed class Authored {
   const Authored();
 }
 
+sealed class RowLife {
+  const RowLife();
+
+  bool matches(int life);
+}
+
+final class BornAt extends RowLife {
+  const BornAt(this.life);
+
+  final int life;
+
+  @override
+  bool matches(int life) => life == this.life;
+
+  @override
+  bool operator ==(Object other) => other is BornAt && other.life == life;
+
+  @override
+  int get hashCode => Object.hash(BornAt, life);
+
+  @override
+  String toString() => 'born at $life';
+}
+
+final class BornByAdd extends RowLife {
+  const BornByAdd(this.opId);
+
+  final String opId;
+
+  @override
+  bool matches(int life) => false;
+
+  @override
+  bool operator ==(Object other) => other is BornByAdd && other.opId == opId;
+
+  @override
+  int get hashCode => Object.hash(BornByAdd, opId);
+
+  @override
+  String toString() => 'born by $opId';
+}
+
+final class MadeHere extends RowLife {
+  const MadeHere();
+
+  @override
+  bool matches(int life) => true;
+
+  @override
+  bool operator ==(Object other) => other is MadeHere;
+
+  @override
+  int get hashCode => (MadeHere).hashCode;
+
+  @override
+  String toString() => 'a page made here';
+}
+
+final class NotYetBorn extends RowLife {
+  const NotYetBorn();
+
+  @override
+  bool matches(int life) => false;
+
+  @override
+  bool operator ==(Object other) => other is NotYetBorn;
+
+  @override
+  int get hashCode => (NotYetBorn).hashCode;
+
+  @override
+  String toString() => 'not yet born';
+}
+
 final class ProducedRow {
   const ProducedRow({
     required this.page,
     required this.revision,
     required this.digest,
-    this.life,
+    required this.life,
     this.justifies = true,
   });
 
   final String? page;
   final int revision;
-  final int? life;
+  final RowLife life;
   final String digest;
   final bool justifies;
-
-  Version? get version => switch (life) {
-    final life? => Version(life, revision),
-    null => null,
-  };
 
   ProducedRow unjustified() => ProducedRow(
     page: page,
@@ -396,11 +469,11 @@ final class ProducedRow {
     justifies: false,
   );
 
-  ProducedRow inLife(int? life) => ProducedRow(
+  ProducedRow inLife(RowLife life) => ProducedRow(
     page: page,
     revision: revision,
     digest: digest,
-    life: life ?? this.life,
+    life: life,
     justifies: justifies,
   );
 
@@ -425,19 +498,15 @@ final class AuthoredRow extends Authored {
   const AuthoredRow({
     required this.revision,
     required this.digest,
-    this.life,
+    required this.life,
     this.payloadVersion,
     this.produces,
     this.movedRow,
   });
 
   final int revision;
-  final int? life;
+  final RowLife life;
   final String digest;
-  Version? get version => switch (life) {
-    final life? => Version(life, revision),
-    null => null,
-  };
 
   final int? payloadVersion;
   final ProducedRow? produces;
@@ -482,10 +551,10 @@ final class AuthoredUnreadable extends Authored {
 }
 
 final class KeptOverServer extends Authored {
-  const KeptOverServer(this.revision, {this.life});
+  const KeptOverServer(this.revision, {required this.life});
 
   final int revision;
-  final int? life;
+  final RowLife life;
 
   @override
   bool operator ==(Object other) =>
@@ -589,6 +658,22 @@ final class FailedOnServer extends ServerRefusal {
 
   @override
   String toString() => 'FailedOnServer($code)';
+}
+
+final class AnsweredWithoutLife extends ServerRefusal {
+  const AnsweredWithoutLife(this.revision);
+
+  final int revision;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AnsweredWithoutLife && other.revision == revision;
+
+  @override
+  int get hashCode => Object.hash(AnsweredWithoutLife, revision);
+
+  @override
+  String toString() => 'AnsweredWithoutLife($revision)';
 }
 
 sealed class ServerFailure {
@@ -781,6 +866,7 @@ enum BatchRefusal {
   unauthenticated,
   editAccessRemoved,
   strategyDeleted,
+  strategyReplaced,
   uncheckedTooLate,
 }
 
@@ -832,7 +918,7 @@ final class LandedWork {
     required this.shape,
     required this.own,
     required this.firstSentAt,
-    this.life,
+    required this.life,
     this.produced,
     this.movedRow,
     this.shownWithout = false,
@@ -842,11 +928,8 @@ final class LandedWork {
   final int position;
   final StrategyOp op;
   final int revision;
-  final int? life;
-  Version? get version => switch (life) {
-    final life? => Version(life, revision),
-    null => null,
-  };
+  final int life;
+  Version get version => Version(life, revision);
 
   final LandedShape shape;
   final bool own;

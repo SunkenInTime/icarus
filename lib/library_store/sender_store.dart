@@ -12,6 +12,7 @@ final class ClaimedBatch {
     required this.clientId,
     required List<StrategyOp> ops,
     required this.session,
+    required this.strategyLife,
     this.basis,
     Map<String, int> lives = const {},
   })  : ops = List.unmodifiable(ops),
@@ -23,6 +24,7 @@ final class ClaimedBatch {
   final String clientId;
   final List<StrategyOp> ops;
   final int session;
+  final int strategyLife;
   final int? basis;
   final Map<String, int> lives;
 
@@ -87,12 +89,6 @@ final class QueueFound extends QueueRead {
   final CloudStrategy cloud;
 }
 
-final class QueueWrittenBeforeLives extends QueueRead {
-  const QueueWrittenBeforeLives(this.owner);
-
-  final Account owner;
-}
-
 final class QueueTroubled extends QueueRead {
   const QueueTroubled(this.trouble);
 
@@ -153,7 +149,8 @@ final class StoredStrategy {
 
   bool get needsReading => switch (tally) {
         Tally(standing: Standing.editAccessLost) => true,
-        Tally(:final waiting) => waiting.containsKey(Underway.awaitingResult),
+        Tally(:final waiting, :final readsOwed) =>
+          readsOwed > 0 || waiting.containsKey(Underway.awaitingResult),
         null => false,
       };
 
@@ -265,6 +262,8 @@ base class SenderStore {
         LibraryShut() => const [],
       };
 
+  int readStartsNow() => store.readStartsNow();
+
   Future<Reading<StrategyContent>> readStrategy(String strategyId) =>
       store.readStrategy(strategyId);
 
@@ -278,15 +277,6 @@ base class SenderStore {
     return switch (reading) {
       Found(value: StrategyContent(sync: final CloudStrategy cloud)) =>
         QueueFound(cloud),
-      Found(
-        value: StrategyContent(
-          sync: CloudHeld(
-            owner: OwnedBy(account: final owner),
-            writtenBeforeLives: true,
-          ),
-        ),
-      ) =>
-        QueueWrittenBeforeLives(owner),
       Found() || NotFound() => const QueueTroubled(
           StrategyHeld('the store holds no cloud queue for it'),
         ),
@@ -295,30 +285,6 @@ base class SenderStore {
         ),
       NotRead(:final failure) =>
         QueueTroubled(_failed(failure, StoreStep.read)),
-    };
-  }
-
-  Future<StoreTrouble?> discardWrittenBeforeLives(
-    Account owner,
-    String strategyId,
-  ) async {
-    final Saving<StrategySummary, CommitRefusal> result;
-    try {
-      result = await store.discardUnreadableQueue(
-        owner,
-        strategyId,
-        const DiscardsUnsentWork(),
-      );
-    } catch (error) {
-      return StoreShut('the store threw: $error');
-    }
-    return switch (result) {
-      Saved() || NothingToSave() => null,
-      Refused(:final reason) =>
-        StrategyHeld('the store would not discard it: $reason'),
-      NotSaved(:final failure) => _failed(failure, StoreStep.refusedSave),
-      SaveInDoubt(:final failure) =>
-        StoreShut(storageFailureWords(failure, StoreStep.saveInDoubt)),
     };
   }
 
@@ -469,6 +435,7 @@ base class SenderStore {
                 :final ops,
                 :final basis,
                 :final lives,
+                :final strategyLife,
               )) {
             return Claimed(
               ClaimedBatch(
@@ -480,6 +447,7 @@ base class SenderStore {
                 session: session,
                 basis: basis,
                 lives: lives,
+                strategyLife: strategyLife,
               ),
             );
           }

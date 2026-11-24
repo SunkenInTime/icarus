@@ -638,9 +638,23 @@ void main() {
       final client = Client(base: initialRows());
       client.edit(pageDelete('drop', 'page-b'));
       final base = initialRows();
-      client.queue = stepped(
+      var started = stepped(
         transition(
           CloudQueue.start(build: build),
+          const ConnectionReturned(),
+          now: now,
+        ),
+      ).queue;
+      started = stepped(
+        transition(
+          started,
+          BaseArrived(headerReadOf(base), session: started.session.number),
+          now: now,
+        ),
+      ).queue;
+      client.queue = stepped(
+        transition(
+          started,
           UserEdited(
             PageDeleteEdit(
               pageDelete('blind', 'page-b'),
@@ -993,6 +1007,7 @@ void main() {
       authoredAt: entry.authoredAt,
       refusal: entry.refusal,
       retriedAfter: entry.retriedAfter,
+      strategyLife: entry.strategyLife,
     );
     expect(make, returnsNormally);
     expect(() => make(entries: [entry, again]), throwsArgumentError);
@@ -1079,6 +1094,7 @@ void main() {
           payload: lineup([link('k1', '')]),
           sortIndex: 0,
           revision: 1,
+          unknownFields: jsonObject(const {'createdAt': fixtureLife}),
         ),
       ],
     );
@@ -1155,6 +1171,7 @@ void main() {
       payload: full('stored'),
       sortIndex: 0,
       revision: 1,
+      unknownFields: jsonObject(const {'createdAt': fixtureLife}),
     );
     final rows = strategyRows(
       elements: initialRows().elements.toList(),
@@ -2007,7 +2024,15 @@ void main() {
       );
       client.edit(putBackOf('back', drawn, 'e1'));
       client.clock = now.add(const Duration(days: 30));
-      expect(stateOf(client, 'back'), isNot(isA<NeedsUser>()));
+      final back = client.view('back');
+      expect(back.state, isA<Waiting>());
+      expect(back.holds, isEmpty);
+      expect(back.sendable, isTrue);
+      client.claim(['back']);
+      final sent = client.effects.whereType<SendBatch>().last;
+      expect(sent.ops.single, isA<ElementAddOp>());
+      expect(expectedOf(sent.ops.single), 2);
+      expect(sent.lives, {'back': fixtureLife});
     });
 
     test('a landed move stays on its destination when the source page\'s '

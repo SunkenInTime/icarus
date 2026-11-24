@@ -1844,42 +1844,78 @@ queue orders what it knows of a row by `Version(life, revision)`: life
 first, then revision. A `Version` always has a life; nothing is compared by
 revision alone across lives.
 
-- Every batch opts in to lives (`sendsLives`) and names, for each op that
-  checks a revision, the life of the row it checks (`expectedLife`): the
-  strategy for a strategy patch and for page adds, deletes and reorders, the
-  row itself otherwise. The server refuses another life with `row_replaced`,
-  which asks the user like any refusal; with or without the server's copy.
-- Every row a result shows carries its life, and so does every answer that
-  applied or found its row, with one exception: a replay of a receipt the
-  server wrote before it sent lives. That answer is its own kind
-  (`ReplayWithoutLife`). Its landed record holds no version: it outranks
-  nothing, nothing outranks it by number, a later edit of its row waits for
-  the row's result, and the first result of that row after the answer
-  retires it. An applied answer or a server copy without a life is not read
-  at all (the batch is lost and sent again, and the replay then carries the
-  life). A refusal without a copy and a noop without a revision carry no
-  version, so need no life.
-- A row this device created has no life until the server names it: an
-  element or lineup add's answer names its row's life, which passes to every
-  queued edit made on that add's prediction; a page add's answer names the
-  strategy's life, so a new page takes its life from the first page list that
-  shows it. Ids of rows this device creates are made on this device, so the
-  first result that shows that id is the row the add created. When the
-  strategy was replaced in between, a page of that id can come from the
-  upload instead; the page add names the strategy's life and is refused
-  first, and every edit of the page waits behind that add, so none is sent
-  before the user decides.
+- Every batch opts in to lives (`sendsLives`) and carries the life of the
+  strategy its edits were made in (`strategyLife`). The server refuses the
+  whole batch with `STRATEGY_REPLACED` when the strategy was deleted and made
+  again since, and the queue then owes a read of the page list.
+- Each op that checks a revision also names the life of the row it checks
+  (`expectedLife`): the strategy for a strategy patch and for page adds,
+  deletes and reorders, the row itself otherwise. An edit of a page, or of its
+  settings, that this device added before any page list showed the page names
+  no page life; the batch's strategy life guards it. The server refuses
+  another row life with `row_replaced`.
+- An edit belongs to the strategy life it was made in. Once a page list shows
+  the strategy in a later life, every edit of an earlier one asks
+  (`MadeInAReplacedStrategy`) and is never sent: one question per edit, each
+  counted under `Attention.strategyReplaced`. A delete of a row the new
+  strategy lacks asks too.
+- `row_replaced` is never taken as delivered. The edit asks, and the queue
+  owes a read: the page list for the strategy, a page or its settings, and the
+  row's page for an element or lineup.
+- What the queue owes is a queue fact, stored with the results: the page list
+  (`Shown.listOwed`) and every listed page whose content is not held
+  (`owedReads`). It survives restarts and is paid only by a result that
+  started after the debt (**The order of results**).
+- An answer without a life (`ReplayWithoutLife`, a replay of a receipt the
+  server wrote before it sent lives) asks (`AnsweredWithoutLife`, counted
+  under `Attention.serverForgotAnswer`). An applied answer or a server copy
+  without a life is not read at all: the batch is lost and sent again.
+- A row this device created has no life until the server names it. An edit
+  made on an element or lineup add's prediction is born by that add
+  (`BornByAdd`) and takes the life its answer names; until then it is drawn
+  over whatever row the add made, and it is not sent. An add that checks a
+  revision puts a deleted row back: the row keeps its life, and so does every
+  edit made on it.
 - A page is a place, not a life: an element moved to another page keeps its
   life, and an op on an element names the element's life, never its page's.
-- A page list that shows the strategy in another life drops everything the
-  queue knew of the old one (results and landed work) and every page the
-  store held, from memory and disk. Queued edits stay: they go out naming the
-  old life and ask. Until each page of the new life is read, it is listed
-  with its content not read, and nothing of the old life is drawn.
+- Nothing from an earlier strategy life enters a later one. A page list of an
+  earlier life is set aside, never a reset; a page result older than the
+  page's life in the current list is set aside; an answer to an edit of an
+  earlier life makes no landed record and releases nothing. A page list that
+  shows the strategy in a later life drops everything the queue knew of the
+  old one (results and landed work) and every page the store held, from
+  memory and disk. Until each page of the new life is read, it is listed with
+  its content not read.
+- A page list that shows the strategy, in any life, ends "deleted on the
+  server".
+- An edit is drawn only over the row of its own life. An edit whose row is
+  gone or replaced, an edit the server refused, and an edit of a replaced
+  strategy are not drawn; they show only in what needs the user.
 - Entries, landed work and stored results are written at `livedRowVersion`
-  2. A store from a build before lives reads as held
-  (`CloudHeld.writtenBeforeLives`), and the sender discards that queue and
-  reads the strategy again from the server. Only test builds wrote it.
+  3. A store from a build before lives is held (`CloudHeld`) with its rows as
+  they were. Nothing discards it on its own: its owner can discard it with
+  `discardUnreadableQueue`, which works as it did before lives.
+
+**The order of results.** Within a session the store hands out a sequence
+number, kept in memory across unloads, when a read starts
+(`LibraryStore.readStartsNow`) and when it records an event. A result carries
+the number its read took (`BaseArrived.started`). A result that started
+before one already taken for the same subject (the page list, or one page) is
+set aside, and so is one that started before a debt on its subject; a
+set-aside result changes nothing in memory or on disk. A row's absence from a
+result shows it gone only when the result started after this device's answer
+for that row was recorded. A restart opens a new session, so nothing ordered
+in an earlier one counts.
+
+Only reads the sender starts count for absence until the live-result
+guarantee is proven against the local backend. Convex documents that every
+subscription reflects one consistent state of the database and that a
+client's mutations run in one ordered queue; only its blog states that a
+client receives the updated query results before its mutation's promise
+resolves, and the app's transport wraps the Convex Rust client. Until a test
+against the local backend proves that order through our transport, a live
+result (`LiveResult`, which the cloud shadow records) adds and updates rows
+and never removes one.
 
 **Landed work.** An answered op is drawn on top of the latest results until
 a result shows its row at the answered revision or later. The queue keeps

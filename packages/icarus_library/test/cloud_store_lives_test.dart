@@ -56,59 +56,159 @@ StrategyRowSet bornAt(int life, Map<String, String> elements) {
   );
 }
 
+String diskOf(MemoryStorage storage) => jsonEncode(storage.contents);
+
+Future<List<ReportOutcome>> arrive(
+  LibraryStore store,
+  ArrivedBase base, {
+  ResultStart started = const StartedAsItArrived(),
+}) async => (await recordAll(store, [
+  BaseArrived(base, session: await sessionOf(store), started: started),
+])).outcomes;
+
 void main() {
-  test('a strategy deleted and uploaded again under the same id, read through '
-      'the store: between the new page list and the page reads, nothing the '
-      'old life held is drawn, before or after a reopen', () async {
+  test(
+    'a strategy deleted and made again, read through the store: the new '
+    'page list drops every page of the earlier strategy and the queued move '
+    'asks, before and after a reopen; the new pages read in after it',
+    () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      final before = bornAt(oldLife, {
+        'e1': 'page-a',
+        'e2': 'page-a',
+        'e3': 'page-b',
+      });
+      await addCloud(store, before);
+      await recordAll(store, [const ConnectionReturned()]);
+      await readServer(store, before);
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('move', x: 40)),
+      );
+      final after = bornAt(newLife, {'e1': 'page-a', 'e5': 'page-a'});
+      await arrive(store, headerReadOf(after));
+
+      Future<void> expectBetween() async {
+        final strategy = strategyOf(await store.readStrategy(strategyId));
+        expect(strategy.pages.map((page) => page.publicId), ['page-a']);
+        final between = pageOf(await store.readPage(strategyId, 'page-a'));
+        expect(between.elements, isEmpty);
+        expect(between.content, isA<ContentNotRead>());
+        expect(
+          await store.readPage(strategyId, 'page-b'),
+          isA<NotFound<PageContent>>(),
+        );
+        final sync = await syncOf(store);
+        expect(sync.views.keys, ['move']);
+        expect(
+          sync.views['move']!.state,
+          const NeedsUser(MadeInAReplacedStrategy()),
+        );
+        expect(sync.views['move']!.sendable, isFalse);
+      }
+
+      await expectBetween();
+      await store.close();
+      store = await openCloudStore(MemoryEngine(storage));
+      await recordAll(store, [
+        const AppRestarted(build: build),
+        const ConnectionReturned(),
+      ]);
+      await expectBetween();
+      await arrive(store, pageReadOf(after, 'page-a'));
+      final read = pageOf(await store.readPage(strategyId, 'page-a'));
+      expect(
+        {for (final row in read.elements) row.publicId: row.toJson()},
+        {
+          for (final row in after.elementsOn('page-a'))
+            row.publicId: row.toJson(),
+        },
+      );
+    },
+  );
+
+  test('a result the queue sets aside writes nothing to disk', () async {
     final storage = MemoryStorage();
-    var store = await openCloudStore(MemoryEngine(storage));
-    final before = bornAt(oldLife, {
-      'e1': 'page-a',
-      'e2': 'page-a',
-      'e3': 'page-b',
-    });
+    final store = await openCloudStore(MemoryEngine(storage));
+    final before = bornAt(oldLife, {'e1': 'page-a'});
     await addCloud(store, before);
     await recordAll(store, [const ConnectionReturned()]);
     await readServer(store, before);
-    savedValue(
-      await store.commitAs(testAccount, strategyId, movePatch('move', x: 40)),
-    );
-    final after = bornAt(newLife, {'e1': 'page-a', 'e5': 'page-a'});
-    await recordAll(store, [
-      BaseArrived(headerReadOf(after), session: await sessionOf(store)),
+    final after = bornAt(newLife, {'e5': 'page-a'});
+    await readServer(store, after);
+    final disk = diskOf(storage);
+    final outcomes = await arrive(store, pageReadOf(before, 'page-a'));
+    expect(outcomes, [
+      isA<ReportNotApplicable>().having(
+        (outcome) => outcome.why,
+        'why',
+        isA<FromAnEarlierLife>(),
+      ),
     ]);
-    await store.close();
-    store = await openCloudStore(MemoryEngine(storage));
-    await recordAll(store, [
-      const AppRestarted(build: build),
-      const ConnectionReturned(),
-    ]);
-    final strategy = strategyOf(await store.readStrategy(strategyId));
-    expect(strategy.pages.map((page) => page.publicId), ['page-a']);
-    final between = pageOf(await store.readPage(strategyId, 'page-a'));
-    expect(between.elements, isEmpty);
-    expect(between.content, isA<ContentNotRead>());
-    expect(
-      await store.readPage(strategyId, 'page-b'),
-      isA<NotFound<PageContent>>(),
-    );
-    expect(
-      (await syncOf(
-        store,
-      )).queue.entries.whereType<PendingOp>().map((entry) => entry.id),
-      ['move'],
-    );
-    await recordAll(store, [
-      BaseArrived(pageReadOf(after, 'page-a'), session: await sessionOf(store)),
-    ]);
-    final read = pageOf(await store.readPage(strategyId, 'page-a'));
-    expect(
-      {for (final row in read.elements) row.publicId: createdAtOf(row)},
-      {'e1': newLife, 'e5': newLife},
-    );
-    final sent = await claimAll(store);
-    expect(sent.lives, {'move': oldLife});
+    expect(diskOf(storage), disk);
   });
+
+  test('a live page result stores the rows it holds and keeps a stored row it '
+      'lacks', () async {
+    final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+    final rows = bornAt(oldLife, {'e1': 'page-a', 'e2': 'page-a'});
+    await addCloud(store, rows);
+    await recordAll(store, [const ConnectionReturned()]);
+    await readServer(store, rows);
+    final live = bornAt(oldLife, {'e1': 'page-a', 'e7': 'page-a'});
+    await arrive(
+      store,
+      pageReadOf(live, 'page-a'),
+      started: const LiveResult(),
+    );
+    final page = pageOf(await store.readPage(strategyId, 'page-a'));
+    expect(page.elements.map((row) => row.publicId).toSet(), {
+      'e1',
+      'e2',
+      'e7',
+    });
+  });
+
+  test(
+    'a page list read started before a refusal that owes the list does not '
+    'pay it, though the strategy was unloaded and loaded again between',
+    () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      final rows = bornAt(oldLife, {'e1': 'page-a'});
+      await addCloud(store, rows);
+      await recordAll(store, [const ConnectionReturned()]);
+      await readServer(store, rows);
+      savedValue(
+        await store.commitAs(testAccount, strategyId, movePatch('move', x: 40)),
+      );
+      final early = store.readStartsNow();
+      final sent = await claimAll(store);
+      await recordAll(store, [
+        BatchRefused(sent.attempt, BatchRefusal.strategyReplaced),
+      ]);
+      expect(owedReads((await syncOf(store)).queue), {const PageListResult()});
+      expect(await store.unload(strategyId), isA<Unloaded>());
+      final outcomes = await arrive(
+        store,
+        headerReadOf(rows),
+        started: StartedAt(early),
+      );
+      expect(outcomes, [
+        isA<ReportNotApplicable>().having(
+          (outcome) => outcome.why,
+          'why',
+          isA<StartedBeforeANewerResult>(),
+        ),
+      ]);
+      expect(owedReads((await syncOf(store)).queue), {const PageListResult()});
+      await arrive(
+        store,
+        headerReadOf(rows),
+        started: StartedAt(store.readStartsNow()),
+      );
+      expect(owedReads((await syncOf(store)).queue), isEmpty);
+    },
+  );
 
   group('a store written before rows carried lives', () {
     Future<MemoryStorage> writtenBeforeLives({String? damaged}) async {
@@ -133,50 +233,36 @@ void main() {
       return MemoryStorage(contents);
     }
 
-    test(
-      'is held, says so, and its owner can discard it and start again',
-      () async {
-        final store = await openCloudStore(
-          MemoryEngine(await writtenBeforeLives()),
-        );
-        final held = strategyOf(await store.readStrategy(strategyId)).sync;
-        expect(
-          held,
-          isA<CloudHeld>().having(
-            (held) => held.writtenBeforeLives,
-            'written before lives',
-            isTrue,
-          ),
-        );
-        savedValue(
-          await store.discardUnreadableQueue(
-            testAccount,
-            strategyId,
-            const DiscardsUnsentWork(),
-          ),
-        );
-        final fresh = await syncOf(store);
-        expect(fresh.queue.entries, isEmpty);
-        expect(fresh.queue.shown.strategy, isNull);
-      },
-    );
+    test('is held with its rows as they were, and its owner can discard it '
+        'and start again', () async {
+      final storage = await writtenBeforeLives();
+      final disk = diskOf(storage);
+      final store = await openCloudStore(MemoryEngine(storage));
+      expect(
+        strategyOf(await store.readStrategy(strategyId)).sync,
+        isA<CloudHeld>(),
+      );
+      expect(diskOf(storage), disk);
+      savedValue(
+        await store.discardUnreadableQueue(
+          testAccount,
+          strategyId,
+          const DiscardsUnsentWork(),
+        ),
+      );
+      final fresh = await syncOf(store);
+      expect(fresh.queue.entries, isEmpty);
+      expect(fresh.queue.shown.strategy, isNull);
+    });
 
-    test(
-      'a row damaged another way makes it held for that reason too',
-      () async {
-        final store = await openCloudStore(
-          MemoryEngine(await writtenBeforeLives(damaged: 'pending/zz')),
-        );
-        final held = strategyOf(await store.readStrategy(strategyId)).sync;
-        expect(
-          held,
-          isA<CloudHeld>().having(
-            (held) => held.writtenBeforeLives,
-            'written before lives',
-            isFalse,
-          ),
-        );
-      },
-    );
+    test('a row damaged another way holds it too', () async {
+      final store = await openCloudStore(
+        MemoryEngine(await writtenBeforeLives(damaged: 'pending/zz')),
+      );
+      expect(
+        strategyOf(await store.readStrategy(strategyId)).sync,
+        isA<CloudHeld>(),
+      );
+    });
   });
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:test/test.dart';
 
+import 'cloud_server.dart';
 import 'cloud_support.dart';
 import 'support.dart';
 
@@ -19,6 +20,7 @@ enum Kind {
   rejected,
   failed,
   windowClosed,
+  madeInReplacedStrategy,
   retriesExhausted,
   deleteHeld,
   oversized,
@@ -35,13 +37,15 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
     NeedsUser(:final reason) => switch (reason) {
       RefusedByServer(refusal: RejectedByServer()) => Kind.rejected,
       RefusedByServer(refusal: FailedOnServer()) => Kind.failed,
-      WindowClosed() => Kind.windowClosed,
+      WindowClosed() ||
+      RefusedByServer(refusal: AnsweredWithoutLife()) => Kind.windowClosed,
       RetriesExhausted() => Kind.retriesExhausted,
       DeleteHeld() => Kind.deleteHeld,
       Oversized() => Kind.oversized,
       ChangedUnseen() => Kind.changedUnseen,
       RowPageGone() => Kind.rowPageGone,
       RetiredFormat() => Kind.retired,
+      MadeInAReplacedStrategy() => Kind.madeInReplacedStrategy,
     },
     Waiting() || Unanswered()
         when view.holds.any((hold) => hold is BehindEntry) =>
@@ -160,10 +164,9 @@ final rows = <Row>[
     final client = sentAndLost()..clock = now.add(const Duration(days: 29));
     return client..queue = look(client.queue, client.at).queue;
   }),
-  Row('needs user: written 29 days ago against a revision, never sent', () {
+  Row('needs user: made in a strategy deleted and made again since', () {
     final client = Client()..edit(movePatch('x'));
-    client.clock = now.add(const Duration(days: 29));
-    return client..queue = look(client.queue, client.at).queue;
+    return client..read(reuploaded(initialRows(), fixtureLife + 1000));
   }),
   Row('needs user: retries exhausted', () {
     final client = Client()..edit(movePatch('x'));
@@ -263,11 +266,18 @@ final rows = <Row>[
   }),
 ];
 
-final events = <String, QueueEvent Function(Client)>{
+String lifeName(int life) => life == fixtureLife
+    ? 'L0'
+    : 'L0${life > fixtureLife ? '+' : ''}${life - fixtureLife}';
+
+QueueEvent? editOfShown(Client client, String elementId, StrategyOp op) =>
+    client.visible.element(elementId) == null ? null : client.editEvent(op);
+
+final events = <String, QueueEvent? Function(Client)>{
   'user edits another item': (c) =>
-      c.editEvent(movePatch('z', elementId: 'e2')),
+      editOfShown(c, 'e2', movePatch('z', elementId: 'e2')),
   'user edits the same item': (c) =>
-      c.editEvent(movePatch('w', expected: 2, x: 30)),
+      editOfShown(c, 'e1', movePatch('w', expected: 2, x: 30)),
   'claimed': (c) => BatchClaimed(clientId: clientId, opIds: ['x'], at: c.at),
   'claimed under another client id': (c) =>
       BatchClaimed(clientId: 'client-2', opIds: ['x'], at: c.at),
@@ -381,6 +391,11 @@ String outcome(Client before, Step result) {
         for (final id in ids)
           if (describe(before, id) != describe(after, id))
             '$id: ${describe(after, id)}',
+        if (queue.shown.listOwed && !before.queue.shown.listOwed)
+          'owes a read of the strategy',
+        for (final page in queue.shown.pagesOwed)
+          if (!before.queue.shown.pagesOwed.contains(page))
+            'owes a read of $page',
         if (standingOf(queue) != standingOf(before.queue))
           'standing ${standingOf(queue).name}',
         for (final work in queue.landed)
@@ -393,8 +408,18 @@ String outcome(Client before, Step result) {
         ...effects.map(
           (effect) => switch (effect) {
             OpRemoved(:final opId, :final cause) => 'removes $opId ($cause)',
-            SendBatch(:final attempt, :final ops) =>
-              'sends attempt $attempt (${ops.map((op) => op.opId).join(', ')})',
+            SendBatch(
+              :final attempt,
+              :final ops,
+              :final strategyLife,
+              :final lives,
+            ) =>
+              'sends attempt $attempt '
+                  '(${ops.map((op) => switch (lives[op.opId]) {
+                    final life? => '${op.opId} on ${lifeName(life)}',
+                    null => op.opId,
+                  }).join(', ')}) '
+                  'in strategy ${lifeName(strategyLife)}',
             SessionOpened(:final session) => 'opens session $session',
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
@@ -405,7 +430,8 @@ String outcome(Client before, Step result) {
   }
 }
 
-const generatedMarker = '<!-- Generated below by test/cloud_transitions_test.dart. -->';
+const generatedMarker =
+    '<!-- Generated below by test/cloud_transitions_test.dart. -->';
 
 String renderTable() {
   final out = StringBuffer();
@@ -423,6 +449,10 @@ String renderTable() {
     for (final MapEntry(key: name, value: make) in events.entries) {
       final fresh = row.build();
       final event = make(fresh);
+      if (event == null) {
+        ignored.add(name);
+        continue;
+      }
       final result = outcome(
         fresh,
         transition(fresh.queue, event, now: fresh.at),
@@ -446,6 +476,7 @@ void main() {
       for (final make in events.values) {
         final client = row.build();
         final event = make(client);
+        if (event == null) continue;
         expect(
           () => transition(client.queue, event, now: client.at),
           returnsNormally,

@@ -542,7 +542,7 @@ final class CloudShadow {
     final session = await _sessionOf(entry);
     if (session == null) return false;
     final recorded = await _record(entry.strategyId, entry, [
-      BaseArrived(base, session: session),
+      BaseArrived(base, session: session, started: const LiveResult()),
     ]);
     if (recorded == null) return false;
     for (final outcome in recorded.outcomes) {
@@ -650,7 +650,10 @@ final class CloudShadow {
       CloudHeld(:final owner) => owner,
       LocalStrategy() => null,
     };
-    final shownPages = [for (final page in content.pages) page.publicId];
+    final shownPages = [
+      for (final page in content.pages)
+        if (expected.pages.containsKey(page.publicId)) page.publicId,
+    ];
     final sentPages = [
       for (final page in _ordered(expected.pages.values)) page.publicId,
     ];
@@ -686,9 +689,7 @@ final class CloudShadow {
     final sentPage = expected.pages[pageId];
     switch (await other.readPage(strategyId, pageId)) {
       case Found(value: final shown):
-        if (sentPage == null) {
-          return ['page $pageId: the store holds it, the server dropped it'];
-        }
+        if (sentPage == null) return const [];
         return [
           for (final difference in pageDifferences(
             shown: shown,
@@ -774,9 +775,6 @@ Iterable<String> _rowDifferences<T extends Object>(
       case _:
         break;
     }
-  }
-  for (final key in shown.keys) {
-    if (!server.containsKey(key)) yield '$kind $key: only in the store';
   }
 }
 

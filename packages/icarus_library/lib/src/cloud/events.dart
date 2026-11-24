@@ -236,10 +236,33 @@ final class UserDiscarded extends UserAction {
 }
 
 final class BaseArrived extends QueueEvent {
-  const BaseArrived(this.base, {required this.session});
+  const BaseArrived(
+    this.base, {
+    required this.session,
+    this.started = const StartedAsItArrived(),
+  });
 
   final ArrivedBase base;
   final int session;
+  final ResultStart started;
+}
+
+sealed class ResultStart {
+  const ResultStart();
+}
+
+final class StartedAt extends ResultStart {
+  const StartedAt(this.sequence);
+
+  final int sequence;
+}
+
+final class StartedAsItArrived extends ResultStart {
+  const StartedAsItArrived();
+}
+
+final class LiveResult extends ResultStart {
+  const LiveResult();
 }
 
 sealed class OpAnswer {

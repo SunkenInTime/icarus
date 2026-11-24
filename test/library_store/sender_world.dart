@@ -28,6 +28,7 @@ final class ServerCall {
     this.ops, [
     this.serverTime = const ServerTimeNotAsked(),
     this.lives = const {},
+    this.strategyLife = firstLife,
   ]);
 
   final String strategyId;
@@ -36,6 +37,7 @@ final class ServerCall {
   final List<StrategyOp> ops;
   final ServerTimeAsk serverTime;
   final Map<String, int> lives;
+  final int strategyLife;
 
   int? get basis => switch (serverTime) {
         ServerTimeAsked(:final basis) => basis,
@@ -229,6 +231,10 @@ final class FakeServer {
   var skew = 0;
 
   StoreBatchOutcome applyAll(ServerCall call) {
+    if (rows[call.strategyId] case final held?
+        when (createdAtOf(held.strategy) ?? firstLife) != call.strategyLife) {
+      return const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced);
+    }
     final now = serverNow;
     final asked = call.serverTime is ServerTimeAsked;
     switch (call.basis) {
@@ -261,6 +267,7 @@ final class FakeServer {
     required String clientId,
     required List<StrategyOp> ops,
     required Map<String, int> lives,
+    required int strategyLife,
     required Account account,
     required ServerTimeAsk serverTime,
   }) {
@@ -271,6 +278,7 @@ final class FakeServer {
       ops,
       serverTime,
       lives,
+      strategyLife,
     );
     calls.add(call);
     log.add('send ${call.opIds.join(' ')}');

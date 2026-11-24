@@ -33,15 +33,40 @@ Set<String> pagesToLoad(CloudQueue queue, Pages pages) => {
         ?queue.shown.rows[targetOf(work.op)]?.page,
 };
 
-int? _visibleRevision(StrategyRows rows, StrategyOp op) {
-  final row = switch (targetOf(op)) {
-    StrategyTarget() => rows.strategy,
-    PageTarget(:final pagePublicId) => rows.page(pagePublicId),
-    SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
-    ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
-    LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+Row? _visibleRow(StrategyRows rows, StrategyOp op) => switch (targetOf(op)) {
+  StrategyTarget() => rows.strategy,
+  PageTarget(:final pagePublicId) => rows.page(pagePublicId),
+  SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
+  ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+  LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+};
+
+int? _visibleRevision(StrategyRows rows, StrategyOp op) =>
+    switch (_visibleRow(rows, op)) {
+      final row? => revisionOfRow(row),
+      null => null,
+    };
+
+bool _ofTheRowsLife(StrategyRows rows, StrategyOp op, RowLife life) =>
+    switch ((life, _visibleRow(rows, op))) {
+      (BornByAdd(), _) || (_, null) => true,
+      (_, final row?) => switch (createdAtOf(row)) {
+        final born? => life.matches(born),
+        null => true,
+      },
+    };
+
+bool _drawn(CloudQueue queue, StrategyRows rows, PendingOp entry) {
+  if (entry.refusal is! NotRefused) return false;
+  if (queue.shown.strategyVersion case final shown?
+      when shown.bornAfter(entry.strategyLife)) {
+    return false;
+  }
+  return switch (entry.authored) {
+    AuthoredRow(:final life) ||
+    KeptOverServer(:final life) => _ofTheRowsLife(rows, entry.op, life),
+    _ => true,
   };
-  return row == null ? null : revisionOfRow(row);
 }
 
 StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
@@ -73,9 +98,10 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
         target,
   };
   for (final work in queue.landed) {
-    if (_visiblePage(work.op, pages) ||
-        _leaves(rows, work.op, pages) ||
-        followed.contains(targetOf(work.op))) {
+    if ((_visiblePage(work.op, pages) ||
+            _leaves(rows, work.op, pages) ||
+            followed.contains(targetOf(work.op))) &&
+        _ofTheRowsLife(rows, work.op, BornAt(work.life))) {
       rows = _bornInLandedLife(
         _strategyAtLeast(
           onTop(
@@ -103,7 +129,9 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
         entry.place: entry,
     }.values.toList()..sort((a, b) => a.place.compareTo(b.place)),
   };
-  for (final PendingOp(:op, :authored) in entries) {
+  for (final entry in entries) {
+    if (!_drawn(queue, rows, entry)) continue;
+    final PendingOp(:op, :authored) = entry;
     final moved = switch (authored) {
       AuthoredRow(:final movedRow?) => movedRow,
       _ => null,
@@ -147,7 +175,6 @@ StrategyRowSet _strategyAtLeast(StrategyRowSet rows, LandedWork work) =>
 
 StrategyRowSet _bornInLandedLife(StrategyRowSet rows, LandedWork work) {
   final life = work.life;
-  if (life == null) return rows;
   final row = switch (targetOf(work.op)) {
     ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
     LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),

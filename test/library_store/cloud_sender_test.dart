@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart' show useCloudAs;
@@ -82,8 +83,9 @@ void main() {
     });
 
     test(
-        'a queue stored by a build from before rows carried lives is '
-        'discarded, and the strategy is read again from the server', () {
+        'a queue stored by a build from before rows carried lives is not '
+        'discarded: it stays held, with its rows as they were, and nothing is '
+        'sent', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       inWorld((world) {
@@ -103,17 +105,26 @@ void main() {
               },
           },
       };
+      final before = MemoryStorage(contents);
       inWorld(
         (world) {
-          world.settle(const Duration(seconds: 5));
-          final cloud = world.cloud();
-          expect(cloud.queue.entries, isEmpty);
-          expect(cloud.queue.shown.strategy, isNotNull);
+          world.settle(const Duration(minutes: 5));
           expect(server.calls, isEmpty);
+          Reading<StrategyContent>? read;
+          world.store.readStrategy(strategyId).then((value) => read = value);
+          world.async.flushMicrotasks();
+          expect(
+            (read! as Found<StrategyContent>).value.sync,
+            isA<CloudHeld>(),
+          );
         },
-        storage: MemoryStorage(contents),
+        storage: before,
         server: server,
         addStrategy: false,
+      );
+      expect(
+        before.contents[strategyArea(strategyId)],
+        contents[strategyArea(strategyId)],
       );
     });
 
@@ -146,11 +157,7 @@ void main() {
           world.async.flushMicrotasks();
           expect(
             (read! as Found<StrategyContent>).value.sync,
-            isA<CloudHeld>().having(
-              (held) => held.writtenBeforeLives,
-              'written before lives',
-              isFalse,
-            ),
+            isA<CloudHeld>(),
           );
         },
         storage: damaged,
@@ -172,14 +179,24 @@ void main() {
     });
 
     test(
-        'an op the server refuses as replaced asks the user, and the page '
-        'list is read once so the strategy as the server now holds it is '
-        'what the store draws', () {
+        'an element move the server refuses as replaced asks the user, and '
+        'the element\'s page is read once, so the element as the server now '
+        'holds it is what the store draws', () {
       inWorld((world) {
         world.server.log.clear();
-        world.server.answerNext(
-          strategyId,
-          (call) => Future.value(
+        final drawn = world.firstElement();
+        final putBack = LiveElement(
+          publicId: drawn.publicId,
+          pagePublicId: drawn.pagePublicId,
+          payload: drawn.payload,
+          sortIndex: drawn.sortIndex,
+          revision: 1,
+          unknownFields: jsonObject({'createdAt': firstLife + 1000}),
+        );
+        world.server.answerNext(strategyId, (call) {
+          world.server.rows[strategyId] =
+              world.server.rows[strategyId]!.withRows([putBack]);
+          return Future.value(
             StoreBatchAnswered(
               [
                 RejectedAnswer(
@@ -190,12 +207,33 @@ void main() {
               ],
               complete: true,
             ),
+          );
+        });
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 1));
+        expect(world.server.log, ['send move-1', 'page ${drawn.pagePublicId}']);
+        expect(world.views().single.state, isA<NeedsUser>());
+        expect(world.firstElement().toJson(), putBack.toJson());
+      });
+    });
+
+    test(
+        'an applied answer without a life is not read: the batch is lost, the '
+        'move is sent again and lands, and its page is read to retire it', () {
+      inWorld((world) {
+        world.server.log.clear();
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(
+            storeBatchOutcomeOf(call.ops, [
+              app.AppliedOpAck(opId: call.opIds.single, revision: 2),
+            ]),
           ),
         );
         world.commitMove(1);
         world.settle(const Duration(minutes: 1));
-        expect(world.server.log, ['send move-1', 'list']);
-        expect(world.views().single.state, isA<NeedsUser>());
+        expect(world.server.log, ['send move-1', 'send move-1', 'page p1']);
+        expect(world.queueLength(), 0);
       });
     });
 
@@ -2207,6 +2245,7 @@ void main() {
               required clientId,
               required ops,
               required lives,
+              required strategyLife,
               required account,
               required serverTime,
             }) {

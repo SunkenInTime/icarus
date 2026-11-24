@@ -1,17 +1,29 @@
 import '../json.dart';
 import '../rows.dart';
+import 'pending.dart';
 
 final class Version {
-  const Version(this.life, this.revision);
+  const Version(this._life, this._revision);
 
-  final int life;
-  final int revision;
+  final int _life;
+  final int _revision;
 
-  bool sameLife(Version other) => life == other.life;
+  int get lifeOnTheWire => _life;
 
-  int _against(Version other) => life == other.life
-      ? revision.compareTo(other.revision)
-      : life.compareTo(other.life);
+  int get revisionOnTheWire => _revision;
+
+  bool sameLife(Version other) => _life == other._life;
+
+  bool bornBefore(Version other) => _life < other._life;
+
+  bool bornAfter(int life) => _life > life;
+
+  bool isAt(RowLife life, int revision) =>
+      revision == _revision && life.matches(_life);
+
+  int _against(Version other) => _life == other._life
+      ? _revision.compareTo(other._revision)
+      : _life.compareTo(other._life);
 
   bool operator >(Version other) => _against(other) > 0;
 
@@ -21,13 +33,13 @@ final class Version {
 
   @override
   bool operator ==(Object other) =>
-      other is Version && other.life == life && other.revision == revision;
+      other is Version && other._life == _life && other._revision == _revision;
 
   @override
-  int get hashCode => Object.hash(life, revision);
+  int get hashCode => Object.hash(_life, _revision);
 
   @override
-  String toString() => '$revision of life $life';
+  String toString() => '$_revision of life $_life';
 }
 
 int? createdAtOf(Row row) => switch (row) {

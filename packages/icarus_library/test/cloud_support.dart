@@ -290,6 +290,16 @@ final class Client {
   void arrive(ArrivedBase base) =>
       must(BaseArrived(base, session: queue.session.number));
 
+  int startRead() {
+    final sequence = queue.order.sequence + 1;
+    queue = queue.inOrder(queue.order.at(sequence));
+    return sequence;
+  }
+
+  void arriveStarted(ArrivedBase base, ResultStart started) => must(
+    BaseArrived(base, session: queue.session.number, started: started),
+  );
+
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
     arrive(headerReadOf(server));

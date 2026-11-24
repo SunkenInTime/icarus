@@ -348,7 +348,13 @@ final class LibraryStore {
   final _unsaved = <String>{};
   var _summariesRebuiltAtOpen = 0;
   final _unchecked = <String>{};
-  final _sessions = <String, ({QueueSession session, Shown shown})>{};
+  final _sessions =
+      <String, ({QueueSession session, Shown shown, ResultOrder order})>{};
+  var _sequence = 0;
+
+  int readStartsNow() => _nextSequence();
+
+  int _nextSequence() => ++_sequence;
   final _changes = StreamController<StoreChange>.broadcast();
 
   Stream<StoreChange> get changes => _changes.stream;

@@ -722,7 +722,9 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         RefusedByServer(refusal: RejectedByServer()) =>
           Attention.rejectedByServer,
         RefusedByServer(refusal: FailedOnServer()) => Attention.failedOnServer,
-        WindowClosed() => Attention.serverForgotAnswer,
+        MadeInAReplacedStrategy() => Attention.strategyReplaced,
+        WindowClosed() || RefusedByServer(refusal: AnsweredWithoutLife()) =>
+          Attention.serverForgotAnswer,
         RetriesExhausted() => Attention.retriesExhausted,
         DeleteHeld() => Attention.heldPageDelete,
         Oversized() => Attention.oversized,
@@ -744,6 +746,10 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
     };
 
 PendingState stateOf(CloudQueue queue, PendingOp entry) {
+  if (queue.shown.strategyVersion case final shown?
+      when shown.bornAfter(entry.strategyLife)) {
+    return const NeedsUser(MadeInAReplacedStrategy());
+  }
   if (entry.refusal case RefusedWith(:final refusal)) {
     return NeedsUser(RefusedByServer(refusal));
   }
@@ -794,6 +800,11 @@ Map<String, EntryView> entryViews(CloudQueue queue, DateTime now) =>
     attention: Map.unmodifiable(derived.attention),
   );
 }
+
+Set<ResultSubject> owedReads(CloudQueue queue) => {
+  if (queue.shown.listOwed) const PageListResult(),
+  for (final page in queue.shown.pagesOwed) PageResult(page),
+};
 
 Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   for (final view in _derive(queue, now).views.values)
@@ -873,6 +884,9 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
     }
   }
   final head = !holds.any((hold) => hold is BehindEntry);
+  if (head && _waitsForItsLife(entry)) {
+    return (EntryView(const NeedsUser(ChangedUnseen()), const []), null);
+  }
   final pageGone = switch (entry.work) {
     final CheckedDelete work =>
       pageDeleteVerdict(queue.shown, work) is PageAlreadyGone,

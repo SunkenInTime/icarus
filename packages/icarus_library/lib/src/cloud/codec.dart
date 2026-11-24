@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
@@ -14,18 +12,7 @@ import 'version.dart';
 
 const cloudRowVersion = 1;
 
-const livedRowVersion = 2;
-
-bool writtenBeforeLives(String text) {
-  try {
-    return switch (jsonDecode(text)) {
-      {'version': final int version} => version < livedRowVersion,
-      _ => false,
-    };
-  } on FormatException {
-    return false;
-  }
-}
+const livedRowVersion = 3;
 
 T? _named<T extends Enum>(JsonFields fields, String key, List<T> values) {
   final found = values.asNameMap()[fields.json[key]];
@@ -77,7 +64,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
       final AuthoredRow row => _rowToJson(row),
       KeptOverServer(:final revision, :final life) => {
         'keptOverServer': revision,
-        'life': ?life,
+        ..._rowLifeToJson(life),
       },
       AuthoredNoRow(:final produces) => {
         'noRow': true,
@@ -88,6 +75,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     'authoredIn': entry.authoredIn,
     'authoredAt': _millis(entry.authoredAt),
     'retriedAfter': entry.retriedAfter,
+    'strategyLife': entry.strategyLife,
     'work': switch (entry.work) {
       OpWork() => 'op',
       CheckedDelete(:final seen) => {'checkedDelete': _seenToJson(seen)},
@@ -127,7 +115,7 @@ Map<String, Object?> _seenToJson(SeenPage seen) => {
 
 Map<String, Object?> _rowToJson(AuthoredRow row) => {
   'revision': row.revision,
-  'life': ?row.life,
+  ..._rowLifeToJson(row.life),
   'digest': row.digest,
   'payloadVersion': ?row.payloadVersion,
   if (row.produces case final produces?) 'produces': _producedToJson(produces),
@@ -163,7 +151,7 @@ Row? Function() _movedRowOf(JsonFields fields) {
 Map<String, Object?> _producedToJson(ProducedRow row) => {
   'page': ?row.page,
   'revision': row.revision,
-  'life': ?row.life,
+  ..._rowLifeToJson(row.life),
   'digest': row.digest,
   if (!row.justifies) 'justifies': false,
 };
@@ -180,7 +168,7 @@ Decoded<ProducedRow> _producedRow(Object? json) =>
       };
       final revision = fields.whole('revision');
       if (revision < 1) fields.reject('revisions start at 1');
-      final life = _lifeOf(fields);
+      final life = _rowLifeOf(fields);
       final digest = fields.string('digest');
       final justifies = switch (fields.json['justifies']) {
         null => true,
@@ -199,11 +187,26 @@ Decoded<ProducedRow> _producedRow(Object? json) =>
       );
     });
 
-int? _lifeOf(JsonFields fields) {
-  if (!fields.has('life')) return null;
-  final life = fields.whole('life');
+Map<String, Object?> _rowLifeToJson(RowLife life) => switch (life) {
+  BornAt(:final life) => {'life': life},
+  BornByAdd(:final opId) => {'lifeOfAdd': opId},
+  MadeHere() => {'madeHere': true},
+  NotYetBorn() => {'notYetBorn': true},
+};
+
+int _lifeOf(JsonFields fields, [String key = 'life']) {
+  final life = fields.whole(key);
   if (life < 1) fields.reject('lives start after the epoch');
   return life;
+}
+
+RowLife _rowLifeOf(JsonFields fields) {
+  if (fields.has('life')) return BornAt(_lifeOf(fields));
+  if (fields.has('lifeOfAdd')) return BornByAdd(fields.string('lifeOfAdd'));
+  if (fields.json['madeHere'] == true) return const MadeHere();
+  if (fields.json['notYetBorn'] == true) return const NotYetBorn();
+  fields.reject('a row with no life');
+  return const NotYetBorn();
 }
 
 ProducedRow? Function() _producesOfKey(JsonFields fields, String key) {
@@ -228,6 +231,7 @@ Map<String, Object?> _refusalToJson(ServerRefusal refusal) => switch (refusal) {
         'value': value.toJson(),
       },
   },
+  AnsweredWithoutLife(:final revision) => {'withoutLife': revision},
   FailedOnServer(:final code, :final message) => {
     'failed': '$code',
     'message': message,
@@ -285,6 +289,7 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
         if (op != null && scope != null && !_scopeFits(op, scope)) {
           fields.reject('a scope or field base that does not fit its op');
         }
+        final strategyLife = _lifeOf(fields, 'strategyLife');
         final behindOwn = switch (fields.json['behindOwn']) {
           null => false,
           true => true,
@@ -316,6 +321,7 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
           authoredAt: authoredAt,
           refusal: refused == null ? const NotRefused() : RefusedWith(refused),
           retriedAfter: retriedAfter,
+          strategyLife: strategyLife,
           window: windowPassed ? const WindowPassed() : const WindowOpen(),
         );
       default:
@@ -365,7 +371,7 @@ Decoded<Authored> _authored(Object? json) =>
       if (fields.has('keptOverServer')) {
         final revision = fields.whole('keptOverServer');
         if (revision < 1) fields.reject('revisions start at 1');
-        final life = _lifeOf(fields);
+        final life = _rowLifeOf(fields);
         return () => KeptOverServer(revision, life: life);
       }
       return _authoredRowOf(fields);
@@ -373,7 +379,7 @@ Decoded<Authored> _authored(Object? json) =>
 
 AuthoredRow Function() _authoredRowOf(JsonFields fields) {
   final revision = fields.whole('revision');
-  final life = _lifeOf(fields);
+  final life = _rowLifeOf(fields);
   final digest = fields.string('digest');
   final payloadVersion = fields.has('payloadVersion')
       ? fields.whole('payloadVersion')
@@ -464,6 +470,10 @@ Decoded<ServerRefusal> _refusal(Object? json) =>
           }(),
         };
         return () => RejectedByServer(reason!, current);
+      }
+      if (fields.has('withoutLife')) {
+        final revision = fields.whole('withoutLife');
+        return () => AnsweredWithoutLife(revision);
       }
       final code = fields.string('failed');
       final message = fields.string('message');
@@ -728,7 +738,7 @@ Map<String, Object?> landedToJson(LandedWork work) => {
   'version': livedRowVersion,
   'op': work.op.toJson(),
   'revision': work.revision,
-  'life': ?work.life,
+  'life': work.life,
   'shape': work.shape.name,
   'own': work.own,
   'firstSentAt': _millis(work.firstSentAt),
@@ -811,8 +821,8 @@ Target? _target(Object? key) => switch (key) {
 };
 
 List<Object?> _versionToJson(Version version) => [
-  version.life,
-  version.revision,
+  version.lifeOnTheWire,
+  version.revisionOnTheWire,
 ];
 
 Version? _versionFrom(Object? raw) => switch (raw) {
@@ -865,6 +875,7 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
         for (final MapEntry(:key, :value) in shown.highest.entries)
           [_targetKey(key), _versionToJson(value)],
       ],
+      if (shown.listOwed) 'listOwed': true,
     },
     for (final page in pages)
       page: {
@@ -904,6 +915,7 @@ final class ShownUnreadable extends ShownReading {
 
 ShownReading shownFromGroups(Map<String?, String> texts) {
   ShownRow? strategy;
+  var listOwed = false;
   final pages = <String, ShownRow>{};
   final settings = <String, ShownRow>{};
   final highest = <Target, Version>{};
@@ -926,7 +938,16 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
           if (pageRows == null || settingsRows == null || tops == null) {
             fields.reject('unreadable shown rows');
           }
+          final owed = switch (fields.json['listOwed']) {
+            null => false,
+            true => true,
+            _ => () {
+              fields.reject('an unreadable flag');
+              return false;
+            }(),
+          };
           return () {
+            listOwed = owed;
             strategy = strategyRows!['strategy'];
             pages.addAll(pageRows!);
             settings.addAll(settingsRows!);
@@ -977,6 +998,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
       content: content,
       rows: rows,
       highest: highest,
+      listOwed: listOwed,
     ),
   );
 }

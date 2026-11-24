@@ -283,7 +283,6 @@ enum _Why {
   adopt('the strategy was adopted'),
   need('the queue asked for it'),
   access('edit access was lost'),
-  replaced('the server says a row this device wrote to was replaced'),
   retire('landed work waits for a result');
 
   const _Why(this.words);
@@ -352,7 +351,6 @@ final class CloudSender {
   final _wanted = <String, _Request>{};
   final _memory = <String, ReadMemory>{};
   final _unread = <String>{};
-  final _listOwed = <String>{};
   final _lastSeen = <String, CloudStrategy>{};
   final retiring = Retiring();
   var looks = 0;
@@ -736,8 +734,6 @@ final class CloudSender {
     switch (await _store.read(id)) {
       case QueueFound(cloud: final found):
         cloud = found;
-      case QueueWrittenBeforeLives(:final owner):
-        return _discardWrittenBeforeLives(id, owner);
       case QueueTroubled(:final trouble):
         return _troubled(id, trouble);
     }
@@ -787,8 +783,6 @@ final class CloudSender {
           switch (await _store.read(id)) {
             case QueueFound(cloud: final fresh):
               cloud = fresh;
-            case QueueWrittenBeforeLives(:final owner):
-              return _discardWrittenBeforeLives(id, owner);
             case QueueTroubled(:final trouble):
               return _troubled(id, trouble);
           }
@@ -873,15 +867,6 @@ final class CloudSender {
     if (cloud.queue.shown.strategy == null) {
       return (planned: (read: const _ReadList(), why: _Why.adopt), due: null);
     }
-    if (_listOwed.contains(id)) {
-      return (
-        planned: (read: const _ReadList(), why: _Why.replaced),
-        due: null
-      );
-    }
-    if (_unreadPages(cloud).firstOrNull case final page?) {
-      return (planned: (read: _ReadPage(page), why: _Why.adopt), due: null);
-    }
     switch (retiring.next(id, cloud, now, _timing.retiring, memory.retired)) {
       case (read: final String page?, due: _):
         return (
@@ -941,6 +926,7 @@ final class CloudSender {
         for (final view in cloud.views.values)
           for (final hold in view.holds)
             if (hold case AwaitingResult(:final subject)) subject,
+        ...owedReads(cloud.queue),
       };
 
   static DateTime? _earliest(DateTime? a, DateTime? b) => switch ((a, b)) {
@@ -995,6 +981,7 @@ final class CloudSender {
   ) async {
     final (:read, :why) = planned;
     final started = _clock();
+    final sequence = _store.readStartsNow();
     final outcome = await _fetch(id, owner, read, snap, why);
     if (disposed) return const _Ended();
     if (_inputs != snap) {
@@ -1008,7 +995,7 @@ final class CloudSender {
       case StoreReadAnswered(:final base, :final role):
         final confirms = why == _Why.access && (role?.edits ?? false);
         final written = await _store.write(owner, id, [
-          BaseArrived(base, session: session),
+          BaseArrived(base, session: session, started: StartedAt(sequence)),
           if (confirms) EditAccessConfirmed(afterAttempt: _accessLostAt(cloud)),
         ]);
         if (disposed) return const _Ended();
@@ -1025,7 +1012,6 @@ final class CloudSender {
             break;
         }
         if (_inputs != snap) return const _Restart();
-        if (read is _ReadList) _listOwed.remove(id);
         _recorded(id, read, why, role, cloud, started, snap);
         _note(
             id,
@@ -1209,15 +1195,6 @@ final class CloudSender {
         }
         _forget(id);
         retiring.active(id, _clock());
-        if (outcome case StoreBatchAnswered(:final answers)
-            when answers.any(
-              (answer) =>
-                  answer is RejectedAnswer &&
-                  answer.reason == RejectionReason.rowReplaced,
-            )) {
-          _unread.add(id);
-          _listOwed.add(id);
-        }
         _note(
           id,
           notApplied.isEmpty
@@ -1314,6 +1291,7 @@ final class CloudSender {
           clientId: batch.clientId,
           ops: batch.ops,
           lives: batch.lives,
+          strategyLife: batch.strategyLife,
           account: batch.account,
           serverTime: ServerTimeAsked(basis: batch.basis),
         ),
@@ -1342,19 +1320,6 @@ final class CloudSender {
       case WriteTroubled(:final trouble):
         return _troubled(id, trouble);
     }
-  }
-
-  Future<_Step> _discardWrittenBeforeLives(String id, Account owner) async {
-    final trouble = await _store.discardWrittenBeforeLives(owner, id);
-    if (disposed) return const _Ended();
-    if (trouble != null) return _troubled(id, trouble);
-    _forget(id);
-    _unread.add(id);
-    _note(
-        id,
-        'its queue was stored by a build from before rows carried lives; '
-        'it was discarded and the strategy is read again');
-    return const _Acted();
   }
 
   _Step _troubled(String id, StoreTrouble trouble) {

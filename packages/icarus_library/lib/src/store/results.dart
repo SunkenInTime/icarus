@@ -119,21 +119,19 @@ final class QueueRefusal extends CommitRefusal {
 }
 
 final class UnreadableQueueRow {
-  const UnreadableQueueRow(this.ref, this.problem, {this.beforeLives = false});
+  const UnreadableQueueRow(this.ref, this.problem);
 
   final StoredRowRef ref;
   final String problem;
-  final bool beforeLives;
 
   @override
   bool operator ==(Object other) =>
       other is UnreadableQueueRow &&
       other.ref == ref &&
-      other.problem == problem &&
-      other.beforeLives == beforeLives;
+      other.problem == problem;
 
   @override
-  int get hashCode => Object.hash(ref, problem, beforeLives);
+  int get hashCode => Object.hash(ref, problem);
 
   @override
   String toString() => 'UnreadableQueueRow($ref, $problem)';
@@ -552,9 +550,6 @@ final class CloudHeld extends StrategySync {
 
   final CloudOwner owner;
   final List<UnreadableQueueRow> rows;
-
-  bool get writtenBeforeLives =>
-      rows.isNotEmpty && rows.every((row) => row.beforeLives);
 }
 
 final class CloudStrategy extends StrategySync {

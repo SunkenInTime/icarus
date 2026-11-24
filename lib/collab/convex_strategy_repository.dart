@@ -716,6 +716,7 @@ class ConvexStrategyRepository {
     bool sendsLiveBasis = false,
     double? liveBasis,
     bool sendsLives = false,
+    int? strategyLife,
   }) async {
     if (ops.isEmpty) return (acks: const <OpAck>[], serverTime: null);
     final result = await _applyBatchResult(
@@ -727,6 +728,7 @@ class ConvexStrategyRepository {
       sendsLiveBasis: sendsLiveBasis,
       liveBasis: liveBasis,
       sendsLives: sendsLives,
+      strategyLife: strategyLife,
     );
     return (
       acks: result.results.map(_opAck).toList(growable: false),
@@ -760,6 +762,7 @@ class ConvexStrategyRepository {
     bool sendsLiveBasis = false,
     double? liveBasis,
     bool sendsLives = false,
+    int? strategyLife,
   }) {
     return _api.ops.applyBatch(
       strategyPublicId: strategyPublicId,
@@ -785,6 +788,7 @@ class ConvexStrategyRepository {
       sendsLives: sendsLives
           ? const ConvexOptional.present(true)
           : const ConvexOptional.absent(),
+      strategyLife: _optional(strategyLife?.toDouble()),
     );
   }
 
@@ -1401,6 +1405,13 @@ bool isAccountMismatchError(Object error) {
           error.code == ConvexErrorCode.accountMismatch) ||
       (error is ConvexClientFunctionError &&
           error.rawCode == ConvexErrorCode.accountMismatch.wireName);
+}
+
+bool isStrategyReplacedError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.strategyReplaced) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode == ConvexErrorCode.strategyReplaced.wireName);
 }
 
 bool isUncheckedOutsideWindowError(Object error) {

@@ -362,17 +362,8 @@ extension _CloudStore on LibraryStore {
     final storeArea = StrategyArea(strategy.digest);
     final listed = _summaries[strategy.digest];
     final unreadable = <UnreadableQueueRow>[];
-    final lived = <String, String>{};
-    void cannotRead(String name, String problem) => unreadable.add(
-      UnreadableQueueRow(
-        strategy.refOf(name),
-        problem,
-        beforeLives: switch (lived[name]) {
-          final text? => writtenBeforeLives(text),
-          null => false,
-        },
-      ),
-    );
+    void cannotRead(String name, String problem) =>
+        unreadable.add(UnreadableQueueRow(strategy.refOf(name), problem));
     var facts = StrategyFacts.fresh;
     CloudOwner owner = const OwnerUnreadable();
     switch (await _lease.read(area, const CloudName().name)) {
@@ -397,7 +388,6 @@ extension _CloudStore on LibraryStore {
         for (final (:key, :value) in value) {
           switch (readName(storeArea, key)) {
             case PendingName(:final place):
-              lived[key] = value;
               stored.add((place, value));
             case _:
               cannotRead(key, 'a queue row this build does not name');
@@ -431,7 +421,6 @@ extension _CloudStore on LibraryStore {
         for (final (:key, :value) in value) {
           switch (readName(storeArea, key)) {
             case LandedName(:final attempt, :final position):
-              lived[key] = value;
               switch (landedFromText(attempt, position, value)) {
                 case CloudRowRead(:final value):
                   landed.add(value);
@@ -452,10 +441,8 @@ extension _CloudStore on LibraryStore {
         for (final (:key, :value) in value) {
           switch (readName(storeArea, key)) {
             case HeaderReadName():
-              lived[key] = value;
               groups[null] = value;
             case final PageReadName name:
-              lived[key] = value;
               switch (_groupPage(name, value)) {
                 case final page?:
                   groups[page] = value;
@@ -532,7 +519,8 @@ extension _CloudStore on LibraryStore {
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
       shown: switch (kept) {
-        (shown: final memory, session: _) when memory.inNewSession() == shown =>
+        (shown: final memory, session: _, order: _)
+            when memory.inNewSession() == shown =>
           memory,
         _ => shown,
       },
@@ -541,7 +529,10 @@ extension _CloudStore on LibraryStore {
           kept?.session ??
           QueueSession(connected: false, build: _build, number: 0),
     );
-    final current = onDisk;
+    final current = switch (kept) {
+      (order: final order, session: _, shown: _) => onDisk.inOrder(order),
+      null => onDisk,
+    };
     final loaded = _LoadedQueue(
       _OnDisk(
         entries: {for (final entry in entries) entry.place: entry},
@@ -858,13 +849,15 @@ extension _CloudStore on LibraryStore {
 
   Future<Stored<_BaseApplied>> _applyBase(
     LoadedStrategy strategy,
-    List<ArrivedBase> arrivals,
+    List<_Arrival> arrivals,
     Shown shown,
   ) async {
     final area = strategy.area;
     final digests = <String>{};
-    for (final arrival in arrivals) {
+    for (final (arrival, :live) in arrivals) {
       switch (arrival) {
+        case HeaderRead() when live:
+          break;
         case HeaderRead(strategy: final header, :final pages):
           final listed = {for (final page in pages) digestOf(page.publicId)};
           digests.addAll(
@@ -994,6 +987,16 @@ extension _CloudStore on LibraryStore {
       }
     }
 
+    void putIfNotOlder(Row row) {
+      final known = switch (held(nameOf(row))) {
+        final stored? => versionOfRow(stored),
+        null => null,
+      };
+      final read = versionOfRow(row);
+      if (known != null && (read == null || known > read)) return;
+      put(row);
+    }
+
     String? shownOn(Row row) => switch (row) {
       ElementRow(:final publicId) => shown.rows[ElementTarget(publicId)]?.page,
       LineupGroupRow(:final publicId) =>
@@ -1001,8 +1004,15 @@ extension _CloudStore on LibraryStore {
       _ => null,
     };
 
-    for (final arrival in arrivals) {
+    for (final (arrival, :live) in arrivals) {
       switch (arrival) {
+        case HeaderRead(:final pages, :final settings) when live:
+          for (final page in pages) {
+            if (page is! TrashedPage) putIfNotOlder(page);
+          }
+          for (final row in settings) {
+            putIfNotOlder(row);
+          }
         case HeaderRead(strategy: final header, :final pages, :final settings):
           if (_anotherLife(strategy, header)) {
             for (final digest in [...strategy.pageDigests]) {
@@ -1026,6 +1036,16 @@ extension _CloudStore on LibraryStore {
           for (final row in settings) {
             put(row);
           }
+        case PageRead(:final page, :final elements, :final lineupGroups)
+            when live:
+          if (page is TrashedPage) continue;
+          putIfNotOlder(page);
+          for (final row in <Row>[...elements, ...lineupGroups]) {
+            if (shownOn(row) case final on? when on != page.publicId) continue;
+            putIfNotOlder(row);
+          }
+        case PageGone() || StrategyGone() when live:
+          break;
         case PageRead(:final page, :final elements, :final lineupGroups):
           put(page);
           final found = <String>{};
@@ -1076,7 +1096,7 @@ extension _CloudStore on LibraryStore {
   Future<Saving<T, CommitRefusal>> _finishCloud<T>(
     _CloudReady cloud,
     CloudQueue next,
-    List<ArrivedBase> arrivals,
+    List<_Arrival> arrivals,
     Set<String> edited,
     T Function(StrategySummary summary) take,
   ) async {
@@ -1204,13 +1224,21 @@ extension _CloudStore on LibraryStore {
     _numbers = numbers;
     if (writes.isEmpty) {
       cloud.queue.current = next;
-      _sessions[digest] = (session: next.session, shown: next.shown);
+      _sessions[digest] = (
+        session: next.session,
+        shown: next.shown,
+        order: next.order,
+      );
       return Saved(take(summary));
     }
     final result = await _commit<T, CommitRefusal>(writes, () {
       _written(disk, owner, next, groups);
       cloud.queue.current = next;
-      _sessions[digest] = (session: next.session, shown: next.shown);
+      _sessions[digest] = (
+        session: next.session,
+        shown: next.shown,
+        order: next.order,
+      );
       _summaries[digest] = summary;
       _unsaved.remove(digest);
       _numbersRow = _NumbersRowRead(numbers);
@@ -1325,7 +1353,12 @@ extension _CloudStore on LibraryStore {
           case (_, _):
             return Refused(OpRefusal(const Rejected(RejectionReason.notFound)));
         }
-        switch (transition(queue, UserEdited(edit), now: now)) {
+        switch (transition(
+          queue,
+          UserEdited(edit),
+          now: now,
+          sequence: _nextSequence(),
+        )) {
           case NotApplicable(:final why):
             return Refused(QueueRefusal(why));
           case Stepped(queue: final stepped):
@@ -1436,7 +1469,7 @@ extension _CloudStore on LibraryStore {
     }
     final now = _cloudNow();
     final outcomes = <ReportOutcome>[];
-    final arrivals = <ArrivedBase>[];
+    final arrivals = <_Arrival>[];
     var queue = recordExpiries(
       cloud.queue.current.raisedTo(
         nextAttempt: _numbers.nextAttempt,
@@ -1449,13 +1482,20 @@ extension _CloudStore on LibraryStore {
         outcomes.add(const EditsGoThroughCommit());
         continue;
       }
-      final step = transition(queue, event, now: now);
+      final step = transition(
+        queue,
+        event,
+        now: now,
+        sequence: _nextSequence(),
+      );
       queue = step.queue;
       switch (step) {
         case NotApplicable(:final why):
           outcomes.add(ReportNotApplicable(why));
         case Stepped(:final effects):
-          if (event case BaseArrived(:final base)) arrivals.add(base);
+          if (event case BaseArrived(:final base, :final started)) {
+            arrivals.add((base, live: started is LiveResult));
+          }
           outcomes.add(ReportApplied(effects));
       }
     }
@@ -1684,7 +1724,12 @@ extension _CloudStore on LibraryStore {
       nextSession: _numbers.nextSession,
     );
     final now = _cloudNow();
-    queue = transition(queue, const ConnectionReturned(), now: now).queue;
+    queue = transition(
+      queue,
+      const ConnectionReturned(),
+      now: now,
+      sequence: _nextSequence(),
+    ).queue;
     final events = [
       for (final base in <ArrivedBase>[header, ...pages])
         BaseArrived(base, session: queue.session.number),
@@ -1811,3 +1856,5 @@ extension _CloudStore on LibraryStore {
     return result;
   }
 }
+
+typedef _Arrival = (ArrivedBase, {bool live});

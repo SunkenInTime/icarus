@@ -66,6 +66,7 @@ typedef StoreBatchSend = Future<StoreBatchOutcome> Function({
   required String clientId,
   required List<store.StrategyOp> ops,
   required Map<String, int> lives,
+  required int strategyLife,
   required store.Account account,
   required ServerTimeAsk serverTime,
 });
@@ -75,6 +76,7 @@ StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
       required clientId,
       required ops,
       required lives,
+      required strategyLife,
       required account,
       required serverTime,
     }) async {
@@ -91,6 +93,7 @@ StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
               },
           ],
           sendsLives: true,
+          strategyLife: strategyLife,
           accountSubject: account.subject,
           sendsLiveBasis: serverTime is ServerTimeAsked,
           liveBasis: switch (serverTime) {
@@ -230,6 +233,9 @@ StoreBatchOutcome storeBatchOutcomeOfError(Object error) {
   }
   if (isTypedConvexNotFoundError(error)) {
     return const StoreBatchRefusedWhole(store.BatchRefusal.strategyDeleted);
+  }
+  if (isStrategyReplacedError(error)) {
+    return const StoreBatchRefusedWhole(store.BatchRefusal.strategyReplaced);
   }
   if (error is TimeoutException) {
     return StoreBatchLost(store.TransportFailure.timeout, '$error');

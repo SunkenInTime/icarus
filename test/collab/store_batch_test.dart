@@ -57,6 +57,7 @@ void main() {
         clientId: 'client-1',
         ops: [rename('op-1')],
         lives: const {},
+        strategyLife: 1,
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
@@ -124,6 +125,7 @@ void main() {
         clientId: 'client-1',
         ops: [rename('op-1')],
         lives: const {},
+        strategyLife: 1,
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
@@ -176,11 +178,13 @@ void main() {
         clientId: 'client-1',
         ops: [rename('op-1'), rename('op-2'), rename('op-3'), rename('op-4')],
         lives: const {'op-1': life, 'op-3': 1700000000000},
+        strategyLife: life,
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
       final (_, args) = transport.mutations.single;
       expect(args['sendsLives'], true);
+      expect(args['strategyLife'], life);
       expect(
         [for (final op in args['ops']! as List) (op as Map)['expectedLife']],
         [life, null, life, null],
@@ -226,6 +230,7 @@ void main() {
           clientId: 'client-1',
           ops: [rename('op-1')],
           lives: const {},
+          strategyLife: 1,
           account: owner,
           serverTime: const ServerTimeNotAsked(),
         ),
@@ -241,6 +246,7 @@ void main() {
         clientId: 'client-1',
         ops: [rename('op-1')],
         lives: const {},
+        strategyLife: 1,
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
@@ -270,6 +276,7 @@ void main() {
         clientId: 'client-1',
         ops: [rename('op-1')],
         lives: const {},
+        strategyLife: 1,
         account: owner,
         serverTime: const ServerTimeAsked(basis: 1764000000000),
       );
@@ -278,6 +285,7 @@ void main() {
         clientId: 'client-1',
         ops: [rename('op-2')],
         lives: const {},
+        strategyLife: 1,
         account: owner,
         serverTime: const ServerTimeAsked(),
       );
@@ -458,6 +466,7 @@ void main() {
         of('CLIENT_UPGRADE_REQUIRED'),
         refused(BatchRefusal.upgradeRequired),
       );
+      expect(of('STRATEGY_REPLACED'), refused(BatchRefusal.strategyReplaced));
       expect(of('FORBIDDEN'), refused(BatchRefusal.editAccessRemoved));
       expect(of('NOT_FOUND'), refused(BatchRefusal.strategyDeleted));
       expect(of('ACCOUNT_MISMATCH'), isA<StoreBatchAccountMismatch>());

@@ -38,8 +38,8 @@ final class Model {
   int restarts = 0;
   String openPage = 'page-a';
   final inFlight =
-      <(int, String, List<StrategyOp>, int?, int, Map<String, int>)>[];
-  final held = <(String, List<StrategyOp>, int?, Map<String, int>)>[];
+      <(int, String, List<StrategyOp>, int?, int, Map<String, int>, int)>[];
+  final held = <(String, List<StrategyOp>, int?, Map<String, int>, int)>[];
   Duration elapsed = Duration.zero;
   late Duration skew;
   final writtenAt = <String, int>{};
@@ -53,12 +53,17 @@ final class Model {
     elapsed += time;
   }
 
+  bool strategyReplacedSince(int strategyLife) =>
+      createdAtOf(server.rows.strategy) != strategyLife;
+
   List<OpAnswer>? receive(
     String owner,
     List<StrategyOp> ops,
     int? basis,
     Map<String, int> lives,
+    int strategyLife,
   ) {
+    if (strategyReplacedSince(strategyLife)) return null;
     final at = serverNow;
     final unchecked = [
       for (final op in ops)
@@ -139,6 +144,7 @@ final class Model {
   bool teammateEdited = false;
   bool userRemoved = false;
   bool jumped = false;
+  final sentChecked = <String, bool>{};
   final seen = <Target, Set<Version>>{};
   final produced = <Target, Set<Version>>{};
   final producedBy = <String, Map<Target, Version>>{};
@@ -150,6 +156,7 @@ final class Model {
   final newestLifeShown = <Target, int>{};
 
   final seenDigest = <String, String>{};
+  final seenLife = <String, int>{};
   final history = <(Target, Version), String>{};
 
   void recordHistory() {
@@ -169,10 +176,12 @@ final class Model {
       final produced = work.produced;
       if (produced == null) continue;
       final target = targetOf(work.op);
-      final life = produced.life;
-      if (life == null) {
-        throw StateError('${work.op.opId} justified $target with no life');
-      }
+      final life = switch (produced.life) {
+        BornAt(:final life) => life,
+        final other => throw StateError(
+          '${work.op.opId} justified $target with $other',
+        ),
+      };
       final truth = history[(target, Version(life, produced.revision))];
       if (truth == null) {
         throw StateError(
@@ -204,12 +213,14 @@ final class Model {
       final asSeen =
           beforeRow != null &&
           seenDigest[op.opId] != null &&
-          rowDigest(beforeRow) == seenDigest[op.opId];
+          rowDigest(beforeRow) == seenDigest[op.opId] &&
+          (seenLife[op.opId] ?? createdAtOf(beforeRow)) ==
+              createdAtOf(beforeRow);
       final known = {...?seen[target], ...?produced[target]};
       final ownPrediction =
           named != null &&
-          (predicted[target]?.contains(named.revision) ?? false) &&
-          createdHere[target] == named.life;
+          (predicted[target]?.contains(named.revisionOnTheWire) ?? false) &&
+          createdHere[target] == named.lifeOnTheWire;
       if (named != null &&
           !asSeen &&
           !ownPrediction &&
@@ -222,8 +233,8 @@ final class Model {
       if (named != null &&
           known.any(
             (version) =>
-                version.revision == named.revision &&
-                version.life != named.life,
+                version.revisionOnTheWire == named.revisionOnTheWire &&
+                version.lifeOnTheWire != named.lifeOnTheWire,
           )) {
         count('checks where another life had the same revision');
       }
@@ -234,7 +245,9 @@ final class Model {
           if (before[key] != value) key: value,
       };
       for (final MapEntry(:key, :value) in after.entries) {
-        if (before[key]?.life != value.life) createdHere[key] = value.life;
+        if (before[key]?.lifeOnTheWire != value.lifeOnTheWire) {
+          createdHere[key] = value.lifeOnTheWire;
+        }
       }
     }
     recordHistory();
@@ -276,10 +289,62 @@ final class Model {
       final target = targetOfRow(row);
       final version = versionOfRow(row);
       if (target == null || version == null) continue;
-      (handedResults[target] ??= {}).add(version);
-      if (version.life > (newestLifeShown[target] ?? 0)) {
-        newestLifeShown[target] = version.life;
+      if (row is! TrashedPage) {
+        count('rows checked as remembered after a result');
+        final kept = client.queue.shown.highest[target];
+        if (kept == null || version > kept) {
+          throw StateError(
+            'a result showed $version of $target and the queue remembers '
+            '${kept ?? 'nothing'}',
+          );
+        }
       }
+      (handedResults[target] ??= {}).add(version);
+      if (version.lifeOnTheWire > (newestLifeShown[target] ?? 0)) {
+        newestLifeShown[target] = version.lifeOnTheWire;
+      }
+    }
+  }
+
+  void checkLives(CloudQueue before, CloudQueue after, QueueEvent event) {
+    switch (event) {
+      case OpAnswered(
+        answer: RejectedAnswer(
+          reason: RejectionReason.rowReplaced,
+          :final opId,
+        ),
+      ):
+        final entry = before.entry(opId);
+        if (entry is! PendingOp || entry.refusal is! NotRefused) return;
+        count('row_replaced answers checked for the read they owe');
+        final owed = owedReads(after);
+        final wanted = switch (targetOf(entry.op)) {
+          StrategyTarget() ||
+          PageTarget() ||
+          SettingsTarget() => owed.contains(const PageListResult()),
+          _ =>
+            owed.any((subject) => subject is PageResult) ||
+                owed.contains(const PageListResult()),
+        };
+        if (!wanted) {
+          throw StateError('$opId was refused as replaced and owes no read');
+        }
+      case BaseArrived(base: HeaderRead(:final strategy))
+          when switch ((before.shown.strategyVersion, versionOfRow(strategy))) {
+            (final was?, final read?) => was.bornBefore(read),
+            _ => false,
+          }:
+        count('page lists of a later strategy life checked');
+        if (after.landed.isNotEmpty ||
+            after.shown.content.isNotEmpty ||
+            after.shown.rows.isNotEmpty) {
+          throw StateError(
+            'a page list of a later strategy life left the earlier one in '
+            'the queue',
+          );
+        }
+      case _:
+        break;
     }
   }
 
@@ -289,10 +354,10 @@ final class Model {
       for (final MapEntry(:key, :value) in client.queue.shown.highest.entries)
         (key, value),
       for (final work in client.queue.landed)
-        if (work.version case final version?) (checkTargetOf(work.op), version),
+        (checkTargetOf(work.op), work.version),
     ];
     for (final (target, version) in remembered) {
-      if (version.life < strategyLife) {
+      if (version.lifeOnTheWire < strategyLife) {
         throw StateError(
           'the queue remembers $version of $target after a result showed the '
           'strategy in life $strategyLife',
@@ -307,7 +372,7 @@ final class Model {
           'given showed',
         );
       }
-      if (version.life < (newestLifeShown[target] ?? 0)) {
+      if (version.lifeOnTheWire < (newestLifeShown[target] ?? 0)) {
         throw StateError(
           'the queue remembers $version of $target after a result showed '
           'life ${newestLifeShown[target]}',
@@ -315,7 +380,8 @@ final class Model {
       }
       if (handedResults[target]!.any(
         (other) =>
-            other.revision == version.revision && other.life != version.life,
+            other.revisionOnTheWire == version.revisionOnTheWire &&
+            other.lifeOnTheWire != version.lifeOnTheWire,
       )) {
         count('remembered rows whose other life had the same revision');
       }
@@ -323,7 +389,6 @@ final class Model {
     }
     for (final work in client.queue.landed) {
       final version = work.version;
-      if (version == null) continue;
       final target = checkTargetOf(work.op);
       if (!(handedAnswers[target]?.contains(version) ?? false)) {
         throw StateError(
@@ -357,6 +422,7 @@ final class Model {
     );
     if (result case Stepped(queue: final after, :final effects)) {
       checkRemovals(before, after, effects, event);
+      checkLives(before, after, event);
       client.queue = after;
       if (event case OpAnswered(:final answer)) credit(answer);
       if (event case BaseArrived(:final base)) handResult(base);
@@ -378,9 +444,17 @@ final class Model {
           }
         }
       }
+      final purgedPutBack = switch (event) {
+        OpAnswered(
+          answer: RejectedAnswer(reason: RejectionReason.notFound, :final opId),
+        ) =>
+          jumped && (sentChecked[opId] ?? false),
+        _ => false,
+      };
+      if (purgedPutBack) count('put-backs refused as their row was purged');
       if (event case OpAnswered(
         answer: RejectedAnswer() || FailedAnswer(),
-      ) when !teammates && !userRemoved) {
+      ) when !teammates && !userRemoved && !purgedPutBack) {
         throw StateError(
           'refused with no teammate: ${switch (event.answer) {
             RejectedAnswer(:final opId, :final reason) => '$opId ${reason.wireName} sent ${inFlightLog[opId]}',
@@ -470,11 +544,12 @@ final class Model {
               place: before.entries.last.place + 1,
               work: OpWork(edit.op),
               scope: edit.scope,
-              authored: edit.authored,
+              authored: authoredInQueue(before, edit.op, edit.authored),
               authoredIn: before.session.number,
               authoredAt: clock,
               refusal: const NotRefused(),
               retriedAfter: before.nextAttempt - 1,
+              strategyLife: before.shown.strategyVersion!.lifeOnTheWire,
               basis: before.session.basis,
             ),
           ],
@@ -679,6 +754,42 @@ final class Model {
         name: 'Renamed ${random.nextInt(100)}',
       );
     }
+    final lineups = [
+      for (final row in rows.lineupGroups)
+        if (row case LiveLineupGroup(
+          :final pagePublicId,
+        ) when pages.contains(pagePublicId))
+          row,
+    ];
+    if (roll == 18 && lineups.isNotEmpty && random.nextBool()) {
+      final target = pick(lineups);
+      return LineupGroupPatchOp(
+        opId: opId,
+        lineupPublicId: target.publicId,
+        expectedLineupRevision: target.revision,
+        payload: lineupPayload(target.publicId, 'note ${random.nextInt(100)}'),
+        sortIndex: target.sortIndex,
+      );
+    }
+    if (roll == 18 && pages.isNotEmpty) {
+      final id = fresh('g');
+      return LineupGroupAddOp(
+        opId: opId,
+        lineupPublicId: id,
+        pagePublicId: pick(pages),
+        payload: lineupPayload(id, ''),
+        sortIndex: 0,
+      );
+    }
+    if (roll == 19 && lineups.isNotEmpty) {
+      final target = pick(lineups);
+      return LineupGroupDeleteOp(
+        opId: opId,
+        lineupPublicId: target.publicId,
+        pagePublicId: target.pagePublicId,
+        expectedLineupRevision: target.revision,
+      );
+    }
     if (roll == 17 && pages.length > 2) {
       final page = pick(pages);
       if (client.queue.entries.whereType<PendingOp>().any(
@@ -700,21 +811,32 @@ final class Model {
         ))
           pagePublicId,
     };
-    final live = [
+    bool onShownPage(String page) =>
+        rows.page(page) is LivePage && !copying.contains(page);
+    final live = <StrategyOp Function()>[
       for (final row in rows.elements)
-        if (row case LiveElement(:final pagePublicId)
-            when rows.page(pagePublicId) is LivePage &&
-                !copying.contains(pagePublicId))
-          row,
+        if (row case LiveElement(
+          :final pagePublicId,
+        ) when onShownPage(pagePublicId))
+          () => elementDelete(
+            fresh('op'),
+            elementId: row.publicId,
+            pageId: row.pagePublicId,
+            expected: row.revision,
+          ),
+      for (final row in rows.lineupGroups)
+        if (row case LiveLineupGroup(
+          :final pagePublicId,
+        ) when onShownPage(pagePublicId))
+          () => LineupGroupDeleteOp(
+            opId: fresh('op'),
+            lineupPublicId: row.publicId,
+            pagePublicId: row.pagePublicId,
+            expectedLineupRevision: row.revision,
+          ),
     ];
     if (live.isEmpty) return;
-    final target = pick(live);
-    final delete = elementDelete(
-      fresh('op'),
-      elementId: target.publicId,
-      pageId: target.pagePublicId,
-      expected: target.revision,
-    );
+    final delete = pick(live)();
     final applied = applyOp(rows, delete);
     if (applied is! OpApplied) return;
     final putBack = switch (buildUndo(
@@ -723,11 +845,13 @@ final class Model {
       opId: fresh('op'),
       defaultSettings: defaultSettings,
     )) {
-      UndoReady(op: final ElementAddOp op) => op,
+      UndoReady(op: final op && (ElementAddOp() || LineupGroupAddOp())) => op,
       _ => null,
     };
     if (putBack == null) return;
-    count('put-backs');
+    count(
+      putBack is LineupGroupAddOp ? 'lineup put-backs' : 'element put-backs',
+    );
     edit(delete);
     edit(putBack);
   }
@@ -767,6 +891,7 @@ final class Model {
       }
       if (rowOf(client.visible, checkTargetOf(each)) case final row?) {
         seenDigest[each.opId] = rowDigest(row);
+        if (createdAtOf(row) case final life?) seenLife[each.opId] = life;
       }
       stepped =
           apply(
@@ -856,7 +981,21 @@ final class Model {
       );
     }
     for (final op in sent.ops) {
+      if ((expectedOf(op), seenLife[op.opId]) case (_?, final life?)) {
+        count('sends checked for the life their edit was made on');
+        if (sent.lives[op.opId] != life) {
+          throw StateError(
+            '${op.opId} was made on life $life of ${checkTargetOf(op)} and '
+            'went out naming ${sent.lives[op.opId]}',
+          );
+        }
+      }
       checkedRow[op.opId] = checkTargetOf(op);
+      sentChecked[op.opId] = switch (op) {
+        ElementAddOp(expectedElementRevision: _?) ||
+        LineupGroupAddOp(expectedLineupRevision: _?) => true,
+        _ => false,
+      };
     }
     inFlight.add((
       sent.attempt,
@@ -865,14 +1004,14 @@ final class Model {
       sent.basis,
       client.queue.session.number,
       sent.lives,
+      sent.strategyLife,
     ));
   }
 
   void deliver({required bool reliable}) {
     if (inFlight.isEmpty) return;
-    final (attempt, owner, ops, basis, session, lives) = inFlight.removeAt(
-      random.nextInt(inFlight.length),
-    );
+    final (attempt, owner, ops, basis, session, lives, strategyLife) = inFlight
+        .removeAt(random.nextInt(inFlight.length));
     final roll = reliable ? 0 : random.nextInt(12);
     if (!server.exists) {
       apply(
@@ -882,7 +1021,9 @@ final class Model {
       return;
     }
     if (roll == 11) {
-      if (random.nextBool()) held.add((owner, ops, basis, lives));
+      if (random.nextBool()) {
+        held.add((owner, ops, basis, lives, strategyLife));
+      }
       apply(
         TransportFailed(attempt, TransportFailure.network, at: clock),
         'lost $attempt',
@@ -902,7 +1043,15 @@ final class Model {
       pass(Duration(milliseconds: 20000 + random.nextInt(9000)));
       count('calls the transport held 20 to 29 s');
     }
-    final received = receive(owner, ops, basis, lives);
+    if (strategyReplacedSince(strategyLife)) {
+      count('batches refused as their strategy was replaced');
+      apply(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced),
+        'refused: strategy replaced $attempt',
+      );
+      return;
+    }
+    final received = receive(owner, ops, basis, lives, strategyLife);
     if (received == null) {
       refusedLate.addAll([for (final op in ops) op.opId]);
       apply(
@@ -945,22 +1094,22 @@ final class Model {
 
   void deliverHeld() {
     if (held.isEmpty || !server.exists) return;
-    final (owner, ops, basis, lives) = held.removeAt(
+    final (owner, ops, basis, lives, strategyLife) = held.removeAt(
       random.nextInt(held.length),
     );
     count('held calls delivered');
     log.add(
       'transport delivers a held call ${ops.map((op) => op.opId)}: '
-      '${receive(owner, ops, basis, lives) == null ? 'refused' : 'received'}',
+      '${receive(owner, ops, basis, lives, strategyLife) == null ? 'refused' : 'received'}',
     );
   }
 
   void restart() {
-    for (final (_, owner, ops, basis, _, lives) in inFlight) {
+    for (final (_, owner, ops, basis, _, lives, strategyLife) in inFlight) {
       if (random.nextBool() && server.exists) {
-        receive(owner, ops, basis, lives);
+        receive(owner, ops, basis, lives, strategyLife);
       } else if (random.nextBool()) {
-        held.add((owner, ops, basis, lives));
+        held.add((owner, ops, basis, lives, strategyLife));
       }
     }
     inFlight.clear();
@@ -1119,7 +1268,20 @@ final class Model {
           ) when server.rows.element(op.elementPublicId) is LiveElement)
             op,
       ];
+      final lineups = [
+        for (final row in server.rows.lineupGroups)
+          if (row is LiveLineupGroup) row,
+      ];
       final StrategyOp op = switch (kind) {
+        4 || 5 when lineups.isNotEmpty => () {
+          final group = pick(lineups);
+          return LineupGroupDeleteOp(
+            opId: fresh('t'),
+            lineupPublicId: group.publicId,
+            pagePublicId: group.pagePublicId,
+            expectedLineupRevision: group.revision,
+          );
+        }(),
         10 || 11 when mine.isNotEmpty => sameAsMine(pick(mine), kind == 11),
         12 => settingsOn(aimed),
         13 => elementAdd(fresh('t'), elementId: fresh('t'), pageId: aimed),
@@ -1171,8 +1333,10 @@ final class Model {
   }
 
   void purgeAndPutBack() {
-    for (final (attempt, owner, ops, basis, _, lives) in [...inFlight]) {
-      if (random.nextBool()) receive(owner, ops, basis, lives);
+    for (final (attempt, owner, ops, basis, _, lives, strategyLife) in [
+      ...inFlight,
+    ]) {
+      if (random.nextBool()) receive(owner, ops, basis, lives, strategyLife);
       apply(
         TransportFailed(attempt, TransportFailure.network, at: clock),
         'given up across 30 days $attempt',
@@ -1184,11 +1348,21 @@ final class Model {
       for (final row in server.rows.elements)
         if (row is DeletedElement) row,
     ];
-    if (purged.isEmpty) return;
+    final purgedLineups = [
+      for (final row in server.rows.lineupGroups)
+        if (row is DeletedLineupGroup) row,
+    ];
+    if (purged.isEmpty && purgedLineups.isEmpty) return;
     server.purgeAfterThirtyDays();
     count('tombstones purged');
+    final queued = {
+      for (final entry in client.queue.entries)
+        if (entry is PendingOp) checkTargetOf(entry.op),
+    };
+    bool putsBack(Target target) =>
+        teammates && (queued.contains(target) || random.nextBool());
     for (final row in purged) {
-      if (!teammates || random.nextBool()) continue;
+      if (!putsBack(ElementTarget(row.publicId))) continue;
       if (server.rows.page(row.pagePublicId) is! LivePage) continue;
       final back = ElementAddOp(
         opId: fresh('t'),
@@ -1204,6 +1378,22 @@ final class Model {
         server.write(done);
         teammateEdited = true;
         count('teammate puts a purged element back at revision 1');
+      }
+    }
+    for (final row in purgedLineups) {
+      if (!putsBack(LineupTarget(row.publicId))) continue;
+      if (server.rows.page(row.pagePublicId) is! LivePage) continue;
+      final back = LineupGroupAddOp(
+        opId: fresh('t'),
+        lineupPublicId: row.publicId,
+        pagePublicId: row.pagePublicId,
+        payload: lineupPayload(row.publicId, 'put back'),
+        sortIndex: row.sortIndex,
+      );
+      if (applyOp(server.rows, back) case final OpApplied done) {
+        server.write(done);
+        teammateEdited = true;
+        count('teammate puts a purged lineup back at revision 1');
       }
     }
     recordHistory();
@@ -1276,6 +1466,18 @@ final class Model {
           PendingOp(op: ElementAddOp(expectedElementRevision: _?)),
         ) =>
           jumped,
+        (
+          NeedsUser(
+            reason: RefusedByServer(
+              refusal: RejectedByServer(reason: RejectionReason.notFound),
+            ),
+          ),
+          PendingOp(
+            op: ElementAddOp(expectedElementRevision: _?) ||
+                LineupGroupAddOp(expectedLineupRevision: _?),
+          ),
+        ) =>
+          jumped,
         _ => false,
       };
       if (forgotten) count('forgotten answers handed to the user');
@@ -1298,7 +1500,7 @@ final class Model {
   }
 
   void stepOnce() {
-    final jump = random.nextInt(400) == 0;
+    final jump = random.nextInt(150) == 0;
     if (jump) {
       jumped = true;
       purgeAndPutBack();
@@ -1437,16 +1639,25 @@ const minimums = {
   'UserDiscarded': 5,
   'removed Delivered': 1500,
   'removed FoldedInto': 20,
-  'put-backs': 100,
+  'element put-backs': 100,
+  'lineup put-backs': 100,
   'given up with its chain': 5,
   'nothing to do at another revision': 20,
   'justified rows checked against the server': 100,
   'teammate makes this device\'s change': 20,
   'teammate makes this device\'s change and rotates': 20,
-  'teammate puts a purged element back at revision 1': 10,
+  'teammate puts a purged element back at revision 1': 40,
   'teammate deletes the strategy and uploads it again': 20,
-  'sent naming a replaced life': 80,
-  'refused as replaced': 80,
+  'batches refused as their strategy was replaced': 20,
+  'teammate puts a purged lineup back at revision 1': 5,
+  'teammate lineup.delete': 20,
+  'sent naming a replaced life': 2,
+  'sends checked for the life their edit was made on': 5000,
+  'row_replaced answers checked for the read they owe': 2,
+  'page lists of a later strategy life checked': 20,
+  'rows checked as remembered after a result': 50000,
+  'refused as replaced': 2,
+  'put-backs refused as their row was purged': 2,
   'remembered versions checked': 100000,
   'remembered rows whose other life had the same revision': 5000,
   'checks where another life had the same revision': 15,
@@ -1504,6 +1715,33 @@ void main() {
     }
   });
 }
+
+LineupGroupPayload lineupPayload(String id, String notes) => LineupGroupPayload(
+  payloadVersion: 1,
+  data: {
+    'id': id,
+    'origins': [
+      {
+        'id': '$id-o',
+        'agent': {'type': 'sova'},
+      },
+    ],
+    'landings': [
+      {
+        'id': '$id-l',
+        'ability': {'type': 'recon'},
+      },
+    ],
+    'links': [
+      {
+        'id': '$id-k',
+        'originId': '$id-o',
+        'landingId': '$id-l',
+        'notes': notes,
+      },
+    ],
+  },
+);
 
 bool uncheckedOnTheWire(StrategyOp op) => switch (op.toJson()) {
   {
