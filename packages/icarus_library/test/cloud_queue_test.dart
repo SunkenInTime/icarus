@@ -329,7 +329,7 @@ void main() {
       );
       client.clock = now.add(const Duration(hours: 1));
       client.must(const AppRestarted(build: build));
-      expect(stateOf(client, 'move'), const NeedsUser(WrittenLongAgo()));
+      expect(stateOf(client, 'move'), const NeedsUser(WindowClosed()));
       expect(client.view('move').sendable, isFalse);
     });
 
@@ -391,7 +391,7 @@ void main() {
       server.purgeAfterThirtyDays();
       client.clock = now.add(const Duration(days: 31));
       client.must(const ConnectionReturned());
-      expect(stateOf(client, 'mine'), const NeedsUser(WrittenLongAgo()));
+      expect(stateOf(client, 'mine'), const NeedsUser(WindowClosed()));
       expect(
         (server.rows.element('e1')! as LiveElement).payload.data
             .toJson()['position'],
@@ -1018,8 +1018,9 @@ void main() {
     client.must(TransportFailed(attempt, TransportFailure.network, at: now));
     client.clock = now.add(resendWindow);
     client.queue = look(client.queue, client.at).queue;
-    expect(stateOf(client, 'del'), const NeedsUser(WrittenLongAgo()));
-    expect(stateOf(client, 'back'), const NeedsUser(WrittenLongAgo()));
+    expect(stateOf(client, 'del'), const NeedsUser(WindowClosed()));
+    expect(stateOf(client, 'back'), const Waiting());
+    expect(client.view('back').holds, [isA<BehindEntry>()]);
   });
 
   test('a page copy reaches the queue as ordinary adds under ids derived on '
@@ -1435,8 +1436,8 @@ void main() {
       expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
     });
 
-    test('an undo waiting for its row asks the user once its delete\'s resend '
-        'window has closed, though nothing happened in between', () {
+    test('an undo waiting for its row keeps waiting for the row\'s result '
+        'however long it waits: time alone never asks', () {
       final server = Server();
       final client = online();
       final drawn = client.visible;
@@ -1459,10 +1460,8 @@ void main() {
         strategy: queue.strategy,
         session: queue.session,
       );
-      expect(
-        entryViews(queue, later)['back']!.state,
-        const NeedsUser(ChangedUnseen()),
-      );
+      expect(entryViews(queue, later)['back']!.state, const Waiting());
+      expect(entryViews(queue, later)['back']!.holds, [isA<AwaitingResult>()]);
       expect(entryViews(afresh, later), entryViews(queue, later));
     });
 
@@ -1702,8 +1701,29 @@ void main() {
       expect(client.view('mine').sendable, isTrue);
     });
 
-    test('a put-back over a delete answered more than 29 days ago needs the '
-        'user', () {
+    test('a put-back over a delete whose tombstone the server has since '
+        'purged asks once a page result no longer holds the row, instead of '
+        'waiting for a result that will never show it', () {
+      final server = Server();
+      final client = online();
+      final drawn = client.visible;
+      client.edit(elementDelete('del'));
+      client.edit(putBackOf('back', drawn, 'e1'));
+      sendAndAnswer(client, server, ['del']);
+      server.purgeAfterThirtyDays();
+      client.clock = now.add(const Duration(days: 31));
+      client
+        ..must(const ConnectionLost())
+        ..must(const ConnectionReturned());
+      expect(stateOf(client, 'back'), isNot(isA<NeedsUser>()));
+      client.read(server.rows);
+      expect(server.rows.element('e1'), isNull);
+      expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+    });
+
+    test('a put-back over a delete answered more than 29 days ago goes like '
+        'any put-back, and the server checks the tombstone\'s revision and '
+        'life', () {
       final client = online();
       final drawn = client.visible;
       client.edit(elementDelete('del'));
@@ -1717,7 +1737,11 @@ void main() {
       );
       expect(client.view('back').sendable, isTrue);
       client.clock = now.add(const Duration(days: 30));
-      expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
+      expect(client.view('back').sendable, isTrue);
+      client.claim(['back']);
+      expect(client.effects.whereType<SendBatch>().last.lives, {
+        'back': fixtureLife,
+      });
     });
 
     test('a whole-batch refusal after the attempt was given up still means '
@@ -1961,8 +1985,8 @@ void main() {
       expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
     });
 
-    test('an undo window runs from the delete\'s first send, not from a '
-        'replay', () {
+    test('an undo after a replayed delete does not depend on when the delete '
+        'was first sent', () {
       final client = online();
       final drawn = client.visible;
       client.edit(elementDelete('del'));
@@ -1983,7 +2007,7 @@ void main() {
       );
       client.edit(putBackOf('back', drawn, 'e1'));
       client.clock = now.add(const Duration(days: 30));
-      expect(stateOf(client, 'back'), isA<NeedsUser>());
+      expect(stateOf(client, 'back'), isNot(isA<NeedsUser>()));
     });
 
     test('a landed move stays on its destination when the source page\'s '
@@ -2121,14 +2145,17 @@ void main() {
       expect(rotationOf(server.rows), 90);
     });
 
-    test('a revision-checked edit written more than 29 days ago needs the '
-        'user before it is ever sent', () {
+    test('a revision-checked edit written more than 29 days ago and never '
+        'sent goes out on reconnect, naming its revision and life', () {
       final client = Client()..read(initialRows());
       client.edit(movePatch('old', x: 80));
       client.clock = now.add(resendWindow);
       client.must(const ConnectionReturned());
-      expect(client.view('old').sendable, isFalse);
-      expect(stateOf(client, 'old'), const NeedsUser(WrittenLongAgo()));
+      expect(client.view('old').sendable, isTrue);
+      client.claim(['old']);
+      expect(client.effects.whereType<SendBatch>().last.lives, {
+        'old': fixtureLife,
+      });
     });
 
     test('solo: renaming a page and then deleting it asks nothing, once the '

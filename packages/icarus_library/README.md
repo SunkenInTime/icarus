@@ -1792,8 +1792,9 @@ of them is something the queue sends: trashing and restoring a page set
 `deletedAt` without a revision, deleting a folder clears a strategy's folder
 without one, and a tombstone purged after 30 days can come back at revision
 1. That is why a page delete's answer never justifies a page row, why
-nothing queued checks the folder, and why justified rows from answers never
-outlive the 29-day window. A result never changes the revision an op names,
+nothing queued checks the folder, and why every check names the row's life
+with its revision: a tombstone that comes back is a new life (**A row's
+life**). A result never changes the revision an op names,
 and `_judge` is the only place an outgoing revision is chosen.
 
 - An op made with nothing of this device's ahead of it on its row goes at
@@ -1823,18 +1824,16 @@ and `_judge` is the only place an outgoing revision is chosen.
 - An undo of a delete ([#668](https://github.com/SunkenInTime/icarus/issues/668))
   goes without asking only over this device's delete answered at the
   revision the undo names, with the tombstone as the user saw it justified
-  (by the delete's prediction, or by a result of this session), within 29
-  days of first sending that delete. Until the tombstone is justified it
-  waits for its row's result; anything else needs the user.
+  (by the delete's prediction, or by a result of this session). Until the
+  tombstone is justified it waits for its row's result; a page result of this
+  session that no longer holds the row (the server purged the tombstone)
+  needs the user, and so does anything else.
 - Keep mine names the revision the user chose theirs over.
-- A revision means something only within a row's lifetime, and a purged
-  tombstone can come back at revision 1. So an entry that carries a revision
-  check and was written more than 29 days ago needs the user before it is
-  sent, and the reason says it was written too long ago (`WrittenLongAgo`)
-  even when it was first sent late and its answer was lost: an edit written
-  offline and first sent on day 28 gets one day of resends. An entry without
-  a revision check that was sent and lost needs the user after 29 days from
-  its first send (`WindowClosed`). Keep mine starts the 29 days again.
+- An entry sent and unanswered 29 days after its first send needs the user
+  (`WindowClosed`), since the server may have forgotten whether it landed.
+  That is the one decision the resend window makes: how old an edit is never
+  decides what is sent, whether it is checked, or what is retired. Keep mine
+  starts the 29 days again.
 - Live sends: a delete sent live is last writer wins, as in the shipped app.
 
 **A row's life.** A revision orders writes within one life of a row. A
@@ -1870,6 +1869,8 @@ revision alone across lives.
   upload instead; the page add names the strategy's life and is refused
   first, and every edit of the page waits behind that add, so none is sent
   before the user decides.
+- A page is a place, not a life: an element moved to another page keeps its
+  life, and an op on an element names the element's life, never its page's.
 - A page list that shows the strategy in another life drops everything the
   queue knew of the old one (results and landed work) and every page the
   store held, from memory and disk. Queued edits stay: they go out naming the

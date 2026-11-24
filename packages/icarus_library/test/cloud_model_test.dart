@@ -1094,7 +1094,7 @@ final class Model {
       };
       if (action == null) continue;
       final forgotten = switch ((view?.state, entry)) {
-        (NeedsUser(reason: WindowClosed() || WrittenLongAgo()), _) => true,
+        (NeedsUser(reason: WindowClosed()), _) => true,
         (
           NeedsUser(reason: ChangedUnseen()),
           PendingOp(op: ElementAddOp(expectedElementRevision: _?)),

@@ -373,28 +373,27 @@ Does not apply: claimed; claimed under another client id; answer from an attempt
 
 ## needs user: written 29 days ago against a revision, never sent
 
-Starts as: needs user: written more than 29 days ago, too long to check against the server.
+Starts as: waiting.
 
 | Event | Result |
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| claimed | x: sending in 1; sends attempt 1 (x) |
+| claimed under another client id | x: sending in 1; sends attempt 1 (x) |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
 | connection lost | unchanged |
 | connection returned | opens session 2 |
 | server time held | unchanged |
 | account changed | opens session 2 |
-| user: keep mine, same item | x: gone; x2: waiting; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
-| user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
-| user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended.
+Does not apply: attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended.
 
 ## needs user: retries exhausted
 

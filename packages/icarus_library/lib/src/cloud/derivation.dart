@@ -346,7 +346,6 @@ final class _IndexEdit {
   void add(QueueEntry entry) {
     _ownById[entry.id] = entry;
     if (entry is! PendingOp) return;
-    _checkedLifetime(entry);
     final slot = (entry.place, entry.id);
     final keys = _keysOf(entry);
     for (final key in keys.under) {
@@ -408,12 +407,6 @@ final class _IndexEdit {
     }
   }
 
-  void _checkedLifetime(PendingOp entry) {
-    if (entry.window is WindowOpen && expectedOf(entry.op) != null) {
-      forgetBy(entry.id, entry.authoredAt);
-    }
-  }
-
   void unsent(AttemptFact refused, Map<int, AttemptFact> attempts) {
     for (final opId in refused.opIds) {
       stopForgetting(opId);
@@ -421,7 +414,6 @@ final class _IndexEdit {
           (byId[opId]! as PendingOp).window is! WindowOpen) {
         continue;
       }
-      _checkedLifetime(byId[opId]! as PendingOp);
       for (final number in attemptsByOp[opId] ?? const <int>[]) {
         final attempt = attempts[number];
         if (attempt == null || attempt.outcome is AttemptRefusedWhole) continue;
@@ -731,7 +723,6 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
           Attention.rejectedByServer,
         RefusedByServer(refusal: FailedOnServer()) => Attention.failedOnServer,
         WindowClosed() => Attention.serverForgotAnswer,
-        WrittenLongAgo() => Attention.writtenLongAgo,
         RetriesExhausted() => Attention.retriesExhausted,
         DeleteHeld() => Attention.heldPageDelete,
         Oversized() => Attention.oversized,
@@ -764,13 +755,7 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
   for (final attempt in attempts) {
     if (attempt.outcome is AttemptOpen) return Sending(attempt.number);
   }
-  if (entry.window is WindowPassed) {
-    return NeedsUser(
-      expectedOf(entry.op) != null
-          ? const WrittenLongAgo()
-          : const WindowClosed(),
-    );
-  }
+  if (entry.window is WindowPassed) return const NeedsUser(WindowClosed());
   final failed = [
     for (final attempt in attempts)
       if (attempt.outcome case AttemptFailed(:final at)) (attempt, at),
@@ -895,15 +880,10 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   };
   if (head && state is Waiting && !pageGone) {
     switch (_judge(queue, entry, now)) {
-      case _NameAt(until: final deadline?):
-        if (until == null || deadline.isBefore(until)) until = deadline;
       case _NameAt():
         break;
-      case _AwaitRow(:final page, until: final deadline):
+      case _AwaitRow(:final page):
         holds.add(AwaitingResult(RowResult(_rowTarget(op), page)));
-        if (deadline != null && (until == null || deadline.isBefore(until))) {
-          until = deadline;
-        }
       case _AskUser(reason: RowPageGone()) when entry.work is CheckedDelete:
         break;
       case _AskUser(:final reason):

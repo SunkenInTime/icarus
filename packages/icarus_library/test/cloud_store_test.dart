@@ -679,14 +679,14 @@ void main() {
     await recordAll(store, const []);
     expect(
       (await syncOf(store)).views['move']!.state,
-      const NeedsUser(WrittenLongAgo()),
+      const NeedsUser(WindowClosed()),
     );
     await store.close();
     clock = fixedClock();
     store = await openCloudStore(MemoryEngine(storage), clock: () => clock);
     expect(
       (await syncOf(store)).views['move']!.state,
-      const NeedsUser(WrittenLongAgo()),
+      const NeedsUser(WindowClosed()),
     );
   });
 

@@ -363,20 +363,6 @@ final class WindowClosed extends UserReason {
   String toString() => 'the server may have forgotten whether it landed';
 }
 
-final class WrittenLongAgo extends UserReason {
-  const WrittenLongAgo();
-
-  @override
-  bool operator ==(Object other) => other is WrittenLongAgo;
-
-  @override
-  int get hashCode => (WrittenLongAgo).hashCode;
-
-  @override
-  String toString() =>
-      'written more than 29 days ago, too long to check against the server';
-}
-
 final class RetriesExhausted extends UserReason {
   const RetriesExhausted();
 
@@ -1638,17 +1624,15 @@ sealed class _Verdict {
 }
 
 final class _NameAt extends _Verdict {
-  const _NameAt(this.revision, {this.until});
+  const _NameAt(this.revision);
 
   final int? revision;
-  final DateTime? until;
 }
 
 final class _AwaitRow extends _Verdict {
-  const _AwaitRow(this.page, {this.until});
+  const _AwaitRow(this.page);
 
   final String? page;
-  final DateTime? until;
 }
 
 final class _AskUser extends _Verdict {
@@ -1790,23 +1774,28 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
           )
           .lastOrNull;
       if (delete == null || seen is! AuthoredRow) return const _AskUser();
-      final until = delete.firstSentAt.add(resendWindow);
-      if (!now.isBefore(until)) return const _AskUser();
       if (entry.scope case OnPage(
         :final pagePublicId,
       ) when _pageGone(queue.shown, pagePublicId)) {
         return const _AskUser(RowPageGone());
       }
       return switch (_knownRow(queue, row)) {
-        _KnownRow(:final revision, :final digest, current: true)
-            when revision == authored && digest == seen.digest =>
-          _NameAt(authored, until: until),
+        _KnownRow(:final revision, :final life, :final digest, current: true)
+            when revision == authored &&
+                life == seen.life &&
+                digest == seen.digest =>
+          _NameAt(authored),
         _KnownRow(current: true) => const _AskUser(),
-        _KnownRow(:final page) => _AwaitRow(page, until: until),
-        _ => _AwaitRow(switch (entry.scope) {
-          OnPage(:final pagePublicId) => pagePublicId,
-          _ => null,
-        }, until: until),
+        _KnownRow(:final page) => _AwaitRow(page),
+        _ => switch (entry.scope) {
+          OnPage(:final pagePublicId)
+              when queue.shown.pagesThisSession.contains(pagePublicId) &&
+                  queue.shown.highest.containsKey(row) &&
+                  _shownRow(queue.shown, row) == null =>
+            const _AskUser(),
+          OnPage(:final pagePublicId) => _AwaitRow(pagePublicId),
+          _ => const _AwaitRow(null),
+        },
       };
     case _Writes.wholeRow:
       if (!entry.behindOwn) return _NameAt(authored);
@@ -2249,7 +2238,6 @@ bool _userMayReplace(EntryView view) => switch (view.state) {
     reason: RefusedByServer() ||
         ChangedUnseen() ||
         WindowClosed() ||
-        WrittenLongAgo() ||
         RowPageGone(),
   ) =>
     true,

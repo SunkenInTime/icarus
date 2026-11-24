@@ -11,7 +11,6 @@ enum Attention {
   changedUnseen,
   pageGone,
   serverForgotAnswer,
-  writtenLongAgo,
   heldPageDelete,
   waitingOnRefused,
   retiredFormat,
