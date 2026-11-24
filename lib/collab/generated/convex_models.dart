@@ -411,7 +411,8 @@ enum OpsApplyBatchResultResultsItemRejectedReason {
   missingExpectedRevision('missing_expected_revision'),
   notFound('not_found'),
   pageStrategyMismatch('page_strategy_mismatch'),
-  revisionMismatch('revision_mismatch');
+  revisionMismatch('revision_mismatch'),
+  rowReplaced('row_replaced');
 
   const OpsApplyBatchResultResultsItemRejectedReason(this.wireName);
   final String wireName;
@@ -2083,9 +2084,11 @@ final class OpsApplyBatchArgsOpsItemElementAdd
     required this.payload,
     required this.sortIndex,
     this.expectedElementRevision = const ConvexOptional.absent(),
+    this.expectedLife = const ConvexOptional.absent(),
   });
   final String elementPublicId;
   final ConvexOptional<double> expectedElementRevision;
+  final ConvexOptional<double> expectedLife;
   final String opId;
   final String pagePublicId;
   final CloudPayload payload;
@@ -2107,6 +2110,14 @@ final class OpsApplyBatchArgsOpsItemElementAdd
               _decodeNumber(
                 object.value['expectedElementRevision']!,
                 '$path.expectedElementRevision',
+              ),
+            )
+          : const ConvexOptional.absent(),
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
               ),
             )
           : const ConvexOptional.absent(),
@@ -2139,6 +2150,8 @@ final class OpsApplyBatchArgsOpsItemElementAdd
           expectedElementRevision.value,
           '$path.expectedElementRevision',
         ),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'opId': ConvexString(opId),
       'pagePublicId': ConvexString(pagePublicId),
       'payload': _encodeOpsApplyBatchArgsOpsItemElementAddPayload(
@@ -2157,10 +2170,12 @@ final class OpsApplyBatchArgsOpsItemElementDelete
     required this.expectedElementRevision,
     required this.opId,
     required this.pagePublicId,
+    this.expectedLife = const ConvexOptional.absent(),
     this.lastWriterWins = const ConvexOptional.absent(),
   });
   final String elementPublicId;
   final double expectedElementRevision;
+  final ConvexOptional<double> expectedLife;
   final ConvexOptional<bool> lastWriterWins;
   final String opId;
   final String pagePublicId;
@@ -2180,6 +2195,14 @@ final class OpsApplyBatchArgsOpsItemElementDelete
             _missing(path, 'expectedElementRevision'),
         '$path.expectedElementRevision',
       ),
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       lastWriterWins: object.value.containsKey('lastWriterWins')
           ? ConvexOptional.present(
               _decodeBoolean(
@@ -2208,6 +2231,8 @@ final class OpsApplyBatchArgsOpsItemElementDelete
         expectedElementRevision,
         '$path.expectedElementRevision',
       ),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       if (lastWriterWins.isPresent)
         'lastWriterWins': ConvexBoolean(lastWriterWins.value),
       'opId': ConvexString(opId),
@@ -2222,6 +2247,7 @@ final class OpsApplyBatchArgsOpsItemElementPatch
     required this.elementPublicId,
     required this.expectedElementRevision,
     required this.opId,
+    this.expectedLife = const ConvexOptional.absent(),
     this.merge = const ConvexOptional.absent(),
     this.pagePublicId = const ConvexOptional.absent(),
     this.payload = const ConvexOptional.absent(),
@@ -2229,6 +2255,7 @@ final class OpsApplyBatchArgsOpsItemElementPatch
   });
   final String elementPublicId;
   final double expectedElementRevision;
+  final ConvexOptional<double> expectedLife;
   final ConvexOptional<OpsApplyBatchArgsOpsItemElementPatchMerge> merge;
   final String opId;
   final ConvexOptional<String> pagePublicId;
@@ -2250,6 +2277,14 @@ final class OpsApplyBatchArgsOpsItemElementPatch
             _missing(path, 'expectedElementRevision'),
         '$path.expectedElementRevision',
       ),
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       merge: object.value.containsKey('merge')
           ? ConvexOptional.present(
               OpsApplyBatchArgsOpsItemElementPatchMerge.decode(
@@ -2295,6 +2330,8 @@ final class OpsApplyBatchArgsOpsItemElementPatch
         expectedElementRevision,
         '$path.expectedElementRevision',
       ),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       if (merge.isPresent) 'merge': merge.value.encode('$path.merge'),
       'opId': ConvexString(opId),
       if (pagePublicId.isPresent)
@@ -2423,9 +2460,11 @@ final class OpsApplyBatchArgsOpsItemElementReorder
     required this.opId,
     required this.pagePublicId,
     required this.sortIndex,
+    this.expectedLife = const ConvexOptional.absent(),
   });
   final String elementPublicId;
   final double expectedElementRevision;
+  final ConvexOptional<double> expectedLife;
   final String opId;
   final String pagePublicId;
   final double sortIndex;
@@ -2445,6 +2484,14 @@ final class OpsApplyBatchArgsOpsItemElementReorder
             _missing(path, 'expectedElementRevision'),
         '$path.expectedElementRevision',
       ),
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       opId: _decodeString(
         object.value['opId'] ?? _missing(path, 'opId'),
         '$path.opId',
@@ -2469,6 +2516,8 @@ final class OpsApplyBatchArgsOpsItemElementReorder
         expectedElementRevision,
         '$path.expectedElementRevision',
       ),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'opId': ConvexString(opId),
       'pagePublicId': ConvexString(pagePublicId),
       'sortIndex': _encodeNumber(sortIndex, '$path.sortIndex'),
@@ -2483,8 +2532,10 @@ final class OpsApplyBatchArgsOpsItemLineupAdd extends OpsApplyBatchArgsOpsItem {
     required this.pagePublicId,
     required this.payload,
     required this.sortIndex,
+    this.expectedLife = const ConvexOptional.absent(),
     this.expectedLineupRevision = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final ConvexOptional<double> expectedLineupRevision;
   final String lineupPublicId;
   final String opId;
@@ -2498,6 +2549,14 @@ final class OpsApplyBatchArgsOpsItemLineupAdd extends OpsApplyBatchArgsOpsItem {
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemLineupAdd(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedLineupRevision: object.value.containsKey('expectedLineupRevision')
           ? ConvexOptional.present(
               _decodeNumber(
@@ -2533,6 +2592,8 @@ final class OpsApplyBatchArgsOpsItemLineupAdd extends OpsApplyBatchArgsOpsItem {
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('lineup.add'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       if (expectedLineupRevision.isPresent)
         'expectedLineupRevision': _encodeNumber(
           expectedLineupRevision.value,
@@ -2557,8 +2618,10 @@ final class OpsApplyBatchArgsOpsItemLineupDelete
     required this.lineupPublicId,
     required this.opId,
     required this.pagePublicId,
+    this.expectedLife = const ConvexOptional.absent(),
     this.lastWriterWins = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final double expectedLineupRevision;
   final ConvexOptional<bool> lastWriterWins;
   final String lineupPublicId;
@@ -2571,6 +2634,14 @@ final class OpsApplyBatchArgsOpsItemLineupDelete
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemLineupDelete(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedLineupRevision: _decodeNumber(
         object.value['expectedLineupRevision'] ??
             _missing(path, 'expectedLineupRevision'),
@@ -2603,6 +2674,8 @@ final class OpsApplyBatchArgsOpsItemLineupDelete
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('lineup.delete'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedLineupRevision': _encodeNumber(
         expectedLineupRevision,
         '$path.expectedLineupRevision',
@@ -2622,11 +2695,13 @@ final class OpsApplyBatchArgsOpsItemLineupPatch
     required this.expectedLineupRevision,
     required this.lineupPublicId,
     required this.opId,
+    this.expectedLife = const ConvexOptional.absent(),
     this.merge = const ConvexOptional.absent(),
     this.pagePublicId = const ConvexOptional.absent(),
     this.payload = const ConvexOptional.absent(),
     this.sortIndex = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final double expectedLineupRevision;
   final String lineupPublicId;
   final ConvexOptional<OpsApplyBatchArgsOpsItemElementPatchMerge> merge;
@@ -2641,6 +2716,14 @@ final class OpsApplyBatchArgsOpsItemLineupPatch
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemLineupPatch(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedLineupRevision: _decodeNumber(
         object.value['expectedLineupRevision'] ??
             _missing(path, 'expectedLineupRevision'),
@@ -2690,6 +2773,8 @@ final class OpsApplyBatchArgsOpsItemLineupPatch
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('lineup.patch'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedLineupRevision': _encodeNumber(
         expectedLineupRevision,
         '$path.expectedLineupRevision',
@@ -2718,7 +2803,9 @@ final class OpsApplyBatchArgsOpsItemLineupReorder
     required this.opId,
     required this.pagePublicId,
     required this.sortIndex,
+    this.expectedLife = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final double expectedLineupRevision;
   final String lineupPublicId;
   final String opId;
@@ -2731,6 +2818,14 @@ final class OpsApplyBatchArgsOpsItemLineupReorder
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemLineupReorder(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedLineupRevision: _decodeNumber(
         object.value['expectedLineupRevision'] ??
             _missing(path, 'expectedLineupRevision'),
@@ -2759,6 +2854,8 @@ final class OpsApplyBatchArgsOpsItemLineupReorder
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('lineup.reorder'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedLineupRevision': _encodeNumber(
         expectedLineupRevision,
         '$path.expectedLineupRevision',
@@ -2779,8 +2876,10 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
     required this.payload,
     required this.sortIndex,
     this.copyContentFromPagePublicId = const ConvexOptional.absent(),
+    this.expectedLife = const ConvexOptional.absent(),
   });
   final ConvexOptional<String> copyContentFromPagePublicId;
+  final ConvexOptional<double> expectedLife;
   final double expectedStrategyRevision;
   final String opId;
   final String pagePublicId;
@@ -2799,6 +2898,14 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
               _decodeString(
                 object.value['copyContentFromPagePublicId']!,
                 '$path.copyContentFromPagePublicId',
+              ),
+            )
+          : const ConvexOptional.absent(),
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
               ),
             )
           : const ConvexOptional.absent(),
@@ -2834,6 +2941,8 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
         'copyContentFromPagePublicId': ConvexString(
           copyContentFromPagePublicId.value,
         ),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedStrategyRevision': _encodeNumber(
         expectedStrategyRevision,
         '$path.expectedStrategyRevision',
@@ -2950,7 +3059,9 @@ final class OpsApplyBatchArgsOpsItemPageContentPatch
     required this.opId,
     required this.pagePublicId,
     required this.settings,
+    this.expectedLife = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final double expectedPageContentRevision;
   final String opId;
   final String pagePublicId;
@@ -2962,6 +3073,14 @@ final class OpsApplyBatchArgsOpsItemPageContentPatch
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemPageContentPatch(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedPageContentRevision: _decodeNumber(
         object.value['expectedPageContentRevision'] ??
             _missing(path, 'expectedPageContentRevision'),
@@ -2986,6 +3105,8 @@ final class OpsApplyBatchArgsOpsItemPageContentPatch
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('pageContent.patch'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedPageContentRevision': _encodeNumber(
         expectedPageContentRevision,
         '$path.expectedPageContentRevision',
@@ -3003,7 +3124,9 @@ final class OpsApplyBatchArgsOpsItemPageDelete
     required this.expectedStrategyRevision,
     required this.opId,
     required this.pagePublicId,
+    this.expectedLife = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final double expectedStrategyRevision;
   final String opId;
   final String pagePublicId;
@@ -3014,6 +3137,14 @@ final class OpsApplyBatchArgsOpsItemPageDelete
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemPageDelete(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedStrategyRevision: _decodeNumber(
         object.value['expectedStrategyRevision'] ??
             _missing(path, 'expectedStrategyRevision'),
@@ -3034,6 +3165,8 @@ final class OpsApplyBatchArgsOpsItemPageDelete
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('page.delete'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedStrategyRevision': _encodeNumber(
         expectedStrategyRevision,
         '$path.expectedStrategyRevision',
@@ -3050,7 +3183,9 @@ final class OpsApplyBatchArgsOpsItemPagePatch extends OpsApplyBatchArgsOpsItem {
     required this.opId,
     required this.pagePublicId,
     required this.payload,
+    this.expectedLife = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final double expectedPageRevision;
   final String opId;
   final String pagePublicId;
@@ -3062,6 +3197,14 @@ final class OpsApplyBatchArgsOpsItemPagePatch extends OpsApplyBatchArgsOpsItem {
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemPagePatch(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedPageRevision: _decodeNumber(
         object.value['expectedPageRevision'] ??
             _missing(path, 'expectedPageRevision'),
@@ -3086,6 +3229,8 @@ final class OpsApplyBatchArgsOpsItemPagePatch extends OpsApplyBatchArgsOpsItem {
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('page.patch'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedPageRevision': _encodeNumber(
         expectedPageRevision,
         '$path.expectedPageRevision',
@@ -3104,7 +3249,9 @@ final class OpsApplyBatchArgsOpsItemPageReorder
     required this.opId,
     required this.pagePublicId,
     required this.sortIndex,
+    this.expectedLife = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final double expectedStrategyRevision;
   final String opId;
   final String pagePublicId;
@@ -3116,6 +3263,14 @@ final class OpsApplyBatchArgsOpsItemPageReorder
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemPageReorder(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedStrategyRevision: _decodeNumber(
         object.value['expectedStrategyRevision'] ??
             _missing(path, 'expectedStrategyRevision'),
@@ -3140,6 +3295,8 @@ final class OpsApplyBatchArgsOpsItemPageReorder
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('page.reorder'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedStrategyRevision': _encodeNumber(
         expectedStrategyRevision,
         '$path.expectedStrategyRevision',
@@ -3157,7 +3314,9 @@ final class OpsApplyBatchArgsOpsItemStrategyPatch
     required this.expectedStrategyRevision,
     required this.opId,
     required this.payload,
+    this.expectedLife = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> expectedLife;
   final double expectedStrategyRevision;
   final String opId;
   final OpsApplyBatchArgsOpsItemStrategyPatchPayload payload;
@@ -3168,6 +3327,14 @@ final class OpsApplyBatchArgsOpsItemStrategyPatch
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchArgsOpsItemStrategyPatch(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
       expectedStrategyRevision: _decodeNumber(
         object.value['expectedStrategyRevision'] ??
             _missing(path, 'expectedStrategyRevision'),
@@ -3188,6 +3355,8 @@ final class OpsApplyBatchArgsOpsItemStrategyPatch
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('strategy.patch'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
       'expectedStrategyRevision': _encodeNumber(
         expectedStrategyRevision,
         '$path.expectedStrategyRevision',
@@ -3387,7 +3556,9 @@ final class OpsApplyBatchResultResultsItemApplied
   const OpsApplyBatchResultResultsItemApplied({
     required this.appliedRevision,
     required this.opId,
+    this.appliedLife = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> appliedLife;
   final double appliedRevision;
   final String opId;
 
@@ -3397,6 +3568,11 @@ final class OpsApplyBatchResultResultsItemApplied
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchResultResultsItemApplied(
+      appliedLife: object.value.containsKey('appliedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(object.value['appliedLife']!, '$path.appliedLife'),
+            )
+          : const ConvexOptional.absent(),
       appliedRevision: _decodeNumber(
         object.value['appliedRevision'] ?? _missing(path, 'appliedRevision'),
         '$path.appliedRevision',
@@ -3412,6 +3588,8 @@ final class OpsApplyBatchResultResultsItemApplied
   ConvexObject encode(String path) {
     return ConvexObject({
       'status': ConvexString('applied'),
+      if (appliedLife.isPresent)
+        'appliedLife': _encodeNumber(appliedLife.value, '$path.appliedLife'),
       'appliedRevision': _encodeNumber(
         appliedRevision,
         '$path.appliedRevision',
@@ -3475,9 +3653,11 @@ final class OpsApplyBatchResultResultsItemNoop
     extends OpsApplyBatchResultResultsItem {
   const OpsApplyBatchResultResultsItemNoop({
     required this.opId,
+    this.currentLife = const ConvexOptional.absent(),
     this.currentRevision = const ConvexOptional.absent(),
     this.wasApplied = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> currentLife;
   final ConvexOptional<double> currentRevision;
   final String opId;
   final ConvexOptional<bool> wasApplied;
@@ -3488,6 +3668,11 @@ final class OpsApplyBatchResultResultsItemNoop
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchResultResultsItemNoop(
+      currentLife: object.value.containsKey('currentLife')
+          ? ConvexOptional.present(
+              _decodeNumber(object.value['currentLife']!, '$path.currentLife'),
+            )
+          : const ConvexOptional.absent(),
       currentRevision: object.value.containsKey('currentRevision')
           ? ConvexOptional.present(
               _decodeNumber(
@@ -3512,6 +3697,8 @@ final class OpsApplyBatchResultResultsItemNoop
   ConvexObject encode(String path) {
     return ConvexObject({
       'status': ConvexString('noop'),
+      if (currentLife.isPresent)
+        'currentLife': _encodeNumber(currentLife.value, '$path.currentLife'),
       if (currentRevision.isPresent)
         'currentRevision': _encodeNumber(
           currentRevision.value,
@@ -3578,7 +3765,9 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentElement
   const OpsApplyBatchResultResultsItemRejectedCurrentElement({
     required this.revision,
     required this.value,
+    this.life = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> life;
   final double revision;
   final CloudPayload value;
 
@@ -3588,6 +3777,11 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentElement
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchResultResultsItemRejectedCurrentElement(
+      life: object.value.containsKey('life')
+          ? ConvexOptional.present(
+              _decodeNumber(object.value['life']!, '$path.life'),
+            )
+          : const ConvexOptional.absent(),
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
         '$path.revision',
@@ -3603,6 +3797,7 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentElement
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('element'),
+      if (life.isPresent) 'life': _encodeNumber(life.value, '$path.life'),
       'revision': _encodeNumber(revision, '$path.revision'),
       'value': _encodeOpsApplyBatchResultResultsItemRejectedCurrentElementValue(
         value,
@@ -3617,7 +3812,9 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentLineup
   const OpsApplyBatchResultResultsItemRejectedCurrentLineup({
     required this.revision,
     required this.value,
+    this.life = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> life;
   final double revision;
   final CloudPayload value;
 
@@ -3627,6 +3824,11 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentLineup
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchResultResultsItemRejectedCurrentLineup(
+      life: object.value.containsKey('life')
+          ? ConvexOptional.present(
+              _decodeNumber(object.value['life']!, '$path.life'),
+            )
+          : const ConvexOptional.absent(),
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
         '$path.revision',
@@ -3644,6 +3846,7 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentLineup
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('lineup'),
+      if (life.isPresent) 'life': _encodeNumber(life.value, '$path.life'),
       'revision': _encodeNumber(revision, '$path.revision'),
       'value': _encodePayload(
         () => const LineupsConvexCodec().encode(value),
@@ -3658,7 +3861,9 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPage
   const OpsApplyBatchResultResultsItemRejectedCurrentPage({
     required this.revision,
     required this.value,
+    this.life = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> life;
   final double revision;
   final OpsApplyBatchResultResultsItemRejectedCurrentPageValue value;
 
@@ -3668,6 +3873,11 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPage
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchResultResultsItemRejectedCurrentPage(
+      life: object.value.containsKey('life')
+          ? ConvexOptional.present(
+              _decodeNumber(object.value['life']!, '$path.life'),
+            )
+          : const ConvexOptional.absent(),
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
         '$path.revision',
@@ -3683,6 +3893,7 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPage
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('page'),
+      if (life.isPresent) 'life': _encodeNumber(life.value, '$path.life'),
       'revision': _encodeNumber(revision, '$path.revision'),
       'value': value.encode('$path.value'),
     });
@@ -3694,7 +3905,9 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageContent
   const OpsApplyBatchResultResultsItemRejectedCurrentPageContent({
     required this.revision,
     required this.value,
+    this.life = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> life;
   final double revision;
   final OpsApplyBatchResultResultsItemRejectedCurrentPageContentValue value;
 
@@ -3704,6 +3917,11 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageContent
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchResultResultsItemRejectedCurrentPageContent(
+      life: object.value.containsKey('life')
+          ? ConvexOptional.present(
+              _decodeNumber(object.value['life']!, '$path.life'),
+            )
+          : const ConvexOptional.absent(),
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
         '$path.revision',
@@ -3720,6 +3938,7 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageContent
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('pageContent'),
+      if (life.isPresent) 'life': _encodeNumber(life.value, '$path.life'),
       'revision': _encodeNumber(revision, '$path.revision'),
       'value': value.encode('$path.value'),
     });
@@ -3811,7 +4030,9 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategy
   const OpsApplyBatchResultResultsItemRejectedCurrentStrategy({
     required this.revision,
     required this.value,
+    this.life = const ConvexOptional.absent(),
   });
+  final ConvexOptional<double> life;
   final double revision;
   final OpsApplyBatchResultResultsItemRejectedCurrentStrategyValue value;
 
@@ -3821,6 +4042,11 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategy
   ) {
     final object = _decodeObject(value, path);
     return OpsApplyBatchResultResultsItemRejectedCurrentStrategy(
+      life: object.value.containsKey('life')
+          ? ConvexOptional.present(
+              _decodeNumber(object.value['life']!, '$path.life'),
+            )
+          : const ConvexOptional.absent(),
       revision: _decodeNumber(
         object.value['revision'] ?? _missing(path, 'revision'),
         '$path.revision',
@@ -3836,6 +4062,7 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentStrategy
   ConvexObject encode(String path) {
     return ConvexObject({
       'type': ConvexString('strategy'),
+      if (life.isPresent) 'life': _encodeNumber(life.value, '$path.life'),
       'revision': _encodeNumber(revision, '$path.revision'),
       'value': value.encode('$path.value'),
     });
@@ -7188,6 +7415,7 @@ ConvexObject encodeOpsApplyBatchArgs({
   required List<OpsApplyBatchArgsOpsItem> ops,
   ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
   ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
+  ConvexOptional<bool> sendsLives = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
   if (acceptsPictureIds.isPresent)
@@ -7230,6 +7458,7 @@ ConvexObject encodeOpsApplyBatchArgs({
     'readsAccountMismatch': ConvexBoolean(readsAccountMismatch.value),
   if (sendsLiveBasis.isPresent)
     'sendsLiveBasis': ConvexBoolean(sendsLiveBasis.value),
+  if (sendsLives.isPresent) 'sendsLives': ConvexBoolean(sendsLives.value),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 

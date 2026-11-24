@@ -1153,6 +1153,7 @@ abstract interface class OpsModule {
     required List<OpsApplyBatchArgsOpsItem> ops,
     ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
     ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
+    ConvexOptional<bool> sendsLives = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
 }
@@ -1176,6 +1177,7 @@ final class _OpsModule implements OpsModule {
     required List<OpsApplyBatchArgsOpsItem> ops,
     ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
     ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
+    ConvexOptional<bool> sendsLives = const ConvexOptional.absent(),
     required String strategyPublicId,
   }) {
     final args = encodeOpsApplyBatchArgs(
@@ -1192,6 +1194,7 @@ final class _OpsModule implements OpsModule {
       ops: ops,
       readsAccountMismatch: readsAccountMismatch,
       sendsLiveBasis: sendsLiveBasis,
+      sendsLives: sendsLives,
       strategyPublicId: strategyPublicId,
     );
     return _invoke(

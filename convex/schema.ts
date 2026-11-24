@@ -504,6 +504,7 @@ export default defineSchema({
     message: v.optional(v.string()),
     expectedRevision: v.optional(v.number()),
     appliedRevision: v.optional(v.number()),
+    appliedLife: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_strategyId", ["strategyId"])
