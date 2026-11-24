@@ -354,6 +354,9 @@ final class LibraryStore {
 
   int get summariesRebuiltAtOpen => _summariesRebuiltAtOpen;
 
+  int rowsCountedFor(String strategyPublicId) =>
+      _strategies[digestOf(strategyPublicId)]?.rowsCounted ?? 0;
+
   bool get isOpen => _settle() is Done;
 
   StrategySummary? summaryOf(String strategyPublicId) => switch (_settle()) {
