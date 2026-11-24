@@ -473,6 +473,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             return false;
           }
         } else if (strategyOpen) {
+          navigator.popUntil((route) => route is! PopupRoute);
           // Already in the strategy view; swap strategies in place, exactly
           // like the quick switcher does.
           // An open that gave way to a newer one (or to a close) did not

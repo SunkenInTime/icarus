@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -14,6 +15,7 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
@@ -208,6 +210,46 @@ void main() {
         expect(strategies.opened, ['${recorded.name}:shared-id']);
       });
     }
+
+    testWidgets(
+        'a share link that opens a strategy over the open one closes a '
+        'dialog first, so nothing in it acts on the strategy being left',
+        (tester) async {
+      final strategies = _RecordingStrategies();
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+            isCloudWorkspaceAvailableProvider.overrideWithValue(true),
+            strategyProvider.overrideWith(() => strategies),
+          ],
+          child: ShadApp(
+            navigatorKey: appNavigatorKey,
+            navigatorObservers: [mouseNavigationRouteObserver],
+            builder: (context, child) {
+              container = ProviderScope.containerOf(context);
+              return MouseNavigation(child: child!);
+            },
+            home: const Scaffold(body: Text('library')),
+          ),
+        ),
+      );
+      strategies.show('other-id', StrategySource.local);
+      await tester.pump();
+      unawaited(showShadDialog<void>(
+        context: appNavigatorKey.currentContext!,
+        builder: (_) => const ShadDialog(child: Text('a dialog')),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('a dialog'), findsOneWidget);
+
+      container.read(sharedStrategyToOpenProvider.notifier).state = 'shared-id';
+      await tester.pumpAndSettle();
+
+      expect(find.text('a dialog'), findsNothing);
+      expect(strategies.opened, ['cloud:shared-id']);
+    });
 
     testWidgets('a back whose open gave way does not count as having moved',
         (tester) async {
