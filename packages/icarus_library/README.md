@@ -1804,7 +1804,10 @@ and `_judge` is the only place an outgoing revision is chosen.
   row, including work answered "nothing to do", goes
   only once that row is justified at the revision it names, with the content
   the user saw (or already holding what the op writes, so the server's answer
-  settles it). Otherwise it waits for the row's result (`AwaitingResult`).
+  settles it). Otherwise it waits for the row's result (`AwaitingResult`),
+  on the page a result last showed the row on, or the page the op was made on
+  when no result has shown it (a teammate may have moved it since the editor
+  drew it).
   It needs the user when a result of this session shows the row otherwise,
   when a result of its page no longer holds a row that results showed or this
   device added, or when its page is gone (`RowPageGone`). A solo session

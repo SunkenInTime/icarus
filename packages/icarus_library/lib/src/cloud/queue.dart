@@ -1734,10 +1734,12 @@ _Verdict _wholeBehindOwn(
   final shown = queue.shown;
   final seen = entry.authored;
   final known = _knownRow(queue, row);
+  final lastShownOn = _shownRow(shown, row)?.page;
   final page = switch ((row, known, entry.scope)) {
     (PageTarget(:final pagePublicId), _, _) => pagePublicId,
     (SettingsTarget(:final pagePublicId), _, _) => pagePublicId,
     (_, _KnownRow(:final page?), _) => page,
+    _ when lastShownOn != null => lastShownOn,
     (_, _, OnPage(:final pagePublicId)) => pagePublicId,
     (_, _, Moving(:final from)) => from,
     _ => null,
