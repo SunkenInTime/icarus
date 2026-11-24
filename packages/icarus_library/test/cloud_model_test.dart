@@ -36,7 +36,7 @@ final class Model {
   final inFlight = <(int, String, List<StrategyOp>, int?, int)>[];
   final held = <(String, List<StrategyOp>, int?)>[];
   Duration elapsed = Duration.zero;
-  late final Duration skew;
+  late Duration skew;
   final writtenAt = <String, int>{};
   final teammateWrote = <(Target, String), int>{};
   final refusedLate = <String>{};
@@ -255,33 +255,47 @@ final class Model {
   void checkNothingStalls() {
     if (!server.exists) return;
     final queue = client.queue;
+    List<AwaitingResult> awaitedIn(EntryView? view) =>
+        [
+          for (final hold in view?.holds ?? const <Hold>[])
+            if (hold is AwaitingResult) hold,
+        ]..sort(
+          (a, b) => (a.subject is PageListResult ? 0 : 1).compareTo(
+            b.subject is PageListResult ? 0 : 1,
+          ),
+        );
     for (final MapEntry(key: id, value: view) in entryViews(
       queue,
       clock,
     ).entries) {
       if (view.state is! Waiting) continue;
-      for (final hold in view.holds) {
-        if (hold is! AwaitingResult) continue;
-        var read = queue;
-        for (final base in resultsFor(hold.subject)) {
-          if (transition(
-                read,
-                BaseArrived(base, session: read.session.number),
-                now: clock,
-              )
-              case Stepped(:final queue)) {
-            read = queue;
+      final first = awaitedIn(view);
+      if (first.isEmpty) continue;
+      var read = queue;
+      var awaited = first;
+      for (var round = 0; round < 3 && awaited.isNotEmpty; round++) {
+        for (final hold in awaited) {
+          for (final base in resultsFor(hold.subject)) {
+            if (transition(
+                  read,
+                  BaseArrived(base, session: read.session.number),
+                  now: clock,
+                )
+                case Stepped(:final queue)) {
+              read = queue;
+            }
           }
         }
-        final after = entryViews(read, clock)[id];
-        if (after != null && after.holds.contains(hold)) {
-          throw StateError(
-            '$id waits for ${hold.subject}, and reading it from the server now '
-            'leaves it waiting (${after.state}, ${after.holds})',
-          );
-        }
-        count('waits for a result that a read would settle');
+        awaited = awaitedIn(entryViews(read, clock)[id]);
       }
+      if (awaited.isNotEmpty) {
+        throw StateError(
+          '$id waits for ${[for (final hold in first) hold.subject]}, and '
+          'three rounds of reading what it asks for leave it waiting for '
+          '${[for (final hold in awaited) hold.subject]}',
+        );
+      }
+      count('waits for a result that a read would settle', first.length);
     }
   }
 
@@ -1145,7 +1159,11 @@ final class Model {
           log.add('a quiet spell');
         }
       case 23:
-        deliverHeld();
+        if (random.nextInt(8) == 0) {
+          clockBack();
+        } else {
+          deliverHeld();
+        }
       case 17:
         userActs(draining: false);
       case 18:
@@ -1164,6 +1182,14 @@ final class Model {
           'connection',
         );
     }
+  }
+
+  void clockBack() {
+    final back = pick(const [Duration(seconds: 1), Duration(days: 1)]);
+    clock = clock.subtract(back);
+    skew += back;
+    count('backward clock steps');
+    log.add('the device clock moves back $back');
   }
 
   void drain() {
@@ -1252,6 +1278,7 @@ const minimums = {
   'held calls delivered': 200,
   'the device slept': 100,
   'calls the transport held 20 to 29 s': 100,
+  'backward clock steps': 50,
 };
 
 void main() {
@@ -1266,6 +1293,15 @@ void main() {
     () {
       runSeed(375, 150, folding: true);
       runSeed(375, 150, folding: false);
+    },
+  );
+
+  test(
+    'seed 7: after the device clock moves back a day, a retry waiting out its '
+    'backoff goes, so the queue drains',
+    () {
+      runSeed(7, 150, folding: true);
+      runSeed(7, 150, folding: false);
     },
   );
 
