@@ -81,7 +81,7 @@ Starts as: waiting, behind first (sameRow).
 | attempt 1 refused whole: unauthenticated | first: waiting; reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | first: waiting; standing editAccessLost |
 | attempt 1 refused whole: strategyDeleted | first: waiting; standing deletedOnServer |
-| attempt 1 refused whole: strategyReplaced | first: waiting; owes a read of the strategy |
+| attempt 1 refused whole: strategyReplaced | first: waiting, awaiting a result for the page list; x: waiting, behind first (sameRow), awaiting a result for the page list; owes a read of the strategy |
 | attempt 1 refused whole: uncheckedTooLate | first: waiting |
 | app restarted, same build | first: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; opens session 2 |
 | app restarted, new build | first: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; opens session 2 |
@@ -171,7 +171,7 @@ Starts as: sending in 1.
 | attempt 1 refused whole: unauthenticated | x: waiting; reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost |
 | attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer |
-| attempt 1 refused whole: strategyReplaced | x: waiting; owes a read of the strategy |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; owes a read of the strategy |
 | attempt 1 refused whole: uncheckedTooLate | x: waiting |
 | app restarted, same build | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; opens session 2 |
 | app restarted, new build | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; opens session 2 |
@@ -217,7 +217,7 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 
 | attempt 1 refused whole: unauthenticated | x: waiting; reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost |
 | attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer |
-| attempt 1 refused whole: strategyReplaced | x: waiting; owes a read of the strategy |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; owes a read of the strategy |
 | attempt 1 refused whole: uncheckedTooLate | x: waiting |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
@@ -264,7 +264,7 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z).
 | attempt 1 refused whole: unauthenticated | x: waiting; reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost |
 | attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer |
-| attempt 1 refused whole: strategyReplaced | x: waiting; owes a read of the strategy |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; owes a read of the strategy |
 | attempt 1 refused whole: uncheckedTooLate | x: waiting |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
@@ -427,7 +427,7 @@ Starts as: needs user: retries exhausted.
 | attempt 1 refused whole: unauthenticated | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing editAccessLost |
 | attempt 1 refused whole: strategyDeleted | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing deletedOnServer |
-| attempt 1 refused whole: strategyReplaced | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; owes a read of the strategy |
+| attempt 1 refused whole: strategyReplaced | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z, awaiting a result for the page list; owes a read of the strategy |
 | attempt 1 refused whole: uncheckedTooLate | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
@@ -602,7 +602,7 @@ Starts as: waiting.
 | attempt 1 refused whole: unauthenticated | reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | unchanged |
 | attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
-| attempt 1 refused whole: strategyReplaced | owes a read of the strategy |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; owes a read of the strategy |
 | attempt 1 refused whole: uncheckedTooLate | unchanged |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
@@ -633,7 +633,7 @@ Starts as: waiting.
 | attempt 1 refused whole: unauthenticated | reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
 | attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
-| attempt 1 refused whole: strategyReplaced | owes a read of the strategy |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; owes a read of the strategy |
 | attempt 1 refused whole: uncheckedTooLate | unchanged |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | standing good; opens session 2 |

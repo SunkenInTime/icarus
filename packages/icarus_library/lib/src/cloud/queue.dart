@@ -1108,10 +1108,14 @@ final class _Edit {
   Stepped done() => Stepped(build(), effects);
 
   void owe(ResultSubject subject) {
-    shown = switch (subject) {
-      PageResult(:final page) => shown.owingPage(page),
-      _ => shown.owingList(),
-    };
+    switch (subject) {
+      case PageResult(:final page):
+        shown = shown.owingPage(page);
+        change.pages.add(page);
+      case _:
+        shown = shown.owingList();
+        change.everything = true;
+    }
     order = ResultOrder(
       sequence: order.sequence,
       owed: {...order.owed, subject: sequence},

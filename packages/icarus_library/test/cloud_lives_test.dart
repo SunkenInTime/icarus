@@ -91,6 +91,10 @@ void main() {
       deliver(client, server, attempt);
       expect([for (final row in server.rows.rows) row.toJson()], before);
       expect(owedReads(client.queue), {const PageListResult()});
+      expect(client.view('move').holds, [
+        awaitingResult(const PageListResult()),
+      ]);
+      expect(client.view('move').sendable, isFalse);
       expect(
         setAside(client, headerReadOf(server.rows), StartedAt(early)),
         isA<StartedBeforeANewerResult>(),

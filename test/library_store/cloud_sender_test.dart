@@ -217,6 +217,57 @@ void main() {
       });
     });
 
+    group(
+        'a batch refused whole is not sent again until something has '
+        'changed: a read recorded, a backoff elapsed or the user\'s answer',
+        () {
+      final refusals = <String, (StoreBatchOutcome, List<String>)>{
+        'STRATEGY_REPLACED': (
+          const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+          ['send move-1', 'list', 'send move-1', 'page p1'],
+        ),
+        'ACCOUNT_MISMATCH': (
+          const StoreBatchAccountMismatch('refused'),
+          ['send move-1'],
+        ),
+        'UNCHECKED_OUTSIDE_WINDOW': (
+          const StoreBatchOutsideWindow('refused'),
+          ['send move-1', 'send move-1', 'page p1'],
+        ),
+        'CLIENT_UPGRADE_REQUIRED': (
+          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired),
+          ['send move-1'],
+        ),
+        'UNAUTHENTICATED': (
+          const StoreBatchRefusedWhole(BatchRefusal.unauthenticated),
+          ['send move-1'],
+        ),
+        'FORBIDDEN': (
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          ['send move-1', 'list', 'send move-1', 'page p1'],
+        ),
+        'NOT_FOUND': (
+          const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted),
+          ['send move-1'],
+        ),
+      };
+      for (final MapEntry(key: code, value: (refusal, log))
+          in refusals.entries) {
+        test(code, () {
+          inWorld((world) {
+            world.server.log.clear();
+            world.server.answerWith(strategyId, refusal);
+            world.commitMove(1);
+            world.settle(const Duration(minutes: 1));
+            expect(world.server.log, log);
+            if (refusal is StoreBatchOutsideWindow) {
+              expect(world.server.calls.last.unchecked, isEmpty);
+            }
+          });
+        });
+      }
+    });
+
     test(
         'an applied answer without a life is not read: the batch is lost, the '
         'move is sent again and lands, and its page is read to retire it', () {

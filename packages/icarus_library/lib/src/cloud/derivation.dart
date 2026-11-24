@@ -883,6 +883,7 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
       until = at;
     }
   }
+  if (queue.shown.listOwed) holds.add(const AwaitingResult(PageListResult()));
   final head = !holds.any((hold) => hold is BehindEntry);
   if (head && _waitsForItsLife(entry)) {
     return (EntryView(const NeedsUser(ChangedUnseen()), const []), null);

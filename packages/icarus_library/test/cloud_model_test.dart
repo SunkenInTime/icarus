@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -157,6 +158,8 @@ final class Model {
 
   final seenDigest = <String, String>{};
   final seenLife = <String, int>{};
+  final sentAs = <int, String>{};
+  String? refusedUnchanged;
   final history = <(Target, Version), String>{};
 
   void recordHistory() {
@@ -421,6 +424,26 @@ final class Model {
       }}',
     );
     if (result case Stepped(queue: final after, :final effects)) {
+      switch (event) {
+        case BatchRefused(refusal: BatchRefusal.unauthenticated):
+          refusedUnchanged = null;
+        case BatchRefused(
+              :final attempt,
+              refusal: BatchRefusal.editAccessRemoved,
+            )
+            when attempt <= before.strategy.accessConfirmedAt:
+          refusedUnchanged = null;
+        case BatchRefused(:final attempt):
+          refusedUnchanged = sentAs[attempt];
+        case BaseArrived() ||
+            UserAction() ||
+            AppRestarted() ||
+            ConnectionReturned() ||
+            EditAccessConfirmed():
+          refusedUnchanged = null;
+        case _:
+          break;
+      }
       checkRemovals(before, after, effects, event);
       checkLives(before, after, event);
       client.queue = after;
@@ -943,6 +966,18 @@ final class Model {
       'claim $ids as $owner',
     );
     final sent = result.effects.whereType<SendBatch>().single;
+    final form = jsonEncode([
+      for (final op in sent.ops) op.toJson(),
+      sent.lives,
+      sent.strategyLife,
+    ]);
+    if (form == refusedUnchanged) {
+      throw StateError(
+        'attempt ${sent.attempt} sent a batch refused whole again unchanged, '
+        'with nothing read, answered or reconnected since',
+      );
+    }
+    sentAs[sent.attempt] = form;
     int? oldest;
     for (final op in sent.ops) {
       inFlightLog[op.opId] = '${op.toJson()}';
