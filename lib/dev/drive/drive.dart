@@ -220,6 +220,9 @@ import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/services/image_file_name.dart' show strategyFolderPath;
+import 'package:icarus/services/strategy_folders.dart';
+import 'package:icarus/library_store/canvas_units.dart' show cloneStrategy;
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 // The driver alone swaps the platform's launcher; the app uses url_launcher.
@@ -792,6 +795,131 @@ Future<void> _tap(
   }
   await Future<void>.delayed(const Duration(milliseconds: 500));
   await _frames();
+}
+
+void _click(Offset at) {
+  final pointer = _pointer++;
+  final binding = GestureBinding.instance;
+  _addMouse(pointer, at);
+  binding.handlePointerEvent(PointerHoverEvent(
+    pointer: pointer,
+    kind: PointerDeviceKind.mouse,
+    position: at,
+  ));
+  binding.handlePointerEvent(PointerDownEvent(
+    pointer: pointer,
+    kind: PointerDeviceKind.mouse,
+    buttons: kPrimaryMouseButton,
+    position: at,
+  ));
+  binding.handlePointerEvent(PointerUpEvent(
+    pointer: pointer,
+    kind: PointerDeviceKind.mouse,
+    position: at,
+  ));
+}
+
+Future<void> _raceLeave(Map<String, dynamic> step) async {
+  final c = appProviderContainer;
+  final openedName = step['raceLeave'] as String;
+  final leftName = step['from'] as String;
+  final pageName = step['page'] as String;
+  final runs = (step['runs'] ?? 50) as int;
+  final pictures = (step['unusedPictures'] ?? 20) as int;
+  StrategyData named(String name) => const LocalLibrary()
+      .storedStrategies
+      .firstWhere((strategy) => strategy.name == name);
+  final left = named(leftName);
+  final opened = named(openedName);
+  final firstPageId = ([...left.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)))
+      .first
+      .id;
+  List<String> agentsOnFirstPage() => [
+        for (final agent in const LocalLibrary()
+            .storedStrategy(left.id)!
+            .pages
+            .firstWhere((page) => page.id == firstPageId)
+            .agentData)
+          agent.id,
+      ];
+  String ms(int micros) => (micros / 1000).toStringAsFixed(1);
+  var emptied = 0;
+  final windows = <int>[];
+  for (var run = 1; run <= runs; run++) {
+    final original =
+        cloneStrategy(const LocalLibrary().storedStrategy(left.id)!);
+    if (!await c.read(strategyProvider.notifier).loadFromHive(left.id)) {
+      throw StateError('$leftName did not open');
+    }
+    await _frames();
+    final before = agentsOnFirstPage();
+    final root = await strategyFoldersRoot();
+    final images = Directory(
+      path.join(strategyFolderPath(root.path, opened.id), 'images'),
+    )..createSync(recursive: true);
+    for (var i = 0; i < pictures; i++) {
+      File(path.join(images.path, 'race-unused-$run-$i.png'))
+          .writeAsBytesSync(List.filled(16384, run % 251));
+    }
+    await _tap(_point(step, 'switcherAt'));
+    final item = _centerOf((w) => _isText(w, openedName));
+    final page = _centerOf((w) => _isText(w, pageName));
+    final clock = Stopwatch();
+    int? cleared;
+    int? openedAt;
+    int? secondClick;
+    final subscriptions = [
+      c.listen(agentProvider, (_, next) {
+        if (next.isEmpty && cleared == null)
+          cleared = clock.elapsedMicroseconds;
+      }),
+      c.listen(strategyProvider.select((state) => state.strategyId), (_, next) {
+        if (next == opened.id) openedAt ??= clock.elapsedMicroseconds;
+      }),
+    ];
+    clock.start();
+    _click(item);
+    secondClick = clock.elapsedMicroseconds;
+    _click(page);
+    await _waitFor(
+      () =>
+          c.read(strategyProvider).strategyId == opened.id &&
+          !c.read(strategyPageSessionProvider).isApplyingPage,
+      30,
+    );
+    await Future<void>.delayed(const Duration(seconds: 1));
+    await _frames();
+    for (final subscription in subscriptions) {
+      subscription.close();
+    }
+    final after = agentsOnFirstPage();
+    final lost = before.isNotEmpty && after.isEmpty;
+    if (lost) emptied++;
+    if (!listEquals(before, after)) {
+      (await const LocalLibrary().savePageOnScreen(original)).orThrow();
+    }
+    final window = switch ((cleared, openedAt)) {
+      (final from?, final to?) => to - from,
+      _ => null,
+    };
+    if (window != null) windows.add(window);
+    _log(
+        'RACE run $run: ${lost ? 'the left page was saved empty' : 'the left page kept its ${before.length} agents'}; '
+        'canvas cleared ${cleared == null ? 'never' : '${ms(cleared!)} ms'} after the first click, '
+        'second click ${ms(secondClick)} ms after it, '
+        '$openedName published ${openedAt == null ? 'never' : '${ms(openedAt!)} ms'} after it; '
+        'window ${window == null ? 'not measured' : '${ms(window)} ms'}');
+  }
+  windows.sort();
+  _log('RACE summary: $runs runs, the left page saved empty $emptied times; '
+      'window median ${windows.isEmpty ? '-' : ms(windows[windows.length ~/ 2])} ms, '
+      'worst ${windows.isEmpty ? '-' : ms(windows.last)} ms');
+  if (step['expectEmptied'] case final int expected when expected != emptied) {
+    _failedSteps++;
+    _log('FAIL raceLeave: the left page was saved empty $emptied times, '
+        'expected $expected');
+  }
 }
 
 Future<void> _drag(
@@ -1946,6 +2074,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _frames();
     case 'mark':
       _marks[value as String] = Stopwatch()..start();
+    case 'raceLeave':
+      await _raceLeave(step);
     case 'watchPicture':
       _pictureWatches.add(
         _watchPicture(value as String, step['gone'] as String?),
