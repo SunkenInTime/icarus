@@ -94,13 +94,17 @@ type StrategyOp = {
 type TargetSnapshot = {
   revision: number;
   payload: unknown;
+  life?: number;
 };
+type Lives = { sends: boolean; expected: number | undefined };
 type OperationResult = {
   status: "ack" | "reject" | "failed";
   reason?: string;
   appliedRevision?: number;
+  life?: number;
   latestRevision?: number;
   latestPayload?: unknown;
+  latestLife?: number;
   code?: string;
   rawCode?: string;
   message?: string;
@@ -496,6 +500,7 @@ function setIfChanged(
 function replayedReason(
   reason: string | undefined,
   op: StrategyOp,
+  sendsLives: boolean,
 ): string | undefined {
   if (
     op.merge === undefined &&
@@ -503,7 +508,17 @@ function replayedReason(
   ) {
     return "revision_mismatch";
   }
+  if (reason === "row_replaced" && !sendsLives) return "revision_mismatch";
   return reason;
+}
+
+function lifeMismatch(lives: Lives, life: number | undefined): boolean {
+  return (
+    lives.sends &&
+    lives.expected !== undefined &&
+    life !== undefined &&
+    life !== lives.expected
+  );
 }
 
 /// Whether an offline merge that names its place collides on it: the row
@@ -697,7 +712,11 @@ async function getTargetSnapshot(
     op.entityType === "strategy" ||
     (op.entityType === "page" && op.kind !== "patch")
   ) {
-    return { revision: strategy.revision, payload: strategyPayload(strategy) };
+    return {
+      revision: strategy.revision,
+      payload: strategyPayload(strategy),
+      life: strategy.createdAt,
+    };
   }
   const publicId = op.entityPublicId ?? op.pagePublicId;
   if (publicId === undefined) return null;
@@ -706,7 +725,11 @@ async function getTargetSnapshot(
     if (page === null || page.strategyId !== strategy._id || isTrashed(page)) {
       return null;
     }
-    return { revision: page.revision, payload: pagePayload(page) };
+    return {
+      revision: page.revision,
+      payload: pagePayload(page),
+      life: page.createdAt,
+    };
   }
   if (op.entityType === "pageContent") {
     const page = await getPageByPublicIdOrNull(ctx, publicId);
@@ -717,6 +740,7 @@ async function getTargetSnapshot(
     return {
       revision: content.revision,
       payload: { settings: content.settings ?? null },
+      life: content.createdAt,
     };
   }
   // Content on a page in the trash is not the server's current copy.
@@ -729,13 +753,21 @@ async function getTargetSnapshot(
     ) {
       return null;
     }
-    return { revision: element.revision, payload: element.payload };
+    return {
+      revision: element.revision,
+      payload: element.payload,
+      life: element.createdAt,
+    };
   }
   const lineup = await getLineupByPublicIdOrNull(ctx, strategy._id, publicId);
   if (lineup === null || !(await contentPageIsLive(ctx, lineup.pageId))) {
     return null;
   }
-  return { revision: lineup.revision, payload: lineup.payload };
+  return {
+    revision: lineup.revision,
+    payload: lineup.payload,
+    life: lineup.createdAt,
+  };
 }
 
 function rejected(
@@ -748,6 +780,7 @@ function rejected(
     reason,
     latestRevision: snapshot?.revision,
     latestPayload: snapshot?.payload,
+    latestLife: snapshot?.life,
     eventPageId,
   };
 }
@@ -795,7 +828,10 @@ function toPublicResult(
   result: OperationResult,
   acceptsPictureIds: boolean,
   elementFieldLevel: number | undefined,
+  sendsLives: boolean,
 ): PublicOperationResult {
+  const life = sendsLives ? result.life : undefined;
+  const latestLife = sendsLives ? result.latestLife : undefined;
   if (result.status === "failed") {
     return {
       opId: op.opId,
@@ -811,7 +847,10 @@ function toPublicResult(
       status: "noop",
       ...(result.appliedRevision === undefined
         ? {}
-        : { currentRevision: result.appliedRevision }),
+        : {
+            currentRevision: result.appliedRevision,
+            ...(life === undefined ? {} : { currentLife: life }),
+          }),
     };
   }
   if (result.status === "ack") {
@@ -822,6 +861,7 @@ function toPublicResult(
       opId: op.opId,
       status: "applied",
       appliedRevision: result.appliedRevision,
+      ...(life === undefined ? {} : { appliedLife: life }),
     };
   }
   const reason = result.reason ?? "not_found";
@@ -838,6 +878,7 @@ function toPublicResult(
           current: {
             type: currentTargetForOp(op),
             revision: result.latestRevision,
+            ...(latestLife === undefined ? {} : { life: latestLife }),
             value:
               op.entityType === "element"
                 ? elementPayloadForClient(
@@ -961,6 +1002,7 @@ async function applyPageOp(
   op: StrategyOp,
   userId: Id<"users">,
   copyBudget: CopyBudget,
+  lives: Lives,
 ): Promise<{ strategy: Doc<"strategies">; result: OperationResult }> {
   const publicId = op.entityPublicId ?? op.pagePublicId;
   if (publicId === undefined) {
@@ -1176,6 +1218,21 @@ async function applyPageOp(
   if (op.kind !== "patch") {
     throw errorWithCode("UNSUPPORTED_OP", "Unsupported page op");
   }
+  if (lifeMismatch(lives, existing.createdAt)) {
+    return {
+      strategy,
+      result: rejected(
+        "row_replaced",
+        {
+          revision: existing.revision,
+          payload: pagePayload(existing),
+          life: existing.createdAt,
+        },
+        existing._id,
+      ),
+    };
+  }
+  const pageLife = { life: existing.createdAt, latestLife: existing.createdAt };
   const payload = assertPagePayload(op.payload);
   if (payload.settings !== undefined) {
     throw errorWithCode(
@@ -1199,17 +1256,23 @@ async function applyPageOp(
     setIfChanged(patch, "isAttack", existing.isAttack, payload.isAttack);
   }
   if (Object.keys(patch).length === 0) {
-    return { strategy, result: noop(existing.revision, existing._id) };
+    return {
+      strategy,
+      result: { ...noop(existing.revision, existing._id), ...pageLife },
+    };
   }
   const mismatch = requireExpectedRevision(op, existing.revision);
   if (mismatch !== null) {
     return {
       strategy,
-      result: rejected(
-        mismatch.reason,
-        { revision: existing.revision, payload: pagePayload(existing) },
-        existing._id,
-      ),
+      result: {
+        ...rejected(
+          mismatch.reason,
+          { revision: existing.revision, payload: pagePayload(existing) },
+          existing._id,
+        ),
+        ...pageLife,
+      },
     };
   }
   const revision = existing.revision + 1;
@@ -1224,6 +1287,7 @@ async function applyPageOp(
       status: "ack",
       appliedRevision: revision,
       eventPageId: existing._id,
+      ...pageLife,
     },
   };
 }
@@ -1232,6 +1296,7 @@ async function applyPageContentOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
   op: StrategyOp,
+  lives: Lives,
 ): Promise<OperationResult> {
   if (op.kind !== "patch") {
     throw errorWithCode("UNSUPPORTED_OP", "Unsupported page content op");
@@ -1253,19 +1318,21 @@ async function applyPageContentOp(
     );
   }
   const content = await getPageContent(ctx, page._id);
+  const snapshot = {
+    revision: content.revision,
+    payload: { settings: content.settings ?? null },
+    life: content.createdAt,
+  };
+  if (lifeMismatch(lives, content.createdAt)) {
+    return rejected("row_replaced", snapshot, page._id);
+  }
+  const contentLife = { life: content.createdAt };
   if (valuesEqual(content.settings, payload.settings)) {
-    return noop(content.revision, page._id);
+    return { ...noop(content.revision, page._id), ...contentLife };
   }
   const mismatch = requireExpectedRevision(op, content.revision);
   if (mismatch !== null) {
-    return rejected(
-      mismatch.reason,
-      {
-        revision: content.revision,
-        payload: { settings: content.settings ?? null },
-      },
-      page._id,
-    );
+    return { ...rejected(mismatch.reason, snapshot, page._id), ...contentLife };
   }
   const revision = content.revision + 1;
   await ctx.db.patch(content._id, {
@@ -1273,7 +1340,12 @@ async function applyPageContentOp(
     revision,
     updatedAt: Date.now(),
   });
-  return { status: "ack", appliedRevision: revision, eventPageId: page._id };
+  return {
+    status: "ack",
+    appliedRevision: revision,
+    eventPageId: page._id,
+    ...contentLife,
+  };
 }
 
 /// [next] keeping what a write can't take from [current] by leaving it out.
@@ -1294,12 +1366,23 @@ async function applyElementOp(
   strategy: Doc<"strategies">,
   op: StrategyOp,
   checkTrashedPageDeletes: boolean,
+  lives: Lives,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
     throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
   }
   const existing = await getElementByPublicIdOrNull(ctx, publicId);
+  const replaced = await rowReplaced(ctx, strategy, lives, existing);
+  if (replaced !== null) return replaced;
+  if (
+    lives.sends &&
+    op.kind === "add" &&
+    op.expectedRevision !== undefined &&
+    existing === null
+  ) {
+    return rejected("not_found");
+  }
 
   if (op.kind === "add") {
     if (op.pagePublicId === undefined) {
@@ -1369,7 +1452,12 @@ async function applyElementOp(
       createdAt: now,
       updatedAt: now,
     });
-    return { status: "ack", appliedRevision: 1, eventPageId: page._id };
+    return {
+      status: "ack",
+      appliedRevision: 1,
+      eventPageId: page._id,
+      life: now,
+    };
   }
 
   if (op.kind === "delete") {
@@ -1524,6 +1612,7 @@ async function applyLineupOp(
   strategy: Doc<"strategies">,
   op: StrategyOp,
   checkTrashedPageDeletes: boolean,
+  lives: Lives,
 ): Promise<OperationResult> {
   const publicId = op.entityPublicId;
   if (publicId === undefined) {
@@ -1534,6 +1623,16 @@ async function applyLineupOp(
     strategy._id,
     publicId,
   );
+  const replaced = await rowReplaced(ctx, strategy, lives, existing);
+  if (replaced !== null) return replaced;
+  if (
+    lives.sends &&
+    op.kind === "add" &&
+    op.expectedRevision !== undefined &&
+    existing === null
+  ) {
+    return rejected("not_found");
+  }
 
   if (op.kind === "add") {
     if (op.pagePublicId === undefined) {
@@ -1598,7 +1697,12 @@ async function applyLineupOp(
       createdAt: now,
       updatedAt: now,
     });
-    return { status: "ack", appliedRevision: 1, eventPageId: page._id };
+    return {
+      status: "ack",
+      appliedRevision: 1,
+      eventPageId: page._id,
+      life: now,
+    };
   }
 
   if (op.kind === "delete") {
@@ -1781,73 +1885,25 @@ async function elementOpChangedAgents(
   return keyOf(rowBefore) !== keyOf(rowAfter);
 }
 
-async function lifeOfTarget(
+async function rowReplaced(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
-  op: StrategyOp,
-  row: Doc<"elements"> | Doc<"lineups"> | null,
-): Promise<number | undefined> {
-  const target = currentTargetForOp(op);
-  if (target === "strategy") return strategy.createdAt;
-  if (target === "element" || target === "lineup") return row?.createdAt;
-  const page =
-    op.pagePublicId === undefined
-      ? null
-      : await getPageByPublicIdOrNull(ctx, op.pagePublicId);
-  if (page === null || page.strategyId !== strategy._id) return undefined;
-  if (target === "page") return page.createdAt;
-  const content = await ctx.db
-    .query("pageContents")
-    .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-    .first();
-  return content?.createdAt;
-}
-
-async function lifeRefusal(
-  ctx: MutationCtx,
-  strategy: Doc<"strategies">,
-  op: StrategyOp,
-  expected: number,
-  life: number | undefined,
+  lives: Lives,
   row: Doc<"elements"> | Doc<"lineups"> | null,
 ): Promise<OperationResult | null> {
-  if (life !== undefined && life !== expected) {
-    return rejected(
-      "row_replaced",
-      await getTargetSnapshot(ctx, strategy, op),
-      row?.pageId,
-    );
-  }
   if (
-    life === undefined &&
-    op.kind === "add" &&
-    op.expectedRevision !== undefined &&
-    (op.entityType === "element" || op.entityType === "lineup")
+    row === null ||
+    row.strategyId !== strategy._id ||
+    !lifeMismatch(lives, row.createdAt) ||
+    !(await contentPageIsLive(ctx, row.pageId))
   ) {
-    return rejected("not_found");
+    return null;
   }
-  return null;
-}
-
-function withLife(
-  result: PublicOperationResult,
-  life: number | undefined,
-): PublicOperationResult {
-  if (life === undefined) return result;
-  switch (result.status) {
-    case "applied":
-      return { ...result, appliedLife: life };
-    case "noop":
-      return result.currentRevision === undefined
-        ? result
-        : { ...result, currentLife: life };
-    case "rejected":
-      return result.current === undefined
-        ? result
-        : { ...result, current: { ...result.current, life } };
-    case "failed":
-      return result;
-  }
+  return rejected(
+    "row_replaced",
+    { revision: row.revision, payload: row.payload, life: row.createdAt },
+    row.pageId,
+  );
 }
 
 async function contentRowForOp(
@@ -2078,31 +2134,26 @@ export const applyBatch = mutation({
             : existingEvent.status === "rejected"
               ? {
                   status: "reject",
-                  reason: replayedReason(existingEvent.reason, op),
+                  reason: replayedReason(
+                    existingEvent.reason,
+                    op,
+                    args.sendsLives === true,
+                  ),
                   latestRevision: latest?.revision,
                   latestPayload: latest?.payload,
+                  latestLife: latest?.life,
                 }
-              : noop(existingEvent.appliedRevision);
-        const replayedPlain = toPublicResult(
+              : {
+                  ...noop(existingEvent.appliedRevision),
+                  life: existingEvent.appliedLife,
+                };
+        const replayed = toPublicResult(
           op,
           replayResult,
           args.acceptsPictureIds === true,
           args.elementFieldLevel,
+          args.sendsLives === true,
         );
-        const replayed =
-          args.sendsLives !== true
-            ? replayedPlain
-            : replayedPlain.status === "noop"
-              ? withLife(replayedPlain, existingEvent.appliedLife)
-              : withLife(
-                  replayedPlain,
-                  await lifeOfTarget(
-                    ctx,
-                    strategy,
-                    op,
-                    await contentRowForOp(ctx, strategy, op),
-                  ),
-                );
         results.push(
           replayed.status === "noop" &&
             existingEvent.status === "applied" &&
@@ -2130,32 +2181,29 @@ export const applyBatch = mutation({
       }
 
       const rowBefore = await contentRowForOp(ctx, strategy, op);
-      const lifeBefore =
-        args.sendsLives === true
-          ? await lifeOfTarget(ctx, strategy, op, rowBefore)
-          : undefined;
-      const refusedLife =
-        args.sendsLives !== true || rawOp.expectedLife === undefined
-          ? null
-          : await lifeRefusal(
-              ctx,
-              strategy,
-              op,
-              rawOp.expectedLife,
-              lifeBefore,
-              rowBefore,
-            );
+      const lives: Lives = {
+        sends: args.sendsLives === true,
+        expected: rawOp.expectedLife,
+      };
+      const { expectedLife: _named, ...sizedOp } = rawOp;
 
       let result: OperationResult;
-      if (cloudOperationExceedsPolicy(rawOp)) {
+      if (cloudOperationExceedsPolicy(sizedOp)) {
         result = {
           status: "failed",
           code: "INVALID_PAYLOAD",
           rawCode: "INVALID_PAYLOAD",
           message: CLOUD_OPERATION_TOO_LARGE_MESSAGE,
         };
-      } else if (refusedLife !== null) {
-        result = refusedLife;
+      } else if (
+        targetsStrategyRevision &&
+        lifeMismatch(lives, strategy.createdAt)
+      ) {
+        result = rejected("row_replaced", {
+          revision: strategy.revision,
+          payload: strategyPayload(strategy),
+          life: strategy.createdAt,
+        });
       } else {
         try {
           if (op.entityType === "strategy") {
@@ -2169,17 +2217,19 @@ export const applyBatch = mutation({
               op,
               user._id,
               copyBudget,
+              lives,
             );
             strategy = applied.strategy;
             result = applied.result;
           } else if (op.entityType === "pageContent") {
-            result = await applyPageContentOp(ctx, strategy, op);
+            result = await applyPageContentOp(ctx, strategy, op, lives);
           } else if (op.entityType === "element") {
             result = await applyElementOp(
               ctx,
               strategy,
               op,
               args.checkTrashedPageDeletes === true,
+              lives,
             );
           } else {
             result = await applyLineupOp(
@@ -2187,6 +2237,7 @@ export const applyBatch = mutation({
               strategy,
               op,
               args.checkTrashedPageDeletes === true,
+              lives,
             );
           }
           if (
@@ -2236,23 +2287,25 @@ export const applyBatch = mutation({
         acceptedStrategyBatchBaseRevision = originalExpectedRevision;
       }
 
-      const plainResult = toPublicResult(
+      const publicResult = toPublicResult(
         op,
-        result,
+        {
+          ...result,
+          life:
+            result.life ??
+            (targetsStrategyRevision
+              ? strategy.createdAt
+              : rowBefore?.createdAt),
+          latestLife:
+            result.latestLife ??
+            (targetsStrategyRevision
+              ? strategy.createdAt
+              : rowBefore?.createdAt),
+        },
         args.acceptsPictureIds === true,
         args.elementFieldLevel,
+        lives.sends,
       );
-      const lifeAfter =
-        args.sendsLives !== true
-          ? undefined
-          : (lifeBefore ??
-            (await lifeOfTarget(
-              ctx,
-              strategy,
-              op,
-              await contentRowForOp(ctx, strategy, op),
-            )));
-      const publicResult = withLife(plainResult, lifeAfter);
 
       await ctx.db.insert("operationEvents", {
         strategyId: strategy._id,

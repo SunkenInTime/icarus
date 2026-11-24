@@ -280,13 +280,40 @@ test("an opt-in can name an argument inside an op", () => {
       returns: reason("gone", "field_conflict"),
     },
   };
-  const optIn = { function: "ops:apply", path: "result.results[].reason", sentOnlyWith: ["args.ops[]<type=a.patch>.merge"] };
+  const optIn = {
+    function: "ops:apply",
+    path: "result.results[].reason",
+    literal: "field_conflict",
+    sentOnlyWith: ["args.ops[]<type=a.patch>.merge"],
+  };
   const { valid, problems } = checkOptIns([optIn], spec(after));
   assert.deepEqual(problems, []);
   const found = compareSpecs(spec(before), spec(after), strict);
   assert.equal(found.length, 1);
   const { hit } = applyOptIns(found, valid, spec(before));
   assert.deepEqual(hit, []);
+});
+
+test("an opt-in for a new value names that value: the next new value at the same path is still reported", () => {
+  const reason = (...values) => object({ results: array(object({ reason: union(...values.map(literal)) })) });
+  const before = { "ops.js:apply": { args: object({}), returns: reason("gone") } };
+  const after = {
+    "ops.js:apply": {
+      args: object({ lives: field(boolean, true) }),
+      returns: reason("gone", "row_replaced", "later"),
+    },
+  };
+  const found = compareSpecs(spec(before), spec(after), strict);
+  assert.equal(found.length, 2);
+  const byPath = { function: "ops:apply", path: "result.results[].reason", sentOnlyWith: ["args.lives"] };
+  assert.equal(applyOptIns(found, [byPath], spec(before)).hit.length, 2);
+  const byValue = { ...byPath, literal: "row_replaced" };
+  const { hit, covered } = applyOptIns(found, [byValue], spec(before));
+  assert.deepEqual(
+    hit.map((issue) => issue.value),
+    ["later"],
+  );
+  assert.equal(covered.length, 1);
 });
 
 test("bad opt-in declarations are reported and cover nothing", () => {

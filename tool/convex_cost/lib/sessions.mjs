@@ -888,6 +888,104 @@ export const SESSIONS = {
     },
   },
 
+  storeLivesReads: {
+    title: "An op that names its row's life reads nothing more",
+    about:
+      "One op of each kind (an element and a lineup group added, patched and deleted, a page's settings and name " +
+      "patched, the strategy renamed, a page added and reordered), sent once without sendsLives and once with it " +
+      "and the life of the row whose revision the op checks, on two strategies made alike. The server takes each " +
+      "row's life from the row its apply already reads, so each op with lives reads the same documents as without; " +
+      "the run fails if any reads more.",
+    world: "team",
+    async run({ env, world, rng }) {
+      const coach = world.coach;
+      const make = async () => {
+        const strategy = await createStrategy(coach, rng, { name: "Lives", pageCount: 1 });
+        const list = await namedPageList(coach, strategy.publicId);
+        const page = await namedPage(coach, strategy.publicId, strategy.pages[0]);
+        return {
+          ...strategy,
+          strategyLife: list.header.createdAt,
+          pageLife: page.page.createdAt,
+          contentLife: page.content.createdAt,
+        };
+      };
+      const plain = await make();
+      const opted = await make();
+      const steps = (strategy, lives) => {
+        const page = strategy.pages[0];
+        const element = `${strategy.publicId}-e`;
+        const group = `${strategy.publicId}-g`;
+        const lineupPayload = {
+          kind: "lineups",
+          payloadVersion: 1,
+          data: {
+            id: group,
+            origins: [{ id: "o", agent: { id: "agent-o", type: "sova", position: { dx: 0, dy: 0 }, lineUpID: "o" } }],
+            landings: [{ id: "l", ability: { id: "ability-l", position: { dx: 0, dy: 0 }, lineUpID: "l" } }],
+            links: [{ id: group, originId: "o", landingId: "l", name: "", youtubeLink: "", notes: "", images: [] }],
+          },
+        };
+        const agent = (dx) => ({ kind: "agent", payloadVersion: 1, data: { id: element, type: "jett", position: { dx, dy: 0 } } });
+        const life = (value) => (lives && value !== undefined ? { expectedLife: value } : {});
+        return [
+          (known) => ({ opId: rng.uuid(), type: "element.add", elementPublicId: element, pagePublicId: page, payload: agent(0), sortIndex: 0 }),
+          (known) => ({ opId: rng.uuid(), type: "element.patch", elementPublicId: element, payload: agent(40), sortIndex: 0, expectedElementRevision: 1, ...life(known.element) }),
+          (known) => ({ opId: rng.uuid(), type: "lineup.add", lineupPublicId: group, pagePublicId: page, payload: lineupPayload, sortIndex: 1 }),
+          (known) => ({ opId: rng.uuid(), type: "lineup.patch", lineupPublicId: group, payload: lineupPayload, sortIndex: 2, expectedLineupRevision: 1, ...life(known.group) }),
+          (known) => ({ opId: rng.uuid(), type: "pageContent.patch", pagePublicId: page, settings: { agentSize: 2, abilitySize: 1, useNeutralTeamColors: false }, expectedPageContentRevision: 1, ...life(strategy.contentLife) }),
+          (known) => ({ opId: rng.uuid(), type: "page.patch", pagePublicId: page, payload: { name: "Renamed" }, expectedPageRevision: 1, ...life(strategy.pageLife) }),
+          (known) => ({ opId: rng.uuid(), type: "strategy.patch", payload: { name: "Renamed" }, expectedStrategyRevision: known.strategyRevision, ...life(strategy.strategyLife) }),
+          (known) => ({ opId: rng.uuid(), type: "page.add", pagePublicId: `${strategy.publicId}-p2`, payload: { name: "Page 2", isAttack: true }, sortIndex: 1, expectedStrategyRevision: known.strategyRevision + 1, ...life(strategy.strategyLife) }),
+          (known) => ({ opId: rng.uuid(), type: "page.reorder", pagePublicId: `${strategy.publicId}-p2`, sortIndex: 0, expectedStrategyRevision: known.strategyRevision + 2, ...life(strategy.strategyLife) }),
+          (known) => ({ opId: rng.uuid(), type: "element.delete", elementPublicId: element, pagePublicId: page, expectedElementRevision: 2, ...life(known.element) }),
+          (known) => ({ opId: rng.uuid(), type: "lineup.delete", lineupPublicId: group, pagePublicId: page, expectedLineupRevision: 2, ...life(known.group) }),
+        ];
+      };
+      const run = async (strategy, lives) => {
+        const known = {
+          strategyRevision: (await coach.query("strategy:getShell", { strategyPublicId: strategy.publicId })).header.revision,
+        };
+        const reads = [];
+        const clientId = rng.uuid();
+        for (const step of steps(strategy, lives)) {
+          const op = step(known);
+          let results;
+          const measured = await measure(env.logs, env.http, async () => {
+            results = await coach.applyBatch(strategy.publicId, clientId, [op], { sendsLives: lives });
+          });
+          if (op.type === "element.add") known.element = results[0].appliedLife;
+          if (op.type === "lineup.add") known.group = results[0].appliedLife;
+          const batch = summarize(measured.entries).byFunction.get("ops:applyBatch");
+          reads.push({ type: op.type, documents: batch?.readDocuments ?? 0, bytes: batch?.readBytes ?? 0 });
+        }
+        return reads;
+      };
+      const without = await run(plain, false);
+      const withLives = await run(opted, true);
+      const extra = withLives.map((step, index) => step.documents - without[index].documents);
+      const worse = withLives.filter((_, index) => extra[index] > 0);
+      if (worse.length > 0) {
+        throw new Error(
+          `ops with lives read more documents than without: ${worse
+            .map((step, index) => `${step.type} +${extra[withLives.indexOf(step)]}`)
+            .join(", ")}`,
+        );
+      }
+      return {
+        summary: summarize([]),
+        notes: withLives.map(
+          (step, index) => `${step.type}: ${step.documents} documents with lives, ${without[index].documents} without`,
+        ),
+        metrics: {
+          documentsReadWithLives: withLives.reduce((sum, step) => sum + step.documents, 0),
+          documentsReadWithout: without.reduce((sum, step) => sum + step.documents, 0),
+          extraDocumentsRead: extra.reduce((sum, value) => sum + value, 0),
+        },
+      };
+    },
+  },
+
   storeSoloSessionRetire: {
     title: "Edit alone with no editor open, sent and retired by the store's sender",
     about:

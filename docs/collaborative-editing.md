@@ -116,10 +116,21 @@ before it looks at the revision, and a put-back whose row is gone as
 `not_found` instead of adding it again. Its answers name the life of the row
 they belong to (`appliedLife`, `currentLife`, and `life` on a refusal's
 `current`), and so does the receipt it keeps for the op id, which a resend
-replays. An op that names a page only as a place, to add an item onto or move
-one to, carries no life for that page, so an item can still land on a page
-re-created under the same id. Clients that do not set `sendsLives` send nothing
-new and are answered as before; an `expectedLife` without it is ignored.
+replays. A page in the trash meets the trash first, as it does today, so a
+`row_replaced` refusal always carries the row as it is now. In a batch that
+sets `sendsLives`, a put-back whose row is gone is `not_found` whether or not
+the op names a life, and `expectedLife` does not count toward an op's size
+limit. A replayed refusal keeps the reason it was given, except that a caller
+that does not set `sendsLives` is told `revision_mismatch` instead of
+`row_replaced`, a reason it knows; the shipped-clients check cannot see
+replays, so a test in `convex/rowLives.test.ts` guards that.
+
+Known limits: an op that names a page only as a place, to add an item onto or
+move one to, carries no life for that page, so an item can still land on a page
+re-created under the same id. Two rows created under one id within the same
+millisecond share a life; no client can delete and re-create a row that fast.
+Clients that do not set `sendsLives` send nothing new and are answered as
+before; an `expectedLife` without it is ignored.
 
 ## Which fields move together
 

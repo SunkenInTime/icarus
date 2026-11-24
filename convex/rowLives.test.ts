@@ -7,8 +7,13 @@ import { makeFunctionReference } from "convex/server";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
 import { markAssetReferencesReady } from "./lib/assetReferences";
-import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
+import {
+  CURRENT_CLOUD_PROTOCOL_VERSION,
+  MAX_CLOUD_OPERATION_BYTES,
+  serializedConvexValueUtf8Bytes,
+} from "./lib/cloudProtocol";
 import schema from "./schema";
+import { oneLineupPayload } from "./testContent.helpers";
 import { modules } from "./test.setup";
 
 const ensureCurrentUser = makeFunctionReference<"mutation">(
@@ -385,5 +390,380 @@ describe("a client that sends no lives sees nothing new", () => {
     expect(plain.answers).toEqual(withoutLives(opted.answers));
     expect(plain.receipts).toEqual(withoutLives(opted.receipts));
     expect(withoutLives(plain.element)).toEqual(withoutLives(opted.element));
+  });
+});
+
+const shippedReasons = [
+  "already_exists",
+  "deleted",
+  "element_strategy_mismatch",
+  "lineup_strategy_mismatch",
+  "missing_expected_revision",
+  "not_found",
+  "page_strategy_mismatch",
+  "revision_mismatch",
+  "field_conflict",
+  "merge_invalid",
+];
+
+function expectShippedContract(answers: Result[]) {
+  for (const answer of answers) {
+    expect(JSON.stringify(answer)).not.toMatch(/[Ll]ife/);
+    if (answer.status === "rejected") {
+      expect(shippedReasons).toContain(answer.reason);
+    }
+  }
+}
+
+function lineupAdd(opId: string, id: string): Op {
+  return {
+    opId,
+    type: "lineup.add",
+    lineupPublicId: id,
+    pagePublicId,
+    payload: oneLineupPayload(id),
+    sortIndex: 0,
+  };
+}
+
+describe("a client that sends no lives stays inside the contract it shipped with", () => {
+  test("a sequence over every row kind, with a stale patch, a failed op and a replay of an opted-in refusal, answers only in fields and reasons shipped clients know", async () => {
+    const { t, me } = await replacedElement();
+    const [refused] = await send(me, "me", [move("refused-once", 1, start)], true);
+    expect(refused!.reason).toBe("row_replaced");
+    const answers: Result[] = [];
+    const plain = async (ops: Op[]) => {
+      answers.push(...(await send(me, "me", ops)));
+    };
+    await plain([
+      {
+        opId: "rename",
+        type: "strategy.patch",
+        payload: { name: "Renamed" },
+        expectedStrategyRevision: 0,
+      },
+    ]);
+    await plain([
+      {
+        opId: "page-2",
+        type: "page.add",
+        pagePublicId: "page-2",
+        payload: { name: "Page 2", isAttack: true },
+        sortIndex: 1,
+        expectedStrategyRevision: 1,
+      },
+    ]);
+    await plain([
+      {
+        opId: "page-rename",
+        type: "page.patch",
+        pagePublicId: "page-2",
+        payload: { name: "Two" },
+        expectedPageRevision: 1,
+      },
+    ]);
+    await plain([
+      {
+        opId: "settings",
+        type: "pageContent.patch",
+        pagePublicId: "page-2",
+        settings: { agentSize: 2, abilitySize: 1, useNeutralTeamColors: false },
+        expectedPageContentRevision: 1,
+      },
+    ]);
+    await plain([
+      {
+        opId: "page-reorder",
+        type: "page.reorder",
+        pagePublicId: "page-2",
+        sortIndex: 0,
+        expectedStrategyRevision: 2,
+      },
+    ]);
+    await plain([move("stale", 1)]);
+    await plain([
+      {
+        opId: "wrong-kind",
+        type: "element.patch",
+        elementPublicId: "e1",
+        payload: { kind: "text", payloadVersion: 1, data: { id: "e1" } },
+        sortIndex: 0,
+        expectedElementRevision: 1,
+      },
+    ]);
+    await plain([lineupAdd("lineup-add", "g1")]);
+    await plain([
+      {
+        opId: "lineup-delete",
+        type: "lineup.delete",
+        lineupPublicId: "g1",
+        pagePublicId,
+        expectedLineupRevision: 1,
+      },
+    ]);
+    await plain([remove("plain-delete", 1)]);
+    await plain([move("refused-once", 1, start)]);
+    const statuses = answers.map((answer) => answer.status);
+    expect(statuses).toContain("rejected");
+    expect(statuses).toContain("failed");
+    expect(statuses).toContain("applied");
+    const replayed = answers[answers.length - 1]!;
+    expect(replayed).toMatchObject({
+      opId: "refused-once",
+      status: "rejected",
+      reason: "revision_mismatch",
+    });
+    expectShippedContract(answers);
+    const receipts = await t.run(async (ctx) =>
+      (await ctx.db.query("operationEvents").collect()).filter(
+        (event) => event.opId === "refused-once",
+      ),
+    );
+    expect(receipts).toHaveLength(1);
+  });
+});
+
+describe("an op id sent again", () => {
+  test("after its row's id was reused, an op that carried a life replays the revision and life it landed on, leaves the replacement alone and writes no second receipt", async () => {
+    const { t, me, teammate } = await createHarness();
+    await send(me, "me", [add("add-1")], true);
+    const [moved] = await send(me, "me", [move("move-1", 1, start)], true);
+    expect(moved).toMatchObject({ appliedRevision: 2, appliedLife: start });
+    await send(teammate, "teammate", [remove("teammate-delete", 2)]);
+    await purge(t);
+    await send(teammate, "teammate", [add("teammate-add", { rotation: 135 })]);
+    const replacement = await element(t);
+    const [again] = await send(me, "me", [move("move-1", 1, start)], true);
+    expect(again).toEqual({
+      opId: "move-1",
+      status: "noop",
+      currentRevision: 2,
+      currentLife: start,
+      wasApplied: true,
+    });
+    expect(await element(t)).toEqual(replacement);
+    const receipts = await t.run(async (ctx) =>
+      (await ctx.db.query("operationEvents").collect()).filter(
+        (event) => event.opId === "move-1",
+      ),
+    );
+    expect(receipts).toHaveLength(1);
+  });
+});
+
+describe("each op checks the life of the row whose revision it checks", () => {
+  test("with a strategy, its page and the page's settings created at three different times, a strategy patch, a page patch and a settings patch each accept only their own row's life", async () => {
+    const { t, me } = await createHarness();
+    vi.setSystemTime(start + 1000);
+    await send(me, "me", [
+      {
+        opId: "page-2",
+        type: "page.add",
+        pagePublicId: "page-2",
+        payload: { name: "Page 2", isAttack: true },
+        sortIndex: 1,
+        expectedStrategyRevision: 0,
+      },
+    ]);
+    const pageLife = start + 1000;
+    const contentLife = start + 2000;
+    await t.run(async (ctx) => {
+      const page = await ctx.db
+        .query("pages")
+        .withIndex("by_publicId", (q) => q.eq("publicId", "page-2"))
+        .first();
+      const content = await ctx.db
+        .query("pageContents")
+        .withIndex("by_pageId", (q) => q.eq("pageId", page!._id))
+        .first();
+      await ctx.db.patch(content!._id, { createdAt: contentLife });
+    });
+    const lives = [start, pageLife, contentLife];
+    const cases: Array<[string, (opId: string, life: number) => Op, number]> = [
+      [
+        "strategy",
+        (opId, life) => ({
+          opId,
+          type: "strategy.patch",
+          payload: { name: opId },
+          expectedStrategyRevision: 1,
+          expectedLife: life,
+        }),
+        start,
+      ],
+      [
+        "page",
+        (opId, life) => ({
+          opId,
+          type: "page.patch",
+          pagePublicId: "page-2",
+          payload: { name: opId },
+          expectedPageRevision: 1,
+          expectedLife: life,
+        }),
+        pageLife,
+      ],
+      [
+        "settings",
+        (opId, life) => ({
+          opId,
+          type: "pageContent.patch",
+          pagePublicId: "page-2",
+          settings: { agentSize: 3, abilitySize: 1, useNeutralTeamColors: false },
+          expectedPageContentRevision: 1,
+          expectedLife: life,
+        }),
+        contentLife,
+      ],
+    ];
+    for (const [name, op, own] of cases) {
+      for (const life of lives.filter((life) => life !== own)) {
+        const [answer] = await send(me, "me", [op(`${name}-${life}`, life)], true);
+        expect(answer, `${name} with life ${life}`).toMatchObject({
+          status: "rejected",
+          reason: "row_replaced",
+          current: { life: own },
+        });
+      }
+      const [answer] = await send(me, "me", [op(`${name}-own`, own)], true);
+      expect(answer, name).toMatchObject({ status: "applied", appliedLife: own });
+    }
+  });
+
+  test("a put-back in a batch that sends lives is not_found when its row is gone, with or without a life on the op", async () => {
+    const { t, me } = await createHarness();
+    await send(me, "me", [add("add-1")], true);
+    await send(me, "me", [remove("delete-1", 1)], true);
+    await purge(t);
+    const [answer] = await send(
+      me,
+      "me",
+      [{ ...add("back"), expectedElementRevision: 2 }],
+      true,
+    );
+    expect(answer).toEqual({ opId: "back", status: "rejected", reason: "not_found" });
+    expect(await element(t)).toBeNull();
+  });
+
+  test("a life mismatch on a page in the trash meets the trash first, as today, so row_replaced always carries the row", async () => {
+    const { me } = await createHarness();
+    await send(me, "me", [
+      {
+        opId: "page-2",
+        type: "page.add",
+        pagePublicId: "page-2",
+        payload: { name: "Page 2", isAttack: true },
+        sortIndex: 1,
+        expectedStrategyRevision: 0,
+      },
+    ]);
+    await send(me, "me", [
+      {
+        opId: "trash",
+        type: "page.delete",
+        pagePublicId: "page-2",
+        expectedStrategyRevision: 1,
+      },
+    ]);
+    const [answer] = await send(
+      me,
+      "me",
+      [
+        {
+          opId: "rename",
+          type: "page.patch",
+          pagePublicId: "page-2",
+          payload: { name: "Late" },
+          expectedPageRevision: 1,
+          expectedLife: start - 1,
+        },
+      ],
+      true,
+    );
+    expect(answer).toMatchObject({ status: "failed", code: "PAGE_DELETED" });
+  });
+
+  test("a page with two settings rows fails only its own op when lives are sent, and the rest of the batch applies", async () => {
+    const { t, me } = await createHarness();
+    await t.run(async (ctx) => {
+      const page = await ctx.db
+        .query("pages")
+        .withIndex("by_publicId", (q) => q.eq("publicId", pagePublicId))
+        .first();
+      await ctx.db.insert("pageContents", {
+        pageId: page!._id,
+        revision: 1,
+        createdAt: start,
+        updatedAt: start,
+      });
+    });
+    const answers = await send(
+      me,
+      "me",
+      [
+        {
+          opId: "settings",
+          type: "pageContent.patch",
+          pagePublicId,
+          settings: { agentSize: 2, abilitySize: 1, useNeutralTeamColors: false },
+          expectedPageContentRevision: 1,
+          expectedLife: start - 1,
+        },
+        add("add-1"),
+      ],
+      true,
+    );
+    expect(answers[0]).toMatchObject({
+      status: "failed",
+      code: "INVALID_PAGE_CONTENT_COUNT",
+    });
+    expect(answers[1]).toMatchObject({ status: "applied", appliedRevision: 1 });
+  });
+});
+
+describe("the op size limit", () => {
+  function patchOfSize(bytes: number, life?: number): Op {
+    const op = (pad: string): Op => ({
+      opId: "big",
+      type: "element.patch",
+      elementPublicId: "e1",
+      payload: agent("e1", { note: pad }),
+      sortIndex: 0,
+      expectedElementRevision: 1,
+    });
+    const base = serializedConvexValueUtf8Bytes(op(""));
+    return {
+      ...op("x".repeat(bytes - base)),
+      ...(life === undefined ? {} : { expectedLife: life }),
+    };
+  }
+
+  test("an op exactly at the limit fits with or without a life, and with or without sendsLives; one byte more does not", async () => {
+    expect(serializedConvexValueUtf8Bytes(patchOfSize(MAX_CLOUD_OPERATION_BYTES))).toBe(
+      MAX_CLOUD_OPERATION_BYTES,
+    );
+    for (const [life, lives] of [
+      [undefined, false],
+      [start, false],
+      [start, true],
+    ] as const) {
+      const { me } = await createHarness();
+      await send(me, "me", [add("add-1")], true);
+      const [fits] = await send(
+        me,
+        "me",
+        [patchOfSize(MAX_CLOUD_OPERATION_BYTES, life)],
+        lives,
+      );
+      expect(fits, `life ${life}, lives ${lives}`).toMatchObject({
+        status: "applied",
+      });
+    }
+    const { me } = await createHarness();
+    await send(me, "me", [add("add-1")], true);
+    const [over] = await send(me, "me", [
+      patchOfSize(MAX_CLOUD_OPERATION_BYTES + 1),
+    ]);
+    expect(over).toMatchObject({ status: "failed", code: "INVALID_PAYLOAD" });
   });
 });
