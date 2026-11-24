@@ -7416,6 +7416,7 @@ ConvexObject encodeOpsApplyBatchArgs({
   ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
   ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
   ConvexOptional<bool> sendsLives = const ConvexOptional.absent(),
+  ConvexOptional<double> strategyLife = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
   if (acceptsPictureIds.isPresent)
@@ -7459,6 +7460,11 @@ ConvexObject encodeOpsApplyBatchArgs({
   if (sendsLiveBasis.isPresent)
     'sendsLiveBasis': ConvexBoolean(sendsLiveBasis.value),
   if (sendsLives.isPresent) 'sendsLives': ConvexBoolean(sendsLives.value),
+  if (strategyLife.isPresent)
+    'strategyLife': _encodeNumber(
+      strategyLife.value,
+      'ops.js:applyBatch.args.strategyLife',
+    ),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 

@@ -134,12 +134,22 @@ replaying an op id an opted-in build sent, which needs both builds sharing
 stored ops, so look at this choice again before any build that shares stored
 ops with released builds turns `sendsLives` on.
 
+A batch that sets `sendsLives` may also name `strategyLife`, the `createdAt` of
+the strategy its ops were made in. A strategy deleted and made again under the
+same id is another life, so when the strategy's `createdAt` is another, the
+whole call is refused with `STRATEGY_REPLACED`, after the account, window and
+access checks and before any op or receipt is read or written. Nothing is
+stored, so a resend or a caller without `sendsLives` never meets it. The client
+then reads the page list and asks its user about every op made in the old
+life. This covers what `expectedLife` cannot: an add of a new item, and an edit
+of a page this device added, which name no life of their own.
+
 Known limits: an op that names a page only as a place, to add an item onto or
-move one to, carries no life for that page, so an item can still land on a page
-re-created under the same id. Two rows created under one id within the same
+move one to, carries no life for that page, so within one strategy life an item
+can still land on a page re-created under the same id. Two rows created under one id within the same
 millisecond share a life; no client can delete and re-create a row that fast.
 Clients that do not set `sendsLives` send nothing new and are answered as
-before; an `expectedLife` without it is ignored.
+before; an `expectedLife` or a `strategyLife` without it is ignored.
 
 ## Which fields move together
 

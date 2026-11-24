@@ -122802,6 +122802,12 @@
             },
             "optional": true
           },
+          "strategyLife": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
