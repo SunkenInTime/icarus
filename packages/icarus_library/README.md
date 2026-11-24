@@ -1744,6 +1744,54 @@ overwrite a teammate's newer work.
   its clock when the mutation starts (so the device's count runs about half a
   round trip behind) and the call's own trip.
 
+**What this device knows lapses.** The server purges an element's or a
+lineup group's tombstone, and a trashed page, 30 days after the delete; the
+same id can then be added again and its revisions start over at 1. So a
+revision names one version of a row only within one life of the row, and
+what the queue remembers of a strategy (results, the highest revision of
+each row, landed work, which page a row is on, the revision each op was
+authored on) is one body of knowledge that goes stale together. The queue
+keeps it as one state on the strategy's facts (`StrategyFacts.knowledge`,
+stored as `knownSince` or `readFrom`):
+
+- `KnownSince(since)`: what it remembers was learned at or after `since`,
+  the time the last complete read began. It lapses at 29 days
+  (`trustRowsFor`, at exactly 29 days included) or as soon as the device
+  clock reads earlier than `since`, since how long it has been is then not
+  known. The day of margin under the server's 30 has to absorb the device
+  clock running slow over the interval and a checked call the transport
+  delivers late.
+- `KnowledgeExpired(readFrom)`: the transition that finds the lapse drops
+  every result (`Shown.nothing`) and keeps landed work and the queue as they
+  are. Nothing is claimed: every op waits for the page list, then for each
+  page in the list's order (`completeReadNeeds`), and an answer that
+  arrives is taken as lost (`AnsweredWhileExpired`), so the op stays with
+  its attempt on record and the resend is answered from the server's
+  memory. Edits still commit. The results gathered are stored as they
+  arrive, so a reconnect or a restart keeps the pages already read.
+  `readFrom` is when the first of them arrived. A queue stored without
+  either key reads as expired: one complete read before anything is sent.
+- The complete read, the page list and a result of every page in it, is the
+  only way back. It retires every landed record, whatever its revision,
+  and judges each op made before it that no earlier op of its row is ahead
+  of and no call has open. An op whose row the read shows as it was
+  authored goes out checked on the fresh revision, its basis dropped. An op
+  whose row already holds what it writes (applying it changes nothing) is
+  settled as soon as the read of its page shows that, and so is a delete
+  whose row the read no longer holds (`SettledByRead`). Adds of a new id go
+  as they are. Every other op needs the user (`AuthoredOutOfDate`, shown
+  as changed by someone else), field merges included: their row is judged
+  whole. Then the state is `KnownSince(readFrom)`.
+
+A tombstone whose row this device never saw live in the interval may be up
+to 30 days old and purged the next minute, so a result's tombstone is
+remembered only for a row the queue already remembers or holds landed work
+on; during the complete read, none is. Every revision remembered while the
+state is `KnownSince` belongs to a row that was live at or after `since`, and
+no such row's id can start a new life before the interval ends. The store
+places a page read's rows where the queue's results place them, so the
+complete read replaces the rows of an earlier life on any page.
+
 **The resend window.** The server remembers its answer to an op id for 30
 days (`serverRemembersAnswersFor`, beside `DAYS_30_MS` in
 `convex/maintenance.ts`), so sending the same op id again inside that time

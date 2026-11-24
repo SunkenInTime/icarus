@@ -113,7 +113,10 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
     final signIns = ref.read(convexSignInsProvider).listen((_) => refresh());
     ref.listen(ref.read(senderSignInWatchProvider), (_, __) => refresh());
     ref.listen<bool>(convexConnectionSnapshotProvider, (_, __) => refresh());
-    ref.listen<String?>(editor, (_, __) => adoptOpen(), fireImmediately: true);
+    ref.listen<String?>(editor, (_, open) {
+      sender.opened(open);
+      adoptOpen();
+    }, fireImmediately: true);
     ref.onDispose(() {
       unawaited(signIns.cancel());
       sender.dispose();

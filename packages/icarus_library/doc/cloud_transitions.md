@@ -8,7 +8,8 @@ Each section builds a queue by real events until op `x` is in that state, then a
 
 - The server's answer to an op is the only thing that takes it out of the queue or hands it to the user. Applied or nothing to do: done. Rejected: the user decides, and later work on that row waits behind it, unless the row the rejection carries already holds what the op wrote. Failed: the user decides.
 - When the user gives up an entry (takes the cloud's version or discards it), every later entry for the same row, page or strategy goes with it, because it was built on the work given up.
-- Results (the rows the server sent) never settle or drop an entry. They end the drawing of landed work, and they tell a whole-row write whether its row is as the user saw it. Two results also stop sending: the page delete below, and a result saying the strategy is gone, which stops every claim for that strategy.
+- Results (the rows the server sent) never settle or drop an entry, except the complete read below. They end the drawing of landed work, and they tell a whole-row write whether its row is as the user saw it. Two results also stop sending: the page delete below, and a result saying the strategy is gone, which stops every claim for that strategy.
+- What this device knows of a strategy lapses 29 days after the read it was learned from, or when the clock reads earlier than that read. Then every op waits for one complete read (the page list, then each page) and an answer that arrives meanwhile is taken as lost. The read replaces everything remembered and retires all landed work; each op made before it goes out checked on the fresh revision if its row is as it was authored, is settled if the row already holds what it writes or is a delete of a row that is gone, and needs the user otherwise.
 
 ## Which revision an op names
 
@@ -327,25 +328,25 @@ Starts as: needs user: the server may have forgotten whether it landed.
 
 | Event | Result |
 | --- | --- |
-| user edits another item | z: waiting |
-| user edits the same item | w: waiting |
+| user edits another item | z: waiting, awaiting a result for the page list |
+| user edits the same item | w: waiting, awaiting a result for the page list |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); removes x (Delivered(alreadyThere)) |
-| noop without a revision | x: gone; removes x (Delivered(nothingToDo)) |
-| rejected: already_exists | x: needs user: RejectedByServer(already_exists) |
-| rejected: deleted | x: needs user: RejectedByServer(deleted) |
-| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch) |
-| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch) |
-| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision) |
-| rejected: not_found | x: needs user: RejectedByServer(not_found) |
-| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch) |
-| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch) |
-| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
-| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
-| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
+| applied at 2 | unchanged |
+| noop at 2, applied when first received | unchanged |
+| noop at 2, not applied | unchanged |
+| noop without a revision | unchanged |
+| rejected: already_exists | unchanged |
+| rejected: deleted | unchanged |
+| rejected: element_strategy_mismatch | unchanged |
+| rejected: lineup_strategy_mismatch | unchanged |
+| rejected: missing_expected_revision | unchanged |
+| rejected: not_found | unchanged |
+| rejected: page_strategy_mismatch | unchanged |
+| rejected: revision_mismatch | unchanged |
+| rejected: field_conflict | unchanged |
+| rejected: merge_invalid | unchanged |
+| failed: INTERNAL_ERROR | unchanged |
 | attempt 1 refused whole: upgradeRequired | standing upgradeRequired; holds sending until upgrade |
 | attempt 1 refused whole: unauthenticated | reports unauthenticated |
 | attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
@@ -373,20 +374,20 @@ Starts as: needs user: written more than 29 days ago, too long to check against 
 
 | Event | Result |
 | --- | --- |
-| user edits another item | z: waiting |
-| user edits the same item | w: waiting, behind x (sameRow) |
+| user edits another item | z: waiting, awaiting a result for the page list |
+| user edits the same item | w: waiting, behind x (sameRow), awaiting a result for the page list |
 | app restarted, same build | opens session 2 |
 | app restarted, new build | opens session 2 |
 | connection lost | unchanged |
 | connection returned | opens session 2 |
 | server time held | unchanged |
 | account changed | opens session 2 |
-| user: keep mine, same item | x: gone; x2: waiting; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
+| user: keep mine, same item | x: gone; x2: waiting, awaiting a result for the page list; removes x (RemovedByUser(replacedByKeepMine, notLanded)) |
 | user: use cloud | x: gone; removes x (RemovedByUser(usedCloud, notLanded)) |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | unchanged |
 | result: page-a with the item at revision 2 | unchanged |
-| result: page-a with the item as this device wrote it at 2 | unchanged |
+| result: page-a with the item as this device wrote it at 2 | x: gone; removes x (SettledByRead(alreadyAsWritten)) |
 | result: page-b gone | unchanged |
 | result: strategy gone | standing deletedOnServer |
 

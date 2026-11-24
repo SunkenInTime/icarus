@@ -523,7 +523,10 @@ _Derivation _derive(CloudQueue queue, DateTime now) {
   final known = queue._derived;
   if (known != null && known.at == now) return known;
   final _Derivation derived;
-  if (known != null && !now.isBefore(known.at)) {
+  final lapses = knowledgeLapsesAt(queue);
+  if (known != null &&
+      !now.isBefore(known.at) &&
+      (lapses == null || known.at.isBefore(lapses) == now.isBefore(lapses))) {
     derived = _Deriving(queue, known, _Change(), now).run();
   } else if (queue._lineage case _Lineage(
     :final parent,
@@ -764,6 +767,9 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
   for (final attempt in attempts) {
     if (attempt.outcome is AttemptOpen) return Sending(attempt.number);
   }
+  if (entry.authored is AuthoredOutOfDate) {
+    return const NeedsUser(ChangedUnseen());
+  }
   if (entry.window is WindowPassed) {
     return NeedsUser(
       expectedOf(entry.op) != null
@@ -879,6 +885,10 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   ) when at.isAfter(now)) {
     holds.add(UntilRetryTime(at));
     until = at;
+  }
+  if (completeReadNeeds(queue, now) case final subject?) {
+    holds.add(AwaitingResult(subject));
+    return (EntryView(state, holds), until);
   }
   final head = !holds.any((hold) => hold is BehindEntry);
   final pageGone = switch (entry.work) {

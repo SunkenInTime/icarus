@@ -13,6 +13,8 @@ const resendWindow = Duration(days: 29);
 
 const liveFor = Duration(seconds: 20);
 
+const trustRowsFor = Duration(days: 29);
+
 final class ServerTimeBasis {
   const ServerTimeBasis(this.serverTime, {required this.heldAt});
 
@@ -470,6 +472,19 @@ final class KeptOverServer extends Authored {
   String toString() => 'KeptOverServer($revision)';
 }
 
+final class AuthoredOutOfDate extends Authored {
+  const AuthoredOutOfDate();
+
+  @override
+  bool operator ==(Object other) => other is AuthoredOutOfDate;
+
+  @override
+  int get hashCode => (AuthoredOutOfDate).hashCode;
+
+  @override
+  String toString() => 'AuthoredOutOfDate';
+}
+
 final class AuthoredNoRow extends Authored {
   const AuthoredNoRow({this.produces});
 
@@ -782,6 +797,19 @@ final class AppClosedWhileSending extends SendCut {
   String toString() => 'app closed';
 }
 
+final class AnsweredWhileExpired extends SendCut {
+  const AnsweredWhileExpired();
+
+  @override
+  bool operator ==(Object other) => other is AnsweredWhileExpired;
+
+  @override
+  int get hashCode => (AnsweredWhileExpired).hashCode;
+
+  @override
+  String toString() => 'answered while the strategy was read again';
+}
+
 enum TransportFailure { network, timeout, malformedAnswer, missingAnswer }
 
 enum Life { live, gone }
@@ -882,6 +910,7 @@ final class StrategyFacts {
     required this.accessLostAt,
     required this.accessConfirmedAt,
     required this.upgradeTold,
+    this.knowledge = const KnowledgeExpired(),
   });
 
   static const fresh = StrategyFacts(
@@ -895,17 +924,20 @@ final class StrategyFacts {
   final int accessLostAt;
   final int accessConfirmedAt;
   final UpgradeTold upgradeTold;
+  final Knowledge knowledge;
 
   StrategyFacts copyWith({
     Presence? presence,
     int? accessLostAt,
     int? accessConfirmedAt,
     UpgradeTold? upgradeTold,
+    Knowledge? knowledge,
   }) => StrategyFacts(
     presence: presence ?? this.presence,
     accessLostAt: accessLostAt ?? this.accessLostAt,
     accessConfirmedAt: accessConfirmedAt ?? this.accessConfirmedAt,
     upgradeTold: upgradeTold ?? this.upgradeTold,
+    knowledge: knowledge ?? this.knowledge,
   );
 
   @override
@@ -914,12 +946,59 @@ final class StrategyFacts {
       other.presence == presence &&
       other.accessLostAt == accessLostAt &&
       other.accessConfirmedAt == accessConfirmedAt &&
-      other.upgradeTold == upgradeTold;
+      other.upgradeTold == upgradeTold &&
+      other.knowledge == knowledge;
 
   @override
-  int get hashCode =>
-      Object.hash(presence, accessLostAt, accessConfirmedAt, upgradeTold);
+  int get hashCode => Object.hash(
+    presence,
+    accessLostAt,
+    accessConfirmedAt,
+    upgradeTold,
+    knowledge,
+  );
 }
+
+sealed class Knowledge {
+  const Knowledge();
+}
+
+final class KnownSince extends Knowledge {
+  const KnownSince(this.since);
+
+  final DateTime since;
+
+  @override
+  bool operator ==(Object other) => other is KnownSince && other.since == since;
+
+  @override
+  int get hashCode => Object.hash(KnownSince, since);
+
+  @override
+  String toString() => 'known since ${since.toIso8601String()}';
+}
+
+final class KnowledgeExpired extends Knowledge {
+  const KnowledgeExpired({this.readFrom});
+
+  final DateTime? readFrom;
+
+  @override
+  bool operator ==(Object other) =>
+      other is KnowledgeExpired && other.readFrom == readFrom;
+
+  @override
+  int get hashCode => Object.hash(KnowledgeExpired, readFrom);
+
+  @override
+  String toString() => switch (readFrom) {
+    final from? => 'expired, read again from ${from.toIso8601String()}',
+    null => 'expired',
+  };
+}
+
+bool knowledgeLapsed(DateTime from, DateTime now) =>
+    now.isBefore(from) || !now.isBefore(from.add(trustRowsFor));
 
 enum Presence { present, gone }
 

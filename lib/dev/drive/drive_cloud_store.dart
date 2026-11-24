@@ -519,6 +519,63 @@ Future<List<String>> useCloudAs(
   return chosen;
 }
 
+Future<String> timeStoreSaved(
+  ProviderContainer c,
+  Stopwatch sinceOpen,
+  Duration within,
+) async {
+  final strategyId = storedCloudStrategy(c);
+  final opened = DateTime.now().subtract(sinceOpen.elapsed);
+  int? readAt;
+  while (true) {
+    if (await _storeOf(c).readStrategy(strategyId)
+        case Found(value: StrategyContent(sync: final CloudStrategy cloud))) {
+      if (cloud.queue.strategy.knowledge case KnownSince(:final since)
+          when readAt == null && !since.isBefore(opened)) {
+        readAt = sinceOpen.elapsedMilliseconds;
+      }
+      if (readAt != null && cloud.queue.entries.isEmpty) {
+        return 'CLOUDSTORE $strategyId read in full $readAt ms and its '
+            'queue empty ${sinceOpen.elapsedMilliseconds} ms after the open';
+      }
+    }
+    if (sinceOpen.elapsed > within) {
+      throw StateError(
+        '$strategyId was not read in full with its queue empty within '
+        '${within.inSeconds} s; sender ${_senderWords(c)}',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
+
+Future<String> waitStoreAllRead(ProviderContainer c, Duration within) async {
+  final clock = Stopwatch()..start();
+  while (true) {
+    final held = _storedCloudStrategies(_storeOf(c));
+    if (held.length == 1) {
+      final strategyId = held.single;
+      if (await _storeOf(c).readStrategy(strategyId)
+          case Found(value: StrategyContent(sync: final CloudStrategy cloud))) {
+        final shown = cloud.queue.shown;
+        if (shown.pages.isNotEmpty &&
+            shown.pages.keys.every(shown.content.containsKey)) {
+          return 'CLOUDSTORE $strategyId has its page list and all '
+              '${shown.pages.length} pages read, '
+              '${clock.elapsedMilliseconds} ms after the step began';
+        }
+      }
+    }
+    if (clock.elapsed > within) {
+      throw StateError(
+        'the store did not hold one cloud strategy with every page read '
+        'within ${within.inSeconds} s; sender ${_senderWords(c)}',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
+
 Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
   final strategyId = storedCloudStrategy(c);
   final until = DateTime.now().add(within);
@@ -1475,9 +1532,10 @@ CloudStoreLine? _senderReportLine(SenderReport report) => switch (report) {
           'connection ${stamp.connection} and ${stamp.account?.subject}',
           problem: false,
         ),
-      ReadRecorded(:final strategyId, :final read, :final why) =>
+      ReadRecorded(:final strategyId, :final read, :final why, :final at) =>
         CloudStoreLine(
-          'CLOUDSTORE read $read of $strategyId as its account ($why)',
+          'CLOUDSTORE read $read of $strategyId as its account ($why), '
+          'recorded at ${_clockTime(at)}',
           problem: false,
         ),
       BatchSentAs(:final strategyId, :final batch) => CloudStoreLine(

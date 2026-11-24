@@ -572,6 +572,7 @@ final class World {
     FakeServer? server,
     String clientId = 'client-1',
     Snapshot? startingWith,
+    Duration later = Duration.zero,
   }) {
     final inputs = startingWith ??
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
@@ -583,7 +584,7 @@ final class World {
       engine,
       canRead: appCanRead,
       build: 'test-build',
-      clock: () => start.add(async.elapsed),
+      clock: () => start.add(later + async.elapsed),
     ).then(
       (opened) => store = switch (opened) {
         StoreOpened(:final store) => store,
@@ -594,7 +595,7 @@ final class World {
     final fake = server ?? FakeServer();
     fake
       ..owners[strategyId] ??= servedAccount
-      ..clock = () => start.add(async.elapsed);
+      ..clock = () => start.add(later + async.elapsed);
     fake.rows[strategyId] ??= serverRows();
     final sender = CloudSender(
       store: SlowSenderStore(store!),
@@ -604,7 +605,7 @@ final class World {
       clientId: clientId,
       inputs: inputs,
       timing: timing,
-      clock: () => start.add(async.elapsed),
+      clock: () => start.add(later + async.elapsed),
       elapsed: () => async.elapsed - slept.value,
       recordsConnectionLost: () => !dropsConnectionLost.value,
     );
@@ -890,6 +891,7 @@ void inWorld(
   bool addStrategy = true,
   String clientId = 'client-1',
   bool keepOpen = false,
+  Duration later = Duration.zero,
 }) {
   fakeAsync((async) {
     final world = World.open(
@@ -897,6 +899,7 @@ void inWorld(
       storage: storage,
       server: server,
       clientId: clientId,
+      later: later,
     );
     if (addStrategy) world.addServedStrategy();
     body(world);

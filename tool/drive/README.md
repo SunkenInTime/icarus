@@ -81,6 +81,7 @@ Its steps:
 - `{"storeDelete": id}` commits a delete of element `id` as the account signed in; the queue decides whether it goes unchecked.
 - `{"storeSetField": id, "field": name, "to": value}` commits a field merge of one data field of element `id`.
 - `{"waitStoreRefusedLate": seconds}` waits until the queue records a batch the server refused as arriving too late for its basis.
+- `{"waitStoreAllRead": seconds}` waits until the store holds one cloud strategy with its page list and every page in it read, and logs how long that took from the start of the step.
 - `{"waitStoreHeld": seconds}` waits until the store's one cloud strategy is held for lost edit access with work unsent, and the sender's page-list read for that loss said the account can only view it; it fails if that does not happen in time.
 - `{"storeSyncState": true}` logs each cloud strategy's sync state for the account signed in, whose work it is, and the sender's state.
 - `{"killNow": true}` ends the app at once, the way a crash does.
@@ -92,6 +93,8 @@ The scripts: `cloud-store-send.json` (ops sent and the store equal to the server
 - `cloud-store-late-alone.json` through `linux-cloud-store-late.sh`: a field edit sent into a cut network and held past the window with no teammate. The late call is refused, the checked resend lands, once.
 - `cloud-store-late-refused.json` through `linux-cloud-store-late.sh`: the network comes back while the sender still waits for its call, so the sender sees the late refusal itself. A same-field edit made while sending is held goes out checked, as does the resend.
 - `cloud-store-late-restart-before.json` through `linux-cloud-store-late.sh`, then `cloud-store-late-restart-after.json` with `--hive-store`: an unchecked edit in flight when the app is killed is sent checked after the restart.
+
+And for a strategy whose knowledge lapsed (more than 29 days since this device last read it in full): `cloud-store-lapse-before-4.json` or `cloud-store-lapse-before-20.json` makes a cloud strategy of 4 or 20 pages of 60 items and leaves it read in full in the store; `linux-cloud-store-lapse.sh <store dir> 30` moves that full read back 30 days in the stored queue; `cloud-store-lapse-after.json` with `--hive-store` on the same store runs `{"timeLapsedOpen": id}`: it opens the stored strategy, adds an agent `id` through the store at once, and logs how long after the open the strategy was read in full and its queue was empty. The before scripts end in `killNow`, so the setup run reports the kill; the end-of-run comparison belongs to the after run, which reads the server in full. Every line the sender logs for a read says when it was recorded.
 - `cloud-store-fields-owner.json` with `cloud-store-fields-teammate.json`: two people edit different fields of one item at once; both go unchecked and merge, with no prompt.
 - `cloud-store-race-owner.json` with `cloud-store-race-teammate.json`: both move the same item at once while active; both go unchecked and converge on the last arrival, with no prompt.
 - `cloud-store-race-quiet-owner.json` with `cloud-store-race-quiet-teammate.json`: the same after 30 s of quiet; both go checked, and one of them is asked.

@@ -1,0 +1,11 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 6},
+  {"timeLapsedOpen": "probe-{run}"},
+  {"storeSyncState": true},
+  {"storeExpect": true},
+  {"wait": 3},
+  {"exit": 1}
+]

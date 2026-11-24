@@ -311,8 +311,10 @@ void main() {
       expect(client.view('move').sendable, isFalse);
     });
 
-    test('a claim still open when the window passes is recorded too, and its '
-        'answer is still taken if it arrives', () {
+    test('a claim still open when the window passes is recorded too; its '
+        'answer, arriving once the strategy\'s knowledge has lapsed with it, '
+        'is taken as lost, and the complete read that shows the write settles '
+        'it', () {
       final server = Server();
       final client = online();
       client.edit(movePatch('move', x: 40));
@@ -326,6 +328,16 @@ void main() {
       client.must(
         OpAnswered(attempt, server.apply(clientId, client.lastSent().single)),
       );
+      expect(client.queue.entry('move'), isNotNull);
+      expect(
+        client.queue.attempts[attempt]!.outcome,
+        isA<AttemptFailed>().having(
+          (failed) => failed.cause,
+          'cause',
+          const AnsweredWhileExpired(),
+        ),
+      );
+      client.read(server.rows);
       expect(client.queue.entry('move'), isNull);
     });
 
@@ -614,8 +626,7 @@ void main() {
         ),
       ).queue;
       expect(client.view('blind').sendable, isFalse);
-      client.arrive(headerReadOf(base));
-      client.arrive(pageReadOf(base, 'page-b'));
+      client.read(base);
       expect(
         stateOf(client, 'blind'),
         const NeedsUser(DeleteHeld(HeldDeleteCause.contentNeverRead)),
@@ -1331,6 +1342,7 @@ void main() {
       client.must(const AppRestarted(build: 'build-2'));
       client.clock = now.add(const Duration(days: 31));
       client.queue = look(client.queue, client.at).queue;
+      client.read(initialRows());
       expect(stateOf(client, 'move'), const Waiting());
       expect(client.view('move').sendable, isTrue);
     });
@@ -1395,11 +1407,14 @@ void main() {
         strategy: queue.strategy,
         session: queue.session,
       );
-      expect(
-        entryViews(queue, later)['back']!.state,
-        const NeedsUser(ChangedUnseen()),
-      );
+      expect(entryViews(queue, later)['back']!.holds, [
+        const AwaitingResult(PageListResult()),
+      ]);
       expect(entryViews(afresh, later), entryViews(queue, later));
+      client
+        ..clock = later
+        ..read(server.rows);
+      expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
     });
 
     test('an undo after a delete answered with no revision needs the user', () {
@@ -1643,6 +1658,10 @@ void main() {
       client.must(OpAnswered(attempt, const AppliedAnswer('del', revision: 2)));
       expect(client.view('back').sendable, isTrue);
       client.clock = now.add(const Duration(days: 30));
+      expect(client.view('back').holds, [
+        const AwaitingResult(PageListResult()),
+      ]);
+      client.read(withOp(initialRows(), elementDelete('del')));
       expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
     });
 
@@ -1908,6 +1927,7 @@ void main() {
       );
       client.edit(putBackOf('back', drawn, 'e1'));
       client.clock = now.add(const Duration(days: 30));
+      client.read(withOp(initialRows(), elementDelete('del')));
       expect(stateOf(client, 'back'), isA<NeedsUser>());
     });
 

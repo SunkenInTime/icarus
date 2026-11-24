@@ -282,6 +282,7 @@ final class _ReadPage extends _Read {
 enum _Why {
   adopt('the strategy was adopted'),
   need('the queue asked for it'),
+  lapsed('the strategy is open and what this device knows of it lapsed'),
   access('edit access was lost'),
   retire('landed work waits for a result');
 
@@ -416,6 +417,7 @@ final class CloudSender {
         null => !_checkedClean.contains(strategy.id),
         _ => strategy.hasWorkToSend ||
             strategy.needsReading ||
+            strategy.id == _opened ||
             _unread.contains(strategy.id) ||
             retiring.mayRetire(strategy.id),
       };
@@ -514,6 +516,13 @@ final class CloudSender {
     _checkedClean.remove(strategyId);
     _forget(strategyId);
     retiring.active(strategyId, now);
+    wake();
+  }
+
+  String? _opened;
+
+  void opened(String? strategyId) {
+    _opened = strategyId;
     wake();
   }
 
@@ -863,6 +872,14 @@ final class CloudSender {
         return (planned: (read: _readOf(need), why: _Why.need), due: null);
       }
       later(at);
+    }
+    if (id == _opened) {
+      if (completeReadNeeds(cloud.queue, now) case final subject?) {
+        return (planned: (read: _readOf(subject), why: _Why.lapsed), due: null);
+      }
+      if (knowledgeLapsesAt(cloud.queue) case final at? when at.isAfter(now)) {
+        later(at);
+      }
     }
     if (_unreadPages(cloud).firstOrNull case final page?) {
       return (planned: (read: _ReadPage(page), why: _Why.adopt), due: null);

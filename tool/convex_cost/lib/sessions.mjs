@@ -324,6 +324,24 @@ async function share(owner, guest, rng, targetType, targetPublicId, role) {
   await guest.mutation("shares:redeem", { token });
 }
 
+function completeReadScenario(which, title, about) {
+  return {
+    title,
+    about,
+    world: "team",
+    async run({ env, world }) {
+      const strategy = world[which];
+      await rename(strategy);
+      return metered([world.coach], env, async () => {
+        await namedPageList(world.coach, strategy.publicId);
+        for (const page of strategy.pages) {
+          await namedPage(world.coach, strategy.publicId, page);
+        }
+      });
+    },
+  };
+}
+
 async function rename(strategy) {
   const device = strategy.owner;
   const { header } = await device.query("strategy:getShell", { strategyPublicId: strategy.publicId });
@@ -887,6 +905,23 @@ export const SESSIONS = {
       });
     },
   },
+
+  storeCompleteReadTypical: completeReadScenario(
+    "typical",
+    "The store's sender reads a typical strategy again in full",
+    "Once 29 days have passed since this device last read a strategy in full, a revision may name an earlier life of " +
+      "its row, so the sender reads the strategy again before anything is sent: strategy:getPageList, then " +
+      "page:getSnapshot of each of its 4 pages (60 items a page), one per step, named for the coach's account. It " +
+      "happens at most once per strategy per device per 29 days, plus once each time the device clock is set back " +
+      "past the last full read, and only for a strategy with queued work or open in the editor. A first open of a " +
+      "strategy on a new device makes the same reads.",
+  ),
+
+  storeCompleteReadLarge: completeReadScenario(
+    "large",
+    "The store's sender reads a large strategy again in full",
+    "The same read of a strategy of 20 pages and 300 items a page.",
+  ),
 
   storeSoloSessionRetire: {
     title: "Edit alone with no editor open, sent and retired by the store's sender",

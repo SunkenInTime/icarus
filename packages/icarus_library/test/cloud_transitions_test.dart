@@ -410,11 +410,22 @@ String renderTable() {
       'goes with it, because it was built on the work given up.',
     )
     ..writeln(
-      '- Results (the rows the server sent) never settle or drop an entry. '
-      'They end the drawing of landed work, and they tell a whole-row write '
-      'whether its row is as the user saw it. Two results also stop sending: '
-      'the page delete below, and a result saying the strategy is gone, '
-      'which stops every claim for that strategy.',
+      '- Results (the rows the server sent) never settle or drop an entry, '
+      'except the complete read below. They end the drawing of landed work, '
+      'and they tell a whole-row write whether its row is as the user saw it. '
+      'Two results also stop sending: the page delete below, and a result '
+      'saying the strategy is gone, which stops every claim for that '
+      'strategy.',
+    )
+    ..writeln(
+      '- What this device knows of a strategy lapses 29 days after the read '
+      'it was learned from, or when the clock reads earlier than that read. '
+      'Then every op waits for one complete read (the page list, then each '
+      'page) and an answer that arrives meanwhile is taken as lost. The read '
+      'replaces everything remembered and retires all landed work; each op '
+      'made before it goes out checked on the fresh revision if its row is as '
+      'it was authored, is settled if the row already holds what it writes or '
+      'is a delete of a row that is gone, and needs the user otherwise.',
     )
     ..writeln()
     ..writeln('## Which revision an op names')

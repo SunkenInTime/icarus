@@ -1011,6 +1011,7 @@ void main() {
         server: server,
         addStrategy: false,
         clientId: 'client-2',
+        later: const Duration(minutes: 1),
       );
     });
 
@@ -2122,6 +2123,138 @@ void main() {
         world.settle(const Duration(minutes: 1));
         expect(world.views().single.state, isA<Sending>());
       });
+    });
+  });
+
+  group('a strategy whose knowledge lapsed is read once in full', () {
+    List<String> readsAfter(World world, int before) =>
+        [for (final call in world.server.readCalls.skip(before)) '$call'];
+
+    String second() => secondPage().page.publicId;
+
+    void withTwoPages(World world) {
+      world.secondPageOnServer();
+      world.sender.adopt(strategyId);
+      world.settle();
+      expect(world.sender.adopting(strategyId), isFalse);
+    }
+
+    test(
+        'an edit made after the lapse waits for the page list and each page, '
+        'read once, then goes out in one checked call', () {
+      inWorld(
+        (world) {
+          withTwoPages(world);
+          world.settle(trustRowsFor);
+          final before = world.server.readCalls.length;
+          final sends = world.server.calls.length;
+          world.commitMerge(1);
+          world.settle(const Duration(seconds: 10));
+          expect(
+            readsAfter(world, before).take(3),
+            ['list', 'page p1', 'page ${second()}'],
+          );
+          expect(
+            readsAfter(world, before).where((read) => read == 'list'),
+            hasLength(1),
+          );
+          final calls = world.server.calls.skip(sends).toList();
+          expect(calls, hasLength(1));
+          expect(calls.single.unchecked, isEmpty);
+          expect(world.cloud().queue.entries, isEmpty);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a reconnect in the middle of the read keeps the pages already read: '
+        'only the read in flight is made again', () {
+      inWorld(
+        (world) {
+          withTwoPages(world);
+          world.settle(trustRowsFor);
+          final before = world.server.readCalls.length;
+          var cut = false;
+          world.server.onRead = (call) {
+            if (call.page == second() && !cut) {
+              cut = true;
+              world.connection = null;
+              world.connection = 2;
+            }
+          };
+          world.commitMerge(1);
+          world.settle(const Duration(seconds: 30));
+          expect(
+            readsAfter(world, before).take(4),
+            ['list', 'page p1', 'page ${second()}', 'page ${second()}'],
+          );
+          expect(world.cloud().queue.entries, isEmpty);
+        },
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a restart in the middle of the read keeps the pages already read: '
+        'the next run reads only the rest', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          withTwoPages(world);
+          world.settle(trustRowsFor);
+          server.overrideRead = (call) => call.page == second()
+              ? const StoreReadLost(TransportFailure.network, 'cut')
+              : null;
+          world.commitMerge(1);
+          world.settle(const Duration(seconds: 1));
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      server.overrideRead = null;
+      inWorld(
+        (world) {
+          final before = server.readCalls.length;
+          world.settle(const Duration(seconds: 10));
+          expect(readsAfter(world, before).first, 'page ${second()}');
+          expect(
+            readsAfter(world, before).where((read) => read == 'list'),
+            isEmpty,
+          );
+          expect(world.cloud().queue.entries, isEmpty);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+        later: trustRowsFor + const Duration(seconds: 3),
+      );
+    });
+
+    test(
+        'the strategy the editor has open is read once in full when its '
+        'knowledge lapses, with nothing to send, and not again within the '
+        'interval', () {
+      inWorld(
+        (world) {
+          withTwoPages(world);
+          world.sender.opened(strategyId);
+          final before = world.server.readCalls.length;
+          world.settle(trustRowsFor + const Duration(seconds: 5));
+          expect(readsAfter(world, before), [
+            'list',
+            'page p1',
+            'page ${second()}',
+          ]);
+          final after = world.server.readCalls.length;
+          world.settle(const Duration(hours: 6));
+          expect(readsAfter(world, after), isEmpty);
+        },
+        addStrategy: false,
+      );
     });
   });
 }

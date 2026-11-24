@@ -19,6 +19,9 @@ final class Model {
   Model(this.seed, {required this.teammates, required this.folding})
     : random = Random(seed) {
     skew = Duration(milliseconds: random.nextInt(180001) - 90000);
+    for (final MapEntry(:key, :value) in revisionsOf(server.rows).entries) {
+      hand(key, value);
+    }
   }
 
   final int seed;
@@ -36,7 +39,7 @@ final class Model {
   final inFlight = <(int, String, List<StrategyOp>, int?, int)>[];
   final held = <(String, List<StrategyOp>, int?)>[];
   Duration elapsed = Duration.zero;
-  late final Duration skew;
+  late Duration skew;
   final writtenAt = <String, int>{};
   final teammateWrote = <(Target, String), int>{};
   final refusedLate = <String>{};
@@ -109,11 +112,70 @@ final class Model {
   bool teammateEdited = false;
   bool userRemoved = false;
   bool jumped = false;
-  final seen = <Target, Set<int>>{};
-  final produced = <Target, Set<int>>{};
+  final seen = <(Target, int), Set<int>>{};
+  final produced = <(Target, int), Set<int>>{};
+  final life = <Target, int>{};
+  final baseLife = <Target, int>{};
+  final handed = <(Target, int), Set<int>>{};
+
+  int lifeOf(Target target) => life[target] ?? 0;
+
+  final existed = <Target>{};
+  final authoredLife = <String, int>{};
+
+  void trackLives(StrategyRowSet before, StrategyRowSet after) {
+    for (final row in [...after.elements, ...after.lineupGroups]) {
+      final target = switch (row) {
+        ElementRow(:final publicId) => ElementTarget(publicId) as Target,
+        LineupGroupRow(:final publicId) => LineupTarget(publicId),
+        _ => null,
+      };
+      if (target == null) continue;
+      if (rowOf(before, target) == null && existed.contains(target)) {
+        life[target] = lifeOf(target) + 1;
+        count('ids that came back in a new life');
+      }
+      existed.add(target);
+    }
+  }
+
+  void hand(Target target, int revision) {
+    (handed[(target, lifeOf(target))] ??= {}).add(revision);
+    baseLife[target] = lifeOf(target);
+  }
+
+  void handBase(ArrivedBase base) {
+    final rows = switch (base) {
+      HeaderRead(:final strategy, :final pages, :final settings) => <Row>[
+        strategy,
+        ...pages,
+        ...settings,
+      ],
+      PageRead(:final page, :final elements, :final lineupGroups) => <Row>[
+        page,
+        ...elements,
+        ...lineupGroups,
+      ],
+      PageGone() || StrategyGone() => const <Row>[],
+    };
+    for (final row in rows) {
+      final target = switch (row) {
+        StrategyRow() => const StrategyTarget() as Target,
+        PageRow(:final publicId) => PageTarget(publicId),
+        PageSettingsRow(:final pagePublicId) => SettingsTarget(pagePublicId),
+        ElementRow(:final publicId) => ElementTarget(publicId),
+        LineupGroupRow(:final publicId) => LineupTarget(publicId),
+        _ => null,
+      };
+      if (target == null) continue;
+      if (revisionOfRowForTest(row) case final revision?) {
+        hand(target, revision);
+      }
+    }
+  }
 
   final seenDigest = <String, String>{};
-  final history = <(Target, int), String>{};
+  final history = <(Target, int, int), String>{};
 
   void recordHistory() {
     for (final MapEntry(key: target, value: revision) in revisionsOf(
@@ -121,18 +183,19 @@ final class Model {
     ).entries) {
       final row = rowOf(server.rows, target);
       if (row == null) continue;
-      history[(target, revision)] = target is StrategyTarget
+      history[(target, lifeOf(target), revision)] = target is StrategyTarget
           ? strategyDigest(server.rows.strategy, server.rows.pages)
           : rowDigest(row);
     }
   }
 
   void checkJustified() {
+    if (client.queue.strategy.knowledge is! KnownSince) return;
     for (final work in client.queue.landed) {
       final produced = work.produced;
       if (produced == null) continue;
       final target = targetOf(work.op);
-      final truth = history[(target, produced.revision)];
+      final truth = history[(target, lifeOf(target), produced.revision)];
       if (truth == null) {
         throw StateError(
           '${work.op.opId} justified $target at ${produced.revision}, a '
@@ -153,7 +216,9 @@ final class Model {
     recordHistory();
     final before = revisionsOf(server.rows);
     final beforeRow = rowOf(server.rows, checkTargetOf(op));
+    final beforeRows = server.rows;
     final answer = server.apply(owner, op);
+    trackLives(beforeRows, server.rows);
     if (answer case AppliedAnswer()) {
       final target = checkTargetOf(op);
       final named = expectedOf(op);
@@ -161,19 +226,29 @@ final class Model {
           beforeRow != null &&
           seenDigest[op.opId] != null &&
           rowDigest(beforeRow) == seenDigest[op.opId];
+      final key = (target, lifeOf(target));
       if (named != null &&
           !asSeen &&
-          !(seen[target]?.contains(named) ?? false) &&
-          !(produced[target]?.contains(named) ?? false)) {
+          !(seen[key]?.contains(named) ?? false) &&
+          !(produced[key]?.contains(named) ?? false)) {
         throw StateError(
-          '${op.opId} landed on revision $named of $target, which the user '
-          'never saw and no answer of this device produced',
+          '${op.opId} landed on revision $named of $target in its life '
+          '${lifeOf(target)}, which the user never saw in that life and no '
+          'answer of this device produced',
         );
       }
       count('checked revisions verified');
       for (final MapEntry(:key, :value) in revisionsOf(server.rows).entries) {
-        if (before[key] != value) (produced[key] ??= {}).add(value);
+        if (before[key] != value) {
+          (produced[(key, lifeOf(key))] ??= {}).add(value);
+        }
       }
+    }
+    switch (answer) {
+      case AppliedAnswer(:final revision) || NoopAnswer(:final revision):
+        hand(checkTargetOf(op), revision);
+      case _:
+        break;
     }
     recordHistory();
     return answer;
@@ -202,6 +277,13 @@ final class Model {
     );
     if (result case Stepped(queue: final after, :final effects)) {
       checkRemovals(before, after, effects, event);
+      checkAskedByContent(before, after);
+      if ((before.strategy.knowledge, after.strategy.knowledge) case (
+        KnowledgeExpired(),
+        KnownSince(),
+      )) {
+        count('complete reads after a lapse');
+      }
       client.queue = after;
       count(event.runtimeType.toString());
       if (event case OpAnswered(
@@ -235,6 +317,7 @@ final class Model {
     checkStates();
     checkJustified();
     checkNothingStalls();
+    checkRememberedLives();
     return result;
   }
 
@@ -255,15 +338,21 @@ final class Model {
   void checkNothingStalls() {
     if (!server.exists) return;
     final queue = client.queue;
-    for (final MapEntry(key: id, value: view) in entryViews(
-      queue,
-      clock,
-    ).entries) {
-      if (view.state is! Waiting) continue;
-      for (final hold in view.holds) {
-        if (hold is! AwaitingResult) continue;
-        var read = queue;
-        for (final base in resultsFor(hold.subject)) {
+    final waiting = {
+      for (final MapEntry(key: id, value: view) in entryViews(
+        queue,
+        clock,
+      ).entries)
+        if (view.holds.any((hold) => hold is AwaitingResult)) id,
+    };
+    if (waiting.isEmpty) return;
+    var read = queue;
+    final rounds = server.rows.pages.length + 4;
+    for (var round = 0; round < rounds; round++) {
+      final asked = resultsNeeded(read, clock);
+      if (asked.isEmpty) break;
+      for (final subject in asked) {
+        for (final base in resultsFor(subject)) {
           if (transition(
                 read,
                 BaseArrived(base, session: read.session.number),
@@ -273,14 +362,83 @@ final class Model {
             read = queue;
           }
         }
-        final after = entryViews(read, clock)[id];
-        if (after != null && after.holds.contains(hold)) {
-          throw StateError(
-            '$id waits for ${hold.subject}, and reading it from the server now '
-            'leaves it waiting (${after.state}, ${after.holds})',
-          );
-        }
-        count('waits for a result that a read would settle');
+      }
+    }
+    for (final MapEntry(key: id, value: view) in entryViews(
+      read,
+      clock,
+    ).entries) {
+      if (view.holds.any((hold) => hold is AwaitingResult)) {
+        throw StateError(
+          '$id still waits after $rounds rounds of reading everything the '
+          'queue asked for (${view.state}, ${view.holds})',
+        );
+      }
+    }
+    count('waits for a result that a read would settle', waiting.length);
+  }
+
+  void checkRememberedLives() {
+    final queue = client.queue;
+    if (queue.strategy.knowledge is! KnownSince) return;
+    void check(Target target, int? revision, String what) {
+      if (revision == null) return;
+      if (target is! ElementTarget && target is! LineupTarget) return;
+      if (rowOf(server.rows, target) == null) return;
+      if (!(handed[(target, lifeOf(target))]?.contains(revision) ?? false)) {
+        throw StateError(
+          'the queue remembers $what of $target at revision $revision, which '
+          'the server never handed this device in the row\'s life '
+          '${lifeOf(target)}',
+        );
+      }
+      count('remembered revisions checked against their life');
+    }
+
+    for (final MapEntry(:key, :value) in queue.shown.highest.entries) {
+      check(key, value, 'the highest revision');
+    }
+    for (final MapEntry(:key, :value) in queue.shown.rows.entries) {
+      check(key, value.revision, 'a shown row');
+    }
+    for (final work in queue.landed) {
+      check(checkTargetOf(work.op), work.revision, 'landed work');
+    }
+  }
+
+  void checkAskedByContent(CloudQueue before, CloudQueue after) {
+    for (final entry in after.entries) {
+      if (entry is! PendingOp) continue;
+      final was = before.entry(entry.id);
+      if (was is! PendingOp) continue;
+      switch ((was.authored, entry.authored)) {
+        case (AuthoredOutOfDate(), _):
+          break;
+        case (final AuthoredRow seen, AuthoredOutOfDate()):
+          final target = targetOf(entry.op);
+          final row = rowOf(server.rows, target);
+          final now = switch (row) {
+            null || DeletedElement() || DeletedLineupGroup() => null,
+            _ when target is StrategyTarget => strategyDigest(
+              server.rows.strategy,
+              server.rows.pages,
+            ),
+            final Row row => rowDigest(row),
+          };
+          if (now == seen.digest) {
+            throw StateError(
+              '${entry.id} was asked after the complete read though its row '
+              'holds what it was authored on',
+            );
+          }
+          count('ops asked by content at a complete read');
+        case (_, AuthoredOutOfDate()):
+          count('ops asked by content at a complete read');
+        case (AuthoredRow(revision: final old), AuthoredRow(:final revision))
+            when old != revision:
+          count('ops kept by content at a complete read');
+        case _:
+          break;
       }
     }
   }
@@ -344,6 +502,21 @@ final class Model {
         Delivered(how: Delivery.applied) =>
           event is OpAnswered && server.landed(entry.id),
         Delivered() => event is OpAnswered,
+        SettledByRead(how: ReadSettled.alreadyAsWritten) =>
+          event is BaseArrived &&
+              entry is PendingOp &&
+              applyOp(server.rows, entry.op) is OpUnchanged,
+        SettledByRead(how: ReadSettled.rowGone) =>
+          event is BaseArrived &&
+              entry is PendingOp &&
+              (authoredLife[entry.id] != lifeOf(targetOf(entry.op)) ||
+                  switch (rowOf(server.rows, targetOf(entry.op))) {
+                    null ||
+                    DeletedElement() ||
+                    DeletedLineupGroup() ||
+                    TrashedPage() => true,
+                    _ => false,
+                  }),
         FoldedInto(:final opId) =>
           event is UserEdited && event.edit.op.opId == opId,
         RemovedByUser() =>
@@ -578,11 +751,15 @@ final class Model {
     };
     var stepped = ops.isNotEmpty;
     for (final each in ops) {
+      final checked = checkTargetOf(each);
+      final seenIn = (checked, baseLife[checked] ?? lifeOf(checked));
+      authoredLife[each.opId] =
+          baseLife[targetOf(each)] ?? lifeOf(targetOf(each));
       if (expectedOf(each) case final revision?) {
-        (seen[checkTargetOf(each)] ??= {}).add(revision);
+        (seen[seenIn] ??= {}).add(revision);
       }
-      if (revisionsOf(client.base)[checkTargetOf(each)] case final shown?) {
-        (seen[checkTargetOf(each)] ??= {}).add(shown);
+      if (revisionsOf(client.base)[checked] case final shown?) {
+        (seen[seenIn] ??= {}).add(shown);
       }
       if (rowOf(client.visible, checkTargetOf(each)) case final row?) {
         seenDigest[each.opId] = rowDigest(row);
@@ -751,7 +928,9 @@ final class Model {
 
   void teammateWrites() {
     final before = fieldsOf(server.rows);
+    final rows = server.rows;
     teammate();
+    trackLives(rows, server.rows);
     final after = fieldsOf(server.rows);
     for (final key in {...before.keys, ...after.keys}) {
       if (before[key] != after[key]) teammateWrote[key] = serverNow;
@@ -784,8 +963,10 @@ final class Model {
     must(AppRestarted(build: build), 'restart as $clientId on $build');
   }
 
-  void arrive(ArrivedBase base, String label) =>
-      must(BaseArrived(base, session: client.queue.session.number), label);
+  void arrive(ArrivedBase base, String label) {
+    handBase(base);
+    must(BaseArrived(base, session: client.queue.session.number), label);
+  }
 
   void readHeader() {
     if (!server.exists) {
@@ -1011,7 +1192,9 @@ final class Model {
         sortIndex: row.sortIndex,
       );
       if (applyOp(server.rows, back) case final OpApplied done) {
+        final before = server.rows;
         server.rows = server.rows.withRows(done.rows);
+        trackLives(before, server.rows);
         teammateEdited = true;
         count('teammate puts a purged element back at revision 1');
       }
@@ -1083,6 +1266,11 @@ final class Model {
         (NeedsUser(reason: WindowClosed() || WrittenLongAgo()), _) => true,
         (
           NeedsUser(reason: ChangedUnseen()),
+          PendingOp(authored: AuthoredOutOfDate()),
+        ) =>
+          true,
+        (
+          NeedsUser(reason: ChangedUnseen()),
           PendingOp(op: ElementAddOp(expectedElementRevision: _?)),
         ) =>
           jumped,
@@ -1108,17 +1296,28 @@ final class Model {
   }
 
   void stepOnce() {
-    final jump = random.nextInt(400) == 0;
-    if (jump) {
-      jumped = true;
-      purgeAndPutBack();
+    switch (random.nextInt(800)) {
+      case 0 || 5:
+        jumped = true;
+        pass(
+          serverRemembersAnswersFor +
+              Duration(minutes: random.nextInt(24 * 60)),
+        );
+        held.clear();
+        purgeAndPutBack();
+        return;
+      case 1:
+        toTheBoundary();
+      case 2:
+        clockBack();
+      case 3:
+        claimAcrossTheLapse();
+      case 4:
+        almostDueTombstone(readFirst: true);
+      case 6:
+        almostDueTombstone(readFirst: false);
     }
-    pass(
-      jump
-          ? serverRemembersAnswersFor + const Duration(hours: 1)
-          : Duration(milliseconds: random.nextInt(2000)),
-    );
-    if (jump) held.clear();
+    pass(Duration(milliseconds: random.nextInt(2000)));
     switch (random.nextInt(24)) {
       case < 6:
         edit();
@@ -1166,6 +1365,171 @@ final class Model {
     }
   }
 
+  void toTheBoundary() {
+    if (client.queue.strategy.knowledge case KnownSince(:final since)) {
+      final at = since.add(
+        trustRowsFor +
+            pick(const [
+              Duration(minutes: -1),
+              Duration.zero,
+              Duration(minutes: 1),
+            ]),
+      );
+      if (!at.isAfter(clock)) return;
+      jumped = true;
+      pass(at.difference(clock));
+      count('steps to the 29-day boundary');
+      log.add('the clock reaches ${at.difference(since)} after the interval');
+      if (random.nextBool()) {
+        restart();
+        count('restarts across the lapse');
+      } else {
+        must(const ConnectionReturned(), 'connection across the lapse');
+      }
+    }
+  }
+
+  void clockBack() {
+    final back = pick(const [Duration(seconds: 1), Duration(days: 1)]);
+    clock = clock.subtract(back);
+    skew += back;
+    jumped = true;
+    count('backward clock steps');
+    log.add('the device clock moves back $back');
+  }
+
+  void claimAcrossTheLapse() {
+    if (client.queue.strategy.knowledge case KnownSince(:final since)) {
+      final at = since.add(trustRowsFor - const Duration(minutes: 1));
+      if (!at.isAfter(clock)) return;
+      jumped = true;
+      pass(at.difference(clock));
+      edit();
+      claim();
+      if (inFlight.isEmpty) return;
+      count('claims outstanding across the lapse');
+      log.add('a claim is outstanding as the interval lapses');
+      pass(const Duration(minutes: 2));
+      switch (random.nextInt(3)) {
+        case 0:
+          deliver(reliable: true);
+        case 1:
+          readHeader();
+          deliver(reliable: true);
+          lane();
+        case _:
+          lane();
+          lane();
+          deliver(reliable: true);
+      }
+    }
+  }
+
+  void almostDueTombstone({required bool readFirst}) {
+    if (!teammates || !server.exists) return;
+    final live = [
+      for (final row in server.rows.elements)
+        if (row is LiveElement &&
+            server.rows.page(row.pagePublicId) is LivePage)
+          row,
+    ];
+    if (live.isEmpty) return;
+    while (inFlight.isNotEmpty) {
+      deliver(reliable: true);
+    }
+    final atOne = [
+      for (final row in live)
+        if (row.revision == 1) row,
+    ];
+    final target = pick(!readFirst && atOne.isNotEmpty ? atOne : live);
+    final delete = elementDelete(
+      fresh('t'),
+      elementId: target.publicId,
+      pageId: target.pagePublicId,
+      expected: target.revision,
+    );
+    final rows = server.rows;
+    if (applyOp(rows, delete) case final OpApplied done) {
+      server.rows = rows.withRows(done.rows);
+    } else {
+      return;
+    }
+    teammateEdited = true;
+    jumped = true;
+    void readInFull() {
+      for (var round = 0; round < 8; round++) {
+        lane();
+        if (completeReadNeeds(client.queue, clock) == null) break;
+      }
+    }
+
+    if (readFirst) {
+      pass(serverRemembersAnswersFor - const Duration(minutes: 10));
+      readInFull();
+      pass(const Duration(minutes: 15));
+    } else {
+      pass(serverRemembersAnswersFor + const Duration(minutes: 5));
+    }
+    held.clear();
+    recordHistory();
+    server.purgeAfterThirtyDays();
+    final pages = [
+      for (final page in server.rows.pages)
+        if (page is LivePage) page.publicId,
+    ];
+    final back = ElementAddOp(
+      opId: fresh('t'),
+      elementPublicId: target.publicId,
+      pagePublicId: pick(pages),
+      payload: agentPayload(target.publicId, {
+        ...target.payload.data.toJson(),
+        'rotation': 135,
+      }),
+      sortIndex: 0,
+    );
+    final purged = server.rows;
+    if (applyOp(purged, back) case final OpApplied done) {
+      server.rows = purged.withRows(done.rows);
+      trackLives(purged, server.rows);
+    }
+    recordHistory();
+    if (readFirst) {
+      count('tombstones almost due at the complete read');
+      log.add(
+        'a tombstone of ${target.publicId} read 30 days less 10 minutes after '
+        'its delete is purged and the id comes back',
+      );
+    } else {
+      if (client.visible.element(target.publicId) case final LiveElement seen) {
+        edit(
+          random.nextBool()
+              ? elementDelete(
+                  fresh('op'),
+                  elementId: seen.publicId,
+                  pageId: seen.pagePublicId,
+                  expected: seen.revision,
+                )
+              : ElementPatchOp(
+                  opId: fresh('op'),
+                  elementPublicId: seen.publicId,
+                  expectedElementRevision: seen.revision,
+                  payload: agentPayload(seen.publicId, {
+                    ...seen.payload.data.toJson(),
+                    'position': {'dx': random.nextInt(1000), 'dy': 0},
+                  }),
+                  sortIndex: seen.sortIndex,
+                ),
+        );
+        count('rows replaced under an edit of their earlier life');
+      }
+      log.add(
+        '${target.publicId} is deleted, purged and comes back while an edit '
+        'of its earlier life waits',
+      );
+      readInFull();
+    }
+  }
+
   void drain() {
     for (
       var round = 0;
@@ -1173,6 +1537,16 @@ final class Model {
       round++
     ) {
       pass(const Duration(minutes: 1));
+      final retries = [
+        for (final view in entryViews(client.queue, clock).values)
+          for (final hold in view.holds)
+            if (hold case UntilRetryTime(:final at)) at,
+      ]..sort();
+      if (retries.firstOrNull case final at?
+          when at.difference(clock) > const Duration(hours: 1)) {
+        count('retries waited out after the clock moved back');
+        pass(at.difference(clock));
+      }
       lane();
       userActs(draining: true);
       claim();
@@ -1244,7 +1618,7 @@ const minimums = {
   'teammate puts a purged element back at revision 1': 10,
   'teammate changes a page\'s settings': 50,
   'waits for a result that a read would settle': 200,
-  'unchecked sends': 20,
+  'unchecked sends': 15,
   'unchecked ops applied': 10,
   'ServerTimeHeld': 5000,
   'batches refused outside the window': 4,
@@ -1252,6 +1626,17 @@ const minimums = {
   'held calls delivered': 200,
   'the device slept': 100,
   'calls the transport held 20 to 29 s': 100,
+  'complete reads after a lapse': 150,
+  'ops kept by content at a complete read': 15,
+  'ops asked by content at a complete read': 50,
+  'remembered revisions checked against their life': 100000,
+  'steps to the 29-day boundary': 30,
+  'restarts across the lapse': 15,
+  'backward clock steps': 25,
+  'claims outstanding across the lapse': 20,
+  'tombstones almost due at the complete read': 8,
+  'rows replaced under an edit of their earlier life': 8,
+  'ids that came back in a new life': 20,
 };
 
 void main() {

@@ -1,7 +1,11 @@
 import 'dart:collection';
 
+import '../apply.dart';
 import '../json.dart';
 import '../ops.dart';
+import '../outcome.dart';
+import '../rows.dart';
+import '../strategy_rows.dart';
 import 'events.dart';
 import 'fold.dart';
 import 'held_page_delete.dart';
@@ -681,6 +685,23 @@ final class Delivered extends RemovalCause {
 
 enum Delivery { applied, alreadyThere, nothingToDo, alreadyAsWritten }
 
+final class SettledByRead extends RemovalCause {
+  const SettledByRead(this.how);
+
+  final ReadSettled how;
+
+  @override
+  bool operator ==(Object other) => other is SettledByRead && other.how == how;
+
+  @override
+  int get hashCode => Object.hash(SettledByRead, how);
+
+  @override
+  String toString() => 'SettledByRead(${how.name})';
+}
+
+enum ReadSettled { alreadyAsWritten, rowGone }
+
 final class FoldedInto extends RemovalCause {
   const FoldedInto(this.opId);
 
@@ -1016,10 +1037,41 @@ final class _Edit {
   Stepped done() => Stepped(build(), effects);
 }
 
+DateTime? knowledgeLapsesAt(CloudQueue queue) =>
+    switch (queue.strategy.knowledge) {
+      KnownSince(:final since) => since.add(trustRowsFor),
+      KnowledgeExpired(readFrom: final from?) => from.add(trustRowsFor),
+      KnowledgeExpired() => null,
+    };
+
+bool _knowledgeLapsed(CloudQueue queue, DateTime now) =>
+    switch (queue.strategy.knowledge) {
+      KnownSince(:final since) => knowledgeLapsed(since, now),
+      KnowledgeExpired(readFrom: final from?) => knowledgeLapsed(from, now),
+      KnowledgeExpired() => false,
+    };
+
+ResultSubject? completeReadNeeds(CloudQueue queue, DateTime now) {
+  if (_knowledgeLapsed(queue, now)) return const PageListResult();
+  if (queue.strategy.knowledge is KnownSince) return null;
+  final shown = queue.shown;
+  if (shown.strategy == null) return const PageListResult();
+  for (final page in shown.pages.keys) {
+    if (!shown.content.containsKey(page)) return PageResult(page);
+  }
+  return null;
+}
+
 CloudQueue recordExpiries(CloudQueue queue, DateTime now) {
   final due = queue._index.dueBy(now);
-  if (due.isEmpty) return queue;
+  final lapsed = _knowledgeLapsed(queue, now);
+  if (due.isEmpty && !lapsed) return queue;
   final edit = _Edit(queue, now);
+  if (lapsed) {
+    edit.shown = Shown.nothing;
+    edit.strategy = edit.strategy.copyWith(knowledge: const KnowledgeExpired());
+    edit.change.everything = true;
+  }
   for (final id in due) {
     if (edit.index.byId[id] case final PendingOp entry
         when entry.window is WindowOpen) {
@@ -1231,8 +1283,19 @@ Step _arrived(_Edit edit, ArrivedBase base) {
     edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
     return edit.done();
   }
+  if (edit.strategy.knowledge case KnowledgeExpired(readFrom: null)) {
+    edit.strategy = edit.strategy.copyWith(
+      knowledge: KnowledgeExpired(readFrom: edit.now),
+    );
+  }
   final before = edit.shown;
-  edit.shown = edit.shown.take(base);
+  edit.shown = edit.shown.take(
+    base,
+    keepGoneOf: switch (edit.strategy.knowledge) {
+      KnownSince() => {for (final work in edit.landed) targetOf(work.op)},
+      KnowledgeExpired() => const {},
+    },
+  );
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -1272,6 +1335,11 @@ Step _arrived(_Edit edit, ArrivedBase base) {
       ?edit.shown.rows[targetOf(work.op)]?.page,
     ]);
   }
+  if (edit.strategy.knowledge case KnowledgeExpired(:final readFrom?)) {
+    edit.change.everything = true;
+    _settleUnchanged(edit, base);
+    if (_readWhole(edit.shown)) _complete(edit, readFrom);
+  }
   switch (base) {
     case HeaderRead():
       edit.change.everything = true;
@@ -1289,6 +1357,159 @@ Step _arrived(_Edit edit, ArrivedBase base) {
       break;
   }
   return edit.done();
+}
+
+bool _readWhole(Shown shown) =>
+    shown.strategy != null && shown.pages.keys.every(shown.content.containsKey);
+
+bool _headOfItsRow(_Edit edit, PendingOp entry) {
+  final row = targetOf(entry.op);
+  for (final other in edit.entries) {
+    if (other.place >= entry.place) return true;
+    if (other case PendingOp(:final op) when targetOf(op) == row) return false;
+  }
+  return true;
+}
+
+bool _inFlight(_Edit edit, PendingOp entry) => [
+  for (final number in edit.index.attemptsByOp[entry.id] ?? const <int>[])
+    ?edit.attempts[number],
+].any((attempt) => attempt.outcome is AttemptOpen);
+
+StrategyRows? _rowsOf(ArrivedBase base) => switch (base) {
+  HeaderRead(
+    strategy: final ReadableStrategy strategy,
+    :final pages,
+    :final settings,
+  ) =>
+    StrategyRowSet(strategy: strategy, pages: pages, settings: settings),
+  HeaderRead() => null,
+  PageRead(:final page, :final elements, :final lineupGroups) => _PageRows(
+    page,
+    elements,
+    lineupGroups,
+  ),
+  PageGone() || StrategyGone() => null,
+};
+
+bool _judgedBy(StrategyOp op, ArrivedBase base) => switch ((op, base)) {
+  (
+    StrategyPatchOp() ||
+        PagePatchOp() ||
+        PageReorderOp() ||
+        PageSettingsPatchOp(),
+    HeaderRead(),
+  ) =>
+    true,
+  (
+    ElementAddOp() ||
+        ElementPatchOp() ||
+        ElementDeleteOp() ||
+        ElementReorderOp() ||
+        LineupGroupAddOp() ||
+        LineupGroupPatchOp() ||
+        LineupGroupDeleteOp() ||
+        LineupGroupReorderOp(),
+    PageRead(:final elements, :final lineupGroups),
+  ) =>
+    [
+      for (final row in elements) ElementTarget(row.publicId),
+      for (final row in lineupGroups) LineupTarget(row.publicId),
+    ].contains(targetOf(op)),
+  _ => false,
+};
+
+void _settleUnchanged(_Edit edit, ArrivedBase base) {
+  final rows = _rowsOf(base);
+  if (rows == null) return;
+  for (final entry in [...edit.entries]) {
+    if (entry is! PendingOp || !_judgedBy(entry.op, base)) continue;
+    if (!_headOfItsRow(edit, entry) || _inFlight(edit, entry)) continue;
+    if (applyOp(rows, entry.op) is OpUnchanged) {
+      edit.remove(entry.id, const SettledByRead(ReadSettled.alreadyAsWritten));
+    }
+  }
+}
+
+void _complete(_Edit edit, DateTime readFrom) {
+  final shown = edit.shown;
+  for (final entry in [...edit.entries]) {
+    if (entry is! PendingOp) continue;
+    if (!_headOfItsRow(edit, entry) || _inFlight(edit, entry)) continue;
+    final op = entry.op;
+    final fresh = _shownRow(shown, targetOf(op));
+    switch (entry.authored) {
+      case AuthoredNoRow():
+        continue;
+      case AuthoredRow(:final digest, :final payloadVersion, :final movedRow)
+          when fresh?.digest == digest && fresh?.revision != null:
+        final checked = _shownRow(shown, checkTargetOf(op))?.revision;
+        edit.put(
+          entry.copyWith(
+            work: switch ((expectedOf(op), checked)) {
+              (_?, final revision?) => _workAt(entry.work, revision),
+              _ => entry.work,
+            },
+            authored: AuthoredRow(
+              revision: fresh!.revision!,
+              digest: digest,
+              payloadVersion: payloadVersion,
+              movedRow: movedRow,
+            ),
+            dropBasis: true,
+          ),
+        );
+      case AuthoredRow()
+          when (_deletes(op) || op is PageDeleteOp) && fresh == null:
+        edit.remove(entry.id, const SettledByRead(ReadSettled.rowGone));
+      case _:
+        edit.put(entry.copyWith(authored: const AuthoredOutOfDate()));
+    }
+  }
+  if (edit.landed.isNotEmpty) {
+    edit.landed.clear();
+    edit.change.everything = true;
+  }
+  edit.strategy = edit.strategy.copyWith(knowledge: KnownSince(readFrom));
+  edit.change.everything = true;
+}
+
+final class _PageRows implements StrategyRows {
+  _PageRows(this._page, this._elements, this._lineupGroups);
+
+  final PageRow _page;
+  final List<ElementRow> _elements;
+  final List<LineupGroupRow> _lineupGroups;
+
+  @override
+  ReadableStrategy get strategy =>
+      throw StateError('a page read holds no strategy row');
+
+  @override
+  Iterable<PageRow> get pages => [_page];
+
+  @override
+  PageRow? page(String pagePublicId) =>
+      pagePublicId == _page.publicId ? _page : null;
+
+  @override
+  PageSettingsRow? settingsOf(String pagePublicId) => null;
+
+  @override
+  ElementRow? element(String elementPublicId) =>
+      _elements.where((row) => row.publicId == elementPublicId).firstOrNull;
+
+  @override
+  LineupGroupRow? lineupGroup(String lineupPublicId) =>
+      _lineupGroups.where((row) => row.publicId == lineupPublicId).firstOrNull;
+
+  @override
+  Iterable<ElementRow> elementsOn(String pagePublicId) =>
+      pagePublicId == _page.publicId ? _elements : const [];
+
+  @override
+  Iterable<LineupGroupRow> lineupGroupsOn(String pagePublicId) =>
+      pagePublicId == _page.publicId ? _lineupGroups : const [];
 }
 
 bool _unchangedPrediction(Authored authored) => switch (authored) {
@@ -1626,6 +1847,7 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
   final op = entry.op;
   final authored = expectedOf(op);
   if (authored == null) return const _NameAt(null);
+  if (entry.authored is AuthoredOutOfDate) return const _AskUser();
   if (entry.authored case KeptOverServer(:final revision)) {
     return _NameAt(revision);
   }
@@ -1913,6 +2135,14 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
   if (index == -1) return NotApplicable(queue, NoSuchOp(answer.opId));
   final entry = edit.entries[index];
   if (entry is! PendingOp) return NotApplicable(queue, NoSuchOp(answer.opId));
+  if (edit.strategy.knowledge is KnowledgeExpired) {
+    if (fact.outcome is AttemptOpen) {
+      edit.setAttempt(
+        fact.withOutcome(AttemptFailed(const AnsweredWhileExpired(), edit.now)),
+      );
+    }
+    return edit.done();
+  }
   if (attempt > edit.strategy.accessConfirmedAt) {
     edit.strategy = edit.strategy.copyWith(accessConfirmedAt: attempt);
   }

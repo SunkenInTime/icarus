@@ -231,7 +231,10 @@ final class Shown {
     digest: rowDigest(row),
   );
 
-  Shown take(ArrivedBase result) => switch (result) {
+  Shown take(
+    ArrivedBase result, {
+    Set<Target> keepGoneOf = const {},
+  }) => switch (result) {
     HeaderRead(:final strategy, :final pages, :final settings) => Shown(
       fresh: fresh.afterList([
         for (final page in pages)
@@ -277,6 +280,7 @@ final class Shown {
     PageRead(:final page, :final elements, :final lineupGroups) => _withPage(
       page,
       [...elements, ...lineupGroups],
+      keepGoneOf,
     ),
     PageGone(:final pagePublicId) => Shown(
       fresh: fresh.afterPage(pagePublicId, gone: true),
@@ -340,7 +344,7 @@ final class Shown {
     rows: rows,
   );
 
-  Shown _withPage(PageRow pageRow, List<Row> found) {
+  Shown _withPage(PageRow pageRow, List<Row> found, Set<Target> keepGoneOf) {
     final page = pageRow.publicId;
     final next = {
       for (final MapEntry(:key, :value) in rows.entries)
@@ -353,6 +357,13 @@ final class Shown {
         LineupGroupRow(:final publicId) => LineupTarget(publicId),
         _ => throw StateError('only page content is read with a page'),
       };
+      final remembered =
+          rows.containsKey(target) ||
+          highest.containsKey(target) ||
+          keepGoneOf.contains(target);
+      if (!remembered && row is! LiveElement && row is! LiveLineupGroup) {
+        continue;
+      }
       final shown = _rowOf(row, page);
       if (shown.revision case final revision?
           when revision > (raised[target] ?? 0)) {

@@ -59,6 +59,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
         if (produces != null) 'produces': _producedToJson(produces),
       },
       AuthoredUnreadable() => {'unreadable': true},
+      AuthoredOutOfDate() => {'outOfDate': true},
     },
     'authoredIn': entry.authoredIn,
     'authoredAt': _millis(entry.authoredAt),
@@ -324,6 +325,9 @@ Decoded<Authored> _authored(Object? json) =>
       if (fields.json['unreadable'] == true) {
         return () => const AuthoredUnreadable();
       }
+      if (fields.json['outOfDate'] == true) {
+        return () => const AuthoredOutOfDate();
+      }
       if (fields.has('keptOverServer')) {
         final revision = fields.whole('keptOverServer');
         if (revision < 1) fields.reject('revisions start at 1');
@@ -479,6 +483,7 @@ Map<String, Object?> attemptToJson(AttemptFact attempt) => {
       'failed': switch (cause) {
         TransportCut(:final failure) => failure.name,
         AppClosedWhileSending() => 'appClosed',
+        AnsweredWhileExpired() => 'answeredWhileExpired',
       },
       'at': _millis(at),
     },
@@ -520,6 +525,8 @@ AttemptOutcome? _outcome(Object? raw) => switch (raw) {
     const AppClosedWhileSending(),
     _time(at),
   ),
+  {'failed': 'answeredWhileExpired', 'at': final num at} when _isTime(at) =>
+    AttemptFailed(const AnsweredWhileExpired(), _time(at)),
   {'failed': final String name, 'at': final num at}
       when _isTime(at) &&
           TransportFailure.values.asNameMap().containsKey(name) =>
@@ -596,6 +603,11 @@ Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
   'accessConfirmedAt': facts.accessConfirmedAt,
   if (facts.upgradeTold case UpgradeToldTo(:final build, :final attempt))
     'upgradeTold': {'build': build, 'attempt': attempt},
+  ...switch (facts.knowledge) {
+    KnownSince(:final since) => {'knownSince': _millis(since)},
+    KnowledgeExpired(readFrom: final from?) => {'readFrom': _millis(from)},
+    KnowledgeExpired() => const <String, Object?>{},
+  },
 };
 
 CloudOwner ownerFromText(String text) => switch (admit(text)) {
@@ -632,6 +644,19 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
         return const NoUpgradeTold();
       }(),
     };
+    DateTime? timeAt(String key) => switch (fields.json[key]) {
+      null => null,
+      final num at when _isTime(at) => _time(at),
+      _ => () {
+        fields.reject('an unreadable $key');
+        return null;
+      }(),
+    };
+    final since = timeAt('knownSince');
+    final from = timeAt('readFrom');
+    if (since != null && from != null) {
+      fields.reject('knowledge both current and being read again');
+    }
     return () => CloudFacts(
       Account(account),
       StrategyFacts(
@@ -639,6 +664,10 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
         accessLostAt: lost,
         accessConfirmedAt: confirmed,
         upgradeTold: upgrade,
+        knowledge: switch ((since, from)) {
+          (final at?, _) => KnownSince(at),
+          (_, final at) => KnowledgeExpired(readFrom: at),
+        },
       ),
     );
   }),

@@ -782,6 +782,66 @@
           "budget": 0
         }
       }
+    },
+    "storeCompleteReadTypical": {
+      "title": "The store's sender reads a typical strategy again in full",
+      "about": "Once 29 days have passed since this device last read a strategy in full, a revision may name an earlier life of its row, so the sender reads the strategy again before anything is sent: strategy:getPageList, then page:getSnapshot of each of its 4 pages (60 items a page), one per step, named for the coach's account. It happens at most once per strategy per device per 29 days, plus once each time the device clock is set back past the last full read, and only for a strategy with queued work or open in the editor. A first open of a strategy on a new device makes the same reads.",
+      "metrics": {
+        "functionCalls": {
+          "today": 5,
+          "budget": 7
+        },
+        "readBytes": {
+          "today": 189644,
+          "budget": 237055
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 979,
+          "budget": 1224
+        },
+        "returnBytes": {
+          "today": 171758,
+          "budget": 214698
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
+    },
+    "storeCompleteReadLarge": {
+      "title": "The store's sender reads a large strategy again in full",
+      "about": "The same read of a strategy of 20 pages and 300 items a page.",
+      "metrics": {
+        "functionCalls": {
+          "today": 21,
+          "budget": 26
+        },
+        "readBytes": {
+          "today": 8455742,
+          "budget": 10569678
+        },
+        "writeBytes": {
+          "today": 0,
+          "budget": 0
+        },
+        "sentBytes": {
+          "today": 4435,
+          "budget": 5544
+        },
+        "returnBytes": {
+          "today": 11453536,
+          "budget": 14316920
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 2
+        }
+      }
     }
   }
 }
