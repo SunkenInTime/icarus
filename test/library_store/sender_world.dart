@@ -101,6 +101,14 @@ const firstLife = 1761955200000;
 
 R lived<R extends Row>(R row) => bornIn(row, firstLife) as R;
 
+StrategyRowSet livedRows(StrategyRowSet rows) => StrategyRowSet(
+      strategy: rows.strategy,
+      pages: [for (final row in rows.pages) lived(row)],
+      settings: [for (final row in rows.settings) lived(row)],
+      elements: [for (final row in rows.elements) lived(row)],
+      lineupGroups: [for (final row in rows.lineupGroups) lived(row)],
+    );
+
 int lifeOfChecked(StrategyRowSet rows, StrategyOp op) {
   final Row? row = switch (checkTargetOf(op)) {
     StrategyTarget() => rows.strategy,
@@ -176,7 +184,7 @@ final class FakeServer {
       case null:
         break;
     }
-    final now = rows[strategy]!;
+    final now = livedRows(rows[strategy]!);
     final OpAnswer answer;
     switch (applyOp(now, op)) {
       case final OpApplied done:

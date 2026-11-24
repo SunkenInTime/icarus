@@ -20,6 +20,7 @@ import 'summary.dart';
 import '../cloud/account.dart';
 import '../cloud/codec.dart';
 import '../cloud/events.dart';
+import '../cloud/version.dart';
 import '../cloud/shown.dart';
 import '../cloud/op_facts.dart';
 import '../cloud/pending.dart';

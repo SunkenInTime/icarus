@@ -834,6 +834,15 @@ extension _CloudStore on LibraryStore {
     );
   }
 
+  bool _anotherLife(LoadedStrategy strategy, StrategyRow header) =>
+      switch ((strategy.heldUnder(const HeaderName()), header)) {
+        (HeldRow(row: final StrategyRow held), _) =>
+          createdAtOf(held) != null &&
+              createdAtOf(header) != null &&
+              createdAtOf(held) != createdAtOf(header),
+        _ => false,
+      };
+
   Future<Stored<_BaseApplied>> _applyBase(
     LoadedStrategy strategy,
     List<ArrivedBase> arrivals,
@@ -842,10 +851,12 @@ extension _CloudStore on LibraryStore {
     final digests = <String>{};
     for (final arrival in arrivals) {
       switch (arrival) {
-        case HeaderRead(:final pages):
+        case HeaderRead(strategy: final header, :final pages):
           final listed = {for (final page in pages) digestOf(page.publicId)};
           digests.addAll(
-            strategy.pageDigests.where((d) => !listed.contains(d)),
+            _anotherLife(strategy, header)
+                ? strategy.pageDigests
+                : strategy.pageDigests.where((d) => !listed.contains(d)),
           );
         case PageRead(:final page, :final elements, :final lineupGroups):
           digests.add(digestOf(page.publicId));
@@ -894,8 +905,7 @@ extension _CloudStore on LibraryStore {
       }
     }
 
-    void dropPage(String page) {
-      final digest = digestOf(page);
+    void dropDigest(String digest, String page) {
       pages.add(page);
       remember(PageName(digest));
       remember(SettingsName(digest));
@@ -920,6 +930,8 @@ extension _CloudStore on LibraryStore {
       }
       strategy.forgetPage(digest);
     }
+
+    void dropPage(String page) => dropDigest(digestOf(page), page);
 
     void put(Row row) {
       final name = nameOf(row);
@@ -1001,6 +1013,11 @@ extension _CloudStore on LibraryStore {
     for (final arrival in arrivals) {
       switch (arrival) {
         case HeaderRead(strategy: final header, :final pages, :final settings):
+          if (_anotherLife(strategy, header)) {
+            for (final digest in [...strategy.pageDigests]) {
+              dropDigest(digest, strategy.pageIdOf(digest) ?? digest);
+            }
+          }
           put(header);
           final listed = {for (final page in pages) page.publicId};
           for (final page in [...strategy.pages]) {
