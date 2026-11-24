@@ -5,6 +5,7 @@ import 'package:test/test.dart';
 
 import 'store_budget_test.dart' show strategyWith;
 import 'store_support.dart';
+import 'support.dart';
 
 const _itemsAPage = 30;
 
@@ -72,6 +73,58 @@ void main() {
       await store.close();
     });
   }
+
+  test('a page that holds only deleted items is counted once when it is read, '
+      'like any other page', () async {
+    const pages = 20;
+    final pageIds = [for (var i = 0; i < pages; i++) 's-page-$i'];
+    final storage = MemoryStorage();
+    final written = await openStore(MemoryEngine(storage));
+    savedValue(
+      await written.editLibrary([
+        AddStrategy(
+          StrategyRowSet(
+            strategy: strategyRow(publicId: 's', name: 's', mapData: 'bind'),
+            pages: [
+              for (final (index, pageId) in pageIds.indexed)
+                LivePage(
+                  publicId: pageId,
+                  strategyPublicId: 's',
+                  name: 'Page ${index + 1}',
+                  sortIndex: index,
+                  isAttack: true,
+                  revision: 1,
+                ),
+            ],
+            settings: [for (final pageId in pageIds) settings(pageId)],
+            elements: [
+              for (final pageId in pageIds)
+                for (var i = 0; i < _itemsAPage; i++)
+                  deletedElement('$pageId-gone-$i', pageId: pageId),
+            ],
+          ),
+        ),
+      ]),
+    );
+    await written.close();
+
+    final store = await openStore(
+      MemoryEngine(MemoryStorage(editable(storage.contents))),
+    );
+    expect(listOf(store).strategies.single.tallies, isEmpty);
+    final content = strategyOf(await store.readStrategy('s'));
+    var counted = store.rowsCountedFor('s');
+    final countedByPage = <int>[];
+    for (final page in content.pages) {
+      pageOf(await store.readPage('s', page.publicId));
+      countedByPage.add(store.rowsCountedFor('s') - counted);
+      counted = store.rowsCountedFor('s');
+    }
+
+    expect(countedByPage, [for (var i = 0; i < pages; i++) _itemsAPage]);
+    expect(listOf(store).strategies.single.tallies, isEmpty);
+    await store.close();
+  });
 
   test(
     'reading every page leaves the summary as it was and nothing to save',
