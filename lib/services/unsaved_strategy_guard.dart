@@ -27,40 +27,61 @@ enum CloudExitDecision {
 }
 
 Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
-  BuildContext context,
-) async {
+  BuildContext context, {
+  required String? strategyId,
+}) async {
   final result = await showShadDialog<UnsavedStrategyDecision>(
     context: context,
     builder: (context) {
       final l10n = context.l10n;
-      return ShadDialog.alert(
-        title: Text(l10n.unsavedGuardTitle),
-        description: Text(l10n.unsavedGuardDescription),
-        actions: [
-          ShadButton.ghost(
-            onPressed: () {
-              Navigator.of(context).pop(UnsavedStrategyDecision.cancel);
-            },
-            child: Text(l10n.commonCancel),
-          ),
-          ShadButton.destructive(
-            onPressed: () {
-              Navigator.of(context).pop(UnsavedStrategyDecision.dontSave);
-            },
-            child: Text(l10n.unsavedGuardDontSave),
-          ),
-          ShadButton(
-            onPressed: () {
-              Navigator.of(context).pop(UnsavedStrategyDecision.save);
-            },
-            child: Text(l10n.commonSave),
-          ),
-        ],
+      return _AsksWhileOpen(
+        strategyId: strategyId,
+        child: ShadDialog.alert(
+          title: Text(l10n.unsavedGuardTitle),
+          description: Text(l10n.unsavedGuardDescription),
+          actions: [
+            ShadButton.ghost(
+              onPressed: () {
+                Navigator.of(context).pop(UnsavedStrategyDecision.cancel);
+              },
+              child: Text(l10n.commonCancel),
+            ),
+            ShadButton.destructive(
+              onPressed: () {
+                Navigator.of(context).pop(UnsavedStrategyDecision.dontSave);
+              },
+              child: Text(l10n.unsavedGuardDontSave),
+            ),
+            ShadButton(
+              onPressed: () {
+                Navigator.of(context).pop(UnsavedStrategyDecision.save);
+              },
+              child: Text(l10n.commonSave),
+            ),
+          ],
+        ),
       );
     },
   );
 
   return result ?? UnsavedStrategyDecision.cancel;
+}
+
+class _AsksWhileOpen extends ConsumerWidget {
+  const _AsksWhileOpen({required this.strategyId, required this.child});
+
+  final String? strategyId;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen(strategyProvider.select((state) => state.strategyId), (_, now) {
+      if (now != strategyId) {
+        Navigator.of(context).pop(UnsavedStrategyDecision.cancel);
+      }
+    });
+    return child;
+  }
 }
 
 Future<CloudExitDecision> _showCloudSyncBlockedDialog(
@@ -421,7 +442,10 @@ Future<bool> guardUnsavedStrategyExit({
     return false;
   }
 
-  final decision = await showUnsavedStrategyDialog(context);
+  final decision = await showUnsavedStrategyDialog(
+    context,
+    strategyId: strategyState.strategyId,
+  );
   switch (decision) {
     case UnsavedStrategyDecision.save:
       try {
