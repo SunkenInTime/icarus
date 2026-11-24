@@ -199,6 +199,7 @@ final class SavePathGauntlet {
       }
     }
     final random = Random(seed * 1000 + _progress.round);
+    _seedFaultsFrom = _app.transport.appliedFaults.length;
     try {
       while (_progress.round < roundCount) {
         final round = _progress.round;
@@ -369,7 +370,6 @@ final class SavePathGauntlet {
   /// an accept, the server holds the first edits, and the second ones must
   /// still land, unasked.
   Future<void> _editWhileResendWaits(int seed, Editor editor, int round) async {
-    final faultsBefore = _app.transport.appliedFaults.length;
     await _waitFor(
       'the faulted batch to go out',
       () => _app.transport.heldForEdits != null,
@@ -379,6 +379,19 @@ final class SavePathGauntlet {
       for (final intent in _app.queueState.inFlightByEntityKey.values)
         intent.pending.op.opId: intent.pending.op,
     };
+    final unknown = [
+      for (final (index, opId) in held.opIds.indexed)
+        if (!inFlight.containsKey(opId)) '${held.opTypes[index]} $opId',
+    ];
+    if (unknown.isNotEmpty) {
+      _app.transport.faultedBatchEdited();
+      throw GauntletFailure(
+        'sent_under_unknown_ids',
+        'Seed $seed round $round: the batch sent carried ops the outbox does '
+            'not hold under those ids, so their answers can never settle them: '
+            '${unknown.join(', ')}',
+      );
+    }
     bool waitsBehind(StrategyOp op) => _app.queueState.successorByEntityKey
         .containsKey(EntitySyncKey.forStrategyOp(op)!);
     final waited = <String>[];
@@ -403,7 +416,11 @@ final class SavePathGauntlet {
     _app.transport.faultedBatchEdited();
     await _waitFor(
       'the faulted batch to fail',
-      () => _app.transport.appliedFaults.length > faultsBefore,
+      () => _app.transport.appliedFaults.any(
+        (applied) =>
+            applied.fault == held.fault &&
+            applied.opIds.join(' ') == held.opIds.join(' '),
+      ),
     );
     if (waited.isEmpty) {
       throw GauntletFailure(
@@ -775,16 +792,18 @@ final class SavePathGauntlet {
     final faultsBefore = _app.transport.appliedFaults.length;
     _app.transport.inject(BatchFault.loseAnswer);
     await editor.addPage('${_prefix(seed)}page-3', 'Lurk', 2);
+    Iterable<AppliedFault> lostAnswers() => _app.transport.appliedFaults
+        .skip(faultsBefore)
+        .where((applied) => applied.fault == BatchFault.loseAnswer);
     await _waitFor(
       'the page add\'s batch to lose its answer',
-      () => _app.transport.appliedFaults.length > faultsBefore,
+      () => lostAnswers().isNotEmpty,
     );
-    final struck = _app.transport.appliedFaults[faultsBefore];
-    if (!struck.opTypes.contains('page.add')) {
+    if (!lostAnswers().any((applied) => applied.opTypes.contains('page.add'))) {
       throw GauntletFailure(
         'page_add_not_faulted',
         'Seed $seed: the lost answer struck a batch without the page add '
-            '(${struck.opTypes.join(' ')})',
+            '(${lostAnswers().first.opTypes.join(' ')})',
       );
     }
     _faults['lostPageChangeAnswer'] = true;
@@ -1163,8 +1182,33 @@ final class SavePathGauntlet {
     return missing;
   }
 
+  int _seedFaultsFrom = 0;
+
   Future<void> _finishSeed(int seed, Editor editor) async {
     await _settle(seed);
+    final transport = _app.transport;
+    for (final applied in transport.appliedFaults.skip(_seedFaultsFrom)) {
+      if (applied.fault != BatchFault.loseAnswer &&
+          applied.fault != BatchFault.loseRequest) {
+        continue;
+      }
+      final sentAgain = {
+        for (final ids in transport.sentOpIds.skip(applied.sentAt + 1))
+          ...ids,
+      };
+      final notResent = [
+        for (final (index, opId) in applied.opIds.indexed)
+          if (!sentAgain.contains(opId)) '${applied.opTypes[index]} $opId',
+      ];
+      if (notResent.isNotEmpty) {
+        throw GauntletFailure(
+          'faulted_op_not_resent',
+          'Seed $seed: ops of a batch whose ${applied.fault.name} left their '
+              'outcome unknown were never sent again under their own ids: '
+              '${notResent.join(', ')}',
+        );
+      }
+    }
     final shown = await _check(seed, 'end of seed');
     if (shown != CloudSyncStatus.synced) {
       throw GauntletFailure(
