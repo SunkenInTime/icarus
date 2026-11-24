@@ -288,7 +288,117 @@ void main() {
       uploaded.page('page-c')!.toJson(),
     );
   });
+
+  group('a device reconnects with an edit to a row of a strategy deleted and '
+      'uploaded again, whose id and revision were reused', () {
+    final edits = <String, StrategyOp>{
+      'the strategy': const StrategyPatchOp(
+        opId: 'edit',
+        expectedStrategyRevision: 1,
+        name: 'Execute A',
+      ),
+      'a page': const PagePatchOp(
+        opId: 'edit',
+        pagePublicId: 'page-a',
+        expectedPageRevision: 1,
+        name: 'B site',
+      ),
+      'a page\'s settings': const PageSettingsPatchOp(
+        opId: 'edit',
+        pagePublicId: 'page-a',
+        settings: PageSettings(
+          agentSize: 2,
+          abilitySize: 2,
+          useNeutralTeamColors: true,
+        ),
+        expectedPageSettingsRevision: 1,
+      ),
+      'an element': movePatch('edit', x: 40),
+      'a lineup': LineupGroupPatchOp(
+        opId: 'edit',
+        lineupPublicId: 'g1',
+        expectedLineupRevision: 1,
+        payload: lineupNotes('jump throw'),
+        sortIndex: 0,
+      ),
+    };
+    for (final MapEntry(key: kind, value: edit) in edits.entries) {
+      test('$kind: the server refuses it as replaced, the replacement stays '
+          'intact, and the edit asks', () {
+        final server = Server()..rows = withLineup(initialRows());
+        final client = Client(base: server.rows)
+          ..must(const ConnectionReturned());
+        client.read(server.rows);
+        client.edit(edit);
+        server.reupload();
+        final uploaded = server.rows;
+        client
+          ..must(const ConnectionLost())
+          ..must(const ConnectionReturned());
+        client.read(server.rows);
+        final attempt = client.claim(['edit']);
+        final sent = client.effects.whereType<SendBatch>().last;
+        expect(sent.lives, {'edit': fixtureLife});
+        client.must(
+          OpAnswered(
+            attempt,
+            server.apply(
+              clientId,
+              sent.ops.single,
+              expectedLife: sent.lives['edit'],
+            ),
+          ),
+        );
+        expect(
+          client.view('edit').state,
+          const NeedsUser(
+            RefusedByServer(
+              RejectedByServer(RejectionReason.rowReplaced, NoServerCopy()),
+            ),
+          ),
+        );
+        expect(
+          [for (final row in server.rows.rows) row.toJson()],
+          [for (final row in uploaded.rows) row.toJson()],
+        );
+      });
+    }
+  });
 }
+
+LineupGroupPayload lineupNotes(String notes) => LineupGroupPayload(
+  payloadVersion: 1,
+  data: {
+    'id': 'g1',
+    'origins': [
+      {
+        'id': 'o1',
+        'agent': {'type': 'sova'},
+      },
+    ],
+    'landings': [
+      {
+        'id': 'l1',
+        'ability': {'type': 'recon'},
+      },
+    ],
+    'links': [
+      {'id': 'k1', 'originId': 'o1', 'landingId': 'l1', 'notes': notes},
+    ],
+  },
+);
+
+StrategyRowSet withLineup(StrategyRowSet rows) => rows.withRows([
+  LiveLineupGroup(
+    strategyPublicId: strategyId,
+    publicId: 'g1',
+    pagePublicId: 'page-a',
+    payload: lineupNotes(''),
+    sortIndex: 0,
+    revision: 1,
+    unknownFields: jsonObject({'createdAt': fixtureLife}),
+  ),
+]);
 
 Row relived(Row row, int life) {
   final born = jsonObject({'createdAt': life});

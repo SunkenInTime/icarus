@@ -670,7 +670,7 @@ void main() {
     await recordAll(store, [
       TransportFailed(sent.attempt, TransportFailure.network, at: clock),
     ]);
-    clock = clock.add(resendWindow);
+    clock = clock.add(const Duration(days: 29));
     counts.reset();
     await store.readStrategy(strategyId);
     await store.readPage(strategyId, 'page-a');

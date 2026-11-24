@@ -1016,7 +1016,7 @@ void main() {
     client.edit(putBackOf('back', drawn, 'e1'));
     final attempt = client.claim(['del']);
     client.must(TransportFailed(attempt, TransportFailure.network, at: now));
-    client.clock = now.add(resendWindow);
+    client.clock = now.add(const Duration(days: 29));
     client.queue = look(client.queue, client.at).queue;
     expect(stateOf(client, 'del'), const NeedsUser(WindowClosed()));
     expect(stateOf(client, 'back'), const Waiting());
@@ -1448,7 +1448,7 @@ void main() {
         ..must(const ConnectionReturned())
         ..edit(putBackOf('back', drawn, 'e1'));
       expect(client.view('back').holds, [isA<AwaitingResult>()]);
-      final later = client.at.add(resendWindow + const Duration(minutes: 1));
+      final later = client.at.add(const Duration(days: 29, minutes: 1));
       final queue = client.queue;
       final afresh = CloudQueue(
         entries: queue.entries,
@@ -2149,7 +2149,7 @@ void main() {
         'sent goes out on reconnect, naming its revision and life', () {
       final client = Client()..read(initialRows());
       client.edit(movePatch('old', x: 80));
-      client.clock = now.add(resendWindow);
+      client.clock = now.add(const Duration(days: 29));
       client.must(const ConnectionReturned());
       expect(client.view('old').sendable, isTrue);
       client.claim(['old']);

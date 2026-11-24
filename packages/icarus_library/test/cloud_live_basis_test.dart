@@ -83,8 +83,8 @@ void main() {
             }
             final elapsed = switch (basis) {
               Basis.none || Basis.fresh => heldAt + const Duration(seconds: 5),
-              Basis.atTheLimit => heldAt + liveFor,
-              Basis.stale => heldAt + liveFor + const Duration(milliseconds: 1),
+              Basis.atTheLimit => heldAt + const Duration(seconds: 20),
+              Basis.stale => heldAt + const Duration(seconds: 20, milliseconds: 1),
               Basis.noReading => null,
             };
             final sent = claimAt(client, ['drop'], elapsed);
@@ -212,7 +212,7 @@ void main() {
       at: client.at,
       elapsed: () => reading,
     );
-    reading = heldAt + liveFor + const Duration(seconds: 1);
+    reading = heldAt + const Duration(seconds: 21);
     client.must(claim);
     final sent = client.effects.whereType<SendBatch>().last;
     expect((sent.ops.single as ElementDeleteOp).lastWriterWins, isFalse);

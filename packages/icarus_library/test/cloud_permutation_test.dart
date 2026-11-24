@@ -310,7 +310,7 @@ final class Scenario {
       case 0:
         facts.add(ClockFact(const Duration(hours: 1), '+1h'));
       case 1:
-        facts.add(ClockFact(serverRemembersAnswersFor, '+30 days'));
+        facts.add(ClockFact(const Duration(days: 30), '+30 days'));
       case _:
         break;
     }
@@ -438,7 +438,7 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
         for (final sent in made.whereType<SendBatch>()) {
           for (final op in sent.ops) {
             if (server.firstClient.containsKey(op.opId) &&
-                !at.isBefore(now.add(serverRemembersAnswersFor))) {
+                !at.isBefore(now.add(const Duration(days: 30)))) {
               throw StateError(
                 '${op.opId} was sent again after the server forgot it',
               );

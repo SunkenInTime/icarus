@@ -1358,7 +1358,9 @@ void main() {
       );
       inWorld(
         (world) {
-          server.readCalls.clear();
+          server
+            ..readCalls.clear()
+            ..log.clear();
           server.onRead = (call) {
             if (call.page == secondId() && server.readCalls.length == 2) {
               world.teammateDeletesPage(secondId());
@@ -1366,8 +1368,7 @@ void main() {
           };
           world.commitPageDelete('delete-p2', secondId());
           world.settle(const Duration(minutes: 1));
-          expect(readsAfter(world, 0).take(2), ['list', 'page p2']);
-          expect(readsAfter(world, 0).length, inInclusiveRange(3, 6));
+          expect(server.log, ['list', 'page p2', 'list', 'send delete-p2']);
           expect(world.queueLength(), 0);
         },
         storage: storage,
@@ -1848,9 +1849,6 @@ void main() {
   });
 
   group('the bot review of the third round', () {
-    List<String> readsAfter(World world, int before) =>
-        [for (final call in world.server.readCalls.skip(before)) '$call'];
-
     test(
         'a read-back that throws after adoption saves ends the sender with the '
         'store\'s words instead of escaping the loop', () {
@@ -1892,13 +1890,18 @@ void main() {
           world.connection = null;
           world.settle(const Duration(seconds: 40));
           final before = server.readCalls.length;
+          final logged = server.log.length;
           world.slowStore.duringSessionWrite = () => world.commitPageDelete(
                 'delete-p2',
                 secondPage().page.publicId,
               );
           world.connection = 2;
           world.settle(const Duration(seconds: 1));
-          expect(readsAfter(world, before).first, 'list');
+          expect(server.log.skip(logged), [
+            'list',
+            'page p2',
+            'send delete-p2',
+          ]);
           expect(server.readCalls[before].why, 'the queue asked for it');
         },
         storage: storage,

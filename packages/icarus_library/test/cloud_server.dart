@@ -85,6 +85,12 @@ final class Server {
     );
   }
 
+  void reupload() {
+    rows = reuploaded(rows, nextLife++);
+    recorded.clear();
+    firstClient.clear();
+  }
+
   void write(OpApplied done) => rows = rows.withRows([
     for (final row in done.rows) bornIn(row, nextLife++),
   ]);
@@ -174,4 +180,70 @@ final class Server {
     },
     null => false,
   };
+}
+
+StrategyRowSet reuploaded(StrategyRowSet rows, int life) {
+  final born = jsonObject({'createdAt': life});
+  final strategy = rows.strategy;
+  return StrategyRowSet(
+    strategy: ReadableStrategy(
+      publicId: strategy.publicId,
+      name: strategy.name,
+      mapData: strategy.mapData,
+      themeProfileId: strategy.themeProfileId,
+      revision: 1,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(life, isUtc: true),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(life, isUtc: true),
+    ),
+    pages: [
+      for (final row in rows.pages)
+        if (row is LivePage)
+          LivePage(
+            publicId: row.publicId,
+            strategyPublicId: row.strategyPublicId,
+            name: row.name,
+            isAutoNamed: row.isAutoNamed,
+            sortIndex: row.sortIndex,
+            isAttack: row.isAttack,
+            revision: 1,
+            unknownFields: born,
+          ),
+    ],
+    settings: [
+      for (final row in rows.settings)
+        if (row is ReadablePageSettings &&
+            rows.page(row.pagePublicId) is LivePage)
+          ReadablePageSettings(
+            pagePublicId: row.pagePublicId,
+            settings: row.settings,
+            revision: 1,
+            unknownFields: born,
+          ),
+    ],
+    elements: [
+      for (final row in rows.elements)
+        if (row is LiveElement && rows.page(row.pagePublicId) is LivePage)
+          LiveElement(
+            publicId: row.publicId,
+            pagePublicId: row.pagePublicId,
+            payload: row.payload,
+            sortIndex: row.sortIndex,
+            revision: 1,
+            unknownFields: born,
+          ),
+    ],
+    lineupGroups: [
+      for (final row in rows.lineupGroups)
+        if (row is LiveLineupGroup && rows.page(row.pagePublicId) is LivePage)
+          LiveLineupGroup(
+            publicId: row.publicId,
+            strategyPublicId: row.strategyPublicId,
+            pagePublicId: row.pagePublicId,
+            payload: row.payload,
+            sortIndex: row.sortIndex,
+            revision: 1,
+            unknownFields: born,
+          ),
+    ],
+  );
 }

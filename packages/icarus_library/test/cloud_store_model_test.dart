@@ -113,7 +113,7 @@ final class StoreModel {
   final server = Server();
   final log = <String>[];
   final reference = <StrategyOp>[];
-  final inFlight = <(int, String, List<StrategyOp>)>[];
+  final inFlight = <(int, String, List<StrategyOp>, Map<String, int>)>[];
   late LibraryStore store;
   DateTime clock = now;
   String clientId = 'client-0';
@@ -673,9 +673,13 @@ final class StoreModel {
   Future<void> landNow() async {
     await claim();
     while (inFlight.isNotEmpty) {
-      final (attempt, owner, ops) = inFlight.removeAt(0);
+      final (attempt, owner, ops, lives) = inFlight.removeAt(0);
       await record([
-        for (final op in ops) OpAnswered(attempt, server.apply(owner, op)),
+        for (final op in ops)
+          OpAnswered(
+            attempt,
+            server.apply(owner, op, expectedLife: lives[op.opId]),
+          ),
       ], 'answers for $attempt');
     }
   }
@@ -758,7 +762,7 @@ final class StoreModel {
 
   Future<void> giveUpLostSends() async {
     final queue = (await sync()).queue;
-    final carried = {for (final (attempt, _, _) in inFlight) attempt};
+    final carried = {for (final (attempt, _, _, _) in inFlight) attempt};
     final lost = [
       for (final attempt in queue.attempts.values)
         if (attempt.outcome is AttemptOpen && !carried.contains(attempt.number))
@@ -796,12 +800,12 @@ final class StoreModel {
     ], 'claim $ids');
     if (recorded == null) return;
     final sent = effectsOf(recorded).whereType<SendBatch>().single;
-    inFlight.add((sent.attempt, sent.clientId, sent.ops));
+    inFlight.add((sent.attempt, sent.clientId, sent.ops, sent.lives));
   }
 
   Future<void> deliver() async {
     if (inFlight.isEmpty) return;
-    final (attempt, owner, ops) = inFlight.removeAt(
+    final (attempt, owner, ops, lives) = inFlight.removeAt(
       random.nextInt(inFlight.length),
     );
     if (random.nextInt(8) == 0) {
@@ -810,7 +814,10 @@ final class StoreModel {
       ], 'lost $attempt');
       return;
     }
-    final answers = [for (final op in ops) server.apply(owner, op)];
+    final answers = [
+      for (final op in ops)
+        server.apply(owner, op, expectedLife: lives[op.opId]),
+    ];
     if (random.nextInt(4) == 0) {
       await record([
         for (final answer in answers) OpAnswered(attempt, answer),
@@ -826,10 +833,10 @@ final class StoreModel {
   }
 
   Future<void> restart() async {
-    for (final (_, owner, ops) in inFlight) {
+    for (final (_, owner, ops, lives) in inFlight) {
       if (random.nextBool()) {
         for (final op in ops) {
-          server.apply(owner, op);
+          server.apply(owner, op, expectedLife: lives[op.opId]);
         }
       }
     }

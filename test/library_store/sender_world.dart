@@ -123,6 +123,7 @@ int lifeOfChecked(StrategyRowSet rows, StrategyOp op) {
 final class FakeServer {
   int nextLife = firstLife + 1;
   final calls = <ServerCall>[];
+  final log = <String>[];
   final receipts = <(String, String, String), OpAnswer>{};
   final appliedTimes = <(String, String), int>{};
   final owners = <String, Account>{};
@@ -272,6 +273,7 @@ final class FakeServer {
       lives,
     );
     calls.add(call);
+    log.add('send ${call.opIds.join(' ')}');
     onCall?.call(call);
     if (owners[strategyPublicId] case final owner? when owner != account) {
       wrongAccount.add(call);
@@ -329,6 +331,7 @@ final class FakeServer {
       ..why = whyNow?.call()
       ..role = roles[call.strategyId] ?? StoreReadRole.owner;
     readCalls.add(call);
+    log.add('$call');
     onRead?.call(call);
     if (owners[call.strategyId] case final owner? when owner != call.account) {
       wrongAccountReads.add(call);
