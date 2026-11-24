@@ -219,6 +219,7 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
@@ -711,6 +712,85 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
         '${outcomes['the opened strategy took the change'] ?? 0} times, '
         'expected $expected');
   }
+}
+
+Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
+  final c = appProviderContainer;
+  final strategies = c.read(strategyProvider.notifier);
+  final listing = c.listen(cloudStrategiesProvider, (_, __) {});
+  String? idOf(String name) =>
+      (c.read(cloudStrategiesProvider).valueOrNull ?? const [])
+          .where((entry) => entry.strategy.name == name)
+          .firstOrNull
+          ?.strategy
+          .id;
+  final openedName = step['cloudOpenTime'] as String;
+  final leftName = step['from'] as String;
+  await _waitFor(() => idOf(openedName) != null && idOf(leftName) != null, 30);
+  final opened = idOf(openedName)!;
+  final left = idOf(leftName)!;
+  listing.close();
+  Future<void> openAndSettle(String id) async {
+    if (!await strategies.openCloudStrategy(id)) {
+      throw StateError('$id did not open');
+    }
+    await _waitFor(
+      () => !c.read(strategyPageSessionProvider).isApplyingPage,
+      60,
+    );
+    await _frames();
+  }
+
+  final pages = (step['pages'] ?? 1) as int;
+  final items = (step['items'] ?? 0) as int;
+  if (items > 0) {
+    await openAndSettle(opened);
+    for (var page = 0; page < pages; page++) {
+      if (page > 0) await _run({'addPage': true});
+      await _run({'fillPage': items});
+    }
+    await _waitFor(_settled, 180);
+  }
+  final runs = (step['runs'] ?? 20) as int;
+  final restAt = _point(step, 'restAt');
+  String ms(int micros) => (micros / 1000).toStringAsFixed(1);
+  final shownAfter = <int>[];
+  final reads = <int>[];
+  for (var run = 1; run <= runs; run++) {
+    await openAndSettle(opened);
+    await openAndSettle(left);
+    final clock = Stopwatch();
+    int? swapped;
+    final subscription = c.listen(
+      strategyProvider.select((state) => state.strategyId),
+      (_, id) {
+        if (id == opened) swapped ??= clock.elapsedMicroseconds;
+      },
+    );
+    clock.start();
+    _pressMouse(restAt, buttons: kBackMouseButton);
+    await _waitFor(
+      () =>
+          swapped != null &&
+          !c.read(strategyPageSessionProvider).isApplyingPage,
+      60,
+    );
+    final shown = clock.elapsedMicroseconds;
+    subscription.close();
+    shownAfter.add(shown);
+    reads.add(swapped!);
+    _log('CLOUDOPEN run $run: $openedName read ${ms(swapped!)} ms after the '
+        'back button, its page shown after ${ms(shown)} ms');
+    await _frames();
+    await Future<void>.delayed(const Duration(seconds: 1));
+  }
+  shownAfter.sort();
+  reads.sort();
+  String spread(List<int> values) =>
+      'median ${ms(values[values.length ~/ 2])} ms, worst ${ms(values.last)} ms';
+  _log('CLOUDOPEN summary $openedName ($pages pages, $items items a page): '
+      '$runs runs; back button to the read done ${spread(reads)}; to its '
+      'page shown ${spread(shownAfter)}');
 }
 
 int _markersOn(StrategyPage page) =>
@@ -2300,6 +2380,12 @@ Future<void> _run(Map<String, dynamic> step) async {
       await File(step['file'] as String).writeAsString(code);
     case 'mapThenOpen':
       await _mapThenOpen(step);
+    case 'cloudOpenTime':
+      await _cloudOpenTime(step);
+    case 'autosave':
+      await c
+          .read(appPreferencesProvider.notifier)
+          .setAutosaveEnabled(value as bool);
     case 'openFirstFrame':
       await _openFirstFrame(step);
     case 'openStoredCloudStrategy':
