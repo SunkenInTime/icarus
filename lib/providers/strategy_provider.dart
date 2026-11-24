@@ -948,14 +948,10 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   CanvasOf? _canvasOnScreen() => switch (state.strategyId) {
-        final strategyId? => switch (readCanvas(
-            ref,
+        final strategyId? => _canvasOf(
             strategyId,
             ref.read(strategyPageSessionProvider).activePageId,
-          )) {
-            final CanvasOf canvas => canvas,
-            CanvasNotShown() => null,
-          },
+          ),
         null => null,
       };
 
@@ -1917,13 +1913,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       final sourcePageId = pages.isEmpty ? null : pages[sourceIndex].publicId;
       // Edits made just before "+" go ahead of the add, so the server's
       // copy has them.
-      final handedOver = await ref
+      await ref
           .read(strategyPageSessionProvider.notifier)
           .handOverForSyncStatus();
       if (state.strategyId != strategyId) return none;
-      if (handedOver is NothingShown) {
-        return (unsavedEdits: true, waitingForCloud: false, notSaved: true);
-      }
       // Edits to the page the server refused: the copy, made from the
       // server's page, doesn't have them.
       bool sourceEditsRefused() =>
@@ -2192,11 +2185,10 @@ class StrategyProvider extends Notifier<StrategyState> {
               activePageId
           : activePageId;
 
-      if (activePageId == pageId &&
-          await ref
-              .read(strategyPageSessionProvider.notifier)
-              .handOverForSyncStatus(flushImmediately: true) is NothingShown) {
-        return false;
+      if (activePageId == pageId) {
+        await ref
+            .read(strategyPageSessionProvider.notifier)
+            .handOverForSyncStatus(flushImmediately: true);
       }
 
       final ack = await _enqueueCloudPageDescriptorOp(
@@ -2785,16 +2777,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         ref.read(strategySaveStateProvider.notifier).dirtyMarks;
     final unsaved = ref.read(strategySaveStateProvider).isDirty ||
         ref.read(textDraftProvider).isNotEmpty;
-    final canvas = switch (readCanvas(
-      ref,
-      id,
-      ref.read(strategyPageSessionProvider).activePageId ??
-          const LocalLibrary().storedStrategy(id)?.pages.firstOrNull?.id,
-    )) {
-      final CanvasOf shown when state.strategyId == id => shown,
-      _ => null,
-    };
-    if (canvas == null) {
+    final pageId = ref.read(strategyPageSessionProvider).activePageId ??
+        const LocalLibrary().storedStrategy(id)?.pages.firstOrNull?.id;
+    if (_canvasOf(id, pageId) == null) {
       if (unsaved) {
         throw StateError(
           'The canvas does not show this strategy, so the work on the canvas '
@@ -2814,6 +2799,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         break;
     }
 
+    final canvas = _canvasOf(id, pageId);
+    if (canvas == null) return;
     final StrategyData? savedStrat = const LocalLibrary().storedStrategy(id);
 
     if (savedStrat == null) return;
@@ -2837,6 +2824,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
     log("Save to hive was called");
   }
+
+  CanvasOf? _canvasOf(String strategyId, String? pageId) =>
+      switch (readCanvas(ref, strategyId, pageId)) {
+        final CanvasOf shown => shown,
+        CanvasNotShown() => null,
+      };
 
   Future<void> _saveLocalPageOrThrow() async {
     switch (await _syncCurrentPageToHive()) {
@@ -3011,8 +3004,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     StrategySettings Function(StrategySettings settings) transform,
   ) async {
     if (!_currentStrategyCanEditPages()) return;
-    final canvas = _canvasOnScreen();
-    if (canvas == null) return;
+    final startedOn = state.strategyId;
     if (_currentStrategyIsCloud()) {
       final strategyId = state.strategyId;
       if (strategyId == null) {
@@ -3056,7 +3048,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     const library = LocalLibrary();
     final strategyId = state.strategyId;
-    if (strategyId == null) return;
+    if (strategyId == null || strategyId != startedOn) return;
+    final canvas = _canvasOnScreen();
+    if (canvas == null) return;
     final strat = library.storedStrategy(strategyId);
     if (strat == null || strat.pages.isEmpty) return;
 

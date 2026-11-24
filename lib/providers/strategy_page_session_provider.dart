@@ -654,11 +654,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     return handover;
   }
 
-  Future<PageHandover> handOverForSyncStatus({
-    bool flushImmediately = false,
-  }) async {
-    final handover = await flushCurrentPage(flushImmediately: flushImmediately);
-    switch (handover) {
+  Future<void> handOverForSyncStatus({bool flushImmediately = false}) async {
+    switch (await flushCurrentPage(flushImmediately: flushImmediately)) {
       case HeldOnCanvas(:final reason):
         AppErrorReporter.reportInfo(
           'The canvas of page ${state.activePageId} is held: ${reason.name}.',
@@ -672,7 +669,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         );
       case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
     }
-    return handover;
   }
 
   /// Keeps both versions of every conflicting lineup group: the cloud's
@@ -1244,13 +1240,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             activePageId: pageId,
           );
       await remote.setActivePage(pageId, fetched: target);
-      if (superseded()) return _PageSwitch.superseded;
     }
 
     final pageData = await pageSource.loadPage(pageId);
-    if (source == StrategySource.cloud && superseded()) {
-      return _PageSwitch.superseded;
-    }
     onTargetRead?.call(pageData);
     await _applyLoadedPageData(
       pageData,
@@ -1703,9 +1695,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     await ref
         .read(strategyOpQueueProvider.notifier)
         .retryRestoredPage(deleted.pageId);
-    if (await handOverForSyncStatus(flushImmediately: true) is NothingShown) {
-      return DeletedPageRestore.failed;
-    }
+    await handOverForSyncStatus(flushImmediately: true);
     // A send whose answer was lost replays under its own op id, and may be
     // answered with the refusal the server recorded while the page was in
     // the trash: once the page's sends are answered, those go again too.

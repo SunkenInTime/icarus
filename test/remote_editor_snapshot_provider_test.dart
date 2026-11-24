@@ -12,6 +12,8 @@ import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
@@ -19,10 +21,12 @@ import 'package:icarus/providers/collab/media_bytes_source.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_ce/hive.dart';
@@ -678,10 +682,69 @@ void main() {
       expect(container.read(strategyProvider).strategyId, local.id);
     });
 
+    void onEmptied(ProviderContainer container, void Function() act) {
+      container.listen(canvasShowsProvider, (_, next) {
+        if (next is ShowsNothing) act();
+      });
+    }
+
     test(
-        'two page clicks at once end on the second page, with nothing handed '
-        'over from a canvas that does not show the page asked for', () async {
-      final repository = _Repository()..pageIds = ['a', 'b', 'c'];
+        'a cloud save that resumes after a reopen emptied the canvas and '
+        'before its page is drawn hands nothing over and stays unsynced',
+        () async {
+      final repository = _Repository();
+      repository.pageSnapshots['a'] = _page(
+        'a',
+        images: [_image('image-a')],
+        assets: [_activeAsset('image-a')],
+      );
+      final queue = _RecordingOpQueue();
+      final (container, _) = await desktop(repository, queue: () => queue);
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+      final session = container.read(strategyPageSessionProvider.notifier);
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            type: AgentType.jett,
+            position: const Offset(300, 300),
+            id: 'sent-before',
+          ));
+      await session.handOverForSyncStatus();
+      queue.desired.clear();
+
+      queue.holdMetadata();
+      final saving = session.handOverForSyncStatus();
+      await queue.metadataReached!.future;
+      onEmptied(container, queue.releaseMetadata);
+      final opening = strategies.openCloudStrategy('strategy');
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            type: AgentType.sova,
+            position: const Offset(400, 300),
+            id: 'made-while-reopening',
+          ));
+      strategies.setUnsaved();
+      await saving;
+      final heldAtSave =
+          container.read(strategySaveStateProvider.notifier).canvasHeld;
+      expect(await opening, isTrue);
+
+      expect(heldAtSave, isTrue);
+      expect(
+        [for (final desired in queue.desired) ...desired.values]
+            .whereType<ElementDeleteOp>(),
+        isEmpty,
+      );
+    });
+
+    test(
+        'an acknowledgment that resumes after a reopen emptied the canvas and '
+        'before its page is drawn queues no delete', () async {
+      final repository = _Repository();
+      repository.pageSnapshots['a'] = _page(
+        'a',
+        images: [_image('image-a')],
+        assets: [_activeAsset('image-a')],
+      );
       final queue = _RecordingOpQueue();
       final (container, _) = await desktop(repository, queue: () => queue);
       await container.read(remoteEditorSnapshotProvider.future);
@@ -690,29 +753,191 @@ void main() {
       container.read(agentProvider.notifier).addAgent(PlacedAgent(
             type: AgentType.jett,
             position: const Offset(300, 300),
-            id: 'edited-on-a',
+            id: 'sent-before',
           ));
+      final session = container.read(strategyPageSessionProvider.notifier);
+      await session.handOverForSyncStatus();
+      final sent = queue.desired.last.values.whereType<ElementAddOp>().first;
       queue.desired.clear();
+      container.read(strategySaveStateProvider.notifier).reset();
 
+      final refreshRead = Completer<void>();
+      repository.pageReadGate = refreshRead;
+      queue.acknowledge(
+        AckedEntityIntent(
+          entityKey: EntitySyncKey.element('a', sent.elementPublicId),
+          op: sent,
+          ack: AppliedOpAck(opId: sent.opId, revision: 2),
+        ),
+      );
+      await repository.pageReadHeld.future;
+      onEmptied(container, refreshRead.complete);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(refreshRead.isCompleted, isTrue);
+      expect(
+        [for (final desired in queue.desired) ...desired.values]
+            .whereType<ElementDeleteOp>(),
+        isEmpty,
+      );
+    });
+
+    test(
+        'a page clicked after an edit made while the page clicked before it '
+        'is selected but not drawn stays, and the editor ends on the first '
+        'page drawn and saving', () async {
+      final repository = _Repository()..pageIds = ['a', 'b', 'c'];
+      final queue = _RecordingOpQueue();
+      final (container, _) = await desktop(repository, queue: () => queue);
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+
+      final drawingB = Completer<void>();
+      repository.unwatchGate = drawingB;
       final first = strategies.selectPage('b');
+      await repository.unwatchHeld.future;
+      expect(container.read(strategyPageSessionProvider).activePageId, 'b');
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            type: AgentType.jett,
+            position: const Offset(300, 300),
+            id: 'made-while-b-reads',
+          ));
+      strategies.setUnsaved();
       final second = strategies.selectPage('c');
+      drawingB.complete();
       await first;
       await second;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      expect(container.read(strategyPageSessionProvider).activePageId, 'c');
+      const page = 'b';
+      expect(container.read(strategyPageSessionProvider).activePageId, page);
       expect(
         container.read(canvasShowsProvider),
-        isA<ShowsPage>().having((shows) => shows.pageId, 'page', 'c'),
+        isA<ShowsPage>().having((shows) => shows.pageId, 'page', page),
       );
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            type: AgentType.sova,
+            position: const Offset(400, 300),
+            id: 'made-after',
+          ));
+      queue.desired.clear();
+      await container
+          .read(strategyPageSessionProvider.notifier)
+          .handOverForSyncStatus();
+      expect(container.read(strategySaveStateProvider.notifier).canvasHeld,
+          isFalse);
       final handedOver = [
         for (final desired in queue.desired)
           for (final MapEntry(:key, :value) in desired.entries)
-            if (key.entityId == 'edited-on-a') (key.pageId, value),
+            if (key.entityId == 'made-after') (page: key.pageId, op: value),
       ];
-      expect(handedOver, isNotEmpty);
-      expect({for (final (page, _) in handedOver) page}, {'a'});
-      expect(handedOver.map((handed) => handed.$2),
-          everyElement(isA<ElementAddOp>()));
+      expect(handedOver.map((handed) => handed.page), [page]);
+      expect(handedOver.single.op, isA<ElementAddOp>());
+    });
+
+    test(
+        'a page clicked once the page clicked before it is selected but not '
+        'drawn ends, as on main, on the first page, drawn', () async {
+      final repository = _Repository()..pageIds = ['a', 'b', 'c'];
+      repository.pageSnapshots['a'] = _page(
+        'a',
+        images: [_image('image-a')],
+        assets: [_activeAsset('image-a')],
+      );
+      final (container, _) =
+          await desktop(repository, queue: _RecordingOpQueue.new);
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+
+      final drawingB = Completer<void>();
+      repository.unwatchGate = drawingB;
+      final first = strategies.selectPage('b');
+      await repository.unwatchHeld.future;
+      expect(container.read(strategyPageSessionProvider).activePageId, 'b');
+      final second = strategies.selectPage('c');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      drawingB.complete();
+      for (final click in [first, second]) {
+        await click.then((_) {}, onError: (Object _) {});
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(container.read(strategyPageSessionProvider).activePageId, 'b');
+      expect(
+        container.read(canvasShowsProvider),
+        isA<ShowsPage>().having((shows) => shows.pageId, 'page', 'b'),
+      );
+      expect(container.read(placedImageProvider).images, isEmpty);
+    });
+
+    group('with the canvas not showing the page on screen', () {
+      final writers = <String, Future<Object?> Function(ProviderContainer)>{
+        'a save': (container) => container
+            .read(strategyPageSessionProvider.notifier)
+            .handOverForSyncStatus(),
+        'a page click': (container) =>
+            container.read(strategyProvider.notifier).selectPage('b'),
+        'copying an item to the next page': (container) => container
+            .read(strategyProvider.notifier)
+            .copyPlacedWidgetToAdjacentPage(
+              widgetId: 'edited-here',
+              direction: PageTransitionDirection.forward,
+            ),
+        'copying lineups to the next page': (container) =>
+            container.read(strategyProvider.notifier).copyLineUpsToAdjacentPage(
+              linkIds: {
+                for (final link in container.read(lineUpProvider).links)
+                  link.id,
+              },
+              direction: PageTransitionDirection.forward,
+            ),
+        'switching side on all pages': (container) =>
+            container.read(strategyProvider.notifier).switchSide(
+                  allPages: true,
+                ),
+        'adding a page': (container) =>
+            container.read(strategyProvider.notifier).addPage(),
+      };
+
+      for (final MapEntry(key: step, value: write) in writers.entries) {
+        test('$step queues nothing', () async {
+          final repository = _Repository();
+          final queue = _RecordingOpQueue();
+          final (container, _) = await desktop(repository, queue: () => queue);
+          await container.read(remoteEditorSnapshotProvider.future);
+          final strategies = container.read(strategyProvider.notifier);
+          expect(await strategies.openCloudStrategy('strategy'), isTrue);
+          container.read(agentProvider.notifier).addAgent(PlacedAgent(
+                type: AgentType.jett,
+                position: const Offset(300, 300),
+                id: 'edited-here',
+              ));
+          container
+              .read(lineUpProvider.notifier)
+              .fromHive(sharedSpotLineups('on-screen'));
+          strategies.setUnsaved();
+          queue.desired.clear();
+          queue.queued.clear();
+
+          container.read(canvasShowsProvider.notifier).emptied();
+          await write(container).catchError(
+            (Object _) => null,
+            test: (error) => error is StateError,
+          );
+
+          expect(queue.queued, isEmpty);
+          expect(queue.desired, isEmpty);
+          expect(container.read(strategyPageSessionProvider).activePageId, 'a');
+          expect(
+            container.read(strategySaveStateProvider.notifier).canvasHeld ||
+                container.read(strategySaveStateProvider).isDirty,
+            isTrue,
+          );
+        });
+      }
     });
 
     test('a strategy that cannot be read does not open as the one before it',
@@ -1000,6 +1225,8 @@ class _Repository extends ConvexStrategyRepository {
   /// While set, the next page read waits for it, then answers as usual.
   Completer<void>? pageReadGate;
 
+  final pageReadHeld = Completer<void>();
+
   final failNextRead = <String>{};
 
   /// What reads of a page answer; an empty page when it has none.
@@ -1050,6 +1277,7 @@ class _Repository extends ConvexStrategyRepository {
     final gate = pageReadGate;
     if (gate != null) {
       pageReadGate = null;
+      if (!pageReadHeld.isCompleted) pageReadHeld.complete();
       await gate.future;
     }
     if (failPageReads || failNextRead.remove(pagePublicId)) {
@@ -1076,10 +1304,29 @@ class _Repository extends ConvexStrategyRepository {
   }) {
     readTokens.add(shareToken);
     watchedPages.add(pagePublicId);
-    return (pageStreams[pagePublicId] ??=
+    final watched = (pageStreams[pagePublicId] ??=
             StreamController<RemotePageSnapshot>.broadcast())
         .stream;
+    late final StreamSubscription<RemotePageSnapshot> forwarding;
+    final watch = StreamController<RemotePageSnapshot>(
+      onListen: () {},
+      onCancel: () async {
+        await forwarding.cancel();
+        final gate = unwatchGate;
+        if (gate != null) {
+          unwatchGate = null;
+          unwatchHeld.complete();
+          await gate.future;
+        }
+      },
+    );
+    forwarding = watched.listen(watch.add);
+    return watch.stream;
   }
+
+  Completer<void>? unwatchGate;
+
+  final unwatchHeld = Completer<void>();
 }
 
 class _ReadyAuthProvider extends AuthProvider {
@@ -1152,6 +1399,49 @@ class _IdleOpQueue extends StrategyOpQueueNotifier {
 
 class _RecordingOpQueue extends _IdleOpQueue {
   final desired = <Map<EntitySyncKey, StrategyOp>>[];
+  final queued = <StrategyOp>[];
+
+  @override
+  Future<void> enqueue(StrategyOp op, {bool flushImmediately = false}) async =>
+      queued.add(op);
+
+  @override
+  Future<void> enqueueAll(
+    Iterable<StrategyOp> ops, {
+    bool flushImmediately = false,
+    SeenPage? seenPage,
+  }) async =>
+      queued.addAll(ops);
+
+  @override
+  Future<void> enqueuePageChange(
+    StrategyOp op, {
+    bool flushImmediately = false,
+    SeenPage? seenPage,
+  }) async =>
+      queued.add(op);
+
+  @override
+  Future<bool> enqueuePageCopy(
+    PageAddOp add,
+    List<StrategyOp> content, {
+    required String strategyPublicId,
+  }) async {
+    queued
+      ..add(add)
+      ..addAll(content);
+    return true;
+  }
+
+  @override
+  Future<bool> enqueueOffCanvas(
+    StrategyOp op, {
+    bool flushImmediately = false,
+  }) async {
+    queued.add(op);
+    return true;
+  }
+
   Completer<void>? metadataReached;
   Completer<void>? _metadataReleased;
 

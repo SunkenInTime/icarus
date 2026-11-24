@@ -9,7 +9,9 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -32,6 +34,7 @@ final class _Hold {
   final reached = Completer<void>();
   final released = Completer<void>();
   var fails = false;
+  var passFirst = 0;
 }
 
 final class _DiskGate {
@@ -40,14 +43,18 @@ final class _DiskGate {
   final Directory directory;
   final _armed = <_Hold>[];
 
-  _Hold holdNext({bool fails = false}) {
-    final hold = _Hold()..fails = fails;
+  _Hold holdNext({bool fails = false, int passFirst = 0}) {
+    final hold = _Hold()
+      ..fails = fails
+      ..passFirst = passFirst;
     _armed.add(hold);
     return hold;
   }
 
   Future<Object?> answer(MethodCall call) async {
-    if (_armed.isNotEmpty) {
+    if (_armed.firstOrNull case final next? when next.passFirst > 0) {
+      next.passFirst--;
+    } else if (_armed.isNotEmpty) {
       final hold = _armed.removeAt(0);
       hold.reached.complete();
       await hold.released.future;
@@ -163,8 +170,26 @@ void main() {
         [for (final agent in a.pages[1].agentData) agent.id]);
     await editor().addPage();
     expectShowsActivePage('adding a page');
+    final onScreenBeforeMove = activePage();
+    final orderBeforeMove = [
+      for (final page
+          in saved(a.id).pages.toList()
+            ..sort((x, y) => x.sortIndex.compareTo(y.sortIndex)))
+        page.id,
+    ];
     await editor().reorderPage(0, 2);
+    expect(
+      [
+        for (final page
+            in saved(a.id).pages.toList()
+              ..sort((x, y) => x.sortIndex.compareTo(y.sortIndex)))
+          page.id,
+      ],
+      isNot(orderBeforeMove),
+    );
+    expect(activePage(), onScreenBeforeMove);
     expectShowsActivePage('moving a page');
+    expect(agentsOnCanvas(), agentsSaved(a.id, activePage()!));
     final active = activePage()!;
     final onScreen = agentsOnCanvas();
     expect(await editor().deletePage(active), isTrue);
@@ -290,7 +315,10 @@ void main() {
     await holdC.reached.future;
 
     expect(editor().isOpening, isTrue);
-    expect(editor().ignoresClick(a.pages[1].id), isTrue);
+    final before = saved(a.id).lastEdited;
+    await editor().selectPage(a.pages[1].id);
+    expect(activePage(), a.pages[0].id);
+    expect(saved(a.id).lastEdited, before);
     holdC.released.complete();
     expect(await openingC, isTrue);
 
@@ -361,6 +389,59 @@ void main() {
   });
 
   test(
+      'a Save that a map change and a page click overtake does not put the '
+      'old map back', () async {
+    final a = stored('overtaken-save');
+    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .put(a.id, a.copyWith(mapData: MapValue.haven));
+    expect(await editor().loadFromHive(a.id), isTrue);
+    expect(container.read(mapProvider).currentMap, MapValue.haven);
+
+    final saving = editor().saveToHive(a.id);
+    container.read(mapProvider.notifier).updateMap(MapValue.lotus);
+    editor().setUnsaved();
+    final switching = editor().selectPage(a.pages[1].id);
+    await saving;
+    await switching;
+
+    expect(container.read(mapProvider).currentMap, MapValue.lotus);
+    expect(saved(a.id).mapData, MapValue.lotus);
+  });
+
+  test(
+      'settings applied to all pages while another strategy opens write '
+      'nothing to the strategy opened', () async {
+    final a = stored('all-pages-a');
+    final b = stored('all-pages-b');
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    await box.put(a.id, a.copyWith(mapData: MapValue.haven));
+    await box.put(b.id, b.copyWith(mapData: MapValue.lotus));
+    expect(await editor().loadFromHive(a.id), isTrue);
+    final before = saved(b.id);
+
+    final hold = gate.holdNext(passFirst: 1);
+    final opening = editor().loadFromHive(b.id);
+    await hold.reached.future;
+    final ahead = box.put('written-ahead', stored('written-ahead', pages: 400));
+    final applying = editor().applyNeutralTeamColorsToAllPages(
+      !before.pages.first.settings.useNeutralTeamColors,
+    );
+    hold.released.complete();
+    await ahead;
+    expect(await opening, isTrue);
+    await applying;
+
+    final after = saved(b.id);
+    expect(container.read(strategyProvider).strategyId, b.id);
+    expect(after.mapData, MapValue.lotus);
+    expect(after.themeProfileId, before.themeProfileId);
+    expect(
+      [for (final page in after.pages) page.settings.useNeutralTeamColors],
+      [for (final page in before.pages) page.settings.useNeutralTeamColors],
+    );
+  });
+
+  test(
       'a Save asked for a strategy that is no longer open writes nothing to '
       'it, and fails loudly when there is unsaved work', () async {
     final a = stored('stale-a', optionals: Optionals.unset);
@@ -383,5 +464,117 @@ void main() {
       [for (final page in after.pages) page.agentData.length],
       [for (final page in before.pages) page.agentData.length],
     );
+  });
+
+  test(
+      'a Save of one strategy that resumes after another has opened writes '
+      'nothing of the other into it', () async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final a = stored('resumed-a');
+    final b = stored('resumed-b', optionals: Optionals.unset);
+    await box.put(a.id, a.copyWith(mapData: MapValue.haven));
+    await box.put(b.id, b.copyWith(mapData: MapValue.lotus));
+    expect(saved(a.id).themeProfileId, isNotNull);
+    expect(saved(b.id).themeProfileId, isNull);
+    expect(await editor().loadFromHive(a.id), isTrue);
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          type: AgentType.jett,
+          position: const Offset(300, 300),
+          id: 'saved-on-a',
+        ));
+    editor().setUnsaved();
+    final onA = agentsOnCanvas();
+
+    final ahead = box.put('written-ahead', stored('written-ahead', pages: 400));
+    final saving = editor().saveToHive(a.id);
+    expect(await editor().loadFromHive(b.id), isTrue);
+    await ahead;
+    await saving;
+
+    expect(saved(a.id).mapData, MapValue.haven);
+    expect(saved(a.id).themeProfileId, isNotNull);
+    expect(await editor().loadFromHive(a.id), isTrue);
+    expect(agentsOnCanvas(), onA);
+    expect(container.read(mapProvider).currentMap, MapValue.haven);
+  });
+
+  group('with the canvas not showing the page on screen', () {
+    String fingerprint(String id) {
+      final strategy = saved(id);
+      return [
+        strategy.mapData,
+        strategy.themeProfileId,
+        strategy.lastEdited,
+        for (final page in strategy.pages)
+          [
+            page.id,
+            page.isAttack,
+            page.settings.toJson(),
+            [for (final agent in page.agentData) agent.id],
+            [for (final link in page.lineUpGraph.links) link.id],
+          ],
+      ].toString();
+    }
+
+    final writers = <String, Future<Object?> Function(StrategyProvider)>{
+      'a page click': (editor) => editor.selectPage('writer-p1'),
+      'a Save': (editor) => editor.saveToHive('writer'),
+      'copying an item to the next page': (editor) =>
+          editor.copyPlacedWidgetToAdjacentPage(
+            widgetId: 'edited-here',
+            direction: PageTransitionDirection.forward,
+          ),
+      'copying lineups to the next page': (editor) =>
+          editor.copyLineUpsToAdjacentPage(
+            linkIds: {
+              for (final link in container.read(lineUpProvider).links) link.id,
+            },
+            direction: PageTransitionDirection.forward,
+          ),
+      'marker sizes on all pages': (editor) =>
+          editor.applyMarkerSizesToAllPages(),
+      'neutral colours on all pages': (editor) =>
+          editor.applyNeutralTeamColorsToAllPages(true),
+      'switching side on all pages': (editor) =>
+          editor.switchSide(allPages: true),
+      'adding a page': (editor) => editor.addPage(),
+    };
+
+    for (final MapEntry(key: step, value: write) in writers.entries) {
+      test('$step writes nothing', () async {
+        await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+          'writer',
+          generatedStrategy(Optionals.set).copyWith(id: 'writer', pages: [
+            for (final index in [0, 1, 2])
+              generatedPage(
+                id: 'writer-p$index',
+                sortIndex: index,
+                optionals: Optionals.set,
+                isAttack: true,
+                itemPrefix: 'writer-p$index',
+                lineups: sharedSpotLineups('writer-p$index'),
+              ),
+          ]),
+        );
+        expect(await editor().loadFromHive('writer'), isTrue);
+        expect(container.read(lineUpProvider).links, isNotEmpty);
+        container.read(agentProvider.notifier).addAgent(PlacedAgent(
+              type: AgentType.jett,
+              position: const Offset(300, 300),
+              id: 'edited-here',
+            ));
+        editor().setUnsaved();
+        final before = fingerprint('writer');
+
+        container.read(canvasShowsProvider.notifier).emptied();
+        await write(editor()).catchError(
+          (Object _) => null,
+          test: (error) => error is StateError,
+        );
+
+        expect(fingerprint('writer'), before);
+        expect(activePage(), 'writer-p0');
+      });
+    }
   });
 }
