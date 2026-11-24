@@ -425,6 +425,29 @@ final class SlowSenderStore extends SenderStore {
   var throwsOnBase = false;
   void Function()? duringSessionWrite;
   var readsThrow = false;
+  var claimWaits = Duration.zero;
+
+  @override
+  Future<ClaimResult> claim(
+    Account owner,
+    String strategyId,
+    Picked picked,
+    DateTime at, {
+    required Duration Function() elapsed,
+    required int session,
+  }) async {
+    final wait = claimWaits;
+    claimWaits = Duration.zero;
+    if (wait > Duration.zero) await Future<void>.delayed(wait);
+    return super.claim(
+      owner,
+      strategyId,
+      picked,
+      at,
+      elapsed: elapsed,
+      session: session,
+    );
+  }
 
   @override
   Future<Reading<StrategyContent>> readStrategy(String strategyId) {

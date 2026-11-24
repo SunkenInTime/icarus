@@ -18,6 +18,8 @@ Convex CLI's cache (`%LOCALAPPDATA%\convex\binaries` or
 
 ## How it measures
 
+The flows are modelled sequences of requests. They measure what the server charges for that sequence, and cannot see a change in how many calls the Dart code makes for the same edits: a scenario sends what it is written to send. The store's sender's call counts are guarded by the Dart tests that count them (`test/library_store/cloud_sender_test.dart`).
+
 The run starts the open-source Convex backend on port 3310 with an empty
 database, deploys `convex/` to it, and seeds two libraries at once. The first,
 for the first four flows: 150 strategies (50 at the top level, 25 in each of

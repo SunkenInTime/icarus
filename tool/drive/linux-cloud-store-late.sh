@@ -39,10 +39,25 @@ dart "$repo/tool/drive/linux.dart" run --exe "$exe" --script "$script" \
   "${companion[@]}" "$@" > "$parent/$(basename "$out")-run.log" 2>&1 &
 run_pid=$!
 
+ends_killed=false
+if tail -n 3 "$script" | grep -q '"killNow"'; then ends_killed=true; fi
+
+ended() {
+  local status=0
+  wait $run_pid || status=$?
+  if $ends_killed && grep -q 'KILLED by the script' "$out/main.log" 2>/dev/null &&
+    ! grep -q ' FAIL ' "$out/main.log"; then
+    say "the run ended where its script kills the app, with no step failed"
+    exit 0
+  fi
+  say "run ended before $1"
+  exit $status
+}
+
 signal() { cat "$out/run-id" > "$out/signals/$1"; }
 wait_for() {
   until [ -f "$out/signals/$1" ]; do
-    kill -0 $run_pid 2>/dev/null || { say "run ended before $1"; wait $run_pid; exit $?; }
+    kill -0 $run_pid 2>/dev/null || ended "$1"
     sleep 0.2
   done
 }

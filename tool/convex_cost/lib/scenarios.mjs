@@ -143,10 +143,7 @@ export class Device {
       sendsLiveBasis,
       liveBasis,
     });
-    if (serverTime !== undefined) {
-      this.serverTime = serverTime;
-      this.serverTimeAt = performance.now();
-    }
+    results.serverTime = serverTime;
     const refused = results.filter((result) => result.status !== "applied");
     if (refused.length > 0) throw new Error(`applyBatch refused ops: ${JSON.stringify(refused[0])}`);
     return results;

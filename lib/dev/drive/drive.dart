@@ -1852,6 +1852,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'killNow':
       _log('KILLED by the script');
+      await _flush();
       exit(9);
     case 'expectPageListRefusedNaming':
       _log(await pageListRefusal(c, value as String));

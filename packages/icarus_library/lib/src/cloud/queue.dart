@@ -1063,7 +1063,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
     case UserEdited(edit: final change):
       return _userEdited(edit, change, now);
     case BatchClaimed(:final clientId, :final opIds, :final at, :final elapsed):
-      return _claim(edit, clientId, opIds, at, elapsed, now);
+      return _claim(edit, clientId, opIds, at, elapsed?.call(), now);
     case ServerTimeHeld(:final serverTime, :final at, :final session):
       final held = edit.session.basis;
       if (edit.session.connected &&
@@ -1160,12 +1160,31 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
   }
 }
 
+void _dropRefusedBases(_Edit edit, AttemptFact refused) {
+  final bases = [
+    for (final op in refused.ops)
+      if (isUncheckedSend(op))
+        if (edit.index.byId[op.opId] case PendingOp(:final basis?))
+          basis.serverTime,
+  ];
+  if (bases.isEmpty) return;
+  final refusedBasis = bases.reduce((a, b) => a < b ? a : b);
+  for (final entry in [...edit.entries]) {
+    if (entry case PendingOp(
+      :final basis?,
+    ) when basis.serverTime <= refusedBasis) {
+      edit.put(entry.copyWith(dropBasis: true));
+    }
+  }
+}
+
 Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
   final fact = edit.attempts[attempt];
   if (fact == null) return NotApplicable(edit.original, NoSuchAttempt(attempt));
   if (fact.outcome is! AttemptRefusedWhole) {
     edit.setAttempt(fact.withOutcome(AttemptRefusedWhole(refusal)));
   }
+  if (refusal == BatchRefusal.uncheckedTooLate) _dropRefusedBases(edit, fact);
   switch (refusal) {
     case BatchRefusal.upgradeRequired:
       final later = switch (edit.strategy.upgradeTold) {

@@ -580,7 +580,12 @@ final class Model {
         if (entry is PendingOp) entry.id: entry,
     };
     final result = must(
-      BatchClaimed(clientId: owner!, opIds: ids, at: clock, elapsed: elapsed),
+      BatchClaimed(
+        clientId: owner!,
+        opIds: ids,
+        at: clock,
+        elapsed: () => elapsed,
+      ),
       'claim $ids as $owner',
     );
     final sent = result.effects.whereType<SendBatch>().single;

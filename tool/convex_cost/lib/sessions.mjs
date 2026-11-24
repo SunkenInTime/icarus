@@ -241,9 +241,12 @@ const STORE_SENDER_WAIT_MS = 180;
 
 const LIVE_FOR_MS = 20000;
 
-function storeForm(device, op, row) {
-  const fresh = device.serverTime !== undefined && performance.now() - device.serverTimeAt <= LIVE_FOR_MS;
-  if (fresh) return { op, liveBasis: device.serverTime };
+const heldTimes = new Map();
+
+function storeForm(clientId, op, row) {
+  const held = heldTimes.get(clientId);
+  const fresh = held !== undefined && performance.now() - held.at <= LIVE_FOR_MS;
+  if (fresh) return { op, liveBasis: held.serverTime };
   const base = op.merge.fields.map((field) =>
     field in row.payload.data ? { field, value: row.payload.data[field] } : { field },
   );
@@ -252,14 +255,17 @@ function storeForm(device, op, row) {
 
 async function sendFromStore(device, strategyPublicId, clientId, op, row) {
   await new Promise((resolve) => setTimeout(resolve, STORE_SENDER_WAIT_MS));
-  const { op: sent, liveBasis } = storeForm(device, op, row);
-  const [result] = await device.applyBatch(strategyPublicId, clientId, [sent], {
+  const { op: sent, liveBasis } = storeForm(clientId, op, row);
+  const results = await device.applyBatch(strategyPublicId, clientId, [sent], {
     includeWasApplied: true,
     readsAccountMismatch: true,
     sendsLiveBasis: true,
     liveBasis,
   });
-  return result.appliedRevision;
+  if (results.serverTime !== undefined) {
+    heldTimes.set(clientId, { serverTime: results.serverTime, at: performance.now() });
+  }
+  return results[0].appliedRevision;
 }
 
 const namedPage = (device, strategyPublicId, pagePublicId) =>
@@ -886,10 +892,11 @@ export const SESSIONS = {
     title: "Edit alone with no editor open, sent and retired by the store's sender",
     about:
       "soloSession's 50 moves sent by the store's sender with nothing watching: five bursts of ten with a minute's " +
-      "pause after each. The sender reads nothing before a send; once a strategy has been quiet for 30 s it reads the " +
-      "touched page to retire its landed work, and not that page again for five minutes, so the session reads the page " +
-      "twice (test/library_store/cloud_sender_test.dart counts the same). The reads stand in for a source of results " +
-      "until the editor's page results come through the store.",
+      "pause after each. The loop does not wait the pauses out; it does what they change for the sender: after each " +
+      "pause the server time it held is too old, so the burst's first move goes checked, and the touched page is read " +
+      "to retire landed work after the first pause and the last, not again within five minutes, so twice in all " +
+      "(test/library_store/cloud_sender_test.dart counts the same). The reads stand in for a source of results until " +
+      "the editor's page results come through the store.",
     world: "team",
     async run({ env, world, rng }) {
       const coach = world.coach;
@@ -902,6 +909,7 @@ export const SESSIONS = {
           for (const row of rows.slice(burst * perBurst, (burst + 1) * perBurst)) {
             await sendFromStore(coach, session.publicId, clientId, liveMove(row, rng), row);
           }
+          heldTimes.delete(clientId);
           if (burst === 0 || burst === STORE_BURSTS - 1) {
             await namedPage(coach, session.publicId, session.pages[0]);
           }
@@ -925,7 +933,6 @@ export const SESSIONS = {
       const session = world.session;
       const rows = (await coach.query("page:getSnapshot", wholePageArgs(session.publicId, session.pages[0]))).elements;
       const clientId = rng.uuid();
-      coach.serverTime = undefined;
       const result = await metered([coach], env, async () => {
         for (const row of rows.slice(0, LIVE_BASIS_EDITS)) {
           await sendFromStore(coach, session.publicId, clientId, liveMove(row, rng), row);
@@ -938,14 +945,14 @@ export const SESSIONS = {
             includeWasApplied: true,
             readsAccountMismatch: true,
             sendsLiveBasis: true,
-            liveBasis: coach.serverTime - 31000,
+            liveBasis: heldTimes.get(clientId).serverTime - 31000,
           });
         } catch (error) {
           if (!String(error).includes("UNCHECKED_OUTSIDE_WINDOW")) throw error;
           refused = true;
         }
         if (!refused) throw new Error("a batch held past the window was not refused");
-        coach.serverTime = undefined;
+        heldTimes.delete(clientId);
         await sendFromStore(coach, session.publicId, clientId, held, row);
       });
       result.expectedFailures = { "ops:applyBatch": 1 };

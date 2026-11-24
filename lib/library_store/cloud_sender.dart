@@ -1125,7 +1125,7 @@ final class CloudSender {
       id,
       picked,
       _clock(),
-      elapsed: _elapsed(),
+      elapsed: _elapsed,
       session: session,
     )) {
       case Claimed(batch: final claimed):

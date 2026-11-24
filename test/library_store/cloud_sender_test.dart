@@ -1941,6 +1941,132 @@ void main() {
         clientId: 'client-2',
       );
     });
+
+    test(
+        'a claim held up behind an earlier write judges its basis when it runs: '
+        'held 21 s past a fresh answer, the edit goes checked', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        world.slowStore.claimWaits = const Duration(seconds: 21);
+        world.commitMerge(2);
+        world.settle(const Duration(seconds: 30));
+        final [held] = callsOf(world, 'merge-2');
+        expect(held.unchecked, isEmpty);
+        expect(held.basis, isNull);
+      });
+    });
+
+    test(
+        'an unchecked call lost by the transport but landed inside the window '
+        'is answered "applied when first received" to its checked retry, and '
+        'lands once', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        world.server.answerNext(strategyId, (call) {
+          world.server.applyAll(call);
+          return Completer<StoreBatchOutcome>().future;
+        });
+        world.commitMerge(2);
+        world.settle(const Duration(minutes: 2));
+        final [lost, retry] = callsOf(world, 'merge-2');
+        expect(lost.unchecked, ['merge-2']);
+        expect(retry.unchecked, isEmpty);
+        expect(world.server.anyAppliedTwice, isFalse);
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    for (final (order, delivered) in [
+      ('before its checked retry', const Duration(seconds: 46)),
+      ('after its checked retry', const Duration(seconds: 90)),
+    ]) {
+      test(
+          'an unchecked call the transport delivers past the cutoff, $order, is '
+          'refused by the server, and the edit lands once, through the retry',
+          () {
+        inWorld((world) {
+          world.commitMerge(1);
+          world.settle();
+          StoreBatchOutcome? late;
+          world.server.answerNext(strategyId, (call) {
+            Timer(delivered, () => late = world.server.applyAll(call));
+            return Completer<StoreBatchOutcome>().future;
+          });
+          world.commitMerge(2);
+          world.settle(const Duration(minutes: 3));
+          expect(late, isA<StoreBatchOutsideWindow>());
+          final [original, retry] = callsOf(world, 'merge-2');
+          expect(original.unchecked, ['merge-2']);
+          expect(retry.unchecked, isEmpty);
+          expect(world.server.anyAppliedTwice, isFalse);
+          expect(world.queueLength(), 0);
+        });
+      });
+    }
+
+    test(
+        'the answer\'s server time is held as of the moment the answer arrived',
+        () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        final arrived = Completer<StoreBatchOutcome>();
+        Duration? at;
+        world.server.answerNext(strategyId, (call) {
+          Timer(const Duration(seconds: 3), () {
+            at = world.async.elapsed;
+            arrived.complete(world.server.applyAll(call));
+          });
+          return arrived.future;
+        });
+        world.commitMerge(2);
+        world.settle(const Duration(seconds: 10));
+        final held = world.written().whereType<ServerTimeHeld>().last;
+        expect(held.at, at);
+      });
+    });
+
+    test(
+        'no session opens while a call is awaited, so the session the call '
+        'was sent in is the one bound when its answer arrives', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        final bound = world.sender.bound[strategyId]!.number;
+        final arrived = Completer<StoreBatchOutcome>();
+        world.server.answerNext(strategyId, (call) {
+          Timer(const Duration(seconds: 3), () {
+            world.connection = null;
+            world.connection = 2;
+            world.async.flushMicrotasks();
+            expect(world.sender.bound[strategyId]?.number, bound);
+            arrived.complete(world.server.applyAll(call));
+          });
+          return arrived.future;
+        });
+        world.commitMerge(2);
+        world.settle(const Duration(seconds: 10));
+        final written = world.written();
+        final held = written.whereType<ServerTimeHeld>().last;
+        expect(held.session, bound);
+        final claimed = written.lastIndexWhere(
+          (event) => event is BatchClaimed,
+          written.indexOf(held),
+        );
+        expect(
+          written.sublist(claimed, written.indexOf(held)).where(
+                (event) =>
+                    event is ConnectionLost ||
+                    event is ConnectionReturned ||
+                    event is AccountChanged ||
+                    event is AppRestarted,
+              ),
+          isEmpty,
+        );
+      });
+    });
   });
 
   group('through the real provider', () {

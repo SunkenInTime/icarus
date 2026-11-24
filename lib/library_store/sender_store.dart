@@ -406,7 +406,7 @@ base class SenderStore {
     String strategyId,
     Picked picked,
     DateTime at, {
-    required Duration elapsed,
+    required Duration Function() elapsed,
     required int session,
   }) async {
     final events = [

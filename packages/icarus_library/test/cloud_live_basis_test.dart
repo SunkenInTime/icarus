@@ -38,7 +38,7 @@ SendBatch claimAt(Client client, List<String> ids, Duration? elapsed) {
       clientId: clientId,
       opIds: ids,
       at: client.at,
-      elapsed: elapsed,
+      elapsed: elapsed == null ? null : () => elapsed,
     ),
   );
   return client.effects.whereType<SendBatch>().last;
@@ -157,6 +157,62 @@ void main() {
     expect(again.ops.single.opId, 'drop');
     expect((again.ops.single as ElementDeleteOp).lastWriterWins, isFalse);
     expect(again.basis, isNull);
+  });
+
+  test(
+    'a late refusal drops the basis of every op written on one no newer than '
+    'the refused batch\'s, so an edit made while the refused one was in '
+    'flight goes checked: one refusal, not two',
+    () {
+      final client = quietClient();
+      client.read(initialRows());
+      hold(client, 1000, heldAt);
+      client.edit(
+        movePatch('a', x: 20, merge: FieldMerge(fields: const ['position'])),
+      );
+      final first = claimAt(client, ['a'], heldAt);
+      expect(isUncheckedSend(first.ops.single), isTrue);
+      client.edit(
+        movePatch(
+          'b',
+          rotation: 45,
+          merge: FieldMerge(fields: const ['rotation']),
+        ),
+      );
+      expect(
+        (client.queue.entries.last as PendingOp).basis,
+        const ServerTimeBasis(1000, heldAt: heldAt),
+      );
+      client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate));
+      expect((client.queue.entries.last as PendingOp).basis, isNull);
+      final again = claimAt(client, ['a'], heldAt);
+      expect(isUncheckedSend(again.ops.single), isFalse);
+      client.must(
+        OpAnswered(again.attempt, const AppliedAnswer('a', revision: 2)),
+      );
+      final second = claimAt(client, ['b'], heldAt);
+      expect(isUncheckedSend(second.ops.single), isFalse);
+      expect(second.basis, isNull);
+    },
+  );
+
+  test('the reading a claim judges its basis by is the one it takes when it '
+      'runs, not one handed to it earlier', () {
+    final client = quietClient();
+    client.read(initialRows());
+    hold(client, 1000, heldAt);
+    client.edit(elementDelete('drop', elementId: 'e2'));
+    var reading = heldAt;
+    final claim = BatchClaimed(
+      clientId: clientId,
+      opIds: const ['drop'],
+      at: client.at,
+      elapsed: () => reading,
+    );
+    reading = heldAt + liveFor + const Duration(seconds: 1);
+    client.must(claim);
+    final sent = client.effects.whereType<SendBatch>().last;
+    expect((sent.ops.single as ElementDeleteOp).lastWriterWins, isFalse);
   });
 
   test('the queue holds a server time only while connected, keeps the newest, '
