@@ -312,15 +312,17 @@ final class RetryNow extends Backoff {
 }
 
 final class RetryAfter extends Backoff {
-  const RetryAfter(this.at);
+  const RetryAfter(this.at, {required this.failedAt});
 
   final DateTime at;
+  final DateTime failedAt;
 
   @override
-  bool operator ==(Object other) => other is RetryAfter && other.at == at;
+  bool operator ==(Object other) =>
+      other is RetryAfter && other.at == at && other.failedAt == failedAt;
 
   @override
-  int get hashCode => Object.hash(RetryAfter, at);
+  int get hashCode => Object.hash(RetryAfter, at, failedAt);
 
   @override
   String toString() => 'retry after ${at.toIso8601String()}';
