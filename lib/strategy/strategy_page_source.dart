@@ -27,6 +27,7 @@ import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
@@ -48,6 +49,10 @@ final class NothingToHandOver extends PageHandover {
   const NothingToHandOver();
 }
 
+final class NothingShown extends PageHandover {
+  const NothingShown();
+}
+
 final class HeldOnCanvas extends PageHandover {
   const HeldOnCanvas(this.reason);
 
@@ -67,6 +72,9 @@ PageHandover _settled(PageHandover handover, {required bool anythingUnsaved}) =>
     handover is HeldOnCanvas && !anythingUnsaved
         ? const NothingToHandOver()
         : handover;
+
+bool _canvasShows(Ref ref, String strategyId, String? pageId) =>
+    ref.read(canvasShowsProvider.notifier).shows(strategyId, pageId);
 
 bool _anythingUnsaved(Ref ref) =>
     ref.read(strategySaveStateProvider).isDirty ||
@@ -147,10 +155,17 @@ class LocalStrategyPageSource implements StrategyPageSource {
   }
 
   @override
-  Future<PageHandover> flushCurrentPage() async => _settled(
-        await _writeCurrentPage(),
-        anythingUnsaved: _anythingUnsaved(ref),
-      );
+  Future<PageHandover> flushCurrentPage() async {
+    final written = activePageId() ??
+        const LocalLibrary().storedStrategy(strategyId)?.pages.firstOrNull?.id;
+    if (!_canvasShows(ref, strategyId, written)) {
+      return const NothingShown();
+    }
+    return _settled(
+      await _writeCurrentPage(),
+      anythingUnsaved: _anythingUnsaved(ref),
+    );
+  }
 
   Future<PageHandover> _writeCurrentPage() async {
     final strategy = const LocalLibrary().storedStrategy(strategyId);
@@ -335,6 +350,9 @@ class CloudStrategyPageSource implements StrategyPageSource {
   /// edits on screen unsaved until a handover works.
   @override
   Future<PageHandover> flushCurrentPage() async {
+    if (!_canvasShows(ref, strategyId, activePageId())) {
+      return const NothingShown();
+    }
     final saveState = ref.read(strategySaveStateProvider.notifier);
     final marksBefore = saveState.dirtyMarks;
     final dirtyBefore = ref.read(strategySaveStateProvider).isDirty;

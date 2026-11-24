@@ -21,7 +21,9 @@ import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
@@ -508,6 +510,70 @@ void main() {
       expect(mediaQueue.enqueued, isEmpty);
     });
 
+    test(
+        'a page of the strategy being left, clicked while a cloud open of '
+        'another strategy reads, leaves that open to finish and queues '
+        'nothing for the strategy opened', () async {
+      final repository = _Repository();
+      repository.pageSnapshots['a'] = _page(
+        'a',
+        images: [_image('image-a')],
+        assets: [_activeAsset('image-a')],
+      );
+      final (container, _) = await desktop(repository);
+      await container.read(remoteEditorSnapshotProvider.future);
+      final strategies = container.read(strategyProvider.notifier);
+      expect(await strategies.openCloudStrategy('strategy'), isTrue);
+      expect(container.read(placedImageProvider).images, isNotEmpty);
+      expect(
+        container.read(canvasShowsProvider),
+        isA<ShowsPage>()
+            .having((shows) => shows.strategyId, 'strategy', 'strategy')
+            .having((shows) => shows.pageId, 'page', 'a'),
+      );
+
+      final disk = await Directory.systemTemp.createTemp('cloud_open_window');
+      addTearDown(() => disk.delete(recursive: true));
+      final reached = Completer<void>();
+      final held = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProvider, (_) async {
+        if (!reached.isCompleted) {
+          reached.complete();
+          await held.future;
+        }
+        return disk.path;
+      });
+      final opening = strategies.openCloudStrategy('other');
+      await reached.future;
+      expect(container.read(strategyProvider).strategyId, 'strategy',
+          reason: 'while the open waits, the strategy left is still open');
+      final switching = strategies.setActivePageAnimated('b');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      held.complete();
+      await opening;
+      await switching;
+
+      expect(
+        [
+          for (final op in container.read(strategyOpQueueProvider).pending)
+            op.op,
+        ],
+        isEmpty,
+      );
+      expect(container.read(strategyProvider).strategyId, 'other');
+      expect(
+        container.read(strategyPageSessionProvider).activePageId,
+        'other-a',
+      );
+      expect(
+        container.read(canvasShowsProvider),
+        isA<ShowsPage>()
+            .having((shows) => shows.strategyId, 'strategy', 'other')
+            .having((shows) => shows.pageId, 'page', 'other-a'),
+      );
+    });
+
     test('a strategy that cannot be read does not open as the one before it',
         () async {
       final repository = _Repository();
@@ -682,9 +748,14 @@ Future<void> _settle() async {
   }
 }
 
-RemotePage _remotePage(String id, {int revision = 1}) => RemotePage(
+RemotePage _remotePage(
+  String id, {
+  int revision = 1,
+  String strategyPublicId = 'strategy',
+}) =>
+    RemotePage(
       publicId: id,
-      strategyPublicId: 'strategy',
+      strategyPublicId: strategyPublicId,
       name: id,
       sortIndex: 0,
       isAttack: true,
@@ -693,10 +764,14 @@ RemotePage _remotePage(String id, {int revision = 1}) => RemotePage(
       updatedAt: DateTime.utc(2026),
     );
 
-RemoteStrategyShell _shell(List<String> pageIds, {int revision = 1}) =>
+RemoteStrategyShell _shell(
+  List<String> pageIds, {
+  int revision = 1,
+  String publicId = 'strategy',
+}) =>
     RemoteStrategyShell(
       header: RemoteStrategyHeader(
-        publicId: 'strategy',
+        publicId: publicId,
         name: 'Strategy',
         mapData: 'ascent',
         revision: revision,
@@ -704,7 +779,9 @@ RemoteStrategyShell _shell(List<String> pageIds, {int revision = 1}) =>
         updatedAt: DateTime.utc(2026),
         role: 'owner',
       ),
-      pages: [for (final id in pageIds) _remotePage(id)],
+      pages: [
+        for (final id in pageIds) _remotePage(id, strategyPublicId: publicId),
+      ],
     );
 
 RemotePageSnapshot _page(
@@ -800,6 +877,13 @@ class _Repository extends ConvexStrategyRepository {
       staleShellGate = null;
       await gate.future;
       return _shell(['b'], revision: 2);
+    }
+    if (strategyPublicId != 'strategy') {
+      return _shell(
+        ['$strategyPublicId-a', '$strategyPublicId-b'],
+        revision: shellRevision,
+        publicId: strategyPublicId,
+      );
     }
     return _shell(failPageReads ? ['b'] : ['a', 'b'], revision: shellRevision);
   }

@@ -16,12 +16,14 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/unshown_cloud_content_provider.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/remote_page_merge.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
-Future<void> applyStrategyEditorPageData(
+Future<String?> applyStrategyEditorPageData(
   Ref ref,
   StrategyEditorPageData data, {
+  required String strategyId,
   required String? themeProfileId,
   required MapThemePalette? themeOverridePalette,
   bool preserveHistory = false,
@@ -56,12 +58,15 @@ Future<void> applyStrategyEditorPageData(
   if (preserveHistory) {
     ref.read(actionProvider.notifier).reconcileHistory();
   }
+  final wanted =
+      ref.read(canvasShowsProvider.notifier).shown(strategyId, data.pageId);
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     ref
         .read(drawingProvider.notifier)
         .rebuildAllPaths(CoordinateSystem.instance);
   });
+  return wanted;
 }
 
 /// Brings the page on screen to the server's copy without reloading it.

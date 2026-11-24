@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:meta/meta.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
@@ -660,7 +661,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           'The canvas of page ${state.activePageId} is held: ${reason.name}.',
           source: 'strategy_page_session',
         );
-      case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
+      case NothingShown() ||
+            SavedToLibrary() ||
+            QueuedForServer() ||
+            NothingToHandOver():
     }
   }
 
@@ -739,7 +743,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // a conflicting group is newer than the copy, so nothing goes ahead.
     final pageSource = _resolvePageSource(strategyId, StrategySource.cloud);
     final handover = await pageSource.flushCurrentPage();
-    if (handover is HeldOnCanvas || !unchangedSince()) {
+    if (handover is HeldOnCanvas ||
+        handover is NothingShown ||
+        !unchangedSince()) {
       return KeepBothOutcome.unchanged;
     }
 
@@ -834,6 +840,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           reason: HeldReason.outboxWriteFailed || HeldReason.noAccount
         ) =>
           true,
+        NothingShown() => true,
         HeldOnCanvas() ||
         SavedToLibrary() ||
         QueuedForServer() ||
@@ -1108,6 +1115,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   void setStateForTest(StrategyPageSessionState newState) {
     state = newState;
+    final strategyId = ref.read(strategyProvider).strategyId;
+    final pageId = newState.activePageId;
+    if (strategyId != null && pageId != null) {
+      ref.read(canvasShowsProvider.notifier).shown(strategyId, pageId);
+    }
   }
 
   void reset() {
@@ -1174,6 +1186,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           source: 'strategy_page_session',
         );
         _showToast(ref.read(l10nProvider).strategyMsgPageEditsNotSaved);
+        return _PageSwitch.stayed;
+      case NothingShown():
+        ref.read(canvasShowsProvider.notifier).want(strategyId, pageId);
         return _PageSwitch.stayed;
       case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
         break;
@@ -1326,11 +1341,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final retainedTextDrafts = preserveTextDrafts
         ? Map<String, String>.from(ref.read(textDraftProvider))
         : const <String, String>{};
+    String? wanted;
     try {
-      await opening.wait(
+      wanted = await opening.wait(
         applyStrategyEditorPageData(
           ref,
           pageData,
+          strategyId: strategyId,
           themeProfileId: themeProfileId,
           themeOverridePalette: themeOverridePalette,
           preserveHistory: preserveHistory,
@@ -1371,6 +1388,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         );
         _resumePendingRemoteReapplyIfPossible();
       }
+    }
+    if (wanted case final pageId?
+        when opening.isCurrent && state.availablePageIds.contains(pageId)) {
+      await opening.wait(setActivePage(pageId));
     }
   }
 
@@ -1757,6 +1778,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final source = _resolvePageSource(strategyId, StrategySource.cloud);
       final pageData = await source.loadPage(pageId);
       if (_disposed || generation != _pageSessionGeneration) return;
+      if (source.loadedRemoteSnapshot?.header.publicId != strategyId) return;
       bool canApply() {
         if (_disposed || generation != _pageSessionGeneration) return false;
         final current = ref.read(strategyProvider);

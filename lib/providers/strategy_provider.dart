@@ -19,6 +19,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/const/settings.dart';
@@ -266,6 +267,16 @@ class StrategyProvider extends Notifier<StrategyState> {
             ),
           );
     }
+    final strategyId = state.strategyId;
+    final shownPageId = ref.read(strategyPageSessionProvider).activePageId ??
+        switch (strategyId) {
+          final id? when LocalLibrary.isOpen =>
+            const LocalLibrary().storedStrategy(id)?.pages.firstOrNull?.id,
+          _ => null,
+        };
+    if (state.isOpen && strategyId != null && shownPageId != null) {
+      ref.read(canvasShowsProvider.notifier).shown(strategyId, shownPageId);
+    }
   }
 
   @Deprecated('Use strategyPageSessionProvider instead.')
@@ -398,6 +409,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       throw StateError('This strategy is moving to the cloud.');
     }
     cancelPendingSave();
+    ref.read(canvasShowsProvider.notifier).left();
     ref.read(strategySaveStateProvider.notifier).reset();
 
     return _open((opening) async {
@@ -840,7 +852,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           final handover = await ref
               .read(strategyPageSessionProvider.notifier)
               .flushCurrentPage(flushImmediately: true);
-          handedOver = handover is! HeldOnCanvas;
+          handedOver = switch (handover) {
+            HeldOnCanvas() || NothingShown() => false,
+            SavedToLibrary() ||
+            QueuedForServer() ||
+            NothingToHandOver() =>
+              true,
+          };
           cloudSaved = id;
         } else {
           cloudSaved = null;
@@ -883,6 +901,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> clearCurrentStrategy() async {
     _openAttempt += 1;
     cancelPendingSave();
+    ref.read(canvasShowsProvider.notifier).dropWanted();
     ref.read(strategyThemeProvider.notifier).fromStrategy();
     ref.read(strategySaveStateProvider.notifier).reset();
     ref.read(strategyPageSessionProvider.notifier).reset();
@@ -1100,6 +1119,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final handover = await _syncCurrentPageToHive();
     if (handover is HeldOnCanvas) return PageCopyResult.notSaved;
+    if (handover is NothingShown) return PageCopyResult.unavailable;
 
     final strategyId = state.strategyId;
     if (strategyId == null) return PageCopyResult.unavailable;
@@ -1560,6 +1580,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final handover = await _syncCurrentPageToHive();
     if (handover is HeldOnCanvas) return PageCopyResult.notSaved;
+    if (handover is NothingShown) return PageCopyResult.unavailable;
     if (state.strategyId != strategyId) return PageCopyResult.unavailable;
     final pages = _orderedLocalPages();
     final currentIndex = pages.indexWhere(
@@ -2700,7 +2721,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     _requireLocalLibrary('save');
     final dirtyMarksSaved =
         ref.read(strategySaveStateProvider.notifier).dirtyMarks;
-    await _saveLocalPageOrThrow();
+    switch (await _syncCurrentPageToHive()) {
+      case HeldOnCanvas(:final reason):
+        throw StateError(
+          'The page on screen could not be saved: ${reason.name}.',
+        );
+      case NothingShown()
+          when ref.read(strategySaveStateProvider).isDirty ||
+              ref.read(textDraftProvider).isNotEmpty:
+        throw StateError(
+          'No page of this strategy is on the canvas yet, so the work on '
+          'the canvas was not saved.',
+        );
+      case NothingShown():
+        return;
+      case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
+        break;
+    }
 
     final StrategyData? savedStrat = const LocalLibrary().storedStrategy(id);
 
@@ -2728,8 +2765,14 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> _saveLocalPageOrThrow() async {
-    if (await _syncCurrentPageToHive() case HeldOnCanvas(:final reason)) {
-      throw StateError('The page on screen could not be saved: ${reason.name}.');
+    switch (await _syncCurrentPageToHive()) {
+      case HeldOnCanvas(:final reason):
+        throw StateError(
+            'The page on screen could not be saved: ${reason.name}.');
+      case NothingShown():
+        throw StateError('No page of this strategy is on the canvas yet.');
+      case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
+        break;
     }
   }
 
