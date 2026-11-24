@@ -2113,13 +2113,13 @@ Future<void> _run(Map<String, dynamic> step) async {
             final at = Offset(60.0 + (n % 40) * 22, 60.0 + (n ~/ 40) * 22);
             if (n.isEven) {
               agents.addAgent(PlacedAgent(
-                id: 'fill-$n',
+                id: 'fill-$n-${const Uuid().v4()}',
                 type: types[(n ~/ 2) % types.length],
                 position: at,
               ));
             } else {
               texts.addText(PlacedText(
-                id: 'fill-$n',
+                id: 'fill-$n-${const Uuid().v4()}',
                 position: at,
                 sizeVersion: worldSizedMediaVersion,
               )..text = 'Fill $n');
