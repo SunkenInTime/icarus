@@ -2714,10 +2714,7 @@ void main() {
             );
 
     expect(
-      [
-        for (final MapEntry(:key, :value) in desired!.entries)
-          if (value != null) key.entityId,
-      ],
+      [for (final key in desired!.keys) key.entityId],
       contains('in-the-read'),
     );
     expect(
