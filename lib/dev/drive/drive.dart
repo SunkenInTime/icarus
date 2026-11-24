@@ -219,7 +219,6 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
@@ -2382,13 +2381,6 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _mapThenOpen(step);
     case 'cloudOpenTime':
       await _cloudOpenTime(step);
-    case 'pressBack':
-      _pressMouse(_point(step, 'pressBack'), buttons: kBackMouseButton);
-      await _frames();
-    case 'autosave':
-      await c
-          .read(appPreferencesProvider.notifier)
-          .setAutosaveEnabled(value as bool);
     case 'openFirstFrame':
       await _openFirstFrame(step);
     case 'openStoredCloudStrategy':
