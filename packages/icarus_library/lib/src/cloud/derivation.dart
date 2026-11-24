@@ -786,7 +786,10 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
     failures: failures,
     backoff: switch (failures) {
       0 => const RetryNow(),
-      _ => RetryAfter(retryTimeAfter(failed.last.$2, failures)),
+      _ => RetryAfter(
+        retryTimeAfter(failed.last.$2, failures),
+        failedAt: failed.last.$2,
+      ),
     },
   );
 }
@@ -875,10 +878,14 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
     }
   }
   if (state case Unanswered(
-    backoff: RetryAfter(:final at),
+    backoff: RetryAfter(:final at, :final failedAt),
   ) when at.isAfter(now)) {
-    holds.add(UntilRetryTime(at));
-    until = at;
+    if (failedAt.isAfter(now)) {
+      until = failedAt;
+    } else {
+      holds.add(UntilRetryTime(at));
+      until = at;
+    }
   }
   final head = !holds.any((hold) => hold is BehindEntry);
   final pageGone = switch (entry.work) {

@@ -1674,7 +1674,10 @@ it stores and the attempts that sent it:
 - `Sending(attempt)`: in an open attempt.
 - `Unanswered`: sent, and the answer never came. It is sent again with
   backoff, under the same op id, always in its checked form; after
-  `retriesBeforePause` failures it needs the user, who can retry.
+  `retriesBeforePause` failures it needs the user, who can retry. The
+  backoff is measured from the last failure's time; when the clock reads
+  earlier than that time it has moved back, the wait cannot be measured, and
+  the entry is sent at once rather than held until the clock catches up.
 - `NeedsUser(reason)`: rejected or failed (`RefusedByServer`), unanswered for
   29 days (`WindowClosed`), retries exhausted, page delete held, too big to
   send (`Oversized`), written over a row someone else changed
