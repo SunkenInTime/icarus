@@ -16,6 +16,6 @@
   {"wait": 3},
   {"tapAt": [206, 857]},
   {"wait": 2},
-  {"raceLeave": "Race opened {run}", "from": "Race left {run}", "page": "Page 2", "switcherAt": [850, 19], "runs": 50, "unusedPictures": 20},
+  {"raceLeave": "Race opened {run}", "from": "Race left {run}", "page": "Page 2", "switcherAt": [850, 19], "runs": 50, "unusedPictures": 20, "expectEmptied": 0},
   {"exit": 1}
 ]
