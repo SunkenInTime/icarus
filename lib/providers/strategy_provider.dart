@@ -2331,6 +2331,10 @@ class StrategyProvider extends Notifier<StrategyState> {
               attempt: opening,
             ),
       );
+      if (ref.read(localPageReadsProvider) case final reads?
+          when ref.read(strategyPageSessionProvider).activePageId == null) {
+        reads.openedWithoutPage(migratedStrategy.id);
+      }
       ref.read(strategySaveStateProvider.notifier).markPersisted();
       return true;
     });

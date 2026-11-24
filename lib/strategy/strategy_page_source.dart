@@ -128,8 +128,18 @@ class LocalStrategyPageSource implements StrategyPageSource {
         migrated: !identical(current, migrated),
       );
       if (fromStore != null) return fromStore;
+      final now = const LocalLibrary().storedStrategy(strategyId) ??
+          (throw StateError('Strategy $strategyId not found.'));
+      return reads.drawnFromHive(
+        strategyId,
+        pageId,
+        _pageOf(StrategyMigrator.migrateToCurrentVersion(now), pageId),
+      );
     }
+    return _pageOf(migrated, pageId);
+  }
 
+  static StrategyEditorPageData _pageOf(StrategyData migrated, String pageId) {
     final orderedPages = [...migrated.pages]
       ..sortBySortIndex((item) => item.sortIndex);
     final page = orderedPages.firstWhere(

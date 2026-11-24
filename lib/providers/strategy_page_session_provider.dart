@@ -1381,6 +1381,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           mapOverride: preservedMetadata?.map,
         ),
       );
+      ref.read(localPageReadsProvider)?.applied(pageData);
       for (final entry in retainedTextDrafts.entries) {
         ref.read(textDraftProvider.notifier).setDraft(entry.key, entry.value);
       }

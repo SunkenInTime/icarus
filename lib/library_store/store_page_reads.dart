@@ -17,6 +17,7 @@ enum FromHiveBecause {
   noPages('the strategy has no pages'),
   damagedRows('the store holds rows this build cannot show'),
   hiveWriteDuringRead('a Hive write began during the read'),
+  pageNotInStore('the store does not hold this page'),
   readFailed('the store read failed');
 
   const FromHiveBecause(this.words);
@@ -24,18 +25,18 @@ enum FromHiveBecause {
   final String words;
 }
 
-sealed class PageServedFrom {
-  const PageServedFrom();
+sealed class PageLoadOutcome {
+  const PageLoadOutcome();
 }
 
-final class ServedFromStore extends PageServedFrom {
+final class ServedFromStore extends PageLoadOutcome {
   const ServedFromStore();
 
   @override
   String toString() => 'from the store';
 }
 
-final class ServedFromHive extends PageServedFrom {
+final class ServedFromHive extends PageLoadOutcome {
   const ServedFromHive(this.reason, [this.detail]);
 
   final FromHiveBecause reason;
@@ -46,24 +47,48 @@ final class ServedFromHive extends PageServedFrom {
       '${detail == null ? '' : ' ($detail)'}';
 }
 
+final class GaveWay extends PageLoadOutcome {
+  const GaveWay();
+
+  @override
+  String toString() => 'never shown: a newer open or load took its place';
+}
+
+final class NoPageToShow extends PageLoadOutcome {
+  const NoPageToShow();
+
+  @override
+  String toString() => 'no page to show: the strategy has none';
+}
+
 final class PageLoad {
   const PageLoad({
     required this.kind,
     required this.strategyId,
     required this.pageId,
-    required this.served,
+    required this.outcome,
     required this.took,
   });
 
   final PageLoadKind kind;
   final String strategyId;
-  final String pageId;
-  final PageServedFrom served;
+  final String? pageId;
+  final PageLoadOutcome outcome;
   final Duration took;
 
   @override
-  String toString() => '${kind.name} $strategyId page $pageId $served in '
-      '${(took.inMicroseconds / 1000).toStringAsFixed(1)} ms';
+  String toString() => '${kind.name} $strategyId page ${pageId ?? '-'} '
+      '$outcome, read in ${(took.inMicroseconds / 1000).toStringAsFixed(1)} ms';
+}
+
+final class _Load {
+  _Load(this.kind, this.strategyId, this.pageId, this.read, this.took);
+
+  final PageLoadKind kind;
+  final String strategyId;
+  final String pageId;
+  final PageLoadOutcome read;
+  final Duration took;
 }
 
 sealed class _Answer {
@@ -91,18 +116,78 @@ final class StorePageReads implements LocalPageReads {
 
   final StoreMirror _mirror;
   final _served = Expando<LocalPageServed>('served from the store');
+  final _drawnBy = Expando<_Load>('the load that drew a page');
   final _loads = <PageLoad>[];
+  final _unshown = <_Load>[];
+  final _fellBack = <(String, String), _Load>{};
   ({String strategyId, bool migrated})? _opening;
   ({LibraryStore store, String strategyId})? _loaded;
 
   List<PageLoad> get loads => List.unmodifiable(_loads);
 
+  var _opens = 0;
+
   @override
-  void opening(String strategyId, {required bool migrated}) =>
-      _opening = (strategyId: strategyId, migrated: migrated);
+  void opening(String strategyId, {required bool migrated}) {
+    _opens += 1;
+    _gaveWay();
+    _opening = (strategyId: strategyId, migrated: migrated);
+  }
+
+  @override
+  void openedWithoutPage(String strategyId) {
+    _opening = null;
+    _loads.add(PageLoad(
+      kind: PageLoadKind.open,
+      strategyId: strategyId,
+      pageId: null,
+      outcome: const NoPageToShow(),
+      took: Duration.zero,
+    ));
+  }
 
   @override
   LocalPageServed? servedWith(StrategyEditorPageData page) => _served[page];
+
+  @override
+  StrategyEditorPageData drawnFromHive(
+    String strategyId,
+    String pageId,
+    StrategyEditorPageData page,
+  ) {
+    if (_fellBack.remove((strategyId, pageId)) case final load?) {
+      _drawnBy[page] = load;
+    }
+    return page;
+  }
+
+  @override
+  void applied(StrategyEditorPageData page) {
+    final load = _drawnBy[page];
+    if (load == null || !_unshown.remove(load)) return;
+    _drawnBy[page] = null;
+    _loads.add(PageLoad(
+      kind: load.kind,
+      strategyId: load.strategyId,
+      pageId: load.pageId,
+      outcome: load.read,
+      took: load.took,
+    ));
+  }
+
+  void _gaveWay() {
+    _unshown.forEach(_neverShown);
+    _unshown.clear();
+    _fellBack.clear();
+  }
+
+  void _neverShown(_Load load) => _loads.add(PageLoad(
+        kind: load.kind,
+        strategyId: load.strategyId,
+        pageId: load.pageId,
+        outcome: const GaveWay(),
+        took: load.took,
+      ));
 
   @override
   Future<StrategyEditorPageData?> page(
@@ -113,27 +198,35 @@ final class StorePageReads implements LocalPageReads {
     final opening = _opening;
     _opening = null;
     final opened = opening?.strategyId == strategyId;
+    final opens = _opens;
     final clock = Stopwatch()..start();
     final answer = await _answer(
       strategyId,
       pageId,
       migrated: migrated || (opened && opening!.migrated),
     );
-    _loads.add(PageLoad(
-      kind: opened ? PageLoadKind.open : PageLoadKind.pageSwitch,
-      strategyId: strategyId,
-      pageId: pageId,
-      served: switch (answer) {
+    final load = _Load(
+      opened ? PageLoadKind.open : PageLoadKind.pageSwitch,
+      strategyId,
+      pageId,
+      switch (answer) {
         _Page() => const ServedFromStore(),
         _Hive(:final because) => because,
       },
-      took: clock.elapsed,
-    ));
+      clock.elapsed,
+    );
+    if (opens != _opens) {
+      _neverShown(load);
+      return null;
+    }
+    _unshown.add(load);
     switch (answer) {
       case _Page(:final data, :final served):
         _served[data] = served;
+        _drawnBy[data] = load;
         return data;
       case _Hive():
+        _fellBack[(strategyId, pageId)] = load;
         return null;
     }
   }
@@ -224,10 +317,8 @@ final class StorePageReads implements LocalPageReads {
         return _hive(FromHiveBecause.tiedPositions);
       }
     }
-    final target = pages.firstWhere(
-      (page) => page.publicId == pageId,
-      orElse: () => pages.first,
-    );
+    final target = pages.where((page) => page.publicId == pageId).firstOrNull;
+    if (target == null) return _hive(FromHiveBecause.pageNotInStore);
     final PageContent onPage;
     switch (await store.readPage(strategyId, target.publicId)) {
       case Found(:final value):

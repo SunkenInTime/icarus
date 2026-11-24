@@ -20,6 +20,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -125,7 +126,7 @@ final class _Reading {
   StrategyProvider get editor => container.read(strategyProvider.notifier);
 
   List<String> get loads => [
-        for (final load in reads.loads) '${load.kind.name} ${load.served}',
+        for (final load in reads.loads) '${load.kind.name} ${load.outcome}',
       ];
 
   String? captionOnCanvas() => container.read(agentProvider).first.caption;
@@ -137,9 +138,11 @@ final class _Reading {
     }
   }
 
-  Future<void> plantInStoreOnly(StrategyData strategy, String caption) async {
-    final planted = cloneStrategy(strategy);
-    planted.pages.first.agentData.first.caption = caption;
+  Future<void> plantInStoreOnly(StrategyData strategy, String caption) =>
+      putInStoreOnly(cloneStrategy(strategy)
+        ..pages.first.agentData.first.caption = caption);
+
+  Future<void> putInStoreOnly(StrategyData planted) async {
     final rows = (strategyToRows(planted) as StrategyRowsMade).rows;
     final put = await store.putStrategy(rows);
     expect(put, isA<Saved>(),
@@ -233,17 +236,22 @@ void main() {
   test(
       'an open comes from the store when it is known equal to Hive: a '
       'caption planted only in the store is what the canvas shows, and the '
-      'pages bar lists the store\'s pages', () async {
+      'pages bar lists the store\'s pages in the store\'s order', () async {
     final s = strategy();
     final h = await reading([s]);
-    await h.plantInStoreOnly(s, 'only in the store');
+    final planted = cloneStrategy(s);
+    planted.pages.first.agentData.first.caption = 'only in the store';
+    await h.putInStoreOnly(planted.copyWith(pages: [
+      planted.pages[0].copyWith(sortIndex: 1),
+      planted.pages[1].copyWith(sortIndex: 0),
+    ]));
 
     expect(await h.editor.loadFromHive(s.id), isTrue);
 
     expect(h.captionOnCanvas(), 'only in the store');
     expect(h.loads, ['open from the store']);
     expect(container.read(strategyPageSessionProvider).availablePageIds,
-        [s.pages[0].id, s.pages[1].id]);
+        [s.pages[1].id, s.pages[0].id]);
   });
 
   test(
@@ -361,10 +369,29 @@ void main() {
         startsWith('open from Hive: ${FromHiveBecause.readFailed.words}'));
   });
 
+  String? savedCaption(String strategyId, String pageId) => const LocalLibrary()
+      .storedStrategy(strategyId)!
+      .pages
+      .firstWhere((page) => page.id == pageId)
+      .agentData
+      .first
+      .caption;
+
+  Future<void> saveCaption(String strategyId, String caption) async {
+    final newer =
+        cloneStrategy(const LocalLibrary().storedStrategy(strategyId)!);
+    newer.pages
+        .firstWhere((page) => page.sortIndex == 0)
+        .agentData
+        .first
+        .caption = caption;
+    (await const LocalLibrary().savePageOnScreen(newer)).orThrow();
+  }
+
   test(
-      'a Hive write that begins while the store read is held sends the open '
-      'to Hive: the canvas shows Hive\'s page, not the one planted in the '
-      'store', () async {
+      'an open whose store read a Hive save overtakes draws Hive as it is '
+      'once the store answers: the newer caption is on the canvas and a page '
+      'switch keeps it', () async {
     final s = strategy();
     final gate = _ReadGate();
     final h =
@@ -375,15 +402,168 @@ void main() {
 
     final opening = h.editor.loadFromHive(s.id);
     await held;
-    final stored = const LocalLibrary().storedStrategy(s.id)!;
-    final renaming = const LocalLibrary().renameStrategy(stored, 'Renamed');
+    await saveCaption(s.id, 'newer');
     gate.release();
-    (await renaming).orThrow();
 
     expect(await opening, isTrue);
-    expect(h.captionOnCanvas(), s.pages[0].agentData.first.caption);
+    expect(h.captionOnCanvas(), 'newer');
     expect(h.loads,
         ['open from Hive: ${FromHiveBecause.hiveWriteDuringRead.words}']);
+    await h.editor.setActivePage(s.pages[1].id);
+    await h.settle();
+    expect(savedCaption(s.id, s.pages[0].id), 'newer');
+  });
+
+  test(
+      'a Hive save the mirror has copied before the held store read ends '
+      'still sends the open to Hive', () async {
+    final s = strategy();
+    final gate = _ReadGate();
+    final h =
+        await reading([s], engine: (memory) => _ReadGatedEngine(memory, gate));
+    await h.plantInStoreOnly(s, 'only in the store');
+    await h.store.unload(s.id);
+    final held = gate.hold();
+
+    final opening = h.editor.loadFromHive(s.id);
+    await held;
+    await saveCaption(s.id, 'newer');
+    for (var turn = 0; turn < 20; turn++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    gate.release();
+
+    expect(await opening, isTrue);
+    await h.settle();
+    expect(h.mirror.strategiesNotKnownEqual, isNot(contains(s.id)));
+    expect(h.loads,
+        ['open from Hive: ${FromHiveBecause.hiveWriteDuringRead.words}']);
+    expect(h.captionOnCanvas(), 'newer');
+  });
+
+  test('a page the store does not hold opens from Hive', () async {
+    final s = strategy();
+    final h = await reading([s]);
+    await h.putInStoreOnly(
+      cloneStrategy(s).copyWith(pages: [cloneStrategy(s).pages[0]]),
+    );
+
+    expect(await h.editor.loadFromHive(s.id, pageId: s.pages[1].id), isTrue);
+
+    expect(container.read(strategyPageSessionProvider).activePageId,
+        s.pages[1].id);
+    expect(
+        h.loads, ['open from Hive: ${FromHiveBecause.pageNotInStore.words}']);
+  });
+
+  test(
+      'an open overtaken by another open while its store read is held is '
+      'recorded as never shown, and the open that took its place as served',
+      () async {
+    final a = strategy();
+    final b = strategy().copyWith(versionNumber: Settings.versionNumber - 1);
+    final gate = _ReadGate();
+    final h = await reading(
+      [a, b],
+      allCopied: false,
+      engine: (memory) => _ReadGatedEngine(memory, gate),
+    );
+    await h.store.unload(a.id);
+    final held = gate.hold();
+
+    final openingA = h.editor.loadFromHive(a.id);
+    await held;
+    expect(await h.editor.loadFromHive(b.id), isTrue);
+    gate.release();
+
+    expect(await openingA, isFalse);
+    expect(container.read(strategyProvider).strategyId, b.id);
+    expect(h.loads, [
+      'open from Hive: ${FromHiveBecause.migrationRan.words}',
+      'open ${const GaveWay()}',
+    ]);
+  });
+
+  test('a strategy with no pages records that there was no page to show',
+      () async {
+    final s = strategy().copyWith(pages: const []);
+    final h = await reading([s], allCopied: false);
+
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+
+    expect(h.loads, ['open ${const NoPageToShow()}']);
+  });
+
+  group(
+      'while an open waits on its store read, the strategy it opens is '
+      'already the open one and the canvas holds nothing', () {
+    late StrategyData a;
+    late StrategyData b;
+    late _Reading h;
+    late _ReadGate gate;
+    late Future<bool> opening;
+
+    setUp(() async {
+      a = strategy();
+      b = strategy();
+      gate = _ReadGate();
+      h = await reading([a, b],
+          engine: (memory) => _ReadGatedEngine(memory, gate));
+      expect(await h.editor.loadFromHive(a.id), isTrue);
+      await h.store.unload(b.id);
+      final held = gate.hold();
+      opening = h.editor.loadFromHive(b.id);
+      await held;
+      expect(container.read(strategyProvider).strategyId, b.id);
+      expect(container.read(canvasShowsProvider), isA<ShowsNothing>());
+      expect(container.read(agentProvider), isEmpty);
+    });
+
+    List<String> agentsSaved(StrategyData strategy, int page) => [
+          for (final agent in const LocalLibrary()
+              .storedStrategy(strategy.id)!
+              .pages
+              .firstWhere((stored) => stored.id == strategy.pages[page].id)
+              .agentData)
+            agent.id,
+        ];
+
+    Future<void> openEnds() async {
+      gate.release();
+      expect(await opening, isTrue);
+      await h.settle();
+    }
+
+    test('a Save writes nothing and says the work was not saved', () async {
+      h.editor.setUnsaved();
+      await expectLater(h.editor.saveToHive(b.id), throwsStateError);
+      await openEnds();
+      expect(agentsSaved(b, 0),
+          [for (final agent in b.pages[0].agentData) agent.id]);
+    });
+
+    test('the autosave writes nothing and leaves the work unsaved', () async {
+      h.editor.setUnsaved();
+      final saved = await h.editor
+          .flushPendingAutosaveBeforeExit()
+          .then((left) => left, onError: (Object _) => false);
+      expect(saved, isFalse);
+      await openEnds();
+      expect(agentsSaved(b, 0),
+          [for (final agent in b.pages[0].agentData) agent.id]);
+    });
+
+    test('a page click is ignored and the open ends on its first page',
+        () async {
+      await h.editor.selectPage(b.pages[1].id);
+      await openEnds();
+      expect(container.read(strategyPageSessionProvider).activePageId,
+          b.pages[0].id);
+      expect(agentsSaved(b, 0),
+          [for (final agent in b.pages[0].agentData) agent.id]);
+      expect(agentsSaved(b, 1),
+          [for (final agent in b.pages[1].agentData) agent.id]);
+    });
   });
 
   test('only the read mode reads pages from the store', () {

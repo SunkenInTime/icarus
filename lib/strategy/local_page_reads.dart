@@ -17,13 +17,23 @@ final class LocalPageServed {
 abstract interface class LocalPageReads {
   void opening(String strategyId, {required bool migrated});
 
+  void openedWithoutPage(String strategyId);
+
   Future<StrategyEditorPageData?> page(
     String strategyId,
     String pageId, {
     required bool migrated,
   });
 
+  StrategyEditorPageData drawnFromHive(
+    String strategyId,
+    String pageId,
+    StrategyEditorPageData page,
+  );
+
   LocalPageServed? servedWith(StrategyEditorPageData page);
+
+  void applied(StrategyEditorPageData page);
 }
 
 final localPageReadsProvider = Provider<LocalPageReads?>((ref) => null);

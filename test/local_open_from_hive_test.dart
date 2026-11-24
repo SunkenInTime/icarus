@@ -104,6 +104,28 @@ void main() {
   });
 
   test(
+      'a page switch lists the pages as Hive has them at the switch: a page '
+      'added behind the editor is in the pages bar', () async {
+    final s = await stored();
+    expect(await editor().loadFromHive(s.id), isTrue);
+    final behind = const LocalLibrary().storedStrategy(s.id)!;
+    final added = generatedPage(
+      id: '${s.id}-added',
+      sortIndex: 5,
+      optionals: Optionals.set,
+      isAttack: true,
+      itemPrefix: '${s.id}-added',
+    );
+    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .put(s.id, behind.copyWith(pages: [...behind.pages, added]));
+
+    await editor().setActivePage(s.pages[2].id);
+
+    expect(container.read(strategyPageSessionProvider).availablePageIds,
+        [s.pages[1].id, s.pages[2].id, s.pages[0].id, added.id]);
+  });
+
+  test(
       'a page switch with no edit writes the page it leaves to Hive: the '
       'time moves on and a strategy that named no theme now names the '
       'default', () async {

@@ -89,13 +89,6 @@
 //                                      file as Explorer does
 //   {"openLineup": linkId}             the lineup's media dialog
 //   {"mark": name}                     starts a clock
-//   {"shownAfter": name, "page": t}    logs the time since mark name until
-//                                      the editor shows the page named t,
-//                                      applied and drawn in a frame
-//   {"logPageReads": tag, "expect": {key: n}?}  each page load so far, from
-//                                      the store or from Hive with why, and
-//                                      the counts by key (openFromStore,
-//                                      switchFromHive, a reason's name, ...)
 //   {"watchPicture": name, "gone": t?} logs the time since mark name when a
 //                                      pasted picture is first drawn, once text
 //                                      t has left the screen; runs behind the
@@ -2648,8 +2641,6 @@ Future<void> _run(Map<String, dynamic> step) async {
       _marks[value as String] = Stopwatch()..start();
     case 'raceLeave':
       await _raceLeave(step);
-    case 'shownAfter':
-      await _shownAfter(value as String, step['page'] as String);
     case 'logPageReads':
       (await _storeLines(Future.sync(() => pageReadLines(
                 c,
@@ -3156,40 +3147,6 @@ Future<void> _watchLibraryText(
   }
   _log('TIMED $mark "$text" ${gone ? 'gone from' : 'on'} the library screen '
       '${since.elapsedMilliseconds} ms after the action');
-}
-
-Future<void> _shownAfter(String mark, String pageName) async {
-  final c = appProviderContainer;
-  final since = _marks[mark];
-  if (since == null) {
-    _failedSteps++;
-    _log('FAIL shownAfter $mark: no such mark');
-    return;
-  }
-  bool shown() {
-    final session = c.read(strategyPageSessionProvider);
-    final strategyId = c.read(strategyProvider).strategyId;
-    if (session.isApplyingPage || strategyId == null) return false;
-    final pages = const LocalLibrary().storedStrategy(strategyId)?.pages;
-    final active = pages?.where((page) => page.id == session.activePageId);
-    return active != null && active.any((page) => page.name == pageName);
-  }
-
-  final deadline = DateTime.now().add(const Duration(seconds: 60));
-  while (!shown()) {
-    if (DateTime.now().isAfter(deadline)) {
-      _failedSteps++;
-      _log('FAIL shownAfter $mark: page "$pageName" was never shown');
-      return;
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 1));
-  }
-  final applied = since.elapsedMicroseconds;
-  SchedulerBinding.instance.scheduleFrame();
-  await SchedulerBinding.instance.endOfFrame;
-  _log('TIMED $mark page "$pageName" applied after '
-      '${(applied / 1000).toStringAsFixed(1)} ms, drawn after '
-      '${(since.elapsedMicroseconds / 1000).toStringAsFixed(1)} ms');
 }
 
 /// Waits for a pasted picture to be drawn: the only image this large on

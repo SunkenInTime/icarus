@@ -683,12 +683,16 @@ Map<String, int> pageLoadCounts(List<PageLoad> loads) {
       PageLoadKind.open => 'open',
       PageLoadKind.pageSwitch => 'switch',
     };
-    switch (load.served) {
+    switch (load.outcome) {
       case ServedFromStore():
         count('${kind}FromStore');
       case ServedFromHive(:final reason):
         count('${kind}FromHive');
         count(reason.name);
+      case GaveWay():
+        count('${kind}GaveWay');
+      case NoPageToShow():
+        count('${kind}NoPage');
     }
   }
   return counts;
