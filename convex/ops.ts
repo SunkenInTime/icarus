@@ -1378,7 +1378,7 @@ async function applyElementOp(
   if (
     lives.sends &&
     op.kind === "add" &&
-    op.expectedRevision !== undefined &&
+    (op.expectedRevision !== undefined || lives.expected !== undefined) &&
     existing === null
   ) {
     return rejected("not_found");
@@ -1628,7 +1628,7 @@ async function applyLineupOp(
   if (
     lives.sends &&
     op.kind === "add" &&
-    op.expectedRevision !== undefined &&
+    (op.expectedRevision !== undefined || lives.expected !== undefined) &&
     existing === null
   ) {
     return rejected("not_found");

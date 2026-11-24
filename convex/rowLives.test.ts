@@ -30,6 +30,9 @@ const applyBatch = makeFunctionReference<"mutation">("ops:applyBatch");
 const purgeOldTombstones = makeFunctionReference<"mutation">(
   "maintenance:purgeOldTombstones",
 );
+const purgeTrashedPages = makeFunctionReference<"mutation">(
+  "maintenance:purgeTrashedPages",
+);
 
 type Harness = TestConvexForDataModel<DataModel>;
 type RootHarness = TestConvexForDataModelAndIdentity<DataModel>;
@@ -427,96 +430,116 @@ function lineupAdd(opId: string, id: string): Op {
 }
 
 describe("a client that sends no lives stays inside the contract it shipped with", () => {
-  test("a sequence over every row kind, with a stale patch, a failed op and a replay of an opted-in refusal, answers only in fields and reasons shipped clients know", async () => {
+  test("one op of every kind, a stale patch, a failed op and a replay of an opted-in refusal each answer as today, in fields and reasons shipped clients know", async () => {
     const { t, me } = await replacedElement();
-    const [refused] = await send(me, "me", [move("refused-once", 1, start)], true);
+    const [refused] = await send(me, "me", [move("refused-with-lives", 1, start)], true);
     expect(refused!.reason).toBe("row_replaced");
+    const settings = { agentSize: 2, abilitySize: 1, useNeutralTeamColors: false };
+    const steps: Array<[Op, Record<string, unknown>]> = [
+      [
+        { opId: "rename-strategy", type: "strategy.patch", payload: { name: "Renamed" }, expectedStrategyRevision: 0 },
+        { status: "applied", appliedRevision: 1 },
+      ],
+      [
+        {
+          opId: "add-page",
+          type: "page.add",
+          pagePublicId: "page-2",
+          payload: { name: "Page 2", isAttack: true },
+          sortIndex: 1,
+          expectedStrategyRevision: 1,
+        },
+        { status: "applied", appliedRevision: 2 },
+      ],
+      [
+        { opId: "rename-page", type: "page.patch", pagePublicId: "page-2", payload: { name: "Two" }, expectedPageRevision: 1 },
+        { status: "applied", appliedRevision: 2 },
+      ],
+      [
+        { opId: "page-settings", type: "pageContent.patch", pagePublicId: "page-2", settings, expectedPageContentRevision: 1 },
+        { status: "applied", appliedRevision: 2 },
+      ],
+      [
+        { opId: "reorder-page", type: "page.reorder", pagePublicId: "page-2", sortIndex: 0, expectedStrategyRevision: 2 },
+        { status: "applied", appliedRevision: 3 },
+      ],
+      [move("move-element", 1), { status: "applied", appliedRevision: 2 }],
+      [
+        {
+          ...move("stale-move-element", 1),
+          payload: agent("e1", { position: { dx: 90, dy: 0 } }),
+        },
+        { status: "rejected", reason: "revision_mismatch", current: { type: "element", revision: 2 } },
+      ],
+      [
+        {
+          opId: "reorder-element",
+          type: "element.reorder",
+          elementPublicId: "e1",
+          pagePublicId,
+          sortIndex: 5,
+          expectedElementRevision: 2,
+        },
+        { status: "applied", appliedRevision: 3 },
+      ],
+      [
+        {
+          opId: "element-of-the-wrong-kind",
+          type: "element.patch",
+          elementPublicId: "e1",
+          payload: { kind: "text", payloadVersion: 1, data: { id: "e1" } },
+          sortIndex: 0,
+          expectedElementRevision: 3,
+        },
+        { status: "failed", code: "ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH" },
+      ],
+      [lineupAdd("add-lineup", "g1"), { status: "applied", appliedRevision: 1 }],
+      [
+        {
+          opId: "patch-lineup",
+          type: "lineup.patch",
+          lineupPublicId: "g1",
+          payload: oneLineupPayload("g1", { name: "Retake" }),
+          sortIndex: 0,
+          expectedLineupRevision: 1,
+        },
+        { status: "applied", appliedRevision: 2 },
+      ],
+      [
+        {
+          opId: "reorder-lineup",
+          type: "lineup.reorder",
+          lineupPublicId: "g1",
+          pagePublicId,
+          sortIndex: 7,
+          expectedLineupRevision: 2,
+        },
+        { status: "applied", appliedRevision: 3 },
+      ],
+      [
+        { opId: "delete-lineup", type: "lineup.delete", lineupPublicId: "g1", pagePublicId, expectedLineupRevision: 3 },
+        { status: "applied", appliedRevision: 4 },
+      ],
+      [remove("delete-element", 3), { status: "applied", appliedRevision: 4 }],
+      [
+        { opId: "delete-page", type: "page.delete", pagePublicId: "page-2", expectedStrategyRevision: 3 },
+        { status: "applied", appliedRevision: 4 },
+      ],
+      [
+        move("refused-with-lives", 1, start),
+        { status: "rejected", reason: "revision_mismatch", current: { type: "element", revision: 4 } },
+      ],
+    ];
     const answers: Result[] = [];
-    const plain = async (ops: Op[]) => {
-      answers.push(...(await send(me, "me", ops)));
-    };
-    await plain([
-      {
-        opId: "rename",
-        type: "strategy.patch",
-        payload: { name: "Renamed" },
-        expectedStrategyRevision: 0,
-      },
-    ]);
-    await plain([
-      {
-        opId: "page-2",
-        type: "page.add",
-        pagePublicId: "page-2",
-        payload: { name: "Page 2", isAttack: true },
-        sortIndex: 1,
-        expectedStrategyRevision: 1,
-      },
-    ]);
-    await plain([
-      {
-        opId: "page-rename",
-        type: "page.patch",
-        pagePublicId: "page-2",
-        payload: { name: "Two" },
-        expectedPageRevision: 1,
-      },
-    ]);
-    await plain([
-      {
-        opId: "settings",
-        type: "pageContent.patch",
-        pagePublicId: "page-2",
-        settings: { agentSize: 2, abilitySize: 1, useNeutralTeamColors: false },
-        expectedPageContentRevision: 1,
-      },
-    ]);
-    await plain([
-      {
-        opId: "page-reorder",
-        type: "page.reorder",
-        pagePublicId: "page-2",
-        sortIndex: 0,
-        expectedStrategyRevision: 2,
-      },
-    ]);
-    await plain([move("stale", 1)]);
-    await plain([
-      {
-        opId: "wrong-kind",
-        type: "element.patch",
-        elementPublicId: "e1",
-        payload: { kind: "text", payloadVersion: 1, data: { id: "e1" } },
-        sortIndex: 0,
-        expectedElementRevision: 1,
-      },
-    ]);
-    await plain([lineupAdd("lineup-add", "g1")]);
-    await plain([
-      {
-        opId: "lineup-delete",
-        type: "lineup.delete",
-        lineupPublicId: "g1",
-        pagePublicId,
-        expectedLineupRevision: 1,
-      },
-    ]);
-    await plain([remove("plain-delete", 1)]);
-    await plain([move("refused-once", 1, start)]);
-    const statuses = answers.map((answer) => answer.status);
-    expect(statuses).toContain("rejected");
-    expect(statuses).toContain("failed");
-    expect(statuses).toContain("applied");
-    const replayed = answers[answers.length - 1]!;
-    expect(replayed).toMatchObject({
-      opId: "refused-once",
-      status: "rejected",
-      reason: "revision_mismatch",
-    });
+    for (const [op, expected] of steps) {
+      const [answer] = await send(me, "me", [op]);
+      expect(answer, op.opId as string).toMatchObject({ opId: op.opId, ...expected });
+      answers.push(answer!);
+    }
     expectShippedContract(answers);
     const receipts = await t.run(async (ctx) =>
       (await ctx.db.query("operationEvents").collect()).filter(
-        (event) => event.opId === "refused-once",
+        (event) => event.opId === "refused-with-lives",
       ),
     );
     expect(receipts).toHaveLength(1);
@@ -765,5 +788,180 @@ describe("the op size limit", () => {
       patchOfSize(MAX_CLOUD_OPERATION_BYTES + 1),
     ]);
     expect(over).toMatchObject({ status: "failed", code: "INVALID_PAYLOAD" });
+  });
+});
+
+describe("a put-back, in a batch that sends lives", () => {
+  test("an add that names an expected revision or an expected life is a put-back, and a put-back of an element or a lineup group that is gone is not_found and adds nothing", async () => {
+    for (const kind of ["element", "lineup"] as const) {
+      for (const [name, named] of [
+        ["revision", { revision: 2 }],
+        ["life", { life: start }],
+        ["revision and life", { revision: 2, life: start }],
+      ] as const) {
+        const { t, me } = await createHarness();
+        const id = kind === "element" ? "e1" : "g1";
+        const created =
+          kind === "element" ? add("add-1") : lineupAdd("add-1", id);
+        await send(me, "me", [created], true);
+        await send(
+          me,
+          "me",
+          [
+            kind === "element"
+              ? remove("delete-1", 1)
+              : {
+                  opId: "delete-1",
+                  type: "lineup.delete",
+                  lineupPublicId: id,
+                  pagePublicId,
+                  expectedLineupRevision: 1,
+                },
+          ],
+          true,
+        );
+        await purge(t);
+        const back: Op = {
+          ...created,
+          opId: "put-back",
+          ...("revision" in named
+            ? kind === "element"
+              ? { expectedElementRevision: named.revision }
+              : { expectedLineupRevision: named.revision }
+            : {}),
+          ...("life" in named ? { expectedLife: named.life } : {}),
+        };
+        const [answer] = await send(me, "me", [back], true);
+        expect(answer, `${kind}, ${name}`).toEqual({
+          opId: "put-back",
+          status: "rejected",
+          reason: "not_found",
+        });
+        const rows = await t.run(async (ctx) =>
+          kind === "element"
+            ? await ctx.db.query("elements").collect()
+            : await ctx.db.query("lineups").collect(),
+        );
+        expect(rows, `${kind}, ${name}`).toEqual([]);
+      }
+    }
+  });
+});
+
+describe("a refusal sent again reads its row fresh, as every replayed refusal does", () => {
+  test("row_replaced carries the row while it is live, and comes back without it once the page is in the trash and once it is purged, the receipt still there", async () => {
+    const { t, me } = await replacedElement();
+    const elementEdit = move("element-edit", 1, start);
+    const [first] = await send(me, "me", [elementEdit], true);
+    expect(first).toMatchObject({
+      reason: "row_replaced",
+      current: { life: start + 31 * day },
+    });
+    const rename: Op = {
+      opId: "page-edit",
+      type: "page.patch",
+      pagePublicId: "page-2",
+      payload: { name: "Late" },
+      expectedPageRevision: 1,
+      expectedLife: start,
+    };
+    await send(me, "me", [
+      {
+        opId: "add-page",
+        type: "page.add",
+        pagePublicId: "page-2",
+        payload: { name: "Page 2", isAttack: true },
+        sortIndex: 1,
+        expectedStrategyRevision: 0,
+      },
+    ]);
+    const [pageFirst] = await send(me, "me", [rename], true);
+    expect(pageFirst).toMatchObject({
+      reason: "row_replaced",
+      current: { type: "page", life: Date.now() },
+    });
+    await send(me, "me", [
+      {
+        opId: "move-to-page-2",
+        type: "element.patch",
+        elementPublicId: "e1",
+        pagePublicId: "page-2",
+        payload: agent("e1", { rotation: 135 }),
+        sortIndex: 0,
+        expectedElementRevision: 1,
+      },
+    ]);
+    await send(me, "me", [
+      { opId: "trash-page-2", type: "page.delete", pagePublicId: "page-2", expectedStrategyRevision: 1 },
+    ]);
+    for (const op of [elementEdit, rename]) {
+      const [again] = await send(me, "me", [op], true);
+      expect(again, `${op.opId} in the trash`).toEqual({
+        opId: op.opId,
+        status: "rejected",
+        reason: "row_replaced",
+      });
+    }
+    vi.setSystemTime(Date.now() + 31 * day);
+    await t.run(markAssetReferencesReady);
+    await t.mutation(purgeTrashedPages, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    for (const op of [elementEdit, rename]) {
+      const [again] = await send(me, "me", [op], true);
+      expect(again, `${op.opId} purged`).toEqual({
+        opId: op.opId,
+        status: "rejected",
+        reason: "row_replaced",
+      });
+    }
+  });
+});
+
+describe("content on a page in the trash", () => {
+  test("an element and a lineup group on a page in the trash, with a life that does not match, get the answer they get today", async () => {
+    const answers: Record<string, Result[]> = {};
+    for (const lives of [false, true]) {
+      const { me } = await createHarness();
+      await send(me, "me", [
+        {
+          opId: "add-page",
+          type: "page.add",
+          pagePublicId: "page-2",
+          payload: { name: "Page 2", isAttack: true },
+          sortIndex: 1,
+          expectedStrategyRevision: 0,
+        },
+      ]);
+      await send(me, "me", [
+        { ...add("add-element"), pagePublicId: "page-2" },
+        { ...lineupAdd("add-lineup", "g1"), pagePublicId: "page-2" },
+      ]);
+      await send(me, "me", [
+        { opId: "trash", type: "page.delete", pagePublicId: "page-2", expectedStrategyRevision: 1 },
+      ]);
+      const life = lives ? { expectedLife: start - 1 } : {};
+      answers[String(lives)] = await send(
+        me,
+        "me",
+        [
+          { ...move("element-edit", 1), ...life },
+          {
+            opId: "lineup-edit",
+            type: "lineup.patch",
+            lineupPublicId: "g1",
+            payload: oneLineupPayload("g1", { name: "Late" }),
+            sortIndex: 0,
+            expectedLineupRevision: 1,
+            ...life,
+          },
+        ],
+        lives,
+      );
+    }
+    expect(answers["true"]).toEqual(answers["false"]);
+    expect(answers["false"]!.map((answer) => answer.code)).toEqual([
+      "PAGE_DELETED",
+      "PAGE_DELETED",
+    ]);
   });
 });

@@ -116,14 +116,23 @@ before it looks at the revision, and a put-back whose row is gone as
 `not_found` instead of adding it again. Its answers name the life of the row
 they belong to (`appliedLife`, `currentLife`, and `life` on a refusal's
 `current`), and so does the receipt it keeps for the op id, which a resend
-replays. A page in the trash meets the trash first, as it does today, so a
-`row_replaced` refusal always carries the row as it is now. In a batch that
-sets `sendsLives`, a put-back whose row is gone is `not_found` whether or not
-the op names a life, and `expectedLife` does not count toward an op's size
-limit. A replayed refusal keeps the reason it was given, except that a caller
-that does not set `sendsLives` is told `revision_mismatch` instead of
-`row_replaced`, a reason it knows; the shipped-clients check cannot see
-replays, so a test in `convex/rowLives.test.ts` guards that.
+replays. A page in the trash meets the trash first, as it does today, so a first
+`row_replaced` answer carries the row as it is now. A replayed refusal, like
+every replayed refusal, keeps the reason it was given and reads the row fresh:
+it carries the row while the row is live, and none once the row is gone or in
+the trash. In a batch that sets `sendsLives`, an add that names an expected
+revision or an expected life is a put-back, and a put-back of a row that is
+gone is `not_found`. `expectedLife` does not count toward an op's size limit.
+
+A caller that does not set `sendsLives` and replays an op id first sent with it
+is told `revision_mismatch` instead of `row_replaced`, a reason it knows; the
+shipped-clients check cannot see replays, so a test in
+`convex/rowLives.test.ts` guards that. A released build told
+`revision_mismatch` acts as it does on any stale edit (a page add reloads the
+strategy and is sent again under a new op id); it can only meet this by
+replaying an op id an opted-in build sent, which needs both builds sharing
+stored ops, so look at this choice again before any build that shares stored
+ops with released builds turns `sendsLives` on.
 
 Known limits: an op that names a page only as a place, to add an item onto or
 move one to, carries no life for that page, so an item can still land on a page
