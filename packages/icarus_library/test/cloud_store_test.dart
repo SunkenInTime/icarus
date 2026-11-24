@@ -780,6 +780,7 @@ void main() {
         }),
         sortIndex: row.sortIndex,
         revision: revision,
+        unknownFields: row.unknownFields,
       );
     }
 

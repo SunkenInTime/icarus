@@ -1996,6 +1996,7 @@ Future<void> _run(Map<String, dynamic> step) async {
         AgentType.sage,
         AgentType.omen,
       ];
+      final fill = const Uuid().v4().substring(0, 8);
       c.read(actionProvider.notifier).performTransaction(
         groups: const [],
         mutation: () {
@@ -2003,13 +2004,13 @@ Future<void> _run(Map<String, dynamic> step) async {
             final at = Offset(60.0 + (n % 40) * 22, 60.0 + (n ~/ 40) * 22);
             if (n.isEven) {
               agents.addAgent(PlacedAgent(
-                id: 'fill-$n',
+                id: 'fill-$fill-$n',
                 type: types[(n ~/ 2) % types.length],
                 position: at,
               ));
             } else {
               texts.addText(PlacedText(
-                id: 'fill-$n',
+                id: 'fill-$fill-$n',
                 position: at,
                 sizeVersion: worldSizedMediaVersion,
               )..text = 'Fill $n');
@@ -2376,6 +2377,10 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':
       (await storeSyncStates(c)).forEach(_log);
+    case 'waitStoreAllRead':
+      _log(
+        await waitStoreAllRead(c, Duration(seconds: (value as num).toInt())),
+      );
     case 'waitStoreHeld':
       _log(
         await waitStoreHeld(c, Duration(seconds: (value as num).toInt())),

@@ -859,6 +859,7 @@ extension _CloudStore on LibraryStore {
   Future<Stored<_BaseApplied>> _applyBase(
     LoadedStrategy strategy,
     List<ArrivedBase> arrivals,
+    Shown shown,
   ) async {
     final area = strategy.area;
     final digests = <String>{};
@@ -993,35 +994,12 @@ extension _CloudStore on LibraryStore {
       }
     }
 
-    int? heldElsewhere(Row row, String page) {
-      final (ids, nameAt) = switch (row) {
-        ElementRow(:final publicId) => (
-          strategy.pagesOfElement(publicId),
-          (String digest) =>
-              ElementName(digest, digestOf(publicId)) as StoreName,
-        ),
-        LineupGroupRow(:final publicId) => (
-          strategy.pagesOfLineupGroup(publicId),
-          (String digest) =>
-              LineupName(digest, digestOf(publicId)) as StoreName,
-        ),
-        _ => (
-          const <String>[],
-          (String digest) => PageName(digest) as StoreName,
-        ),
-      };
-      int? most;
-      for (final digest in [...ids]) {
-        if (digest == digestOf(page)) continue;
-        if (held(nameAt(digest)) case final other?) {
-          final revision = revisionOfRow(other);
-          if (revision != null && (most == null || revision > most)) {
-            most = revision;
-          }
-        }
-      }
-      return most;
-    }
+    String? shownOn(Row row) => switch (row) {
+      ElementRow(:final publicId) => shown.rows[ElementTarget(publicId)]?.page,
+      LineupGroupRow(:final publicId) =>
+        shown.rows[LineupTarget(publicId)]?.page,
+      _ => null,
+    };
 
     for (final arrival in arrivals) {
       switch (arrival) {
@@ -1053,11 +1031,7 @@ extension _CloudStore on LibraryStore {
           final found = <String>{};
           for (final row in <Row>[...elements, ...lineupGroups]) {
             found.add(nameOf(row).name);
-            final elsewhere = heldElsewhere(row, page.publicId);
-            final revision = revisionOfRow(row);
-            if (elsewhere != null && revision != null && elsewhere > revision) {
-              continue;
-            }
+            if (shownOn(row) case final on? when on != page.publicId) continue;
             put(row);
           }
           if (strategy.loadedPage(digestOf(page.publicId)) case final loaded?) {
@@ -1117,7 +1091,7 @@ extension _CloudStore on LibraryStore {
     }
 
     final _BaseApplied base;
-    switch (await _applyBase(strategy, arrivals)) {
+    switch (await _applyBase(strategy, arrivals, next.shown)) {
       case StorageFailed(:final failure):
         asBefore();
         return NotSaved(failure);

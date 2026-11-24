@@ -100,6 +100,7 @@ Its steps:
 - `{"storeDelete": id}` commits a delete of element `id` as the account signed in; the queue decides whether it goes unchecked.
 - `{"storeSetField": id, "field": name, "to": value}` commits a field merge of one data field of element `id`.
 - `{"waitStoreRefusedLate": seconds}` waits until the queue records a batch the server refused as arriving too late for its basis.
+- `{"waitStoreAllRead": seconds}` waits until the store holds one cloud strategy with its page list and every page in it read, and logs how long that took from the start of the step.
 - `{"waitStoreHeld": seconds}` waits until the store's one cloud strategy is held for lost edit access with work unsent, and the sender's page-list read for that loss said the account can only view it; it fails if that does not happen in time.
 - `{"storeSyncState": true}` logs each cloud strategy's sync state for the account signed in, whose work it is, and the sender's state.
 - `{"killNow": true}` ends the app at once, the way a crash does.
