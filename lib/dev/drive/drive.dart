@@ -522,6 +522,167 @@ Future<PageTransitionState> _shot(String path) async {
   return transition;
 }
 
+void _pressMouse(Offset at, {int buttons = kPrimaryMouseButton}) {
+  final pointer = _pointer++;
+  final binding = GestureBinding.instance;
+  _addMouse(pointer, at);
+  binding.handlePointerEvent(PointerHoverEvent(
+    pointer: pointer,
+    kind: PointerDeviceKind.mouse,
+    position: at,
+  ));
+  binding.handlePointerEvent(PointerDownEvent(
+    pointer: pointer,
+    kind: PointerDeviceKind.mouse,
+    buttons: buttons,
+    position: at,
+  ));
+  binding.handlePointerEvent(PointerUpEvent(
+    pointer: pointer,
+    kind: PointerDeviceKind.mouse,
+    position: at,
+  ));
+}
+
+Future<void> _mapThenOpen(Map<String, dynamic> step) async {
+  final c = appProviderContainer;
+  final strategies = c.read(strategyProvider.notifier);
+  final repository = c.read(convexStrategyRepositoryProvider);
+  final listing = c.listen(cloudStrategiesProvider, (_, __) {});
+  String idOf(String name) =>
+      (c.read(cloudStrategiesProvider).valueOrNull ?? const [])
+          .firstWhere((entry) => entry.strategy.name == name)
+          .strategy
+          .id;
+  bool listed(String name) =>
+      (c.read(cloudStrategiesProvider).valueOrNull ?? const [])
+          .any((entry) => entry.strategy.name == name);
+  await _waitFor(
+    () =>
+        listed(step['mapThenOpen'] as String) && listed(step['from'] as String),
+    30,
+  );
+  final opened = idOf(step['mapThenOpen'] as String);
+  final left = idOf(step['from'] as String);
+  listing.close();
+  final runs = (step['runs'] ?? 50) as int;
+  final byBackButton = (step['by'] ?? 'back') == 'back';
+  final targets = [
+    for (final name in (step['maps'] as List).cast<String>())
+      MapValue.values.byName(name),
+  ];
+  final restAt = _point(step, 'restAt');
+  String ms(int micros) => (micros / 1000).toStringAsFixed(1);
+  Future<String> serverMap(String id) async =>
+      (await repository.fetchShell(id)).header.mapData;
+  Future<void> openAndSettle(String id) async {
+    if (!await strategies.openCloudStrategy(id)) {
+      throw StateError('$id did not open');
+    }
+    await _waitFor(
+      () => !c.read(strategyPageSessionProvider).isApplyingPage,
+      30,
+    );
+    await _frames();
+  }
+
+  final outcomes = <String, int>{};
+  final patchWaits = <int>[];
+  final openStarts = <int>[];
+  for (var run = 1; run <= runs; run++) {
+    await openAndSettle(opened);
+    await openAndSettle(left);
+    final openedBefore = await serverMap(opened);
+    final leftBefore = await serverMap(left);
+    final target = targets.firstWhere(
+      (map) =>
+          Maps.mapNames[map] != openedBefore &&
+          Maps.mapNames[map] != leftBefore &&
+          map != c.read(mapProvider).currentMap,
+    );
+    final targetName = Maps.mapNames[target]!;
+    await _tap(_centerOf(
+      (w) => _isText(
+        w,
+        Maps.mapNames[c.read(mapProvider).currentMap]!.toUpperCase(),
+      ),
+    ));
+    final tile = _centerOf((w) => _isText(w, targetName.toUpperCase()));
+    final clock = Stopwatch();
+    int? patchAt;
+    String? patchUnder;
+    int? openAt;
+    final subscription = c.listen(strategyOpQueueProvider, (_, next) {
+      if (openAt == null && next.strategyPublicId == opened) {
+        openAt = clock.elapsedMicroseconds;
+      }
+      if (patchAt != null) return;
+      for (final pending in next.pending) {
+        if (pending.op case StrategyPatchOp(:final payload)
+            when payload['mapData'] == targetName) {
+          patchAt = clock.elapsedMicroseconds;
+          patchUnder = next.strategyPublicId;
+        }
+      }
+    });
+    clock.start();
+    _pressMouse(tile);
+    SchedulerBinding.instance.scheduleFrame();
+    await SchedulerBinding.instance.endOfFrame;
+    if (byBackButton) {
+      _pressMouse(restAt, buttons: kBackMouseButton);
+    } else {
+      unawaited(strategies.openCloudStrategy(opened));
+    }
+    await _waitFor(
+      () =>
+          c.read(strategyProvider).strategyId == opened &&
+          !c.read(strategyPageSessionProvider).isApplyingPage,
+      30,
+    );
+    String? leftAfter;
+    String? openedAfter;
+    final settleBy = DateTime.now().add(const Duration(seconds: 20));
+    while (DateTime.now().isBefore(settleBy)) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      leftAfter = await serverMap(left);
+      openedAfter = await serverMap(opened);
+      if (leftAfter == targetName || openedAfter == targetName) break;
+    }
+    subscription.close();
+    final outcome = openedAfter == targetName
+        ? 'the opened strategy took the change'
+        : leftAfter == targetName
+            ? 'the changed strategy kept it'
+            : 'neither has it';
+    outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
+    if (patchAt case final at?) patchWaits.add(at);
+    if (openAt case final at?) openStarts.add(at);
+    _log('MAPRACE run $run (${byBackButton ? 'back button' : 'direct open'}): '
+        '$left $leftBefore -> $targetName; '
+        'patch queued ${patchAt == null ? 'never seen' : '${ms(patchAt!)} ms after the tap, under ${patchUnder == opened ? opened : patchUnder == left ? left : patchUnder}'}; '
+        'open began ${openAt == null ? 'never' : '${ms(openAt!)} ms'} after the tap; '
+        '$outcome ($left $leftAfter, $opened $openedAfter)');
+  }
+  patchWaits.sort();
+  openStarts.sort();
+  String spread(List<int> values) => values.isEmpty
+      ? '-'
+      : 'median ${ms(values[values.length ~/ 2])} ms, worst ${ms(values.last)} ms';
+  _log('MAPRACE summary (${byBackButton ? 'back button' : 'direct open'}): '
+      '$runs runs; ${[
+    for (final MapEntry(:key, :value) in outcomes.entries) '$key $value',
+  ].join(', ')}; tap to patch queued ${spread(patchWaits)}; '
+      'tap to open began ${spread(openStarts)}');
+  if (step['expectTaken'] case final int expected
+      when (outcomes['the opened strategy took the change'] ?? 0) != expected) {
+    _failedSteps++;
+    _log('FAIL mapThenOpen: the opened strategy took the change '
+        '${outcomes['the opened strategy took the change'] ?? 0} times, '
+        'expected $expected');
+  }
+}
+
 Future<void> _frames([int count = 3]) async {
   for (var i = 0; i < count; i++) {
     SchedulerBinding.instance.scheduleFrame();
@@ -1742,6 +1903,8 @@ Future<void> _run(Map<String, dynamic> step) async {
             role: value as String,
           );
       await File(step['file'] as String).writeAsString(code);
+    case 'mapThenOpen':
+      await _mapThenOpen(step);
     case 'openStoredCloudStrategy':
       unawaited(
         Navigator.of(appNavigatorKey.currentContext!).push(
