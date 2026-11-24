@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'dart:math';
 import 'dart:convert';
 import 'dart:io';
@@ -1644,6 +1645,18 @@ Future<ProviderContainer> _cloudContainer({
       ));
   container.listen(strategyPageSessionProvider, (_, __) {});
   await container.read(remoteEditorSnapshotProvider.future);
+  final shownPage = container.read(strategyPageSessionProvider).activePageId ??
+      container
+          .read(remoteEditorSnapshotProvider)
+          .valueOrNull
+          ?.activePage
+          ?.page
+          .publicId;
+  if (shownPage != null) {
+    container
+        .read(canvasShowsProvider.notifier)
+        .shown('cloud-strategy', shownPage);
+  }
   return container;
 }
 
@@ -2653,11 +2666,12 @@ void main() {
           snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
         );
 
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            );
+    final desired = container
+        .read(activePageLiveSyncProvider.notifier)
+        .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            canvas: _drawn(container, 'cloud-strategy', page.publicId));
 
     final op = desired![EntitySyncKey.element(page.publicId, element.publicId)];
     expect(op, isNotNull);
@@ -4455,7 +4469,9 @@ void main() {
     final ops = container
         .read(activePageLiveSyncProvider.notifier)
         .syncLocalPage(
-            strategyPublicId: 'cloud-strategy', pageId: page.publicId)!;
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            canvas: _drawn(container, 'cloud-strategy', page.publicId))!;
     final op = ops[_lineupKey(page.publicId, 'a')];
     // Revision 1, not the teammate's 2: the server refuses it as a conflict
     // instead of the move silently overwriting their notes.
@@ -4500,7 +4516,9 @@ void main() {
       final ops = container
           .read(activePageLiveSyncProvider.notifier)
           .syncLocalPage(
-              strategyPublicId: 'cloud-strategy', pageId: page.publicId)!;
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+              canvas: _drawn(container, 'cloud-strategy', page.publicId))!;
       return {
         for (final entry in ops.entries)
           if (entry.key.kind == EntitySyncKeyKind.element)
@@ -5246,7 +5264,9 @@ void main() {
       final ops = container
           .read(activePageLiveSyncProvider.notifier)
           .syncLocalPage(
-              strategyPublicId: 'cloud-strategy', pageId: page.publicId)!;
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+              canvas: _drawn(container, 'cloud-strategy', page.publicId))!;
       expect(
           ops.keys
               .where((key) => key.kind == EntitySyncKeyKind.element)
@@ -5267,7 +5287,9 @@ void main() {
       final ops = container
           .read(activePageLiveSyncProvider.notifier)
           .syncLocalPage(
-              strategyPublicId: 'cloud-strategy', pageId: page.publicId)!;
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+              canvas: _drawn(container, 'cloud-strategy', page.publicId))!;
       final elementOps = {
         for (final entry in ops.entries)
           if (entry.key.kind == EntitySyncKeyKind.element)
@@ -5724,11 +5746,12 @@ void main() {
     );
 
     container.read(textDraftProvider.notifier).clearDraft(textId);
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            );
+    final desired = container
+        .read(activePageLiveSyncProvider.notifier)
+        .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            canvas: _drawn(container, 'cloud-strategy', page.publicId));
     expect(desired, isNotNull);
     expect(desired, isNot(contains(key)));
     await queue.syncDesiredOpsForPage(
@@ -5802,11 +5825,12 @@ void main() {
       final canvas = {
         for (final text in container.read(textProvider)) text.id: text.text
       };
-      final desired =
-          container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-                strategyPublicId: 'cloud-strategy',
-                pageId: 'page-1',
-              )!;
+      final desired = container
+          .read(activePageLiveSyncProvider.notifier)
+          .syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: 'page-1',
+              canvas: _drawn(container, 'cloud-strategy', 'page-1'))!;
       await queue.syncDesiredOpsForPage(
           pageId: 'page-1', desiredOpsByEntityKey: desired);
       expect(canvas['unrelated'], 'keep-my-edit');
@@ -6016,11 +6040,12 @@ void main() {
         ..text = 'local-one',
     ]);
 
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: 'page-1',
-            );
+    final desired = container
+        .read(activePageLiveSyncProvider.notifier)
+        .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: 'page-1',
+            canvas: _drawn(container, 'cloud-strategy', 'page-1'));
 
     expect(desired, isNull);
   });
@@ -6045,17 +6070,17 @@ void main() {
       );
     container.read(mapProvider.notifier).setAttack(false);
     final defense = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: page.publicId,
-    )![key]!;
+        strategyPublicId: 'cloud-strategy',
+        pageId: page.publicId,
+        canvas: _drawn(container, 'cloud-strategy', page.publicId))![key]!;
     expect(defense.payload, {'isAttack': false});
     queue.holdInFlight(key, defense);
     container.read(mapProvider.notifier).setAttack(true);
 
     final desired = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: page.publicId,
-    );
+        strategyPublicId: 'cloud-strategy',
+        pageId: page.publicId,
+        canvas: _drawn(container, 'cloud-strategy', page.publicId));
 
     final sideOp = desired![key] as PagePatchOp;
     expect(sideOp.payload, {'isAttack': true});
@@ -6109,11 +6134,14 @@ void main() {
     queue.holdInFlight(key, firstEdit);
     container.read(textDraftProvider.notifier).setDraft(textId, 'final-edit');
 
-    final beforeAck =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            )![key] as ElementPatchOp;
+    final beforeAck = container
+            .read(activePageLiveSyncProvider.notifier)
+            .syncLocalPage(
+                strategyPublicId: 'cloud-strategy',
+                pageId: page.publicId,
+                canvas:
+                    _drawn(container, 'cloud-strategy', page.publicId))![key]
+        as ElementPatchOp;
     expect(beforeAck.payload.toString(), contains('final-edit'));
     expect(beforeAck.expectedElementRevision, 1);
 
@@ -6129,11 +6157,14 @@ void main() {
     ]);
     queue.clearInFlight();
 
-    final afterAck =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            )![key] as ElementPatchOp;
+    final afterAck = container
+            .read(activePageLiveSyncProvider.notifier)
+            .syncLocalPage(
+                strategyPublicId: 'cloud-strategy',
+                pageId: page.publicId,
+                canvas:
+                    _drawn(container, 'cloud-strategy', page.publicId))![key]
+        as ElementPatchOp;
     expect(afterAck.payload.toString(), contains('final-edit'));
     expect(afterAck.expectedElementRevision, 2);
   });
@@ -6163,9 +6194,9 @@ void main() {
     ]);
     const key = EntitySyncKey.element('page-1', 'text-a');
     final op = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: 'page-1',
-    )![key]!;
+        strategyPublicId: 'cloud-strategy',
+        pageId: 'page-1',
+        canvas: _drawn(container, 'cloud-strategy', 'page-1'))![key]!;
     sync.setContext(strategyPublicId: 'cloud-strategy', activePageId: 'page-2');
     sync.recordAckBatch([
       AckedEntityIntent(
@@ -6190,9 +6221,10 @@ void main() {
         snapshot: remote.initialSnapshot);
     container.read(textProvider.notifier).commitText('text-a', 'next edit');
     final next = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: 'page-1',
-    )![key] as ElementPatchOp;
+            strategyPublicId: 'cloud-strategy',
+            pageId: 'page-1',
+            canvas: _drawn(container, 'cloud-strategy', 'page-1'))![key]
+        as ElementPatchOp;
     expect(next.expectedElementRevision, 2);
     expect(next.payload.toString(), contains('next edit'));
   });
@@ -6233,9 +6265,9 @@ void main() {
       activePage: _pageSnapshot(changed),
     ));
     final desired = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: 'page-1',
-    )!;
+        strategyPublicId: 'cloud-strategy',
+        pageId: 'page-1',
+        canvas: _drawn(container, 'cloud-strategy', 'page-1'))!;
     expect(desired, isNot(contains(key)));
     expect(
         sync
@@ -6292,9 +6324,10 @@ void main() {
 
       container.read(mapProvider.notifier).fromHive(MapValue.ascent, false);
       final side = sync.syncLocalPage(
-        strategyPublicId: 'cloud-strategy',
-        pageId: 'page-1',
-      )![const EntitySyncKey.pageDescriptor('page-1')]!;
+              strategyPublicId: 'cloud-strategy',
+              pageId: 'page-1',
+              canvas: _drawn(container, 'cloud-strategy', 'page-1'))![
+          const EntitySyncKey.pageDescriptor('page-1')]!;
 
       expect(side.expectedRevision, base);
     });
@@ -6325,17 +6358,17 @@ void main() {
     ]);
 
     final firstDesired = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: page.publicId,
-    );
+        strategyPublicId: 'cloud-strategy',
+        pageId: page.publicId,
+        canvas: _drawn(container, 'cloud-strategy', page.publicId));
     final add = firstDesired![key] as ElementAddOp;
     queue.holdInFlight(key, add);
     container.read(textProvider.notifier).removeText(textId);
 
     final finalDesired = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: page.publicId,
-    );
+        strategyPublicId: 'cloud-strategy',
+        pageId: page.publicId,
+        canvas: _drawn(container, 'cloud-strategy', page.publicId));
 
     final delete = finalDesired![key] as ElementDeleteOp;
     expect(delete.expectedElementRevision, 0);
@@ -6402,9 +6435,9 @@ void main() {
     );
 
     final desired = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: page.publicId,
-    );
+        strategyPublicId: 'cloud-strategy',
+        pageId: page.publicId,
+        canvas: _drawn(restarted, 'cloud-strategy', page.publicId));
 
     final retained = desired![key] as ElementAddOp;
     expect(retained.opId, 'add-before-restart');
@@ -6481,9 +6514,9 @@ void main() {
     container.read(textDraftProvider.notifier).setDraft(textId, 'local-edit');
 
     final desired = sync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: hydratedPage.publicId,
-    );
+        strategyPublicId: 'cloud-strategy',
+        pageId: hydratedPage.publicId,
+        canvas: _drawn(container, 'cloud-strategy', hydratedPage.publicId));
 
     final op = desired![EntitySyncKey.element(hydratedPage.publicId, textId)]
         as ElementPatchOp;
@@ -6514,11 +6547,12 @@ void main() {
         );
 
     container.read(mapProvider.notifier).switchSide();
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            );
+    final desired = container
+        .read(activePageLiveSyncProvider.notifier)
+        .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            canvas: _drawn(container, 'cloud-strategy', page.publicId));
 
     expect(desired, hasLength(1));
     final entry = desired!.entries.single;
@@ -6555,11 +6589,12 @@ void main() {
     RemotePage page,
   ) {
     container.read(textProvider).single.position = const Offset(50, 60);
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            );
+    final desired = container
+        .read(activePageLiveSyncProvider.notifier)
+        .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            canvas: _drawn(container, 'cloud-strategy', page.publicId));
     expect(desired, isNotNull);
     expect(
       desired![EntitySyncKey.element(page.publicId, 'text-page-1')]?.kind,
@@ -6761,9 +6796,9 @@ void main() {
     container.read(lineUpProvider.notifier).addRecovered(
         lineUpGraphFromRemoteLineups([_lineup(two.publicId, 'b')]));
     final desired = liveSync.syncLocalPage(
-      strategyPublicId: 'cloud-strategy',
-      pageId: two.publicId,
-    )!;
+        strategyPublicId: 'cloud-strategy',
+        pageId: two.publicId,
+        canvas: _drawn(container, 'cloud-strategy', two.publicId))!;
     final added = {
       for (final MapEntry(:key, :value) in desired.entries)
         if (key.kind == EntitySyncKeyKind.lineup && value is LineupAddOp)
@@ -6831,11 +6866,12 @@ void main() {
     );
 
     container.read(textProvider).single.position = const Offset(50, 60);
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            );
+    final desired = container
+        .read(activePageLiveSyncProvider.notifier)
+        .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            canvas: _drawn(container, 'cloud-strategy', page.publicId));
     expect(
       desired!.keys,
       allOf(
@@ -6996,9 +7032,9 @@ void main() {
       RemotePage page,
     ) {
       return container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-                strategyPublicId: 'cloud-strategy',
-                pageId: page.publicId,
-              ) ??
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+              canvas: _drawn(container, 'cloud-strategy', page.publicId)) ??
           const {};
     }
 
@@ -14021,11 +14057,12 @@ void main() {
         lineUps.originById('lineup-a')!.agent.position,
         const Offset(10, 20),
       );
-      final desired =
-          container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-                strategyPublicId: 'cloud-strategy',
-                pageId: page.publicId,
-              );
+      final desired = container
+          .read(activePageLiveSyncProvider.notifier)
+          .syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+              canvas: _drawn(container, 'cloud-strategy', page.publicId));
       expect(desired, isNotNull);
       expect(desired!.values.whereType<LineupDeleteOp>(), isEmpty);
       expect(
@@ -14058,11 +14095,12 @@ void main() {
           activePageId: page.publicId,
         );
 
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            );
+    final desired = container
+        .read(activePageLiveSyncProvider.notifier)
+        .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            canvas: _drawn(container, 'cloud-strategy', page.publicId));
 
     expect(desired, isNull);
   });
@@ -14097,11 +14135,12 @@ void main() {
       ),
     ));
 
-    final desired =
-        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-              strategyPublicId: 'cloud-strategy',
-              pageId: page.publicId,
-            );
+    final desired = container
+        .read(activePageLiveSyncProvider.notifier)
+        .syncLocalPage(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            canvas: _drawn(container, 'cloud-strategy', page.publicId));
 
     expect(desired, isNotNull);
     expect(
@@ -14518,9 +14557,9 @@ void main() {
       RemotePage page,
     ) {
       return container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
-                strategyPublicId: 'cloud-strategy',
-                pageId: page.publicId,
-              ) ??
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+              canvas: _drawn(container, 'cloud-strategy', page.publicId)) ??
           const {};
     }
 
@@ -16278,3 +16317,12 @@ class _GatedRemoveOutbox extends MemoryDurableStrategyOutboxStore {
     await super.remove(storageKey);
   }
 }
+
+final _refForTests = Provider<Ref>((ref) => ref);
+
+CanvasOf _drawn(
+  ProviderContainer container,
+  String strategyId,
+  String pageId,
+) =>
+    canvasAsDrawn(container.read(_refForTests), strategyId, pageId);

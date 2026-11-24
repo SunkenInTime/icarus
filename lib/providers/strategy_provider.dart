@@ -699,7 +699,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         switch (readCanvas(
           ref,
           strategyId,
-          ref.read(strategyPageSessionProvider).activePageId,
+          ref.read(canvasShowsProvider.notifier).pageShownOf(strategyId),
         )) {
           final CanvasOf read => read,
           CanvasNotShown() => null,

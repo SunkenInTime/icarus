@@ -81,6 +81,10 @@ CanvasRead readCanvas(Ref ref, String strategyId, String? pageId) {
     shows.refused(strategyId, pageId);
     return const CanvasNotShown();
   }
+  return canvasAsDrawn(ref, strategyId, pageId);
+}
+
+CanvasOf canvasAsDrawn(Ref ref, String strategyId, String pageId) {
   final map = ref.read(mapProvider);
   final theme = ref.read(strategyThemeProvider);
   return CanvasOf(
@@ -149,6 +153,13 @@ final class CanvasShowsNotifier extends Notifier<CanvasShows> {
 
   void shown(String strategyId, String pageId) =>
       state = ShowsPage(strategyId, pageId);
+
+  String? pageShownOf(String strategyId) => switch (state) {
+        ShowsPage(strategyId: final shown, :final pageId)
+            when shown == strategyId =>
+          pageId,
+        _ => null,
+      };
 
   bool shows(String strategyId, String pageId) => switch (state) {
         ShowsPage(strategyId: final shown, pageId: final page) =>

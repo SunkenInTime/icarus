@@ -345,12 +345,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final entry in remoteEntities.entries) {
       remoteRevisions[entry.key] = entry.value.revision;
     }
-    final canvas = switch (readCanvas(ref, strategyPublicId, pageId)) {
-      final CanvasOf shown => shown,
-      CanvasNotShown() => throw StateError(
-          'Page $pageId was marked drawn while the canvas does not show it.',
-        ),
-    };
+    final canvas = canvasAsDrawn(ref, strategyPublicId, pageId);
     _hydratedPositionByKey
       ..removeWhere((key, _) => key.pageId == pageId)
       ..addAll({

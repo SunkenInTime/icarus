@@ -382,11 +382,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
           canvas: canvas,
         );
 
+    final page = switch (readCanvas(ref, strategyId, pageId)) {
+      final CanvasOf shown => shown,
+      CanvasNotShown() => null,
+    };
+    if (page == null) return const NothingShown();
     final desiredOpsByEntityKey =
         ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
               strategyPublicId: strategyId,
               pageId: pageId,
-              canvas: canvas,
+              canvas: page,
             );
     if (desiredOpsByEntityKey == null) {
       return const HeldOnCanvas(HeldReason.noServerRead);
