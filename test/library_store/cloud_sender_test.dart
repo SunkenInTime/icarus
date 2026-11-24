@@ -2083,6 +2083,7 @@ void main() {
               required strategyPublicId,
               required clientId,
               required ops,
+              required lives,
               required account,
               required serverTime,
             }) {

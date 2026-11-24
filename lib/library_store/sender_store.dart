@@ -13,7 +13,9 @@ final class ClaimedBatch {
     required List<StrategyOp> ops,
     required this.session,
     this.basis,
-  }) : ops = List.unmodifiable(ops);
+    Map<String, int> lives = const {},
+  })  : ops = List.unmodifiable(ops),
+        lives = Map.unmodifiable(lives);
 
   final String strategyId;
   final Account account;
@@ -22,6 +24,7 @@ final class ClaimedBatch {
   final List<StrategyOp> ops;
   final int session;
   final int? basis;
+  final Map<String, int> lives;
 
   List<String> get unchecked => [
         for (final op in ops)
@@ -426,6 +429,7 @@ base class SenderStore {
                 :final clientId,
                 :final ops,
                 :final basis,
+                :final lives,
               )) {
             return Claimed(
               ClaimedBatch(
@@ -436,6 +440,7 @@ base class SenderStore {
                 ops: ops,
                 session: session,
                 basis: basis,
+                lives: lives,
               ),
             );
           }

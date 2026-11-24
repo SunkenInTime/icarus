@@ -127,6 +127,23 @@ int? visibleRevision(StrategyRows rows, StrategyOp op) =>
       },
     };
 
+int? lifeForTest(StrategyRows rows, StrategyOp op) =>
+    _lifeOf(rows, targetOf(op));
+
+int? lifeOfCheckedRowForTest(StrategyRows rows, StrategyOp op) =>
+    _lifeOf(rows, checkTargetOf(op));
+
+int? _lifeOf(StrategyRows rows, Target target) => switch (switch (target) {
+  StrategyTarget() => rows.strategy,
+  PageTarget(:final pagePublicId) => rows.page(pagePublicId),
+  SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
+  ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+  LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+}) {
+  final Row row => createdAtOf(row),
+  null => null,
+};
+
 int? revisionOfRowForTest(Row row) => switch (row) {
   ReadablePageRow(:final revision) ||
   ReadablePageSettings(:final revision) ||

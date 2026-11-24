@@ -12,6 +12,7 @@ import '../ops.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
 import 'pending.dart';
+import 'version.dart';
 
 sealed class Target {
   const Target();
@@ -450,6 +451,11 @@ String strategyDigest(StrategyRow strategy, Iterable<PageRow> pages) {
   });
 }
 
+Version? versionOfRow(Row row) => switch (revisionOfRow(row)) {
+  final revision? => Version(createdAtOf(row) ?? unknownLife, revision),
+  null => null,
+};
+
 int? revisionOfRow(Row row) => switch (row) {
   ReadableStrategy(:final revision) ||
   ReadablePageRow(:final revision) ||
@@ -485,6 +491,7 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
   if (targetOf(op) is StrategyTarget) {
     return AuthoredRow(
       revision: rows.strategy.revision,
+      life: createdAtOf(rows.strategy),
       digest: strategyDigest(rows.strategy, rows.pages),
       produces: producedBy(rows, op),
     );
@@ -492,6 +499,7 @@ Authored authoredFor(StrategyRows rows, StrategyOp op) {
   return switch ((row, row == null ? null : revisionOfRow(row))) {
     (final row?, final revision?) => AuthoredRow(
       revision: revision,
+      life: createdAtOf(row),
       digest: rowDigest(row),
       payloadVersion: switch (row) {
         ReadableElementRow(:final payload) => payload.payloadVersion,
@@ -534,6 +542,7 @@ ProducedRow? producedBy(StrategyRows rows, StrategyOp op) {
     return ProducedRow(
       page: null,
       revision: strategy.revision,
+      life: createdAtOf(strategy),
       digest: strategyDigest(strategy, [
         for (final page in rows.pages) changed.remove(page.publicId) ?? page,
         ...changed.values,
@@ -552,6 +561,7 @@ ProducedRow? producedBy(StrategyRows rows, StrategyOp op) {
     final revision = revisionOfRow(row);
     if (revision == null) return null;
     return ProducedRow(
+      life: createdAtOf(row),
       page: switch (row) {
         PageRow(:final publicId) => publicId,
         PageSettingsRow(:final pagePublicId) => pagePublicId,

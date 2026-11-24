@@ -65,6 +65,7 @@ typedef StoreBatchSend = Future<StoreBatchOutcome> Function({
   required String strategyPublicId,
   required String clientId,
   required List<store.StrategyOp> ops,
+  required Map<String, int> lives,
   required store.Account account,
   required ServerTimeAsk serverTime,
 });
@@ -73,6 +74,7 @@ StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
       required strategyPublicId,
       required clientId,
       required ops,
+      required lives,
       required account,
       required serverTime,
     }) async {
@@ -81,7 +83,14 @@ StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
         answer = await repository.applyWireBatch(
           strategyPublicId: strategyPublicId,
           clientId: clientId,
-          ops: [for (final op in ops) op.toJson()],
+          ops: [
+            for (final op in ops)
+              {
+                ...op.toJson(),
+                if (lives[op.opId] case final life?) 'expectedLife': life,
+              },
+          ],
+          sendsLives: true,
           accountSubject: account.subject,
           sendsLiveBasis: serverTime is ServerTimeAsked,
           liveBasis: switch (serverTime) {
@@ -131,18 +140,18 @@ StoreBatchOutcome storeBatchOutcomeOf(
 }
 
 store.OpAnswer? storeAnswerOf(OpAck ack) => switch (ack) {
-      AppliedOpAck(:final opId, :final revision) => store.AppliedAnswer(
-          opId,
-          revision: revision,
-        ),
+      AppliedOpAck(:final opId, :final revision, :final life) =>
+        store.AppliedAnswer(opId, revision: revision, life: life),
       NoopOpAck(
         :final opId,
         currentRevision: final revision?,
+        :final currentLife,
         :final wasApplied
       ) =>
         store.NoopAnswer(
           opId,
           revision: revision,
+          life: currentLife,
           replay: wasApplied
               ? store.NoopReplay.appliedWhenFirstReceived
               : store.NoopReplay.notApplied,
@@ -166,6 +175,7 @@ store.OpAnswer? storeAnswerOf(OpAck ack) => switch (ack) {
                       LineupCurrentSnapshot() => store.SnapshotTarget.lineup,
                     },
                     revision: snapshot.revision,
+                    life: snapshot.life,
                     value: snapshot.value,
                   ),
               }),

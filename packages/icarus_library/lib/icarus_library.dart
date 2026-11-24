@@ -97,5 +97,6 @@ export 'src/cloud/op_facts.dart'
         strategyDigest,
         withFieldBase;
 export 'src/cloud/pending.dart';
+export 'src/cloud/version.dart';
 export 'src/cloud/queue.dart' hide DerivationWork, derivationWork;
 export 'src/cloud/sync.dart';

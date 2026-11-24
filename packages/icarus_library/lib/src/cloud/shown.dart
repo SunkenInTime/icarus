@@ -5,27 +5,28 @@ import '../strategy_rows.dart';
 import 'events.dart';
 import 'op_facts.dart';
 import 'pending.dart';
+import 'version.dart';
 
 final class ShownRow {
   const ShownRow({
     required this.page,
-    required this.revision,
+    required this.version,
     required this.digest,
   });
 
   final String page;
-  final int? revision;
+  final Version? version;
   final String digest;
 
   @override
   bool operator ==(Object other) =>
       other is ShownRow &&
       other.page == page &&
-      other.revision == revision &&
+      other.version == version &&
       other.digest == digest;
 
   @override
-  int get hashCode => Object.hash(page, revision, digest);
+  int get hashCode => Object.hash(page, version, digest);
 }
 
 final class Freshness {
@@ -128,7 +129,7 @@ final class Shown {
     this.headerThisSession = false,
     Set<String> pagesThisSession = const {},
     Set<String> goneThisSession = const {},
-    Map<Target, int> highest = const {},
+    Map<Target, Version> highest = const {},
     Freshness? fresh,
   }) : fresh = fresh ?? Freshness.none,
        pagesThisSession = Set.unmodifiable(pagesThisSession),
@@ -185,17 +186,17 @@ final class Shown {
         },
       },
       highest: {
-        const StrategyTarget(): ?revisionOfRow(rows.strategy),
+        const StrategyTarget(): ?versionOfRow(rows.strategy),
         for (final page in rows.pages)
           if (page is! TrashedPage)
-            PageTarget(page.publicId): ?revisionOfRow(page),
+            PageTarget(page.publicId): ?versionOfRow(page),
         for (final row in rows.settings)
-          SettingsTarget(row.pagePublicId): ?revisionOfRow(row),
+          SettingsTarget(row.pagePublicId): ?versionOfRow(row),
         for (final page in read) ...{
           for (final row in rows.elementsOn(page))
-            ElementTarget(row.publicId): ?revisionOfRow(row),
+            ElementTarget(row.publicId): ?versionOfRow(row),
           for (final row in rows.lineupGroupsOn(page))
-            LineupTarget(row.publicId): ?revisionOfRow(row),
+            LineupTarget(row.publicId): ?versionOfRow(row),
         },
       },
     );
@@ -204,18 +205,18 @@ final class Shown {
   final ShownRow? strategy;
   final Freshness fresh;
 
-  int? get strategyRevision => strategy?.revision;
+  Version? get strategyVersion => strategy?.version;
 
   static ShownRow _strategyRow(StrategyRow row, Iterable<PageRow> pages) =>
       ShownRow(
         page: '',
-        revision: revisionOfRow(row),
+        version: versionOfRow(row),
         digest: strategyDigest(row, pages),
       );
   final bool headerThisSession;
   final Set<String> pagesThisSession;
   final Set<String> goneThisSession;
-  final Map<Target, int> highest;
+  final Map<Target, Version> highest;
   final Map<String, ShownRow> pages;
   final Map<String, ShownRow> settings;
   final Map<String, Map<SeenPart, String>> content;
@@ -227,7 +228,7 @@ final class Shown {
       PageRow(:final publicId) => publicId,
       _ => '',
     },
-    revision: revisionOfRow(row),
+    version: versionOfRow(row),
     digest: rowDigest(row),
   );
 
@@ -245,12 +246,12 @@ final class Shown {
             page,
       },
       highest: _raised(highest, {
-        const StrategyTarget(): ?revisionOfRow(strategy),
+        const StrategyTarget(): ?versionOfRow(strategy),
         for (final page in pages)
           if (page is! TrashedPage)
-            PageTarget(page.publicId): ?revisionOfRow(page),
+            PageTarget(page.publicId): ?versionOfRow(page),
         for (final row in settings)
-          SettingsTarget(row.pagePublicId): ?revisionOfRow(row),
+          SettingsTarget(row.pagePublicId): ?versionOfRow(row),
       }),
       strategy: _strategyRow(strategy, pages),
       pages: {
@@ -296,13 +297,13 @@ final class Shown {
     StrategyGone() => this,
   };
 
-  static Map<Target, int> _raised(
-    Map<Target, int> highest,
-    Map<Target, int> seen,
+  static Map<Target, Version> _raised(
+    Map<Target, Version> highest,
+    Map<Target, Version> seen,
   ) => {
     ...highest,
     for (final MapEntry(:key, :value) in seen.entries)
-      if (value > (highest[key] ?? 0)) key: value,
+      if (highest[key] == null || value > highest[key]!) key: value,
   };
 
   Shown withGone(String page) => Shown(
@@ -354,13 +355,13 @@ final class Shown {
         _ => throw StateError('only page content is read with a page'),
       };
       final shown = _rowOf(row, page);
-      if (shown.revision case final revision?
-          when revision > (raised[target] ?? 0)) {
-        raised[target] = revision;
+      if (shown.version case final version?
+          when raised[target] == null || version > raised[target]!) {
+        raised[target] = version;
       }
       final elsewhere = next[target];
       if (elsewhere != null &&
-          (elsewhere.revision ?? 0) > (shown.revision ?? 0)) {
+          _outranks(elsewhere.version, shown.version)) {
         continue;
       }
       next[target] = shown;
@@ -372,9 +373,9 @@ final class Shown {
       goneThisSession: {...goneThisSession}..remove(page),
       highest: raised,
       strategy: strategy,
-      pages: switch ((pageRow, pages[page]?.revision)) {
+      pages: switch ((pageRow, pages[page]?.version)) {
         (TrashedPage(), _) => {...pages}..remove(page),
-        (_, final known?) when (revisionOfRow(pageRow) ?? 0) < known => pages,
+        (_, final known?) when _outranks(known, versionOfRow(pageRow)) => pages,
         _ => {...pages, page: _rowOf(pageRow, pageRow)},
       },
       settings: settings,
@@ -409,3 +410,9 @@ final class Shown {
   int get hashCode =>
       Object.hash(strategy, pages.length, content.length, rows.length);
 }
+
+bool _outranks(Version? a, Version? b) => switch ((a, b)) {
+  (final a?, final b?) => a > b,
+  (_?, null) => true,
+  (null, _) => false,
+};

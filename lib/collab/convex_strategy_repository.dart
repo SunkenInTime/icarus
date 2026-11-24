@@ -715,6 +715,7 @@ class ConvexStrategyRepository {
     required String accountSubject,
     bool sendsLiveBasis = false,
     double? liveBasis,
+    bool sendsLives = false,
   }) async {
     if (ops.isEmpty) return (acks: const <OpAck>[], serverTime: null);
     final result = await _applyBatchResult(
@@ -725,6 +726,7 @@ class ConvexStrategyRepository {
       readsAccountMismatch: true,
       sendsLiveBasis: sendsLiveBasis,
       liveBasis: liveBasis,
+      sendsLives: sendsLives,
     );
     return (
       acks: result.results.map(_opAck).toList(growable: false),
@@ -757,6 +759,7 @@ class ConvexStrategyRepository {
     required bool readsAccountMismatch,
     bool sendsLiveBasis = false,
     double? liveBasis,
+    bool sendsLives = false,
   }) {
     return _api.ops.applyBatch(
       strategyPublicId: strategyPublicId,
@@ -779,6 +782,9 @@ class ConvexStrategyRepository {
           ? const ConvexOptional.present(true)
           : const ConvexOptional.absent(),
       liveBasis: _optional(liveBasis),
+      sendsLives: sendsLives
+          ? const ConvexOptional.present(true)
+          : const ConvexOptional.absent(),
     );
   }
 
@@ -1677,6 +1683,7 @@ RemoteElement _element(ElementsListForPageResultItem element) {
     sortIndex: element.sortIndex.toInt(),
     revision: element.revision.toInt(),
     deleted: element.deleted,
+    createdAt: _dateTime(element.createdAt),
   );
 }
 
@@ -1689,6 +1696,7 @@ RemoteLineup _lineup(LineupsListForPageResultItem lineup) {
     sortIndex: lineup.sortIndex.toInt(),
     revision: lineup.revision.toInt(),
     deleted: lineup.deleted,
+    createdAt: _dateTime(lineup.createdAt),
   );
 }
 
@@ -1712,18 +1720,25 @@ OpAck _opAck(OpsApplyBatchResultResultsItem result) {
   return switch (result) {
     OpsApplyBatchResultResultsItemApplied(
       :final opId,
-      :final appliedRevision
+      :final appliedRevision,
+      :final appliedLife,
     ) =>
-      AppliedOpAck(opId: opId, revision: appliedRevision.toInt()),
+      AppliedOpAck(
+        opId: opId,
+        revision: appliedRevision.toInt(),
+        life: _whole(appliedLife),
+      ),
     OpsApplyBatchResultResultsItemNoop(
       :final opId,
       :final currentRevision,
+      :final currentLife,
       :final wasApplied,
     ) =>
       NoopOpAck(
         opId: opId,
         currentRevision:
             currentRevision.isPresent ? currentRevision.value.toInt() : null,
+        currentLife: _whole(currentLife),
         wasApplied: wasApplied.isPresent && wasApplied.value,
       ),
     OpsApplyBatchResultResultsItemRejected(
@@ -1757,10 +1772,12 @@ CurrentOpSnapshot _currentSnapshot(
   return switch (current) {
     OpsApplyBatchResultResultsItemRejectedCurrentStrategy(
       :final revision,
+      :final life,
       :final value,
     ) =>
       StrategyCurrentSnapshot(
         revision: revision.toInt(),
+        life: _whole(life),
         value: {
           'name': value.name,
           'mapData': value.mapData,
@@ -1772,10 +1789,12 @@ CurrentOpSnapshot _currentSnapshot(
       ),
     OpsApplyBatchResultResultsItemRejectedCurrentPage(
       :final revision,
+      :final life,
       :final value,
     ) =>
       PageCurrentSnapshot(
         revision: revision.toInt(),
+        life: _whole(life),
         value: {
           'name': value.name,
           if (value.isAutoNamed.isPresent)
@@ -1786,22 +1805,34 @@ CurrentOpSnapshot _currentSnapshot(
       ),
     OpsApplyBatchResultResultsItemRejectedCurrentPageContent(
       :final revision,
+      :final life,
       :final value,
     ) =>
       PageContentCurrentSnapshot(
         revision: revision.toInt(),
+        life: _whole(life),
         value: {'settings': _settingsValue(value.settings)},
       ),
     OpsApplyBatchResultResultsItemRejectedCurrentElement(
       :final revision,
+      :final life,
       :final value,
     ) =>
-      ElementCurrentSnapshot(revision: revision.toInt(), value: value),
+      ElementCurrentSnapshot(
+        revision: revision.toInt(),
+        life: _whole(life),
+        value: value,
+      ),
     OpsApplyBatchResultResultsItemRejectedCurrentLineup(
       :final revision,
+      :final life,
       :final value,
     ) =>
-      LineupCurrentSnapshot(revision: revision.toInt(), value: value),
+      LineupCurrentSnapshot(
+        revision: revision.toInt(),
+        life: _whole(life),
+        value: value,
+      ),
   };
 }
 
@@ -1820,6 +1851,9 @@ CloudPayload? _settingsValue(
 Map<String, dynamic> _object(ConvexObject value) {
   return Map<String, dynamic>.from(value.toDart());
 }
+
+int? _whole(ConvexOptional<double> value) =>
+    value.isPresent ? value.value.toInt() : null;
 
 DateTime _dateTime(double milliseconds) =>
     DateTime.fromMillisecondsSinceEpoch(milliseconds.toInt());

@@ -116,6 +116,7 @@ RemoteElement _upgradeElement(RemoteElement element, MapValue map) {
     sortIndex: element.sortIndex,
     revision: element.revision,
     deleted: element.deleted,
+    createdAt: element.createdAt,
   );
 }
 

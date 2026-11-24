@@ -2,6 +2,7 @@ import '../ops.dart';
 import '../outcome.dart';
 import '../rows.dart';
 import 'pending.dart';
+import 'version.dart';
 
 sealed class QueueEvent {
   const QueueEvent();
@@ -248,16 +249,33 @@ sealed class OpAnswer {
 }
 
 final class AppliedAnswer extends OpAnswer {
-  const AppliedAnswer(super.opId, {required this.revision});
+  const AppliedAnswer(super.opId, {required this.revision, this.life});
 
   final int revision;
+  final int? life;
+
+  Version? get version => switch (life) {
+    final life? => Version(life, revision),
+    null => null,
+  };
 }
 
 final class NoopAnswer extends OpAnswer {
-  const NoopAnswer(super.opId, {required this.revision, required this.replay});
+  const NoopAnswer(
+    super.opId, {
+    required this.revision,
+    required this.replay,
+    this.life,
+  });
 
   final int revision;
   final NoopReplay replay;
+  final int? life;
+
+  Version? get version => switch (life) {
+    final life? => Version(life, revision),
+    null => null,
+  };
 }
 
 enum NoopReplay { appliedWhenFirstReceived, notApplied }

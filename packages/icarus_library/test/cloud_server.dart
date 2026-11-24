@@ -80,7 +80,7 @@ final class Server {
     );
   }
 
-  OpAnswer apply(String client, StrategyOp op) {
+  OpAnswer apply(String client, StrategyOp op, {int? expectedLife}) {
     sends++;
     final owner = firstClient.putIfAbsent(op.opId, () {
       received++;
@@ -91,16 +91,29 @@ final class Server {
     }
     final key = '$client|${op.opId}';
     switch (recorded[key]) {
-      case RecordedAnswer(answer: AppliedAnswer(:final revision)):
+      case RecordedAnswer(answer: AppliedAnswer(:final revision, :final life)):
         return NoopAnswer(
           op.opId,
           revision: revision,
           replay: NoopReplay.appliedWhenFirstReceived,
+          life: life,
         );
       case RecordedAnswer(:final answer):
         return answer;
       case null:
         break;
+    }
+    if ((expectedLife, lifeOfCheckedRowForTest(rows, op)) case (
+      final expected?,
+      final life?,
+    ) when expected != life) {
+      final refused = RejectedAnswer(
+        op.opId,
+        RejectionReason.rowReplaced,
+        const NoServerCopy(),
+      );
+      recorded[key] = RecordedAnswer(refused, applied: false);
+      return refused;
     }
     final OpAnswer answer;
     var applied = false;
@@ -108,7 +121,11 @@ final class Server {
       case final OpApplied done:
         rows = rows.withRows(done.rows);
         applied = true;
-        answer = AppliedAnswer(op.opId, revision: visibleRevision(rows, op)!);
+        answer = AppliedAnswer(
+          op.opId,
+          revision: visibleRevision(rows, op)!,
+          life: lifeForTest(rows, op),
+        );
       case OpUnchanged():
         final revision = visibleRevision(rows, op);
         answer = revision == null
@@ -117,6 +134,7 @@ final class Server {
                 op.opId,
                 revision: revision,
                 replay: NoopReplay.notApplied,
+                life: lifeForTest(rows, op),
               );
       case OpRefused(refusal: Rejected(:final reason)):
         answer = RejectedAnswer(op.opId, reason, const NoServerCopy());

@@ -27,6 +27,7 @@ final class ServerCall {
     this.account,
     this.ops, [
     this.serverTime = const ServerTimeNotAsked(),
+    this.lives = const {},
   ]);
 
   final String strategyId;
@@ -34,6 +35,7 @@ final class ServerCall {
   final Account account;
   final List<StrategyOp> ops;
   final ServerTimeAsk serverTime;
+  final Map<String, int> lives;
 
   int? get basis => switch (serverTime) {
         ServerTimeAsked(:final basis) => basis,
@@ -225,6 +227,7 @@ final class FakeServer {
     required String strategyPublicId,
     required String clientId,
     required List<StrategyOp> ops,
+    required Map<String, int> lives,
     required Account account,
     required ServerTimeAsk serverTime,
   }) {
@@ -234,6 +237,7 @@ final class FakeServer {
       account,
       ops,
       serverTime,
+      lives,
     );
     calls.add(call);
     onCall?.call(call);

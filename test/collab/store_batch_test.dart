@@ -55,6 +55,7 @@ void main() {
         strategyPublicId: strategy,
         clientId: 'client-1',
         ops: [rename('op-1')],
+        lives: const {},
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
@@ -116,6 +117,7 @@ void main() {
         strategyPublicId: strategy,
         clientId: 'client-1',
         ops: [rename('op-1')],
+        lives: const {},
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
@@ -131,6 +133,81 @@ void main() {
       );
     });
 
+    test(
+        'opts in to lives, names the life of each op the queue gave one, and '
+        'reads the lives the server answers with', () async {
+      transport.answer = () => {
+            'results': [
+              {
+                'opId': 'op-1',
+                'status': 'applied',
+                'appliedRevision': 3,
+                'appliedLife': 1700000000000,
+              },
+              {
+                'opId': 'op-2',
+                'status': 'noop',
+                'currentRevision': 3,
+                'currentLife': 1700000000000,
+              },
+              {
+                'opId': 'op-3',
+                'status': 'rejected',
+                'reason': 'row_replaced',
+                'current': {
+                  'type': 'page',
+                  'revision': 1,
+                  'life': 1800000000000,
+                  'value': {'name': 'A', 'sortIndex': 0, 'isAttack': true},
+                },
+              },
+              {'opId': 'op-4', 'status': 'rejected', 'reason': 'row_replaced'},
+            ],
+            'strategyPublicId': strategy,
+          };
+      final outcome = await storeBatchSenderOver(repository)(
+        strategyPublicId: strategy,
+        clientId: 'client-1',
+        ops: [rename('op-1'), rename('op-2'), rename('op-3'), rename('op-4')],
+        lives: const {'op-1': 1700000000000, 'op-3': 1700000000000},
+        account: owner,
+        serverTime: const ServerTimeNotAsked(),
+      );
+      final (_, args) = transport.mutations.single;
+      expect(args['sendsLives'], true);
+      expect(
+        [for (final op in args['ops']! as List) (op as Map)['expectedLife']],
+        [1700000000000, null, 1700000000000, null],
+      );
+      if (outcome is StoreBatchLost) fail(outcome.why);
+      final answers = (outcome as StoreBatchAnswered).answers;
+      expect(
+        answers[0],
+        isA<AppliedAnswer>().having((a) => a.life, 'life', 1700000000000),
+      );
+      expect(
+        answers[1],
+        isA<NoopAnswer>().having((a) => a.life, 'life', 1700000000000),
+      );
+      expect(
+        answers[2],
+        isA<RejectedAnswer>()
+            .having((a) => a.reason, 'reason', RejectionReason.rowReplaced)
+            .having(
+              (a) => a.current,
+              'current',
+              isA<ServerSnapshot>()
+                  .having((c) => c.life, 'life', 1800000000000),
+            ),
+      );
+      expect(
+        answers[3],
+        isA<RejectedAnswer>()
+            .having((a) => a.reason, 'reason', RejectionReason.rowReplaced)
+            .having((a) => a.current, 'current', isA<NoServerCopy>()),
+      );
+    });
+
     test('a thrown refusal is read as the queue\'s verdict', () async {
       transport.answer = () => throw ConvexFunctionException(
             code: ConvexErrorCode.accountMismatch,
@@ -142,6 +219,7 @@ void main() {
           strategyPublicId: strategy,
           clientId: 'client-1',
           ops: [rename('op-1')],
+          lives: const {},
           account: owner,
           serverTime: const ServerTimeNotAsked(),
         ),
@@ -156,6 +234,7 @@ void main() {
         strategyPublicId: strategy,
         clientId: 'client-1',
         ops: [rename('op-1')],
+        lives: const {},
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
@@ -179,6 +258,7 @@ void main() {
         strategyPublicId: strategy,
         clientId: 'client-1',
         ops: [rename('op-1')],
+        lives: const {},
         account: owner,
         serverTime: const ServerTimeAsked(basis: 1764000000000),
       );
@@ -186,6 +266,7 @@ void main() {
         strategyPublicId: strategy,
         clientId: 'client-1',
         ops: [rename('op-2')],
+        lives: const {},
         account: owner,
         serverTime: const ServerTimeAsked(),
       );

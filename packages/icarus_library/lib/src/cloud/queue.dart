@@ -9,6 +9,7 @@ import 'op_facts.dart';
 import 'pending.dart';
 import 'shown.dart';
 import 'sync.dart';
+import 'version.dart';
 
 part 'derivation.dart';
 
@@ -618,13 +619,20 @@ final class OpRemoved extends QueueEffect {
 }
 
 final class SendBatch extends QueueEffect {
-  SendBatch(this.attempt, this.clientId, List<StrategyOp> ops, {this.basis})
-    : ops = List.unmodifiable(ops);
+  SendBatch(
+    this.attempt,
+    this.clientId,
+    List<StrategyOp> ops, {
+    this.basis,
+    Map<String, int> lives = const {},
+  }) : ops = List.unmodifiable(ops),
+       lives = Map.unmodifiable(lives);
 
   final int attempt;
   final String clientId;
   final List<StrategyOp> ops;
   final int? basis;
+  final Map<String, int> lives;
 
   @override
   String toString() =>
@@ -1233,6 +1241,13 @@ Step _arrived(_Edit edit, ArrivedBase base) {
     edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
     return edit.done();
   }
+  if (base case HeaderRead(
+    :final strategy,
+  ) when _anotherLife(edit.shown.strategy?.version, versionOfRow(strategy))) {
+    edit.shown = Shown.nothing;
+    edit.landed.clear();
+    edit.change.everything = true;
+  }
   final before = edit.shown;
   edit.shown = edit.shown.take(base);
   if (base case HeaderRead(:final strategy)) {
@@ -1371,11 +1386,10 @@ Iterable<Target> _shownOn(Shown shown, String page) => [
 ];
 
 bool _alreadyShown(Shown shown, LandedWork work) {
-  final revision = shown.highest[checkTargetOf(work.op)];
-  if (revision == null) return false;
-  return _ownDelete(work)
-      ? revision > work.revision
-      : revision >= work.revision;
+  final shownAt = shown.highest[checkTargetOf(work.op)];
+  if (shownAt == null) return false;
+  final landedAt = work.version;
+  return _ownDelete(work) ? shownAt > landedAt : shownAt >= landedAt;
 }
 
 bool _ownDelete(LandedWork work) =>
@@ -1478,11 +1492,12 @@ Authored _justifiedOrNot(
       .where((entry) => targetOf(entry.op) == row)
       .lastOrNull;
   final justified = switch ((authored, ahead)) {
-    (AuthoredRow(:final revision, :final digest), final ahead?) =>
+    (AuthoredRow(:final revision, :final life, :final digest), final ahead?) =>
       switch (_producesOf(ahead.authored)) {
         final produced? =>
           produced.justifies &&
               produced.revision == revision &&
+              _sameRow(life, produced.life) &&
               produced.digest == digest,
         null => false,
       },
@@ -1498,10 +1513,17 @@ Authored _justifiedOrNot(
 bool _baseJustified(CloudQueue queue, Target row, Authored authored) =>
     switch ((authored, _knownRow(queue, row))) {
       (
-        AuthoredRow(:final revision, :final digest),
-        _KnownRow(revision: final known, digest: final shown, current: true),
+        AuthoredRow(:final revision, :final life, :final digest),
+        _KnownRow(
+          revision: final known,
+          life: final knownLife,
+          digest: final shown,
+          current: true,
+        ),
       ) =>
-        known == revision && (shown == null || shown == digest),
+        known == revision &&
+            _sameRow(life, knownLife) &&
+            (shown == null || shown == digest),
       (AuthoredNoRow(), null) => true,
       _ => false,
     };
@@ -1569,19 +1591,36 @@ final class _KnownRow extends _Known {
     this.revision,
     this.digest, {
     required this.current,
+    required this.life,
   });
 
   final String? page;
   final int revision;
   final String? digest;
   final bool current;
+  final int? life;
 }
 
 final class _NotKnown extends _Known {
-  const _NotKnown(this.revision);
+  const _NotKnown(this.revision, {required this.life});
 
   final int revision;
+  final int? life;
 }
+
+bool _anotherLife(Version? remembered, Version? read) =>
+    remembered != null && read != null && !remembered.sameLife(read);
+
+bool _sameRow(int? authored, int? known) =>
+    authored == null ||
+    known == null ||
+    authored == unknownLife ||
+    known == unknownLife ||
+    authored == known;
+
+bool _ranksAbove(int? life, int revision, int? otherLife, int otherRevision) =>
+    Version(life ?? unknownLife, revision) >
+    Version(otherLife ?? unknownLife, otherRevision);
 
 _Known? _knownRow(CloudQueue queue, Target row) {
   final shown = queue.shown;
@@ -1592,33 +1631,44 @@ _Known? _knownRow(CloudQueue queue, Target row) {
   };
   _Known? best = switch ((row, result)) {
     (StrategyTarget(), _) => switch (shown.strategy) {
-      ShownRow(revision: final revision?, :final digest) => _KnownRow(
+      ShownRow(version: final version?, :final digest) => _KnownRow(
         null,
-        revision,
+        version.revision,
         digest,
         current: shown.headerThisSession,
+        life: version.life,
       ),
       _ => null,
     },
-    (_, ShownRow(:final page, revision: final revision?, :final digest)) =>
-      _KnownRow(page, revision, digest, current: current),
+    (_, ShownRow(:final page, version: final version?, :final digest)) =>
+      _KnownRow(
+        page,
+        version.revision,
+        digest,
+        current: current,
+        life: version.life,
+      ),
     _ => null,
   };
-  int revisionOf(_Known known) => switch (known) {
-    _KnownRow(:final revision) => revision,
-    _NotKnown(:final revision) => revision,
+  (int?, int) versionOf(_Known known) => switch (known) {
+    _KnownRow(:final life, :final revision) => (life, revision),
+    _NotKnown(:final life, :final revision) => (life, revision),
   };
   for (final work in queue.landed) {
     if (targetOf(work.op) != row) continue;
-    if (best != null && revisionOf(best) >= work.revision) continue;
+    if (best != null) {
+      final (life, revision) = versionOf(best);
+      if (!_ranksAbove(work.life, work.revision, life, revision)) continue;
+    }
     best = switch (work.produced) {
       ProducedRow(:final page, :final revision, :final digest) => _KnownRow(
         page,
         revision,
         digest,
         current: true,
+        life: work.life,
       ),
-      null => _NotKnown(work.revision),
+      null => _NotKnown(work.revision, life: work.life),
     };
   }
   return best;
@@ -1819,6 +1869,7 @@ Step _claim(
   final views = entryViews(queue, now);
   var previous = -1;
   final ops = <StrategyOp>[];
+  final lives = <String, int>{};
   int? basis;
   for (final opId in opIds) {
     final index = edit.indexOf(opId);
@@ -1847,6 +1898,9 @@ Step _claim(
     };
     final sent = sendable(queue, named, elapsed);
     ops.add(sent);
+    if (_lifeNamed(queue, named, sent) case final life?) {
+      lives[sent.opId] = life;
+    }
     if (isUncheckedSend(sent)) {
       final own = named.basis!.serverTime;
       if (basis == null || own < basis) basis = own;
@@ -1863,8 +1917,31 @@ Step _claim(
       outcome: const AttemptOpen(),
     ),
   );
-  edit.effects.add(SendBatch(number, clientId, ops, basis: basis));
+  edit.effects.add(
+    SendBatch(number, clientId, ops, basis: basis, lives: lives),
+  );
   return edit.done();
+}
+
+int? _lifeNamed(CloudQueue queue, PendingOp entry, StrategyOp sent) {
+  final revision = expectedOf(sent);
+  if (revision == null) return null;
+  final target = checkTargetOf(sent);
+  int? real(int? life) => life == unknownLife ? null : life;
+  switch (entry.authored) {
+    case KeptOverServer(revision: final kept, :final life?)
+        when kept == revision:
+      return real(life);
+    case AuthoredRow(revision: final authored, :final life?)
+        when authored == revision && targetOf(entry.op) == target:
+      return real(life);
+    case _:
+      break;
+  }
+  return switch (_knownRow(queue, target)) {
+    _KnownRow(:final life) || _NotKnown(:final life) => real(life),
+    null => null,
+  };
 }
 
 StrategyOp sendable(CloudQueue queue, PendingOp entry, Duration? elapsed) =>
@@ -1923,24 +2000,36 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
   final sent = (attempt: attempt, position: position, op: fact.ops[position]);
   _resultsStale(edit, entry, sent.op);
   switch (answer) {
-    case AppliedAnswer(:final revision):
-      _landed(edit, entry, sent, revision, ours: true);
+    case AppliedAnswer(:final revision, :final life):
+      _landed(edit, entry, sent, revision, life, ours: true);
       edit.remove(entry.id, const Delivered(Delivery.applied));
     case NoopAnswer(
       :final revision,
+      :final life,
       replay: NoopReplay.appliedWhenFirstReceived,
     ):
-      _landed(edit, entry, sent, revision, ours: true);
+      _landed(edit, entry, sent, revision, life, ours: true);
       edit.remove(entry.id, const Delivered(Delivery.applied));
-    case NoopAnswer(:final revision, replay: NoopReplay.notApplied):
-      _landed(edit, entry, sent, revision, ours: false);
+    case NoopAnswer(
+      :final revision,
+      :final life,
+      replay: NoopReplay.notApplied,
+    ):
+      _landed(edit, entry, sent, revision, life, ours: false);
       edit.remove(entry.id, const Delivered(Delivery.alreadyThere));
     case NoopWithoutRevision():
       edit.remove(entry.id, const Delivered(Delivery.nothingToDo));
     case RejectedAnswer(:final reason, :final current):
       if (current case final ServerSnapshot snapshot
           when _alreadyAsWritten(entry.op, snapshot)) {
-        _landed(edit, entry, sent, snapshot.revision, ours: false);
+        _landed(
+          edit,
+          entry,
+          sent,
+          snapshot.revision,
+          snapshot.life,
+          ours: false,
+        );
         edit.remove(entry.id, const Delivered(Delivery.alreadyAsWritten));
       } else {
         edit.put(
@@ -1986,7 +2075,8 @@ void _landed(
   _Edit edit,
   PendingOp entry,
   ({int attempt, int position, StrategyOp op}) carried,
-  int revision, {
+  int revision,
+  int? life, {
   required bool ours,
 }) {
   final sent = carried.op;
@@ -1994,8 +2084,9 @@ void _landed(
     AuthoredRow(:final produces?) || AuthoredNoRow(:final produces?)
         when produces.justifies &&
             produces.revision == revision &&
+            _sameRow(produces.life, life) &&
             (ours || _unchangedPrediction(entry.authored)) =>
-      produces,
+      produces.inLife(life),
     _ => null,
   };
   final firstSent =
@@ -2013,6 +2104,7 @@ void _landed(
     position: carried.position,
     op: sent,
     revision: revision,
+    life: life,
     shape: _shapeOf(sent),
     own: ours,
     firstSentAt: firstSent ?? edit.attempts[carried.attempt]!.at,
@@ -2085,7 +2177,16 @@ Step _keepMine(
       },
       scope: entry.scope,
       authored: switch (expectedOf(replacement)) {
-        final revision? => KeptOverServer(revision),
+        final revision? => KeptOverServer(
+          revision,
+          life: switch (entry.refusal) {
+            RefusedWith(
+              refusal: RejectedByServer(current: final ServerSnapshot current),
+            ) =>
+              current.life,
+            _ => null,
+          },
+        ),
         null => authored,
       },
       authoredIn: edit.session.number,

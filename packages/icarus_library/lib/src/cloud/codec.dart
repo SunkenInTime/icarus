@@ -8,6 +8,7 @@ import 'events.dart';
 import 'op_facts.dart';
 import 'pending.dart';
 import 'shown.dart';
+import 'version.dart';
 
 const cloudRowVersion = 1;
 
@@ -53,7 +54,10 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     },
     'authored': switch (entry.authored) {
       final AuthoredRow row => _rowToJson(row),
-      KeptOverServer(:final revision) => {'keptOverServer': revision},
+      KeptOverServer(:final revision, :final life) => {
+        'keptOverServer': revision,
+        'life': ?life,
+      },
       AuthoredNoRow(:final produces) => {
         'noRow': true,
         if (produces != null) 'produces': _producedToJson(produces),
@@ -102,6 +106,7 @@ Map<String, Object?> _seenToJson(SeenPage seen) => {
 
 Map<String, Object?> _rowToJson(AuthoredRow row) => {
   'revision': row.revision,
+  'life': ?row.life,
   'digest': row.digest,
   'payloadVersion': ?row.payloadVersion,
   if (row.produces case final produces?) 'produces': _producedToJson(produces),
@@ -137,6 +142,7 @@ Row? Function() _movedRowOf(JsonFields fields) {
 Map<String, Object?> _producedToJson(ProducedRow row) => {
   'page': ?row.page,
   'revision': row.revision,
+  'life': ?row.life,
   'digest': row.digest,
   if (!row.justifies) 'justifies': false,
 };
@@ -153,6 +159,7 @@ Decoded<ProducedRow> _producedRow(Object? json) =>
       };
       final revision = fields.whole('revision');
       if (revision < 1) fields.reject('revisions start at 1');
+      final life = _lifeOf(fields);
       final digest = fields.string('digest');
       final justifies = switch (fields.json['justifies']) {
         null => true,
@@ -165,10 +172,18 @@ Decoded<ProducedRow> _producedRow(Object? json) =>
       return () => ProducedRow(
         page: page,
         revision: revision,
+        life: life,
         digest: digest,
         justifies: justifies,
       );
     });
+
+int? _lifeOf(JsonFields fields) {
+  if (!fields.has('life')) return null;
+  final life = fields.whole('life');
+  if (life < 1) fields.reject('lives start after the epoch');
+  return life;
+}
 
 ProducedRow? Function() _producesOfKey(JsonFields fields, String key) {
   if (!fields.has(key)) return () => null;
@@ -182,11 +197,13 @@ Map<String, Object?> _refusalToJson(ServerRefusal refusal) => switch (refusal) {
     if (current case ServerSnapshot(
       :final target,
       :final revision,
+      :final life,
       :final value,
     ))
       'current': {
         'target': target.name,
         'revision': revision,
+        'life': ?life,
         'value': value.toJson(),
       },
   },
@@ -327,13 +344,15 @@ Decoded<Authored> _authored(Object? json) =>
       if (fields.has('keptOverServer')) {
         final revision = fields.whole('keptOverServer');
         if (revision < 1) fields.reject('revisions start at 1');
-        return () => KeptOverServer(revision);
+        final life = _lifeOf(fields);
+        return () => KeptOverServer(revision, life: life);
       }
       return _authoredRowOf(fields);
     });
 
 AuthoredRow Function() _authoredRowOf(JsonFields fields) {
   final revision = fields.whole('revision');
+  final life = _lifeOf(fields);
   final digest = fields.string('digest');
   final payloadVersion = fields.has('payloadVersion')
       ? fields.whole('payloadVersion')
@@ -342,6 +361,7 @@ AuthoredRow Function() _authoredRowOf(JsonFields fields) {
   final movedRow = _movedRowOf(fields);
   return () => AuthoredRow(
     revision: revision,
+    life: life,
     digest: digest,
     payloadVersion: payloadVersion,
     produces: produces(),
@@ -392,6 +412,12 @@ Decoded<SeenPage> _seen(Object? json) => JsonFields.read(json, 'seen page', (
   );
 });
 
+Object? _snapshotLife(Object? current) => switch (current) {
+  {'life': final num life} when isSafeWhole(life) && life >= 1 => life.toInt(),
+  {'life': _} => false,
+  _ => null,
+};
+
 Decoded<ServerRefusal> _refusal(Object? json) =>
     JsonFields.read(json, 'refusal', (fields) {
       if (fields.has('rejected')) {
@@ -406,10 +432,15 @@ Decoded<ServerRefusal> _refusal(Object? json) =>
             'value': final Map<String, Object?> value,
           }
               when isSafeWhole(revision) &&
-                  SnapshotTarget.values.asNameMap().containsKey(target) =>
+                  SnapshotTarget.values.asNameMap().containsKey(target) &&
+                  _snapshotLife(fields.json['current']) != false =>
             ServerSnapshot(
               target: SnapshotTarget.values.asNameMap()[target]!,
               revision: revision.toInt(),
+              life: switch (_snapshotLife(fields.json['current'])) {
+                final int life => life,
+                _ => null,
+              },
               value: value,
             ),
           null => const NoServerCopy(),
@@ -683,6 +714,7 @@ Map<String, Object?> landedToJson(LandedWork work) => {
   'version': cloudRowVersion,
   'op': work.op.toJson(),
   'revision': work.revision,
+  'life': ?work.life,
   'shape': work.shape.name,
   'own': work.own,
   'firstSentAt': _millis(work.firstSentAt),
@@ -703,6 +735,7 @@ CloudRowReading<LandedWork> landedFromText(
     final op = fields.decoded('op', StrategyOp.decode);
     final revision = fields.whole('revision');
     if (revision < 1) fields.reject('revisions start at 1');
+    final life = _lifeOf(fields);
     final shape = _named(fields, 'shape', LandedShape.values);
     final own = switch (fields.json['own']) {
       final bool own => own,
@@ -732,6 +765,7 @@ CloudRowReading<LandedWork> landedFromText(
       position: position,
       op: op!,
       revision: revision,
+      life: life,
       shape: shape!,
     );
   }),
@@ -762,10 +796,22 @@ Target? _target(Object? key) => switch (key) {
   _ => null,
 };
 
+List<Object?> _versionToJson(Version version) => [
+  version.life,
+  version.revision,
+];
+
+Version? _versionFrom(Object? raw) => switch (raw) {
+  [final num life, final num revision]
+      when isSafeWhole(life) && isSafeWhole(revision) =>
+    Version(life.toInt(), revision.toInt()),
+  _ => null,
+};
+
 List<Object?> _shownRow(String key, ShownRow row) => [
   key,
   row.page,
-  row.revision,
+  if (row.version case final version?) _versionToJson(version) else null,
   row.digest,
 ];
 
@@ -773,18 +819,11 @@ List<Object?> _shownRow(String key, ShownRow row) => [
   [
     final String key,
     final String page,
-    final Object? revision,
+    final Object? version,
     final String digest,
   ]
-      when revision == null || (revision is num && isSafeWhole(revision)) =>
-    (
-      key,
-      ShownRow(
-        page: page,
-        revision: (revision as num?)?.toInt(),
-        digest: digest,
-      ),
-    ),
+      when version == null || _versionFrom(version) != null =>
+    (key, ShownRow(page: page, version: _versionFrom(version), digest: digest)),
   _ => null,
 };
 
@@ -810,7 +849,7 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
       ],
       'highest': [
         for (final MapEntry(:key, :value) in shown.highest.entries)
-          [_targetKey(key), value],
+          [_targetKey(key), _versionToJson(value)],
       ],
     },
     for (final page in pages)
@@ -853,7 +892,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
   ShownRow? strategy;
   final pages = <String, ShownRow>{};
   final settings = <String, ShownRow>{};
-  final highest = <Target, int>{};
+  final highest = <Target, Version>{};
   final content = <String, Map<SeenPart, String>>{};
   final rows = <Target, ShownRow>{};
   for (final MapEntry(key: group, value: text) in texts.entries) {
@@ -939,17 +978,17 @@ Map<String, ShownRow>? _shownRows(Object? raw) {
   return found;
 }
 
-Map<Target, int>? _highest(Object? raw) {
+Map<Target, Version>? _highest(Object? raw) {
   if (raw is! List<Object?>) return null;
-  final found = <Target, int>{};
+  final found = <Target, Version>{};
   for (final each in raw) {
     if (each case [
       final Object? key,
-      final num revision,
-    ] when isSafeWhole(revision)) {
+      final Object? stored,
+    ] when _versionFrom(stored) != null) {
       final target = _target(key);
       if (target == null || found.containsKey(target)) return null;
-      found[target] = revision.toInt();
+      found[target] = _versionFrom(stored)!;
     } else {
       return null;
     }

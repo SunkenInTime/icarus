@@ -1288,6 +1288,7 @@ final class CloudSender {
           strategyPublicId: batch.strategyId,
           clientId: batch.clientId,
           ops: batch.ops,
+          lives: batch.lives,
           account: batch.account,
           serverTime: ServerTimeAsked(basis: batch.basis),
         ),
