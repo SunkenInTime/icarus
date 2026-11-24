@@ -171,6 +171,34 @@ void main() {
       );
     });
 
+    test(
+        'an op the server refuses as replaced asks the user, and the page '
+        'list is read once so the strategy as the server now holds it is '
+        'what the store draws', () {
+      inWorld((world) {
+        world.server.log.clear();
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(
+            StoreBatchAnswered(
+              [
+                RejectedAnswer(
+                  call.opIds.single,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+              ],
+              complete: true,
+            ),
+          ),
+        );
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 1));
+        expect(world.server.log, ['send move-1', 'list']);
+        expect(world.views().single.state, isA<NeedsUser>());
+      });
+    });
+
     test('a start with saved work sends it with no wake from outside', () {
       final storage = MemoryStorage();
       final server = FakeServer();

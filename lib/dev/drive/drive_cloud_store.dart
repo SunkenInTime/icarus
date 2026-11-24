@@ -449,9 +449,11 @@ Future<List<String>> storeNeedsYou(ProviderContainer c) async {
   return lines;
 }
 
-Future<String> storeUseCloud(ProviderContainer c, String itemId) async {
+Future<String> storeUseCloud(ProviderContainer c, String? itemId) async {
   final store = _storeOf(c);
-  final strategyId = await _strategyHolding(store, itemId);
+  final strategyId = itemId == null
+      ? storedCloudStrategy(c)
+      : await _strategyHolding(store, itemId);
   final chosen = await useCloudAs(store, _signedIn(c), strategyId);
   return 'CLOUDSTORE used the cloud\'s version for ${chosen.join(', ')} of '
       '$strategyId';

@@ -283,6 +283,7 @@ enum _Why {
   adopt('the strategy was adopted'),
   need('the queue asked for it'),
   access('edit access was lost'),
+  replaced('the server says a row this device wrote to was replaced'),
   retire('landed work waits for a result');
 
   const _Why(this.words);
@@ -351,6 +352,7 @@ final class CloudSender {
   final _wanted = <String, _Request>{};
   final _memory = <String, ReadMemory>{};
   final _unread = <String>{};
+  final _listOwed = <String>{};
   final _lastSeen = <String, CloudStrategy>{};
   final retiring = Retiring();
   var looks = 0;
@@ -871,6 +873,12 @@ final class CloudSender {
     if (cloud.queue.shown.strategy == null) {
       return (planned: (read: const _ReadList(), why: _Why.adopt), due: null);
     }
+    if (_listOwed.contains(id)) {
+      return (
+        planned: (read: const _ReadList(), why: _Why.replaced),
+        due: null
+      );
+    }
     if (_unreadPages(cloud).firstOrNull case final page?) {
       return (planned: (read: _ReadPage(page), why: _Why.adopt), due: null);
     }
@@ -1017,6 +1025,7 @@ final class CloudSender {
             break;
         }
         if (_inputs != snap) return const _Restart();
+        if (read is _ReadList) _listOwed.remove(id);
         _recorded(id, read, why, role, cloud, started, snap);
         _note(
             id,
@@ -1200,6 +1209,15 @@ final class CloudSender {
         }
         _forget(id);
         retiring.active(id, _clock());
+        if (outcome case StoreBatchAnswered(:final answers)
+            when answers.any(
+              (answer) =>
+                  answer is RejectedAnswer &&
+                  answer.reason == RejectionReason.rowReplaced,
+            )) {
+          _unread.add(id);
+          _listOwed.add(id);
+        }
         _note(
           id,
           notApplied.isEmpty
