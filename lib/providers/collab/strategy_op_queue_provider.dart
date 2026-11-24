@@ -281,6 +281,16 @@ RemoteStrategyHeader drawnStrategyHeader(
   return waiting == null ? known : known.withPatch(waiting.payload);
 }
 
+typedef OutboxTarget = ({String accountId, String strategyPublicId});
+
+typedef _QueueView = ({
+  Map<EntitySyncKey, QueuedEntityIntent> queued,
+  Map<EntitySyncKey, InFlightEntityIntent> inFlight,
+  Map<EntitySyncKey, QueuedEntityIntent> successors,
+  Map<EntitySyncKey, QueuedEntityIntent> paused,
+  Map<EntitySyncKey, QueuedEntityIntent> attention,
+});
+
 class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   static const int _maxBatchSize = 40;
   static const int _maxAttempts = 8;
@@ -641,16 +651,22 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
   Future<void> enqueue(
     StrategyOp op, {
+    required String strategyPublicId,
     bool flushImmediately = false,
   }) {
     if (isPageChangeOp(op)) {
-      return enqueuePageChange(op, flushImmediately: flushImmediately);
+      return enqueuePageChange(
+        op,
+        strategyPublicId: strategyPublicId,
+        flushImmediately: flushImmediately,
+      );
     }
     final entityKey = EntitySyncKey.forStrategyOp(op);
     if (entityKey == null) return Future<void>.value();
     final pageId = entityKey.pageId;
     if (pageId != null) {
       return syncDesiredOpsForPage(
+        strategyPublicId: strategyPublicId,
         pageId: pageId,
         desiredOpsByEntityKey: {entityKey: op},
         clearMissing: false,
@@ -658,6 +674,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       );
     }
     return syncDesiredGenericOp(
+      strategyPublicId: strategyPublicId,
       entityKey: entityKey,
       desiredOp: op,
       flushImmediately: flushImmediately,
@@ -668,6 +685,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// [enqueuePageChange]).
   Future<void> enqueueAll(
     Iterable<StrategyOp> ops, {
+    required String strategyPublicId,
     bool flushImmediately = false,
     SeenPage? seenPage,
   }) async {
@@ -676,6 +694,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       if (isPageChangeOp(op)) {
         await enqueuePageChange(
           op,
+          strategyPublicId: strategyPublicId,
           seenPage: op is PageDeleteOp ? seenPage : null,
         );
         continue;
@@ -683,13 +702,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       final key = EntitySyncKey.forStrategyOp(op);
       if (key == null) continue;
       if (key.pageId == null) {
-        await syncDesiredGenericOp(entityKey: key, desiredOp: op);
+        await syncDesiredGenericOp(
+          strategyPublicId: strategyPublicId,
+          entityKey: key,
+          desiredOp: op,
+        );
       } else {
         (byPage[key.pageId!] ??= <EntitySyncKey, StrategyOp>{})[key] = op;
       }
     }
     for (final entry in byPage.entries) {
       await syncDesiredOpsForPage(
+        strategyPublicId: strategyPublicId,
         pageId: entry.key,
         desiredOpsByEntityKey: entry.value,
         clearMissing: false,
@@ -713,13 +737,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// (see [_pageChangedSinceDelete]).
   Future<void> enqueuePageChange(
     StrategyOp op, {
+    required String strategyPublicId,
     bool flushImmediately = false,
     SeenPage? seenPage,
   }) {
     assert(isPageChangeOp(op));
     final madeLive = liveStamp;
+    final target = _targetFor(strategyPublicId);
     return _serializeWrite(
       () => _appendPageChangeLocked(
+        target,
         op,
         flushImmediately: flushImmediately,
         seenPage: seenPage,
@@ -729,21 +756,21 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<void> _appendPageChangeLocked(
+    OutboxTarget? target,
     StrategyOp op, {
     required bool flushImmediately,
     required SeenPage? seenPage,
     required int? madeLive,
   }) async {
-    final accountId = state.accountId;
-    final strategyPublicId = state.strategyPublicId;
     final pageId = op.pagePublicId;
-    if (accountId == null || strategyPublicId == null || pageId == null) {
+    if (target == null || pageId == null) {
       state = state.copyWith(
         lastError: 'Cloud work could not be queued without an active account.',
         hasDurabilityFailure: true,
       );
       return;
     }
+    final (:accountId, :strategyPublicId) = target;
     final list = _pageChangeRecords(accountId, strategyPublicId);
     bool forPage(DurableOutboxRecord record) =>
         record.pending.op.pagePublicId == pageId;
@@ -799,7 +826,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           accountId: accountId,
           strategyPublicId: strategyPublicId,
           entityKey: EntitySyncKey.pageChange(const Uuid().v4()),
-          pending: PendingOp(op: op, clientId: state.clientId!),
+          pending: PendingOp(op: op, clientId: _clientIdFor(target)),
           status: oversized
               ? DurableOutboxStatus.attention
               : DurableOutboxStatus.queued,
@@ -825,7 +852,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     _pruneCanvasOpIds();
     _refreshActiveQueueView();
-    _scheduleFlush(flushImmediately: flushImmediately);
+    _scheduleSend(target, flushImmediately: flushImmediately);
+  }
+
+  void _scheduleSend(OutboxTarget target, {required bool flushImmediately}) {
+    if (_activeTarget == target) {
+      _scheduleFlush(flushImmediately: flushImmediately);
+    } else {
+      _scheduleBackgroundDrain(ignoreBackoff: true);
+    }
   }
 
   static bool _isPageChange(DurableOutboxRecord record) =>
@@ -1137,12 +1172,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// when the outbox could not store it, the caller must say so.
   Future<bool> enqueueOffCanvas(
     StrategyOp op, {
+    required String strategyPublicId,
     bool flushImmediately = false,
   }) async {
     final key = EntitySyncKey.forStrategyOp(op)!;
     final canvasSession = _canvasSession;
     final madeLive = liveStamp;
+    final target = _targetFor(strategyPublicId);
     await _serializeWrite(() => _syncDesiredLocked(
+          target: target,
           keys: <EntitySyncKey>{key},
           desiredOps: <EntitySyncKey, StrategyOp?>{key: op},
           flushImmediately: flushImmediately,
@@ -1150,6 +1188,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           madeLive: madeLive,
           onCanvas: false,
         ));
+    if (target == null) return false;
+    if (_activeTarget != target) {
+      final record = _recordAt(target, key);
+      return record != null &&
+          (record.pending.op.opId == op.opId ||
+              record.successorPending?.op.opId == op.opId);
+    }
     return state.pending.any(
           (pending) => EntitySyncKey.forStrategyOp(pending.op) == key,
         ) ||
@@ -1157,13 +1202,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<void> syncDesiredGenericOp({
+    required String strategyPublicId,
     required EntitySyncKey entityKey,
     required StrategyOp? desiredOp,
     bool flushImmediately = false,
   }) {
     final canvasSession = _canvasSession;
     final madeLive = liveStamp;
+    final target = _targetFor(strategyPublicId);
     return _serializeWrite(() => _syncDesiredLocked(
+          target: target,
           keys: <EntitySyncKey>{entityKey},
           desiredOps: <EntitySyncKey, StrategyOp?>{entityKey: desiredOp},
           flushImmediately: flushImmediately,
@@ -1173,6 +1221,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<OutboxWrite> syncDesiredOpsForPage({
+    required String strategyPublicId,
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
@@ -1187,22 +1236,23 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     // A desired op the queue already holds is work kept as it is (live sync
     // keeps recovered work this way), not a new edit. Read now: by the time
     // this write runs it may have landed and left the queue.
-    final heldOpIds = {for (final pending in state.pending) pending.op.opId};
+    final target = _targetFor(strategyPublicId);
+    final heldOpIds = {
+      for (final pending in _pendingOf(target)) pending.op.opId,
+    };
     return _serializeWrite(() async {
+      final view = _viewFor(target);
       final keys = clearMissing
           ? <EntitySyncKey>{
-              ...state.queuedByEntityKey.keys
-                  .where((key) => key.pageId == pageId),
-              ...state.pausedByEntityKey.keys
-                  .where((key) => key.pageId == pageId),
-              ...state.inFlightByEntityKey.keys
-                  .where((key) => key.pageId == pageId),
-              ...state.successorByEntityKey.keys
-                  .where((key) => key.pageId == pageId),
+              ...view.queued.keys.where((key) => key.pageId == pageId),
+              ...view.paused.keys.where((key) => key.pageId == pageId),
+              ...view.inFlight.keys.where((key) => key.pageId == pageId),
+              ...view.successors.keys.where((key) => key.pageId == pageId),
               ...desiredOpsByEntityKey.keys,
             }
           : desiredOpsByEntityKey.keys.toSet();
       final write = await _syncDesiredLocked(
+        target: target,
         keys: keys,
         desiredOps: <EntitySyncKey, StrategyOp?>{
           for (final key in keys) key: desiredOpsByEntityKey[key],
@@ -1213,20 +1263,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         madeLive: madeLive,
       );
       return write == OutboxWrite.written &&
-              _hasUnstoredWrite(desiredOpsByEntityKey.keys)
+              _hasUnstoredWrite(target, desiredOpsByEntityKey.keys)
           ? OutboxWrite.failed
           : write;
     });
   }
 
-  bool _hasUnstoredWrite(Iterable<EntitySyncKey> keys) {
-    final accountId = state.accountId;
-    final strategyPublicId = state.strategyPublicId;
-    if (accountId == null || strategyPublicId == null) return false;
+  bool _hasUnstoredWrite(OutboxTarget? target, Iterable<EntitySyncKey> keys) {
+    if (target == null) return false;
     return keys.any((key) => _uncertainDurableIntents.containsKey(
           DurableOutboxRecord.createStorageKey(
-            accountId: accountId,
-            strategyPublicId: strategyPublicId,
+            accountId: target.accountId,
+            strategyPublicId: target.strategyPublicId,
             entityKey: key,
           ),
         ));
@@ -1240,6 +1288,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// it is. Ops made with [onCanvas] false are never the canvas's work.
   /// [madeLive] is the live stamp the work was made with (see [_markLive]).
   Future<OutboxWrite> _syncDesiredLocked({
+    required OutboxTarget? target,
     required Set<EntitySyncKey> keys,
     required Map<EntitySyncKey, StrategyOp?> desiredOps,
     required bool flushImmediately,
@@ -1265,9 +1314,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
     }
 
-    final accountId = state.accountId;
-    final strategyPublicId = state.strategyPublicId;
-    if (accountId == null || strategyPublicId == null) {
+    if (target == null) {
       final hasWork = desiredOps.values.any((op) => op != null);
       if (hasWork) {
         state = state.copyWith(
@@ -1279,30 +1326,23 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       return hasWork ? OutboxWrite.noAccount : OutboxWrite.written;
     }
 
-    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.queuedByEntityKey,
-    );
-    final paused = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.pausedByEntityKey,
-    );
-    final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.attentionByEntityKey,
-    );
-    final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.successorByEntityKey,
-    );
+    final (:accountId, :strategyPublicId) = target;
+    final active = _activeTarget == target;
+    final (:queued, :inFlight, :successors, :paused, :attention) =
+        _viewFor(target);
+    final clientId = _clientIdFor(target);
     var changed = false;
     _storingMany = true;
     try {
       for (final key in keys) {
-        if (_awaitingRemoteAdoption.contains(key)) continue;
+        if (active && _awaitingRemoteAdoption.contains(key)) continue;
         // Page changes wait in their list, which reconciling a page's
         // content never touches.
         if (key.kind == EntitySyncKeyKind.pageChange) continue;
         final made = desiredOps[key];
         final existing = queued[key];
-        final inFlightIntent = state.inFlightByEntityKey[key];
-        final inFlight = inFlightIntent?.pending.op;
+        final inFlightIntent = inFlight[key];
+        final sending = inFlightIntent?.pending.op;
         final successorIntent = successors[key];
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
@@ -1333,7 +1373,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
         final desired = made == null || heldOpIds.contains(made.opId)
             ? made
-            : _behindOwnLanded(key, made);
+            : _behindOwnLanded(target, key, made);
 
         // A rejected op remains the durable authority until the user
         // explicitly retries it. Reconciliation may update its successor, but
@@ -1346,7 +1386,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             entityKey: key,
           );
           final current =
-              _recordForActiveKey(key) ?? _uncertainDurableIntents[storageKey];
+              _recordAt(target, key) ?? _uncertainDurableIntents[storageKey];
           if (current == null) {
             throw StateError('Durable attention record is missing for $key.');
           }
@@ -1425,12 +1465,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
 
         if (desired == null) {
-          if (inFlight != null || successorIntent != null) {
+          if (sending != null || successorIntent != null) {
             continue;
           }
           final current = existing ?? pausedIntent;
           if (current != null) {
-            await _removeRecordIfCurrent(key, current.pending.op.opId);
+            await _removeRecordIfCurrent(target, key, current.pending.op.opId);
             queued.remove(key);
             paused.remove(key);
             attention.remove(key);
@@ -1439,9 +1479,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           continue;
         }
 
-        if (inFlight != null && _sameIntent(desired, inFlight)) {
+        if (sending != null && _sameIntent(desired, sending)) {
           if (successorIntent != null) {
             await _putRecord(_recordFor(
+              target: target,
               key: key,
               pending: inFlightIntent!.pending,
               status: DurableOutboxStatus.inFlight,
@@ -1468,10 +1509,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               predecessor,
               drawn: _canvasOpIds.contains(predecessor.opId),
             ),
-            clientId: successorIntent?.pending.clientId ?? state.clientId!,
+            clientId: successorIntent?.pending.clientId ?? clientId,
           );
           writtenByCanvas(pending, desired, from: successorIntent?.pending.op);
           await _putRecord(_recordFor(
+            target: target,
             key: key,
             pending: inFlightIntent.pending,
             status: DurableOutboxStatus.inFlight,
@@ -1489,6 +1531,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         if (existing != null && successorIntent != null) {
           if (_sameIntent(existing.pending.op, desired)) {
             await _putRecord(_recordFor(
+              target: target,
               key: key,
               pending: existing.pending,
               status: DurableOutboxStatus.queued,
@@ -1512,6 +1555,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           );
           writtenByCanvas(pending, desired, from: successorIntent.pending.op);
           await _putRecord(_recordFor(
+            target: target,
             key: key,
             pending: existing.pending,
             status: DurableOutboxStatus.queued,
@@ -1530,7 +1574,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
 
         final base = pausedIntent ?? existing;
-        final baseRecord = base == null ? null : _recordForActiveKey(key);
+        final baseRecord = base == null ? null : _recordAt(target, key);
         if (base != null &&
             baseRecord?.pending.op.opId == base.pending.op.opId &&
             _mayHaveLanded(baseRecord!)) {
@@ -1552,7 +1596,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               base.pending.op,
               drawn: _canvasOpIds.contains(base.pending.op.opId),
             ),
-            clientId: successorIntent?.pending.clientId ?? state.clientId!,
+            clientId: successorIntent?.pending.clientId ?? clientId,
           );
           writtenByCanvas(pending, desired, from: successorIntent?.pending.op);
           await _putRecord(baseRecord.copyWith(
@@ -1569,7 +1613,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             : _mergeQueuedIntent(base.pending.op, desired);
         if (merged == null) {
           if (base != null) {
-            await _removeRecordIfCurrent(key, base.pending.op.opId);
+            await _removeRecordIfCurrent(target, key, base.pending.op.opId);
             queued.remove(key);
             paused.remove(key);
             attention.remove(key);
@@ -1580,12 +1624,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
         final pending = PendingOp(
           op: merged,
-          clientId: base?.pending.clientId ?? state.clientId!,
+          clientId: base?.pending.clientId ?? clientId,
           attempts: base?.pending.attempts ?? 0,
           lastAttemptAt: base?.pending.lastAttemptAt,
         );
         writtenByCanvas(pending, desired, from: base?.pending.op);
         final record = _recordFor(
+          target: target,
           key: key,
           pending: pending,
           status: cloudOperationExceedsPolicy(pending.op)
@@ -1614,6 +1659,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     _storedMany();
     if (!changed) return OutboxWrite.written;
+    if (!active) {
+      _scheduleSend(target, flushImmediately: flushImmediately);
+      return OutboxWrite.written;
+    }
     _pruneCanvasOpIds();
     final attentionMessage = _loadedAttentionMessage(
       loadIssues: state.loadIssues,
@@ -3290,12 +3339,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     PendingOp? successorPending,
     bool clearSuccessorPending = false,
     String? lastError,
+    OutboxTarget? target,
   }) {
-    final current = _recordForActiveKey(key);
+    final (:accountId, :strategyPublicId) = target ?? _activeTarget!;
+    final current = _recordAt(
+      (accountId: accountId, strategyPublicId: strategyPublicId),
+      key,
+    );
     final now = DateTime.now();
     return DurableOutboxRecord(
-      accountId: state.accountId!,
-      strategyPublicId: state.strategyPublicId!,
+      accountId: accountId,
+      strategyPublicId: strategyPublicId,
       entityKey: key,
       pending: pending,
       status: status,
@@ -3313,16 +3367,47 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     );
   }
 
-  DurableOutboxRecord? _recordForActiveKey(EntitySyncKey key) {
-    final accountId = state.accountId;
-    final strategyPublicId = state.strategyPublicId;
-    if (accountId == null || strategyPublicId == null) return null;
-    return _recordsByStorageKey[DurableOutboxRecord.createStorageKey(
-      accountId: accountId,
-      strategyPublicId: strategyPublicId,
-      entityKey: key,
-    )];
-  }
+  OutboxTarget? get _activeTarget =>
+      switch ((state.accountId, state.strategyPublicId)) {
+        (final accountId?, final strategyPublicId?) => (
+            accountId: accountId,
+            strategyPublicId: strategyPublicId,
+          ),
+        _ => null,
+      };
+
+  OutboxTarget? _targetFor(String strategyPublicId) =>
+      switch (state.accountId) {
+        final accountId? => (
+            accountId: accountId,
+            strategyPublicId: strategyPublicId,
+          ),
+        null => null,
+      };
+
+  DurableOutboxRecord? _recordForActiveKey(EntitySyncKey key) =>
+      switch (_activeTarget) {
+        final target? => _recordAt(target, key),
+        null => null,
+      };
+
+  DurableOutboxRecord? _recordAt(OutboxTarget target, EntitySyncKey key) =>
+      _recordsByStorageKey[DurableOutboxRecord.createStorageKey(
+        accountId: target.accountId,
+        strategyPublicId: target.strategyPublicId,
+        entityKey: key,
+      )];
+
+  String _clientIdFor(OutboxTarget target) =>
+      _recordsByStorageKey.values
+          .where((record) =>
+              record.accountId == target.accountId &&
+              record.strategyPublicId == target.strategyPublicId)
+          .firstOrNull
+          ?.pending
+          .clientId ??
+      state.clientId ??
+      const Uuid().v4();
 
   Future<void> _putRecord(DurableOutboxRecord record) async {
     if (!record.waitsForPageAdd && _waitsForPageAdd(record)) {
@@ -3451,10 +3536,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<void> _removeRecordIfCurrent(
+    OutboxTarget target,
     EntitySyncKey key,
     String opId,
   ) async {
-    final record = _recordForActiveKey(key);
+    final record = _recordAt(target, key);
     if (record == null || record.pending.op.opId != opId) return;
     await _removeRecordByStorageKey(record.storageKey);
   }
@@ -3473,6 +3559,107 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         state.strategyPublicId == strategyPublicId;
   }
 
+  static _QueueView _emptyView() => (
+        queued: <EntitySyncKey, QueuedEntityIntent>{},
+        inFlight: <EntitySyncKey, InFlightEntityIntent>{},
+        successors: <EntitySyncKey, QueuedEntityIntent>{},
+        paused: <EntitySyncKey, QueuedEntityIntent>{},
+        attention: <EntitySyncKey, QueuedEntityIntent>{},
+      );
+
+  _QueueView _viewFor(OutboxTarget? target) {
+    if (target == null) return _emptyView();
+    if (_activeTarget != target) return _viewOf(target);
+    return (
+      queued: {...state.queuedByEntityKey},
+      inFlight: {...state.inFlightByEntityKey},
+      successors: {...state.successorByEntityKey},
+      paused: {...state.pausedByEntityKey},
+      attention: {...state.attentionByEntityKey},
+    );
+  }
+
+  Iterable<PendingOp> _pendingOf(OutboxTarget? target) {
+    final view = _viewFor(target);
+    return [
+      for (final intent in view.queued.values) intent.pending,
+      for (final intent in view.inFlight.values) intent.pending,
+      for (final intent in view.successors.values) intent.pending,
+      for (final intent in view.paused.values) intent.pending,
+      for (final intent in view.attention.values) intent.pending,
+    ];
+  }
+
+  _QueueView _viewOf(OutboxTarget target) {
+    final view = _emptyView();
+    final (:queued, :inFlight, :successors, :paused, :attention) = view;
+    final isActivelyDraining = _drainingStrategy == target;
+    for (final record in _recordsByStorageKey.values) {
+      if (record.accountId != target.accountId ||
+          record.strategyPublicId != target.strategyPublicId) {
+        continue;
+      }
+      final intent = QueuedEntityIntent(
+        entityKey: record.entityKey,
+        pending: record.pending,
+      );
+      final successor = record.successorPending;
+      if (successor != null) {
+        successors[record.entityKey] = QueuedEntityIntent(
+          entityKey: record.entityKey,
+          pending: successor,
+        );
+      }
+      switch (record.status) {
+        case DurableOutboxStatus.queued:
+          if (cloudOperationExceedsPolicy(record.pending.op)) {
+            attention[record.entityKey] = intent;
+          } else {
+            queued[record.entityKey] = intent;
+          }
+        case DurableOutboxStatus.inFlight:
+          if (cloudOperationExceedsPolicy(record.pending.op)) {
+            attention[record.entityKey] = intent;
+          } else if (isActivelyDraining) {
+            inFlight[record.entityKey] = InFlightEntityIntent(
+              entityKey: record.entityKey,
+              pending: record.pending,
+              sentAt: record.updatedAt,
+            );
+          } else {
+            queued[record.entityKey] = intent;
+          }
+        case DurableOutboxStatus.paused:
+          if (cloudOperationExceedsPolicy(record.pending.op)) {
+            attention[record.entityKey] = intent;
+          } else {
+            paused[record.entityKey] = intent;
+          }
+        case DurableOutboxStatus.attention:
+          attention[record.entityKey] = intent;
+      }
+    }
+    for (final record in _uncertainDurableIntents.values.where((record) =>
+        record.accountId == target.accountId &&
+        record.strategyPublicId == target.strategyPublicId)) {
+      attention[record.entityKey] = QueuedEntityIntent(
+        entityKey: record.entityKey,
+        pending: record.pending,
+      );
+      queued.remove(record.entityKey);
+      inFlight.remove(record.entityKey);
+      paused.remove(record.entityKey);
+      final successor = record.successorPending;
+      if (successor != null) {
+        successors[record.entityKey] = QueuedEntityIntent(
+          entityKey: record.entityKey,
+          pending: successor,
+        );
+      }
+    }
+    return view;
+  }
+
   void _refreshActiveQueueView({
     bool? isFlushing,
     String? lastError,
@@ -3485,78 +3672,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     if (_isDisposed) return;
     final accountId = state.accountId;
     final strategyPublicId = state.strategyPublicId;
-    final queued = <EntitySyncKey, QueuedEntityIntent>{};
-    final inFlight = <EntitySyncKey, InFlightEntityIntent>{};
-    final successors = <EntitySyncKey, QueuedEntityIntent>{};
-    final paused = <EntitySyncKey, QueuedEntityIntent>{};
-    final attention = <EntitySyncKey, QueuedEntityIntent>{};
-    if (accountId != null && strategyPublicId != null) {
-      final isActivelyDraining = _drainingStrategy ==
-          (accountId: accountId, strategyPublicId: strategyPublicId);
-      for (final record in _recordsByStorageKey.values) {
-        if (record.accountId != accountId ||
-            record.strategyPublicId != strategyPublicId) {
-          continue;
-        }
-        final intent = QueuedEntityIntent(
-          entityKey: record.entityKey,
-          pending: record.pending,
-        );
-        final successor = record.successorPending;
-        if (successor != null) {
-          successors[record.entityKey] = QueuedEntityIntent(
-            entityKey: record.entityKey,
-            pending: successor,
-          );
-        }
-        switch (record.status) {
-          case DurableOutboxStatus.queued:
-            if (cloudOperationExceedsPolicy(record.pending.op)) {
-              attention[record.entityKey] = intent;
-            } else {
-              queued[record.entityKey] = intent;
-            }
-          case DurableOutboxStatus.inFlight:
-            if (cloudOperationExceedsPolicy(record.pending.op)) {
-              attention[record.entityKey] = intent;
-            } else if (isActivelyDraining) {
-              inFlight[record.entityKey] = InFlightEntityIntent(
-                entityKey: record.entityKey,
-                pending: record.pending,
-                sentAt: record.updatedAt,
-              );
-            } else {
-              queued[record.entityKey] = intent;
-            }
-          case DurableOutboxStatus.paused:
-            if (cloudOperationExceedsPolicy(record.pending.op)) {
-              attention[record.entityKey] = intent;
-            } else {
-              paused[record.entityKey] = intent;
-            }
-          case DurableOutboxStatus.attention:
-            attention[record.entityKey] = intent;
-        }
-      }
-      for (final record in _uncertainDurableIntents.values.where((record) =>
-          record.accountId == accountId &&
-          record.strategyPublicId == strategyPublicId)) {
-        attention[record.entityKey] = QueuedEntityIntent(
-          entityKey: record.entityKey,
-          pending: record.pending,
-        );
-        queued.remove(record.entityKey);
-        inFlight.remove(record.entityKey);
-        paused.remove(record.entityKey);
-        final successor = record.successorPending;
-        if (successor != null) {
-          successors[record.entityKey] = QueuedEntityIntent(
-            entityKey: record.entityKey,
-            pending: successor,
-          );
-        }
-      }
-    }
+    final (
+      :queued,
+      :inFlight,
+      :successors,
+      :paused,
+      :attention
+    ) = accountId == null || strategyPublicId == null
+        ? _emptyView()
+        : _viewOf((accountId: accountId, strategyPublicId: strategyPublicId));
     final attentionMessage = _loadedAttentionMessage(
       loadIssues: state.loadIssues,
       paused: paused,
@@ -3967,10 +4091,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   /// restart, or landed as the canvas was drawn fresh) is not what the user
   /// saw, so [op] keeps the version it was made from and is checked against
   /// it. Any other [op] as it is.
-  StrategyOp _behindOwnLanded(EntitySyncKey key, StrategyOp op) {
+  StrategyOp _behindOwnLanded(
+    OutboxTarget target,
+    EntitySyncKey key,
+    StrategyOp op,
+  ) {
     final storageKey = DurableOutboxRecord.createStorageKey(
-      accountId: state.accountId!,
-      strategyPublicId: state.strategyPublicId!,
+      accountId: target.accountId,
+      strategyPublicId: target.strategyPublicId,
       entityKey: key,
     );
     final landed = _ownLanded[storageKey];

@@ -35,12 +35,13 @@ void main() {
     final server = _Server();
     final (container, queue) = _start(store, server);
 
-    await queue.enqueue(add('add', 'a'));
+    await queue.enqueue(add('add', 'a'), strategyPublicId: 'strategy-1');
     final flushing = queue.flushNow();
     await store.removeStarted.future;
     // The server answered the add, and the queue is storing that answer.
     // The user moves the item; the canvas still knows no row for it.
-    final editing = queue.enqueue(add('edit', 'b'));
+    final editing =
+        queue.enqueue(add('edit', 'b'), strategyPublicId: 'strategy-1');
     store.releaseRemove.complete();
     await flushing;
     await editing;
@@ -59,13 +60,14 @@ void main() {
     final (container, queue) =
         _start(MemoryDurableStrategyOutboxStore(), server);
 
-    await queue.enqueue(add('add', 'a'));
+    await queue.enqueue(add('add', 'a'), strategyPublicId: 'strategy-1');
     await queue.flushNow();
     // A teammate deletes it (revision 2); this device's queue still
     // remembers its own add at 1. The canvas reads the delete and the user
     // brings the item back over it.
     server.teammateDeletes();
-    await queue.enqueue(add('again', 'c', expectedRevision: 2));
+    await queue.enqueue(add('again', 'c', expectedRevision: 2),
+        strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
 
@@ -79,17 +81,20 @@ void main() {
     final (container, queue) =
         _start(MemoryDurableStrategyOutboxStore(), server);
 
-    await queue.enqueue(add('add', 'a'));
+    await queue.enqueue(add('add', 'a'), strategyPublicId: 'strategy-1');
     await queue.flushNow();
-    await queue.enqueue(const ElementDeleteOp(
-      opId: 'delete',
-      elementPublicId: 'element-1',
-      pagePublicId: 'page-1',
-      expectedElementRevision: 1,
-    ));
+    await queue.enqueue(
+        const ElementDeleteOp(
+          opId: 'delete',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          expectedElementRevision: 1,
+        ),
+        strategyPublicId: 'strategy-1');
     await queue.flushNow();
     // The canvas knows the delete landed at 2, and the user brings it back.
-    await queue.enqueue(add('again', 'c', expectedRevision: 2));
+    await queue.enqueue(add('again', 'c', expectedRevision: 2),
+        strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(() => container.read(strategyOpQueueProvider).pending.isEmpty);
 

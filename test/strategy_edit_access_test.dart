@@ -205,6 +205,7 @@ class _RecordingStrategyOpQueue extends StrategyOpQueueNotifier {
   @override
   Future<void> enqueueAll(
     Iterable<StrategyOp> ops, {
+    required String strategyPublicId,
     bool flushImmediately = false,
     SeenPage? seenPage,
   }) async {

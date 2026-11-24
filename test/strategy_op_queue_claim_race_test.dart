@@ -32,22 +32,26 @@ void main() {
     final queue = container.read(strategyOpQueueProvider.notifier)
       ..setActiveStrategy('strategy-1', accountId: 'account-a');
 
-    await queue.enqueue(const ElementAddOp(
-      opId: 'add',
-      elementPublicId: 'element-1',
-      pagePublicId: 'page-1',
-      payload: {'value': 'a'},
-      sortIndex: 0,
-    ));
+    await queue.enqueue(
+        const ElementAddOp(
+          opId: 'add',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {'value': 'a'},
+          sortIndex: 0,
+        ),
+        strategyPublicId: 'strategy-1');
     final claimWrite = store.holdNextPut();
     final flushing = queue.flushNow();
     await claimWrite.reached;
-    final deleting = queue.enqueue(const ElementDeleteOp(
-      opId: 'delete',
-      elementPublicId: 'element-1',
-      pagePublicId: 'page-1',
-      expectedElementRevision: 0,
-    ));
+    final deleting = queue.enqueue(
+        const ElementDeleteOp(
+          opId: 'delete',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          expectedElementRevision: 0,
+        ),
+        strategyPublicId: 'strategy-1');
     claimWrite.release();
     await flushing;
     await deleting;

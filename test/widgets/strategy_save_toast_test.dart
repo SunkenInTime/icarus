@@ -205,6 +205,7 @@ class _CloudStrategy extends StrategyProvider {
         payload: {'value': 'mine'},
         expectedElementRevision: 1,
       ),
+      strategyPublicId: 'cloud-strategy',
     );
     await queue.flushNow();
   }

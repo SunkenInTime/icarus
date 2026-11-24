@@ -1407,8 +1407,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
 
     final strategy = ref.read(localLibraryViewProvider).strategyImage(
-      strategyId,
-    );
+          strategyId,
+        );
     return strategy?.themeProfileId ??
         MapThemeProfilesProvider.immutableDefaultProfileId;
   }
@@ -2057,6 +2057,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       );
       if (desiredOpsByEntityKey != null) {
         await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+              strategyPublicId: strategyId,
               pageId: activePageId,
               desiredOpsByEntityKey: desiredOpsByEntityKey,
               flushImmediately: false,

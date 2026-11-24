@@ -129,23 +129,29 @@ void main() {
     final queue = container.read(strategyOpQueueProvider.notifier)
       ..setActiveStrategy('strategy-a', accountId: 'account-a');
     await tester.runAsync(() async {
-      await queue.enqueue(const PagePatchOp(
-        opId: 'rename',
-        pagePublicId: 'page-2',
-        payload: {'name': 'Retake', 'isAutoNamed': false},
-        expectedPageRevision: 1,
-      ));
-      await queue.enqueue(const PageReorderOp(
-        opId: 'move',
-        pagePublicId: 'page-3',
-        sortIndex: 0,
-        expectedStrategyRevision: 3,
-      ));
-      await queue.enqueue(const PageDeleteOp(
-        opId: 'delete',
-        pagePublicId: 'page-1',
-        expectedStrategyRevision: 3,
-      ));
+      await queue.enqueue(
+          const PagePatchOp(
+            opId: 'rename',
+            pagePublicId: 'page-2',
+            payload: {'name': 'Retake', 'isAutoNamed': false},
+            expectedPageRevision: 1,
+          ),
+          strategyPublicId: 'strategy-a');
+      await queue.enqueue(
+          const PageReorderOp(
+            opId: 'move',
+            pagePublicId: 'page-3',
+            sortIndex: 0,
+            expectedStrategyRevision: 3,
+          ),
+          strategyPublicId: 'strategy-a');
+      await queue.enqueue(
+          const PageDeleteOp(
+            opId: 'delete',
+            pagePublicId: 'page-1',
+            expectedStrategyRevision: 3,
+          ),
+          strategyPublicId: 'strategy-a');
     });
     await tester.pumpAndSettle();
 

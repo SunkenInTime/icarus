@@ -467,14 +467,17 @@ class StrategyProvider extends Notifier<StrategyState> {
     bool flushImmediately = false,
     SeenPage? seenPage,
   }) async {
+    final strategyId = state.strategyId;
     if (!_currentStrategyIsCloud() ||
         !_currentStrategyCanEditPages() ||
+        strategyId == null ||
         ops.isEmpty) {
       return;
     }
 
     ref.read(strategyOpQueueProvider.notifier).enqueueAll(
           ops,
+          strategyPublicId: strategyId,
           flushImmediately: flushImmediately,
           seenPage: seenPage,
         );
@@ -700,6 +703,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       _partsChanged.clear();
       if (!strategyPatchMayLand(queue, strategyId)) {
         await queueNotifier.syncDesiredGenericOp(
+          strategyPublicId: strategyId,
           entityKey: const EntitySyncKey.strategy(),
           desiredOp: null,
           flushImmediately: flushImmediately,
@@ -736,6 +740,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final changes = _partChanges;
     final failuresBefore = queueNotifier.persistenceFailureCount;
     await queueNotifier.syncDesiredGenericOp(
+      strategyPublicId: strategyId,
       entityKey: const EntitySyncKey.strategy(),
       desiredOp: StrategyPatchOp(
         opId: const Uuid().v4(),
@@ -1396,6 +1401,7 @@ class StrategyProvider extends Notifier<StrategyState> {
                 ),
                 sortIndex: 1 + onTarget.values.fold<int>(-1, max),
               ),
+              strategyPublicId: strategyId,
               flushImmediately: true,
             );
     if (!queued) return PageCopyResult.notSaved;
@@ -1704,6 +1710,7 @@ class StrategyProvider extends Notifier<StrategyState> {
                         .map((group) => group.sortIndex)
                         .fold<int>(-1, max),
               ),
+              strategyPublicId: strategyId,
               flushImmediately: true,
             );
     if (!queued) return PageCopyResult.notSaved;
@@ -2729,7 +2736,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> _saveLocalPageOrThrow() async {
     if (await _syncCurrentPageToHive() case HeldOnCanvas(:final reason)) {
-      throw StateError('The page on screen could not be saved: ${reason.name}.');
+      throw StateError(
+          'The page on screen could not be saved: ${reason.name}.');
     }
   }
 
@@ -2805,9 +2813,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             (request: request, isAttack: isAttack);
       }
       try {
-        await ref
-            .read(strategyOpQueueProvider.notifier)
-            .enqueueAll(ops, flushImmediately: true);
+        await ref.read(strategyOpQueueProvider.notifier).enqueueAll(
+              ops,
+              strategyPublicId: strategyId,
+              flushImmediately: true,
+            );
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:switch_side_all_pages',
@@ -2914,9 +2924,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       ];
 
       try {
-        await ref
-            .read(strategyOpQueueProvider.notifier)
-            .enqueueAll(ops, flushImmediately: true);
+        await ref.read(strategyOpQueueProvider.notifier).enqueueAll(
+              ops,
+              strategyPublicId: strategyId,
+              flushImmediately: true,
+            );
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:apply_settings_to_all_pages',

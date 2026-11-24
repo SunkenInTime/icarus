@@ -66,12 +66,14 @@ void main() {
     expect(server.row, agent('C', 'none'));
 
     // The canvas still shows revision 1, and the user deletes the agent.
-    await queue.enqueue(const ElementDeleteOp(
-      opId: 'delete',
-      elementPublicId: 'agent-1',
-      pagePublicId: 'page-1',
-      expectedElementRevision: 1,
-    ));
+    await queue.enqueue(
+        const ElementDeleteOp(
+          opId: 'delete',
+          elementPublicId: 'agent-1',
+          pagePublicId: 'page-1',
+          expectedElementRevision: 1,
+        ),
+        strategyPublicId: 'strategy-1');
     await queue.flushNow();
     await _until(
       () => container.read(strategyOpQueueProvider).needsAttention,
@@ -90,16 +92,19 @@ void main() {
 
     await queue.enqueue(
       edit('move', agent('B', 'none'), base: {'position': 'A'}, revision: 1),
+      strategyPublicId: 'strategy-1',
     );
     await queue.flushNow();
     expect(queue.landedCanvasWorkCount, 1);
     // The canvas heard the move landed at 2, and edits from there.
-    await queue.enqueue(edit(
-      'weapon',
-      agent('B', 'ghost'),
-      base: {'weapon': 'none'},
-      revision: 2,
-    ));
+    await queue.enqueue(
+        edit(
+          'weapon',
+          agent('B', 'ghost'),
+          base: {'weapon': 'none'},
+          revision: 2,
+        ),
+        strategyPublicId: 'strategy-1');
     expect(queue.landedCanvasWorkCount, 0);
     await queue.flushNow();
     expect(queue.landedCanvasWorkCount, 1);
@@ -117,28 +122,33 @@ void main() {
 
     await queue.enqueue(
       edit('move', agent('B', 'none'), base: {'position': 'A'}, revision: 1),
+      strategyPublicId: 'strategy-1',
     );
     server.holdAnswers = true;
     unawaited(queue.flushNow());
     await server.reached.future;
     // While it is sent, the user moves it back to A and changes the weapon.
     // Against revision 1 (position A), only the weapon changed.
-    await queue.enqueue(edit(
-      'back',
-      agent('A', 'ghost'),
-      base: {'weapon': 'none'},
-      revision: 1,
-    ));
+    await queue.enqueue(
+        edit(
+          'back',
+          agent('A', 'ghost'),
+          base: {'weapon': 'none'},
+          revision: 1,
+        ),
+        strategyPublicId: 'strategy-1');
     // The move lands. While the queue stores that answer, the user changes
     // the weapon again; the canvas still knows only revision 1.
     server.release();
     await store.promotionStarted.future;
-    final again = queue.enqueue(edit(
-      'again',
-      agent('A', 'vandal'),
-      base: {'weapon': 'none'},
-      revision: 1,
-    ));
+    final again = queue.enqueue(
+        edit(
+          'again',
+          agent('A', 'vandal'),
+          base: {'weapon': 'none'},
+          revision: 1,
+        ),
+        strategyPublicId: 'strategy-1');
     store.releasePromotion.complete();
     await again;
     await queue.flushNow();

@@ -33,6 +33,16 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## A change in one cloud strategy, then another opened
+
+`{"mapThenOpen": B, "from": A, "runs": 50, "by": "back", "maps": [...], "restAt": [x, y]}` measures whether a map change made in cloud strategy A can be stored under B when B is opened at once (`scripts/map-then-open-cloud.json`). Each run:
+1. opens B, then A, so the mouse's back button leads to B;
+2. opens A's map picker and taps a map from `maps` that neither strategy has, each in the current map pool;
+3. one frame later, opens B: with the back button pressed at `restAt` when `by` is `back`, as a player would, or with `openCloudStrategy` straight away, past the exit guard, when it is `open`;
+4. reads both strategies from the server until one has the new map.
+
+Each run logs where the change landed, how long after the tap its patch was queued and under which strategy, and how long after the tap B's open began. The summary counts the outcomes, and `expectTaken` fails the step unless B took the change that many times. With `shots`, the picker and the end of the first two runs are saved there, as is the screen when a tile can't be found.
+
 ## The cloud store in shadow
 
 `--cloud-store shadow` on Linux, `-CloudStore shadow` on Windows, starts the app with the cloud store in shadow. It uses the same SQLite file as the library store, and either flag works without the other.
