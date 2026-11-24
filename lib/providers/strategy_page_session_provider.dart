@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:meta/meta.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
@@ -660,6 +661,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           'The canvas of page ${state.activePageId} is held: ${reason.name}.',
           source: 'strategy_page_session',
         );
+      case NothingShown():
+        AppErrorReporter.reportInfo(
+          'The canvas does not show page ${state.activePageId}; its unsaved '
+          'edits were not handed over.',
+          source: 'strategy_page_session',
+        );
       case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
     }
   }
@@ -739,7 +746,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // a conflicting group is newer than the copy, so nothing goes ahead.
     final pageSource = _resolvePageSource(strategyId, StrategySource.cloud);
     final handover = await pageSource.flushCurrentPage();
-    if (handover is HeldOnCanvas || !unchangedSince()) {
+    if (handover is HeldOnCanvas ||
+        handover is NothingShown ||
+        !unchangedSince()) {
       return KeepBothOutcome.unchanged;
     }
 
@@ -778,6 +787,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     });
     final saved = copiesQueued &&
         copyHandover is! HeldOnCanvas &&
+        copyHandover is! NothingShown &&
         !afterCopy.hasDurabilityFailure &&
         afterCopy.attentionByEntityKey.keys.every(waiting.containsKey);
     if (!saved || !unchangedSince()) return KeepBothOutcome.copiesOnly;
@@ -829,11 +839,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         waiting.entries.every((entry) => now[entry.key] == entry.value);
   }
 
+  bool _anythingUnsavedOnCanvas() =>
+      ref.read(strategySaveStateProvider).isDirty ||
+      ref.read(textDraftProvider).isNotEmpty;
+
   bool _outboxRefused(PageHandover handover) => switch (handover) {
         HeldOnCanvas(
           reason: HeldReason.outboxWriteFailed || HeldReason.noAccount
         ) =>
           true,
+        NothingShown() => true,
         HeldOnCanvas() ||
         SavedToLibrary() ||
         QueuedForServer() ||
@@ -1108,6 +1123,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   void setStateForTest(StrategyPageSessionState newState) {
     state = newState;
+    final strategyId = ref.read(strategyProvider).strategyId;
+    final pageId = newState.activePageId;
+    if (strategyId != null && pageId != null) {
+      ref.read(canvasShowsProvider.notifier).shown(strategyId, pageId);
+    }
   }
 
   void reset() {
@@ -1171,6 +1191,21 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         AppErrorReporter.reportInfo(
           'The edits on page $leftPageId could not be saved '
           '(${reason.name}); staying on it.',
+          source: 'strategy_page_session',
+        );
+        _showToast(ref.read(l10nProvider).strategyMsgPageEditsNotSaved);
+        return _PageSwitch.stayed;
+      case NothingShown() when !_anythingUnsavedOnCanvas():
+        break;
+      case NothingShown()
+          when source == StrategySource.cloud &&
+              leftPageId != null &&
+              _deletedOnThisDevice(leftPageId):
+        break;
+      case NothingShown():
+        AppErrorReporter.reportInfo(
+          'Page $leftPageId is not on the canvas, and the canvas has unsaved '
+          'edits; staying on it.',
           source: 'strategy_page_session',
         );
         _showToast(ref.read(l10nProvider).strategyMsgPageEditsNotSaved);
@@ -1331,6 +1366,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         applyStrategyEditorPageData(
           ref,
           pageData,
+          strategyId: strategyId,
           themeProfileId: themeProfileId,
           themeOverridePalette: themeOverridePalette,
           preserveHistory: preserveHistory,
@@ -1757,6 +1793,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final source = _resolvePageSource(strategyId, StrategySource.cloud);
       final pageData = await source.loadPage(pageId);
       if (_disposed || generation != _pageSessionGeneration) return;
+      if (source.loadedRemoteSnapshot?.header.publicId != strategyId) return;
       bool canApply() {
         if (_disposed || generation != _pageSessionGeneration) return false;
         final current = ref.read(strategyProvider);
@@ -2051,10 +2088,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
       final liveSync = ref.read(activePageLiveSyncProvider.notifier);
       final madeLive = liveSync.liveStampForEdits(activePageId);
-      final desiredOpsByEntityKey = liveSync.syncLocalPage(
-        strategyPublicId: strategyId,
-        pageId: activePageId,
-      );
+      final desiredOpsByEntityKey =
+          switch (readCanvas(ref, strategyId, activePageId)) {
+        final CanvasOf canvas => liveSync.syncLocalPage(
+            strategyPublicId: strategyId,
+            pageId: activePageId,
+            canvas: canvas,
+          ),
+        CanvasNotShown() => null,
+      };
       if (desiredOpsByEntityKey != null) {
         await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
               pageId: activePageId,

@@ -173,7 +173,7 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
   /// something was marked unsaved since the handover looked.
   void noteCanvasHandover(PageHandover handover, {required int marksBefore}) {
     final wasHeld = _canvasHeld;
-    _canvasHeld = handover is HeldOnCanvas;
+    _canvasHeld = handover is HeldOnCanvas || handover is NothingShown;
     if (_canvasHeld && (!state.isDirty || !state.hasPendingCloudSync)) {
       state = state.copyWith(isDirty: true, hasPendingCloudSync: true);
     }

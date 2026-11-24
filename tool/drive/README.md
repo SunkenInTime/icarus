@@ -141,6 +141,14 @@ Every run logs `FRAMES whole run`: the frames drawn, the worst one from the star
 
 At the end of a run the driver closes the store and logs `STORE closed`.
 
+`scripts/open-race-leave-local.json` races a strategy switch against a page click, the way a fast player can. Its step `{"raceLeave": b, "from": a, "page": p, "switcherAt": [x, y], "runs": n?, "unusedPictures": k?, "expectEmptied": m?}` does this n times (50 by default):
+1. Opens strategy a.
+2. Leaves k unused picture files (20 by default) in b's folder, so the open has cleanup to do.
+3. Opens the quick switcher at `switcherAt` and clicks b.
+4. One frame later, once the switcher has closed, clicks a's page p in the pages bar.
+
+It times the open from inside the app, with provider listeners rather than polling. For each run it logs `RACE run`: whether a's first page was saved without its agents, when the canvas was cleared, when the second click landed, and when b became the open strategy. The window is the time between the clear and that moment. Then it puts a back as it was. `RACE summary` gives the count and the window's median and worst. With `expectEmptied` the step fails unless the count matches.
+
 `--kill-after-seconds S` (Linux only) kills the main instance with SIGKILL S seconds after it starts, as a crash would. Start the next run with `--hive-store <that run's out>/store-main` and `scripts/library-store-shadow.json` to see the copy pick up where it stopped.
 
 ## Editor actions as ops

@@ -9,24 +9,17 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/sort_index_order.dart';
-import 'package:icarus/providers/ability_provider.dart';
-import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
-import 'package:icarus/providers/drawing_provider.dart';
-import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
-import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
@@ -37,7 +30,9 @@ sealed class PageHandover {
 }
 
 final class SavedToLibrary extends PageHandover {
-  const SavedToLibrary();
+  const SavedToLibrary(this.canvas);
+
+  final CanvasOf canvas;
 }
 
 final class QueuedForServer extends PageHandover {
@@ -46,6 +41,10 @@ final class QueuedForServer extends PageHandover {
 
 final class NothingToHandOver extends PageHandover {
   const NothingToHandOver();
+}
+
+final class NothingShown extends PageHandover {
+  const NothingShown();
 }
 
 final class HeldOnCanvas extends PageHandover {
@@ -64,7 +63,7 @@ enum HeldReason {
 }
 
 PageHandover _settled(PageHandover handover, {required bool anythingUnsaved}) =>
-    handover is HeldOnCanvas && !anythingUnsaved
+    (handover is HeldOnCanvas || handover is NothingShown) && !anythingUnsaved
         ? const NothingToHandOver()
         : handover;
 
@@ -147,44 +146,49 @@ class LocalStrategyPageSource implements StrategyPageSource {
   }
 
   @override
-  Future<PageHandover> flushCurrentPage() async => _settled(
-        await _writeCurrentPage(),
-        anythingUnsaved: _anythingUnsaved(ref),
-      );
+  Future<PageHandover> flushCurrentPage() async {
+    final stored = const LocalLibrary().storedStrategy(strategyId);
+    final written = activePageId() ?? stored?.pages.firstOrNull?.id;
+    return switch (readCanvas(ref, strategyId, written)) {
+      CanvasNotShown() => const NothingShown(),
+      final CanvasOf canvas => _settled(
+          await _writeCurrentPage(canvas),
+          anythingUnsaved: _anythingUnsaved(ref),
+        ),
+    };
+  }
 
-  Future<PageHandover> _writeCurrentPage() async {
+  Future<PageHandover> _writeCurrentPage(CanvasOf canvas) async {
     final strategy = const LocalLibrary().storedStrategy(strategyId);
     if (strategy == null) {
       return const HeldOnCanvas(HeldReason.strategyMissing);
     }
 
-    final pageId = activePageId() ?? strategy.pages.firstOrNull?.id;
-    final index = strategy.pages.indexWhere((page) => page.id == pageId);
+    final index = strategy.pages.indexWhere((page) => page.id == canvas.pageId);
     if (index < 0) {
       return const HeldOnCanvas(HeldReason.pageMissing);
     }
 
     final updatedPage = strategy.pages[index].copyWith(
-      drawingData: ref.read(drawingProvider).elements,
-      agentData: ref.read(agentProvider),
-      abilityData: ref.read(abilityProvider),
-      textData: ref.read(textProvider.notifier).snapshotForPersistence(),
-      imageData: ref.read(placedImageProvider).images,
-      utilityData: ref.read(utilityProvider),
-      isAttack: ref.read(mapProvider).isAttack,
-      settings: ref.read(strategySettingsProvider),
-      lineUpGraph: ref.read(lineUpProvider).graph,
+      drawingData: canvas.drawings,
+      agentData: canvas.agents,
+      abilityData: canvas.abilities,
+      textData: canvas.texts,
+      imageData: canvas.images,
+      utilityData: canvas.utilities,
+      isAttack: canvas.isAttack,
+      settings: canvas.settings,
+      lineUpGraph: canvas.lineUpGraph,
     );
 
-    final strategyTheme = ref.read(strategyThemeProvider);
     final updatedPages = [...strategy.pages]..[index] = updatedPage;
     final updated = strategy.copyWith(
       pages: updatedPages,
-      mapData: ref.read(mapProvider).currentMap,
-      themeProfileId: strategyTheme.profileId,
-      clearThemeProfileId: strategyTheme.profileId == null,
-      themeOverridePalette: strategyTheme.overridePalette,
-      clearThemeOverridePalette: strategyTheme.overridePalette == null,
+      mapData: canvas.map,
+      themeProfileId: canvas.themeProfileId,
+      clearThemeProfileId: canvas.themeProfileId == null,
+      themeOverridePalette: canvas.themeOverridePalette,
+      clearThemeOverridePalette: canvas.themeOverridePalette == null,
       lastEdited: DateTime.now(),
     );
     try {
@@ -198,7 +202,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       );
       return const HeldOnCanvas(HeldReason.libraryWriteFailed);
     }
-    return const SavedToLibrary();
+    return SavedToLibrary(canvas);
   }
 }
 
@@ -368,13 +372,26 @@ class CloudStrategyPageSource implements StrategyPageSource {
     if (pageId == null) {
       return const HeldOnCanvas(HeldReason.pageMissing);
     }
+    final canvas = switch (readCanvas(ref, strategyId, pageId)) {
+      final CanvasOf shown => shown,
+      CanvasNotShown() => null,
+    };
+    if (canvas == null) return const NothingShown();
 
-    await ref.read(strategyProvider.notifier).syncStrategyMetadata();
+    await ref.read(strategyProvider.notifier).syncStrategyMetadata(
+          canvas: canvas,
+        );
 
+    final page = switch (readCanvas(ref, strategyId, pageId)) {
+      final CanvasOf shown => shown,
+      CanvasNotShown() => null,
+    };
+    if (page == null) return const NothingShown();
     final desiredOpsByEntityKey =
         ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
               strategyPublicId: strategyId,
               pageId: pageId,
+              canvas: page,
             );
     if (desiredOpsByEntityKey == null) {
       return const HeldOnCanvas(HeldReason.noServerRead);

@@ -19,6 +19,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/const/settings.dart';
@@ -121,8 +122,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     } on OpenGaveWay {
       // The newer open, or the close, owns the outcome.
       return false;
+    } finally {
+      if (attempt > _settledAttempt) _settledAttempt = attempt;
     }
   }
+
+  int _settledAttempt = 0;
+
+  bool get isOpening => _settledAttempt < _openAttempt;
 
   @override
   StrategyState build() {
@@ -265,6 +272,16 @@ class StrategyProvider extends Notifier<StrategyState> {
                   : [...session.availablePageIds, activePageId],
             ),
           );
+    }
+    final strategyId = state.strategyId;
+    final shownPageId = ref.read(strategyPageSessionProvider).activePageId ??
+        switch (strategyId) {
+          final id? when LocalLibrary.isOpen =>
+            const LocalLibrary().storedStrategy(id)?.pages.firstOrNull?.id,
+          _ => null,
+        };
+    if (state.isOpen && strategyId != null && shownPageId != null) {
+      ref.read(canvasShowsProvider.notifier).shown(strategyId, shownPageId);
     }
   }
 
@@ -425,13 +442,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           ? null
           : (await opening.wait(setStorageDirectory(snapshot.header.publicId)))
               .path;
-      state = state.copyWith(
+      _becomeOpen(state.copyWith(
         strategyId: snapshot.header.publicId,
         strategyName: snapshot.header.name,
         source: StrategySource.cloud,
         storageDirectory: storageDirectory,
         isOpen: true,
-      );
+      ));
 
       await opening.wait(
         ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
@@ -667,21 +684,33 @@ class StrategyProvider extends Notifier<StrategyState> {
   ///   differs from the server's was changed by a teammate: it is not sent,
   ///   and the canvas takes the server's when the page is next brought up
   ///   to date.
-  Future<void> syncStrategyMetadata({bool flushImmediately = false}) async {
+  Future<void> syncStrategyMetadata({
+    bool flushImmediately = false,
+    CanvasOf? canvas,
+  }) async {
     final strategyId = state.strategyId;
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    final mapData = Maps.mapNames[ref.read(mapProvider).currentMap];
     if (strategyId == null ||
         snapshot == null ||
-        snapshot.header.publicId != strategyId ||
-        mapData == null) {
+        snapshot.header.publicId != strategyId) {
       return;
     }
-    final strategyTheme = ref.read(strategyThemeProvider);
-    final themeOverridePalette = strategyTheme.overridePalette?.toJson();
+    final shown = canvas ??
+        switch (readCanvas(
+          ref,
+          strategyId,
+          ref.read(canvasShowsProvider.notifier).pageShownOf(strategyId),
+        )) {
+          final CanvasOf read => read,
+          CanvasNotShown() => null,
+        };
+    if (shown == null || shown.strategyId != strategyId) return;
+    final mapData = Maps.mapNames[shown.map];
+    if (mapData == null) return;
+    final themeOverridePalette = shown.themeOverridePalette?.toJson();
     bool shows(RemoteStrategyHeader header) => header.shows(
           mapData: mapData,
-          themeProfileId: strategyTheme.profileId,
+          themeProfileId: shown.themeProfileId,
           themeOverridePalette: themeOverridePalette,
         );
     final changed =
@@ -721,8 +750,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         ..remove('clearThemeProfileId')
         ..remove('themeOverridePalette')
         ..remove('clearThemeOverridePalette');
-      if (strategyTheme.profileId != null) {
-        payload['themeProfileId'] = strategyTheme.profileId;
+      if (shown.themeProfileId != null) {
+        payload['themeProfileId'] = shown.themeProfileId;
       } else {
         payload['clearThemeProfileId'] = true;
       }
@@ -840,7 +869,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           final handover = await ref
               .read(strategyPageSessionProvider.notifier)
               .flushCurrentPage(flushImmediately: true);
-          handedOver = handover is! HeldOnCanvas;
+          handedOver = switch (handover) {
+            HeldOnCanvas() || NothingShown() => false,
+            SavedToLibrary() ||
+            QueuedForServer() ||
+            NothingToHandOver() =>
+              true,
+          };
           cloudSaved = id;
         } else {
           cloudSaved = null;
@@ -880,9 +915,18 @@ class StrategyProvider extends Notifier<StrategyState> {
     return customDirectory;
   }
 
+  void _becomeOpen(StrategyState opened) {
+    _withoutPersistenceTracking(() {
+      ref.read(actionProvider.notifier).resetActionState();
+    });
+    state = opened;
+  }
+
   Future<void> clearCurrentStrategy() async {
     _openAttempt += 1;
+    _settledAttempt = _openAttempt;
     cancelPendingSave();
+    ref.read(canvasShowsProvider.notifier).emptied();
     ref.read(strategyThemeProvider.notifier).fromStrategy();
     ref.read(strategySaveStateProvider.notifier).reset();
     ref.read(strategyPageSessionProvider.notifier).reset();
@@ -904,13 +948,36 @@ class StrategyProvider extends Notifier<StrategyState> {
     state = state.copyWith(activePageId: pageID);
   }
 
+  CanvasOf? _canvasOnScreen() => switch (state.strategyId) {
+        final strategyId? => _canvasOf(
+            strategyId,
+            ref.read(strategyPageSessionProvider).activePageId,
+          ),
+        null => null,
+      };
+
+  bool ignoresClick(String pageId) {
+    if (!isOpening) return false;
+    ref
+        .read(canvasShowsProvider.notifier)
+        .clickIgnored(state.strategyId, pageId);
+    return true;
+  }
+
+  Future<void> selectPage(String pageId) async {
+    if (ignoresClick(pageId)) return;
+    await setActivePageAnimated(pageId);
+  }
+
   Future<void> backwardPage() async {
+    if (ignoresClick('previous')) return;
     await ref
         .read(strategyPageSessionProvider.notifier)
         .switchRelativePage(PageSwitchDirection.previous);
   }
 
   Future<void> forwardPage() async {
+    if (ignoresClick('next')) return;
     await ref
         .read(strategyPageSessionProvider.notifier)
         .switchRelativePage(PageSwitchDirection.next);
@@ -1100,6 +1167,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final handover = await _syncCurrentPageToHive();
     if (handover is HeldOnCanvas) return PageCopyResult.notSaved;
+    if (handover is NothingShown) return PageCopyResult.unavailable;
 
     final strategyId = state.strategyId;
     if (strategyId == null) return PageCopyResult.unavailable;
@@ -1243,20 +1311,21 @@ class StrategyProvider extends Notifier<StrategyState> {
             ..putIfAbsent('elementType', () => kind),
         );
 
-    for (final agent in ref.read(agentProvider)) {
+    final canvas = _canvasOnScreen();
+    if (canvas == null) return null;
+    for (final agent in canvas.agents) {
       if (agent.id == widgetId) return element('agent', agent.toJson());
     }
-    for (final ability in ref.read(abilityProvider)) {
+    for (final ability in canvas.abilities) {
       if (ability.id == widgetId) return element('ability', ability.toJson());
     }
-    for (final text
-        in ref.read(textProvider.notifier).snapshotForPersistence()) {
+    for (final text in canvas.texts) {
       if (text.id == widgetId) return element('text', text.toJson());
     }
-    for (final utility in ref.read(utilityProvider)) {
+    for (final utility in canvas.utilities) {
       if (utility.id == widgetId) return element('utility', utility.toJson());
     }
-    for (final image in ref.read(placedImageProvider).images) {
+    for (final image in canvas.images) {
       if (image.id == widgetId) {
         return element('image', cloudImagePayloadFromPlacedImage(image));
       }
@@ -1520,7 +1589,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     required PageTransitionDirection direction,
   }) async {
     final strategyId = state.strategyId;
-    final copy = ref.read(lineUpProvider).graph.copyOfLinks(linkIds);
+    final canvas = _canvasOnScreen();
+    if (canvas == null) return PageCopyResult.unavailable;
+    final copy = canvas.lineUpGraph.copyOfLinks(linkIds);
     if (strategyId == null || copy.links.isEmpty) {
       return PageCopyResult.unavailable;
     }
@@ -1560,6 +1631,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     final handover = await _syncCurrentPageToHive();
     if (handover is HeldOnCanvas) return PageCopyResult.notSaved;
+    if (handover is NothingShown) return PageCopyResult.unavailable;
     if (state.strategyId != strategyId) return PageCopyResult.unavailable;
     final pages = _orderedLocalPages();
     final currentIndex = pages.indexWhere(
@@ -1876,6 +1948,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (copyHere != null &&
           (_cloudCannotAnswer() || pages[sourceIndex].revision == null)) {
         // Offline, or the page on screen isn't on the server for it to copy.
+        final canvas = _canvasOnScreen();
+        if (canvas == null) {
+          return (unsavedEdits: true, waitingForCloud: false, notSaved: true);
+        }
         final queued = await queue.enqueuePageCopy(
           PageAddOp(
             opId: const Uuid().v4(),
@@ -1883,8 +1959,8 @@ class StrategyProvider extends Notifier<StrategyState> {
             payload: {
               'name': name ?? 'Page ${nextIndex + 1}',
               'isAutoNamed': isAutoNamed,
-              'isAttack': ref.read(mapProvider).isAttack,
-              'settings': ref.read(strategySettingsProvider).toJson(),
+              'isAttack': canvas.isAttack,
+              'settings': canvas.settings.toJson(),
             },
             sortIndex: nextIndex,
             expectedStrategyRevision: _drawnStrategyRevision(snapshot),
@@ -1898,6 +1974,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         _markCloudWorkPending();
         return turnToCopyHere();
       }
+      final shown = _canvasOnScreen();
+      if (shown == null) {
+        return (unsavedEdits: true, waitingForCloud: false, notSaved: true);
+      }
       final answer = await _sendAndAwaitAnswer(
         PageAddOp(
           opId: const Uuid().v4(),
@@ -1906,7 +1986,7 @@ class StrategyProvider extends Notifier<StrategyState> {
             'name': name ?? 'Page ${nextIndex + 1}',
             'isAutoNamed': isAutoNamed,
             'isAttack': pages.isNotEmpty ? pages[sourceIndex].isAttack : true,
-            'settings': ref.read(strategySettingsProvider).toJson(),
+            'settings': shown.settings.toJson(),
           },
           sortIndex: nextIndex,
           expectedStrategyRevision: _drawnStrategyRevision(snapshot),
@@ -2190,10 +2270,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (newStrat == null) {
         return false;
       }
-      _withoutPersistenceTracking(() {
-        ref.read(actionProvider.notifier).resetActionState();
-      });
-
       List<PlacedImage> pageImageData = [];
       for (final page in newStrat.pages) {
         pageImageData.addAll(page.imageData);
@@ -2232,13 +2308,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       // owner disables, must not reach this editor.
       final remote = ref.read(remoteEditorSnapshotProvider.notifier);
       if (remote.activeStrategyPublicId != null) remote.clear();
-      state = StrategyState(
+      _becomeOpen(StrategyState(
         strategyId: migratedStrategy.id,
         strategyName: migratedStrategy.name,
         source: StrategySource.local,
         storageDirectory: newDir?.path,
         isOpen: true,
-      );
+      ));
       ref.read(strategySaveStateProvider.notifier).reset();
       await opening.wait(
         ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
@@ -2700,20 +2776,43 @@ class StrategyProvider extends Notifier<StrategyState> {
     _requireLocalLibrary('save');
     final dirtyMarksSaved =
         ref.read(strategySaveStateProvider.notifier).dirtyMarks;
-    await _saveLocalPageOrThrow();
+    final unsaved = ref.read(strategySaveStateProvider).isDirty ||
+        ref.read(textDraftProvider).isNotEmpty;
+    final pageId = ref.read(strategyPageSessionProvider).activePageId ??
+        const LocalLibrary().storedStrategy(id)?.pages.firstOrNull?.id;
+    if (_canvasOf(id, pageId) == null) {
+      if (unsaved) {
+        throw StateError(
+          'The canvas does not show this strategy, so the work on the canvas '
+          'was not saved to it.',
+        );
+      }
+      return;
+    }
+    switch (await _syncCurrentPageToHive()) {
+      case HeldOnCanvas(:final reason):
+        throw StateError(
+          'The page on screen could not be saved: ${reason.name}.',
+        );
+      case NothingShown():
+        throw StateError('The canvas stopped showing the page being saved.');
+      case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
+        break;
+    }
 
+    final canvas = _canvasOf(id, pageId);
+    if (canvas == null) return;
     final StrategyData? savedStrat = const LocalLibrary().storedStrategy(id);
 
     if (savedStrat == null) return;
 
-    final strategyTheme = ref.read(strategyThemeProvider);
     final currentStrategy = savedStrat.copyWith(
-      mapData: ref.read(mapProvider).currentMap,
+      mapData: canvas.map,
       lastEdited: DateTime.now(),
-      themeProfileId: strategyTheme.profileId,
-      clearThemeProfileId: strategyTheme.profileId == null,
-      themeOverridePalette: strategyTheme.overridePalette,
-      clearThemeOverridePalette: strategyTheme.overridePalette == null,
+      themeProfileId: canvas.themeProfileId,
+      clearThemeProfileId: canvas.themeProfileId == null,
+      themeOverridePalette: canvas.themeOverridePalette,
+      clearThemeOverridePalette: canvas.themeOverridePalette == null,
     );
 
     (await const LocalLibrary().saveStrategyFields(currentStrategy)).orThrow();
@@ -2727,9 +2826,21 @@ class StrategyProvider extends Notifier<StrategyState> {
     log("Save to hive was called");
   }
 
+  CanvasOf? _canvasOf(String strategyId, String? pageId) =>
+      switch (readCanvas(ref, strategyId, pageId)) {
+        final CanvasOf shown => shown,
+        CanvasNotShown() => null,
+      };
+
   Future<void> _saveLocalPageOrThrow() async {
-    if (await _syncCurrentPageToHive() case HeldOnCanvas(:final reason)) {
-      throw StateError('The page on screen could not be saved: ${reason.name}.');
+    switch (await _syncCurrentPageToHive()) {
+      case HeldOnCanvas(:final reason):
+        throw StateError(
+            'The page on screen could not be saved: ${reason.name}.');
+      case NothingShown():
+        throw StateError('No page of this strategy is on the canvas yet.');
+      case SavedToLibrary() || QueuedForServer() || NothingToHandOver():
+        break;
     }
   }
 
@@ -2751,7 +2862,8 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> applyMarkerSizesToAllPages() async {
     if (state.strategyName == null) return;
 
-    final target = ref.read(strategySettingsProvider);
+    final target = _canvasOnScreen()?.settings;
+    if (target == null) return;
     await _applySettingsToAllPages(
       (settings) => settings.copyWith(
         agentSize: target.agentSize,
@@ -2772,7 +2884,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// between visits (a page switch writes there the same way), so they are
   /// flipped in place.
   Future<void> switchSide({required bool allPages}) async {
-    final isAttack = !ref.read(mapProvider).isAttack;
+    final shown = _canvasOnScreen();
+    if (shown == null) return;
+    final isAttack = !shown.isAttack;
     ref.read(mapProvider.notifier).setAttack(isAttack);
     ActionProvider.editFollower?.onEdit(
       (pageId) => [PageSideSet(pageId, isAttack: isAttack)],
@@ -2891,6 +3005,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     StrategySettings Function(StrategySettings settings) transform,
   ) async {
     if (!_currentStrategyCanEditPages()) return;
+    final startedOn = state.strategyId;
     if (_currentStrategyIsCloud()) {
       final strategyId = state.strategyId;
       if (strategyId == null) {
@@ -2934,7 +3049,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     const library = LocalLibrary();
     final strategyId = state.strategyId;
-    if (strategyId == null) return;
+    if (strategyId == null || strategyId != startedOn) return;
+    final canvas = _canvasOnScreen();
+    if (canvas == null) return;
     final strat = library.storedStrategy(strategyId);
     if (strat == null || strat.pages.isEmpty) return;
 
@@ -2943,14 +3060,13 @@ class StrategyProvider extends Notifier<StrategyState> {
         page.copyWith(settings: transform(page.settings)),
     ];
 
-    final strategyTheme = ref.read(strategyThemeProvider);
     final updated = strat.copyWith(
       pages: newPages,
-      mapData: ref.read(mapProvider).currentMap,
-      themeProfileId: strategyTheme.profileId,
-      clearThemeProfileId: strategyTheme.profileId == null,
-      themeOverridePalette: strategyTheme.overridePalette,
-      clearThemeOverridePalette: strategyTheme.overridePalette == null,
+      mapData: canvas.map,
+      themeProfileId: canvas.themeProfileId,
+      clearThemeProfileId: canvas.themeProfileId == null,
+      themeOverridePalette: canvas.themeOverridePalette,
+      clearThemeOverridePalette: canvas.themeOverridePalette == null,
       lastEdited: DateTime.now(),
     );
     ActionProvider.editFollower?.onPagesChanged(

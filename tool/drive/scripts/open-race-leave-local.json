@@ -1,0 +1,21 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"newLocal": "bind", "name": "Race left {run}"},
+  {"newLocal": "ascent", "name": "Race opened {run}"},
+  {"wait": 3},
+  {"tapText": "Race left {run}"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"addAgent": "a1-{run}", "agent": "jett", "at": [655, 352]},
+  {"addAgent": "a2-{run}", "agent": "sova", "at": [820, 420]},
+  {"hoverAt": [300, 150]},
+  {"wait": 1},
+  {"tapAt": [33, 857]},
+  {"wait": 3},
+  {"tapAt": [206, 857]},
+  {"wait": 2},
+  {"raceLeave": "Race opened {run}", "from": "Race left {run}", "page": "Page 2", "switcherAt": [850, 19], "runs": 50, "unusedPictures": 20, "expectEmptied": 0},
+  {"exit": 1}
+]

@@ -146,7 +146,10 @@ Future<SameAccountCheck> sendCloudWork(
       // chip saying syncing.
       final handover =
           await read(strategyPageSessionProvider.notifier).flushCurrentPage();
-      canvasQueued = handover is! HeldOnCanvas;
+      canvasQueued = switch (handover) {
+        HeldOnCanvas() || NothingShown() => false,
+        SavedToLibrary() || QueuedForServer() || NothingToHandOver() => true,
+      };
       // Sends what is queued: once at the start, and again once the canvas
       // is in. Each send skips the retry backoff, so not on every check.
       // Not awaited: a stalled request must not hold the copy past the

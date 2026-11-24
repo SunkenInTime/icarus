@@ -308,9 +308,7 @@ Future<void> stepCommunityPage(WidgetRef ref, int delta) async {
   final index = pages.indexWhere((page) => page.publicId == activeId);
   final next = index + delta;
   if (index < 0 || next < 0 || next >= pages.length) return;
-  await ref
-      .read(strategyProvider.notifier)
-      .setActivePageAnimated(pages[next].publicId);
+  await ref.read(strategyProvider.notifier).selectPage(pages[next].publicId);
 }
 
 /// Steps through the post's pages: the quick look's pages bar. The quick

@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/services/debug_breadcrumbs.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -398,6 +399,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
   // Hard reset used by strategy/page lifecycle flows. This is not undoable.
   void resetActionState() {
+    ref.read(canvasShowsProvider.notifier).emptied();
     poppedItems = [];
     ref.read(agentProvider.notifier).clearAll();
     ref.read(abilityProvider.notifier).clearAll();
