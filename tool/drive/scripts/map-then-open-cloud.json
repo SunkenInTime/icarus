@@ -1,0 +1,19 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"signIn": true},
+  {"wait": 4},
+  {"newCloudFolder": "Map race {run}"},
+  {"openCloudFolder": "Map race {run}"},
+  {"wait": 3},
+  {"newCloud": "Map race B {run}", "map": "haven"},
+  {"newCloud": "Map race A {run}", "map": "lotus"},
+  {"wait": 4},
+  {"tapText": "Map race A {run}"},
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"mapThenOpen": "Map race B {run}", "from": "Map race A {run}", "runs": 50, "by": "back", "maps": ["abyss", "bind", "corrode", "summit", "sunset"], "restAt": [600, 450], "shots": "{out}"},
+  {"mapThenOpen": "Map race B {run}", "from": "Map race A {run}", "runs": 50, "by": "open", "maps": ["abyss", "bind", "corrode", "summit", "sunset"], "restAt": [600, 450], "shots": "{out}"},
+  {"exit": 1}
+]
