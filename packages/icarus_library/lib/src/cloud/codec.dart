@@ -203,7 +203,7 @@ Map<String, Object?> _refusalToJson(ServerRefusal refusal) => switch (refusal) {
       'current': {
         'target': target.name,
         'revision': revision,
-        'life': ?life,
+        'life': life,
         'value': value.toJson(),
       },
   },
@@ -412,12 +412,6 @@ Decoded<SeenPage> _seen(Object? json) => JsonFields.read(json, 'seen page', (
   );
 });
 
-Object? _snapshotLife(Object? current) => switch (current) {
-  {'life': final num life} when isSafeWhole(life) && life >= 1 => life.toInt(),
-  {'life': _} => false,
-  _ => null,
-};
-
 Decoded<ServerRefusal> _refusal(Object? json) =>
     JsonFields.read(json, 'refusal', (fields) {
       if (fields.has('rejected')) {
@@ -430,17 +424,16 @@ Decoded<ServerRefusal> _refusal(Object? json) =>
             'target': final String target,
             'revision': final num revision,
             'value': final Map<String, Object?> value,
+            'life': final num life,
           }
               when isSafeWhole(revision) &&
-                  SnapshotTarget.values.asNameMap().containsKey(target) &&
-                  _snapshotLife(fields.json['current']) != false =>
+                  isSafeWhole(life) &&
+                  life >= 1 &&
+                  SnapshotTarget.values.asNameMap().containsKey(target) =>
             ServerSnapshot(
               target: SnapshotTarget.values.asNameMap()[target]!,
               revision: revision.toInt(),
-              life: switch (_snapshotLife(fields.json['current'])) {
-                final int life => life,
-                _ => null,
-              },
+              life: life.toInt(),
               value: value,
             ),
           null => const NoServerCopy(),

@@ -97,7 +97,23 @@ int? visibleRevision(StrategyRowSet rows, StrategyOp op) =>
         revisionOf(rows.lineupGroup(lineupPublicId)),
     };
 
+const firstLife = 1761955200000;
+
+R lived<R extends Row>(R row) => bornIn(row, firstLife) as R;
+
+int lifeOfChecked(StrategyRowSet rows, StrategyOp op) {
+  final Row? row = switch (checkTargetOf(op)) {
+    StrategyTarget() => rows.strategy,
+    PageTarget(:final pagePublicId) => rows.page(pagePublicId),
+    SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
+    ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+    LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+  };
+  return (row == null ? null : createdAtOf(row)) ?? firstLife;
+}
+
 final class FakeServer {
+  int nextLife = firstLife + 1;
   final calls = <ServerCall>[];
   final receipts = <(String, String, String), OpAnswer>{};
   final appliedTimes = <(String, String), int>{};
@@ -148,11 +164,12 @@ final class FakeServer {
   OpAnswer _applyOne(String strategy, String client, StrategyOp op) {
     final key = (strategy, client, op.opId);
     switch (receipts[key]) {
-      case AppliedAnswer(:final revision):
+      case AppliedAnswer(:final revision, :final life):
         return NoopAnswer(
           op.opId,
           revision: revision,
           replay: NoopReplay.appliedWhenFirstReceived,
+          life: life,
         );
       case final answer?:
         return answer;
@@ -163,13 +180,19 @@ final class FakeServer {
     final OpAnswer answer;
     switch (applyOp(now, op)) {
       case final OpApplied done:
-        final next = rows[strategy] = now.withRows(done.rows);
+        final next = rows[strategy] = now.withRows([
+          for (final row in done.rows) bornIn(row, nextLife++),
+        ]);
         appliedTimes.update(
           (strategy, op.opId),
           (times) => times + 1,
           ifAbsent: () => 1,
         );
-        answer = AppliedAnswer(op.opId, revision: visibleRevision(next, op)!);
+        answer = AppliedAnswer(
+          op.opId,
+          revision: visibleRevision(next, op)!,
+          life: lifeOfChecked(next, op),
+        );
       case OpUnchanged():
         final revision = visibleRevision(now, op);
         answer = revision == null
@@ -178,6 +201,7 @@ final class FakeServer {
                 op.opId,
                 revision: revision,
                 replay: NoopReplay.notApplied,
+                life: lifeOfChecked(now, op),
               );
       case OpRefused(refusal: Rejected(:final reason)):
         answer = RejectedAnswer(op.opId, reason, const NoServerCopy());
@@ -259,8 +283,8 @@ final class FakeServer {
       );
     return HeaderRead(
       strategy: held.strategy as StrategyRow,
-      pages: pages,
-      settings: [...held.settings],
+      pages: [for (final page in pages) lived(page)],
+      settings: [for (final row in held.settings) lived(row)],
     );
   }
 
@@ -282,9 +306,11 @@ final class FakeServer {
     if (pageRow == null) return StoreReadAnswered(PageGone(page));
     return StoreReadAnswered(
       PageRead(
-        page: pageRow,
-        elements: [...held.elementsOn(page)],
-        lineupGroups: [...held.lineupGroupsOn(page)],
+        page: lived(pageRow),
+        elements: [for (final row in held.elementsOn(page)) lived(row)],
+        lineupGroups: [
+          for (final row in held.lineupGroupsOn(page)) lived(row),
+        ],
       ),
     );
   }

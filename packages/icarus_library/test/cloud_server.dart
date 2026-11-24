@@ -22,7 +22,10 @@ Map<String, Object?> liveContent(StrategyRowSet rows) => {
       '${row.key}': switch (row.toJson()) {
         final Map<String, Object?> json => {
           for (final MapEntry(:key, :value) in json.entries)
-            if (key != 'revision' && key != 'updatedAt' && key != 'sortIndex')
+            if (key != 'revision' &&
+                key != 'updatedAt' &&
+                key != 'sortIndex' &&
+                key != 'createdAt')
               key: value,
         },
         final other => other,
@@ -47,6 +50,7 @@ final class Server {
   final firstClient = <String, String>{};
   int received = 0;
   int sends = 0;
+  int nextLife = addedLife;
 
   Server copy() => Server()
     ..rows = rows
@@ -55,6 +59,7 @@ final class Server {
     ..firstClient.addAll(firstClient)
     ..received = received
     ..sends = sends
+    ..nextLife = nextLife
     ..appliedBeforePurge.addAll(appliedBeforePurge);
 
   final appliedBeforePurge = <String>{};
@@ -79,6 +84,10 @@ final class Server {
       ],
     );
   }
+
+  void write(OpApplied done) => rows = rows.withRows([
+    for (final row in done.rows) bornIn(row, nextLife++),
+  ]);
 
   OpAnswer apply(String client, StrategyOp op, {int? expectedLife}) {
     sends++;
@@ -119,12 +128,12 @@ final class Server {
     var applied = false;
     switch (applyOp(rows, op)) {
       case final OpApplied done:
-        rows = rows.withRows(done.rows);
+        write(done);
         applied = true;
         answer = AppliedAnswer(
           op.opId,
           revision: visibleRevision(rows, op)!,
-          life: lifeForTest(rows, op),
+          life: lifeOfCheckedRowForTest(rows, op)!,
         );
       case OpUnchanged():
         final revision = visibleRevision(rows, op);
@@ -134,7 +143,7 @@ final class Server {
                 op.opId,
                 revision: revision,
                 replay: NoopReplay.notApplied,
-                life: lifeForTest(rows, op),
+                life: lifeOfCheckedRowForTest(rows, op)!,
               );
       case OpRefused(refusal: Rejected(:final reason)):
         answer = RejectedAnswer(op.opId, reason, const NoServerCopy());

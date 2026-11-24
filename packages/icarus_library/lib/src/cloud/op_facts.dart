@@ -451,10 +451,11 @@ String strategyDigest(StrategyRow strategy, Iterable<PageRow> pages) {
   });
 }
 
-Version? versionOfRow(Row row) => switch (revisionOfRow(row)) {
-  final revision? => Version(createdAtOf(row) ?? unknownLife, revision),
-  null => null,
-};
+Version? versionOfRow(Row row) =>
+    switch ((createdAtOf(row), revisionOfRow(row))) {
+      (final life?, final revision?) => Version(life, revision),
+      _ => null,
+    };
 
 int? revisionOfRow(Row row) => switch (row) {
   ReadableStrategy(:final revision) ||

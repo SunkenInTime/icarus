@@ -984,7 +984,7 @@ final class Model {
         ),
       };
       if (applyOp(server.rows, op) case final OpApplied done) {
-        server.rows = server.rows.withRows(done.rows);
+        server.write(done);
         count('teammate ${op.type.wireName}');
       } else {
         return;
@@ -1025,7 +1025,7 @@ final class Model {
         sortIndex: row.sortIndex,
       );
       if (applyOp(server.rows, back) case final OpApplied done) {
-        server.rows = server.rows.withRows(done.rows);
+        server.write(done);
         teammateEdited = true;
         count('teammate puts a purged element back at revision 1');
       }

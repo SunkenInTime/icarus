@@ -748,7 +748,7 @@ final class StoreModel {
       expected: server.rows.strategy.revision,
     );
     if (applyOp(server.rows, delete) case final OpApplied done) {
-      server.rows = server.rows.withRows(done.rows);
+      server.write(done);
       teammateEdited = true;
       log.add('teammate deletes $source under a queued move');
       await readOne(PageGone(source), 'page $source is gone');
@@ -1149,7 +1149,7 @@ final class StoreModel {
           );
     if (op case ElementPatchOp(pagePublicId: _?)) count('server moves');
     if (applyOp(server.rows, op) case final OpApplied done) {
-      server.rows = server.rows.withRows(done.rows);
+      server.write(done);
       teammateEdited = true;
       log.add('teammate moves ${target.publicId}');
     }
@@ -1253,7 +1253,11 @@ final class StoreModel {
         () => store.record(otherAccount, strategyId, [
           OpAnswered(
             attempt,
-            AppliedAnswer(someEntry, revision: target?.revision ?? 1),
+            AppliedAnswer(
+              someEntry,
+              revision: target?.revision ?? 1,
+              life: fixtureLife,
+            ),
           ),
         ]),
       ),

@@ -360,8 +360,7 @@ final class Shown {
         raised[target] = version;
       }
       final elsewhere = next[target];
-      if (elsewhere != null &&
-          _outranks(elsewhere.version, shown.version)) {
+      if (elsewhere != null && _outranks(elsewhere.version, shown.version)) {
         continue;
       }
       next[target] = shown;

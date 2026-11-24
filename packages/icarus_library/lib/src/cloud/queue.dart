@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import '../json.dart';
 import '../ops.dart';
+import '../rows.dart';
 import 'events.dart';
 import 'fold.dart';
 import 'held_page_delete.dart';
@@ -1250,6 +1251,7 @@ Step _arrived(_Edit edit, ArrivedBase base) {
   }
   final before = edit.shown;
   edit.shown = edit.shown.take(base);
+  _predictionsBornIn(edit, base);
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -1340,16 +1342,91 @@ void _laterUnjustified(_Edit edit, PendingOp entry, LandedWork work) {
   }
 }
 
+void _predictionsBornIn(_Edit edit, ArrivedBase read) {
+  final rows = switch (read) {
+    HeaderRead(:final pages, :final settings) => <Row>[...pages, ...settings],
+    PageRead(:final elements, :final lineupGroups) => <Row>[
+      ...elements,
+      ...lineupGroups,
+    ],
+    _ => const <Row>[],
+  };
+  final lives = <Target, int>{
+    for (final row in rows)
+      if ((_targetOfRow(row), createdAtOf(row)) case (
+        final target?,
+        final life?,
+      ))
+        target: life,
+  };
+  for (final entry in [...edit.entries]) {
+    if (entry case PendingOp(
+      authored: final AuthoredRow authored,
+    ) when authored.life == null) {
+      if (lives[targetOf(entry.op)] case final life?) {
+        edit.put(entry.copyWith(authored: _authoredInLife(authored, life)));
+      }
+    }
+  }
+}
+
+Target? _targetOfRow(Row row) => switch (row) {
+  PageRow(:final publicId) => PageTarget(publicId),
+  PageSettingsRow(:final pagePublicId) => SettingsTarget(pagePublicId),
+  ElementRow(:final publicId) => ElementTarget(publicId),
+  LineupGroupRow(:final publicId) => LineupTarget(publicId),
+  _ => null,
+};
+
+AuthoredRow _authoredInLife(AuthoredRow authored, int life) => AuthoredRow(
+  revision: authored.revision,
+  life: life,
+  digest: authored.digest,
+  payloadVersion: authored.payloadVersion,
+  produces: authored.produces?.inLife(life),
+  movedRow: authored.movedRow,
+);
+
+void _laterBornIn(
+  _Edit edit,
+  PendingOp entry,
+  ProducedRow predicted,
+  int life,
+) {
+  if (predicted.life case final named? when named != life) return;
+  final row = targetOf(entry.op);
+  var ahead = predicted;
+  for (final later in [...edit.entries]) {
+    if (later case PendingOp(
+      :final place,
+      authored: final AuthoredRow authored,
+    ) when place > entry.place && targetOf(later.op) == row) {
+      if (authored.life != null ||
+          authored.revision != ahead.revision ||
+          authored.digest != ahead.digest) {
+        return;
+      }
+      final born = _authoredInLife(authored, life);
+      edit.put(later.copyWith(authored: born));
+      final produces = born.produces;
+      if (produces == null) return;
+      ahead = produces;
+    }
+  }
+}
+
 Authored _withProduces(Authored authored, ProducedRow produces) =>
     switch (authored) {
       AuthoredRow(
         :final revision,
+        :final life,
         :final digest,
         :final payloadVersion,
         :final movedRow,
       ) =>
         AuthoredRow(
           revision: revision,
+          life: life,
           digest: digest,
           payloadVersion: payloadVersion,
           produces: produces,
@@ -1386,11 +1463,24 @@ Iterable<Target> _shownOn(Shown shown, String page) => [
 ];
 
 bool _alreadyShown(Shown shown, LandedWork work) {
+  final landedAt = work.version;
+  if (landedAt == null) return _resultSinceAnswer(shown, work);
   final shownAt = shown.highest[checkTargetOf(work.op)];
   if (shownAt == null) return false;
-  final landedAt = work.version;
   return _ownDelete(work) ? shownAt > landedAt : shownAt >= landedAt;
 }
+
+bool _resultSinceAnswer(Shown shown, LandedWork work) => switch (checkTargetOf(
+  work.op,
+)) {
+  StrategyTarget() => shown.fresh.listSinceTouch,
+  PageTarget(:final pagePublicId) ||
+  SettingsTarget(:final pagePublicId) => shown.fresh.listFreshFor(pagePublicId),
+  final row => switch ({...pagesNeeded(work.op), ?shown.rows[row]?.page}) {
+    final pages when pages.isNotEmpty => pages.every(shown.fresh.pageFreshFor),
+    _ => false,
+  },
+};
 
 bool _ownDelete(LandedWork work) =>
     work.own && (work.op is ElementDeleteOp || work.op is LineupGroupDeleteOp);
@@ -1497,7 +1587,7 @@ Authored _justifiedOrNot(
         final produced? =>
           produced.justifies &&
               produced.revision == revision &&
-              _sameRow(life, produced.life) &&
+              life == produced.life &&
               produced.digest == digest,
         null => false,
       },
@@ -1522,7 +1612,7 @@ bool _baseJustified(CloudQueue queue, Target row, Authored authored) =>
         ),
       ) =>
         known == revision &&
-            _sameRow(life, knownLife) &&
+            life == knownLife &&
             (shown == null || shown == digest),
       (AuthoredNoRow(), null) => true,
       _ => false,
@@ -1598,29 +1688,26 @@ final class _KnownRow extends _Known {
   final int revision;
   final String? digest;
   final bool current;
-  final int? life;
+  final int life;
+
+  Version get version => Version(life, revision);
 }
 
 final class _NotKnown extends _Known {
   const _NotKnown(this.revision, {required this.life});
 
   final int revision;
-  final int? life;
+  final int life;
+
+  Version get version => Version(life, revision);
+}
+
+final class _Unplaced extends _Known {
+  const _Unplaced();
 }
 
 bool _anotherLife(Version? remembered, Version? read) =>
     remembered != null && read != null && !remembered.sameLife(read);
-
-bool _sameRow(int? authored, int? known) =>
-    authored == null ||
-    known == null ||
-    authored == unknownLife ||
-    known == unknownLife ||
-    authored == known;
-
-bool _ranksAbove(int? life, int revision, int? otherLife, int otherRevision) =>
-    Version(life ?? unknownLife, revision) >
-    Version(otherLife ?? unknownLife, otherRevision);
 
 _Known? _knownRow(CloudQueue queue, Target row) {
   final shown = queue.shown;
@@ -1650,25 +1737,28 @@ _Known? _knownRow(CloudQueue queue, Target row) {
       ),
     _ => null,
   };
-  (int?, int) versionOf(_Known known) => switch (known) {
-    _KnownRow(:final life, :final revision) => (life, revision),
-    _NotKnown(:final life, :final revision) => (life, revision),
-  };
-  for (final work in queue.landed) {
-    if (targetOf(work.op) != row) continue;
-    if (best != null) {
-      final (life, revision) = versionOf(best);
-      if (!_ranksAbove(work.life, work.revision, life, revision)) continue;
-    }
+  final landed = [
+    for (final work in queue.landed)
+      if (targetOf(work.op) == row) work,
+  ];
+  if (landed.any((work) => work.version == null)) return const _Unplaced();
+  for (final work in landed) {
+    final version = work.version!;
+    final above = switch (best) {
+      _KnownRow(version: final known) ||
+      _NotKnown(version: final known) => version > known,
+      _ => true,
+    };
+    if (!above) continue;
     best = switch (work.produced) {
       ProducedRow(:final page, :final revision, :final digest) => _KnownRow(
         page,
         revision,
         digest,
         current: true,
-        life: work.life,
+        life: version.life,
       ),
-      null => _NotKnown(work.revision, life: work.life),
+      null => _NotKnown(work.revision, life: version.life),
     };
   }
   return best;
@@ -1741,18 +1831,21 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
               digest == last.digest ? revision : revision + 1,
             _ => first.revision,
           },
+          life: last.life,
           digest: last.digest,
           justifies: first.justifies,
         );
   return switch (earlier) {
     AuthoredRow(
       :final revision,
+      :final life,
       :final digest,
       :final payloadVersion,
       :final movedRow,
     ) =>
       AuthoredRow(
         revision: revision,
+        life: life,
         digest: digest,
         payloadVersion: payloadVersion,
         produces: produces,
@@ -1806,12 +1899,15 @@ _Verdict _wholeBehindOwn(
       );
   if (renumbering) return _AwaitRow(page);
   switch (known) {
-    case _KnownRow(:final revision, :final digest, :final current):
+    case _KnownRow(:final revision, :final life, :final digest, :final current):
       final asSeen = switch ((seen, digest)) {
-        (AuthoredRow(), null) => revision == authored,
+        (AuthoredRow(life: final seenLife), null) =>
+          revision == authored && life == seenLife,
         (final AuthoredRow seen, final digest?) =>
           digest == seen.produces?.digest ||
-              (revision == authored && digest == seen.digest),
+              (revision == authored &&
+                  life == seen.life &&
+                  digest == seen.digest),
         _ => false,
       };
       if (asSeen && current) return _NameAt(authored);
@@ -1830,6 +1926,8 @@ _Verdict _wholeBehindOwn(
               _shownRow(shown, row) == null)) {
         return const _AskUser();
       }
+      return _AwaitRow(page);
+    case _Unplaced():
       return _AwaitRow(page);
     case null:
       return _NameAt(authored);
@@ -1927,20 +2025,19 @@ int? _lifeNamed(CloudQueue queue, PendingOp entry, StrategyOp sent) {
   final revision = expectedOf(sent);
   if (revision == null) return null;
   final target = checkTargetOf(sent);
-  int? real(int? life) => life == unknownLife ? null : life;
   switch (entry.authored) {
     case KeptOverServer(revision: final kept, :final life?)
         when kept == revision:
-      return real(life);
+      return life;
     case AuthoredRow(revision: final authored, :final life?)
         when authored == revision && targetOf(entry.op) == target:
-      return real(life);
+      return life;
     case _:
       break;
   }
   return switch (_knownRow(queue, target)) {
-    _KnownRow(:final life) || _NotKnown(:final life) => real(life),
-    null => null,
+    _KnownRow(:final life) || _NotKnown(:final life) => life,
+    _Unplaced() || null => null,
   };
 }
 
@@ -2017,6 +2114,15 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
     ):
       _landed(edit, entry, sent, revision, life, ours: false);
       edit.remove(entry.id, const Delivered(Delivery.alreadyThere));
+    case ReplayWithoutLife(
+      :final revision,
+      replay: NoopReplay.appliedWhenFirstReceived,
+    ):
+      _landed(edit, entry, sent, revision, null, ours: true);
+      edit.remove(entry.id, const Delivered(Delivery.applied));
+    case ReplayWithoutLife(:final revision, replay: NoopReplay.notApplied):
+      _landed(edit, entry, sent, revision, null, ours: false);
+      edit.remove(entry.id, const Delivered(Delivery.alreadyThere));
     case NoopWithoutRevision():
       edit.remove(entry.id, const Delivered(Delivery.nothingToDo));
     case RejectedAnswer(:final reason, :final current):
@@ -2084,7 +2190,8 @@ void _landed(
     AuthoredRow(:final produces?) || AuthoredNoRow(:final produces?)
         when produces.justifies &&
             produces.revision == revision &&
-            _sameRow(produces.life, life) &&
+            life != null &&
+            (produces.life == null || produces.life == life) &&
             (ours || _unchangedPrediction(entry.authored)) =>
       produces.inLife(life),
     _ => null,
@@ -2120,6 +2227,13 @@ void _landed(
       ..sort((a, b) => a.compareTo(b));
   }
   if (produced == null) _laterUnjustified(edit, entry, work);
+  if ((ours, life, _producesOf(entry.authored)) case (
+    true,
+    final life?,
+    final predicted?,
+  )) {
+    _laterBornIn(edit, entry, predicted, life);
+  }
   edit.change.targets
     ..add(checkTargetOf(sent))
     ..add(targetOf(sent));

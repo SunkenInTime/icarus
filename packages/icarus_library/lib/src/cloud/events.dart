@@ -249,15 +249,12 @@ sealed class OpAnswer {
 }
 
 final class AppliedAnswer extends OpAnswer {
-  const AppliedAnswer(super.opId, {required this.revision, this.life});
+  const AppliedAnswer(super.opId, {required this.revision, required this.life});
 
   final int revision;
-  final int? life;
+  final int life;
 
-  Version? get version => switch (life) {
-    final life? => Version(life, revision),
-    null => null,
-  };
+  Version get version => Version(life, revision);
 }
 
 final class NoopAnswer extends OpAnswer {
@@ -265,20 +262,28 @@ final class NoopAnswer extends OpAnswer {
     super.opId, {
     required this.revision,
     required this.replay,
-    this.life,
+    required this.life,
   });
 
   final int revision;
   final NoopReplay replay;
-  final int? life;
+  final int life;
 
-  Version? get version => switch (life) {
-    final life? => Version(life, revision),
-    null => null,
-  };
+  Version get version => Version(life, revision);
 }
 
 enum NoopReplay { appliedWhenFirstReceived, notApplied }
+
+final class ReplayWithoutLife extends OpAnswer {
+  const ReplayWithoutLife(
+    super.opId, {
+    required this.revision,
+    required this.replay,
+  });
+
+  final int revision;
+  final NoopReplay replay;
+}
 
 final class NoopWithoutRevision extends OpAnswer {
   const NoopWithoutRevision(super.opId);

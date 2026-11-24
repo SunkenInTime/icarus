@@ -89,4 +89,141 @@ void main() {
     expect(client.visible.element('e2'), isNull);
     expect(client.visible.element('e5'), isNotNull);
   });
+
+  group('an answer without a life', () {
+    Client online() {
+      final client = Client()..must(const ConnectionReturned());
+      client.read(initialRows());
+      return client;
+    }
+
+    test('a replay of a receipt written before the server sent lives leaves a '
+        'landed record with no version: a later whole-row edit waits for the '
+        'row\'s result, and that result settles it', () {
+      final server = Server();
+      final client = online();
+      client.edit(movePatch('drag', x: 40));
+      final attempt = client.claim(['drag']);
+      server.apply(clientId, client.lastSent().single);
+      client.must(
+        OpAnswered(
+          attempt,
+          const ReplayWithoutLife(
+            'drag',
+            revision: 2,
+            replay: NoopReplay.appliedWhenFirstReceived,
+          ),
+        ),
+      );
+      expect(client.queue.landed.single.version, isNull);
+      client.edit(onVisible(client.visible, movePatch('drop', x: 70)));
+      expect(client.view('drop').holds, [
+        awaitingResult(const RowResult(ElementTarget('e1'), 'page-a')),
+      ]);
+      client.read(server.rows, pages: ['page-a']);
+      expect(client.queue.landed, isEmpty);
+      expect(client.view('drop').sendable, isTrue);
+      client.claim(['drop']);
+      final sent = client.effects.whereType<SendBatch>().last;
+      expect(expectedOf(sent.ops.single), 2);
+      expect(sent.lives, {'drop': fixtureLife});
+    });
+
+    test('a page result read before the answer does not settle it', () {
+      final server = Server();
+      final client = online();
+      client.edit(movePatch('drag', x: 40));
+      final attempt = client.claim(['drag']);
+      server.apply(clientId, client.lastSent().single);
+      client.must(
+        OpAnswered(
+          attempt,
+          const ReplayWithoutLife(
+            'drag',
+            revision: 2,
+            replay: NoopReplay.appliedWhenFirstReceived,
+          ),
+        ),
+      );
+      client.read(server.rows, pages: const []);
+      expect(client.queue.landed, hasLength(1));
+    });
+
+    test('a refusal of a replaced row with no copy asks like any refusal '
+        'without one', () {
+      final client = online();
+      client.edit(movePatch('drag', x: 40));
+      final attempt = client.claim(['drag']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'drag',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+        ),
+      );
+      final plain = online();
+      plain.edit(movePatch('drag', x: 40));
+      final plainAttempt = plain.claim(['drag']);
+      plain.must(
+        OpAnswered(
+          plainAttempt,
+          const RejectedAnswer(
+            'drag',
+            RejectionReason.revisionMismatch,
+            NoServerCopy(),
+          ),
+        ),
+      );
+      expect(
+        client.view('drag').state,
+        const NeedsUser(
+          RefusedByServer(
+            RejectedByServer(RejectionReason.rowReplaced, NoServerCopy()),
+          ),
+        ),
+      );
+      expect(
+        plain.view('drag').state,
+        const NeedsUser(
+          RefusedByServer(
+            RejectedByServer(RejectionReason.revisionMismatch, NoServerCopy()),
+          ),
+        ),
+      );
+      expect(
+        client.visible.element('e1')!.toJson(),
+        plain.visible.element('e1')!.toJson(),
+      );
+    });
+  });
+
+  test('a page this device added takes its life from the first page list '
+      'that shows it, so a rename authored before then goes out naming it', () {
+    final server = Server();
+    final client = Client()..must(const ConnectionReturned());
+    client.read(initialRows());
+    client.edit(pageAdd('add', 'page-c'));
+    final added = client.claim(['add']);
+    client.must(
+      OpAnswered(added, server.apply(clientId, client.lastSent().single)),
+    );
+    client.edit(
+      PagePatchOp(
+        opId: 'rename',
+        pagePublicId: 'page-c',
+        expectedPageRevision: 1,
+        name: 'B site',
+      ),
+    );
+    final pageLife = createdAtOf(server.rows.page('page-c')!)!;
+    expect(pageLife, isNot(createdAtOf(server.rows.strategy)));
+    client.read(server.rows, pages: const []);
+    client.claim(['rename']);
+    expect(client.effects.whereType<SendBatch>().last.lives, {
+      'rename': pageLife,
+    });
+  });
 }

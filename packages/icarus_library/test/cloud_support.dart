@@ -6,6 +6,8 @@ import 'package:test/test.dart';
 
 import 'support.dart';
 
+export 'support.dart' show fixtureLife;
+
 const clientId = 'client-1';
 
 const build = 'build-1';
@@ -299,9 +301,13 @@ final class Client {
   EntryView view(String opId) => entryViews(queue, at)[opId]!;
 }
 
+const addedLife = fixtureLife + 1;
+
 StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
     switch (applyOp(rows, op)) {
-      final OpApplied done => rows.withRows(done.rows),
+      final OpApplied done => rows.withRows([
+        for (final row in done.rows) bornIn(row, addedLife),
+      ]),
       final other => fail('expected $op to apply, got $other'),
     };
 

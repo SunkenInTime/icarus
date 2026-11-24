@@ -489,7 +489,9 @@ final class KeptOverServer extends Authored {
 
   @override
   bool operator ==(Object other) =>
-      other is KeptOverServer && other.revision == revision && other.life == life;
+      other is KeptOverServer &&
+      other.revision == revision &&
+      other.life == life;
 
   @override
   int get hashCode => Object.hash(KeptOverServer, revision, life);
@@ -642,16 +644,13 @@ final class ServerSnapshot extends ServerCopy {
     required this.target,
     required this.revision,
     required Map<String, Object?> value,
-    this.life,
+    required this.life,
   }) : value = jsonObject(value);
 
   final SnapshotTarget target;
   final int revision;
-  final int? life;
-  Version? get version => switch (life) {
-    final life? => Version(life, revision),
-    null => null,
-  };
+  final int life;
+  Version get version => Version(life, revision);
 
   final JsonObject value;
 
@@ -844,7 +843,10 @@ final class LandedWork {
   final StrategyOp op;
   final int revision;
   final int? life;
-  Version get version => Version(life ?? unknownLife, revision);
+  Version? get version => switch (life) {
+    final life? => Version(life, revision),
+    null => null,
+  };
 
   final LandedShape shape;
   final bool own;

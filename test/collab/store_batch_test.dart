@@ -27,6 +27,7 @@ final class _Recording implements ConvexTransport {
 }
 
 const strategy = 'strategy-1';
+const life = 1700000000000;
 final owner = Account('account-a');
 
 app.StrategyOp shippedRename(String opId) => app.StrategyPatchOp(
@@ -109,7 +110,12 @@ void main() {
     test('an answer is read as the queue\'s answer', () async {
       transport.answer = () => {
             'results': [
-              {'opId': 'op-1', 'status': 'applied', 'appliedRevision': 3},
+              {
+                'opId': 'op-1',
+                'status': 'applied',
+                'appliedRevision': 3,
+                'appliedLife': life,
+              },
             ],
             'strategyPublicId': strategy,
           };
@@ -142,13 +148,13 @@ void main() {
                 'opId': 'op-1',
                 'status': 'applied',
                 'appliedRevision': 3,
-                'appliedLife': 1700000000000,
+                'appliedLife': life,
               },
               {
                 'opId': 'op-2',
                 'status': 'noop',
                 'currentRevision': 3,
-                'currentLife': 1700000000000,
+                'currentLife': life,
               },
               {
                 'opId': 'op-3',
@@ -169,7 +175,7 @@ void main() {
         strategyPublicId: strategy,
         clientId: 'client-1',
         ops: [rename('op-1'), rename('op-2'), rename('op-3'), rename('op-4')],
-        lives: const {'op-1': 1700000000000, 'op-3': 1700000000000},
+        lives: const {'op-1': life, 'op-3': 1700000000000},
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
@@ -177,7 +183,7 @@ void main() {
       expect(args['sendsLives'], true);
       expect(
         [for (final op in args['ops']! as List) (op as Map)['expectedLife']],
-        [1700000000000, null, 1700000000000, null],
+        [life, null, life, null],
       );
       if (outcome is StoreBatchLost) fail(outcome.why);
       final answers = (outcome as StoreBatchAnswered).answers;
@@ -248,7 +254,12 @@ void main() {
         'one, and reads the answer\'s server time', () async {
       transport.answer = () => {
             'results': [
-              {'opId': 'op-1', 'status': 'applied', 'appliedRevision': 3},
+              {
+                'opId': 'op-1',
+                'status': 'applied',
+                'appliedRevision': 3,
+                'appliedLife': life,
+              },
             ],
             'strategyPublicId': strategy,
             'serverTime': 1764000000500.0,
@@ -294,14 +305,63 @@ void main() {
   });
 
   group('the server\'s answers as the queue reads them', () {
-    test('applied, changed nothing, rejected and failed', () {
+    test(
+        'an answer with a revision but no life: a replayed receipt written '
+        'before the server sent lives is its own answer, and anything else '
+        'without a life is not read', () {
+      expect(
+        storeAnswerOf(
+          const app.NoopOpAck(opId: 'a', currentRevision: 4, wasApplied: true),
+        ),
+        isA<ReplayWithoutLife>()
+            .having((answer) => answer.revision, 'revision', 4)
+            .having(
+              (answer) => answer.replay,
+              'replay',
+              NoopReplay.appliedWhenFirstReceived,
+            ),
+      );
+      expect(
+        storeAnswerOf(const app.NoopOpAck(opId: 'a', currentRevision: 4)),
+        isA<ReplayWithoutLife>().having(
+          (answer) => answer.replay,
+          'replay',
+          NoopReplay.notApplied,
+        ),
+      );
       expect(
         storeAnswerOf(const app.AppliedOpAck(opId: 'a', revision: 4)),
+        isNull,
+      );
+      expect(
+        storeAnswerOf(
+          app.RejectedOpAck(
+            opId: 'a',
+            rejectionReason: app.OpRejectionReason.revisionMismatch,
+            current: app.ElementCurrentSnapshot(
+              revision: 5,
+              value: const {'payload': {}},
+            ),
+          ),
+        ),
+        isNull,
+      );
+    });
+
+    test('applied, changed nothing, rejected and failed', () {
+      expect(
+        storeAnswerOf(
+            const app.AppliedOpAck(opId: 'a', revision: 4, life: life)),
         isA<AppliedAnswer>().having((answer) => answer.revision, 'rev', 4),
       );
       expect(
         storeAnswerOf(
-          const app.NoopOpAck(opId: 'a', currentRevision: 4, wasApplied: true),
+          const app.NoopOpAck(
+            opId: 'a',
+            currentRevision: 4,
+            currentLife: life,
+            wasApplied: true,
+          ),
         ),
         isA<NoopAnswer>().having(
           (answer) => answer.replay,
@@ -320,6 +380,7 @@ void main() {
             rejectionReason: app.OpRejectionReason.revisionMismatch,
             current: app.ElementCurrentSnapshot(
               revision: 5,
+              life: life,
               value: const {'payload': {}},
             ),
           ),
@@ -362,7 +423,7 @@ void main() {
       final sent = [rename('a'), rename('b')];
       expect(
         storeBatchOutcomeOf(sent, const [
-          app.AppliedOpAck(opId: 'a', revision: 2),
+          app.AppliedOpAck(opId: 'a', revision: 2, life: life),
         ]),
         isA<StoreBatchAnswered>().having(
           (outcome) => outcome.complete,
@@ -372,7 +433,7 @@ void main() {
       );
       expect(
         storeBatchOutcomeOf(sent, const [
-          app.AppliedOpAck(opId: 'z', revision: 2),
+          app.AppliedOpAck(opId: 'z', revision: 2, life: life),
         ]),
         isA<StoreBatchLost>().having(
           (outcome) => outcome.failure,

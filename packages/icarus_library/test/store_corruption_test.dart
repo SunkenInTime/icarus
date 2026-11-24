@@ -183,7 +183,7 @@ final class Rebuilt extends Outcome {
   const Rebuilt();
 }
 
-enum Field { id, parent, string, whole, number, boolean, object, payload }
+enum Field { id, parent, string, whole, number, boolean, object, payload, kept }
 
 const _fields = <String, Map<String, Field>>{
   'folder': {
@@ -207,11 +207,13 @@ const _fields = <String, Map<String, Field>>{
     'isAttack': Field.boolean,
     'revision': Field.whole,
     'deleted': Field.boolean,
+    'createdAt': Field.kept,
   },
   'settings': {
     'pagePublicId': Field.id,
     'revision': Field.whole,
     'settings': Field.object,
+    'createdAt': Field.kept,
   },
   'element': {
     'publicId': Field.id,
@@ -220,6 +222,7 @@ const _fields = <String, Map<String, Field>>{
     'revision': Field.whole,
     'deleted': Field.boolean,
     'payload': Field.payload,
+    'createdAt': Field.kept,
   },
   'lineup': {
     'publicId': Field.id,
@@ -242,6 +245,7 @@ bool _fits(Field field, Object? value) => switch (field) {
         value == value.roundToDouble(),
   Field.number => value is num,
   Field.boolean => value is bool,
+  Field.kept => true,
   Field.id || Field.parent || Field.object || Field.payload => false,
 };
 

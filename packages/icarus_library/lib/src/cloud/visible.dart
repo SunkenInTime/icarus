@@ -6,6 +6,7 @@ import '../strategy_rows.dart';
 import 'op_facts.dart';
 import 'pending.dart';
 import 'queue.dart';
+import 'version.dart';
 
 sealed class Pages {
   const Pages();
@@ -75,10 +76,13 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
     if (_visiblePage(work.op, pages) ||
         _leaves(rows, work.op, pages) ||
         followed.contains(targetOf(work.op))) {
-      rows = _strategyAtLeast(
-        onTop(
-          _withMovedRow(rows, work.op, work.movedRow, work.revision),
-          work.op,
+      rows = _bornInLandedLife(
+        _strategyAtLeast(
+          onTop(
+            _withMovedRow(rows, work.op, work.movedRow, work.revision),
+            work.op,
+          ),
+          work,
         ),
         work,
       );
@@ -140,6 +144,17 @@ StrategyRowSet _strategyAtLeast(StrategyRowSet rows, LandedWork work) =>
         rows.withRows([rows.strategy.rewritten(revision: work.revision)]),
       _ => rows,
     };
+
+StrategyRowSet _bornInLandedLife(StrategyRowSet rows, LandedWork work) {
+  final life = work.life;
+  if (life == null) return rows;
+  final row = switch (targetOf(work.op)) {
+    ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+    LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+    _ => null,
+  };
+  return row == null ? rows : rows.withRows([bornIn(row, life)]);
+}
 
 StrategyRowSet _beforeMove(StrategyRowSet rows, StrategyOp op, Row moved) {
   final missing = switch (moved) {

@@ -140,46 +140,37 @@ StoreBatchOutcome storeBatchOutcomeOf(
 }
 
 store.OpAnswer? storeAnswerOf(OpAck ack) => switch (ack) {
-      AppliedOpAck(:final opId, :final revision, :final life) =>
+      AppliedOpAck(:final opId, :final revision, life: final life?) =>
         store.AppliedAnswer(opId, revision: revision, life: life),
+      AppliedOpAck() => null,
       NoopOpAck(
         :final opId,
         currentRevision: final revision?,
-        :final currentLife,
+        currentLife: final life?,
         :final wasApplied
       ) =>
         store.NoopAnswer(
           opId,
           revision: revision,
-          life: currentLife,
-          replay: wasApplied
-              ? store.NoopReplay.appliedWhenFirstReceived
-              : store.NoopReplay.notApplied,
+          life: life,
+          replay: _replayOf(wasApplied),
+        ),
+      NoopOpAck(
+        :final opId,
+        currentRevision: final revision?,
+        :final wasApplied
+      ) =>
+        store.ReplayWithoutLife(
+          opId,
+          revision: revision,
+          replay: _replayOf(wasApplied),
         ),
       NoopOpAck(:final opId) => store.NoopWithoutRevision(opId),
       RejectedOpAck(:final opId, :final rejectionReason, :final current) =>
-        switch (_rejectionOf(rejectionReason)) {
-          final reason? => store.RejectedAnswer(
-              opId,
-              reason,
-              switch (current) {
-                null => const store.NoServerCopy(),
-                final snapshot => store.ServerSnapshot(
-                    target: switch (snapshot) {
-                      StrategyCurrentSnapshot() =>
-                        store.SnapshotTarget.strategy,
-                      PageCurrentSnapshot() => store.SnapshotTarget.page,
-                      PageContentCurrentSnapshot() =>
-                        store.SnapshotTarget.pageContent,
-                      ElementCurrentSnapshot() => store.SnapshotTarget.element,
-                      LineupCurrentSnapshot() => store.SnapshotTarget.lineup,
-                    },
-                    revision: snapshot.revision,
-                    life: snapshot.life,
-                    value: snapshot.value,
-                  ),
-              }),
-          null => null,
+        switch ((_rejectionOf(rejectionReason), _copyOf(current))) {
+          (final reason?, final copy?) =>
+            store.RejectedAnswer(opId, reason, copy),
+          _ => null,
         },
       FailedOpAck(:final opId, :final code, :final rawCode, :final message) =>
         store.FailedAnswer(
@@ -193,6 +184,28 @@ store.OpAnswer? storeAnswerOf(OpAck ack) => switch (ack) {
             },
             message),
     };
+
+store.ServerCopy? _copyOf(CurrentOpSnapshot? current) => switch (current) {
+      null => const store.NoServerCopy(),
+      CurrentOpSnapshot(life: null) => null,
+      CurrentOpSnapshot(:final revision, :final life?, :final value) =>
+        store.ServerSnapshot(
+          target: switch (current) {
+            StrategyCurrentSnapshot() => store.SnapshotTarget.strategy,
+            PageCurrentSnapshot() => store.SnapshotTarget.page,
+            PageContentCurrentSnapshot() => store.SnapshotTarget.pageContent,
+            ElementCurrentSnapshot() => store.SnapshotTarget.element,
+            LineupCurrentSnapshot() => store.SnapshotTarget.lineup,
+          },
+          revision: revision,
+          life: life,
+          value: value,
+        ),
+    };
+
+store.NoopReplay _replayOf(bool wasApplied) => wasApplied
+    ? store.NoopReplay.appliedWhenFirstReceived
+    : store.NoopReplay.notApplied;
 
 store.RejectionReason? _rejectionOf(OpRejectionReason reason) =>
     store.RejectionReason.values

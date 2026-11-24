@@ -2116,7 +2116,7 @@ void main() {
         expect(sender.view.run, 'disposed');
         answer.complete(
           StoreBatchAnswered(
-            [const AppliedAnswer('move-1', revision: 3)],
+            [const AppliedAnswer('move-1', revision: 3, life: firstLife)],
             complete: true,
           ),
         );

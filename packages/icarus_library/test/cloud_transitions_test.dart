@@ -110,7 +110,12 @@ final rows = <Row>[
     final client = Client()
       ..edit(movePatch('first', merge: FieldMerge(fields: ['position'])));
     final attempt = client.claim(['first']);
-    client.must(OpAnswered(attempt, const AppliedAnswer('first', revision: 3)));
+    client.must(
+      OpAnswered(
+        attempt,
+        const AppliedAnswer('first', revision: 3, life: fixtureLife),
+      ),
+    );
     return client..edit(onVisible(client.visible, movePatch('x', x: 70)));
   }),
   Row(
@@ -119,7 +124,10 @@ final rows = <Row>[
       final client = Client()..edit(movePatch('first'));
       final attempt = client.claim(['first']);
       client.must(
-        OpAnswered(attempt, const AppliedAnswer('first', revision: 3)),
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('first', revision: 3, life: fixtureLife),
+        ),
       );
       return client..edit(pageDelete('x', 'page-a'));
     },
@@ -192,7 +200,12 @@ final rows = <Row>[
     return client..must(
       OpAnswered(
         attempt,
-        const NoopAnswer('del', revision: 2, replay: NoopReplay.notApplied),
+        const NoopAnswer(
+          'del',
+          revision: 2,
+          replay: NoopReplay.notApplied,
+          life: fixtureLife,
+        ),
       ),
     );
   }),
@@ -200,7 +213,12 @@ final rows = <Row>[
     final client = Client()
       ..edit(movePatch('first', merge: FieldMerge(fields: ['position'])));
     final attempt = client.claim(['first']);
-    client.must(OpAnswered(attempt, const AppliedAnswer('first', revision: 3)));
+    client.must(
+      OpAnswered(
+        attempt,
+        const AppliedAnswer('first', revision: 3, life: fixtureLife),
+      ),
+    );
     client.edit(onVisible(client.visible, movePatch('x', x: 70)));
     return client..arrive(const PageGone('page-a'));
   }),
@@ -258,14 +276,25 @@ final events = <String, QueueEvent Function(Client)>{
   'attempt 1 released': (c) => const ClaimReleased(1),
   'attempt 1 transport failed': (c) =>
       TransportFailed(1, TransportFailure.network, at: c.at),
-  'applied at 2': (c) => const OpAnswered(1, AppliedAnswer('x', revision: 2)),
+  'applied at 2': (c) =>
+      const OpAnswered(1, AppliedAnswer('x', revision: 2, life: fixtureLife)),
   'noop at 2, applied when first received': (c) => const OpAnswered(
     1,
-    NoopAnswer('x', revision: 2, replay: NoopReplay.appliedWhenFirstReceived),
+    NoopAnswer(
+      'x',
+      revision: 2,
+      replay: NoopReplay.appliedWhenFirstReceived,
+      life: fixtureLife,
+    ),
   ),
   'noop at 2, not applied': (c) => const OpAnswered(
     1,
-    NoopAnswer('x', revision: 2, replay: NoopReplay.notApplied),
+    NoopAnswer(
+      'x',
+      revision: 2,
+      replay: NoopReplay.notApplied,
+      life: fixtureLife,
+    ),
   ),
   'noop without a revision': (c) =>
       const OpAnswered(1, NoopWithoutRevision('x')),
@@ -277,7 +306,7 @@ final events = <String, QueueEvent Function(Client)>{
     FailedAnswer('x', OtherFailure('INTERNAL_ERROR'), 'unexpected'),
   ),
   'answer from an attempt that did not hold it': (c) =>
-      const OpAnswered(99, AppliedAnswer('x', revision: 2)),
+      const OpAnswered(99, AppliedAnswer('x', revision: 2, life: fixtureLife)),
   for (final refusal in BatchRefusal.values)
     'attempt 1 refused whole: ${refusal.name}': (c) => BatchRefused(1, refusal),
   'app restarted, same build': (c) => const AppRestarted(build: build),
