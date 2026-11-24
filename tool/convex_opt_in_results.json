@@ -15,6 +15,46 @@
       "function": "ops:applyBatch",
       "path": "result.serverTime",
       "sentOnlyWith": ["args.sendsLiveBasis"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=applied>.appliedLife",
+      "sentOnlyWith": ["args.sendsLives"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=noop>.currentLife",
+      "sentOnlyWith": ["args.sendsLives"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=rejected>.current<type=strategy>.life",
+      "sentOnlyWith": ["args.sendsLives"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=rejected>.current<type=page>.life",
+      "sentOnlyWith": ["args.sendsLives"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=rejected>.current<type=pageContent>.life",
+      "sentOnlyWith": ["args.sendsLives"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=rejected>.current<type=element>.life",
+      "sentOnlyWith": ["args.sendsLives"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=rejected>.current<type=lineup>.life",
+      "sentOnlyWith": ["args.sendsLives"]
+    },
+    {
+      "function": "ops:applyBatch",
+      "path": "result.results[]<status=rejected>.reason",
+      "sentOnlyWith": ["args.sendsLives"]
     }
   ]
 }

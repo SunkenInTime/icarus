@@ -785,7 +785,8 @@ function isRejectionReason(
     reason === "page_strategy_mismatch" ||
     reason === "revision_mismatch" ||
     reason === "field_conflict" ||
-    reason === "merge_invalid"
+    reason === "merge_invalid" ||
+    reason === "row_replaced"
   );
 }
 
@@ -1780,6 +1781,75 @@ async function elementOpChangedAgents(
   return keyOf(rowBefore) !== keyOf(rowAfter);
 }
 
+async function lifeOfTarget(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+  row: Doc<"elements"> | Doc<"lineups"> | null,
+): Promise<number | undefined> {
+  const target = currentTargetForOp(op);
+  if (target === "strategy") return strategy.createdAt;
+  if (target === "element" || target === "lineup") return row?.createdAt;
+  const page =
+    op.pagePublicId === undefined
+      ? null
+      : await getPageByPublicIdOrNull(ctx, op.pagePublicId);
+  if (page === null || page.strategyId !== strategy._id) return undefined;
+  if (target === "page") return page.createdAt;
+  const content = await ctx.db
+    .query("pageContents")
+    .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+    .first();
+  return content?.createdAt;
+}
+
+async function lifeRefusal(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+  expected: number,
+  life: number | undefined,
+  row: Doc<"elements"> | Doc<"lineups"> | null,
+): Promise<OperationResult | null> {
+  if (life !== undefined && life !== expected) {
+    return rejected(
+      "row_replaced",
+      await getTargetSnapshot(ctx, strategy, op),
+      row?.pageId,
+    );
+  }
+  if (
+    life === undefined &&
+    op.kind === "add" &&
+    op.expectedRevision !== undefined &&
+    (op.entityType === "element" || op.entityType === "lineup")
+  ) {
+    return rejected("not_found");
+  }
+  return null;
+}
+
+function withLife(
+  result: PublicOperationResult,
+  life: number | undefined,
+): PublicOperationResult {
+  if (life === undefined) return result;
+  switch (result.status) {
+    case "applied":
+      return { ...result, appliedLife: life };
+    case "noop":
+      return result.currentRevision === undefined
+        ? result
+        : { ...result, currentLife: life };
+    case "rejected":
+      return result.current === undefined
+        ? result
+        : { ...result, current: { ...result.current, life } };
+    case "failed":
+      return result;
+  }
+}
+
 async function contentRowForOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
@@ -1935,6 +2005,7 @@ export const applyBatch = mutation({
     includeWasApplied: v.optional(v.boolean()),
     sendsLiveBasis: v.optional(v.boolean()),
     liveBasis: v.optional(v.number()),
+    sendsLives: v.optional(v.boolean()),
   },
   returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
@@ -2012,12 +2083,26 @@ export const applyBatch = mutation({
                   latestPayload: latest?.payload,
                 }
               : noop(existingEvent.appliedRevision);
-        const replayed = toPublicResult(
+        const replayedPlain = toPublicResult(
           op,
           replayResult,
           args.acceptsPictureIds === true,
           args.elementFieldLevel,
         );
+        const replayed =
+          args.sendsLives !== true
+            ? replayedPlain
+            : replayedPlain.status === "noop"
+              ? withLife(replayedPlain, existingEvent.appliedLife)
+              : withLife(
+                  replayedPlain,
+                  await lifeOfTarget(
+                    ctx,
+                    strategy,
+                    op,
+                    await contentRowForOp(ctx, strategy, op),
+                  ),
+                );
         results.push(
           replayed.status === "noop" &&
             existingEvent.status === "applied" &&
@@ -2045,6 +2130,21 @@ export const applyBatch = mutation({
       }
 
       const rowBefore = await contentRowForOp(ctx, strategy, op);
+      const lifeBefore =
+        args.sendsLives === true
+          ? await lifeOfTarget(ctx, strategy, op, rowBefore)
+          : undefined;
+      const refusedLife =
+        args.sendsLives !== true || rawOp.expectedLife === undefined
+          ? null
+          : await lifeRefusal(
+              ctx,
+              strategy,
+              op,
+              rawOp.expectedLife,
+              lifeBefore,
+              rowBefore,
+            );
 
       let result: OperationResult;
       if (cloudOperationExceedsPolicy(rawOp)) {
@@ -2054,6 +2154,8 @@ export const applyBatch = mutation({
           rawCode: "INVALID_PAYLOAD",
           message: CLOUD_OPERATION_TOO_LARGE_MESSAGE,
         };
+      } else if (refusedLife !== null) {
+        result = refusedLife;
       } else {
         try {
           if (op.entityType === "strategy") {
@@ -2134,12 +2236,23 @@ export const applyBatch = mutation({
         acceptedStrategyBatchBaseRevision = originalExpectedRevision;
       }
 
-      const publicResult = toPublicResult(
+      const plainResult = toPublicResult(
         op,
         result,
         args.acceptsPictureIds === true,
         args.elementFieldLevel,
       );
+      const lifeAfter =
+        args.sendsLives !== true
+          ? undefined
+          : (lifeBefore ??
+            (await lifeOfTarget(
+              ctx,
+              strategy,
+              op,
+              await contentRowForOp(ctx, strategy, op),
+            )));
+      const publicResult = withLife(plainResult, lifeAfter);
 
       await ctx.db.insert("operationEvents", {
         strategyId: strategy._id,
@@ -2162,6 +2275,13 @@ export const applyBatch = mutation({
             : publicResult.status === "noop"
               ? publicResult.currentRevision
               : undefined,
+        ...(publicResult.status === "applied" &&
+        publicResult.appliedLife !== undefined
+          ? { appliedLife: publicResult.appliedLife }
+          : publicResult.status === "noop" &&
+              publicResult.currentLife !== undefined
+            ? { appliedLife: publicResult.currentLife }
+            : {}),
         createdAt: Date.now(),
       });
       results.push(publicResult);
