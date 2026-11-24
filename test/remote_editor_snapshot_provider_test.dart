@@ -923,9 +923,10 @@ void main() {
           queue.queued.clear();
 
           container.read(canvasShowsProvider.notifier).emptied();
-          await write(container).catchError(
-            (Object _) => null,
-            test: (error) => error is StateError,
+          await write(container).then<Object?>(
+            (result) => result,
+            onError: (Object error) =>
+                error is StateError ? error : throw error,
           );
 
           expect(queue.queued, isEmpty);

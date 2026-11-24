@@ -567,9 +567,9 @@ void main() {
         final before = fingerprint('writer');
 
         container.read(canvasShowsProvider.notifier).emptied();
-        await write(editor()).catchError(
-          (Object _) => null,
-          test: (error) => error is StateError,
+        await write(editor()).then<Object?>(
+          (result) => result,
+          onError: (Object error) => error is StateError ? error : throw error,
         );
 
         expect(fingerprint('writer'), before);
