@@ -201,7 +201,7 @@ final class Client {
           clientId: clientId,
           opIds: opIds,
           at: at,
-          elapsed: elapsed,
+          elapsed: () => elapsed,
         ),
       _ => event,
     });

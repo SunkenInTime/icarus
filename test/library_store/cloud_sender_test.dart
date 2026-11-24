@@ -1817,6 +1817,258 @@ void main() {
     });
   });
 
+  group('the server\'s window for unchecked sends', () {
+    List<ServerCall> callsOf(World world, String opId) => [
+          for (final call in world.server.calls)
+            if (call.opIds.contains(opId)) call,
+        ];
+
+    test(
+        'the first edit after a quiet start goes checked; the next, within '
+        '20 s of an answer, goes unchecked on that answer\'s server time', () {
+      inWorld((world) {
+        final before = world.server.serverNow;
+        world.commitMerge(1);
+        world.settle();
+        final [first] = callsOf(world, 'merge-1');
+        expect(first.serverTime, isA<ServerTimeAsked>());
+        expect(first.unchecked, isEmpty);
+        expect(first.basis, isNull);
+        final answeredAt = world.server.serverNow;
+        world.async.elapse(const Duration(seconds: 5));
+        world.commitMerge(2);
+        world.settle();
+        final [second] = callsOf(world, 'merge-2');
+        expect(second.unchecked, ['merge-2']);
+        expect(second.basis, inInclusiveRange(before, answeredAt));
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
+        'a batch refused as late is sent again at once, checked, under the '
+        'same op id, and a same-field edit right after it goes checked too',
+        () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        world.sleep(const Duration(seconds: 40));
+        var editedDuringTheResend = false;
+        world.server.onCall = (call) {
+          if (call.opIds.contains('merge-2') &&
+              call.unchecked.isEmpty &&
+              !editedDuringTheResend) {
+            editedDuringTheResend = true;
+            world.commitMerge(3);
+          }
+        };
+        world.commitMerge(2);
+        world.settle();
+        expect(editedDuringTheResend, isTrue);
+        final [late, again] = callsOf(world, 'merge-2');
+        expect(late.unchecked, ['merge-2']);
+        expect(again.unchecked, isEmpty);
+        expect(again.basis, isNull);
+        expect(
+          world.written(),
+          contains(
+            isA<BatchRefused>().having(
+              (refused) => refused.refusal,
+              'refusal',
+              BatchRefusal.uncheckedTooLate,
+            ),
+          ),
+        );
+        world.settle();
+        final [third] = callsOf(world, 'merge-3');
+        expect(third.unchecked, isEmpty);
+        expect(world.queueLength(), 0);
+        expect(
+          world.sender.store.reports.whereType<UncheckedWithoutBasis>(),
+          isEmpty,
+        );
+      });
+    });
+
+    test(
+        'a server time answered after the connection changed is not held, '
+        'so the next edit goes checked', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        final answer = Completer<StoreBatchOutcome>();
+        world.server.answerNext(strategyId, (call) {
+          final outcome = world.server.applyAll(call);
+          world.connection = 2;
+          answer.complete(outcome);
+          return answer.future;
+        });
+        world.async.elapse(const Duration(seconds: 1));
+        world.commitMerge(2);
+        world.settle();
+        world.commitMerge(3);
+        world.settle();
+        final [third] = callsOf(world, 'merge-3');
+        expect(third.unchecked, isEmpty);
+      });
+    });
+
+    test('a send in flight at a restart is retried checked', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        server.answerNext(strategyId, (call) {
+          world.sender.dispose();
+          return Completer<StoreBatchOutcome>().future;
+        });
+        world.commitMerge(2);
+        world.settle();
+        expect(callsOf(world, 'merge-2').single.unchecked, ['merge-2']);
+      }, storage: storage, server: server);
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          final [_, retry] = callsOf(world, 'merge-2');
+          expect(retry.unchecked, isEmpty);
+          expect(retry.basis, isNull);
+          expect(world.queueLength(), 0);
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+        clientId: 'client-2',
+      );
+    });
+
+    test(
+        'a claim held up behind an earlier write judges its basis when it runs: '
+        'held 21 s past a fresh answer, the edit goes checked', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        world.slowStore.claimWaits = const Duration(seconds: 21);
+        world.commitMerge(2);
+        world.settle(const Duration(seconds: 30));
+        final [held] = callsOf(world, 'merge-2');
+        expect(held.unchecked, isEmpty);
+        expect(held.basis, isNull);
+      });
+    });
+
+    test(
+        'an unchecked call lost by the transport but landed inside the window '
+        'is answered "applied when first received" to its checked retry, and '
+        'lands once', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        world.server.answerNext(strategyId, (call) {
+          world.server.applyAll(call);
+          return Completer<StoreBatchOutcome>().future;
+        });
+        world.commitMerge(2);
+        world.settle(const Duration(minutes: 2));
+        final [lost, retry] = callsOf(world, 'merge-2');
+        expect(lost.unchecked, ['merge-2']);
+        expect(retry.unchecked, isEmpty);
+        expect(world.server.anyAppliedTwice, isFalse);
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    for (final (order, delivered) in [
+      ('before its checked retry', const Duration(seconds: 46)),
+      ('after its checked retry', const Duration(seconds: 90)),
+    ]) {
+      test(
+          'an unchecked call the transport delivers past the cutoff, $order, is '
+          'refused by the server, and the edit lands once, through the retry',
+          () {
+        inWorld((world) {
+          world.commitMerge(1);
+          world.settle();
+          StoreBatchOutcome? late;
+          world.server.answerNext(strategyId, (call) {
+            Timer(delivered, () => late = world.server.applyAll(call));
+            return Completer<StoreBatchOutcome>().future;
+          });
+          world.commitMerge(2);
+          world.settle(const Duration(minutes: 3));
+          expect(late, isA<StoreBatchOutsideWindow>());
+          final [original, retry] = callsOf(world, 'merge-2');
+          expect(original.unchecked, ['merge-2']);
+          expect(retry.unchecked, isEmpty);
+          expect(world.server.anyAppliedTwice, isFalse);
+          expect(world.queueLength(), 0);
+        });
+      });
+    }
+
+    test(
+        'the answer\'s server time is held as of the moment the answer arrived',
+        () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        final arrived = Completer<StoreBatchOutcome>();
+        Duration? at;
+        world.server.answerNext(strategyId, (call) {
+          Timer(const Duration(seconds: 3), () {
+            at = world.async.elapsed;
+            arrived.complete(world.server.applyAll(call));
+          });
+          return arrived.future;
+        });
+        world.commitMerge(2);
+        world.settle(const Duration(seconds: 10));
+        final held = world.written().whereType<ServerTimeHeld>().last;
+        expect(held.at, at);
+      });
+    });
+
+    test(
+        'no session opens while a call is awaited, so the session the call '
+        'was sent in is the one bound when its answer arrives', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        final bound = world.sender.bound[strategyId]!.number;
+        final arrived = Completer<StoreBatchOutcome>();
+        world.server.answerNext(strategyId, (call) {
+          Timer(const Duration(seconds: 3), () {
+            world.connection = null;
+            world.connection = 2;
+            world.async.flushMicrotasks();
+            expect(world.sender.bound[strategyId]?.number, bound);
+            arrived.complete(world.server.applyAll(call));
+          });
+          return arrived.future;
+        });
+        world.commitMerge(2);
+        world.settle(const Duration(seconds: 10));
+        final written = world.written();
+        final held = written.whereType<ServerTimeHeld>().last;
+        expect(held.session, bound);
+        final claimed = written.lastIndexWhere(
+          (event) => event is BatchClaimed,
+          written.indexOf(held),
+        );
+        expect(
+          written.sublist(claimed, written.indexOf(held)).where(
+                (event) =>
+                    event is ConnectionLost ||
+                    event is ConnectionReturned ||
+                    event is AccountChanged ||
+                    event is AppRestarted,
+              ),
+          isEmpty,
+        );
+      });
+    });
+  });
+
   group('through the real provider', () {
     test(
         'disposing the container during a call ends quietly: nothing throws, '

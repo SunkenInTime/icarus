@@ -1801,6 +1801,24 @@ Future<void> _run(Map<String, dynamic> step) async {
           at: ((at[0] as num).toDouble(), (at[1] as num).toDouble()),
         ),
       );
+    case 'storeDelete':
+      _log(await storeDelete(c, value as String));
+    case 'storeSetField':
+      _log(
+        await storeSetField(
+          c,
+          value as String,
+          step['field'] as String,
+          step['to'],
+        ),
+      );
+    case 'waitStoreRefusedLate':
+      _log(
+        await waitStoreRefusedLate(
+          c,
+          Duration(seconds: (value as num).toInt()),
+        ),
+      );
     case 'storeAddPage':
       _log(await storeAddPage(c));
     case 'addPage':
@@ -1834,6 +1852,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'killNow':
       _log('KILLED by the script');
+      await _flush();
       exit(9);
     case 'expectPageListRefusedNaming':
       _log(await pageListRefusal(c, value as String));

@@ -85,6 +85,7 @@ final class PendingOp extends QueueEntry {
     RefusalRecord? refusal,
     int? retriedAfter,
     ResendWindow? window,
+    bool dropBasis = false,
   }) => PendingOp(
     place: place,
     work: work ?? this.work,
@@ -96,7 +97,7 @@ final class PendingOp extends QueueEntry {
     retriedAfter: retriedAfter ?? this.retriedAfter,
     window: window ?? this.window,
     behindOwn: behindOwn,
-    basis: basis,
+    basis: dropBasis ? null : basis,
   );
 
   @override

@@ -138,7 +138,7 @@ final class BatchClaimed extends QueueEvent {
   final String clientId;
   final List<String> opIds;
   final DateTime at;
-  final Duration? elapsed;
+  final Duration Function()? elapsed;
 }
 
 final class ServerTimeHeld extends QueueEvent {

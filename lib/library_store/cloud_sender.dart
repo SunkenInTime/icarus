@@ -307,6 +307,7 @@ final class CloudSender {
     ),
     SenderTiming timing = const SenderTiming(),
     DateTime Function()? clock,
+    Duration Function()? elapsed,
     bool Function()? recordsConnectionLost,
   })  : _store = store,
         _send = send,
@@ -314,6 +315,7 @@ final class CloudSender {
         _inputs = inputs,
         _timing = timing,
         _clock = clock ?? DateTime.now,
+        _elapsed = elapsed ?? _monotonic(),
         _recordsLost = recordsConnectionLost ?? (() => true);
 
   final SenderStore _store;
@@ -321,6 +323,13 @@ final class CloudSender {
   final StoreReads _reads;
   final SenderTiming _timing;
   final DateTime Function() _clock;
+  final Duration Function() _elapsed;
+
+  static Duration Function() _monotonic() {
+    final watch = Stopwatch()..start();
+    return () => watch.elapsed;
+  }
+
   final bool Function() _recordsLost;
   final String build;
   final String clientId;
@@ -800,7 +809,7 @@ final class CloudSender {
     final fresh = _plan(id, cloud, _clock(), _boundMemory(id, snap));
     switch (pick(cloud, clientId)) {
       case final Picked picked when _sendable(cloud):
-        return _sendStep(id, owner, snap, picked);
+        return _sendStep(id, owner, snap, picked, session);
       case Picked():
         if (fresh.planned case final next?) {
           return _readStep(id, owner, snap, session, cloud, next);
@@ -1105,12 +1114,20 @@ final class CloudSender {
     Account owner,
     Snapshot snap,
     Picked picked,
+    int session,
   ) async {
     if (_settledAt(id) case final at? when at.isAfter(_clock())) {
       return _Skipped(at);
     }
     final ClaimedBatch batch;
-    switch (await _store.claim(owner, id, picked, _clock())) {
+    switch (await _store.claim(
+      owner,
+      id,
+      picked,
+      _clock(),
+      elapsed: _elapsed,
+      session: session,
+    )) {
       case Claimed(batch: final claimed):
         batch = claimed;
         _firstEdit.remove(id);
@@ -1134,9 +1151,16 @@ final class CloudSender {
       return _afterWrite(id, written, mustApply: true);
     }
     sendingUnder = snap;
+    _store.report(BatchSentAs(id, batch));
     final outcome = await _call(batch);
+    final answeredAt = _elapsed();
     sendingUnder = null;
     if (disposed) return const _Ended();
+    if (outcome is StoreBatchOutsideWindow &&
+        batch.basis == null &&
+        batch.unchecked.isNotEmpty) {
+      _store.report(UncheckedWithoutBasis(id, batch));
+    }
     switch (outcome) {
       case StoreBatchRefusedWhole(refusal: BatchRefusal.unauthenticated) ||
             StoreBatchAccountMismatch():
@@ -1151,7 +1175,11 @@ final class CloudSender {
       id,
       outcome is StoreBatchAccountMismatch
           ? [ClaimReleased(batch.attempt)]
-          : answersOf(batch, outcome, _clock()),
+          : [
+              ...answersOf(batch, outcome, _clock()),
+              if (outcome case StoreBatchAnswered(serverTime: final time?))
+                ServerTimeHeld(time, at: answeredAt, session: batch.session),
+            ],
       batch: batch,
     );
     if (disposed) return const _Ended();
@@ -1261,7 +1289,7 @@ final class CloudSender {
           clientId: batch.clientId,
           ops: batch.ops,
           account: batch.account,
-          serverTime: const ServerTimeNotAsked(),
+          serverTime: ServerTimeAsked(basis: batch.basis),
         ),
       ).then((outcome) => outcome).timeout(
             _timing.giveUpAfter,
@@ -1359,7 +1387,8 @@ List<QueueEvent> answersOf(
       StoreBatchLost(:final failure) => [
           TransportFailed(batch.attempt, failure, at: at),
         ],
-      StoreBatchAccountMismatch() || StoreBatchOutsideWindow() => [
-          ClaimReleased(batch.attempt)
+      StoreBatchAccountMismatch() => [ClaimReleased(batch.attempt)],
+      StoreBatchOutsideWindow() => [
+          BatchRefused(batch.attempt, BatchRefusal.uncheckedTooLate),
         ],
     };

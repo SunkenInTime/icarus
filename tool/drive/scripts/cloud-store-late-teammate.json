@@ -1,0 +1,22 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 4},
+  {"waitSignal": "owner-ready", "seconds": 300},
+  {"openShareLink": "{out}/edit-code.txt"},
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"expectItem": "o1-{run}"},
+  {"storeExpect": true},
+  {"signal": "mate-in"},
+  {"waitSignal": "deleted", "seconds": 300},
+  {"storeMove": "o1-{run}", "by": [0, 80]},
+  {"waitStoreSent": 60, "landed": "may wait"},
+  {"signal": "mate-moved"},
+  {"waitSignal": "owner-done", "seconds": 400},
+  {"wait": 6},
+  {"storeSyncState": true},
+  {"expectItem": "o1-{run}"},
+  {"exit": 1}
+]
