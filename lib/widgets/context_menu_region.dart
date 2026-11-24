@@ -31,6 +31,8 @@ class ContextMenuRegion extends StatefulWidget {
 
   @override
   State<ContextMenuRegion> createState() => _ContextMenuRegionState();
+
+  static void closeOpen() => _ContextMenuRegionState._open?.hide();
 }
 
 class _ContextMenuRegionState extends State<ContextMenuRegion> {

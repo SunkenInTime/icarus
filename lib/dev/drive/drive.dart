@@ -404,10 +404,11 @@ Future<void> _play(String script) async {
   }
   final refusals =
       appProviderContainer.read(canvasShowsProvider.notifier).refusals;
-  _log('CANVAS nothing shown '
-      '${refusals.where((r) => r.what == 'nothing shown').length} times, a '
-      'click ignored during an open '
-      '${refusals.where((r) => r.what != 'nothing shown').length} times');
+  int counted(String what) => refusals.where((r) => r.what == what).length;
+  _log('CANVAS nothing shown ${counted('nothing shown')} times, a click '
+      'ignored during an open ${counted('click ignored during an open')} '
+      'times, an edit reaching the canvas during an open '
+      '${counted('edit during an open')} times');
   for (final refusal in refusals) {
     _log('CANVAS $refusal');
   }
@@ -1211,6 +1212,7 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
   final pageName = step['page'] as String;
   final runs = (step['runs'] ?? 50) as int;
   final pictures = (step['unusedPictures'] ?? 20) as int;
+  final undoes = step['second'] == 'undo';
   StrategyData named(String name) => const LocalLibrary()
       .storedStrategies
       .firstWhere((strategy) => strategy.name == name);
@@ -1230,6 +1232,8 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       ];
   String ms(int micros) => (micros / 1000).toStringAsFixed(1);
   var emptied = 0;
+  var editsTaken = 0;
+  var openedUnsaved = 0;
   final windows = <int>[];
   final leftAgents = <String>{};
   var mixedFrames = 0;
@@ -1250,6 +1254,14 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       throw StateError('$leftName did not open');
     }
     await _frames();
+    if (undoes) {
+      final moved = c.read(agentProvider).first;
+      c
+          .read(agentProvider.notifier)
+          .updatePosition(moved.position + const Offset(30, 0), moved.id);
+      await c.read(strategyProvider.notifier).forceSaveNow(left.id);
+      await _frames();
+    }
     final before = agentsOnFirstPage();
     leftAgents
       ..clear()
@@ -1270,10 +1282,14 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     int? cleared;
     int? openedAt;
     int? secondClick;
+    var taken = false;
     final subscriptions = [
       c.listen(agentProvider, (_, next) {
         if (next.isEmpty && cleared == null)
           cleared = clock.elapsedMicroseconds;
+        if (next.isNotEmpty && c.read(strategyProvider).strategyId == left.id) {
+          taken = true;
+        }
       }),
       c.listen(strategyProvider.select((state) => state.strategyId), (_, next) {
         if (next == opened.id) openedAt ??= clock.elapsedMicroseconds;
@@ -1285,7 +1301,11 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     SchedulerBinding.instance.scheduleFrame();
     await SchedulerBinding.instance.endOfFrame;
     secondClick = clock.elapsedMicroseconds;
-    _click(page);
+    if (undoes) {
+      _press(['controlLeft', 'keyZ']);
+    } else {
+      _click(page);
+    }
     final settleBy = DateTime.now().add(const Duration(seconds: 10));
     while (DateTime.now().isBefore(settleBy) &&
         !(c.read(strategyProvider).strategyId == opened.id &&
@@ -1298,6 +1318,9 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
         ? openedName
         : c.read(strategyProvider).strategyName;
     final session = c.read(strategyPageSessionProvider);
+    final unsaved = !c.read(strategyProvider).isSaved;
+    if (taken) editsTaken++;
+    if (unsaved) openedUnsaved++;
     await _frames();
     for (final subscription in subscriptions) {
       subscription.close();
@@ -1305,7 +1328,7 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     final after = agentsOnFirstPage();
     final lost = before.isNotEmpty && after.isEmpty;
     if (lost) emptied++;
-    if (!listEquals(before, after)) {
+    if (undoes || !listEquals(before, after)) {
       (await const LocalLibrary().savePageOnScreen(original)).orThrow();
     }
     final window = switch ((cleared, openedAt)) {
@@ -1320,14 +1343,21 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
         '$openedName published ${openedAt == null ? 'never' : '${ms(openedAt!)} ms'} after it; '
         'window ${window == null ? 'not measured' : '${ms(window)} ms'}; '
         'ended on $endedOn page ${session.activePageId}'
-        '${session.isApplyingPage ? ' still applying' : ''}');
+        '${session.isApplyingPage ? ' still applying' : ''}'
+        '${undoes ? '; the undo was ${taken ? 'taken' : 'refused'} during the open, $endedOn ${unsaved ? 'marked unsaved' : 'saved'}' : ''}');
   }
   windows.sort();
   _log('RACE summary: $runs runs, the left page saved empty $emptied times; '
       'window median ${windows.isEmpty ? '-' : ms(windows[windows.length ~/ 2])} ms, '
       'worst ${windows.isEmpty ? '-' : ms(windows.last)} ms; '
       '$mixedFrames of $framesWatched frames drawn showed the left '
-      'strategy\'s agents with the other strategy open');
+      'strategy\'s agents with the other strategy open'
+      '${undoes ? '; the undo taken during the open $editsTaken times, the strategy opened marked unsaved $openedUnsaved times' : ''}');
+  if (step['expectTaken'] case final int expected when expected != editsTaken) {
+    _failedSteps++;
+    _log('FAIL raceLeave: the undo was taken during the open $editsTaken '
+        'times, expected $expected');
+  }
   if (step['expectEmptied'] case final int expected when expected != emptied) {
     _failedSteps++;
     _log('FAIL raceLeave: the left page was saved empty $emptied times, '

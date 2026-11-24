@@ -29,6 +29,7 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/widgets/new_page_copy_toast.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 
 class GlobalShortcuts extends ConsumerStatefulWidget {
   const GlobalShortcuts({super.key, required this.child});
@@ -104,8 +105,9 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     // the node itself holds focus. With the web semantics tree on, a click
     // on an empty part of the page focuses it.
     final writingCaption = ref.watch(writingCaptionProvider);
+    final opening = ref.watch(strategyOpeningProvider) != null;
     return Shortcuts(
-      shortcuts: editorCovered || writingCaption
+      shortcuts: editorCovered || writingCaption || opening
           ? const {}
           : ShortcutInfo.globalShortcutsFor(
               ref.watch(appPreferencesProvider).customShortcutBindings,

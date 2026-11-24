@@ -8,6 +8,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 
 class ImageDropTarget extends ConsumerStatefulWidget {
   const ImageDropTarget({super.key, required this.child});
@@ -28,6 +29,7 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
       ),
     );
     final canDrop = canEditPages &&
+        ref.watch(strategyOpeningProvider) == null &&
         ref.watch(platformPolicyProvider).supports(PlatformFeature.fileDrop);
 
     return DropTarget(
@@ -44,7 +46,8 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
         });
       },
       onDragDone: (details) async {
-        if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+        if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages ||
+            ref.read(strategyOpeningProvider) != null) {
           return;
         }
         if (!ensureFeatureAvailable(ref, PlatformFeature.fileDrop)) return;

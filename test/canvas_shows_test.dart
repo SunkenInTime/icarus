@@ -15,6 +15,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
@@ -325,6 +326,34 @@ void main() {
     expect(editor().isOpening, isFalse);
     await editor().selectPage(c.pages[1].id);
     expect(activePage(), c.pages[1].id);
+  });
+
+  test(
+      'the strategy being opened is named from the start of its open to its '
+      'end, and nothing is named once a close ends it', () async {
+    final a = stored('named-a');
+    final b = stored('named-b');
+    expect(container.read(strategyOpeningProvider), isNull);
+    expect(await editor().loadFromHive(a.id), isTrue);
+    expect(container.read(strategyOpeningProvider), isNull);
+
+    final hold = gate.holdNext();
+    final opening = editor().loadFromHive(b.id);
+    expect(container.read(strategyOpeningProvider), b.id);
+    await hold.reached.future;
+    expect(container.read(strategyOpeningProvider), b.id);
+    hold.released.complete();
+    expect(await opening, isTrue);
+    expect(container.read(strategyOpeningProvider), isNull);
+
+    final closing = gate.holdNext();
+    final reopening = editor().loadFromHive(a.id);
+    await closing.reached.future;
+    await editor().clearCurrentStrategy();
+    expect(container.read(strategyOpeningProvider), isNull);
+    closing.released.complete();
+    expect(await reopening, isFalse);
+    expect(container.read(strategyOpeningProvider), isNull);
   });
 
   test('closing during an open ends the open and leaves nothing open',
