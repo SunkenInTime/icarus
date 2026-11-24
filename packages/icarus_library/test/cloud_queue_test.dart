@@ -279,6 +279,25 @@ void main() {
   });
 
   group('the window: a lost answer is resent only inside it', () {
+    test(
+      'a retry waiting out its backoff goes at once when the clock moves '
+      'back past its failure, instead of waiting for the clock to catch up',
+      () {
+        final client = online();
+        client.edit(movePatch('move', x: 40));
+        final attempt = client.claim(['move']);
+        client.must(
+          TransportFailed(attempt, TransportFailure.network, at: now),
+        );
+        expect(client.view('move').holds, [isA<UntilRetryTime>()]);
+        client.clock = now.subtract(const Duration(days: 1));
+        expect(client.view('move').holds, isEmpty);
+        expect(client.view('move').sendable, isTrue);
+        client.clock = now.add(const Duration(milliseconds: 100));
+        expect(client.view('move').holds, [isA<UntilRetryTime>()]);
+      },
+    );
+
     test('the client window is a day shorter than the server\'s memory', () {
       expect(resendWindow, const Duration(days: 29));
       expect(serverRemembersAnswersFor, const Duration(days: 30));
