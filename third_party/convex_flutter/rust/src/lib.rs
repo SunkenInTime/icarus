@@ -707,6 +707,16 @@ impl MobileConvexClient {
         handle_direct_function_result(result)
     }
 
+    /// The connection generation the client is on, as each stamp's
+    /// `connection` numbers it (see `convex::QueryResults::connection`).
+    /// After a reconnect it is the generation the client started again on,
+    /// never an earlier one.
+    #[frb]
+    pub async fn connection_generation(&self) -> Result<i64, ClientError> {
+        let client = self.connected_client().await?;
+        Ok(client.connection_generation().await? as i64)
+    }
+
     /// [mutation], with the snapshot the client held when it completed the
     /// mutation (see [TimedAnswer]). A server function failure is an answer
     /// here, with its snapshot; a timeout or a bridge error still throws.

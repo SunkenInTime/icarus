@@ -5,6 +5,7 @@ import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'package:icarus/collab/src/convex_client_types.dart';
+import 'package:icarus/collab/transport/convex_transport.dart' show ResultStamp;
 
 @JS('convex.ConvexClient')
 extension type _JsConvexClient._(JSObject _) implements JSObject {
@@ -32,11 +33,24 @@ extension type _JsConvexClient._(JSObject _) implements JSObject {
 @JS()
 extension type _JsBaseConvexClient._(JSObject _) implements JSObject {
   external void clearAuth();
+  external JSFunction addOnTransitionHandler(JSFunction handler);
 }
 
 @JS()
 extension type _JsConnectionState._(JSObject _) implements JSObject {
   external bool get isWebSocketConnected;
+  external int get connectionCount;
+}
+
+@JS()
+extension type _JsTransition._(JSObject _) implements JSObject {
+  external _JsLong get timestamp;
+}
+
+@JS()
+extension type _JsLong._(JSObject _) implements JSObject {
+  external int get high;
+  external int get low;
 }
 
 @JS('BigInt')
@@ -61,8 +75,8 @@ extension type _JsReadableUint8Array._(JSObject _) implements JSObject {
   external int operator [](int index);
 }
 
-class ConvexClient implements ConvexClientValueSource {
-  ConvexClient._(this._client, this.config) {
+class ConvexClient implements StampedValueSource {
+  ConvexClient._(this._client, this.config) : _number = ++_built {
     _setConnectionState(
       _client.connectionState().isWebSocketConnected
           ? WebSocketConnectionState.connected
@@ -82,6 +96,12 @@ class ConvexClient implements ConvexClientValueSource {
 
   final _JsConvexClient _client;
   final ConvexConfig config;
+
+  static int _built = 0;
+  final int _number;
+  int _dispatches = 0;
+  int? _serverTime;
+  JSFunction? _transitionHandler;
   final StreamController<WebSocketConnectionState> _connectionStateController =
       StreamController<WebSocketConnectionState>.broadcast();
   final StreamController<bool> _authStateController =
@@ -288,6 +308,118 @@ class ConvexClient implements ConvexClientValueSource {
       updateCallback: updateCallback,
       errorCallback: errorCallback,
     );
+  }
+
+  void _countTransitions() {
+    if (_transitionHandler != null) return;
+    _transitionHandler = ((JSAny? transition) {
+      _dispatches += 1;
+      final time = _JsTransition._(transition as JSObject).timestamp;
+      _serverTime = time.high * 0x100000000 + time.low.toUnsigned(32);
+    }).toJS;
+    _client.client.addOnTransitionHandler(_transitionHandler!);
+  }
+
+  ResultStamp get _stamp => ResultStamp(
+        client: _number,
+        connection: _client.connectionState().connectionCount,
+        snapshot: _dispatches,
+        serverTime: _serverTime,
+      );
+
+  void _stampAfterThisDispatch(void Function(ResultStamp stamp) deliver) =>
+      scheduleMicrotask(() => deliver(_stamp));
+
+  @override
+  Future<StampedOutcome<Object?>> queryStamped(
+    String name,
+    Map<String, Object?> args,
+  ) {
+    _countTransitions();
+    final answered = Completer<StampedOutcome<Object?>>();
+    late final SubscriptionHandle handle;
+    var subscribed = false;
+    var done = false;
+    void finish(StampedOutcome<Object?> outcome) {
+      if (done) return;
+      done = true;
+      if (subscribed) handle.cancel();
+      answered.complete(outcome);
+    }
+
+    subscribeStamped(name: name, args: args, onResult: finish).then((next) {
+      handle = next;
+      subscribed = true;
+      if (done) handle.cancel();
+    });
+    return answered.future.timeout(
+      config.operationTimeout,
+      onTimeout: () {
+        done = true;
+        if (subscribed) handle.cancel();
+        throw TimeoutException('Query $name timed out', config.operationTimeout);
+      },
+    );
+  }
+
+  @override
+  Future<StampedOutcome<Object?>> mutationStamped({
+    required String name,
+    required Map<String, Object?> args,
+  }) async {
+    _countTransitions();
+    final promise = _client.mutation(name, _toJsConvex(args));
+    try {
+      final result = await promise.toDart.timeout(config.operationTimeout);
+      return StampedAnswer(_fromJsConvex(result), _stamp);
+    } on TimeoutException {
+      throw TimeoutException('Mutation $name timed out', config.operationTimeout);
+    } catch (error) {
+      return StampedFunctionError(_jsFunctionError(error), _stamp);
+    }
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeStamped({
+    required String name,
+    required Map<String, Object?> args,
+    required void Function(StampedOutcome<Object?> outcome) onResult,
+  }) async {
+    var cancelled = false;
+    _countTransitions();
+    final member = _subscribeMember(
+      (name: name, args: args),
+      onUpdate: (value) => _stampAfterThisDispatch((stamp) {
+        if (!cancelled) onResult(StampedAnswer(value, stamp));
+      }),
+      onError: (error) => _stampAfterThisDispatch((stamp) {
+        if (!cancelled) onResult(StampedFunctionError(error, stamp));
+      }),
+    );
+    return _WebGroupSubscriptionHandle([member], onCancel: () {
+      cancelled = true;
+    });
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeValuesStamped({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(StampedOutcome<List<Object?>> outcome) onResult,
+  }) {
+    _countTransitions();
+    return subscribeValues(
+        queries: queries,
+        onUpdate: (values) => onResult(StampedAnswer(values, _stamp)),
+      onError: (error) => _stampAfterThisDispatch((stamp) {
+        onResult(StampedFunctionError(error, stamp));
+      }),
+    );
+  }
+
+  @override
+  Future<int> connectionGeneration() async {
+    _countTransitions();
+    return _client.connectionState().connectionCount;
   }
 
   Future<AuthHandleWrapper> setAuthWithRefresh({

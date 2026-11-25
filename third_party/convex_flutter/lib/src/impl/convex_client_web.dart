@@ -636,6 +636,11 @@ class WebConvexClient implements IConvexClient {
   }
 
   @override
+  Future<int> connectionGeneration() {
+    throw UnsupportedError('connectionGeneration is native only.');
+  }
+
+  @override
   Future<TimedAnswer> mutationTimed({
     required String name,
     required Map<String, dynamic> args,

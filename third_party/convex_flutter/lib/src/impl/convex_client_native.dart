@@ -149,6 +149,9 @@ class NativeConvexClient implements IConvexClient {
   }
 
   @override
+  Future<int> connectionGeneration() => _rustClient.connectionGeneration();
+
+  @override
   Future<TimedAnswer> mutationTimed({
     required String name,
     required Map<String, dynamic> args,
