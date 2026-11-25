@@ -710,12 +710,19 @@ impl BaseConvexClient {
                     self.observe_timestamp(ts);
                 }
                 let request_id = RequestId::new(request_id);
-                self.request_manager.update_request(
+                let completed = self.request_manager.update_request(
                     &request_id,
                     RequestType::Mutation,
                     result.into(),
                     ts,
                 )?;
+                // A successful mutation may commit at a timestamp the client
+                // has already seen a transition for, since the server doesn't
+                // order responses before transitions.
+                if !completed {
+                    self.request_manager
+                        .remove_and_notify_completed(self.remote_query_set.version.ts);
+                }
             },
             ServerMessage::AuthError {
                 error_message,
@@ -847,6 +854,7 @@ mod tests {
     use std::str::FromStr;
 
     use convex_sync_types::{
+        types::ErrorPayload,
         AuthenticationToken,
         ClientMessage,
         LogLinesMessage,
@@ -1119,6 +1127,142 @@ mod tests {
         assert_eq!(
             client.latest_results().get(&subscriber_b),
             Some(&FunctionResult::Value(10.into()))
+        );
+    }
+
+    fn start_mutation(
+        client: &mut BaseConvexClient,
+    ) -> (oneshot::Receiver<FunctionResult>, SessionRequestSeqNumber) {
+        let result_receiver =
+            client.mutation("counter:increment".parse().unwrap(), BTreeMap::new());
+        match client.pop_next_message() {
+            Some(ClientMessage::Mutation { request_id, .. }) => (result_receiver, request_id),
+            other => panic!("expected mutation message, got {other:?}"),
+        }
+    }
+
+    fn mutation_response(
+        request_id: SessionRequestSeqNumber,
+        result: Result<Value, ErrorPayload<Value>>,
+        ts: Option<Timestamp>,
+    ) -> ServerMessage {
+        ServerMessage::MutationResponse {
+            request_id,
+            result,
+            ts,
+            log_lines: LogLinesMessage(vec![]),
+        }
+    }
+
+    #[test]
+    fn test_mutation_waits_for_a_transition_reaching_its_timestamp() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+
+        let mutation_ts = version.ts.succ().unwrap().succ().unwrap();
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Ok(Value::Null),
+                Some(mutation_ts),
+            ))
+            .unwrap();
+        // This transition is older than the mutation, so it doesn't reflect it.
+        apply_query_update(&mut client, &mut version, query_id, 5.0.into());
+        assert!(result_receiver.try_recv().is_err());
+
+        apply_query_update(&mut client, &mut version, query_id, 6.0.into());
+        assert_eq!(
+            result_receiver.try_recv().unwrap(),
+            FunctionResult::Value(Value::Null)
+        );
+    }
+
+    #[test]
+    fn test_mutation_completes_when_its_transition_arrived_first() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+
+        // The transition reflecting the mutation arrives before its response.
+        apply_query_update(&mut client, &mut version, query_id, 2.0.into());
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Ok(Value::Null),
+                Some(version.ts),
+            ))
+            .unwrap();
+        assert_eq!(
+            result_receiver.try_recv().unwrap(),
+            FunctionResult::Value(Value::Null)
+        );
+    }
+
+    #[test]
+    fn test_mutation_with_convex_error_completes_immediately() {
+        let mut client = BaseConvexClient::new();
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Err(ErrorPayload::ErrorData {
+                    message: "nope".into(),
+                    data: Value::Null,
+                }),
+                None,
+            ))
+            .unwrap();
+        assert!(matches!(
+            result_receiver.try_recv().unwrap(),
+            FunctionResult::ConvexError(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_resent_mutation_response_after_completion_is_ignored() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+        let mutation_ts = version.ts.succ().unwrap();
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Ok(Value::Null),
+                Some(mutation_ts),
+            ))
+            .unwrap();
+
+        // The connection drops before the transition reflecting the mutation,
+        // so the mutation is resent.
+        client.resend_ongoing_queries_mutations().await;
+        while client.pop_next_message().is_some() {}
+        let mut version = StateVersion::initial();
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        apply_query_update(&mut client, &mut version, query_id, 2.0.into());
+        assert_eq!(version.ts, mutation_ts);
+        assert!(result_receiver.try_recv().is_ok());
+
+        // The response to the resent mutation arrives after it completed.
+        let result = client.receive_message(mutation_response(
+            request_id,
+            Ok(Value::Null),
+            Some(mutation_ts),
+        ));
+        assert!(
+            matches!(result, Ok(None)),
+            "a response to a completed mutation should be ignored, got {result:?}"
         );
     }
 }

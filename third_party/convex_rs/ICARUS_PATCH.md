@@ -94,3 +94,17 @@ again on the next connection. Nothing held its subscription, so nothing could
 unsubscribe it, and it kept costing reads for the life of the client. Now the
 caller gets the subscription either way, and dropping it unsubscribes. Sent
 upstream as convex/convex-rs#26.
+
+A mutation now resolves only once a transition has reached the timestamp it
+committed at, as in the JS client. 0.10.4 resolved a successful mutation on the
+first transition after its response arrived, even when that transition was
+older than the write, so `mutation(...).await` could return while subscribed
+queries still showed the data from before it. This is upstream's change from
+convex/convex-rs 1dbad3046e449224f8ec0bdd6b432ff6544ac2f9 ("Complete Rust
+client mutations only once they're reflected in queries", #60513), applied as
+is: a mutation whose transition arrived before its response completes when the
+response arrives, a mutation that fails with a `ConvexError` completes at once,
+and a response to a mutation that already completed (one resent after a
+reconnect) is ignored instead of causing a reconnect.
+`client::tests::test_mutation_waits_for_its_commit_transition` checks the same
+through the public client and this crate's worker.
