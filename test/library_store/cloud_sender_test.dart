@@ -96,7 +96,7 @@ void main() {
           payload: drawn.payload,
           sortIndex: drawn.sortIndex,
           revision: 1,
-          unknownFields: jsonObject({'createdAt': firstLife + 1000}),
+          unknownFields: jsonObject({'createdAt': createdAtOf(drawn)! + 1000}),
         );
         world.server.answerNext(strategyId, (call) {
           world.server.rows[strategyId] =
