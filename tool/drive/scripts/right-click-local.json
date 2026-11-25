@@ -101,7 +101,7 @@
   {"tapText": "Page 1", "button": "secondary"},
   {"wait": 1},
   {"shot": "{out}/8-last-page-menu.png"},
-  {"tapText": "Delete", "optional": true},
+  {"tapText": "Delete", "disabled": true},
   {"wait": 1},
   {"shot": "{out}/9-last-page-still-there.png"},
   {"waitText": "Page 1", "seconds": 3},

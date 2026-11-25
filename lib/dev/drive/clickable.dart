@@ -56,17 +56,26 @@ RenderObject? _handlerOf(RenderObject node) {
   return null;
 }
 
-bool takesTheTap(RenderObject match, Offset at) {
-  if (!_onScreen(at)) return false;
+enum _Press { taken, onItsWrapper, refused }
+
+_Press _pressOn(RenderObject match, Offset at) {
+  if (!_onScreen(at)) return _Press.refused;
   final path = _hitAt(at);
   final own = _handlerOf(match);
   if (own == null) {
     final first = path.firstOrNull;
-    return first != null && first is! RenderView && _within(first, match);
+    return first != null && first is! RenderView && _within(first, match)
+        ? _Press.taken
+        : _Press.refused;
   }
   final first = path.where(_takesTaps).firstOrNull;
-  return first != null && (identical(first, own) || _within(first, match));
+  if (first == null) return _Press.refused;
+  if (identical(first, own) || _within(first, match)) return _Press.taken;
+  return _within(match, first) ? _Press.onItsWrapper : _Press.refused;
 }
+
+bool takesTheTap(RenderObject match, Offset at) =>
+    _pressOn(match, at) == _Press.taken;
 
 String _named(RenderObject target) {
   Element? made;
@@ -141,16 +150,19 @@ Offset clickableCenterOf(
   bool Function(Widget) test, {
   required String what,
   int nth = 0,
+  bool disabled = false,
   void Function(String)? note,
 }) {
   final found = matchesInTree(test);
+  final presses = [for (final match in found) _pressOn(match.box, match.at)];
+  final wanted = disabled ? _Press.onItsWrapper : _Press.taken;
   final tappable = [
-    for (final (index, match) in found.indexed)
-      if (takesTheTap(match.box, match.at)) index,
+    for (final (index, press) in presses.indexed)
+      if (press == wanted) index,
   ];
   final untapped = [
-    for (var index = 0; index < found.length; index++)
-      if (!tappable.contains(index)) index,
+    for (final (index, press) in presses.indexed)
+      if (press != wanted) index,
   ];
   if (tappable.length > nth) {
     final index = tappable[nth];
@@ -168,8 +180,22 @@ Offset clickableCenterOf(
     throw StateError('$what: found ${found.length}, all can be tapped$asked');
   }
   final can = tappable.isEmpty ? 'none' : '${tappable.length}';
+  if (disabled) {
+    final enabled = presses.indexOf(_Press.taken);
+    if (enabled >= 0) {
+      throw StateError('$what: found ${found.length}, $can disabled$asked; '
+          'the ${_ordinal(enabled + 1)} is not disabled: its own handler '
+          'takes the press');
+    }
+    throw StateError('$what: found ${found.length}, $can disabled$asked; '
+        'the first that cannot be pressed: '
+        '${whyNotTapped(found[untapped.first].at)}');
+  }
+  final hint = presses[untapped.first] == _Press.onItsWrapper
+      ? '; if the control is meant to be disabled, add "disabled": true'
+      : '';
   throw StateError('$what: found ${found.length}, $can can be tapped$asked; '
-      'the first that cannot: ${whyNotTapped(found[untapped.first].at)}');
+      'the first that cannot: ${whyNotTapped(found[untapped.first].at)}$hint');
 }
 
 List<Offset> clickableCentersOf(bool Function(Widget) test) => [

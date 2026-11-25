@@ -381,6 +381,91 @@ void main() {
     expect(_taps, {'page 1': 1});
   });
 
+  Widget disabledItem({required bool enabled}) => Listener(
+        onPointerDown: (_) {},
+        child: IgnorePointer(
+          ignoring: !enabled,
+          child: GestureDetector(
+            onTap: _counts('delete'),
+            child: const Text('Delete'),
+          ),
+        ),
+      );
+
+  testWidgets(
+      'a disabled control is refused, and the refusal says how to mean it',
+      (tester) async {
+    await tester.pumpWidget(_app(Center(child: disabledItem(enabled: false))));
+
+    await expectLater(
+      () => _tapThroughDriver(tester, 'Delete'),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        endsWith('if the control is meant to be disabled, add "disabled": '
+            'true'),
+      )),
+    );
+    expect(_taps, isEmpty);
+  });
+
+  testWidgets(
+      'with "disabled", a disabled control is pressed and nothing it holds '
+      'runs', (tester) async {
+    await tester.pumpWidget(_app(Center(child: disabledItem(enabled: false))));
+
+    await tester.tapAt(clickableCenterOf(
+      (widget) => _isText(widget, 'Delete'),
+      what: 'tapText "Delete"',
+      disabled: true,
+    ));
+    await tester.pumpAndSettle();
+
+    expect(_taps, isEmpty);
+  });
+
+  testWidgets('with "disabled", an enabled control fails as not disabled',
+      (tester) async {
+    await tester.pumpWidget(_app(Center(child: disabledItem(enabled: true))));
+
+    expect(
+      () => clickableCenterOf(
+        (widget) => _isText(widget, 'Delete'),
+        what: 'tapText "Delete"',
+        disabled: true,
+      ),
+      _refused('tapText "Delete": found 1, none disabled; the 1st is not '
+          'disabled: its own handler takes the press'),
+    );
+  });
+
+  testWidgets(
+      'with "disabled", a disabled control under something else fails as '
+      'covered', (tester) async {
+    await tester.pumpWidget(_app(Stack(
+      children: [
+        Center(child: disabledItem(enabled: false)),
+        Positioned.fill(
+          child: GestureDetector(
+            key: const ValueKey('cover'),
+            behavior: HitTestBehavior.opaque,
+            onTap: _counts('cover'),
+          ),
+        ),
+      ],
+    )));
+
+    expect(
+      () => clickableCenterOf(
+        (widget) => _isText(widget, 'Delete'),
+        what: 'tapText "Delete"',
+        disabled: true,
+      ),
+      _refused('tapText "Delete": found 1, none disabled; the first that '
+          "cannot be pressed: the tap goes to GestureDetector [<'cover'>]"),
+    );
+  });
+
   testWidgets('asking past the last match says how many there are',
       (tester) async {
     await tester.pumpWidget(_app(const Center(child: Text(_name))));

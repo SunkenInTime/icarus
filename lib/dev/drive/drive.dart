@@ -1991,6 +1991,7 @@ Future<void> _run(Map<String, dynamic> step) async {
           note: _log,
           (w) => _isText(w, value as String),
           what: 'tapText "$value"',
+          disabled: step['disabled'] == true,
           nth: nth,
         ),
         secondary: step['button'] == 'secondary',
@@ -2002,6 +2003,7 @@ Future<void> _run(Map<String, dynamic> step) async {
           note: _log,
           (w) => _hasKey(w, value as String),
           what: 'tapKey "$value"',
+          disabled: step['disabled'] == true,
           nth: nth,
         ),
         secondary: step['button'] == 'secondary',
@@ -2013,6 +2015,7 @@ Future<void> _run(Map<String, dynamic> step) async {
         note: _log,
         (w) => w is Icon && w.icon == icon,
         what: 'tapIcon "$value"',
+        disabled: step['disabled'] == true,
         nth: nth,
       ));
     case 'tapAt':
