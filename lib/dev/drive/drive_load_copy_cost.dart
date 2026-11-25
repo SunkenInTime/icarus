@@ -1,7 +1,6 @@
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/local_library.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 
 int _copied(StrategyPage page) =>
     page.agentData.length + page.abilityData.length + page.utilityData.length;
