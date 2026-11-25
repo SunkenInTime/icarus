@@ -36,6 +36,8 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
     NeedsUser(:final reason) => switch (reason) {
       RefusedByServer(refusal: RejectedByServer()) => Kind.rejected,
       RefusedByServer(refusal: FailedOnServer()) => Kind.failed,
+      RefusedByServer(refusal: StrategyReplacedOnServer()) => Kind.rejected,
+      RefusedByServer(refusal: AnsweredWithoutLife()) => Kind.windowClosed,
       WindowClosed() => Kind.windowClosed,
       WrittenLongAgo() => Kind.writtenLongAgo,
       RetriesExhausted() => Kind.retriesExhausted,
@@ -110,7 +112,12 @@ final rows = <Row>[
     final client = Client()
       ..edit(movePatch('first', merge: FieldMerge(fields: ['position'])));
     final attempt = client.claim(['first']);
-    client.must(OpAnswered(attempt, const AppliedAnswer('first', revision: 3)));
+    client.must(
+      OpAnswered(
+        attempt,
+        const AppliedAnswer('first', revision: 3, life: fixtureLife),
+      ),
+    );
     return client..edit(onVisible(client.visible, movePatch('x', x: 70)));
   }),
   Row(
@@ -119,11 +126,21 @@ final rows = <Row>[
       final client = Client()..edit(movePatch('first'));
       final attempt = client.claim(['first']);
       client.must(
-        OpAnswered(attempt, const AppliedAnswer('first', revision: 3)),
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('first', revision: 3, life: fixtureLife),
+        ),
       );
       return client..edit(pageDelete('x', 'page-a'));
     },
   ),
+  Row('nothing queued, the page list owed', () {
+    final client = Client()..edit(movePatch('x'));
+    final attempt = client.claim(['x']);
+    return client
+      ..must(BatchRefused(attempt, BatchRefusal.strategyReplaced))
+      ..must(const UserDiscarded('x'));
+  }),
   Row('sending in attempt 1', () {
     final client = Client()..edit(movePatch('x'));
     client.claim(['x']);
@@ -192,7 +209,12 @@ final rows = <Row>[
     return client..must(
       OpAnswered(
         attempt,
-        const NoopAnswer('del', revision: 2, replay: NoopReplay.notApplied),
+        const NoopAnswer(
+          'del',
+          revision: 2,
+          replay: NoopReplay.notApplied,
+          life: fixtureLife,
+        ),
       ),
     );
   }),
@@ -200,7 +222,12 @@ final rows = <Row>[
     final client = Client()
       ..edit(movePatch('first', merge: FieldMerge(fields: ['position'])));
     final attempt = client.claim(['first']);
-    client.must(OpAnswered(attempt, const AppliedAnswer('first', revision: 3)));
+    client.must(
+      OpAnswered(
+        attempt,
+        const AppliedAnswer('first', revision: 3, life: fixtureLife),
+      ),
+    );
     client.edit(onVisible(client.visible, movePatch('x', x: 70)));
     return client..arrive(const PageGone('page-a'));
   }),
@@ -258,17 +285,30 @@ final events = <String, QueueEvent Function(Client)>{
   'attempt 1 released': (c) => const ClaimReleased(1),
   'attempt 1 transport failed': (c) =>
       TransportFailed(1, TransportFailure.network, at: c.at),
-  'applied at 2': (c) => const OpAnswered(1, AppliedAnswer('x', revision: 2)),
+  'applied at 2': (c) =>
+      const OpAnswered(1, AppliedAnswer('x', revision: 2, life: fixtureLife)),
   'noop at 2, applied when first received': (c) => const OpAnswered(
     1,
-    NoopAnswer('x', revision: 2, replay: NoopReplay.appliedWhenFirstReceived),
+    NoopAnswer(
+      'x',
+      revision: 2,
+      replay: NoopReplay.appliedWhenFirstReceived,
+      life: fixtureLife,
+    ),
   ),
   'noop at 2, not applied': (c) => const OpAnswered(
     1,
-    NoopAnswer('x', revision: 2, replay: NoopReplay.notApplied),
+    NoopAnswer(
+      'x',
+      revision: 2,
+      replay: NoopReplay.notApplied,
+      life: fixtureLife,
+    ),
   ),
   'noop without a revision': (c) =>
       const OpAnswered(1, NoopWithoutRevision('x')),
+  'answered at 2 with no life': (c) =>
+      const OpAnswered(1, AnswerWithoutLife('x', revision: 2)),
   for (final reason in RejectionReason.values)
     'rejected: ${reason.wireName}': (c) =>
         OpAnswered(1, RejectedAnswer('x', reason, const NoServerCopy())),
@@ -277,7 +317,7 @@ final events = <String, QueueEvent Function(Client)>{
     FailedAnswer('x', OtherFailure('INTERNAL_ERROR'), 'unexpected'),
   ),
   'answer from an attempt that did not hold it': (c) =>
-      const OpAnswered(99, AppliedAnswer('x', revision: 2)),
+      const OpAnswered(99, AppliedAnswer('x', revision: 2, life: fixtureLife)),
   for (final refusal in BatchRefusal.values)
     'attempt 1 refused whole: ${refusal.name}': (c) => BatchRefused(1, refusal),
   'app restarted, same build': (c) => const AppRestarted(build: build),
@@ -356,6 +396,14 @@ String outcome(Client before, Step result) {
             '$id: ${describe(after, id)}',
         if (standingOf(queue) != standingOf(before.queue))
           'standing ${standingOf(queue).name}',
+        if (queue.shown.list != before.queue.shown.list)
+          'page list ${queue.shown.list}',
+        for (final page in {
+          ...queue.shown.pageReads.keys,
+          ...before.queue.shown.pageReads.keys,
+        })
+          if (queue.shown.pageRead(page) != before.queue.shown.pageRead(page))
+            '$page ${queue.shown.pageRead(page)}',
         for (final work in queue.landed)
           if (!before.queue.landed.contains(work))
             'draws ${work.op.opId} as landed at ${work.revision} '
@@ -402,7 +450,9 @@ String renderTable() {
       'the queue or hands it to the user. Applied or nothing to do: done. '
       'Rejected: the user decides, and later work on that row waits behind '
       'it, unless the row the rejection carries already holds what the op '
-      'wrote. Failed: the user decides.',
+      'wrote, which never applies to `row_replaced`: that row is another life '
+      'of the row, so the op is not delivered whatever its value. Failed: the '
+      'user decides.',
     )
     ..writeln(
       '- When the user gives up an entry (takes the cloud\'s version or '
@@ -571,7 +621,10 @@ String renderTable() {
       ..writeln()
       ..writeln('## ${row.label}')
       ..writeln()
-      ..writeln('Starts as: ${describe(client, row.subject)}.')
+      ..writeln(
+        'Starts as: ${describe(client, row.subject)}'
+        '${isDebt(client.queue.shown.list) ? '; page list ${client.queue.shown.list}' : ''}.',
+      )
       ..writeln()
       ..writeln('| Event | Result |')
       ..writeln('| --- | --- |');
@@ -614,7 +667,9 @@ void main() {
     for (final row in rows) {
       final client = row.build();
       final views = entryViews(client.queue, client.at);
-      kinds.add(kindOf(client.queue.entry(row.subject)!, views[row.subject]));
+      if (client.queue.entry(row.subject) case final entry?) {
+        kinds.add(kindOf(entry, views[row.subject]));
+      }
       standings.add(standingOf(client.queue));
     }
     expect(kinds, Kind.values.toSet());

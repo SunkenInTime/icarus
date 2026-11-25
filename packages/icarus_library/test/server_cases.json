@@ -1,0 +1,750 @@
+[
+  {
+    "name": "an add answers with its new row's life",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "add",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L0"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "an op sent again after it applied replays as applied when first received, with its life",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "appliedLife": "L0",
+            "appliedRevision": 1,
+            "opId": "add",
+            "status": "applied"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "currentLife": "L0",
+            "currentRevision": 1,
+            "opId": "add",
+            "status": "noop",
+            "wasApplied": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "a move naming a life that was purged and put back is row_replaced with the current row, and a resend reads it fresh",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "add",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "delete",
+            "type": "element.delete",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "expectedElementRevision": 1,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "opId": "delete",
+            "status": "applied",
+            "appliedRevision": 2,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "purge": true
+      },
+      {
+        "send": [
+          {
+            "opId": "again",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett",
+                "rotation": 135
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "again",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L1"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "move",
+            "type": "element.patch",
+            "elementPublicId": "e1",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett",
+                "position": {
+                  "dx": 40,
+                  "dy": 0
+                }
+              }
+            },
+            "sortIndex": 0,
+            "expectedElementRevision": 1,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "current": {
+              "type": "element",
+              "revision": 1,
+              "life": "L1",
+              "value": {
+                "data": {
+                  "id": "e1",
+                  "rotation": 135,
+                  "type": "jett"
+                },
+                "kind": "agent",
+                "payloadVersion": 1
+              }
+            },
+            "opId": "move",
+            "reason": "row_replaced",
+            "status": "rejected"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "move",
+            "type": "element.patch",
+            "elementPublicId": "e1",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett",
+                "position": {
+                  "dx": 40,
+                  "dy": 0
+                }
+              }
+            },
+            "sortIndex": 0,
+            "expectedElementRevision": 1,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "current": {
+              "type": "element",
+              "revision": 1,
+              "life": "L1",
+              "value": {
+                "data": {
+                  "id": "e1",
+                  "rotation": 135,
+                  "type": "jett"
+                },
+                "kind": "agent",
+                "payloadVersion": 1
+              }
+            },
+            "opId": "move",
+            "reason": "row_replaced",
+            "status": "rejected"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "a checked put-back of a row that was purged is not_found, and adds nothing",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "add",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "delete",
+            "type": "element.delete",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "expectedElementRevision": 1,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "opId": "delete",
+            "status": "applied",
+            "appliedRevision": 2,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "purge": true
+      },
+      {
+        "send": [
+          {
+            "opId": "back",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0,
+            "expectedElementRevision": 2,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "opId": "back",
+            "status": "rejected",
+            "reason": "not_found"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "probe",
+            "type": "element.patch",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett",
+                "rotation": 90
+              }
+            },
+            "expectedElementRevision": 1
+          }
+        ],
+        "expect": [
+          {
+            "opId": "probe",
+            "reason": "not_found",
+            "status": "rejected"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "a strategy made again starts at revision 0, and a rename naming its earlier life is row_replaced with the current strategy",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "rename",
+            "type": "strategy.patch",
+            "payload": {
+              "name": "Renamed"
+            },
+            "expectedStrategyRevision": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "rename",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "recreate": true
+      },
+      {
+        "send": [
+          {
+            "opId": "old-rename",
+            "type": "strategy.patch",
+            "payload": {
+              "name": "Old"
+            },
+            "expectedStrategyRevision": 0,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "current": {
+              "type": "strategy",
+              "revision": 0,
+              "life": "L1",
+              "value": {
+                "mapData": "ascent",
+                "name": "Case",
+                "themeOverridePalette": null,
+                "themeProfileId": null
+              }
+            },
+            "opId": "old-rename",
+            "reason": "row_replaced",
+            "status": "rejected"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "new-rename",
+            "type": "strategy.patch",
+            "payload": {
+              "name": "New"
+            },
+            "expectedStrategyRevision": 0,
+            "expectedLife": "L1"
+          }
+        ],
+        "expect": [
+          {
+            "opId": "new-rename",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L1"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "an element id held by a deleted strategy's rows cannot be added to the strategy made again",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "add",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "recreate": true
+      },
+      {
+        "send": [
+          {
+            "opId": "add-again",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "add-again",
+            "status": "rejected",
+            "reason": "element_strategy_mismatch"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "a stale move is revision_mismatch with the current row",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "add",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "first",
+            "type": "element.patch",
+            "elementPublicId": "e1",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett",
+                "position": {
+                  "dx": 40,
+                  "dy": 0
+                }
+              }
+            },
+            "sortIndex": 0,
+            "expectedElementRevision": 1,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "opId": "first",
+            "status": "applied",
+            "appliedRevision": 2,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "stale",
+            "type": "element.patch",
+            "elementPublicId": "e1",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett",
+                "position": {
+                  "dx": 80,
+                  "dy": 0
+                }
+              }
+            },
+            "sortIndex": 0,
+            "expectedElementRevision": 1,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "current": {
+              "type": "element",
+              "revision": 2,
+              "life": "L0",
+              "value": {
+                "data": {
+                  "id": "e1",
+                  "position": {
+                    "dx": 40,
+                    "dy": 0
+                  },
+                  "type": "jett"
+                },
+                "kind": "agent",
+                "payloadVersion": 1
+              }
+            },
+            "opId": "stale",
+            "reason": "revision_mismatch",
+            "status": "rejected"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "a batch naming the strategy life it was made in is refused whole once the strategy is made again, and a batch naming the new life applies",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "first",
+            "type": "strategy.patch",
+            "payload": {
+              "name": "First"
+            },
+            "expectedStrategyRevision": 0
+          }
+        ],
+        "expect": [
+          {
+            "opId": "first",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L0"
+          }
+        ]
+      },
+      {
+        "recreate": true
+      },
+      {
+        "send": [
+          {
+            "opId": "old",
+            "type": "strategy.patch",
+            "payload": {
+              "name": "Old"
+            },
+            "expectedStrategyRevision": 1,
+            "expectedLife": "L0"
+          }
+        ],
+        "strategyLife": "L0",
+        "refused": "STRATEGY_REPLACED"
+      },
+      {
+        "send": [
+          {
+            "opId": "look",
+            "type": "strategy.patch",
+            "payload": {
+              "name": "Look"
+            },
+            "expectedStrategyRevision": 1,
+            "expectedLife": "L0"
+          }
+        ],
+        "expect": [
+          {
+            "current": {
+              "type": "strategy",
+              "revision": 0,
+              "life": "L1",
+              "value": {
+                "mapData": "ascent",
+                "name": "Case",
+                "themeOverridePalette": null,
+                "themeProfileId": null
+              }
+            },
+            "opId": "look",
+            "reason": "row_replaced",
+            "status": "rejected"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "new",
+            "type": "strategy.patch",
+            "payload": {
+              "name": "New"
+            },
+            "expectedStrategyRevision": 0,
+            "expectedLife": "L1"
+          }
+        ],
+        "strategyLife": "L1",
+        "expect": [
+          {
+            "opId": "new",
+            "status": "applied",
+            "appliedRevision": 1,
+            "appliedLife": "L1"
+          }
+        ]
+      }
+    ]
+  }
+]

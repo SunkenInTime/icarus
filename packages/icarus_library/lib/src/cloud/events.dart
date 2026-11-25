@@ -234,6 +234,13 @@ final class UserDiscarded extends UserAction {
   const UserDiscarded(super.opId);
 }
 
+final class ResultRefused extends QueueEvent {
+  const ResultRefused({required this.page, required this.problem});
+
+  final String? page;
+  final String problem;
+}
+
 final class BaseArrived extends QueueEvent {
   const BaseArrived(this.base, {required this.session});
 
@@ -248,16 +255,29 @@ sealed class OpAnswer {
 }
 
 final class AppliedAnswer extends OpAnswer {
-  const AppliedAnswer(super.opId, {required this.revision});
+  const AppliedAnswer(super.opId, {required this.revision, required this.life});
 
   final int revision;
+  final int life;
 }
 
 final class NoopAnswer extends OpAnswer {
-  const NoopAnswer(super.opId, {required this.revision, required this.replay});
+  const NoopAnswer(
+    super.opId, {
+    required this.revision,
+    required this.replay,
+    required this.life,
+  });
 
   final int revision;
   final NoopReplay replay;
+  final int life;
+}
+
+final class AnswerWithoutLife extends OpAnswer {
+  const AnswerWithoutLife(super.opId, {required this.revision});
+
+  final int? revision;
 }
 
 enum NoopReplay { appliedWhenFirstReceived, notApplied }

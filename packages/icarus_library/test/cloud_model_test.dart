@@ -40,6 +40,8 @@ final class Model {
   final writtenAt = <String, int>{};
   final teammateWrote = <(Target, String), int>{};
   final refusedLate = <String>{};
+  final livesSent = <String, int>{};
+  final refusedOps = <String>{};
 
   int get serverNow => clock.millisecondsSinceEpoch + skew.inMilliseconds;
 
@@ -153,7 +155,10 @@ final class Model {
     recordHistory();
     final before = revisionsOf(server.rows);
     final beforeRow = rowOf(server.rows, checkTargetOf(op));
-    final answer = server.apply(owner, op);
+    final answer = server.apply(owner, op, expectedLife: livesSent[op.opId]);
+    if (answer case RejectedAnswer(reason: RejectionReason.rowReplaced)) {
+      count('ops refused as naming a row life that was replaced');
+    }
     if (answer case AppliedAnswer()) {
       final target = checkTargetOf(op);
       final named = expectedOf(op);
@@ -203,6 +208,15 @@ final class Model {
     if (result case Stepped(queue: final after, :final effects)) {
       checkRemovals(before, after, effects, event);
       client.queue = after;
+      for (final entry in after.entries) {
+        if (entry case PendingOp(
+          refusal: RefusedWith(
+            refusal: RejectedByServer() || StrategyReplacedOnServer(),
+          ),
+        )) {
+          refusedOps.add(entry.id);
+        }
+      }
       count(event.runtimeType.toString());
       if (event case OpAnswered(
         answer: NoopAnswer(replay: NoopReplay.notApplied),
@@ -409,7 +423,12 @@ final class Model {
       final state = views[entry.id]!.state;
       final bad = switch (state) {
         Waiting() => server.landed(entry.id) || server.refused(entry.id),
-        NeedsUser(reason: RefusedByServer()) => server.landed(entry.id),
+        NeedsUser(
+          reason: RefusedByServer(
+            refusal: RejectedByServer() || FailedOnServer(),
+          ),
+        ) =>
+          server.landed(entry.id),
         _ => false,
       };
       if (bad) throw StateError('${entry.id} is $state against the server');
@@ -612,7 +631,7 @@ final class Model {
     if (!stepped) return;
     if (applyOp(reference, onVisible(reference, op))
         case final OpApplied done) {
-      reference = reference.withRows(done.rows);
+      reference = bornWhereNew(reference, done.rows, addedLife);
     }
   }
 
@@ -622,18 +641,21 @@ final class Model {
     client.queue = seen.queue;
     final views = seen.views;
     String? owner;
+    int? strategyLife;
     final ids = <String>[];
     final most = 1 + random.nextInt(4);
     for (final entry in client.queue.entries) {
       if (ids.length == most) break;
       final view = views[entry.id];
-      if (view == null || !view.sendable) continue;
+      if (view == null || !view.sendable || entry is! PendingOp) continue;
       final mine = switch (view.state) {
         Unanswered(:final clientId) => clientId,
         _ => owner ?? clientId,
       };
       if (owner != null && mine != owner) continue;
+      if (!fitsBatch(entry, strategyLife)) continue;
       owner = mine;
+      strategyLife = entry.strategyLife ?? strategyLife;
       ids.add(entry.id);
     }
     if (ids.isEmpty) return;
@@ -651,6 +673,16 @@ final class Model {
       'claim $ids as $owner',
     );
     final sent = result.effects.whereType<SendBatch>().single;
+    livesSent.addAll(sent.lives);
+    for (final op in sent.ops) {
+      if (refusedOps.contains(op.opId)) {
+        throw StateError(
+          '${op.opId} was sent again after the server refused it',
+        );
+      }
+    }
+    count('ops sent naming a row life', sent.lives.length);
+    if (sent.strategyLife != null) count('batches naming the strategy life');
     int? oldest;
     for (final op in sent.ops) {
       inFlightLog[op.opId] = '${op.toJson()}';
@@ -751,7 +783,22 @@ final class Model {
       }
       return;
     }
-    final order = [...answers];
+    final order = [
+      for (final answer in answers)
+        switch (answer) {
+          NoopAnswer(
+            :final opId,
+            :final revision,
+            replay: NoopReplay.appliedWhenFirstReceived,
+          )
+              when teammates && random.nextInt(4) == 0 =>
+            () {
+              count('replays answered without a life');
+              return AnswerWithoutLife(opId, revision: revision);
+            }(),
+          _ => answer,
+        },
+    ];
     if (roll == 8) order.shuffle(random);
     for (final answer in order) {
       apply(OpAnswered(attempt, answer), 'answer ${answer.opId}');
@@ -984,7 +1031,7 @@ final class Model {
         ),
       };
       if (applyOp(server.rows, op) case final OpApplied done) {
-        server.rows = server.rows.withRows(done.rows);
+        server.write(done);
         count('teammate ${op.type.wireName}');
       } else {
         return;
@@ -1025,7 +1072,7 @@ final class Model {
         sortIndex: row.sortIndex,
       );
       if (applyOp(server.rows, back) case final OpApplied done) {
-        server.rows = server.rows.withRows(done.rows);
+        server.write(done);
         teammateEdited = true;
         count('teammate puts a purged element back at revision 1');
       }
@@ -1268,6 +1315,8 @@ const minimums = {
   'teammate makes this device\'s change': 20,
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
+  'ops refused as naming a row life that was replaced': 1,
+  'replays answered without a life': 1,
   'teammate changes a page\'s settings': 50,
   'waits for a result that a read would settle': 200,
   'unchecked sends': 20,

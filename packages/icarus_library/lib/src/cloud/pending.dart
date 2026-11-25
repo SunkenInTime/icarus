@@ -60,6 +60,7 @@ final class PendingOp extends QueueEntry {
     this.window = const WindowOpen(),
     this.behindOwn = false,
     this.basis,
+    this.strategyLife,
   });
 
   final Work work;
@@ -72,6 +73,7 @@ final class PendingOp extends QueueEntry {
   final ResendWindow window;
   final bool behindOwn;
   final ServerTimeBasis? basis;
+  final int? strategyLife;
 
   StrategyOp get op => work.op;
 
@@ -99,6 +101,7 @@ final class PendingOp extends QueueEntry {
     window: window ?? this.window,
     behindOwn: behindOwn,
     basis: dropBasis ? null : basis,
+    strategyLife: strategyLife,
   );
 
   @override
@@ -114,7 +117,8 @@ final class PendingOp extends QueueEntry {
       other.retriedAfter == retriedAfter &&
       other.window == window &&
       other.behindOwn == behindOwn &&
-      other.basis == basis;
+      other.basis == basis &&
+      other.strategyLife == strategyLife;
 
   @override
   int get hashCode => Object.hash(
@@ -373,7 +377,7 @@ final class ProducedRow {
     required this.page,
     required this.revision,
     required this.digest,
-    this.life,
+    required this.life,
     this.justifies = true,
   });
 
@@ -414,7 +418,7 @@ final class AuthoredRow extends Authored {
   const AuthoredRow({
     required this.revision,
     required this.digest,
-    this.life,
+    required this.life,
     this.payloadVersion,
     this.produces,
     this.movedRow,
@@ -448,6 +452,15 @@ final class AuthoredRow extends Authored {
     movedRow,
   );
 
+  AuthoredRow withProduces(ProducedRow? produces) => AuthoredRow(
+    revision: revision,
+    life: life,
+    digest: digest,
+    payloadVersion: payloadVersion,
+    produces: produces,
+    movedRow: movedRow,
+  );
+
   @override
   String toString() => 'AuthoredRow($revision, $digest)';
 }
@@ -466,7 +479,7 @@ final class AuthoredUnreadable extends Authored {
 }
 
 final class KeptOverServer extends Authored {
-  const KeptOverServer(this.revision, {this.life});
+  const KeptOverServer(this.revision, {required this.life});
 
   final int revision;
   final int? life;
@@ -556,6 +569,35 @@ final class RejectedByServer extends ServerRefusal {
 
   @override
   String toString() => 'RejectedByServer(${reason.wireName})';
+}
+
+final class AnsweredWithoutLife extends ServerRefusal {
+  const AnsweredWithoutLife(this.revision);
+
+  final int? revision;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AnsweredWithoutLife && other.revision == revision;
+
+  @override
+  int get hashCode => Object.hash(AnsweredWithoutLife, revision);
+
+  @override
+  String toString() => 'AnsweredWithoutLife($revision)';
+}
+
+final class StrategyReplacedOnServer extends ServerRefusal {
+  const StrategyReplacedOnServer();
+
+  @override
+  bool operator ==(Object other) => other is StrategyReplacedOnServer;
+
+  @override
+  int get hashCode => (StrategyReplacedOnServer).hashCode;
+
+  @override
+  String toString() => 'StrategyReplacedOnServer()';
 }
 
 final class FailedOnServer extends ServerRefusal {
@@ -764,6 +806,7 @@ enum BatchRefusal {
   editAccessRemoved,
   strategyDeleted,
   uncheckedTooLate,
+  strategyReplaced,
 }
 
 sealed class SendCut {

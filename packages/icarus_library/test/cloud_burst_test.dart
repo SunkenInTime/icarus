@@ -111,12 +111,17 @@ final class Burst {
       final answer = switch (applyOp(server, op)) {
         final OpApplied done => () {
           server = server.withRows(done.rows);
-          return AppliedAnswer(op.opId, revision: visibleRevision(server, op)!);
+          return AppliedAnswer(
+            op.opId,
+            revision: visibleRevision(server, op)!,
+            life: fixtureLife,
+          );
         }(),
         OpUnchanged() => NoopAnswer(
           op.opId,
           revision: visibleRevision(server, op)!,
           replay: NoopReplay.notApplied,
+          life: fixtureLife,
         ),
         final OpRefused refused => throw StateError(
           'a burst op was refused: ${refused.refusal}',

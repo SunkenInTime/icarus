@@ -19,6 +19,14 @@ LiveElement bornAt(String id, int revision, int life) => LiveElement(
   unknownFields: jsonObject({'createdAt': life}),
 );
 
+LiveElement withoutLife(String id, int revision) => LiveElement(
+  publicId: id,
+  pagePublicId: 'page-a',
+  payload: agentPayload(id, const {}),
+  sortIndex: 0,
+  revision: revision,
+);
+
 PageRead pageAWith(List<ElementRow> elements) => PageRead(
   page: initialRows().page('page-a')!,
   elements: elements,
@@ -143,7 +151,7 @@ void main() {
     test('stored results with no lives read back with none, and a page '
         'whose rows have no lives writes no lives key', () {
       final shown = shownAfter([
-        [element('e1', revision: 3)],
+        [withoutLife('e1', 3)],
       ]);
       final groups = shownToGroups(shown);
       expect(groups['page-a']!.keys, isNot(contains('lives')));
@@ -174,7 +182,7 @@ void main() {
     test('a stored row without a life is ordered by revision against one with '
         'a life, as before', () {
       final shown = shownAfter([
-        [element('e1', revision: 3)],
+        [withoutLife('e1', 3)],
         [bornAt('e1', 2, newerLife)],
       ]);
       expect(shown.highest[const ElementTarget('e1')], const Version(3));

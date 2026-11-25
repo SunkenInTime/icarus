@@ -188,7 +188,10 @@ void main() {
       final again = claimAt(client, ['a'], heldAt);
       expect(isUncheckedSend(again.ops.single), isFalse);
       client.must(
-        OpAnswered(again.attempt, const AppliedAnswer('a', revision: 2)),
+        OpAnswered(
+          again.attempt,
+          const AppliedAnswer('a', revision: 2, life: fixtureLife),
+        ),
       );
       final second = claimAt(client, ['b'], heldAt);
       expect(isUncheckedSend(second.ops.single), isFalse);
