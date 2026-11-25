@@ -58,12 +58,13 @@ abstract class IConvexClient {
     required Map<String, dynamic> args,
   });
 
-  /// [mutation], with the snapshot the client held when it completed it:
-  /// for a success, the first transition at or after its commit timestamp,
-  /// so a live result with that snapshot or a later one includes the write;
-  /// for a failure, the last transition applied before its response. A
-  /// failed mutation is an answer here, with its snapshot, not a thrown
-  /// error.
+  /// [mutation], with the snapshot the client held when it completed it.
+  /// For a success, a snapshot whose time is at or after the commit: the
+  /// first such transition when the response came first, else the snapshot
+  /// current when the response was handled. That live results from it on
+  /// show the write rests on the sync protocol. When the server function
+  /// fails, the last snapshot applied before the response; that failure is
+  /// an answer here, not a thrown error, but a timeout still throws.
   Future<TimedAnswer> mutationTimed({
     required String name,
     required Map<String, dynamic> args,

@@ -337,10 +337,15 @@ impl ConvexClient {
     /// [`ConvexClient::mutation`], with the stamp of the results the client
     /// held when it completed the mutation (see [`QueryResults::snapshot`]).
     ///
-    /// A successful mutation completes on the first transition at or after
-    /// the timestamp it committed at, so its snapshot is that transition's.
-    /// A failed one completes when its response arrives, and its snapshot is
-    /// the last transition applied before the response.
+    /// A successful mutation's snapshot has a timestamp at or after the one it
+    /// committed at. If the response arrives first, the mutation completes on
+    /// the first transition that reaches that timestamp, and carries it; if a
+    /// qualifying transition arrived first, it carries the snapshot current
+    /// when the response is handled, which qualifies but need not be the
+    /// first that did. Whether results from that snapshot on show the write
+    /// rests on the sync protocol, as the patch notes say. A mutation whose
+    /// server function fails completes when its response arrives, with the
+    /// last snapshot applied before it.
     pub async fn mutation_timed(
         &mut self,
         name: &str,

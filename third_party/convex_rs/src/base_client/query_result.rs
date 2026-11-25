@@ -72,7 +72,9 @@ impl std::fmt::Debug for FunctionResult {
 pub struct TimedResult {
     /// The query's result: a value or an error.
     pub value: FunctionResult,
-    /// The server time of the snapshot, as [`QueryResults::ts`].
+    /// The server time of the snapshot, as [`QueryResults::ts`]: `None` for an
+    /// answer given before the client applied any transition (a mutation
+    /// failure, an action, an empty group).
     pub ts: Option<Timestamp>,
     /// The snapshot's number in this client, as [`QueryResults::snapshot`]:
     /// the higher of two is the newer, and equal numbers mean the same result.
@@ -118,10 +120,12 @@ impl QueryResults {
         self.snapshot
     }
 
-    /// The connection these results were taken on: 0 for the client's first
-    /// socket, one more for each reconnect. Results kept from an earlier
-    /// connection carry its number until the new connection's first
-    /// transition replaces them.
+    /// The connection generation these results were taken on: 0 until the
+    /// client first reconnects, then one more each time it starts again on a
+    /// new socket, a dial that fails included, so the first socket that opens
+    /// can be 1 and numbers can be skipped. A higher number is a later
+    /// connection. Results kept from an earlier connection carry its number
+    /// until the new connection's first transition replaces them.
     pub fn connection(&self) -> u64 {
         self.connection
     }

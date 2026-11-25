@@ -50,8 +50,9 @@ like `subscribeGroup`: Icarus's web build uses Convex's JavaScript client.
 `mutationTimed` and `subscribeGroupTimed` do the same for a mutation's answer
 and for a group's updates (`TimedGroupUpdate`, whose values all come from one
 snapshot), and every stamp carries its client and connection numbers too. A
-failed mutation is an answer with its snapshot, like a query error. The crate's
-patch notes say what a mutation answer's snapshot means.
+mutation whose server function fails is an answer with its snapshot, like a
+query error; a timeout or a bridge error still throws. The crate's patch notes
+say what a mutation answer's snapshot means and what it rests on.
 `tool/convex_client_gauntlet/runtime/test/timed_results_test.dart` checks the
 snapshots reach Dart, on a local deployment, in the gauntlet lane.
 

@@ -1322,6 +1322,50 @@ mod tests {
         assert_eq!(client.latest_results().snapshot(), 2);
     }
 
+    #[test]
+    fn test_a_late_response_carries_the_snapshot_current_when_it_is_handled() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 2.0.into());
+        let committed_at = version.ts;
+        apply_query_update(&mut client, &mut version, query_id, 3.0.into());
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Ok(Value::Null),
+                Some(committed_at),
+            ))
+            .unwrap();
+        let answer = result_receiver.try_recv().unwrap();
+        assert_eq!((answer.snapshot, answer.ts), (3, Some(version.ts)));
+        assert!(answer.ts.unwrap() > committed_at);
+    }
+
+    #[test]
+    fn test_a_failure_carries_the_snapshot_applied_after_its_request_was_made() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Err(ErrorPayload::Message("boom".into())),
+                None,
+            ))
+            .unwrap();
+        let answer = result_receiver.try_recv().unwrap();
+        assert_eq!(answer.value, FunctionResult::ErrorMessage("boom".into()));
+        assert_eq!((answer.snapshot, answer.ts), (2, Some(version.ts)));
+    }
+
     #[tokio::test]
     async fn test_the_snapshot_count_goes_on_across_a_reconnect() {
         let mut client = BaseConvexClient::new();

@@ -250,15 +250,18 @@ impl QuerySubscriber for CallbackSubscriberDartFn {
 /// `convex::QueryResults::snapshot`), so it never goes backwards, a reconnect
 /// included, and restarts only with the client. `ts` is the server time of
 /// that snapshot in nanoseconds: an unchanged value carries the time of the
-/// snapshot it was taken from, two snapshots can share a time, and it is never
-/// null for a result the client delivered. `connection` is the connection the
-/// snapshot was taken on (0 for the first socket, one more per reconnect), and
+/// snapshot it was taken from, and two snapshots can share a time. It is null
+/// only for an answer given before the client applied any transition (a
+/// mutation failure, an empty group). `connection` is the connection
+/// generation the snapshot was taken on (see `convex::QueryResults::connection`:
+/// a higher number is a later connection, and numbers can be skipped), and
 /// `client` the client it comes from: snapshots of different clients do not
 /// compare.
 ///
-/// A mutation's answer carries the snapshot the client held when it completed
-/// it: for a success, the first transition at or after its commit timestamp;
-/// for a failure, the last transition applied before its response.
+/// A successful mutation's answer carries a snapshot whose time is at or after
+/// its commit: the first such transition if the response came first, else the
+/// snapshot current when the response was handled. A mutation whose server
+/// function failed carries the last snapshot applied before its response.
 pub struct TimedAnswer {
     pub value: Option<String>,
     pub error: Option<QueryFailure>,
@@ -705,8 +708,8 @@ impl MobileConvexClient {
     }
 
     /// [mutation], with the snapshot the client held when it completed the
-    /// mutation (see [TimedAnswer]). A failed mutation is an answer here,
-    /// with its snapshot, not a thrown error.
+    /// mutation (see [TimedAnswer]). A server function failure is an answer
+    /// here, with its snapshot; a timeout or a bridge error still throws.
     #[frb]
     pub async fn mutation_timed(
         &self,

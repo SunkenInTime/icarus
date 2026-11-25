@@ -91,13 +91,38 @@ void main() {
         }
         written.add(name);
       }
+      List<String>? treeOf(convex_flutter.TimedGroupUpdate update) =>
+          switch (update.values.firstOrNull) {
+            final tree? => [
+              for (final folder in jsonDecode(tree) as List)
+                (folder as Map)['name'] as String,
+            ],
+            null => null,
+          };
+      final groupShown = DateTime.now().add(_patience);
+      while (!grouped.any(
+        (update) => treeOf(update)?.toSet().containsAll(written) ?? false,
+      )) {
+        if (DateTime.now().isAfter(groupShown)) {
+          fail('no grouped update showed every folder within $_patience');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
       handle.cancel();
       groupHandle.cancel();
+      final groupedSeen = [...grouped];
 
       final results = [...reads, ...live];
       final stamps = [...results, ...answers.values];
       expect(stamps.map((answer) => answer.client).toSet(), hasLength(1));
-      expect(stamps.map((answer) => answer.connection).toSet(), {0});
+      expect(
+        {
+          ...stamps.map((answer) => answer.connection),
+          ...groupedSeen.map((update) => update.connection),
+        },
+        {0},
+        reason: 'a local deployment never drops the socket in this run',
+      );
       for (final MapEntry(key: name, value: answer) in answers.entries) {
         for (final result in results) {
           if (result.snapshot >= answer.snapshot) {
@@ -111,19 +136,17 @@ void main() {
         }
       }
 
-      expect(grouped, isNotEmpty);
-      for (var at = 1; at < grouped.length; at++) {
-        expect(grouped[at].snapshot, greaterThan(grouped[at - 1].snapshot));
+      for (var at = 1; at < groupedSeen.length; at++) {
+        expect(
+          groupedSeen[at].snapshot,
+          greaterThan(groupedSeen[at - 1].snapshot),
+        );
       }
-      for (final update in grouped) {
+      for (final update in groupedSeen) {
         expect(update.error, isNull);
         expect(update.ts, isNotNull);
         expect(update.client, stamps.first.client);
-        if (update.values.first case final tree?) {
-          final names = [
-            for (final folder in jsonDecode(tree) as List)
-              (folder as Map)['name'] as String,
-          ];
+        if (treeOf(update) case final names?) {
           for (final MapEntry(key: name, value: answer) in answers.entries) {
             if (update.snapshot >= answer.snapshot) {
               expect(names, contains(name));
@@ -131,13 +154,6 @@ void main() {
           }
         }
       }
-      final lastTree = grouped.lastWhere(
-        (update) => update.values.first != null,
-      );
-      expect([
-        for (final folder in jsonDecode(lastTree.values.first!) as List)
-          (folder as Map)['name'] as String,
-      ], containsAll(written));
       final now = DateTime.now().microsecondsSinceEpoch * 1000;
       for (final answer in results) {
         expect(answer.error, isNull);
