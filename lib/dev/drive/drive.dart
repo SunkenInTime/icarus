@@ -32,8 +32,7 @@
 // Input, the way a mouse and keyboard deliver it
 //   {"tapText": t, "nth": n?, "button": "secondary"?}
 //   {"tapKey": valueKey, "nth": n?}    {"tapIcon": name, "nth": n?}
-//   {"tapAt": [x, y], "hold": s?}      {"hoverAt": [x, y]}
-//   {"backButton": [x, y]}             the mouse's back button, pressed there
+//   {"tapAt": [x, y], "hold": s?}      {"hoverAt": [x, y]}  {"backButton": [x, y]}
 //   {"tapDoor": id}  {"hoverDoor": id}  the middle of a map door's bar
 //                                      hold: seconds down, for a long press
 //   {"tapWords": t, "nth": n?, "times": k?, "touch": b?, "button": "secondary"?}
