@@ -88,6 +88,7 @@ final class StoreMirror extends LocalLibraryFollower {
   final _folders = <String>{};
   final _refusedStrategies = <String, CopyRefusal>{};
   final _readsBackDifferently = <String, String>{};
+  final _images = StrategyImages();
   final _refusedFolders = <String, CopyRefusal>{};
   var _working = false;
   var _batches = 0;
@@ -289,6 +290,7 @@ final class StoreMirror extends LocalLibraryFollower {
       copy = await copyHiveIntoStore(
         reads,
         store,
+        images: _images,
         writes: writes,
         breathe: betweenAnimations,
         progress: progress,
@@ -448,6 +450,7 @@ final class StoreMirror extends LocalLibraryFollower {
           reads,
           store,
           holds,
+          images: _images,
           strategies: strategies,
           folders: folders,
           handedOff: _handedOff,
@@ -500,6 +503,7 @@ final class StoreMirror extends LocalLibraryFollower {
         case StrategyRemovedWithHive(:final strategyId):
           _refusedStrategies.remove(strategyId);
           _readsBackDifferently.remove(strategyId);
+          _images.forget(strategyId);
       }
     }
     for (final folder in copy.folders) {

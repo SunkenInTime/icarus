@@ -211,6 +211,7 @@ _Saving _saving(LibraryEditResult result) => switch (result) {
 Future<ShadowCopy> copyHiveIntoStore(
   HiveReads reads,
   LibraryStore store, {
+  required StrategyImages images,
   required LibraryBoxWrites writes,
   required Future<void> Function() breathe,
   void Function(int done, int total)? progress,
@@ -218,6 +219,7 @@ Future<ShadowCopy> copyHiveIntoStore(
   final copy = await _bringUpToDate(
     reads,
     store,
+    images: images,
     breathe: breathe,
     progress: progress,
   );
@@ -296,6 +298,7 @@ Future<ShadowCopy> mirrorIds(
   HiveReads reads,
   LibraryStore store,
   StoreHolds holds, {
+  required StrategyImages images,
   required Set<String> strategies,
   required Set<String> folders,
   bool Function(String strategyId) handedOff = _keptHere,
@@ -338,7 +341,7 @@ Future<ShadowCopy> mirrorIds(
     switch (reads.strategy(id)) {
       case InHive(value: final strategy):
         if (await _putImage(
-                store, holds, id, imageOf(strategy), strategyResults)
+                store, holds, id, images.of(strategy), strategyResults)
             case final stop?) {
           return stopped(stop);
         }
@@ -393,6 +396,7 @@ Future<ShadowCopy> mirrorIds(
 Future<ShadowCopy> _bringUpToDate(
   HiveReads reads,
   LibraryStore store, {
+  required StrategyImages images,
   required Future<void> Function() breathe,
   void Function(int done, int total)? progress,
 }) async {
@@ -433,7 +437,7 @@ Future<ShadowCopy> _bringUpToDate(
   final chosen = hive.strategies;
   for (final (index, strategy) in chosen.indexed) {
     final id = strategy.id;
-    final image = imageOf(strategy);
+    final image = images.of(strategy);
     switch (image.rows) {
       case StrategyRowsRefused(:final problems):
         strategies.add(StrategyNotMirrored(id, ConverterRefused(problems)));

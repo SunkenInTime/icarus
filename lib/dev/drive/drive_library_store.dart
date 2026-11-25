@@ -354,6 +354,13 @@ String mirrorPhaseNow(ProviderContainer c) =>
       Mirroring(:final mirror) => _describePhase(mirror.phase),
     };
 
+StrategyData _withFirstPageRenamed(StrategyData strategy) => strategy.copyWith(
+      pages: [
+        for (final (index, page) in strategy.pages.indexed)
+          index == 0 ? page.copyWith(name: '${page.name} edited') : page,
+      ],
+    );
+
 String readBackCost(String pick, int runs) {
   int items(StrategyData strategy) => strategy.pages.fold(
         0,
@@ -392,14 +399,22 @@ String readBackCost(String pick, int runs) {
 
   String ms(int micros) => (micros / 1000).toStringAsFixed(2);
   final rows = timed(() => strategyToRows(held));
-  final checked = timed(() => imageOf(held));
-  final readBack = imageOf(held).readBack;
+  final checked = timed(() => StrategyImages().of(held));
+  final edited = _withFirstPageRenamed(held);
+  final images = StrategyImages()..of(held);
+  var turn = 0;
+  final afterOnePage =
+      timed(() => images.of(turn++ % 2 == 0 ? edited : held));
+  final readBack = StrategyImages().of(held).readBack;
   return 'READBACK $pick (${target.pages.length} pages, ${items(target)} '
       'items, ${readBack is ReadsBackEqual ? 'reads back equal' : 'reads back differently'}), '
       '$runs runs: rows median ${ms(rows[runs ~/ 2])} ms, worst '
       '${ms(rows.last)} ms; rows and read-back median '
       '${ms(checked[runs ~/ 2])} ms, worst ${ms(checked.last)} ms; added '
-      'median ${ms(checked[runs ~/ 2] - rows[runs ~/ 2])} ms';
+      'median ${ms(checked[runs ~/ 2] - rows[runs ~/ 2])} ms; after one page '
+      'changed median ${ms(afterOnePage[runs ~/ 2])} ms, worst '
+      '${ms(afterOnePage.last)} ms, added median '
+      '${ms(afterOnePage[runs ~/ 2] - rows[runs ~/ 2])} ms';
 }
 
 String holdStore(ProviderContainer c) =>

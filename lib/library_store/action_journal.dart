@@ -83,9 +83,6 @@ final class _SaveJob extends _Job {
   _SaveState state;
 }
 
-StrategyImage rowsOf(StrategyData strategy) =>
-    imageOf(strategyAsHiveHoldsIt(strategy));
-
 enum UnitOutcome {
   noFinding,
   changedWithoutAction,
@@ -200,11 +197,15 @@ final class ActionJournal {
   final _settledActions = <int>{};
   final _takenUp = <String>{};
   final _previous = <String, StrategyData>{};
+  final _images = StrategyImages();
   final tally = ActionOpsTally();
   List<StrategyOp> Function(String label, List<StrategyOp> ops) alterOps =
       _asBuilt;
   void Function(String strategyId) onHiveWrite = _nobody;
   UnitSource? source;
+
+  StrategyImage rowsOf(StrategyData strategy) =>
+      _images.of(strategyAsHiveHoldsIt(strategy));
 
   static List<StrategyOp> _asBuilt(String label, List<StrategyOp> ops) => ops;
 

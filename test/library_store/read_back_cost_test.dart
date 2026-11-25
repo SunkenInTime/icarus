@@ -22,6 +22,14 @@ int _items(StrategyData strategy) => strategy.pages.fold(
           page.lineUpLinks.length,
     );
 
+StrategyData _withFirstPageRenamed(StrategyData strategy) =>
+    strategy.copyWith(
+      pages: [
+        for (final (index, page) in strategy.pages.indexed)
+          index == 0 ? page.copyWith(name: '${page.name} edited') : page,
+      ],
+    );
+
 double _medianMs(void Function() run) {
   for (var warm = 0; warm < 5; warm++) {
     run();
@@ -56,13 +64,20 @@ void main() {
       final big = largest!;
       final held = strategyAsHiveHoldsIt(big);
       final rows = _medianMs(() => strategyToRows(held));
-      final image = _medianMs(() => imageOf(held));
+      final cold = _medianMs(() => StrategyImages().of(held));
+      final edited = _withFirstPageRenamed(held);
+      final images = StrategyImages()..of(held);
+      var turn = 0;
+      final warm = _medianMs(() => images.of(turn++ % 2 == 0 ? edited : held));
       // ignore: avoid_print
       print('READBACK ${_items(big)} items, ${big.pages.length} pages: '
-          'rows ${rows.toStringAsFixed(2)} ms, rows and read-back '
-          '${image.toStringAsFixed(2)} ms, added '
-          '${(image - rows).toStringAsFixed(2)} ms (medians of 21)');
-      expect(imageOf(held).readBack, isA<ReadBack>());
+          'rows ${rows.toStringAsFixed(2)} ms; rows and read-back of every '
+          'page ${cold.toStringAsFixed(2)} ms, added '
+          '${(cold - rows).toStringAsFixed(2)} ms; rows and read-back after '
+          'one page changed ${warm.toStringAsFixed(2)} ms, added '
+          '${(warm - rows).toStringAsFixed(2)} ms (medians of 21)');
+      expect(StrategyImages().of(held).readBack, isA<ReadsBackEqual>());
+      expect(images.of(edited).readBack, isA<ReadsBackEqual>());
     },
   );
 }

@@ -33,16 +33,18 @@ Map<String, Object?> pageFingerprint(StrategyPage page, String strategyId) => {
           as Map<String, Object?>,
     };
 
+List<String> pagePictureFileNames(StrategyPage page) => [
+      for (final image in page.imageData)
+        '${image.pictureId}${image.fileExtension ?? ''}',
+      for (final link in page.lineUpLinks)
+        for (final image in link.images) '${image.id}${image.fileExtension}',
+    ];
+
 List<String> pictureFileNames(StrategyData strategy) => [
-      for (final page in strategy.pages) ...[
-        for (final image in page.imageData)
-          '${image.pictureId}${image.fileExtension ?? ''}',
-        for (final link in page.lineUpLinks)
-          for (final image in link.images) '${image.id}${image.fileExtension}',
-      ],
+      for (final page in strategy.pages) ...pagePictureFileNames(page),
     ]..sort();
 
-Map<String, Object?> strategyFingerprint(StrategyData strategy) => {
+Map<String, Object?> strategyFieldsFingerprint(StrategyData strategy) => {
       'id': strategy.id,
       'name': strategy.name,
       'versionNumber': strategy.versionNumber,
@@ -59,6 +61,10 @@ Map<String, Object?> strategyFingerprint(StrategyData strategy) => {
       },
       'createdAt': strategy.createdAt.toUtc().microsecondsSinceEpoch,
       'lastEdited': strategy.lastEdited.toUtc().microsecondsSinceEpoch,
+    };
+
+Map<String, Object?> strategyFingerprint(StrategyData strategy) => {
+      ...strategyFieldsFingerprint(strategy),
       'pages': [
         for (final page in strategy.pages) pageFingerprint(page, strategy.id),
       ],
