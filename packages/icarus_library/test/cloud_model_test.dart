@@ -258,6 +258,11 @@ final class Model {
         if (effect case OpRemoved(:final opId, :final cause)) {
           count('removed ${cause.runtimeType}');
           if (cause case FoldedInto(opId: final into)) {
+            for (final entry in before.entries) {
+              if (entry case PendingOp(:final op) when entry.id == opId) {
+                count('folded ${op.type.wireName}');
+              }
+            }
             final earlier = writtenAt[opId];
             if (earlier != null && earlier < (writtenAt[into] ?? earlier + 1)) {
               writtenAt[into] = earlier;
@@ -925,7 +930,12 @@ final class Model {
       count('reads held in flight');
       return;
     }
-    final fits = resultFit(client.queue.shown, base, from);
+    final fits = resultFit(
+      client.queue.shown,
+      client.queue.session,
+      base,
+      from,
+    );
     must(BaseArrived(base, session: session, from: from), label);
     mirror(base, fits);
   }
@@ -935,7 +945,12 @@ final class Model {
     final (base, from, session, label) = readsInFlight.removeAt(
       lateness.nextInt(readsInFlight.length),
     );
-    final fits = resultFit(client.queue.shown, base, from);
+    final fits = resultFit(
+      client.queue.shown,
+      client.queue.session,
+      base,
+      from,
+    );
     final result = apply(
       BaseArrived(base, session: session, from: from),
       'late $label',
@@ -943,6 +958,12 @@ final class Model {
     switch (result) {
       case NotApplicable(:final why):
         count('late reads not taken: ${why.runtimeType}');
+        count(
+          'late ${switch (base) {
+            HeaderRead() || StrategyGone() => 'list',
+            PageRead() || PageGone() => 'page',
+          }} reads not taken: ${why.runtimeType}',
+        );
       case Stepped():
         count('late reads taken');
         mirror(base, fits);
@@ -1063,6 +1084,7 @@ final class Model {
     readHeader();
     for (final page in pagesTheLaneReads()) {
       readPage(page);
+      if (lateness.nextInt(3) == 0) deliverLateRead();
     }
   }
 
@@ -1449,6 +1471,7 @@ const minimums = {
   'UserDiscarded': 5,
   'removed Delivered': 1500,
   'removed FoldedInto': 15,
+  'folded element.patch': 15,
   'put-backs': 100,
   'given up with its chain': 5,
   'nothing to do at another revision': 20,
@@ -1463,10 +1486,11 @@ const minimums = {
   'batches refused as the strategy was replaced': 50,
   'StrategySetAside': 5,
   'reads held in flight': 500,
-  'late reads taken': 40,
-  'late reads not taken: OlderResult': 2,
+  'late reads taken': 300,
+  'late page reads not taken: OlderResult': 80,
+  'late list reads not taken: OlderResult': 40,
   'late reads not taken: StartedInAnotherLife': 1,
-  'late reads not taken: FromAnEndedSession': 100,
+  'late reads not taken: FromAnEndedSession': 60,
   'UserDiscardedReplaced': 5,
   'replays answered without a life': 1,
   'teammate changes a page\'s settings': 50,

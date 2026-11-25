@@ -433,6 +433,21 @@ final events = <String, QueueEvent Function(Client)>{
     session: c.queue.session.number,
     from: readFrom(c.queue),
   ),
+  'result: page list of an earlier strategy life': (c) => BaseArrived(
+    headerReadOf(
+      StrategyRowSet(
+        strategy: strategyRow(
+          createdAt: strategyCreatedAt.subtract(const Duration(days: 1)),
+        ),
+        pages: c.base.pages,
+        settings: c.base.settings,
+        elements: const [],
+        lineupGroups: const [],
+      ),
+    ),
+    session: c.queue.session.number,
+    from: readFrom(c.queue),
+  ),
   'result: page list of a later strategy life': (c) => BaseArrived(
     headerReadOf(
       StrategyRowSet(
@@ -510,6 +525,7 @@ String outcome(Client before, Step result) {
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
             StrategySetAside(:final count) => 'sets $count aside',
+            ReadStartIssued(:final started) => 'issues read start $started',
             PageResultDeferred(:final page) => 'defers $page for the page list',
             SetAsideDiscarded(:final count) => 'discards $count set aside',
           },

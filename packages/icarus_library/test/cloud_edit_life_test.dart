@@ -60,18 +60,22 @@ void main() {
       expect(setAsideIds(client.queue), isEmpty);
     });
 
-    test('an edit naming a life the record has not reached is refused', () {
+    test('an edit naming a later life than the record\'s is kept aside and '
+        'never applied, as one naming an earlier life is', () {
       final client = Client();
-      expect(
-        client.step(
-          UserEdited(
-            (client.editEvent(movePatch('ahead')) as UserEdited).edit,
-            madeOn: laterLife,
-          ),
+      final step = client.step(
+        UserEdited(
+          (client.editEvent(movePatch('ahead')) as UserEdited).edit,
+          madeOn: laterLife,
         ),
-        isA<NotApplicable>(),
       );
+      expect(step, isA<Stepped>());
       expect(client.queue.entries, isEmpty);
+      expect(setAsideIds(client.queue), ['ahead']);
+      final generation =
+          (client.queue.strategy.setAside as SetAside).generations.single;
+      expect(generation.writtenIn, laterLife);
+      expect(generation.replacedBy, viewedLife);
     });
 
     test('through the store: an edit made on the old view is refused to the '
@@ -81,6 +85,7 @@ void main() {
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
       await recordAll(store, [const AppRestarted(build: build)]);
+      final oldView = await seenIn(store);
       await recordAll(store, [
         BaseArrived(
           headerReadOf(replaced(initialRows())),
@@ -92,7 +97,7 @@ void main() {
         testAccount,
         strategyId,
         movePatch('late', x: 77),
-        madeOn: viewedLife,
+        seen: oldView,
       );
       expect(
         committed,
@@ -129,7 +134,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('move', x: 31),
-          madeOn: viewedLife,
+          seen: await seenIn(setup),
         ),
       );
       await setup.close();
@@ -144,6 +149,7 @@ void main() {
       await recordAll(store, [const AppRestarted(build: build)]);
       final replacement = replaced(initialRows());
       expect(replacement.strategy.revision, 1);
+      final oldView = await seenIn(store);
       final adoption = store.record(testAccount, strategyId, [
         BaseArrived(
           headerReadOf(replacement),
@@ -160,7 +166,7 @@ void main() {
           expectedStrategyRevision: 1,
           name: 'Retake B',
         ),
-        madeOn: viewedLife,
+        seen: oldView,
       );
       release.complete();
       savedValue(await adoption);

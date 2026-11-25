@@ -33,7 +33,7 @@ Future<(LibraryStore, MemoryStorage)> withWork() async {
       testAccount,
       strategyId,
       movePatch('mine'),
-      madeOn: viewedLife,
+      seen: await seenIn(store),
     ),
   );
   return (store, storage);
@@ -144,18 +144,18 @@ void main() {
         >[
           (
             'an edit',
-            (store, _) => store.commitAs(
+            (store, _) async => store.commitAs(
               otherAccount,
               strategyId,
               movePatch('theirs', elementId: 'e2'),
-              madeOn: viewedLife,
+              seen: await seenIn(store),
             ),
           ),
           (
             'a batch of edits',
-            (store, _) => store.commitAllAs(otherAccount, strategyId, [
+            (store, _) async => store.commitAllAs(otherAccount, strategyId, [
               movePatch('theirs', elementId: 'e2'),
-            ], madeOn: viewedLife),
+            ], seen: await seenIn(store)),
           ),
           (
             'a claim',
@@ -270,7 +270,7 @@ void main() {
           otherAccount,
           strategyId,
           movePatch('theirs'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
         anotherAccountsWork(),
       );
@@ -285,7 +285,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('mine again'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
         refusedWith<QueueHeld>(),
       );
@@ -369,7 +369,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('next'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
     }
@@ -389,6 +389,7 @@ void main() {
       MemoryStorage disk,
       Counts counts,
       Matcher refusal,
+      StrategyRead seen,
     ) async {
       final before = editable(disk.contents);
       final commitsBefore = counts.commits;
@@ -397,11 +398,11 @@ void main() {
           otherAccount,
           strategyId,
           movePatch('theirs'),
-          madeOn: viewedLife,
+          seen: seen,
         ),
         () => store.commitAllAs(otherAccount, strategyId, [
           movePatch('theirs'),
-        ], madeOn: viewedLife),
+        ], seen: seen),
         () => store.record(otherAccount, strategyId, const [
           ConnectionReturned(),
         ]),
@@ -419,6 +420,7 @@ void main() {
 
     test('a missing strategy row', () async {
       final (store, storage) = await withWork();
+      final seen = await seenIn(store);
       await store.close();
       final contents = editable(storage.contents);
       contents[area]!.remove('strategy');
@@ -434,11 +436,13 @@ void main() {
           'reason',
           anyOf(isA<StrategyNotReadable>(), isA<NoSuchStrategy>()),
         ),
+        seen,
       );
     });
 
     test('a read that fails', () async {
       final (store, storage) = await withWork();
+      final seen = await seenIn(store);
       await store.close();
       final disk = MemoryStorage(editable(storage.contents));
       final (counted, counts) = counting(MemoryEngine(disk));
@@ -449,6 +453,7 @@ void main() {
         disk,
         counts,
         isA<NotSaved<Object?, CommitRefusal>>(),
+        seen,
       );
     });
   });
@@ -476,7 +481,7 @@ void main() {
         testAccount,
         strategyId,
         movePatch('someone'),
-        madeOn: viewedLife,
+        seen: await seenIn(local),
       ),
       refusedWith<NotACloudStrategy>(),
     );
@@ -510,7 +515,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('next'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
         refusedWith<QueueHeld>(),
       );

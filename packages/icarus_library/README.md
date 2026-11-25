@@ -1921,6 +1921,51 @@ unreadable work, the face other unreadable work has. The sender reads an owed
 page at once and a refused one on its read backoff; a read the store keeps, or
 an answer that the strategy is gone, pays the debt.
 
+**Which results a record takes.** A record takes results from one source,
+fixed by the mode the app started in. In send mode that is this device's own
+reads (`CloudResults.thisDevicesReads`, chosen when the sender starts); in
+shadow mode it is the editor's live queries (`CloudResults.liveQueries`, chosen
+when the shadow starts). A result from the other source is not taken
+(`NotThisModesResults`), so the two never mix in one record. Inside its mode a
+result has the same rights wherever it comes from: it can adopt a later strategy
+life and pay what is owed.
+
+Every result has a start in the queue's (session, step) order, and no two
+starts are equal. A read of this device asks the queue for its start before it
+is made (`ReadBegun`, answered with `ReadStartIssued`); a live result takes the
+next step when it arrives, so live results follow the order they arrive in. A
+debt, an answer that lands and an adoption also move the order on. A result is
+dropped, and changes nothing, freshness included, when:
+
+- it started before the record last adopted a strategy life. Adoption fences the
+  starts rather than clearing them, so nothing started before an adoption is
+  taken after it, whichever way the life moved;
+- it started before the result already taken for the same list or page;
+- it started before the debt on its list or page;
+- it is a page list showing the very life the server just refused.
+
+Page-gone and strategy-gone answers obey the same rules as rows. Only a page
+result started after this device's own answer landed can show that answered
+item missing.
+
+**A record ahead of the server.** A page list of an earlier life than the
+record's is dropped, except after a `STRATEGY_REPLACED` for the record's own
+life: then the next list read after that refusal is adopted whatever its life,
+and the edits written in the record's life are set aside. The server's
+refusal names no life ([#772](https://github.com/SunkenInTime/icarus/issues/772)),
+so the record infers the current life from that list. If the list were older
+than the state the refusal was judged against, the record would adopt a stale
+life; the edits it sets aside are rightly set aside (their life is gone), and
+the next list read moves the record forward. A read started after a
+mutation's answer should not return such a list, and none of our tests show
+the real read path doing it.
+
+**An edit names its view.** `commitAs` and `commitAllAs` take `seen:`, the
+`StrategyContent` or `PageContent` the edit was built from, and the life the
+edit names comes from that same object. An edit seen in another life than the
+record's, earlier or later, is never applied to the current rows: it is kept
+with the set-aside edits and refused to the caller as `EditOfAReplacedStrategy`.
+
 **Where revisions still meet as numbers.** Every place two rows' versions are
 ordered uses `Version`: the highest version shown, which of two shown rows is
 newer, whether a result has shown landed work, the queue's known row for a

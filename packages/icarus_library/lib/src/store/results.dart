@@ -4,6 +4,7 @@ import '../strategy_rows.dart';
 import '../cloud/account.dart';
 import '../cloud/queue.dart';
 import '../cloud/sync.dart';
+import '../cloud/version.dart';
 import '../undo.dart';
 import 'engine.dart';
 import 'layout.dart';
@@ -543,7 +544,11 @@ final class UnknownKindRow {
   final String text;
 }
 
-final class StrategyContent {
+sealed class StrategyRead {
+  int? get strategyLife;
+}
+
+final class StrategyContent implements StrategyRead {
   StrategyContent({
     required this.strategy,
     required Iterable<PageRow> pages,
@@ -562,6 +567,9 @@ final class StrategyContent {
   final List<UnplacedRow> unplaced;
   final List<ForeignName> foreignNames;
   final StrategySync sync;
+
+  @override
+  int? get strategyLife => createdAtOf(strategy);
 }
 
 sealed class StrategySync {
@@ -620,8 +628,9 @@ final class ContentNotRead extends PageContentState {
   const ContentNotRead();
 }
 
-final class PageContent {
+final class PageContent implements StrategyRead {
   PageContent({
+    required this.strategyLife,
     required this.page,
     required this.settings,
     required Iterable<ElementRow> elements,
@@ -646,6 +655,8 @@ final class PageContent {
   final List<ForeignName> foreignNames;
   final StrategySync sync;
   final PageContentState content;
+  @override
+  final int? strategyLife;
 }
 
 sealed class LibraryState {

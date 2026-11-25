@@ -632,6 +632,24 @@ sealed class QueueEffect {
   const QueueEffect();
 }
 
+final class ReadStartIssued extends QueueEffect {
+  const ReadStartIssued(this.started);
+
+  final ReadStart started;
+
+  ResultSource get source => ReadOfThisDevice(started);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReadStartIssued && other.started == started;
+
+  @override
+  int get hashCode => Object.hash(ReadStartIssued, started);
+
+  @override
+  String toString() => 'ReadStartIssued($started)';
+}
+
 final class PageResultDeferred extends QueueEffect {
   const PageResultDeferred(this.page);
 
@@ -934,14 +952,6 @@ final class OtherEntity extends Inapplicable {
   String toString() => 'OtherEntity($opId)';
 }
 
-final class MadeOnAnUnknownLife extends Inapplicable {
-  const MadeOnAnUnknownLife();
-
-  @override
-  String toString() =>
-      'an edit made on a strategy life later than the one this record holds';
-}
-
 final class StartedInAnotherLife extends Inapplicable {
   const StartedInAnotherLife();
 
@@ -954,7 +964,8 @@ final class OlderResult extends Inapplicable {
   const OlderResult();
 
   @override
-  String toString() => 'a result of an earlier life than the one shown';
+  String toString() =>
+      'a result read before one already taken, or of an earlier life';
 }
 
 final class NothingSetAsideToDiscard extends Inapplicable {
@@ -969,6 +980,18 @@ final class NothingClaimed extends Inapplicable {
 
   @override
   String toString() => 'NothingClaimed';
+}
+
+final class NotThisModesResults extends Inapplicable {
+  const NotThisModesResults(this.mode);
+
+  final CloudResults? mode;
+
+  @override
+  String toString() => switch (mode) {
+    null => 'no source of results was chosen for this run',
+    final CloudResults mode => 'this run takes results only from ${mode.name}',
+  };
 }
 
 final class FromAnEndedSession extends Inapplicable {
@@ -1245,9 +1268,6 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         final made?,
         final record?,
       ) when made != record) {
-        if (made > record) {
-          return NotApplicable(queue, const MadeOnAnUnknownLife());
-        }
         return _setAsideEdit(edit, change, made, record, now);
       }
       return _userEdited(edit, change, now);
@@ -1350,6 +1370,9 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         null => edit.shown.listRefused(problem, since),
       };
       return edit.done();
+    case ReadBegun():
+      edit.effects.add(ReadStartIssued(edit.readsAfterThis()));
+      return edit.done();
     case BaseArrived(:final base, :final session, :final from):
       if (session == 0 || session != edit.session.number) {
         return NotApplicable(queue, FromAnEndedSession(session));
@@ -1430,32 +1453,34 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
 
 enum ResultFit { applies, adopts, listFirst, older, startedInAnotherLife }
 
-ResultFit resultFit(Shown shown, ArrivedBase base, ResultSource from) {
+ReadStart startOf(QueueSession session, ResultSource from) => switch (from) {
+  ReadOfThisDevice(:final started) => started,
+  LiveResult() => session.stepped.readStart,
+};
+
+ResultFit resultFit(
+  Shown shown,
+  QueueSession session,
+  ArrivedBase base,
+  ResultSource from,
+) {
   final held = shown.strategy?.life;
-  if ((from, held, base) case (
-    ReadOfThisDevice(life: final started?),
-    final held?,
-    _,
-  ) when started != held && base is! HeaderRead) {
+  final started = startOf(session, from);
+  if (shown.fence case final fence? when started.isBefore(fence)) {
     return ResultFit.startedInAnotherLife;
   }
-  if ((from, shown.takenFor(base)) case (
-    ReadOfThisDevice(:final started),
-    final taken?,
-  ) when started.isBefore(taken)) {
-    return ResultFit.older;
+  for (final mark in [shown.takenFor(base), shown.owedSince(base)]) {
+    if (mark != null && started.isBefore(mark)) return ResultFit.older;
   }
   return switch (base) {
     HeaderRead(:final strategy) => switch ((held, createdAtOf(strategy))) {
-      (final held?, final listed?) when listed != held => switch (from) {
-        LiveResult() when listed > held => ResultFit.listFirst,
-        LiveResult() => ResultFit.older,
-        ReadOfThisDevice() when listed > held => ResultFit.adopts,
-        ReadOfThisDevice(:final started)
-            when _refusedAsReplaced(shown.list, held, started) =>
-          ResultFit.adopts,
-        ReadOfThisDevice() => ResultFit.older,
-      },
+      (_, final listed?) when listed == _refusedLife(shown.list) =>
+        ResultFit.older,
+      (final held?, final listed?) when listed > held => ResultFit.adopts,
+      (final held?, final listed?)
+          when listed < held && _refusedLife(shown.list) == held =>
+        ResultFit.adopts,
+      (final held?, final listed?) when listed < held => ResultFit.older,
       _ => ResultFit.applies,
     },
     PageRead(:final page) => switch (shown.pages[page.publicId]) {
@@ -1471,25 +1496,18 @@ ResultFit resultFit(Shown shown, ArrivedBase base, ResultSource from) {
   };
 }
 
-bool _refusedAsReplaced(ReadState list, int held, ReadStart started) =>
-    switch (list) {
-      ReadOwed(unlessLife: final refused?, :final since) ||
-      ReadRefused(
-        unlessLife: final refused?,
-        :final since,
-      ) => refused == held && !started.isBefore(since),
-      NotReadThisSession() ||
-      ReadThisSession() ||
-      ReadOwed() ||
-      ReadRefused() => false,
-    };
+int? _refusedLife(ReadState list) => switch (list) {
+  ReadOwed(:final unlessLife) || ReadRefused(:final unlessLife) => unlessLife,
+  NotReadThisSession() || ReadThisSession() => null,
+};
 
 Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
+  final fit = resultFit(edit.shown, edit.session, base, from);
   final started = switch (from) {
     ReadOfThisDevice(:final started) => started,
-    LiveResult() => null,
+    LiveResult() => edit.readsAfterThis(),
   };
-  switch (resultFit(edit.shown, base, from)) {
+  switch (fit) {
     case ResultFit.older:
       return NotApplicable(edit.original, const OlderResult());
     case ResultFit.startedInAnotherLife:
@@ -1506,7 +1524,10 @@ Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
       final written = edit.shown.strategy!.life!;
       final listed = createdAtOf((base as HeaderRead).strategy)!;
       edit.setAsideAll(written, listed);
-      edit.shown = Shown.nothing.take(base, started: started);
+      final taken = edit.shown;
+      edit.shown = Shown.nothing
+          .take(base, started: started)
+          .fencedAt(edit.readsAfterThis(), after: taken);
       return edit.done();
     case ResultFit.applies:
       break;
@@ -1543,7 +1564,6 @@ Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
           !work.shownWithout &&
           added == page.publicId &&
           !held.contains(targetOf(work.op)) &&
-          started != null &&
           !started.isBefore(work.answeredAt)) {
         edit.landed[at] = work.seenWithout();
         edit.change.targets.add(targetOf(work.op));

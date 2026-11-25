@@ -135,7 +135,16 @@ void main() {
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
-      client.arrive(headerReadOf(initialRows()));
+      expect(
+        client.step(
+          BaseArrived(
+            headerReadOf(initialRows()),
+            session: client.queue.session.number,
+            from: client.beginRead(),
+          ),
+        ),
+        isA<NotApplicable>(),
+      );
       expect(setAsideIds(client.queue), isEmpty);
       expect(isDebt(client.queue.shown.list), isTrue);
       client.arrive(headerReadOf(replaced(initialRows())));
@@ -318,7 +327,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('move'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       savedValue(
@@ -326,7 +335,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('later', elementId: 'e2'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await store.close();

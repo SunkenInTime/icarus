@@ -211,7 +211,8 @@ final class ReadOwed extends ReadState {
   @override
   String toString() => unlessLife == null
       ? 'owed'
-      : 'owed by a list of a life after $unlessLife';
+      : 'owed by a list of another life than $unlessLife, read after the '
+            'refusal';
 }
 
 final class ReadRefused extends ReadState {
@@ -234,7 +235,8 @@ final class ReadRefused extends ReadState {
   @override
   String toString() => unlessLife == null
       ? 'refused: $problem'
-      : 'refused: $problem, owed by a list of a life after $unlessLife';
+      : 'refused: $problem, owed by a list of another life than '
+            '$unlessLife, read after the refusal';
 }
 
 bool isDebt(ReadState state) => state is ReadOwed || state is ReadRefused;
@@ -253,6 +255,7 @@ final class Shown {
     Freshness? fresh,
     this.listTaken,
     Map<String, ReadStart> pagesTaken = const {},
+    this.fence,
   }) : fresh = fresh ?? Freshness.none,
        pagesTaken = Map.unmodifiable(pagesTaken),
        pageReads = Map.unmodifiable({
@@ -334,6 +337,32 @@ final class Shown {
   final Map<String, ReadState> pageReads;
   final ReadStart? listTaken;
   final Map<String, ReadStart> pagesTaken;
+  final ReadStart? fence;
+
+  ReadStart? owedSince(ArrivedBase result) => switch (switch (result) {
+    HeaderRead() || StrategyGone() => list,
+    PageRead(:final page) => pageRead(page.publicId),
+    PageGone(:final pagePublicId) => pageRead(pagePublicId),
+  }) {
+    ReadOwed(:final since) || ReadRefused(:final since) => since,
+    NotReadThisSession() || ReadThisSession() => null,
+  };
+
+  Shown fencedAt(ReadStart fence, {required Shown after}) => Shown(
+    strategy: strategy,
+    pages: pages,
+    settings: settings,
+    content: content,
+    rows: rows,
+    list: list,
+    pageReads: pageReads,
+    goneThisSession: goneThisSession,
+    highest: highest,
+    fresh: fresh,
+    listTaken: listTaken ?? after.listTaken,
+    pagesTaken: {...after.pagesTaken, ...pagesTaken},
+    fence: fence,
+  );
 
   ReadStart? takenFor(ArrivedBase result) => switch (result) {
     HeaderRead() || StrategyGone() => listTaken,
@@ -395,6 +424,7 @@ final class Shown {
   }) => Shown(
     listTaken: listTaken ?? this.listTaken,
     pagesTaken: pagesTaken ?? this.pagesTaken,
+    fence: fence,
     fresh: fresh ?? this.fresh,
     list: list ?? this.list,
     pageReads: pageReads ?? this.pageReads,
@@ -412,6 +442,7 @@ final class Shown {
     required ReadStart? started,
   }) => switch (result) {
     HeaderRead(:final strategy, :final pages, :final settings) => Shown(
+      fence: fence,
       listTaken: started ?? listTaken,
       pagesTaken: {
         for (final MapEntry(:key, :value) in pagesTaken.entries)
@@ -614,6 +645,7 @@ final class Shown {
       other.fresh == fresh &&
       other.list == list &&
       other.listTaken == listTaken &&
+      other.fence == fence &&
       const MapEquality<String, ReadStart>().equals(
         other.pagesTaken,
         pagesTaken,

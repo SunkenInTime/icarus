@@ -28,7 +28,7 @@ void main() {
         testAccount,
         strategyId,
         movePatch('move', x: 40),
-        madeOn: viewedLife,
+        seen: await seenIn(store),
       ),
     );
     savedValue(
@@ -36,7 +36,7 @@ void main() {
         testAccount,
         strategyId,
         elementAdd('add', pageId: 'page-b'),
-        madeOn: viewedLife,
+        seen: await seenIn(store),
       ),
     );
     final sent = await claimAll(store);
@@ -80,7 +80,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('move', x: 40),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       final sent = await claimAll(store);
@@ -126,7 +126,7 @@ void main() {
             testAccount,
             strategyId,
             elementAdd('add$i', elementId: 'n$i', pageId: 'page-b'),
-            madeOn: viewedLife,
+            seen: await seenIn(store),
           ),
         );
       }
@@ -150,7 +150,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('move', x: 7),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       expect(counts.commits, 1);
@@ -167,7 +167,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('again', x: 9, expected: 2),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       expect(
@@ -331,7 +331,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('move', x: 40),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       savedValue(
@@ -339,7 +339,7 @@ void main() {
           testAccount,
           strategyId,
           pageDelete('drop', 'page-a'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       final queue = (await syncOf(store)).queue;
@@ -364,7 +364,7 @@ void main() {
           testAccount,
           strategyId,
           pageAdd('copy', 'page-c', copyFrom: 'page-a'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       final queued = (await syncOf(store)).queue.entries;
@@ -381,7 +381,7 @@ void main() {
           testAccount,
           strategyId,
           elementDelete('drop', elementId: copiedId, pageId: 'page-c'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       var server = initialRows();
@@ -423,7 +423,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('good'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await claimAll(store);
@@ -450,7 +450,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('next', elementId: 'e2'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
         isA<Refused<Committed, CommitRefusal>>().having(
           (refused) => refused.reason,
@@ -554,7 +554,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('good'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await store.close();
@@ -657,7 +657,7 @@ void main() {
         testAccount,
         strategyId,
         movePatch('move'),
-        madeOn: viewedLife,
+        seen: await seenIn(store),
       ),
     );
     await claimAll(store);
@@ -716,7 +716,7 @@ void main() {
         testAccount,
         strategyId,
         movePatch('move'),
-        madeOn: viewedLife,
+        seen: await seenIn(store),
       ),
     );
     final sent = await claimAll(store);
@@ -752,7 +752,7 @@ void main() {
         testAccount,
         strategyId,
         movePatch('move'),
-        madeOn: viewedLife,
+        seen: await seenIn(store),
       ),
     );
     final sent = await claimAll(store);
@@ -779,7 +779,7 @@ void main() {
         testAccount,
         strategyId,
         movePatch('move'),
-        madeOn: viewedLife,
+        seen: await seenIn(store),
       ),
     );
     await store.close();
@@ -815,7 +815,7 @@ void main() {
         testAccount,
         strategyId,
         movePatch('move'),
-        madeOn: viewedLife,
+        seen: await seenIn(store),
       ),
     );
     expect(
@@ -975,7 +975,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('move'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await store.close();
@@ -1076,7 +1076,7 @@ void main() {
             testAccount,
             strategyId,
             pageAdd('copy', 'page-c', copyFrom: 'page-a', sortIndex: 2),
-            madeOn: viewedLife,
+            seen: await seenIn(store),
           ),
           isA<Refused<Committed, CommitRefusal>>().having(
             (refused) => refused.reason,
@@ -1154,7 +1154,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('ab', pageId: 'page-b'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await answer(store, 'ab', 2);
@@ -1163,7 +1163,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('bc', pageId: 'page-c', expected: 2),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await answer(store, 'bc', 3);
@@ -1190,7 +1190,7 @@ void main() {
           testAccount,
           strategyId,
           elementAdd('add', elementId: 'e9', pageId: 'page-b'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await answer(store, 'add', 1);
@@ -1199,7 +1199,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('drag', elementId: 'e9', x: 5),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       savedValue(
@@ -1207,7 +1207,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('away', elementId: 'e9', expected: 2, pageId: 'page-a'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       final pages = await drawn(store);
@@ -1245,7 +1245,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('mine', elementId: 'e2'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
         isA<NotSaved<Committed, CommitRefusal>>(),
       );
@@ -1271,7 +1271,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('m', pageId: 'page-b'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await recordAll(store, [
@@ -1301,7 +1301,7 @@ void main() {
           testAccount,
           strategyId,
           elementAdd('add'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await store.close();
@@ -1384,7 +1384,7 @@ void main() {
           testAccount,
           strategyId,
           elementAdd('add'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await store.close();
@@ -1415,7 +1415,7 @@ void main() {
           testAccount,
           strategyId,
           pageAdd('add', 'page-c'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await answer(store, 'add', 2);
@@ -1441,7 +1441,12 @@ void main() {
       await addCloud(store, initialRows());
       final move = movePatch('m', pageId: 'page-b');
       savedValue(
-        await store.commitAs(testAccount, strategyId, move, madeOn: viewedLife),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          move,
+          seen: await seenIn(store),
+        ),
       );
       await answer(store, 'm', 2);
       await recordAll(store, [
@@ -1456,7 +1461,7 @@ void main() {
           testAccount,
           strategyId,
           pageDelete('del', 'page-a'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       expect(
@@ -1476,7 +1481,7 @@ void main() {
             testAccount,
             strategyId,
             elementAdd('add', elementId: 'e9', pageId: 'page-c'),
-            madeOn: viewedLife,
+            seen: await seenIn(store),
           ),
         );
         await answer(store, 'add', 1);
@@ -1485,7 +1490,7 @@ void main() {
             testAccount,
             strategyId,
             movePatch('move', elementId: 'e9', pageId: 'page-a'),
-            madeOn: viewedLife,
+            seen: await seenIn(store),
           ),
         );
         await answer(store, 'move', 2);
@@ -1511,7 +1516,12 @@ void main() {
       await addCloud(store, initialRows());
       final move = movePatch('m', pageId: 'page-b');
       savedValue(
-        await store.commitAs(testAccount, strategyId, move, madeOn: viewedLife),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          move,
+          seen: await seenIn(store),
+        ),
       );
       await answer(store, 'm', 2);
       await recordAll(store, [
@@ -1537,7 +1547,7 @@ void main() {
           testAccount,
           strategyId,
           elementAdd('add'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await store.close();
@@ -1571,7 +1581,7 @@ void main() {
             testAccount,
             strategyId,
             elementAdd('add'),
-            madeOn: viewedLife,
+            seen: await seenIn(store),
           ),
         );
         await store.close();
@@ -1693,7 +1703,7 @@ void main() {
               testAccount,
               strategyId,
               op,
-              madeOn: viewedLife,
+              seen: await seenIn(store),
             ),
           );
           final sent = await claimAll(store);
@@ -1741,7 +1751,7 @@ void main() {
           testAccount,
           strategyId,
           pageAdd('add', 'page-c'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       await answer(store, 'add', 2);
@@ -1758,7 +1768,7 @@ void main() {
           testAccount,
           strategyId,
           pageDelete('del', 'page-c', expected: 2),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       server = withOp(
@@ -1851,7 +1861,7 @@ void main() {
           testAccount,
           strategyId,
           pageDelete('del', 'page-b'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       expect((await syncOf(store)).views['del']!.sendable, isTrue);
@@ -1871,7 +1881,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('drag'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       final before = storage.contents;
@@ -1908,7 +1918,7 @@ void main() {
             testAccount,
             strategyId,
             move,
-            madeOn: viewedLife,
+            seen: await seenIn(first),
           ),
         );
         await recordAll(first, [
@@ -2433,7 +2443,7 @@ void main() {
             testAccount,
             strategyId,
             movePatch('m'),
-            madeOn: viewedLife,
+            seen: await seenIn(store),
           ),
         );
         await store.close();

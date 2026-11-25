@@ -808,6 +808,35 @@ final class World {
         .withRows([...header.pages, ...header.settings]);
   }
 
+  void pagesOnServer(List<String> pages) {
+    final header = switch (pageListRead(
+      pageList(
+        serverRows(),
+        more: [
+          for (final (at, page) in pages.indexed)
+            app.RemoteFullPage(
+              page: app.RemotePage(
+                publicId: page,
+                strategyPublicId: strategyId,
+                name: 'Page $page',
+                sortIndex: at + 1,
+                isAttack: false,
+                revision: 1,
+                createdAt: secondPage().page.createdAt,
+                updatedAt: secondPage().page.updatedAt,
+              ),
+              content: secondPage().content,
+            ),
+        ],
+      ),
+    )) {
+      RowsRead(:final value) => value,
+      RowsUnreadable(:final problem) => throw StateError(problem),
+    };
+    server.rows[strategyId] = server.rows[strategyId]!
+        .withRows([...header.pages, ...header.settings]);
+  }
+
   void teammateDeletesPage(String page) {
     final rows = server.rows[strategyId]!;
     server.rows[strategyId] = StrategyRowSet(
@@ -862,19 +891,34 @@ final class World {
     }
   }
 
-  void recordAsRead(List<ArrivedBase> results, {bool live = false}) {
+  ResultSource beginRead() {
+    Saving<Recorded, CommitRefusal>? recorded;
+    store.record(servedAccount, strategyId, const [ReadBegun()]).then(
+        (value) => recorded = value);
+    async.flushMicrotasks();
+    return switch (recorded) {
+      Saved(value: Recorded(outcomes: [ReportApplied(:final effects)])) =>
+        effects.whereType<ReadStartIssued>().single.source,
+      final other => throw StateError('no read start was issued: $other'),
+    };
+  }
+
+  void recordRead(List<ArrivedBase> results) {
+    final from = beginRead();
+    _record([
+      for (final result in results)
+        BaseArrived(result, session: cloud().queue.session.number, from: from),
+    ]);
+  }
+
+  void recordAsRead(List<ArrivedBase> results) {
     final queue = cloud().queue;
     _record([
       for (final result in results)
         BaseArrived(
           result,
           session: queue.session.number,
-          from: live
-              ? const LiveResult()
-              : ReadOfThisDevice(
-                  queue.session.readStart,
-                  life: queue.shown.strategy?.life,
-                ),
+          from: ReadOfThisDevice(queue.session.readStart),
         ),
     ]);
   }
@@ -961,10 +1005,17 @@ final class World {
   void _commit(String strategy, Account owner, List<StrategyOp> ops) {
     Saving<List<Committed>, CommitRefusal>? saved;
     store
-        .commitAllAs(owner, strategy, ops, madeOn: viewedLife(strategy))
+        .commitAllAs(owner, strategy, ops, seen: seenNow(strategy))
         .then((value) => saved = value);
     async.flushMicrotasks();
     expect(saved, isA<Saved<List<Committed>, CommitRefusal>>());
+  }
+
+  StrategyRead seenNow([String strategy = strategyId]) {
+    Reading<StrategyContent>? read;
+    store.readStrategy(strategy).then((value) => read = value);
+    async.flushMicrotasks();
+    return (read! as Found<StrategyContent>).value;
   }
 
   CloudStrategy cloud([String strategy = strategyId]) {

@@ -646,7 +646,7 @@ final class StoreModel {
       testAccount,
       strategyId,
       op,
-      madeOn: viewedLife,
+      seen: await seenIn(store),
     );
     log.add(
       'edit $opId ${op.type.wireName} ${targetOf(op)} -> ${describeSaving(result)}',
@@ -1100,7 +1100,7 @@ final class StoreModel {
       testAccount,
       strategyId,
       pageAdd(fresh('op'), fresh('page-')),
-      madeOn: viewedLife,
+      seen: await seenIn(store),
     );
     if (refused case Refused(reason: QueueHeld())) {
     } else {
@@ -1262,13 +1262,18 @@ final class StoreModel {
     final calls = <(String, Future<Saving<Object?, CommitRefusal>> Function())>[
       (
         'another account edits',
-        () => store.commitAs(otherAccount, strategyId, op, madeOn: viewedLife),
+        () async => store.commitAs(
+          otherAccount,
+          strategyId,
+          op,
+          seen: await seenIn(store),
+        ),
       ),
       (
         'another account edits in a batch',
-        () => store.commitAllAs(otherAccount, strategyId, [
+        () async => store.commitAllAs(otherAccount, strategyId, [
           op,
-        ], madeOn: viewedLife),
+        ], seen: await seenIn(store)),
       ),
       ('an edit naming no account', () => store.commit(strategyId, op)),
       (
@@ -1320,10 +1325,7 @@ final class StoreModel {
           BaseArrived(
             headerReadOf(server.rows),
             session: this.live,
-            from: ReadOfThisDevice(
-              ReadStart(session: this.live, sequence: 0),
-              life: null,
-            ),
+            from: ReadOfThisDevice(ReadStart(session: this.live, sequence: 0)),
           ),
         ]),
       ),

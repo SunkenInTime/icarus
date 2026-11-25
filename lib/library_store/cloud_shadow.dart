@@ -214,7 +214,9 @@ final class CloudShadow {
     required this.build,
     required this.canRead,
     required Future<void> Function() breathe,
-  }) : _breathe = breathe;
+  }) : _breathe = breathe {
+    store.takeCloudResultsFrom(CloudResults.liveQueries);
+  }
 
   final LibraryStore store;
   final String build;

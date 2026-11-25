@@ -195,7 +195,18 @@ void main() {
     test('a page list of the life the batch named does not pay the debt: it '
         'is from before the strategy was replaced', () {
       final client = refused();
-      client.arrive(headerReadOf(initialRows()));
+      expect(
+        notApplicable(
+          client.step(
+            BaseArrived(
+              headerReadOf(initialRows()),
+              session: client.queue.session.number,
+              from: client.beginRead(),
+            ),
+          ),
+        ),
+        isA<OlderResult>(),
+      );
       expect(
         client.queue.shown.list,
         owed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
@@ -565,7 +576,7 @@ void main() {
             testAccount,
             strategyId,
             movePatch('move'),
-            madeOn: viewedLife,
+            seen: await seenIn(store),
           ),
         );
         final claimed = await recordAll(store, [
@@ -684,7 +695,7 @@ void main() {
           testAccount,
           strategyId,
           movePatch('move'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       final claimed = await recordAll(store, [

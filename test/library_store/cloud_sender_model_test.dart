@@ -177,7 +177,7 @@ final class Model {
     Saving<List<Committed>, CommitRefusal>? saved;
     world.store
         .commitAllAs(servedAccount, strategy, [op],
-            madeOn: world.viewedLife(strategy))
+            seen: world.seenNow(strategy))
         .then((value) => saved = value);
     async.flushMicrotasks();
     if (saved is! Saved) return;

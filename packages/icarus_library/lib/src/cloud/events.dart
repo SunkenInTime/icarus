@@ -274,19 +274,33 @@ final class BaseArrived extends QueueEvent {
   final ResultSource from;
 }
 
+final class ReadBegun extends QueueEvent {
+  const ReadBegun();
+}
+
 sealed class ResultSource {
   const ResultSource();
 }
 
 final class ReadOfThisDevice extends ResultSource {
-  const ReadOfThisDevice(this.started, {required this.life});
+  const ReadOfThisDevice(this.started);
 
   final ReadStart started;
-  final int? life;
 }
 
 final class LiveResult extends ResultSource {
   const LiveResult();
+}
+
+enum CloudResults {
+  thisDevicesReads,
+  liveQueries;
+
+  bool takes(ResultSource from) => switch ((this, from)) {
+    (thisDevicesReads, ReadOfThisDevice()) => true,
+    (liveQueries, LiveResult()) => true,
+    _ => false,
+  };
 }
 
 sealed class OpAnswer {

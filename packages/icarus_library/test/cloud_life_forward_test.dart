@@ -62,9 +62,8 @@ void main() {
       expect([for (final entry in client.queue.entries) entry.id], ['new']);
     });
 
-    test('after STRATEGY_REPLACED a list of the refused life never pays the '
-        'debt, a refused read keeps the restriction, and an earlier list read '
-        'started before the refusal is dropped', () {
+    test('after STRATEGY_REPLACED a refused read keeps the restriction, and '
+        'an earlier list read started before the refusal is dropped', () {
       final client = Client();
       client.edit(movePatch('move'));
       final beforeRefusal = readFrom(client.queue);
@@ -80,8 +79,6 @@ void main() {
       );
       expect(notApplicable(late), isA<OlderResult>());
       expect(client.queue.shown.strategy?.life, strategyLife);
-      expect(isDebt(client.queue.shown.list), isTrue);
-      client.arrive(headerReadOf(replaced(initialRows(), life: strategyLife)));
       expect(isDebt(client.queue.shown.list), isTrue);
       expect(client.view('move').sendable, isFalse);
       client.arrive(headerReadOf(replaced(initialRows())));
@@ -121,6 +118,35 @@ void main() {
       expect(generation.entries.map((entry) => entry.id), ['move']);
     });
 
+    test('a STRATEGY_REPLACED for a life the record has already left does not '
+        'open the way out', () {
+      final client = Client();
+      client.read(replaced(initialRows(), life: yearAhead));
+      final left = client.queue.shown.strategy!.life! - 86400000;
+      client.queue = CloudQueue(
+        entries: client.queue.entries,
+        attempts: client.queue.attempts,
+        landed: client.queue.landed,
+        nextAttempt: client.queue.nextAttempt,
+        nextSession: client.queue.nextSession,
+        shown: client.queue.shown.owingListPast(
+          left,
+          client.queue.session.readStart,
+        ),
+        strategy: client.queue.strategy,
+        session: client.queue.session,
+      );
+      final step = client.step(
+        BaseArrived(
+          headerReadOf(initialRows()),
+          session: client.queue.session.number,
+          from: client.beginRead(),
+        ),
+      );
+      expect(notApplicable(step), isA<OlderResult>());
+      expect(client.queue.shown.strategy?.life, yearAhead);
+    });
+
     test('without a refusal for its own life, an earlier list is dropped and '
         'the record keeps its life', () {
       final client = Client();
@@ -143,40 +169,21 @@ void main() {
     });
   });
 
-  group('live results never change the strategy life and never pay a debt', () {
-    test('a live list of a later life owes the list and adopts nothing', () {
-      final client = Client();
-      client.edit(movePatch('move'));
-      final step = client.step(
-        BaseArrived(
-          headerReadOf(replaced(initialRows())),
-          session: client.queue.session.number,
-          from: const LiveResult(),
-        ),
-      );
-      expect(step, isA<Stepped>());
-      expect(client.queue.shown.strategy?.life, strategyLife);
-      expect(setAsideIds(client.queue), isEmpty);
-      expect(isDebt(client.queue.shown.list), isTrue);
-      client.arrive(headerReadOf(replaced(initialRows())));
-      expect(setAsideIds(client.queue), ['move']);
-    });
-
-    test('a live list of the same life does not pay the list debt', () {
+  group('the way out never adopts the life the server just refused', () {
+    test('a list showing the very life the server just refused is dropped', () {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
-      client.must(
+      final step = client.step(
         BaseArrived(
-          headerReadOf(replaced(initialRows(), life: laterLife)),
+          headerReadOf(replaced(initialRows(), life: strategyLife)),
           session: client.queue.session.number,
-          from: const LiveResult(),
+          from: readFrom(client.queue),
         ),
       );
-      expect(client.queue.shown.strategy?.life, strategyLife);
+      expect(notApplicable(step), isA<OlderResult>());
       expect(isDebt(client.queue.shown.list), isTrue);
-      expect(setAsideIds(client.queue), isEmpty);
     });
   });
 
@@ -217,16 +224,137 @@ void main() {
         ),
       );
       expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
-      client.must(
-        BaseArrived(
-          pageReadOf(initialRows(), 'page-a'),
-          session: client.queue.session.number,
-          from: started,
+      expect(
+        notApplicable(
+          client.step(
+            BaseArrived(
+              pageReadOf(initialRows(), 'page-a'),
+              session: client.queue.session.number,
+              from: started,
+            ),
+          ),
         ),
+        isA<OlderResult>(),
       );
       expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
       client.arrive(pageReadOf(initialRows(), 'page-a'));
       expect(isDebt(client.queue.shown.pageRead('page-a')), isFalse);
+    });
+  });
+
+  group('a gone answer obeys the rules every result obeys', () {
+    Client withPageOwed() {
+      final client = Client();
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'move',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+        ),
+      );
+      expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
+      return client;
+    }
+
+    test('a page-gone answer read before the page was owed is dropped: the '
+        'page stays and is still owed', () {
+      final client = Client();
+      final before = readFrom(client.queue);
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'move',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+        ),
+      );
+      final step = client.step(
+        BaseArrived(
+          const PageGone('page-a'),
+          session: client.queue.session.number,
+          from: before,
+        ),
+      );
+      expect(notApplicable(step), isA<OlderResult>());
+      expect(client.queue.shown.pages, contains('page-a'));
+      expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
+    });
+
+    test('a strategy-gone answer read before the list was owed is dropped: '
+        'the strategy is not marked gone and the list is still owed', () {
+      final client = Client();
+      final before = readFrom(client.queue);
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+      final step = client.step(
+        BaseArrived(
+          const StrategyGone(),
+          session: client.queue.session.number,
+          from: before,
+        ),
+      );
+      expect(notApplicable(step), isA<OlderResult>());
+      expect(standingOf(client.queue), Standing.good);
+      expect(isDebt(client.queue.shown.list), isTrue);
+    });
+
+    test(
+      'a page-gone answer read in a life the record has left is dropped',
+      () {
+        final client = withPageOwed();
+        final before = readFrom(client.queue);
+        client.arrive(headerReadOf(replaced(initialRows())));
+        final step = client.step(
+          BaseArrived(
+            const PageGone('page-a'),
+            session: client.queue.session.number,
+            from: before,
+          ),
+        );
+        expect(notApplicable(step), isNot(isNull));
+        expect(client.queue.shown.pages, contains('page-a'));
+      },
+    );
+  });
+
+  group('freshness moves only on a result that was taken', () {
+    test('a page read started before the page was owed changes neither the '
+        'page nor its freshness', () {
+      final client = Client();
+      final before = readFrom(client.queue);
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'move',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+        ),
+      );
+      final shown = client.queue.shown;
+      final step = client.step(
+        BaseArrived(
+          pageReadOf(withOp(initialRows(), movePatch('t', x: 9)), 'page-a'),
+          session: client.queue.session.number,
+          from: before,
+        ),
+      );
+      expect(notApplicable(step), isA<OlderResult>());
+      expect(client.queue.shown.fresh, shown.fresh);
+      expect(client.queue.shown.content, shown.content);
     });
   });
 
@@ -241,7 +369,7 @@ void main() {
           testAccount,
           strategyId,
           elementAdd('add'),
-          madeOn: viewedLife,
+          seen: await seenIn(store),
         ),
       );
       return store;

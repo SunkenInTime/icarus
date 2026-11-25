@@ -336,7 +336,6 @@ final class Scenario {
           fact.phase == 2
               ? ReadStart(session: fact.session, sequence: 0)
               : client.queue.session.readStart,
-          life: client.queue.shown.strategy?.life,
         );
       }
     }

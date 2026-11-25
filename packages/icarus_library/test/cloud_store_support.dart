@@ -9,13 +9,14 @@ Future<LibraryStore> openCloudStore(
   StorageEngine engine, {
   String build = build,
   DateTime Function() clock = fixedClock,
+  CloudResults results = CloudResults.thisDevicesReads,
 }) async => switch (await LibraryStore.open(
   engine,
   canRead: readsKnownKinds,
   clock: clock,
   build: build,
 )) {
-  StoreOpened(:final store) => store,
+  StoreOpened(:final store) => store..takeCloudResultsFrom(results),
   StoreNotOpened(:final problem) => fail('store did not open: $problem'),
 };
 
@@ -94,3 +95,11 @@ Future<SendBatch> claimAll(
     ]),
   ).whereType<SendBatch>().single;
 }
+
+Future<StrategyRead> seenIn(
+  LibraryStore store, [
+  String id = strategyId,
+]) async => switch (await store.readStrategy(id)) {
+  Found(:final value) => value,
+  final other => fail('$id could not be read: $other'),
+};

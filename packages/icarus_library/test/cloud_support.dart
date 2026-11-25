@@ -282,9 +282,14 @@ final class Client {
   List<StrategyOp> lastSent() =>
       effects.whereType<SendBatch>().last.ops.toList();
 
-  void arrive(ArrivedBase base) => must(
-    BaseArrived(base, session: queue.session.number, from: readFrom(queue)),
-  );
+  void arrive(ArrivedBase base) =>
+      must(BaseArrived(base, session: queue.session.number, from: beginRead()));
+
+  ResultSource beginRead() => switch (step(const ReadBegun())) {
+    Stepped(:final effects) =>
+      effects.whereType<ReadStartIssued>().single.source,
+    final other => fail('no read start was issued: $other'),
+  };
 
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
@@ -377,7 +382,7 @@ Matcher awaitingResult(ResultSubject subject) =>
     isA<AwaitingResult>().having((hold) => hold.subject, 'subject', subject);
 
 ResultSource readFrom(CloudQueue queue) =>
-    ReadOfThisDevice(queue.session.readStart, life: queue.shown.strategy?.life);
+    ReadOfThisDevice(queue.session.readStart);
 
 Matcher owed({int? unlessLife}) => isA<ReadOwed>().having(
   (state) => state.unlessLife,

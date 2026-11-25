@@ -1311,7 +1311,7 @@ extension _CloudStore on LibraryStore {
   Future<BatchResult> _commitCloud(
     _CloudReady cloud,
     List<StrategyOp> asked, {
-    required int madeOn,
+    required int? madeOn,
   }) async {
     final strategy = cloud.strategy;
     final now = _cloudNow();
@@ -1319,9 +1319,11 @@ extension _CloudStore on LibraryStore {
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
     );
-    if (queue.shown.strategy?.life case final recordLife?
-        when recordLife != madeOn) {
-      return _commitOfAnotherLife(cloud, queue, asked, madeOn, now);
+    if ((queue.shown.strategy?.life, madeOn) case (
+      final recordLife?,
+      final made?,
+    ) when recordLife != made) {
+      return _commitOfAnotherLife(cloud, queue, asked, made, now);
     }
     final pages = {for (final op in asked) ..._ownPages(strategy, queue, op)};
     StrategyRowSet rows;
@@ -1523,9 +1525,16 @@ extension _CloudStore on LibraryStore {
         outcomes.add(const EditsGoThroughCommit());
         continue;
       }
+      if (event case BaseArrived(
+        :final from,
+      ) when !(_cloudResults?.takes(from) ?? false)) {
+        outcomes.add(ReportNotApplicable(NotThisModesResults(_cloudResults)));
+        continue;
+      }
       final fits = switch (event) {
         BaseArrived(:final base, :final from) => resultFit(
           queue.shown,
+          queue.session,
           base,
           from,
         ),
@@ -1662,6 +1671,7 @@ extension _CloudStore on LibraryStore {
     final loaded = strategy.loadedPage(digestOf(pagePublicId));
     return Found(
       PageContent(
+        strategyLife: header.createdAt.millisecondsSinceEpoch,
         page: page,
         settings: switch (rows.settingsOf(pagePublicId)) {
           final row? => SettingsStored(row),
@@ -1776,7 +1786,11 @@ extension _CloudStore on LibraryStore {
         BaseArrived(
           base,
           session: queue.session.number,
-          from: ReadOfThisDevice(queue.session.readStart, life: null),
+          from: switch (_cloudResults) {
+            CloudResults.liveQueries => const LiveResult(),
+            CloudResults.thisDevicesReads ||
+            null => ReadOfThisDevice(queue.session.readStart),
+          },
         ),
     ];
     _forgetCloud(digest);

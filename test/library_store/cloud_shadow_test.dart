@@ -593,6 +593,7 @@ void main() {
 
     group('of rows', () {
       PageContent shownOf(StrategyRowSet rows) => PageContent(
+            strategyLife: null,
             page: rows.page(pageId)!,
             settings: SettingsStored(rows.settingsOf(pageId)!),
             elements: rows.elementsOn(pageId),
