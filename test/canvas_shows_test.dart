@@ -339,9 +339,9 @@ void main() {
 
     final hold = gate.holdNext();
     final opening = editor().loadFromHive(b.id);
-    expect(container.read(strategyOpeningProvider), b.id);
+    expect(container.read(strategyOpeningProvider)?.strategyId, b.id);
     await hold.reached.future;
-    expect(container.read(strategyOpeningProvider), b.id);
+    expect(container.read(strategyOpeningProvider)?.strategyId, b.id);
     hold.released.complete();
     expect(await opening, isTrue);
     expect(container.read(strategyOpeningProvider), isNull);

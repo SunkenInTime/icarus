@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
@@ -12,27 +13,86 @@ import 'package:icarus/widgets/strategy_view_skeleton.dart';
 
 const editorBusyAfter = Duration(milliseconds: 500);
 
-class EditorInputGate extends ConsumerWidget {
+class EditorInputGate extends ConsumerStatefulWidget {
   const EditorInputGate({super.key, required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen(strategyOpeningProvider, (before, now) {
+  ConsumerState<EditorInputGate> createState() => _EditorInputGateState();
+}
+
+class _EditorInputGateState extends ConsumerState<EditorInputGate> {
+  final _focus = FocusNode(
+    debugLabel: 'editor-input-gate',
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+  late final ProviderSubscription<StrategyOpening?> _opening;
+
+  bool get _closed => ref.read(strategyOpeningProvider) != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _opening = ref.listenManual(strategyOpeningProvider, (before, now) {
+      _focus.descendantsAreFocusable = now == null;
       if (before != null || now == null) return;
       ref.read(captionCardProvider.notifier).closeNow();
       ref.read(deleteMenuProvider.notifier).requestClose();
       ContextMenuRegion.closeOpen();
     });
-    final opening = ref.watch(
-      strategyOpeningProvider.select((opening) => opening != null),
-    );
-    return AbsorbPointer(
-      absorbing: opening,
-      child: ExcludeFocus(excluding: opening, child: child),
+  }
+
+  @override
+  void dispose() {
+    _opening.close();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final open = ref.watch(strategyOpeningProvider) == null;
+    return _ClosedWhile(
+      closed: () => _closed,
+      child: Focus(
+        focusNode: _focus,
+        canRequestFocus: false,
+        skipTraversal: true,
+        descendantsAreFocusable: open,
+        child: widget.child,
+      ),
     );
   }
+}
+
+class _ClosedWhile extends SingleChildRenderObjectWidget {
+  const _ClosedWhile({required this.closed, required super.child});
+
+  final bool Function() closed;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderClosedWhile(closed);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderClosedWhile renderObject,
+  ) =>
+      renderObject.closed = closed;
+}
+
+class _RenderClosedWhile extends RenderProxyBox {
+  _RenderClosedWhile(this.closed);
+
+  bool Function() closed;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) => closed()
+      ? size.contains(position)
+      : super.hitTest(result, position: position);
 }
 
 class EditorOpeningSkeleton extends ConsumerStatefulWidget {
@@ -57,9 +117,12 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
     super.dispose();
   }
 
-  void _follow(String? opening) {
-    _wait?.cancel();
-    if (opening == null) {
+  StrategyLook _lookOf(StrategyOpening opening) =>
+      strategyLookFor(ref, opening.strategyId, opening.source);
+
+  void _follow(StrategyOpening? before, StrategyOpening? now) {
+    if (now == null) {
+      _wait?.cancel();
       if (_visible) {
         setState(() => _visible = false);
       } else if (_drawn) {
@@ -67,17 +130,20 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
       }
       return;
     }
+    if (before != null) {
+      if (_drawn) setState(() => _look = _lookOf(now));
+      return;
+    }
+    _wait?.cancel();
     _wait = Timer(editorBusyAfter, () {
-      if (!mounted) return;
-      final source = ref.read(strategyOpeningProvider.notifier).source;
+      final opening = ref.read(strategyOpeningProvider);
+      if (!mounted || opening == null) return;
       setState(() {
-        _look = source == null
-            ? unknownStrategyLook
-            : strategyLookFor(ref, opening, source);
+        _look = _lookOf(opening);
         _drawn = true;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _drawn && _wait?.isActive == false) {
+        if (mounted && _drawn) {
           setState(() => _visible = ref.read(strategyOpeningProvider) != null);
         }
       });
@@ -86,7 +152,7 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(strategyOpeningProvider, (_, now) => _follow(now));
+    ref.listen<StrategyOpening?>(strategyOpeningProvider, _follow);
     final look = _look;
     if (!_drawn) return const SizedBox.shrink();
     return IgnorePointer(

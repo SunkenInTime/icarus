@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +26,11 @@ import 'package:icarus/widgets/editor_input_gate.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/widgets/strategy_view_skeleton.dart';
+import 'library_rows/generated_strategies.dart';
+import 'library_store/unit_harness.dart';
 
 class _Ascent extends MapProvider {
   @override
@@ -42,6 +49,22 @@ class _OpenStrategy extends StrategyProvider {
 
   @override
   void setUnsaved() => state = state.copyWith(isSaved: false);
+}
+
+class _RecordingImages extends PlacedImageProvider {
+  final added = <String>[];
+
+  @override
+  Future<void> addImage({
+    required Uint8List imageBytes,
+    required String? strategyId,
+    required StrategySource? strategySource,
+    required String fileExtension,
+    Offset? position,
+    double? aspectRatio,
+    int? tagColorValue,
+  }) async =>
+      added.add(fileExtension);
 }
 
 const _viewport = Size(1300, 675);
@@ -226,6 +249,31 @@ void main() {
   }
 
   testWidgets(
+      'a pointer pressed on a picture in the same frame an open starts, '
+      'before the editor rebuilds, moves nothing', (tester) async {
+    final container = await _editor(tester);
+    final from = tester.getCenter(find.byType(ImageWidget).first);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: from);
+    await tester.pump(const Duration(milliseconds: 200));
+
+    _beginOpen(container);
+    await mouse.down(from);
+    for (var step = 1; step <= 10; step++) {
+      await mouse.moveTo(from + const Offset(6, 4) * step.toDouble());
+      await tester.pump();
+    }
+    await mouse.up();
+    await tester.pump();
+    await mouse.removePointer();
+
+    expect(
+      container.read(placedImageProvider).images.single.position,
+      const Offset(800, 400),
+    );
+  });
+
+  testWidgets(
       'Ctrl+Z pressed in the same frame an open starts, before the editor '
       'rebuilds, undoes nothing', (tester) async {
     final container = await _editor(tester);
@@ -310,56 +358,130 @@ void main() {
     expect(_skeletonOpacity(tester), isNull);
   });
 
-  testWidgets(
-      'a file dragged over the map while an open runs shows no drop overlay, '
-      'and one dragged before it never leaves the overlay behind',
-      (tester) async {
-    final container = ProviderContainer(overrides: [
-      strategyProvider.overrideWith(_OpenStrategy.new),
-      platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
-    ]);
-    addTearDown(container.dispose);
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: const ShadApp(
-        home: Scaffold(body: ImageDropTarget(child: SizedBox.expand())),
-      ),
-    ));
-    final target = tester.widget<DropTarget>(find.byType(DropTarget));
+  group('a file dragged from the desktop', () {
+    late ProviderContainer container;
+    late _RecordingImages images;
+    late DropTarget target;
+    late Finder overlay;
     final over = DropEventDetails(
       localPosition: const Offset(200, 200),
       globalPosition: const Offset(200, 200),
     );
-    final label = find.text(
-      lookupAppLocalizations(const Locale('en')).imageDropOverlayLabel,
-    );
 
-    target.onDragEntered!(over);
-    await tester.pump();
-    expect(label, findsOneWidget);
-    final attempt = _beginOpen(container);
-    await tester.pump();
-    target.onDragExited!(over);
-    await tester.pump();
-    expect(label, findsNothing, reason: 'left while the open ran');
+    Future<void> mount(WidgetTester tester) async {
+      container = ProviderContainer(overrides: [
+        strategyProvider.overrideWith(_OpenStrategy.new),
+        platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+        placedImageProvider.overrideWith(_RecordingImages.new),
+      ]);
+      addTearDown(container.dispose);
+      images = container.read(placedImageProvider.notifier) as _RecordingImages;
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: ImageDropTarget(child: SizedBox.expand())),
+        ),
+      ));
+      target = tester.widget<DropTarget>(find.byType(DropTarget));
+      overlay = find.text(
+        lookupAppLocalizations(const Locale('en')).imageDropOverlayLabel,
+      );
+    }
 
-    target.onDragEntered!(over);
-    await tester.pump();
-    expect(label, findsNothing, reason: 'entered while the open ran');
-    container.read(strategyOpeningProvider.notifier).settle(attempt);
-    await tester.pump();
+    Future<void> drop(WidgetTester tester) async {
+      final folder = Directory.systemTemp.createTempSync('icarus-drop-');
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final file = File('${folder.path}/smokes.png')
+        ..writeAsBytesSync(const [137, 80, 78, 71, 13, 10, 26, 10]);
+      await tester.runAsync(() async {
+        target.onDragDone!(DropDoneDetails(
+          files: [DropItemFile(file.path)],
+          localPosition: const Offset(200, 200),
+          globalPosition: const Offset(200, 200),
+        ));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pump();
+    }
 
-    target.onDragEntered!(over);
+    testWidgets(
+        'held over the map while an open runs shows no overlay, and shows '
+        'it once the open ends', (tester) async {
+      await mount(tester);
+      final attempt = _beginOpen(container);
+      await tester.pump();
+
+      target.onDragEntered!(over);
+      await tester.pump();
+      expect(overlay, findsNothing);
+
+      container.read(strategyOpeningProvider.notifier).settle(attempt);
+      await tester.pump();
+      expect(overlay, findsOneWidget);
+
+      target.onDragExited!(over);
+      await tester.pump();
+      expect(overlay, findsNothing);
+    });
+
+    testWidgets(
+        'dropped while an open runs imports nothing and leaves no overlay; '
+        'dropped after it, it is imported', (tester) async {
+      await mount(tester);
+      target.onDragEntered!(over);
+      await tester.pump();
+      final attempt = _beginOpen(container);
+      await tester.pump();
+
+      await drop(tester);
+      expect(images.added, isEmpty);
+      expect(overlay, findsNothing);
+
+      container.read(strategyOpeningProvider.notifier).settle(attempt);
+      await tester.pump();
+      expect(overlay, findsNothing);
+      await drop(tester);
+      expect(images.added, ['.png']);
+    });
+  });
+
+  testWidgets(
+      'when an open is replaced while its loading view shows, the view shows '
+      'the strategy now being opened at once', (tester) async {
+    late Directory folder;
+    await tester.runAsync(() async {
+      folder = await openUnitHive();
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      for (final (id, map) in [
+        ('look-a', MapValue.bind),
+        ('look-b', MapValue.lotus),
+      ]) {
+        await box.put(
+          id,
+          generatedStrategy(Optionals.unset)
+              .copyWith(id: id, name: 'Look $id', mapData: map),
+        );
+      }
+    });
+    addTearDown(() => tester.runAsync(() async {
+          await Hive.close();
+          await folder.delete(recursive: true);
+        }));
+    final container = await _editor(tester);
+    String? shownName() => tester
+        .widget<StrategyViewSkeleton>(find.byType(StrategyViewSkeleton))
+        .strategyName;
+    final opens = container.read(strategyOpeningProvider.notifier);
+
+    opens.begin('look-a', source: StrategySource.local);
+    await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
-    expect(label, findsOneWidget);
-    _beginOpen(container);
+    expect(shownName(), 'Look look-a');
+
+    final attempt = opens.begin('look-b', source: StrategySource.local);
     await tester.pump();
-    target.onDragDone!(const DropDoneDetails(
-      files: [],
-      localPosition: Offset(200, 200),
-      globalPosition: Offset(200, 200),
-    ));
-    await tester.pump();
-    expect(label, findsNothing, reason: 'dropped while the open ran');
+    expect(shownName(), 'Look look-b');
+    opens.settle(attempt);
+    await tester.pump(const Duration(milliseconds: 200));
   });
 }

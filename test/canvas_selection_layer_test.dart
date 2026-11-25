@@ -87,18 +87,31 @@ Widget _item(
     );
 
 Widget _gatedIf(bool gated, Widget layer) => gated
-    ? EditorInputGate(
-        child: Stack(
-          children: [
-            layer,
-            const Positioned(
-              left: 600,
-              top: 400,
-              width: 150,
-              child: Material(child: TextField(key: ValueKey('field'))),
+    ? Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            child: TextButton(
+              key: const ValueKey('strip-button'),
+              onPressed: () {},
+              child: const Text('Library'),
             ),
-          ],
-        ),
+          ),
+          EditorInputGate(
+            child: Stack(
+              children: [
+                layer,
+                const Positioned(
+                  left: 600,
+                  top: 400,
+                  width: 150,
+                  child: Material(child: TextField(key: ValueKey('field'))),
+                ),
+              ],
+            ),
+          ),
+        ],
       )
     : layer;
 
@@ -450,28 +463,55 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets(
-        'a back-button press on the canvas, then Ctrl+A and Delete, change '
-        'nothing', (tester) async {
-      await pumpCanvas(tester, gated: true);
-      beginOpen();
-      await tester.pump();
+    Offset canvasPoint(WidgetTester tester) =>
+        tester.getTopLeft(find.byType(CanvasSelectionLayer)) +
+        const Offset(300, 300);
 
-      const at = Offset(300, 300);
-      await tester.sendEventToBinding(const PointerDownEvent(
+    void backButtonDown(WidgetTester tester) {
+      tester.binding.handlePointerEvent(PointerDownEvent(
         kind: PointerDeviceKind.mouse,
         buttons: kBackMouseButton,
-        position: at,
+        position: canvasPoint(tester),
       ));
-      await tester.sendEventToBinding(const PointerUpEvent(
-        kind: PointerDeviceKind.mouse,
-        position: at,
-      ));
+    }
+
+    testWidgets(
+        'Ctrl+A then Delete on a focused canvas, in the frame the open '
+        'starts, change nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      await tester.tapAt(canvasPoint(tester));
       await tester.pump();
+
+      beginOpen();
       await selectAllThenDelete(tester);
 
       expect(container.read(agentProvider), hasLength(3));
-      expect(container.read(canvasSelectionProvider), isEmpty);
+    });
+
+    testWidgets(
+        'mouse back on the canvas asking for focus before the open starts, '
+        'then Ctrl+A and Delete in that frame, change nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      backButtonDown(tester);
+      await Future<void>.microtask(() {});
+
+      beginOpen();
+      await selectAllThenDelete(tester);
+
+      expect(container.read(agentProvider), hasLength(3));
+    });
+
+    testWidgets(
+        'mouse back on the canvas asking for focus after the open starts, '
+        'then Ctrl+A and Delete in that frame, change nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      backButtonDown(tester);
+      beginOpen();
+      await Future<void>.microtask(() {});
+
+      await selectAllThenDelete(tester);
+
+      expect(container.read(agentProvider), hasLength(3));
     });
 
     testWidgets('Tab reaches nothing in the editor', (tester) async {
@@ -489,6 +529,23 @@ void main() {
           ))
           .focusNode;
       expect(field.hasFocus, isFalse);
+    });
+
+    testWidgets('focus on a top-strip button stays there when it ends',
+        (tester) async {
+      await pumpCanvas(tester, gated: true);
+      final attempt = beginOpen();
+      await tester.pump();
+      final button = Focus.of(tester.element(find.text('Library')));
+      button.requestFocus();
+      await tester.pump();
+      expect(button.hasFocus, isTrue);
+
+      container.read(strategyOpeningProvider.notifier).settle(attempt);
+      await tester.pump();
+      await tester.pump();
+
+      expect(button.hasFocus, isTrue);
     });
 
     testWidgets('once it has opened, Ctrl+A works with no click',

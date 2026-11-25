@@ -1,20 +1,32 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
-final class StrategyOpeningNotifier extends Notifier<String?> {
+final class StrategyOpening {
+  const StrategyOpening({
+    required this.attempt,
+    required this.strategyId,
+    required this.source,
+  });
+
+  final int attempt;
+  final String strategyId;
+  final StrategySource source;
+}
+
+final class StrategyOpeningNotifier extends Notifier<StrategyOpening?> {
   var _attempt = 0;
   var _settled = 0;
-  StrategySource? _source;
-
-  StrategySource? get source => state == null ? null : _source;
 
   @override
-  String? build() => null;
+  StrategyOpening? build() => null;
 
   int begin(String strategyId, {required StrategySource source}) {
     _attempt += 1;
-    _source = source;
-    state = strategyId;
+    state = StrategyOpening(
+      attempt: _attempt,
+      strategyId: strategyId,
+      source: source,
+    );
     return _attempt;
   }
 
@@ -33,6 +45,6 @@ final class StrategyOpeningNotifier extends Notifier<String?> {
 }
 
 final strategyOpeningProvider =
-    NotifierProvider<StrategyOpeningNotifier, String?>(
+    NotifierProvider<StrategyOpeningNotifier, StrategyOpening?>(
   StrategyOpeningNotifier.new,
 );

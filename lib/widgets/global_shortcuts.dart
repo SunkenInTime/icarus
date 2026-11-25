@@ -67,8 +67,13 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     HardwareKeyboard.instance.addHandler(_handleModifierKeyEvent);
   }
 
+  late final _shortcuts = _ClosedWhileOpening(
+    () => ref.read(strategyOpeningProvider) != null,
+  );
+
   @override
   void dispose() {
+    _shortcuts.dispose();
     HardwareKeyboard.instance.removeHandler(_handleModifierKeyEvent);
     WidgetsBinding.instance.removeObserver(this);
     _focusNode.dispose();
@@ -105,13 +110,13 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     // the node itself holds focus. With the web semantics tree on, a click
     // on an empty part of the page focuses it.
     final writingCaption = ref.watch(writingCaptionProvider);
-    final opening = ref.watch(strategyOpeningProvider) != null;
-    return Shortcuts(
-      shortcuts: editorCovered || writingCaption || opening
-          ? const {}
-          : ShortcutInfo.globalShortcutsFor(
-              ref.watch(appPreferencesProvider).customShortcutBindings,
-            ),
+    _shortcuts.shortcuts = editorCovered || writingCaption
+        ? const {}
+        : ShortcutInfo.globalShortcutsFor(
+            ref.watch(appPreferencesProvider).customShortcutBindings,
+          );
+    return Shortcuts.manager(
+      manager: _shortcuts,
       child: Actions(
         actions: {
           NavigationActionIntent: CallbackAction<NavigationActionIntent>(
@@ -244,10 +249,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
           ),
           UndoActionIntent: CallbackAction<UndoActionIntent>(
             onInvoke: (intent) {
-              if (!capabilities.canEditPages ||
-                  ref.read(strategyOpeningProvider) != null) {
-                return null;
-              }
+              if (!capabilities.canEditPages) return null;
               _dismissDeleteMenu();
               ref.read(actionProvider.notifier).undoAction();
               return null;
@@ -313,10 +315,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
           ),
           RedoActionIntent: CallbackAction<RedoActionIntent>(
             onInvoke: (intent) {
-              if (!capabilities.canEditPages ||
-                  ref.read(strategyOpeningProvider) != null) {
-                return null;
-              }
+              if (!capabilities.canEditPages) return null;
               _dismissDeleteMenu();
               ref.read(actionProvider.notifier).redoAction();
               return null;
@@ -365,4 +364,16 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
       ),
     );
   }
+}
+
+final class _ClosedWhileOpening extends ShortcutManager {
+  _ClosedWhileOpening(this._opening);
+
+  final bool Function() _opening;
+
+  @override
+  KeyEventResult handleKeypress(BuildContext context, KeyEvent event) =>
+      _opening()
+          ? KeyEventResult.ignored
+          : super.handleKeypress(context, event);
 }

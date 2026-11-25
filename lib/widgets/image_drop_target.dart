@@ -30,29 +30,28 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
     );
     final canDrop = canEditPages &&
         ref.watch(platformPolicyProvider).supports(PlatformFeature.fileDrop);
+    final showsDrop =
+        isDragging && canDrop && ref.watch(strategyOpeningProvider) == null;
 
     return DropTarget(
       onDragEntered: (details) {
-        if (!canDrop || ref.read(strategyOpeningProvider) != null) return;
         setState(() {
           isDragging = true;
         });
       },
       onDragExited: (details) {
-        if (!isDragging) return;
         setState(() {
           isDragging = false;
         });
       },
       onDragDone: (details) async {
-        if (isDragging) setState(() => isDragging = false);
+        setState(() => isDragging = false);
         if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages ||
             ref.read(strategyOpeningProvider) != null) {
           return;
         }
         if (!ensureFeatureAvailable(ref, PlatformFeature.fileDrop)) return;
         if (!ensureFeatureAvailable(ref, PlatformFeature.addImages)) return;
-        isDragging = false;
         final files = details.files;
 
         for (final file in files) {
@@ -75,13 +74,13 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
       child: Stack(
         children: [
           Positioned.fill(child: widget.child),
-          if (isDragging)
+          if (showsDrop)
             const Positioned.fill(
               child: ColoredBox(
                 color: Color.fromARGB(118, 2, 2, 2),
               ),
             ),
-          if (isDragging)
+          if (showsDrop)
             Positioned.fill(
               child: Center(
                 child: Column(
