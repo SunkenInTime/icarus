@@ -377,10 +377,12 @@ QueueEvent _atStoredPrecision(QueueEvent event) => switch (event) {
     :final refusal,
     :final at?,
     :final currentLife,
+    :final point,
   ) =>
     BatchRefused(
       attempt,
       refusal,
+      point: point,
       at: _storedPrecision(at),
       currentLife: currentLife,
     ),
@@ -1697,12 +1699,6 @@ extension _CloudStore on LibraryStore {
         outcomes.add(const EditsGoThroughCommit());
         continue;
       }
-      if (event case BaseArrived(
-        :final from,
-      ) when !(_cloudResults?.takes(from) ?? false)) {
-        outcomes.add(ReportNotApplicable(NotThisModesResults(_cloudResults)));
-        continue;
-      }
       final Step step;
       try {
         step = transition(queue, event, now: now);
@@ -2058,13 +2054,11 @@ extension _CloudStore on LibraryStore {
 
   Future<Saving<StrategySummary, LibraryRefusal>> _addCloud(
     Account account,
-    HeaderRead header,
-    List<PageRead> pages,
+    StampedRead<HeaderRead> header,
+    List<StampedRead<PageRead>> pages,
   ) async {
-    final results = _cloudResults;
-    if (results == null) return const Refused(CloudResultsNotChosen());
     final ReadableStrategy strategyRow;
-    switch (header.strategy) {
+    switch (header.base.strategy) {
       case final ReadableStrategy row:
         strategyRow = row;
       case final UnreadableStrategy row:
@@ -2106,17 +2100,17 @@ extension _CloudStore on LibraryStore {
       nextSession: _numbers.nextSession,
     );
     final now = _cloudNow();
-    queue = transition(queue, const ConnectionReturned(), now: now).queue;
+    queue = transition(
+      queue,
+      ConnectionReturned(header.point.generation),
+      now: now,
+    ).queue;
     final events = [
-      for (final base in <ArrivedBase>[header, ...pages])
+      for (final read in <StampedRead<ArrivedBase>>[header, ...pages])
         BaseArrived(
-          base,
+          read.base,
           session: queue.session.number,
-          from: switch (results) {
-            CloudResults.liveQueries => const LiveResult(),
-            CloudResults.thisDevicesReads =>
-              ReadOfThisDevice(queue.session.readStart),
-          },
+          point: read.point,
         ),
     ];
     _forgetCloud(digest);
@@ -2226,7 +2220,7 @@ extension _CloudStore on LibraryStore {
       landed: const [],
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
-      shown: Shown.nothing.owingList(ReadStart.beforeAnyRead),
+      shown: Shown.nothing.owingList(ResultAtOrAfter.anyResult),
       strategy: StrategyFacts.fresh,
       session: QueueSession(
         connected: false,

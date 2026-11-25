@@ -52,7 +52,8 @@ void main() {
         BaseArrived(
           headerReadOf(initialRows()),
           session: client.queue.session.number,
-          from: readFrom(client.queue),
+          point: tick(),
+          requestedAt: client.queue.session.sequence,
         ),
       );
       expect(late, isA<NotApplicable>());
@@ -66,15 +67,16 @@ void main() {
         'an earlier list read started before the refusal is dropped', () {
       final client = Client();
       client.edit(movePatch('move'));
-      final beforeRefusal = readFrom(client.queue);
+      final beforeRefusal = askRead(client.queue);
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
-      client.must(const ResultRefused(page: null, problem: 'lifeless'));
+      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+      client.must(client.readRefused(null, 'lifeless'));
       final late = client.step(
         BaseArrived(
           headerReadOf(replaced(initialRows(), life: strategyLife - 1000)),
           session: client.queue.session.number,
-          from: beforeRefusal,
+          point: beforeRefusal.point,
+          requestedAt: beforeRefusal.requestedAt,
         ),
       );
       expect(notApplicable(late), isA<OlderResult>());
@@ -110,7 +112,7 @@ void main() {
           BatchRefused(
             attempt,
             BatchRefusal.strategyReplaced,
-            currentLife: thirdLife,
+            currentLife: thirdLife, point: tick(),
           ),
         );
         expect(
@@ -121,7 +123,8 @@ void main() {
           BaseArrived(
             headerReadOf(replaced(initialRows(), life: laterLife)),
             session: client.queue.session.number,
-            from: client.beginRead(),
+            point: tick(),
+            requestedAt: client.queue.session.sequence,
           ),
         );
         expect(notApplicable(between), isA<OlderResult>());
@@ -144,14 +147,15 @@ void main() {
         BatchRefused(
           attempt,
           BatchRefusal.strategyReplaced,
-          currentLife: strategyLife,
+          currentLife: strategyLife, point: tick(),
         ),
       );
       final other = client.step(
         BaseArrived(
           headerReadOf(replaced(initialRows(), life: strategyLife - 1000)),
           session: client.queue.session.number,
-          from: client.beginRead(),
+          point: tick(),
+          requestedAt: client.queue.session.sequence,
         ),
       );
       expect(notApplicable(other), isA<OlderResult>());
@@ -169,10 +173,10 @@ void main() {
         BatchRefused(
           attempt,
           BatchRefusal.strategyReplaced,
-          currentLife: laterLife,
+          currentLife: laterLife, point: tick(),
         ),
       );
-      client.must(const ResultRefused(page: null, problem: 'lifeless'));
+      client.must(client.readRefused(null, 'lifeless'));
       expect(
         client.queue.shown.list,
         isA<ReadRefused>().having(
@@ -193,7 +197,7 @@ void main() {
       expect(client.queue.shown.strategy?.life, yearAhead);
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
       client.arrive(headerReadOf(initialRows()));
       expect(client.queue.shown.strategy?.life, strategyLife);
       expect(client.queue.entries, isEmpty);
@@ -217,7 +221,7 @@ void main() {
         nextSession: client.queue.nextSession,
         shown: client.queue.shown.owingListPast(
           left,
-          client.queue.session.readStart,
+          ResultAtOrAfter(client.queue.session.orderOf(tick())),
         ),
         strategy: client.queue.strategy,
         session: client.queue.session,
@@ -226,7 +230,8 @@ void main() {
         BaseArrived(
           headerReadOf(initialRows()),
           session: client.queue.session.number,
-          from: client.beginRead(),
+          point: tick(),
+          requestedAt: client.queue.session.sequence,
         ),
       );
       expect(notApplicable(step), isA<OlderResult>());
@@ -244,7 +249,8 @@ void main() {
             BaseArrived(
               headerReadOf(initialRows()),
               session: client.queue.session.number,
-              from: readFrom(client.queue),
+              point: tick(),
+              requestedAt: client.queue.session.sequence,
             ),
           ),
         ),
@@ -260,12 +266,13 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
       final step = client.step(
         BaseArrived(
           headerReadOf(replaced(initialRows(), life: strategyLife)),
           session: client.queue.session.number,
-          from: readFrom(client.queue),
+          point: tick(),
+          requestedAt: client.queue.session.sequence,
         ),
       );
       expect(notApplicable(step), isA<OlderResult>());
@@ -278,7 +285,7 @@ void main() {
         'dropped unread', () {
       final client = Client();
       client.edit(movePatch('move'));
-      final started = readFrom(client.queue);
+      final started = askRead(client.queue);
       client.arrive(
         headerReadOf(replacedWithNewPage(initialRows(), laterLife)),
       );
@@ -286,7 +293,8 @@ void main() {
         BaseArrived(
           pageReadOf(replacedWithNewPage(initialRows(), laterLife), 'page-a'),
           session: client.queue.session.number,
-          from: started,
+          point: started.point,
+          requestedAt: started.requestedAt,
         ),
       );
       expect(notApplicable(step), isA<StartedInAnotherLife>());
@@ -297,7 +305,7 @@ void main() {
         'the answer', () {
       final client = Client();
       client.edit(movePatch('move'));
-      final started = readFrom(client.queue);
+      final started = askRead(client.queue);
       final attempt = client.claim(['move']);
       client.must(
         OpAnswered(
@@ -306,7 +314,7 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ),
+          ), point: tick(),
         ),
       );
       expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
@@ -316,7 +324,8 @@ void main() {
             BaseArrived(
               pageReadOf(initialRows(), 'page-a'),
               session: client.queue.session.number,
-              from: started,
+              point: started.point,
+          requestedAt: started.requestedAt,
             ),
           ),
         ),
@@ -340,7 +349,7 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ),
+          ), point: tick(),
         ),
       );
       expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
@@ -350,7 +359,7 @@ void main() {
     test('a page-gone answer read before the page was owed is dropped: the '
         'page stays and is still owed', () {
       final client = Client();
-      final before = readFrom(client.queue);
+      final before = askRead(client.queue);
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.must(
@@ -360,14 +369,15 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ),
+          ), point: tick(),
         ),
       );
       final step = client.step(
         BaseArrived(
           const PageGone('page-a'),
           session: client.queue.session.number,
-          from: before,
+          point: before.point,
+          requestedAt: before.requestedAt,
         ),
       );
       expect(notApplicable(step), isA<OlderResult>());
@@ -378,15 +388,16 @@ void main() {
     test('a strategy-gone answer read before the list was owed is dropped: '
         'the strategy is not marked gone and the list is still owed', () {
       final client = Client();
-      final before = readFrom(client.queue);
+      final before = askRead(client.queue);
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
       final step = client.step(
         BaseArrived(
           const StrategyGone(),
           session: client.queue.session.number,
-          from: before,
+          point: before.point,
+          requestedAt: before.requestedAt,
         ),
       );
       expect(notApplicable(step), isA<OlderResult>());
@@ -398,13 +409,14 @@ void main() {
       'a page-gone answer read in a life the record has left is dropped',
       () {
         final client = withPageOwed();
-        final before = readFrom(client.queue);
+        final before = askRead(client.queue);
         client.arrive(headerReadOf(replaced(initialRows())));
         final step = client.step(
           BaseArrived(
             const PageGone('page-a'),
             session: client.queue.session.number,
-            from: before,
+            point: before.point,
+          requestedAt: before.requestedAt,
           ),
         );
         expect(notApplicable(step), isNot(isNull));
@@ -417,7 +429,7 @@ void main() {
     test('a page read started before the page was owed changes neither the '
         'page nor its freshness', () {
       final client = Client();
-      final before = readFrom(client.queue);
+      final before = askRead(client.queue);
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.must(
@@ -427,7 +439,7 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ),
+          ), point: tick(),
         ),
       );
       final shown = client.queue.shown;
@@ -435,7 +447,8 @@ void main() {
         BaseArrived(
           pageReadOf(withOp(initialRows(), movePatch('t', x: 9)), 'page-a'),
           session: client.queue.session.number,
-          from: before,
+          point: before.point,
+          requestedAt: before.requestedAt,
         ),
       );
       expect(notApplicable(step), isA<OlderResult>());
@@ -490,7 +503,7 @@ void main() {
         BaseArrived(
           pageReadOf(newer, 'page-n'),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       expect(isDebt((await syncOf(store)).queue.shown.list), isTrue);
@@ -514,12 +527,12 @@ void main() {
           BaseArrived(
             headerReadOf(trashed),
             session: session,
-            from: await readStartOf(store),
+            point: tick(),
           ),
           BaseArrived(
             pageReadOf(trashed, 'page-b'),
             session: session,
-            from: await readStartOf(store),
+            point: tick(),
           ),
         ]);
         expect(isDebt((await syncOf(store)).queue.shown.list), isFalse);
@@ -542,12 +555,12 @@ void main() {
         BaseArrived(
           headerReadOf(withoutB),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
         BaseArrived(
           pageReadOf(initialRows(), 'page-b'),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       expect(
@@ -558,7 +571,7 @@ void main() {
         BaseArrived(
           headerReadOf(withoutB),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       expect(
@@ -576,7 +589,7 @@ void main() {
         BaseArrived(
           pageReadOf(newer, 'page-a'),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       final queue = (await syncOf(store)).queue;
@@ -597,14 +610,14 @@ void main() {
         BaseArrived(
           headerReadOf(newer),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       await store.record(testAccount, strategyId, [
         BaseArrived(
           pageReadOf(initialRows(), 'page-a'),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       final queue = (await syncOf(store)).queue;
@@ -615,7 +628,7 @@ void main() {
         BaseArrived(
           headerReadOf(newer),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       expect((await syncOf(store)).queue.shown.pagesToRead, contains('page-a'));

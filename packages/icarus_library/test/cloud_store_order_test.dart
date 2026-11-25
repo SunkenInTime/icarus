@@ -21,14 +21,14 @@ void main() {
       BaseArrived(
         pageReadOf(moved, 'page-b'),
         session: session,
-        from: await readStartOf(store),
+        point: tick(),
       ),
     ]);
     await recordAll(store, [
       BaseArrived(
         pageReadOf(initialRows(), 'page-a'),
         session: session,
-        from: await readStartOf(store),
+        point: tick(),
       ),
     ]);
     final onA = pageOf(await store.readPage(strategyId, 'page-a'));

@@ -35,11 +35,11 @@ PageRead pageAWith(List<ElementRow> elements) => PageRead(
 
 Shown shownAfter(List<List<ElementRow>> reads) {
   var shown = Shown.nothing
-      .taken(headerReadOf(initialRows()), started: ReadStart.beforeAnyRead)
+      .taken(headerReadOf(initialRows()), arrival: null)
       .shown;
   for (final elements in reads) {
     shown = shown
-        .taken(pageAWith(elements), started: ReadStart.beforeAnyRead)
+        .taken(pageAWith(elements), arrival: null)
         .shown;
   }
   return shown;

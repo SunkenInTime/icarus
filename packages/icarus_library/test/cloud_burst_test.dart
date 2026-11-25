@@ -127,13 +127,13 @@ final class Burst {
           'a burst op was refused: ${refused.refusal}',
         ),
       };
-      client.must(OpAnswered(attempt, answer));
+      client.must(OpAnswered(attempt, answer, point: tick()));
     }
     client.read(server, pages: ['page-a']);
   }
 
   void run() {
-    if (online) client.must(const ConnectionReturned());
+    if (online) client.must(reconnected());
     final length = 2 + random.nextInt(19);
     final claimAt = random.nextInt(length);
     for (var i = 0; i < length; i++) {

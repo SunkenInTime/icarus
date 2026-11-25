@@ -435,7 +435,7 @@ void main() {
           'first',
           RejectionReason.revisionMismatch,
           NoServerCopy(),
-        ),
+        ), point: tick(),
       ),
     );
     client.edit(movePatch('second', expected: 2, x: 20));

@@ -92,12 +92,9 @@ final class Opened {
     });
   }
 
-  static Future<Opened> over(
-    MemoryStorage storage, {
-    CloudResults results = CloudResults.thisDevicesReads,
-  }) async {
+  static Future<Opened> over(MemoryStorage storage) async {
     final (engine, counts) = counting(MemoryEngine(storage));
-    return Opened._(await openCloudStore(engine, results: results), counts);
+    return Opened._(await openCloudStore(engine), counts);
   }
 
   final LibraryStore store;
@@ -174,22 +171,14 @@ final class ServingAStrayItem extends ForwardingLease {
 
 Future<void> arrive(LibraryStore store, ArrivedBase base) async {
   final recorded = await recordAll(store, [
-    BaseArrived(
-      base,
-      session: await sessionOf(store),
-      from: await beganIn(store),
-    ),
+    await arrivalIn(store, base),
   ]);
   expect(recorded.outcomes.single, isA<ReportApplied>());
 }
 
 Future<RecordResult> arriving(LibraryStore store, ArrivedBase base) async =>
     store.record(testAccount, strategyId, [
-      BaseArrived(
-        base,
-        session: await sessionOf(store),
-        from: await beganIn(store),
-      ),
+      await arrivalIn(store, base),
     ]);
 
 Future<void> readEveryPage(LibraryStore store) async {
@@ -205,7 +194,7 @@ Future<void> expectRefused(LibraryStore store, String reason) async {
     isA<InUnreadableStrategy<PageContent>>(),
   );
   expect(
-    await store.record(testAccount, strategyId, const [ConnectionReturned()]),
+    await store.record(testAccount, strategyId, [reconnected()]),
     isA<Refused<Recorded, CommitRefusal>>().having(
       (refused) => refused.reason,
       'reason',
@@ -378,9 +367,7 @@ void main() {
         final before = editable(disk);
         final storage = MemoryStorage(disk);
         final opened = await Opened.over(
-          storage,
-          results: CloudResults.liveQueries,
-        );
+          storage);
         await readEveryPage(opened.store);
         await expectRefused(opened.store, reason);
         expect(
@@ -388,7 +375,7 @@ void main() {
             BaseArrived(
               pageReadOf(initialRows(), 'page-b'),
               session: 1,
-              from: const LiveResult(),
+              point: tick(),
             ),
           ]),
           isA<Refused<Recorded, CommitRefusal>>(),
@@ -433,38 +420,6 @@ void main() {
     expect(await opened.refusalsReported(), hasLength(1));
   });
 
-  test('a result from a source this mode does not take loads no page, even '
-      'one that would disagree', () async {
-    final disk = await addedOnDisk();
-    disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
-    final opened = await Opened.over(MemoryStorage(disk));
-    await recordAll(opened.store, [const AppRestarted(build: build)]);
-    final session = await sessionOf(opened.store);
-    final listingsBefore = [...opened.counts.entryListings];
-    final recorded = await opened.store.record(testAccount, strategyId, [
-      BaseArrived(
-        pageReadOf(initialRows(), 'page-a'),
-        session: session,
-        from: const LiveResult(),
-      ),
-    ]);
-    final contentListed = [
-      for (final (_, prefix) in opened.counts.entryListings.skip(
-        listingsBefore.length,
-      ))
-        if (prefix.startsWith('content/')) prefix,
-    ];
-    expect(contentListed, isEmpty);
-    expect(
-      savedValue(recorded).outcomes.single,
-      isA<ReportNotApplicable>().having(
-        (outcome) => outcome.why,
-        'why',
-        isA<NotThisModesResults>(),
-      ),
-    );
-    expect(await opened.refusalsReported(), isEmpty);
-  });
 
   test('work the user queued stays on disk as it was and is not sent, and '
       'new work is refused', () async {
@@ -537,7 +492,7 @@ void main() {
       final (opened, storage) = await damagedOnA();
       final store = opened.store;
       final session = await sessionOf(store);
-      final began = await beganIn(store);
+      final began = await askedIn(store);
       expect(
         await store.readPage(strategyId, 'page-b'),
         isA<Found<PageContent>>(),
@@ -549,10 +504,10 @@ void main() {
       final before = editable(storage.contents);
       expect(
         await store.record(testAccount, strategyId, [
-          BaseArrived(
+          arrivedAs(
             pageReadOf(initialRows(), 'page-b'),
             session: session,
-            from: began,
+            asked: began,
           ),
         ]),
         isA<Refused<Recorded, CommitRefusal>>(),
@@ -634,7 +589,7 @@ void main() {
         'damaged page is refused whole, with nothing written', () async {
       final (opened, storage) = await damagedOnA();
       final session = await sessionOf(opened.store);
-      final from = await beganIn(opened.store);
+      final from = await askedIn(opened.store);
       final before = editable(storage.contents);
       final commits = opened.counts.commits;
       final changedB = initialRows().withRows([
@@ -642,15 +597,15 @@ void main() {
       ]);
       expect(
         await opened.store.record(testAccount, strategyId, [
-          BaseArrived(
+          arrivedAs(
             pageReadOf(changedB, 'page-b'),
             session: session,
-            from: from,
+            asked: from,
           ),
-          BaseArrived(
+          arrivedAs(
             pageReadOf(initialRows(), 'page-a'),
             session: session,
-            from: from,
+            asked: from,
           ),
         ]),
         isA<Refused<Recorded, CommitRefusal>>().having(
@@ -729,23 +684,23 @@ void main() {
     final opened = await Opened.over(storage);
     await recordAll(opened.store, [const AppRestarted(build: build)]);
     final session = await sessionOf(opened.store);
-    final older = await beganIn(opened.store);
-    final newer = await beganIn(opened.store);
+    final older = await askedIn(opened.store);
+    final newer = await askedIn(opened.store);
     await recordAll(opened.store, [
-      BaseArrived(
+      arrivedAs(
         pageReadOf(initialRows(), 'page-a'),
         session: session,
-        from: newer,
+        asked: newer,
       ),
     ]);
     expect(await opened.store.unload(strategyId), isA<Unloaded>());
     final listings = opened.counts.entryListings.length;
     final commits = opened.counts.commits;
     final recorded = await opened.store.record(testAccount, strategyId, [
-      BaseArrived(
+      arrivedAs(
         pageReadOf(initialRows(), 'page-a'),
         session: session,
-        from: older,
+        asked: older,
       ),
     ]);
     expect([
@@ -822,14 +777,13 @@ void main() {
     ) async {
       final healthy = await Opened.over(
         MemoryStorage(await addedOnDisk()),
-        results: CloudResults.liveQueries,
       );
       await recordAll(healthy.store, [const AppRestarted(build: build)]);
       final session = await sessionOf(healthy.store);
       expect(
         (await recordAll(healthy.store, [
           for (final result in results)
-            BaseArrived(result, session: session, from: const LiveResult()),
+            BaseArrived(result, session: session, point: tick()),
         ])).outcomes,
         everyElement(isA<ReportApplied>()),
       );
@@ -839,14 +793,12 @@ void main() {
       final before = editable(disk);
       final storage = MemoryStorage(disk);
       final damaged = await Opened.over(
-        storage,
-        results: CloudResults.liveQueries,
-      );
+        storage);
       expect(
         await damaged.store.record(testAccount, strategyId, [
           const AppRestarted(build: build),
           for (final result in results)
-            BaseArrived(result, session: session, from: const LiveResult()),
+            BaseArrived(result, session: session, point: tick()),
         ]),
         isA<Refused<Recorded, CommitRefusal>>().having(
           (refused) => refused.reason,
@@ -899,8 +851,8 @@ void main() {
       counts.commits,
     );
     expect(
-      await opened.store.record(testAccount, strategyId, const [
-        ConnectionReturned(),
+      await opened.store.record(testAccount, strategyId, [
+        reconnected(),
       ]),
       isA<Refused<Recorded, CommitRefusal>>(),
     );
@@ -941,10 +893,14 @@ void main() {
       element('e1', fields: const {'dx': 5}),
     ]);
     expect(
-      await store.addCloudStrategy(testAccount, headerReadOf(initialRows()), [
-        pageReadOf(initialRows(), 'page-a') as PageRead,
-        pageReadOf(other, 'page-a') as PageRead,
-      ]),
+      await store.addCloudStrategy(
+        testAccount,
+        stamped(headerReadOf(initialRows())),
+        stampedPages([
+          pageReadOf(initialRows(), 'page-a') as PageRead,
+          pageReadOf(other, 'page-a') as PageRead,
+        ]),
+      ),
       isA<Refused<StrategySummary, LibraryRefusal>>().having(
         (refused) => refused.reason,
         'reason',
@@ -954,7 +910,7 @@ void main() {
     expect(storage.contents[area], isNull);
     expect(store.refusedStrategies, isEmpty);
     expect(
-      await store.record(testAccount, strategyId, const [ConnectionReturned()]),
+      await store.record(testAccount, strategyId, [reconnected()]),
       isA<Refused<Recorded, CommitRefusal>>().having(
         (refused) => refused.reason,
         'reason',
@@ -998,7 +954,7 @@ void main() {
     expect(await refusedFor(store), isNotNull);
     savedValue(await store.editLibrary([const RemoveStrategy(strategyId)]));
     expect(
-      await store.record(testAccount, strategyId, const [ConnectionReturned()]),
+      await store.record(testAccount, strategyId, [reconnected()]),
       isA<Refused<Recorded, CommitRefusal>>().having(
         (refused) => refused.reason,
         'reason',
@@ -1056,7 +1012,7 @@ void main() {
           entered.add((strategy, page));
       await recordAll(store, [const AppRestarted(build: build)]);
       final session = await sessionOf(store);
-      final from = await beganIn(store);
+      final from = await askedIn(store);
       expect(
         await store.readPage(strategyId, 'page-b'),
         isA<Found<PageContent>>(),
@@ -1064,7 +1020,7 @@ void main() {
       expect(storeWork.strategiesInMemory(), contains(digestOf(strategyId)));
       expect(
         await store.record(testAccount, strategyId, [
-          BaseArrived(
+          arrivedAs(
             pageReadOf(
               initialRows().withRows([
                 element('e3', pageId: 'page-b', revision: 2),
@@ -1072,12 +1028,12 @@ void main() {
               'page-b',
             ),
             session: session,
-            from: from,
+            asked: from,
           ),
-          BaseArrived(
+          arrivedAs(
             pageReadOf(initialRows(), 'page-a'),
             session: session,
-            from: from,
+            asked: from,
           ),
         ]),
         isA<Refused<Recorded, CommitRefusal>>(),
@@ -1106,13 +1062,13 @@ void main() {
       final opened = await Opened.over(storage);
       await recordAll(opened.store, [const AppRestarted(build: build)]);
       final session = await sessionOf(opened.store);
-      final from = await beganIn(opened.store);
+      final from = await askedIn(opened.store);
       final before = editable(storage.contents);
       final commits = opened.counts.commits;
       final rows = initialRows();
       expect(
         await opened.store.record(testAccount, strategyId, [
-          BaseArrived(
+          arrivedAs(
             PageRead(
               page: rows.page('page-a')!,
               elements: [
@@ -1122,7 +1078,7 @@ void main() {
               lineupGroups: const [],
             ),
             session: session,
-            from: from,
+            asked: from,
           ),
         ]),
         isA<Refused<Recorded, CommitRefusal>>().having(
@@ -1153,15 +1109,15 @@ void main() {
       );
       await recordAll(store, [const AppRestarted(build: build)]);
       final session = await sessionOf(store);
-      final from = await beganIn(store);
+      final from = await askedIn(store);
       final before = editable(storage.contents);
       failing = true;
       await expectLater(
         store.record(testAccount, strategyId, [
-          BaseArrived(
+          arrivedAs(
             pageReadOf(initialRows(), 'page-a'),
             session: session,
-            from: from,
+            asked: from,
           ),
         ]),
         throwsA(isA<JsonUnsupportedObjectError>()),
@@ -1220,14 +1176,14 @@ void main() {
     await recordAll(again.store, [const AppRestarted(build: build)]);
     expect(await refusedFor(again.store), isNull);
     final session = await sessionOf(again.store);
-    final from = await beganIn(again.store);
+    final from = await askedIn(again.store);
     final commits = again.counts.commits;
     expect(
       await again.store.record(testAccount, strategyId, [
-        BaseArrived(
+        arrivedAs(
           pageReadOf(initialRows(), 'page-a'),
           session: session,
-          from: from,
+          asked: from,
         ),
       ]),
       isA<Refused<Recorded, CommitRefusal>>().having(
@@ -1310,7 +1266,6 @@ void main() {
     final storage = MemoryStorage(disk);
     final store = await openCloudStore(
       MemoryEngine(storage),
-      results: CloudResults.liveQueries,
     );
     final page = await store.readPage(strategyId, 'page-a');
     expect(
@@ -1328,7 +1283,7 @@ void main() {
         BaseArrived(
           pageReadOf(initialRows(), 'page-a'),
           session: 1,
-          from: const LiveResult(),
+          point: tick(),
         ),
       ]),
       isA<Refused<Recorded, CommitRefusal>>().having(
@@ -1361,7 +1316,7 @@ void main() {
     await addCloud(opened.store, initialRows());
     await recordAll(opened.store, [const AppRestarted(build: build)]);
     final session = await sessionOf(opened.store);
-    final from = await beganIn(opened.store);
+    final from = await askedIn(opened.store);
     final before = editable(storage.contents);
     final odd = initialRows().withRows([
       LiveElement(
@@ -1377,7 +1332,7 @@ void main() {
     ]);
     expect(
       await opened.store.record(testAccount, strategyId, [
-        BaseArrived(pageReadOf(odd, 'page-a'), session: session, from: from),
+        arrivedAs(pageReadOf(odd, 'page-a'), session: session, asked: from),
       ]),
       isA<Refused<Recorded, CommitRefusal>>().having(
         (refused) => refused.reason,

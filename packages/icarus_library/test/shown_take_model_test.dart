@@ -6,6 +6,7 @@ import 'package:icarus_library/src/cloud/op_facts.dart'
     show liveContentOn, rowDigest;
 import 'package:test/test.dart';
 
+import 'cloud_support.dart';
 import 'random_page_server.dart';
 
 ShownRow _loaded(ShownRow row) => ShownRow(
@@ -140,8 +141,8 @@ Map<String, int> runSeed(int seed, int steps) {
   var scratch = Shown.nothing;
   var lastPage = 0;
   var lastList = 0;
-  ReadStart? lastFresh;
-  final firstStart = <int, ReadStart>{};
+  Arrival? lastFresh;
+  final firstStart = <int, Arrival>{};
   for (var step = 0; step < steps; step++) {
     final where = 'seed $seed step $step';
     if (server.random.nextBool()) server.change();
@@ -152,11 +153,11 @@ Map<String, int> runSeed(int seed, int steps) {
         !result.stale && lastFresh != null && server.random.nextInt(5) == 0;
     final started = firstStart[result.read] ??= tie
         ? lastFresh
-        : ReadStart(session: 1, sequence: result.read * 2);
+        : arrivalAt(result.read * 2);
     if (!result.stale) lastFresh = started;
     if (tie) count('started with the read before it');
     if (cached.takenFor(result.base) case final mark?
-        when started.isBefore(mark)) {
+        when started.order.isBefore(mark)) {
       count('dropped as older');
       continue;
     }
@@ -177,10 +178,10 @@ Map<String, int> runSeed(int seed, int steps) {
         break;
     }
     final before = cached;
-    final taken = cached.taken(result.base, started: started);
+    final taken = cached.taken(result.base, arrival: started);
     final fromNothing = fromScratch(
       scratch,
-    ).taken(result.base, started: started);
+    ).taken(result.base, arrival: started);
     if (taken.shown != fromNothing.shown) {
       fail(
         '$where: taking ${result.base} with this run\'s digests differs '
@@ -208,6 +209,16 @@ Map<String, int> runSeed(int seed, int steps) {
   }
   return {...delivered, ...observed.counts};
 }
+
+Arrival arrivalAt(int snapshot) => Arrival(
+  order: ResultOrder(session: 1, client: testClient, snapshot: snapshot),
+  point: ResultPoint(
+    client: testClient,
+    connection: 1,
+    snapshot: snapshot,
+    serverTime: snapshot * 1000,
+  ),
+);
 
 void main() {
   final environment = Platform.environment;
