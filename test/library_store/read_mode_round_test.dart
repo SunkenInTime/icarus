@@ -122,9 +122,10 @@ void main() {
   final compare = Platform.environment[compareVariable];
 
   test(
-    'writes the read-mode round library: the source stores, plus a strategy '
-    'with an agent at x = -0.0, one with lineups saved interleaved, and one '
-    'page of dense strokes',
+    'writes the read-mode round library: the source stores, each name made '
+    'unique so the driver can find its tile, plus a strategy with an agent at '
+    'x = -0.0, one with lineups saved interleaved, and one page of dense '
+    'strokes',
     skip: fixture == null || sources == null
         ? 'set $fixtureVariable to a new folder and $sourcesVariable to Hive '
             'stores separated by ;'
@@ -144,7 +145,15 @@ void main() {
       for (final made in [_signedZero(), _interleaved(), _denseStrokes()]) {
         strategies[made.id] = made;
       }
-      await _write(Directory(fixture!), strategies.values, folders.values);
+      final seen = <String, int>{};
+      final named = [
+        for (final strategy in strategies.values)
+          switch (seen[strategy.name] = (seen[strategy.name] ?? 0) + 1) {
+            1 => strategy,
+            final copy => strategy.copyWith(name: '${strategy.name} ($copy)'),
+          },
+      ];
+      await _write(Directory(fixture!), named, folders.values);
     },
   );
 
