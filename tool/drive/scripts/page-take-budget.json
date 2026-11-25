@@ -1,0 +1,9 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"pageTakeCost": 300, "changed": 1, "runs": 51, "budget": {"longestStepMs": 4, "recordMs": 8}},
+  {"pageTakeCost": 60, "changed": 1, "runs": 51},
+  {"pageTakeCost": 300, "changed": 10, "runs": 51},
+  {"pageTakeCost": 300, "changed": 300, "runs": 21},
+  {"exit": 1}
+]

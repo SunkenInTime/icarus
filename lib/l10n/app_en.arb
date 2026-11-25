@@ -6637,5 +6637,25 @@
   "strategyMsgPageHasUnshownSettings": "This version of Icarus can't read this page's settings, so it shows the default sizes. The saved settings are kept unless you change them.",
   "@strategyMsgPageHasUnshownSettings": {
     "description": "Toast when a cloud page's settings (agent and ability size, team colours) cannot be read by this build. The canvas shows defaults; the saved settings are only replaced if the user changes a setting."
+  },
+  "onboardingSkip": "Skip",
+  "@onboardingSkip": {
+    "description": "Button in the window strip of a first-run screen. Leaves it for the library."
+  },
+  "onboardingSunTitle": "Ready to touch the sun?",
+  "@onboardingSunTitle": {
+    "description": "Headline of the screen shown the first time the app opens. It answers the website's download line, Touch the sun., which the reader pressed minutes ago. In English it is revealed word by word, split on spaces."
+  },
+  "onboardingSunBody": "Choose a map and land straight on the board with every agent and ability ready to place.",
+  "@onboardingSunBody": {
+    "description": "Line under the first-run headline: what pressing the button does and what is waiting on the board."
+  },
+  "onboardingSunBodyLogIn": "Log in to pick a map and open the board with every agent ready and your library synced.",
+  "@onboardingSunBodyLogIn": {
+    "description": "Line under the first-run headline where an account is needed before anything can be made, such as the web beta."
+  },
+  "onboardingSunStart": "Pick a map",
+  "@onboardingSunStart": {
+    "description": "Primary button on the first-run screen. Opens the map picker for a new strategy."
   }
 }

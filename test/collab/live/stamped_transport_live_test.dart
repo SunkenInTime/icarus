@@ -101,7 +101,7 @@ void main() {
       final second = await tree.stampedOn(transport).watch().first;
       await watching.cancel();
       await groupWatching.cancel();
-      final generation = await transport.connectionGeneration();
+      final generation = await transport.generation();
 
       final results = [...reads, ...live, second];
       final stamps = [
@@ -109,10 +109,10 @@ void main() {
         for (final answer in answers.values) answer.stamp,
         for (final update in grouped) update.stamp,
       ];
-      expect({for (final stamp in stamps) stamp.client}, hasLength(1));
+      expect({for (final stamp in stamps) stamp.client}, {generation.client});
       expect(
         {for (final stamp in stamps) stamp.connection},
-        {generation},
+        {generation.connection},
         reason: 'a local deployment never drops the socket in this run',
       );
       expect(second.stamp.snapshot,
@@ -161,7 +161,8 @@ void main() {
       );
       expect(
           refused.stamp.snapshot, greaterThanOrEqualTo(second.stamp.snapshot));
-      expect(refused.stamp.connection, generation);
+      expect(refused.stamp.connection, generation.connection);
+      expect(refused.stamp.client, generation.client);
       expect(refused.stamp.serverTime, isNotNull);
 
       final unconvertible = ConvexObject({

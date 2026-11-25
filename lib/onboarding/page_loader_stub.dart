@@ -1,0 +1,3 @@
+void holdPageLoaderForSplash() {}
+
+void releasePageLoader() {}

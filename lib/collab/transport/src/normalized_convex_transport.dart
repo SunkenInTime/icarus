@@ -225,7 +225,7 @@ abstract base class StampedNormalizedTransport extends NormalizedConvexTransport
       );
 
   @override
-  Future<int> connectionGeneration() => stamped.connectionGeneration();
+  Future<({int client, int connection})> generation() => stamped.generation();
 
   Stamped<T> _stampedOf<V, T>(
     String path,

@@ -485,7 +485,7 @@ class ConvexClient implements StampedValueSource {
       _notOnWeb('subscribeValuesStamped');
 
   @override
-  Future<int> connectionGeneration() => _notOnWeb('connectionGeneration');
+  Future<({int client, int connection})> generation() => _notOnWeb('generation');
 }
 
 JSAny? _toJsConvex(Object? value) {

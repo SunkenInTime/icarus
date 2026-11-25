@@ -257,7 +257,10 @@ class ConvexClient implements StampedValueSource {
   }
 
   @override
-  Future<int> connectionGeneration() => _client.connectionGeneration();
+  Future<({int client, int connection})> generation() async {
+    final generation = await _client.generation();
+    return (client: generation.client, connection: generation.connection);
+  }
 
   int _authChanges = 0;
 

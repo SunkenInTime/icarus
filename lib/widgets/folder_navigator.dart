@@ -9,6 +9,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/l10n/l10n.dart';
+import 'package:icarus/onboarding/launch_intro.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/desktop_update_provider.dart';
@@ -65,6 +66,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       _followCloudAvailability(ref.read(isCloudWorkspaceAvailableProvider));
+      await untilLaunchIntroEnds(ProviderScope.containerOf(context));
+      if (!mounted) return;
       if (!_warnedOnce) {
         _warnedOnce = true;
 
@@ -203,15 +206,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final canCreate =
         tab == LibraryTab.library && !ref.watch(librarySignInRequiredProvider);
 
-    bool refusedOffline() =>
-        ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud &&
-        refuseCloudChangeWhileOffline(
-          ref.read(l10nProvider),
-          ref.read(cloudLibraryShowsCopyProvider),
-        );
-
     Future<void> showCreateFolderDialog() async {
-      if (refusedOffline()) return;
+      if (_refusedCloudChangeOffline(ref)) return;
       await showDialog<String>(
         context: context,
         builder: (context) {
@@ -220,47 +216,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       );
     }
 
-    /// Pick a map, then go straight to the editor. A local strategy paints
-    /// on the chosen map at once and loads inside the view; a cloud strategy
-    /// is already open once the server has created it.
-    void showCreateDialog() async {
-      if (refusedOffline()) return;
-      final map = await showDialog<MapValue>(
-        context: context,
-        builder: (context) => const CreateStrategyDialog(),
-      );
-      if (map == null || !context.mounted) return;
-
-      final isCloud =
-          ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
-      final StrategyData strategy;
-      try {
-        strategy = await ref
-            .read(strategyProvider.notifier)
-            .createNewStrategy(map: map);
-      } catch (_) {
-        Settings.showToast(
-          message: isCloud
-              ? ref.read(l10nProvider).libraryCreateCloudStrategyFailed
-              : ref.read(l10nProvider).libraryCreateStrategyFailed,
-          backgroundColor: Settings.tacticalVioletTheme.destructive,
-        );
-        return;
-      }
-      if (!context.mounted) return;
-
-      Navigator.push(
-        context,
-        isCloud
-            ? StrategyView.route()
-            : StrategyView.route(
-                initialStrategyId: strategy.id,
-                initialStrategyName: strategy.name,
-                initialStrategySource: StrategySource.local,
-                initialMapValue: strategy.mapData,
-              ),
-      );
-    }
+    void showCreateDialog() =>
+        pickMapAndOpenNewStrategy(ref: ref, context: context);
 
     return Stack(
       children: [
@@ -317,6 +274,63 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       ],
     );
   }
+}
+
+bool _refusedCloudChangeOffline(WidgetRef ref) =>
+    ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud &&
+    refuseCloudChangeWhileOffline(
+      ref.read(l10nProvider),
+      ref.read(cloudLibraryShowsCopyProvider),
+    );
+
+/// Pick a map, then go straight to the editor.
+Future<void> pickMapAndOpenNewStrategy({
+  required WidgetRef ref,
+  required BuildContext context,
+}) async {
+  if (_refusedCloudChangeOffline(ref)) return;
+  final map = await showDialog<MapValue>(
+    context: context,
+    builder: (context) => const CreateStrategyDialog(),
+  );
+  if (map == null || !context.mounted) return;
+  await _createStrategyAndOpen(map, ref: ref, context: context);
+}
+
+/// A local strategy paints on the chosen map at once and loads inside the
+/// view; a cloud strategy is already open once the server has created it.
+Future<void> _createStrategyAndOpen(
+  MapValue map, {
+  required WidgetRef ref,
+  required BuildContext context,
+}) async {
+  final isCloud = ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
+  final StrategyData strategy;
+  try {
+    strategy =
+        await ref.read(strategyProvider.notifier).createNewStrategy(map: map);
+  } catch (_) {
+    Settings.showToast(
+      message: isCloud
+          ? ref.read(l10nProvider).libraryCreateCloudStrategyFailed
+          : ref.read(l10nProvider).libraryCreateStrategyFailed,
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+    return;
+  }
+  if (!context.mounted) return;
+
+  Navigator.push(
+    context,
+    isCloud
+        ? StrategyView.route()
+        : StrategyView.route(
+            initialStrategyId: strategy.id,
+            initialStrategyName: strategy.name,
+            initialStrategySource: StrategySource.local,
+            initialMapValue: strategy.mapData,
+          ),
+  );
 }
 
 /// Something the user can drag around the library grid.

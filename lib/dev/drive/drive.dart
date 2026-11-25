@@ -99,7 +99,7 @@
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?,
 //                                       "during": step?}  shots while step runs, each logged with the page transition's progress
-//   {"slowMotion": k}                  animations run k times slower; 1 is real speed
+//   {"slowMotion": k}  {"intro": name}  k times slower, 1 is real speed; shows onboarding or splash
 //   {"logWalls": tag}                  every ability's position and wall path
 //   {"logUtilities": tag}              every utility's type, position and door
 //   {"logDoors": tag}                  the map doors changed on the page
@@ -177,9 +177,11 @@ import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_load_copy_cost.dart';
+import 'package:icarus/dev/drive/drive_page_take.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/clickable.dart';
 import 'package:icarus/interactive_map.dart';
+import 'package:icarus/onboarding/launch_intro.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -2519,6 +2521,20 @@ Future<void> _run(Map<String, dynamic> step) async {
         longestStepMs: step['longestStepMs'] as num?,
       )))
           .forEach(_log);
+    case 'pageTakeCost':
+      final budget = step['budget'] as Map<String, dynamic>?;
+      (await _storeLines(pageTakeCost(
+        items: value as int,
+        changed: (step['changed'] ?? 1) as int,
+        runs: (step['runs'] ?? 51) as int,
+        budget: budget == null
+            ? null
+            : PageTakeBudget(
+                longestStepMs: budget['longestStepMs'] as num,
+                recordMs: budget['recordMs'] as num,
+              ),
+      )))
+          .forEach(_log);
     case 'openStoredCloudStrategy':
       unawaited(
         Navigator.of(appNavigatorKey.currentContext!).push(
@@ -2811,6 +2827,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (await during case final Object failure) throw failure;
     case 'slowMotion':
       timeDilation = (value as num).toDouble();
+    case 'intro':
+      final run = c.read(launchIntroProvider.notifier);
+      final asked = LaunchIntro.named(value as String) ??
+          (throw StateError('no launch intro called "$value"'));
+      run.state = asked == LaunchIntro.none
+          ? null
+          : LaunchIntroRun(asked, take: (run.state?.take ?? 0) + 1);
+      await _frames();
     case 'logLineups' when step['frames'] is int:
       final frames = step['frames'] as int;
       var frame = 0;

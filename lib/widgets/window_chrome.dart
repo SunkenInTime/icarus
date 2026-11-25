@@ -42,18 +42,15 @@ class WindowDragArea extends StatelessWidget {
 }
 
 /// The compact Icarus lockup at the start of every window strip. On macOS it
-/// follows the traffic-light inset; on Windows and Linux it leads the strip.
+/// follows the traffic-light inset; everywhere else it leads the strip.
 class IcarusWordmark extends StatelessWidget {
   const IcarusWordmark({super.key});
 
   @override
   Widget build(BuildContext context) {
-    if (kIsWeb) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(left: 10, right: 6),
-      child: const AssetSvg(
+    return const Padding(
+      padding: EdgeInsets.only(left: 10, right: 6),
+      child: AssetSvg(
         'assets/brand/icarus-wordmark.svg',
         height: 14,
         semanticsLabel: 'Icarus',

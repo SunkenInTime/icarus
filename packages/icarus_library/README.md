@@ -1446,7 +1446,19 @@ rows sit beside them, each versioned and each read back before it is written:
 - `attempt/<number>`: one row per attempt.
 - `landed/<attempt>/<position>`: one row per piece of landed work.
 - `read/header` and `read/page/<page digest>`: what the results showed, as
-  the queue keeps it (`Shown`): revisions and digests, not rows.
+  the queue keeps it (`Shown`): revisions and digests, not rows. A digest
+  read back from here is never reused: a page result digests every item
+  whose digest this run of the app has not computed. After that, an item
+  whose page, revision and life are the ones `Shown` holds keeps its digest,
+  because the server raises an item's revision with every change to what the
+  digest covers (every convex test checks this through
+  `convex/revisionGuard.setup.ts`). For the same reason the store leaves an
+  item it already holds at that revision and life, on that page only, as
+  stored, and encodes a group here again only when what it holds changed.
+  Tests and driver builds also take every page from scratch, compare every
+  item they leave as stored and encode every group, and fail on any
+  difference (`shownTakesChecked`, on unless the build is a release without
+  `ICARUS_DRIVE`).
 
 Any row under one of these names, or under the `pending/`, `attempt/`,
 `landed/` or `read/` prefixes, marks the area as a cloud strategy
@@ -2157,6 +2169,23 @@ tool/engine_costs_web.dart` in Firefox. On IndexedDB it also reports the size
 of the last commit's record after that 300-item save, and how long taking
 the lease takes when the last commit was that save and when it was one
 row.
+
+`dart build cli -t bin/live_result_cost.dart -o build/live_result_cost` builds
+the live result benchmark ahead of time, and
+`build/live_result_cost/bundle/bin/live_result_cost` times, on SQLite, the
+store taking one live page result in which one item moved, on a cloud
+strategy with one page of 300 items (one in ten a 250-point freehand
+drawing) and of 60: how long `record` takes, the longest stretch it holds
+the main isolate, and how long it waits on the SQLite isolate. It then
+feeds 200 such results at 20 a second, taking every one and then only the
+newest while a `record` runs, and reports the longest stall, the backlog and
+how long each result took to be stored. With `own` it times an own move from
+commit to applied answer instead; with `takes`, results in which 1, 10 or all
+300 items changed and 1 of 60, each without and with every take checked from
+scratch, and the first result after the store reopens. The measuring code is
+`lib/take_cost.dart`, which the driver's `pageTakeCost` step runs too. `dart
+compile exe` leaves out SQLite's native library, so the store cannot open in
+that build.
 
 `dart run tool/store_benchmark.dart` times opening the store and a
 700-strategy library list, opening a 300-item page where half the items are

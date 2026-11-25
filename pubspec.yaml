@@ -111,10 +111,14 @@ flutter:
     - shaders/dot_grid.frag
     - shaders/dot_lattice.frag
     - shaders/dither_fire.frag
+    - shaders/sunrise.frag
   fonts:
     - family: CustomIcons
       fonts:
         - asset: assets/fonts/CustomIcons.ttf
+    - family: Onest
+      fonts:
+        - asset: assets/fonts/Onest.ttf
   assets:
     - assets/
     - assets/brand/

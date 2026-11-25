@@ -23,6 +23,7 @@ use crate::{
     base_client::{
         AuthTokenFetcher,
         BaseConvexClient,
+        Generation,
         SubscriberId,
         TimedResult,
     },
@@ -117,7 +118,7 @@ pub enum ClientRequest {
     Unsubscribe(UnsubscribeRequest),
     Authenticate(Option<AuthTokenFetcher>),
     Reconnect(String),
-    ConnectionGeneration(oneshot::Sender<u64>),
+    Generation(oneshot::Sender<Generation>),
 }
 
 pub struct MutationRequest {
@@ -543,7 +544,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_the_connection_generation_moves_on_with_a_reconnect() -> anyhow::Result<()> {
+    async fn test_the_generation_moves_on_with_a_reconnect_on_the_same_client() -> anyhow::Result<()> {
         let (response_sender, response_receiver) = mpsc::channel(1);
         let protocol = FakeProtocol::new(response_sender.clone());
         let TestWorker {
@@ -553,10 +554,11 @@ mod tests {
         } = start_worker(&protocol, response_receiver);
         let generation = || async {
             let (tx, rx) = oneshot::channel();
-            request_sender.send(ClientRequest::ConnectionGeneration(tx))?;
+            request_sender.send(ClientRequest::Generation(tx))?;
             anyhow::Ok(tokio::time::timeout(Duration::from_secs(2), rx).await??)
         };
-        assert_eq!(generation().await?, 0);
+        let before = generation().await?;
+        assert_eq!(before.connection, 0);
 
         request_sender.send(ClientRequest::Reconnect("convex_flutter:manual".into()))?;
         tokio::time::timeout(Duration::from_secs(2), async {
@@ -565,7 +567,9 @@ mod tests {
             }
         })
         .await?;
-        assert_eq!(generation().await?, 1);
+        let after = generation().await?;
+        assert_eq!(after.connection, 1);
+        assert_eq!(after.client, before.client);
         worker.abort();
         Ok(())
     }
@@ -1161,8 +1165,8 @@ async fn _worker_once<T: SyncProtocol>(
                     )
                     .await?;
                 },
-                ClientRequest::ConnectionGeneration(tx) => {
-                    let _ = tx.send(base_client.connection());
+                ClientRequest::Generation(tx) => {
+                    let _ = tx.send(base_client.generation());
                 },
                 ClientRequest::Unsubscribe(unsubscribe) => {
                     let UnsubscribeRequest {subscriber_id} = unsubscribe;
