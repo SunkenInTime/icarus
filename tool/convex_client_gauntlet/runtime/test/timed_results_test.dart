@@ -9,6 +9,7 @@ String _setting(String name) => Platform.environment[name] ?? '';
 
 const _writes = 5;
 const _patience = Duration(seconds: 30);
+const _clockSlack = Duration(minutes: 5);
 
 List<String> _folderNames(convex_flutter.TimedAnswer answer) => [
   for (final folder in jsonDecode(answer.value!) as List)
@@ -48,6 +49,7 @@ void main() {
         onResult: live.add,
       );
       final reads = [await client.queryTimed(tree, treeArgs)];
+      final written = <String>[];
 
       for (var write = 0; write < _writes; write++) {
         final name =
@@ -74,17 +76,34 @@ void main() {
           }
           await Future<void>.delayed(const Duration(milliseconds: 5));
         }
-        final firstShowing = live.firstWhere(
-          (answer) => _folderNames(answer).contains(name),
-        );
-        expect(firstShowing.snapshot, lessThanOrEqualTo(read.snapshot));
+        written.add(name);
       }
       handle.cancel();
 
       final results = [...reads, ...live];
+      final now = DateTime.now().microsecondsSinceEpoch * 1000;
       for (final answer in results) {
         expect(answer.error, isNull);
-        expect(answer.ts, isNotNull);
+        expect(
+          (answer.ts! - now).abs(),
+          lessThan(_clockSlack.inMicroseconds * 1000),
+          reason: 'ts is the server clock in nanoseconds',
+        );
+      }
+      for (final name in written) {
+        final firstSnapshotShowing = results
+            .where((answer) => _folderNames(answer).contains(name))
+            .map((answer) => answer.snapshot)
+            .reduce((a, b) => a < b ? a : b);
+        for (final answer in results) {
+          if (answer.snapshot >= firstSnapshotShowing) {
+            expect(
+              _folderNames(answer),
+              contains(name),
+              reason: 'a later snapshot keeps the write',
+            );
+          }
+        }
       }
       for (final a in results) {
         for (final b in results) {
@@ -122,6 +141,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 5));
       }
       errorHandle.cancel();
+      expect(liveErrors.first.value, isNull);
       expect(liveErrors.first.error?.data, refused.error!.data);
       expect(liveErrors.first.ts, isNotNull);
       expect(liveErrors.first.snapshot, greaterThanOrEqualTo(refused.snapshot));

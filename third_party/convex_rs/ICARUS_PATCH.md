@@ -109,8 +109,12 @@ reconnect) is ignored instead of causing a reconnect.
 `client::tests::test_mutation_waits_for_its_commit_transition` checks the same
 through the public client and this crate's worker.
 
-What that establishes is that the write reached this client's query results,
-not that Dart has seen them. The worker can wake the mutation's caller before a
+What that establishes is that this client has applied a transition at or after
+the write's commit timestamp. The client does not check that any query changed:
+that its results then show the write rests on the sync protocol's rule that a
+transition leaves every subscribed query at its end timestamp, the same rule
+the JS client relies on. It does not establish that Dart has seen those
+results. The worker can wake the mutation's caller before a
 `convex_flutter` subscription callback carrying the same transition has run, so
 "the mutation resolved, so the live result I hold includes my write" is true of
 the Rust client's state and not yet of what Dart was handed. Code that needs
@@ -118,8 +122,8 @@ the updated state in Dart has to observe it there, by the result snapshots
 described below.
 
 One behavior changed for slow transitions. If a transition older than the
-write arrives before the `convex_flutter` bridge's 30-second deadline on the
-call, and the one that reaches the commit timestamp arrives after it, 0.10.4
+write arrives before the `convex_flutter` bridge's deadline on the call (30
+seconds by default), and the one that reaches the commit timestamp arrives after it, 0.10.4
 reported success where this now times out. If Icarus's outbox retries, it
 sends the same op ids again, and the server answers them as replays of the
 write it already applied; it can instead pause at its attempt limit.

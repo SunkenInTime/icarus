@@ -50,12 +50,12 @@ like `subscribeGroup`: Icarus's web build uses Convex's JavaScript client.
 `tool/convex_client_gauntlet/runtime/test/timed_results_test.dart` checks the
 snapshots reach Dart, on a local deployment, in the gauntlet lane.
 
-A mutation's future resolving means the Rust client's results include the
-write, not that Dart has received the live result that does; the snapshot is
-how Dart can tell. Since the crate waits for the transition that reaches a
-mutation's commit (its patch notes), a call whose transition comes after this
-bridge's 30-second deadline now times out where it used to succeed on an older
-transition. If the outbox retries, the server answers the same op ids as
+A mutation's future resolving means the Rust client has applied a transition
+at or after the write's commit timestamp (the crate's patch notes say what that
+rests on), not that Dart has received the live result that shows the write; the
+snapshot is how Dart can tell. Since the crate waits for that transition, a
+call whose transition comes after this bridge's deadline (30 seconds by
+default) now times out where it used to succeed on an older transition. If the outbox retries, the server answers the same op ids as
 replays; it can instead pause at its attempt limit.
 
 Generated Dart and Rust bridge files are never hand-edited. They are regenerated

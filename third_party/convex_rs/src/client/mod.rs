@@ -828,7 +828,12 @@ pub mod tests {
 
     async fn applied(watch: &mut QuerySetSubscription, snapshot: u64) {
         tokio::time::timeout(PATIENCE, async {
-            while watch.next().await.map(|results| results.snapshot()) != Some(snapshot) {}
+            loop {
+                let results = watch.next().await.expect("the client still publishes");
+                if results.snapshot() == snapshot {
+                    break;
+                }
+            }
         })
         .await
         .expect("the client applies the transition");
