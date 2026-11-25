@@ -156,6 +156,28 @@ final rows = <Row>[
       )
       ..must(const UserDiscarded('x'));
   }),
+  Row('refused whole as STRATEGY_REPLACED, waiting for a page list of a '
+      'later strategy life', () {
+    final client = Client()..edit(movePatch('x'));
+    final attempt = client.claim(['x']);
+    return client..must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+  }),
+  Row('set aside after the strategy was replaced', () {
+    final client = Client()..edit(movePatch('x'));
+    return client..arrive(
+      headerReadOf(
+        StrategyRowSet(
+          strategy: strategyRow(
+            createdAt: strategyCreatedAt.add(const Duration(days: 1)),
+          ),
+          pages: client.base.pages,
+          settings: client.base.settings,
+          elements: const [],
+          lineupGroups: const [],
+        ),
+      ),
+    );
+  }),
   Row('sending in attempt 1', () {
     final client = Client()..edit(movePatch('x'));
     client.claim(['x']);
@@ -379,6 +401,9 @@ final events = <String, QueueEvent Function(Client)>{
       BaseArrived(const PageGone('page-b'), session: c.queue.session.number),
   'result: strategy gone': (c) =>
       BaseArrived(const StrategyGone(), session: c.queue.session.number),
+  'result: page list the store would not keep': (c) =>
+      const ResultRefused(page: null, problem: 'ResultWithoutLife(page-a)'),
+  'user: discard what was set aside': (c) => const UserDiscardedReplaced(),
   'result: page-a of another life': (c) => BaseArrived(
     PageRead(
       page: LivePage(

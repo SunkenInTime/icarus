@@ -104,16 +104,27 @@ void main() {
       expect(setAsideIds(client.queue), ['move', 'later']);
     });
 
-    test('a list of the same life, or an earlier one, sets nothing aside', () {
-      for (final life in [
-        strategyCreatedAt.millisecondsSinceEpoch,
-        strategyCreatedAt.millisecondsSinceEpoch - 1000,
-      ]) {
-        final client = withTwoEdits();
-        client.arrive(headerReadOf(replaced(initialRows(), life: life)));
-        expect(setAsideIds(client.queue), isEmpty);
-        expect(client.queue.entries, hasLength(2));
-      }
+    test('a list of the same life sets nothing aside, and one of an earlier '
+        'life is dropped', () {
+      final client = withTwoEdits();
+      client.arrive(headerReadOf(initialRows()));
+      expect(setAsideIds(client.queue), isEmpty);
+      expect(
+        client.step(
+          BaseArrived(
+            headerReadOf(
+              replaced(
+                initialRows(),
+                life: strategyCreatedAt.millisecondsSinceEpoch - 1000,
+              ),
+            ),
+            session: client.queue.session.number,
+          ),
+        ),
+        isA<NotApplicable>(),
+      );
+      expect(setAsideIds(client.queue), isEmpty);
+      expect(client.queue.entries, hasLength(2));
     });
 
     test('a refusal as STRATEGY_REPLACED is paid only by the list of a later '
@@ -128,6 +139,52 @@ void main() {
       client.arrive(headerReadOf(replaced(initialRows())));
       expect(setAsideIds(client.queue), ['move']);
       expect(client.queue.shown.list, const ReadThisSession());
+    });
+  });
+
+  group('adopting the later life', () {
+    test('drops landed work that really landed in the old life', () {
+      final client = Client();
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+        ),
+      );
+      expect(client.queue.landed, isNotEmpty);
+      client.read(replaced(initialRows()));
+      expect(client.queue.landed, isEmpty);
+    });
+
+    test('a field edit of a row whose old edit was set aside is its own op, '
+        'and the set-aside op is kept as it was', () {
+      final position = FieldMerge(fields: ['position']);
+      final client = Client();
+      client.edit(movePatch('old', x: 40, merge: position));
+      final queued = client.queue.entries.single;
+      client.read(replaced(initialRows()));
+      final kept = (client.queue.strategy.setAside as SetAside).entries.single;
+      expect(kept, queued);
+      client.edit(movePatch('new', x: 90, merge: position));
+      expect([for (final entry in client.queue.entries) entry.id], ['new']);
+      expect((client.queue.strategy.setAside as SetAside).entries.single, kept);
+    });
+  });
+
+  group('the test fixtures', () {
+    test('withOp gives a row the op makes the life of the run, not the life '
+        'of the row it was copied from', () {
+      final copied = withOp(
+        initialRows(),
+        pageAdd('copy', 'page-c', copyFrom: 'page-a'),
+      );
+      final made = copied.elementsOn('page-c').toList();
+      expect(made, isNotEmpty);
+      for (final row in made) {
+        expect(createdAtOf(row), addedLife);
+      }
     });
   });
 

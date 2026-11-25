@@ -181,19 +181,24 @@ final class ReadOwed extends ReadState {
 }
 
 final class ReadRefused extends ReadState {
-  const ReadRefused(this.problem);
+  const ReadRefused(this.problem, {this.unlessLife});
 
   final String problem;
+  final int? unlessLife;
 
   @override
   bool operator ==(Object other) =>
-      other is ReadRefused && other.problem == problem;
+      other is ReadRefused &&
+      other.problem == problem &&
+      other.unlessLife == unlessLife;
 
   @override
-  int get hashCode => Object.hash(ReadRefused, problem);
+  int get hashCode => Object.hash(ReadRefused, problem, unlessLife);
 
   @override
-  String toString() => 'refused: $problem';
+  String toString() => unlessLife == null
+      ? 'refused: $problem'
+      : 'refused: $problem, owed by a list of a life after $unlessLife';
 }
 
 bool isDebt(ReadState state) => state is ReadOwed || state is ReadRefused;
@@ -357,8 +362,12 @@ final class Shown {
         for (final page in pages)
           if (page is! TrashedPage) page.publicId,
       ]),
-      list: switch (list) {
-        ReadOwed(:final unlessLife?) when createdAtOf(strategy) == unlessLife =>
+      list: switch ((list, createdAtOf(strategy))) {
+        (
+          ReadOwed(:final unlessLife?) || ReadRefused(:final unlessLife?),
+          final listed,
+        )
+            when listed == null || listed <= unlessLife =>
           list,
         _ => const ReadThisSession(),
       },
@@ -445,7 +454,16 @@ final class Shown {
   Shown owingPage(String page) =>
       _with(pageReads: {...pageReads, page: const ReadOwed()});
 
-  Shown listRefused(String problem) => _with(list: ReadRefused(problem));
+  Shown listRefused(String problem) => _with(
+    list: ReadRefused(
+      problem,
+      unlessLife: switch (list) {
+        ReadOwed(:final unlessLife) ||
+        ReadRefused(:final unlessLife) => unlessLife,
+        NotReadThisSession() || ReadThisSession() => null,
+      },
+    ),
+  );
 
   Shown pageRefused(String page, String problem) =>
       _with(pageReads: {...pageReads, page: ReadRefused(problem)});

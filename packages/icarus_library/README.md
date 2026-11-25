@@ -1879,22 +1879,34 @@ strategy life, and `fitsBatch` is the one rule for which ops may share a batch:
 the queue's claim and the app's picker both use it.
 
 **One strategy life per record.** A queue record holds the edits of one life
-of its strategy. When a page list shows a later life than the record's, one
-step sets every entry aside: the entries move into the record's set-aside
-list (`StrategyFacts.setAside`, stored in the same row as the record's other
-facts, so the move and the removal of every queued row are one commit), and
-attempts, landed work and everything shown from the old life are dropped, the
-store's page content with them, so every page is read again before anything is
-drawn. Set-aside edits are kept so the user can be shown what was not applied;
-queue logic never reads them again, nothing sends, draws or counts them as
-waiting, and only `UserDiscardedReplaced` removes them. The sync status counts
-them (`Tally.setAside`) under its own face, `Face.strategyReplaced`; its words
-are a placeholder. `STRATEGY_REPLACED` only owes the page list, and a list of
-the life the batch named does not pay that debt, so nothing written in that
-life is sent again. A page result whose page row has another life than the one
-shown owes the page list too: a page made again is evidence the list is stale.
-Ops share a batch only when they were written in the same strategy life, an
-unknown life included.
+of its strategy, and that life only moves forward: a life is a creation time,
+so a later life is a larger number. One rule in the queue, `resultFit`, says
+what a result may do, and the store asks it before writing anything:
+
+- a page list of an earlier life than the record's is old news and is
+  dropped, nothing adopted and nothing paid;
+- a page list of a later life sets every entry aside in one step (below);
+- a page result whose page row has a later life than the list shows owes the
+  page list and is not applied; the page is read again after the list;
+- a page result of an earlier life than the list shows is dropped.
+
+Setting aside moves the entries into a new generation of the record's
+set-aside list (`StrategyFacts.setAside`, stored in the same row as the
+record's other facts, so the move and the removal of every queued row are one
+commit). Each generation keeps the life its edits were written in and the life
+that replaced it, and a kept entry's place is never given to a new entry.
+Adopting the new life drops everything that described the old one: attempts,
+landed work, everything shown, the store's page content (so every page is read
+again before anything is drawn), and a strategy seen as gone, which the
+replacement is not. Set-aside edits are kept so the user can be shown what was
+not applied; queue logic never reads them again, nothing sends, draws, folds or
+offers anything on them, and only `UserDiscardedReplaced` removes them. The
+sync status counts them (`Tally.setAside`) under its own face,
+`Face.strategyReplaced`; its words are a placeholder. `STRATEGY_REPLACED` for
+life L only owes the page list, and only a list of a life after L, or an answer
+that the strategy is gone, pays that debt; a refused read keeps the
+restriction. Ops share a batch only when they were written in the same strategy
+life, an unknown life included.
 
 **What has been read.** The page list and each page have one read state:
 not read this session, read this session, owed, or refused. A read is owed

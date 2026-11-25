@@ -628,19 +628,19 @@ Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
   'accessConfirmedAt': facts.accessConfirmedAt,
   if (facts.upgradeTold case UpgradeToldTo(:final build, :final attempt))
     'upgradeTold': {'build': build, 'attempt': attempt},
-  if (facts.setAside case SetAside(
-    :final writtenIn,
-    :final replacedBy,
-    :final entries,
-  ))
-    'setAside': {
-      'writtenIn': ?writtenIn,
-      'replacedBy': replacedBy,
-      'entries': [
-        for (final entry in entries)
-          {'place': entry.place, 'entry': entryToJson(entry)},
-      ],
-    },
+  if (facts.setAside case SetAside(:final generations))
+    'setAside': [
+      for (final SetAsideGeneration(:writtenIn, :replacedBy, :entries)
+          in generations)
+        {
+          'writtenIn': ?writtenIn,
+          'replacedBy': replacedBy,
+          'entries': [
+            for (final entry in entries)
+              {'place': entry.place, 'entry': entryToJson(entry)},
+          ],
+        },
+    ],
 };
 
 CloudOwner ownerFromText(String text) => switch (admit(text)) {
@@ -696,6 +696,17 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
 );
 
 SetAside? _setAside(Object raw) {
+  if (raw is! List<Object?> || raw.isEmpty) return null;
+  final generations = <SetAsideGeneration>[];
+  for (final each in raw) {
+    final generation = each == null ? null : _generation(each);
+    if (generation == null) return null;
+    generations.add(generation);
+  }
+  return SetAside(generations);
+}
+
+SetAsideGeneration? _generation(Object raw) {
   if (raw case {
     'replacedBy': final num replacedBy,
     'entries': final List<Object?> stored,
@@ -718,7 +729,7 @@ SetAside? _setAside(Object raw) {
         return null;
       }
     }
-    return SetAside(
+    return SetAsideGeneration(
       writtenIn: (writtenIn as num?)?.toInt(),
       replacedBy: replacedBy.toInt(),
       entries: entries,
@@ -966,7 +977,10 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
 Object? _readToJson(ReadState state) => switch (state) {
   ReadOwed(unlessLife: null) => 'owed',
   ReadOwed(:final unlessLife?) => {'owedUnless': unlessLife},
-  ReadRefused(:final problem) => {'refused': problem},
+  ReadRefused(:final problem, :final unlessLife) => {
+    'refused': problem,
+    'unless': ?unlessLife,
+  },
   NotReadThisSession() || ReadThisSession() => null,
 };
 
@@ -976,7 +990,11 @@ ReadState? _readFrom(Object? raw) => switch (raw) {
   {'owedUnless': final num life} when isSafeWhole(life) => ReadOwed(
     unlessLife: life.toInt(),
   ),
-  {'refused': final String problem} => ReadRefused(problem),
+  {'refused': final String problem, 'unless': final num life}
+      when isSafeWhole(life) =>
+    ReadRefused(problem, unlessLife: life.toInt()),
+  {'refused': final String problem} when !raw.containsKey('unless') =>
+    ReadRefused(problem),
   _ => null,
 };
 

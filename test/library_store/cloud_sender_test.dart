@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -126,7 +127,7 @@ void main() {
       final refusals = <String, (StoreBatchOutcome, List<String>)>{
         'STRATEGY_REPLACED': (
           const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
-          ['send move-1', 'list'],
+          ['send move-1', 'list', 'page p1'],
         ),
         'ACCOUNT_MISMATCH': (
           const StoreBatchAccountMismatch('refused'),
@@ -326,11 +327,13 @@ void main() {
         'else pending, and a list it keeps clears the unreadable mark', () {
       inWorld((world) {
         world.server.log.clear();
-        world.server.answerWith(
-          strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
-        );
         final header = world.server.headerOf(strategyId);
+        world.server.answerNext(strategyId, (call) {
+          world.replaceStrategyOnServer();
+          return Future.value(
+            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+          );
+        });
         world.server.answerReadWith(
           strategyId,
           StoreReadAnswered(
@@ -379,15 +382,106 @@ void main() {
         });
         world.commitMove(1);
         world.settle(const Duration(minutes: 10));
-        expect(world.server.log.take(2), ['send move-1', 'list']);
-        expect(
-          world.server.log.where((call) => call.startsWith('send')),
-          ['send move-1'],
-        );
+        expect(world.server.log, ['send move-1', 'list', 'page p1']);
         expect(world.queueLength(), 0);
         expect(world.cloud().queue.strategy.setAside.count, 2);
         expect(world.face(), Face.strategyReplaced);
       });
+    });
+
+    test(
+        'after STRATEGY_REPLACED a refused list and then a delayed list of the '
+        'old life do not let the move go again: the next list sets it aside',
+        () {
+      inWorld((world) {
+        world.server.log.clear();
+        final original = world.server.headerOf(strategyId);
+        world.server.answerNext(strategyId, (call) {
+          world.replaceStrategyOnServer();
+          return Future.value(
+            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+          );
+        });
+        world.server.answerReadWith(
+          strategyId,
+          StoreReadAnswered(
+            HeaderRead(
+              strategy: original.strategy,
+              pages: [
+                for (final page in original.pages.cast<LivePage>())
+                  LivePage(
+                    publicId: page.publicId,
+                    strategyPublicId: page.strategyPublicId,
+                    name: page.name,
+                    isAutoNamed: page.isAutoNamed,
+                    sortIndex: page.sortIndex,
+                    isAttack: page.isAttack,
+                    revision: page.revision,
+                  ),
+              ],
+              settings: original.settings,
+            ),
+          ),
+        );
+        world.server.answerReadWith(strategyId, StoreReadAnswered(original));
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 10));
+        expect(
+          world.server.log,
+          ['send move-1', 'list', 'list', 'list', 'page p1'],
+        );
+        expect(world.cloud().queue.strategy.setAside.count, 1);
+      });
+    });
+
+    test(
+        'an edit stored without a strategy life and one with a life are sent '
+        'in separate batches', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld((world) {
+        world.sender.hold('the test writes the edits first');
+        world.commitMove(1);
+        world.settle();
+      }, storage: storage, server: server);
+      final contents = {
+        for (final MapEntry(key: area, value: rows) in storage.contents.entries)
+          area: {
+            for (final MapEntry(:key, :value) in rows.entries)
+              key: key.startsWith('pending/')
+                  ? jsonEncode(
+                      {...jsonDecode(value) as Map<String, Object?>}
+                        ..remove('strategyLife'),
+                    )
+                  : value,
+          },
+      };
+      inWorld(
+        (world) {
+          world.server.log.clear();
+          world.server.calls.clear();
+          world.sender.hold('the test writes the second edit first');
+          world.commit([
+            StrategyPatchOp(
+              opId: 'rename',
+              expectedStrategyRevision:
+                  world.server.rows[strategyId]!.strategy.revision,
+              name: 'Renamed',
+            ),
+          ]);
+          world.sender.release();
+          world.settle(const Duration(minutes: 1));
+          expect(world.server.calls.map((call) => call.opIds), [
+            ['move-1'],
+            ['rename'],
+          ]);
+          expect(world.server.calls.first.strategyLife, isNull);
+          expect(world.server.calls.last.strategyLife, isNotNull);
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
     });
 
     test('a start with saved work sends it with no wake from outside', () {

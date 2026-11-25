@@ -889,6 +889,13 @@ final class OtherEntity extends Inapplicable {
   String toString() => 'OtherEntity($opId)';
 }
 
+final class OlderResult extends Inapplicable {
+  const OlderResult();
+
+  @override
+  String toString() => 'a result of an earlier life than the one shown';
+}
+
 final class NothingSetAsideToDiscard extends Inapplicable {
   const NothingSetAsideToDiscard();
 
@@ -1003,12 +1010,21 @@ final class _Edit {
     effects.add(OpRemoved(id, cause));
   }
 
+  int get nextPlace =>
+      [
+        -1,
+        ...[for (final entry in entries) entry.place],
+        if (strategy.setAside case SetAside(:final entries))
+          for (final entry in entries) entry.place,
+      ].reduce((a, b) => a > b ? a : b) +
+      1;
+
   void setAsideAll(int? writtenIn, int replacedBy) {
     final kept = switch (strategy.setAside) {
-      SetAside(:final entries) => entries,
-      NothingSetAside() => const <QueueEntry>[],
+      SetAside(:final generations) => generations,
+      NothingSetAside() => const <SetAsideGeneration>[],
     };
-    final setAside = [...kept, ...entries];
+    final moved = [...entries];
     for (final old in [...entries]) {
       index.remove(old);
       change.removed.add(old);
@@ -1020,17 +1036,21 @@ final class _Edit {
     }
     landed.clear();
     strategy = strategy.copyWith(
-      setAside: SetAside(
-        writtenIn: switch (strategy.setAside) {
-          SetAside(:final writtenIn) => writtenIn,
-          NothingSetAside() => writtenIn,
-        },
-        replacedBy: replacedBy,
-        entries: setAside,
-      ),
+      presence: Presence.present,
+      setAside: moved.isEmpty && kept.isEmpty
+          ? const NothingSetAside()
+          : SetAside([
+              ...kept,
+              if (moved.isNotEmpty)
+                SetAsideGeneration(
+                  writtenIn: writtenIn,
+                  replacedBy: replacedBy,
+                  entries: moved,
+                ),
+            ]),
     );
     change.everything = true;
-    effects.add(StrategySetAside(setAside.length));
+    if (moved.isNotEmpty) effects.add(StrategySetAside(moved.length));
   }
 
   void setAttempt(AttemptFact attempt) {
@@ -1334,7 +1354,37 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
   return edit.done();
 }
 
+enum ResultFit { applies, listFirst, older }
+
+ResultFit resultFit(Shown shown, ArrivedBase base) => switch (base) {
+  HeaderRead(:final strategy) => switch ((
+    shown.strategy?.life,
+    createdAtOf(strategy),
+  )) {
+    (final held?, final listed?) when listed < held => ResultFit.older,
+    _ => ResultFit.applies,
+  },
+  PageRead(:final page) => switch ((
+    shown.pages[page.publicId]?.life,
+    createdAtOf(page),
+  )) {
+    (final listed?, final read?) when read > listed => ResultFit.listFirst,
+    (final listed?, final read?) when read < listed => ResultFit.older,
+    _ => ResultFit.applies,
+  },
+  PageGone() || StrategyGone() => ResultFit.applies,
+};
+
 Step _arrived(_Edit edit, ArrivedBase base) {
+  switch (resultFit(edit.shown, base)) {
+    case ResultFit.older:
+      return NotApplicable(edit.original, const OlderResult());
+    case ResultFit.listFirst:
+      if (!isDebt(edit.shown.list)) edit.shown = edit.shown.owingList();
+      return edit.done();
+    case ResultFit.applies:
+      break;
+  }
   if (base is StrategyGone) {
     edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
     edit.shown = edit.shown.take(base);
@@ -1347,20 +1397,16 @@ Step _arrived(_Edit edit, ArrivedBase base) {
       final listed?,
     ) when listed > written) {
       edit.setAsideAll(written, listed);
-      edit.shown = Shown.nothing.take(base);
+      var adopted = Shown.nothing.take(base);
+      for (final page in adopted.pages.keys) {
+        adopted = adopted.owingPage(page);
+      }
+      edit.shown = adopted;
       return edit.done();
     }
   }
   final before = edit.shown;
   edit.shown = edit.shown.take(base);
-  if (base case PageRead(:final page)) {
-    if ((before.pages[page.publicId]?.life, createdAtOf(page)) case (
-      final shown?,
-      final read?,
-    ) when shown != read && !isDebt(edit.shown.list)) {
-      edit.shown = edit.shown.owingList();
-    }
-  }
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -1565,7 +1611,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       );
   edit.append(
     PendingOp(
-      place: edit.entries.isEmpty ? 0 : edit.entries.last.place + 1,
+      place: edit.nextPlace,
       work: switch (change) {
         PlainEdit() => OpWork(placed),
         PageDeleteEdit(:final seen) => CheckedDelete(

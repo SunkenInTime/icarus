@@ -444,9 +444,11 @@ Future<List<String>> storeQueueRecords(ProviderContainer c) async => [
                   '${expectedLifeOf(entry)} strategy life ${entry.strategyLife} '
                   '${cloud.views[entry.id]?.state}',
         ].join('; ')}]; set aside ${switch (cloud.queue.strategy.setAside) {
-          SetAside(:final writtenIn, :final replacedBy, :final entries) =>
-            '${entries.length} written in $writtenIn, replaced by $replacedBy: '
-                '${entries.map((entry) => entry.id).join(', ')}',
+          SetAside(:final generations) => [
+              for (final generation in generations)
+                '$generation: '
+                    '${generation.entries.map((entry) => entry.id).join(', ')}',
+            ].join('; '),
           NothingSetAside() => 'nothing',
         }}; tally ${Tally.of(cloud.queue, DateTime.now()).toJson()}',
     ];

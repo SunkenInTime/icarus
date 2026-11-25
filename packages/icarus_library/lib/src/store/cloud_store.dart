@@ -1479,13 +1479,21 @@ extension _CloudStore on LibraryStore {
         outcomes.add(const EditsGoThroughCommit());
         continue;
       }
+      final fits = switch (event) {
+        BaseArrived(:final base) => resultFit(queue.shown, base),
+        _ => null,
+      };
       final step = transition(queue, event, now: now);
       queue = step.queue;
       switch (step) {
         case NotApplicable(:final why):
           outcomes.add(ReportNotApplicable(why));
         case Stepped(:final effects):
-          if (event case BaseArrived(:final base)) arrivals.add(base);
+          if (event case BaseArrived(
+            :final base,
+          ) when fits == ResultFit.applies) {
+            arrivals.add(base);
+          }
           outcomes.add(ReportApplied(effects));
       }
     }

@@ -46,7 +46,8 @@ final class Model {
   final refusedOps = <String>{};
   final strategyLifeSent = <String, int>{};
   final setAsideIds = <String>{};
-  bool replaced = false;
+  final refusedStrategyLives = <int>{};
+  bool adoptedReplacement = false;
 
   bool namesAnotherStrategyLife(List<StrategyOp> ops) => ops.any(
     (op) => switch (strategyLifeSent[op.opId]) {
@@ -222,6 +223,13 @@ final class Model {
       }}',
     );
     if (result case Stepped(queue: final after, :final effects)) {
+      if ((before.shown.strategy?.life, after.shown.strategy?.life) case (
+        final was?,
+        final now?,
+      ) when now > was) {
+        reference = server.rows;
+        adoptedReplacement = true;
+      }
       checkRemovals(before, after, effects, event);
       client.queue = after;
       for (final entry in after.entries) {
@@ -241,7 +249,9 @@ final class Model {
         count('nothing to do at another revision');
       }
       for (final effect in effects) {
-        if (effect is StrategySetAside) count('StrategySetAside');
+        if (effect is StrategySetAside) {
+          count('StrategySetAside');
+        }
         if (effect case OpRemoved(:final opId, :final cause)) {
           count('removed ${cause.runtimeType}');
           if (cause case FoldedInto(opId: final into)) {
@@ -703,6 +713,13 @@ final class Model {
     livesSent.addAll(sent.lives);
     for (final op in sent.ops) {
       if (sent.strategyLife case final life?) strategyLifeSent[op.opId] = life;
+      if (sent.strategyLife case final life?
+          when refusedStrategyLives.contains(life)) {
+        throw StateError(
+          '${op.opId} was sent naming strategy life $life after the server '
+          'refused that life',
+        );
+      }
       if (setAsideIds.contains(op.opId)) {
         throw StateError('${op.opId} was sent after it was set aside');
       }
@@ -775,6 +792,9 @@ final class Model {
     }
     if (namesAnotherStrategyLife(ops)) {
       count('batches refused as the strategy was replaced');
+      refusedStrategyLives.addAll([
+        for (final op in ops) ?strategyLifeSent[op.opId],
+      ]);
       apply(
         BatchRefused(attempt, BatchRefusal.strategyReplaced),
         'refused: the strategy was replaced',
@@ -849,11 +869,10 @@ final class Model {
     );
   }
 
-  void teammateReplaces() {
+  void ownerReplaces() {
     server.reupload();
-    replaced = true;
-    count('teammate replaces the strategy');
-    log.add('a teammate replaces the strategy');
+    count('the strategy is replaced');
+    log.add('the strategy is replaced');
   }
 
   void teammateWrites() {
@@ -1244,8 +1263,8 @@ final class Model {
       case 15:
         lane();
       case 16:
-        if (teammates && replacing.nextInt(30) == 0) {
-          teammateReplaces();
+        if (replacing.nextInt(30) == 0) {
+          ownerReplaces();
         } else if (teammates) {
           teammateWrites();
         }
@@ -1317,7 +1336,10 @@ final class Model {
     if (!teammates && drainHelps > 0) {
       throw StateError('the drain helped the user $drainHelps times');
     }
-    if (!teammateEdited && !userRemoved && !replaced && server.exists) {
+    if (!teammateEdited && !userRemoved && server.exists) {
+      if (adoptedReplacement) {
+        count('end content compared after a replacement');
+      }
       final want = liveContent(reference);
       final got = liveContent(server.rows);
       if (!const DeepCollectionEquality().equals(want, got)) {
@@ -1370,7 +1392,8 @@ const minimums = {
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
   'ops refused as naming a row life that was replaced': 1,
-  'teammate replaces the strategy': 5,
+  'the strategy is replaced': 5,
+  'end content compared after a replacement': 5,
   'StrategySetAside': 5,
   'UserDiscardedReplaced': 5,
   'replays answered without a life': 1,

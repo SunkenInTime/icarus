@@ -1006,7 +1006,35 @@ final class NothingSetAside extends SetAsideRecord {
 }
 
 final class SetAside extends SetAsideRecord {
-  SetAside({
+  SetAside(List<SetAsideGeneration> generations)
+    : generations = List.unmodifiable(generations);
+
+  final List<SetAsideGeneration> generations;
+
+  List<QueueEntry> get entries => [
+    for (final generation in generations) ...generation.entries,
+  ];
+
+  @override
+  int get count => entries.length;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SetAside &&
+      const ListEquality<SetAsideGeneration>().equals(
+        other.generations,
+        generations,
+      );
+
+  @override
+  int get hashCode => Object.hashAll(generations);
+
+  @override
+  String toString() => 'SetAside(${generations.join(', ')})';
+}
+
+final class SetAsideGeneration {
+  SetAsideGeneration({
     required this.writtenIn,
     required this.replacedBy,
     required List<QueueEntry> entries,
@@ -1017,11 +1045,8 @@ final class SetAside extends SetAsideRecord {
   final List<QueueEntry> entries;
 
   @override
-  int get count => entries.length;
-
-  @override
   bool operator ==(Object other) =>
-      other is SetAside &&
+      other is SetAsideGeneration &&
       other.writtenIn == writtenIn &&
       other.replacedBy == replacedBy &&
       const ListEquality<QueueEntry>().equals(other.entries, entries);
@@ -1032,8 +1057,7 @@ final class SetAside extends SetAsideRecord {
 
   @override
   String toString() =>
-      'SetAside(${entries.length} written in $writtenIn, replaced by '
-      '$replacedBy)';
+      '${entries.length} written in $writtenIn, replaced by $replacedBy';
 }
 
 enum Presence { present, gone }
