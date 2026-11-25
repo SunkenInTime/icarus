@@ -398,6 +398,15 @@ final class LoadedStrategy {
     _keep(row);
   }
 
+  void forgetUnplaced(StoreName name) {
+    switch (name) {
+      case ElementName(:final page) || LineupName(:final page):
+        _loaded[page]?.unplaced.remove(name.name);
+      case _:
+        unplaced.remove(name.name);
+    }
+  }
+
   void forgetRow(Row row) {
     switch (row) {
       case PageRow(:final publicId):

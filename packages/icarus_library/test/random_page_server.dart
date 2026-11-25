@@ -96,10 +96,14 @@ final class HeldItem {
 }
 
 final class ServerResult {
-  ServerResult(this.base, this.cases);
+  ServerResult(this.base, this.cases, {required this.read});
 
   final ArrivedBase base;
   final List<String> cases;
+  final int read;
+
+  bool get stale =>
+      cases.contains('stale read') || cases.contains('stale list');
 }
 
 final class RandomServer {
@@ -125,6 +129,8 @@ final class RandomServer {
   final generated = <String, int>{};
   final _itemCases = <String, List<String>>{};
   final _pageCases = <String, List<String>>{};
+  int reads = 0;
+  var _added = 0;
 
   void _generated(String what, {HeldItem? item, String? page}) {
     _made(what);
@@ -148,10 +154,17 @@ final class RandomServer {
           ..revision += 1;
         _generated('moved between pages', item: row);
       case 3:
-        row
-          ..live = !row.live
+        final deleted = [
+          for (final each in held)
+            if (!each.live) each,
+        ];
+        final toggled = deleted.isNotEmpty && random.nextBool()
+            ? deleted[random.nextInt(deleted.length)]
+            : row;
+        toggled
+          ..live = !toggled.live
           ..revision += 1;
-        _generated(row.live ? 'restored' : 'deleted', item: row);
+        _generated(toggled.live ? 'restored' : 'deleted', item: toggled);
       case 4:
         row
           ..life += 1000
@@ -182,8 +195,26 @@ final class RandomServer {
           }
         }
         _generated(trashing ? 'page trashed' : 'page restored', page: page);
+      case 7:
+        final deleted = [
+          for (final each in held)
+            if (!each.live) each,
+        ];
+        if (deleted.isEmpty || random.nextInt(3) != 0) break;
+        final purged = deleted[random.nextInt(deleted.length)];
+        held.remove(purged);
+        _itemCases.remove(purged.id);
+        _generated('purged', page: purged.page);
       case _:
-        break;
+        final id = 'added-${_added++}';
+        final item = HeldItem(
+          id,
+          lineup: random.nextInt(4) == 0,
+          page: serverPages[random.nextInt(serverPages.length)],
+          life: fixtureLife + 100 + _added,
+        );
+        held.add(item);
+        _generated('added', item: item);
     }
   }
 
@@ -220,23 +251,44 @@ final class RandomServer {
 
   void _made(String what) => generated[what] = (generated[what] ?? 0) + 1;
 
+  ServerResult? _stale(bool Function(ArrivedBase base) kind, String what) {
+    final older = [
+      for (final each in snapshots)
+        if (kind(each.base)) each,
+    ];
+    if (older.isEmpty) return null;
+    final stale = older[random.nextInt(older.length)];
+    _made(what);
+    return ServerResult(stale.base, [what], read: stale.read);
+  }
+
   ServerResult pageList() {
+    if (random.nextInt(4) == 0) {
+      if (_stale((base) => base is HeaderRead, 'stale list')
+          case final stale?) {
+        return stale;
+      }
+    }
     _made('page list');
-    return ServerResult(
+    final result = ServerResult(
       HeaderRead(
         strategy: rows().strategy,
         pages: rows().pages.toList(),
         settings: rows().settings.toList(),
       ),
       ['page list', for (final page in serverPages) ..._deliveredPage(page)],
+      read: ++reads,
     );
+    snapshots.add(result);
+    return result;
   }
 
   ServerResult read() {
-    if (snapshots.isNotEmpty && random.nextInt(6) == 0) {
-      final stale = snapshots[random.nextInt(snapshots.length)];
-      _made('stale read');
-      return ServerResult(stale.base, const ['stale read']);
+    if (random.nextInt(6) == 0) {
+      if (_stale((base) => base is! HeaderRead, 'stale read')
+          case final stale?) {
+        return stale;
+      }
     }
     final page = serverPages[random.nextInt(serverPages.length)];
     if (trashed.contains(page)) {
@@ -244,7 +296,7 @@ final class RandomServer {
       return ServerResult(PageGone(page), [
         'trashed page read',
         ..._deliveredPage(page),
-      ]);
+      ], read: ++reads);
     }
     final leaving = random.nextInt(5) == 0;
     final included = [
@@ -272,6 +324,7 @@ final class RandomServer {
         ..._deliveredPage(page),
         for (final item in included) ...?_itemCases.remove(item.id),
       ],
+      read: ++reads,
     );
     snapshots.add(result);
     return result;

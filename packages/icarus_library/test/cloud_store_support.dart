@@ -1,4 +1,5 @@
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/op_facts.dart' show revisionOfRow;
 import 'package:test/test.dart';
 
 import 'cloud_support.dart';
@@ -103,3 +104,84 @@ Future<StrategyRead> seenIn(
   Found(:final value) => value,
   final other => fail('$id could not be read: $other'),
 };
+
+typedef Held = ({String page, int? revision, int? life, String digest});
+
+Held heldOf(Row row, String page) => (
+  page: page,
+  revision: revisionOfRow(row),
+  life: createdAtOf(row),
+  digest: rowDigest(row),
+);
+
+Held shownOf(ShownRow row) => (
+  page: row.page,
+  revision: row.revision,
+  life: row.life,
+  digest: row.digest,
+);
+
+Future<void> expectAgree(LibraryStore store) async {
+  final shown = (await syncOf(store)).queue.shown;
+  final content = switch (await store.readStrategy(strategyId)) {
+    Found(value: final StrategyContent value) => value,
+    final other => fail('the strategy did not read: $other'),
+  };
+  expect(
+    (
+      revision: revisionOfRow(content.strategy),
+      life: createdAtOf(content.strategy),
+    ),
+    (revision: shown.strategy?.revision, life: shown.strategy?.life),
+    reason: 'the strategy row',
+  );
+  expect(
+    {
+      for (final page in content.pages)
+        page.publicId: (heldOf(page, page.publicId), page is TrashedPage),
+    },
+    {
+      for (final MapEntry(:key, :value) in shown.pages.entries)
+        key: (shownOf(value), false),
+      for (final MapEntry(:key, :value) in shown.trashed.entries)
+        key: (shownOf(value), true),
+    },
+    reason: 'page rows',
+  );
+  expect(
+    {
+      for (final MapEntry(:key, :value) in content.settings.entries)
+        key: heldOf(value, key),
+    },
+    {
+      for (final MapEntry(:key, :value) in shown.settings.entries)
+        key: shownOf(value),
+    },
+    reason: 'settings rows',
+  );
+  final items = <Target, Held>{};
+  for (final page in content.pages) {
+    switch (await store.readPage(strategyId, page.publicId)) {
+      case Found(:final value):
+        for (final row in value.elements) {
+          items[ElementTarget(row.publicId)] = heldOf(row, page.publicId);
+        }
+        for (final row in value.lineupGroups) {
+          items[LineupTarget(row.publicId)] = heldOf(row, page.publicId);
+        }
+      case NotFound():
+        break;
+      case final other:
+        fail('page ${page.publicId} did not read: $other');
+    }
+  }
+  expect(items, {
+    for (final MapEntry(:key, :value) in shown.rows.entries)
+      key: shownOf(value),
+  }, reason: 'items');
+}
+
+Future<ResultSource> beganIn(LibraryStore store) async {
+  final recorded = await recordAll(store, [const ReadBegun()]);
+  return effectsOf(recorded).whereType<ReadStartIssued>().single.source;
+}

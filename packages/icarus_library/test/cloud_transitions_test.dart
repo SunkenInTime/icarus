@@ -667,6 +667,41 @@ String renderTable() {
       'until a result shows a later revision of the row.',
     )
     ..writeln()
+    ..writeln('## Which copy of a row a result leaves held')
+    ..writeln()
+    ..writeln(
+      '- `Shown.taken` decides once, for every row a result carries, whether '
+      'it replaces the copy held, and names every row the result removes. The '
+      'store writes what it decides and nothing else. A row replaces the held '
+      'copy unless the held copy is newer: lives compare first when both are '
+      'known, revisions otherwise. A row without a revision never replaces '
+      'one with a revision.',
+    )
+    ..writeln(
+      '- When a page result leaves out an item the device held there, the '
+      'item is marked with that result\'s read order and the version last '
+      'held. A later-arriving result whose read started before that order, '
+      'carrying the item at that version or older, does not bring it back; a '
+      'newer version always does. Marks are kept in memory and end with the '
+      'session. `test/cloud_row_decision_test.dart` covers both ("a page '
+      'result read before another page removed an item stays out when it '
+      'carries the version last held, and is taken when it carries a newer '
+      'one").',
+    )
+    ..writeln(
+      '- One case is taken although it may be stale. The device holds an '
+      'item on page A. On the server it moves to page B, and a read of B '
+      'starts. While that read is in flight, the item moves back to A, is '
+      'deleted, and is purged by the server. A read of A that started after '
+      'the read of B arrives first and leaves the item out. Then the read of '
+      'B arrives carrying the item at a version newer than the one last '
+      'held, so nothing shows it is stale, and the item is shown on B. A '
+      'purged row has been deleted for a long time, so all of this has to '
+      'happen while one read is in flight. The next read of B removes it. A '
+      'read of the same page that started before the removal is dropped '
+      'whole as older.',
+    )
+    ..writeln()
     ..writeln('## Folding')
     ..writeln()
     ..writeln(
@@ -799,6 +834,6 @@ void main() {
     if (Platform.environment['UPDATE_TRANSITIONS'] == '1') {
       file.writeAsStringSync(rendered);
     }
-    expect(file.readAsStringSync(), rendered);
+    expect(file.readAsStringSync().replaceAll('\r\n', '\n'), rendered);
   });
 }

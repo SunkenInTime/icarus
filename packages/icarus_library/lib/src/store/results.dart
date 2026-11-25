@@ -829,11 +829,16 @@ final class EditsGoThroughCommit extends ReportOutcome {
 }
 
 final class Recorded {
-  Recorded({required List<ReportOutcome> outcomes, required this.summary})
-    : outcomes = List.unmodifiable(outcomes);
+  Recorded({
+    required List<ReportOutcome> outcomes,
+    required this.summary,
+    List<RowKey> healed = const [],
+  }) : outcomes = List.unmodifiable(outcomes),
+       healed = List.unmodifiable(healed);
 
   final List<ReportOutcome> outcomes;
   final StrategySummary summary;
+  final List<RowKey> healed;
 }
 
 typedef RecordResult = Saving<Recorded, CommitRefusal>;

@@ -12,17 +12,14 @@ import 'support.dart';
 
 Future<String> takeInto(
   LibraryStore store,
-  ArrivedBase base, {
+  ArrivedBase base,
+  ResultSource from, {
   required bool reuse,
 }) async {
   shownTakesReuse = reuse;
   try {
     final result = await store.record(testAccount, strategyId, [
-      BaseArrived(
-        base,
-        session: await sessionOf(store),
-        from: await readStartOf(store),
-      ),
+      BaseArrived(base, session: await sessionOf(store), from: from),
     ]);
     return switch (result) {
       Saved(:final value) => [
@@ -106,26 +103,70 @@ Future<Counts> runSeed(int seed, int steps) async {
   for (final store in stores) {
     await addCloud(store, server.rows());
   }
+  void count(String what) => applied[what] = (applied[what] ?? 0) + 1;
+  final sources = [<int, ResultSource>{}, <int, ResultSource>{}];
+  List<ResultSource>? lastFresh;
+  var lastPage = 0;
+  var lastList = 0;
   for (var step = 0; step < steps; step++) {
     if (server.random.nextBool()) server.change();
-    final result = server.random.nextInt(8) == 0
+    final result = server.random.nextInt(6) == 0
         ? server.pageList()
         : server.read();
+    final tie =
+        !result.stale && lastFresh != null && server.random.nextInt(5) == 0;
+    final List<ResultSource> from;
+    if (result.stale) {
+      from = [for (final each in sources) each[result.read]!];
+    } else if (tie) {
+      from = lastFresh;
+      count('started with the read before it');
+    } else {
+      from = [for (final store in stores) await beganIn(store)];
+    }
+    if (!result.stale) {
+      lastFresh = from;
+      for (final (index, source) in from.indexed) {
+        sources[index][result.read] = source;
+      }
+    }
     final queue = (await syncOf(stores.first)).queue;
-    final fits = resultFit(
-      queue.shown,
-      queue.session,
+    final fits = resultFit(queue.shown, queue.session, result.base, from[0]);
+    final kept = await takeInto(
+      stores.first,
       result.base,
-      readFrom(queue),
+      from[0],
+      reuse: true,
     );
-    final kept = await takeInto(stores.first, result.base, reuse: true);
-    final scratch = await takeInto(stores.last, result.base, reuse: false);
+    final scratch = await takeInto(
+      stores.last,
+      result.base,
+      from[1],
+      reuse: false,
+    );
     expect(kept, scratch, reason: 'seed $seed step $step');
+    if (fits == ResultFit.older) count('dropped as older');
     if (fits == ResultFit.applies || fits == ResultFit.adopts) {
       for (final what in result.cases) {
-        applied[what] = (applied[what] ?? 0) + 1;
+        count(what);
       }
-      if (!result.cases.contains('stale read')) {
+      switch (result.base) {
+        case HeaderRead() when result.stale && lastPage > result.read:
+          count('older list after a newer page');
+        case PageRead() when result.stale && lastList > result.read:
+          count('older page after a newer list');
+        case _:
+          break;
+      }
+      switch (result.base) {
+        case HeaderRead():
+          lastList = max(lastList, result.read);
+        case PageRead() || PageGone():
+          lastPage = max(lastPage, result.read);
+        case StrategyGone():
+          break;
+      }
+      if (!result.stale) {
         await expectWhatTheServerSent(
           stores.first,
           result.base,
@@ -133,6 +174,7 @@ Future<Counts> runSeed(int seed, int steps) async {
         );
       }
     }
+    await expectAgree(stores.first);
     final apart = differences(reusing.contents, fresh.contents);
     if (apart.isNotEmpty) {
       fail(
@@ -191,6 +233,13 @@ void main() {
       'trashed page read',
       'stale read',
       'rows left out of a read',
+      'stale list',
+      'purged',
+      'added',
+      'older list after a newer page',
+      'older page after a newer list',
+      'started with the read before it',
+      'dropped as older',
     ]) {
       expect(applied[what] ?? 0, greaterThan(20), reason: what);
     }

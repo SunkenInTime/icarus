@@ -1061,7 +1061,7 @@ LandedShape _shapeOf(StrategyOp sent) => switch (sent) {
 };
 
 final class _Edit {
-  _Edit(this.original, this.now)
+  _Edit(this.original, this.now, [this.damaged = const {}])
     : entries = [...original.entries],
       attempts = {...original.attempts},
       landed = [...original.landed],
@@ -1073,6 +1073,7 @@ final class _Edit {
       index = _IndexEdit(original._index);
 
   final CloudQueue original;
+  final Set<RowKey> damaged;
   final decisions = <RowDecision>[];
   final DateTime now;
   final List<QueueEntry> entries;
@@ -1284,9 +1285,14 @@ void _pruneAttempts(_Edit edit) {
   }
 }
 
-Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
+Step transition(
+  CloudQueue queue,
+  QueueEvent event, {
+  required DateTime now,
+  Set<RowKey> damaged = const {},
+}) {
   final start = recordExpiries(queue, now);
-  final step = _step(_Edit(start, now), start, event, now);
+  final step = _step(_Edit(start, now, damaged), start, event, now);
   return switch (step) {
     Stepped() => step,
     NotApplicable(:final why) => NotApplicable(start, why),
@@ -1606,7 +1612,7 @@ Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
     return edit.done();
   }
   final before = edit.shown;
-  final taken = edit.shown.taken(base, started: started);
+  final taken = edit.shown.taken(base, started: started, damaged: edit.damaged);
   edit.decisions.addAll(taken.decisions);
   edit.shown = taken.shown;
   if (base case HeaderRead(:final strategy)) {
