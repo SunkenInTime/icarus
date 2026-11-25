@@ -46,9 +46,12 @@ bool _within(RenderObject node, RenderObject outer) {
   return false;
 }
 
-RenderPointerListener? _handlerOf(RenderObject node) {
+bool _takesTaps(RenderObject node) =>
+    node is RenderPointerListener && node.onPointerDown != null;
+
+RenderObject? _handlerOf(RenderObject node) {
   for (RenderObject? at = node; at != null; at = at.parent) {
-    if (at is RenderPointerListener) return at;
+    if (_takesTaps(at)) return at;
   }
   return null;
 }
@@ -61,7 +64,7 @@ bool takesTheTap(RenderObject match, Offset at) {
     final first = path.firstOrNull;
     return first != null && first is! RenderView && _within(first, match);
   }
-  final first = path.whereType<RenderPointerListener>().firstOrNull;
+  final first = path.where(_takesTaps).firstOrNull;
   return first != null && (identical(first, own) || _within(first, match));
 }
 
@@ -116,7 +119,7 @@ String whyNotTapped(Offset at) {
     return 'off screen, at (${at.dx.round()}, ${at.dy.round()})';
   }
   final path = _hitAt(at);
-  final handler = path.whereType<RenderPointerListener>().firstOrNull;
+  final handler = path.where(_takesTaps).firstOrNull;
   if (handler != null) return 'the tap goes to ${_named(handler)}';
   final first = path.firstOrNull;
   return first == null || first is RenderView

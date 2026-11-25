@@ -142,6 +142,35 @@ void main() {
   });
 
   testWidgets(
+      'a translucent listener over the page that only follows the pointer, as '
+      'the presence cursor reporter does, takes no tap and does not hide the '
+      'button under it', (tester) async {
+    await tester.pumpWidget(_app(Stack(
+      children: [
+        Positioned(
+          left: 100,
+          top: 100,
+          child: GestureDetector(
+            onTap: _counts('next'),
+            child: const Text('Next'),
+          ),
+        ),
+        Positioned.fill(
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerHover: (_) {},
+            onPointerMove: (_) {},
+          ),
+        ),
+      ],
+    )));
+
+    await _tapThroughDriver(tester, 'Next');
+
+    expect(_taps, {'next': 1});
+  });
+
+  testWidgets(
       'text in a disabled item that ignores pointers is tapped, and the '
       'item takes the tap', (tester) async {
     await tester.pumpWidget(_app(Center(
