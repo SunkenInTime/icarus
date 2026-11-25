@@ -9,6 +9,7 @@ import 'package:icarus/library_store/hive_files.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
+import 'package:icarus/library_store/mirror_gate.dart';
 import 'package:icarus/library_store/ui_watch.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -110,6 +111,10 @@ final class ShadowFinished extends ShadowState {
   final ShadowRun run;
 }
 
+final class ShadowClosedWithTheApp extends ShadowState {
+  const ShadowClosedWithTheApp();
+}
+
 final class ShadowNotOpened extends ShadowState {
   const ShadowNotOpened(this.opened);
 
@@ -208,7 +213,7 @@ class ShadowNotifier extends Notifier<ShadowState> {
       final copy = switch (mode) {
         ShadowOnly() => await copyHiveIntoStore(
             _shadowReads,
-            store,
+            GatedStore.open(store),
             images: StrategyImages(),
             writes: writes,
             breathe: _breathe,
@@ -220,12 +225,20 @@ class ShadowNotifier extends Notifier<ShadowState> {
             progress: progress,
           ),
       };
+      if (copy is ShadowCopyCancelled) {
+        state = const ShadowClosedWithTheApp();
+        return;
+      }
       final copyTook = copyClock.elapsed;
       final uiDuringCopy = copyWatch.stop();
       state = const ShadowChecking();
       checkWatch.start();
       final checkClock = Stopwatch()..start();
       final check = await _check(store, foreignNames);
+      if (check is StoreCheckCancelled) {
+        state = const ShadowClosedWithTheApp();
+        return;
+      }
       final checkTook = checkClock.elapsed;
       final uiDuringCheck = checkWatch.stop();
       final after = await HiveFiles.of(Directory(hiveDirectory));

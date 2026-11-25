@@ -3,6 +3,7 @@ import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
+import 'package:icarus/library_store/mirror_gate.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -174,6 +175,10 @@ final class ShadowCopyFaulted extends ShadowCopy {
   final StackTrace stackTrace;
 }
 
+final class ShadowCopyCancelled extends ShadowCopy {
+  ShadowCopyCancelled() : super(const [], const []);
+}
+
 sealed class _Saving {
   const _Saving();
 }
@@ -210,7 +215,7 @@ _Saving _saving(LibraryEditResult result) => switch (result) {
 
 Future<ShadowCopy> copyHiveIntoStore(
   HiveReads reads,
-  LibraryStore store, {
+  GatedStore store, {
   required StrategyImages images,
   required LibraryBoxWrites writes,
   required Future<void> Function() breathe,
@@ -248,7 +253,7 @@ final class StoreHolds {
 }
 
 Future<CopyStop?> _putImage(
-  LibraryStore store,
+  GatedStore store,
   StoreHolds holds,
   String id,
   StrategyImage image,
@@ -259,7 +264,8 @@ Future<CopyStop?> _putImage(
     case StrategyRowsRefused(:final problems):
       results.add(StrategyNotMirrored(id, ConverterRefused(problems)));
     case StrategyRowsMade(:final rows):
-      switch (_saving(await store.putStrategy(rows))) {
+      switch (_saving(
+          await store.use((store) => store.putStrategy(rows)))) {
         case _Wrote():
           results.add(
             holds.strategies.contains(id)
@@ -280,7 +286,7 @@ Future<CopyStop?> _putImage(
 }
 
 Future<ShadowCopy> mirrorImage(
-  LibraryStore store,
+  GatedStore store,
   StoreHolds holds,
   String strategyId,
   StrategyImage image,
@@ -298,7 +304,7 @@ Future<void> _noBreath() async {}
 
 Future<ShadowCopy> mirrorIds(
   HiveReads reads,
-  LibraryStore store,
+  GatedStore store,
   StoreHolds holds, {
   required StrategyImages images,
   required Set<String> strategies,
@@ -325,7 +331,8 @@ Future<ShadowCopy> mirrorIds(
   }
   for (final folder in _parentsFirst(present.values.toList())) {
     final row = _folderRow(folder, holds.folders[folder.id]);
-    switch (_saving(await store.editLibrary([PutFolder(row)]))) {
+    switch (_saving(await store
+        .use((store) => store.editLibrary([PutFolder(row)])))) {
       case _Wrote():
         holds.folders[folder.id] = row;
         folderResults.add(FolderCopied(folder.id));
@@ -350,7 +357,8 @@ Future<ShadowCopy> mirrorIds(
           return stopped(stop);
         }
       case NotInHive() when holds.strategies.contains(id):
-        final removal = switch (await store.editLibrary([RemoveStrategy(id)])) {
+        final removal = switch (await store
+            .use((store) => store.editLibrary([RemoveStrategy(id)]))) {
           Refused(reason: NoSuchStrategy()) => const _NothingToWrite(),
           final result => _saving(result),
         };
@@ -384,7 +392,8 @@ Future<ShadowCopy> mirrorIds(
       case InHive():
         continue;
     }
-    switch (_saving(await store.editLibrary([RemoveFolder(row.publicId)]))) {
+    switch (_saving(await store.use(
+        (store) => store.editLibrary([RemoveFolder(row.publicId)])))) {
       case _Wrote() || _NothingToWrite():
         holds.folders.remove(row.publicId);
         folderResults.add(FolderRemovedWithHive(row.publicId));
@@ -399,7 +408,7 @@ Future<ShadowCopy> mirrorIds(
 
 Future<ShadowCopy> _bringUpToDate(
   HiveReads reads,
-  LibraryStore store, {
+  GatedStore store, {
   required StrategyImages images,
   required Future<void> Function() breathe,
   void Function(int done, int total)? progress,
@@ -425,7 +434,8 @@ Future<ShadowCopy> _bringUpToDate(
   final storedFolders = {for (final row in list.folders) row.publicId: row};
   for (final folder in _parentsFirst(hive.folders)) {
     final row = _folderRow(folder, storedFolders[folder.id]);
-    switch (_saving(await store.editLibrary([PutFolder(row)]))) {
+    switch (_saving(await store
+        .use((store) => store.editLibrary([PutFolder(row)])))) {
       case _Wrote():
         folders.add(FolderCopied(folder.id));
       case _NothingToWrite():
@@ -446,7 +456,8 @@ Future<ShadowCopy> _bringUpToDate(
       case StrategyRowsRefused(:final problems):
         strategies.add(StrategyNotMirrored(id, ConverterRefused(problems)));
       case StrategyRowsMade(:final rows):
-        switch (_saving(await store.putStrategy(rows))) {
+        switch (_saving(
+            await store.use((store) => store.putStrategy(rows)))) {
           case _Wrote():
             strategies.add(
               stored.contains(id)
@@ -471,7 +482,8 @@ Future<ShadowCopy> _bringUpToDate(
     ...now.strategiesWriting,
   };
   for (final id in stored.difference(hiveIds)) {
-    switch (_saving(await store.editLibrary([RemoveStrategy(id)]))) {
+    switch (_saving(await store
+        .use((store) => store.editLibrary([RemoveStrategy(id)])))) {
       case _Wrote() || _NothingToWrite():
         strategies.add(StrategyRemovedWithHive(id));
       case _NotWritten(:final reason):
@@ -490,7 +502,8 @@ Future<ShadowCopy> _bringUpToDate(
     for (final row in list.folders)
       if (leaving.contains(row.publicId)) row,
   ])) {
-    switch (_saving(await store.editLibrary([RemoveFolder(row.publicId)]))) {
+    switch (_saving(await store.use(
+        (store) => store.editLibrary([RemoveFolder(row.publicId)])))) {
       case _Wrote() || _NothingToWrite():
         folders.add(FolderRemovedWithHive(row.publicId));
       case _NotWritten(:final reason):

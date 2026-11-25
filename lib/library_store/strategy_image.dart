@@ -35,16 +35,27 @@ final class StrategyImage {
 final class StrategyImages {
   final _partsReadingBackEqual = <String, Set<String>>{};
 
-  StrategyImage of(StrategyData strategy) =>
-      _steps(strategy).whereType<StrategyImage>().single;
+  StrategyImage of(StrategyData strategy) {
+    try {
+      return _steps(strategy).whereType<StrategyImage>().single;
+    } on Object {
+      forget(strategy.id);
+      rethrow;
+    }
+  }
 
   Future<StrategyImage> between(
     StrategyData strategy,
     Future<void> Function() breathe,
   ) async {
-    for (final step in _steps(strategy)) {
-      if (step != null) return step;
-      await breathe();
+    try {
+      for (final step in _steps(strategy)) {
+        if (step != null) return step;
+        await breathe();
+      }
+    } on Object {
+      forget(strategy.id);
+      rethrow;
     }
     throw StateError('the image ended without an outcome');
   }
@@ -55,23 +66,32 @@ final class StrategyImages {
     final map = strategy.mapData;
     final parts = <_Part>[];
     Object? unkeyable;
-    late final String outline;
-    late final StrategyToRows converted;
-    for (final step in strategyToRowsInSteps(strategy)) {
+    void keyed(_Part Function() part) {
       try {
-        switch (step) {
-          case ItemConverted(:final page, :final item, row: final row?):
-            parts.add(_ItemPart(map, page, item, row));
-          case ItemConverted(row: null):
-            break;
-          case PageConverted(:final page, :final lineupGroups):
-            parts.add(_PagePart(map, page, lineupGroups));
-          case RowsFinished(:final rows):
-            converted = rows;
-            outline = strategyOutline(strategy);
-        }
+        parts.add(part());
       } on Object catch (error) {
         unkeyable ??= error;
+      }
+    }
+
+    late final StrategyToRows converted;
+    late final String Function() outline;
+    for (final step in strategyToRowsInSteps(strategy)) {
+      switch (step) {
+        case ItemConverted(:final page, :final item, row: final row?):
+          keyed(() => _ItemPart(map, page, item, row));
+        case ItemConverted(row: null):
+          break;
+        case PageConverted(:final page, :final lineupGroups):
+          keyed(() => _PagePart(map, page, lineupGroups));
+        case RowsFinished(:final rows):
+          converted = rows;
+          try {
+            final text = strategyOutline(strategy);
+            outline = () => text;
+          } on Object catch (error) {
+            outline = () => throw error;
+          }
       }
       yield null;
     }
@@ -88,15 +108,14 @@ final class StrategyImages {
       case StrategyRowsMade(rows: final made):
         rows = made;
     }
+    var partsReadBack = 0;
     StrategyImage cannotCompare(Object error) {
       forget(strategy.id);
       return StrategyImage(
-          converted, ReadsBackDifferently('it cannot be compared: $error'));
-    }
-
-    if (unkeyable != null) {
-      yield cannotCompare(unkeyable);
-      return;
+        converted,
+        ReadsBackDifferently('it cannot be compared: $error'),
+        partsReadBack: partsReadBack,
+      );
     }
 
     final bool outlineEqual;
@@ -106,12 +125,15 @@ final class StrategyImages {
       yield cannotCompare(error);
       return;
     }
+    if (unkeyable case final error?) {
+      yield cannotCompare(error);
+      return;
+    }
     yield null;
 
     final known = _partsReadingBackEqual[strategy.id] ?? const <String>{};
     final equal = <String>{};
     String? differingPage;
-    var partsReadBack = 0;
     for (final part in parts) {
       if (known.contains(part.key)) {
         equal.add(part.key);
@@ -273,7 +295,7 @@ String strategyOutline(StrategyData strategy) => jsonEncode([
       ],
     ]);
 
-bool outlineReadsBack(String outline, StrategyRowSet rows) =>
+bool outlineReadsBack(String Function() outline, StrategyRowSet rows) =>
     _everyRowOnAPage(rows) &&
     switch (strategyFromRows(rowsAsStored(StrategyRowSet(
       strategy: rows.strategy,
@@ -286,7 +308,7 @@ bool outlineReadsBack(String outline, StrategyRowSet rows) =>
         :final notInStrategy,
       )
           when unreadable.isEmpty && notInStrategy.isEmpty =>
-        strategyOutline(back) == outline,
+        outline() == strategyOutline(back),
       StrategyDataMade() || StrategyDataRefused() => false,
     };
 

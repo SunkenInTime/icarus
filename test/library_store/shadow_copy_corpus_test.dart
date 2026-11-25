@@ -163,6 +163,8 @@ Future<void> _checkOne(
           problem('$round check failed: $failure');
         case StoreChangedDuringCheck():
           problem('$round check: Hive changed during it');
+        case StoreCheckCancelled():
+          problem('$round check: cancelled');
         case final StoreChecked checked:
           if (round == 'first') {
             totals
@@ -380,6 +382,8 @@ Future<List<String>> _editEachThroughMirror(
         problems.add('$label: check failed $failure');
       case StoreChangedDuringCheck():
         problems.add('$label: Hive changed during the check');
+      case StoreCheckCancelled():
+        problems.add('$label: the check was cancelled');
       case final StoreChecked checked when !checked.isExact:
         problems.add(
           '$label: ${checked.strategyProblems} ${checked.folderProblems}',

@@ -281,11 +281,9 @@ final class ItemConverted extends RowsStep {
 }
 
 final class PageConverted extends RowsStep {
-  const PageConverted(this.page, this.row, this.settings, this.lineupGroups);
+  const PageConverted(this.page, this.lineupGroups);
 
   final StrategyPage page;
-  final LivePage row;
-  final ReadablePageSettings settings;
   final List<LiveLineupGroup> lineupGroups;
 }
 
@@ -411,7 +409,7 @@ Iterable<RowsStep> strategyToRowsInSteps(
       lineupCount += page.lineUpLinks.length;
       lineupGroups.addAll(made);
     }
-    yield PageConverted(page, pageRow, settingsRow, made ?? const []);
+    yield PageConverted(page, made ?? const []);
   }
 
   if (problems.isNotEmpty) {

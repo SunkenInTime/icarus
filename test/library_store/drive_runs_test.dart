@@ -106,6 +106,7 @@ Future<String> _checkRun(String run) async {
     return switch (check) {
       StoreNotChecked(:final failure) => 'not checked: $failure',
       StoreChangedDuringCheck() => 'not exact: Hive changed during the check',
+      StoreCheckCancelled() => 'cancelled',
       final StoreChecked checked => checked.isExact
           ? 'exact: ${checked.sameStrategies} strategies, '
               '${checked.sameFolders} folders'

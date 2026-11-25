@@ -76,6 +76,24 @@ final class _CountedDrawing extends FreeDrawing {
   }
 }
 
+final class _BreakingDrawing extends FreeDrawing {
+  _BreakingDrawing(String id)
+      : super(
+          id: id,
+          listOfPoints: const [Offset(1, 2), Offset(3, 4)],
+          colorValue: 0xFF336699,
+          isDotted: false,
+          hasArrow: false,
+        );
+
+  static var breaks = false;
+
+  @override
+  List<Offset> get listOfPoints => breaks
+      ? throw StateError('the test broke the conversion')
+      : super.listOfPoints;
+}
+
 StrategyData _drawn(String id, int strokes) => _strategy(id).withDrawings([
       for (var stroke = 0; stroke < strokes; stroke++)
         _CountedDrawing('$id-stroke-$stroke', [
@@ -245,6 +263,34 @@ void main() {
         {for (final id in strokes) id: 0},
         reason: moment,
       );
+    }
+  });
+
+  test(
+      'a conversion that throws, in one go or in steps, leaves no part known '
+      'equal from the checks before it', () async {
+    addTearDown(() => _BreakingDrawing.breaks = false);
+    final strategy = strategyAsHiveHoldsIt(
+      _strategy('breaking').withDrawings([_BreakingDrawing('breaking-stroke')]),
+    );
+    final parts = [
+      for (final page in strategy.pages) 1 + pageItemsOf(page).length,
+    ].reduce((a, b) => a + b);
+    for (final (way, checkWith) in <(
+      String,
+      Future<StrategyImage> Function(StrategyImages images)
+    )>[
+      ('in one go', (images) async => images.of(strategy)),
+      ('in steps', (images) => images.between(strategy, () async {})),
+    ]) {
+      final images = StrategyImages();
+      Future<StrategyImage> check() => checkWith(images);
+      expect((await check()).partsReadBack, parts, reason: way);
+      expect((await check()).partsReadBack, 0, reason: way);
+      _BreakingDrawing.breaks = true;
+      await expectLater(check(), throwsStateError, reason: way);
+      _BreakingDrawing.breaks = false;
+      expect((await check()).partsReadBack, parts, reason: way);
     }
   });
 

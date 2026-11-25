@@ -85,12 +85,12 @@ With `"ahead": "median"` (`scripts/open-first-frame-abandoned.json`) each press 
 
 Each number gets a `READBACK <strategy> within budget: …` or `READBACK <strategy> over budget: <value> ms, target <x> ms, over by <d> ms` line, and the step fails if either is over.
 
-`{"readBackFrames": pick, "longestStepMs": x?}` runs the same check with the real scheduler while a frame is asked for every frame. It logs:
+`{"readBackFrames": pick, "longestStepMs": x?}` runs the same check with the real scheduler while a frame is asked for every frame, three times on one checker: cold, after one item changed as the editor changes it (a stroke's points, its box and the strategy's `lastEdited`), and with one item at -0.0, which reads back differently. Each run logs:
 - how many breaks had no frame in them;
 - the longest step between breaks;
-- the longest any frame that ran during the check waited after its vsync, matched by frame number.
+- how many of the check's frames were timed, and the longest any of them waited after its vsync, matched by frame number.
 
-It fails if a break had no frame, if no frame of the check was timed, or if a step is over `longestStepMs`. A frame that is asked for waits behind at most the one step running when it was asked for. When nothing asks for a frame, the break does not wait for one.
+It fails if a break had no frame, if any frame of the check was not timed, if a step is over `longestStepMs`, or if the -0.0 item reads back equal. A frame that is asked for waits behind at most the one step running when it was asked for. When nothing asks for a frame, the break does not wait for one.
 
 `scripts/read-back-budget.json` runs both in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
 

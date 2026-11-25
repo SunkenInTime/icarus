@@ -6,6 +6,7 @@ import 'package:icarus/library_store/action_ops.dart';
 import 'package:icarus/library_store/canvas_changes.dart';
 import 'package:icarus/library_store/canvas_units.dart';
 import 'package:icarus/library_store/hive_library.dart';
+import 'package:icarus/library_store/mirror_gate.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
@@ -355,7 +356,7 @@ final class ActionJournal {
     _previous.clear();
   }
 
-  Future<JournalStep> runDue(LibraryStore store) async {
+  Future<JournalStep> runDue(GatedStore store) async {
     final job = _jobs.removeFirst();
     return switch (job) {
       final _TakeUpJob takeUp => _settledAfter(
@@ -378,7 +379,7 @@ final class ActionJournal {
     return step;
   }
 
-  Future<JournalStep> _runTakeUp(LibraryStore store, _TakeUpJob job) async {
+  Future<JournalStep> _runTakeUp(GatedStore store, _TakeUpJob job) async {
     tally.takenUp += 1;
     if (job.actions.isEmpty) {
       _notJudged('strategy opened', 'the strategy opening');
@@ -408,7 +409,7 @@ final class ActionJournal {
     );
   }
 
-  Future<JournalStep> _runRelease(LibraryStore store, _ReleaseJob job) async {
+  Future<JournalStep> _runRelease(GatedStore store, _ReleaseJob job) async {
     tally.released += 1;
     _previous.remove(job.strategyId);
     final hive = job.hive;
@@ -442,7 +443,7 @@ final class ActionJournal {
   String _kindOf(_UnitJob job) =>
       job.kind == UnitKind.load ? 'page loaded' : kindOf(job.actions);
 
-  Future<JournalStep> _runUnit(LibraryStore store, _UnitJob job) async {
+  Future<JournalStep> _runUnit(GatedStore store, _UnitJob job) async {
     final id = job.strategyId;
     final kind = _kindOf(job);
     final snapshot = job.snapshot;
@@ -488,13 +489,13 @@ final class ActionJournal {
         _settledActions.add(number);
         continue;
       }
-      final builder = await OpsBuilder.read(store, id);
+      final builder = await store.use((store) => OpsBuilder.read(store, id));
       if (builder == null) {
         gaps.add('${action.label}: the store has no readable strategy');
         _settledActions.add(number);
         continue;
       }
-      final built = await builder.build(action.changes);
+      final built = await store.use((_) => builder.build(action.changes));
       for (final gap in built.gaps) {
         gaps.add('${action.label}: $gap');
       }
@@ -504,7 +505,7 @@ final class ActionJournal {
         continue;
       }
       tally.commits += 1;
-      final committing = await store.commitAll(id, ops);
+      final committing = await store.use((store) => store.commitAll(id, ops));
       _settledActions.add(number);
       switch (committing) {
         case Saved():
@@ -616,7 +617,7 @@ final class ActionJournal {
     return step;
   }
 
-  Future<JournalStep> _runSave(LibraryStore store, _SaveJob job) async {
+  Future<JournalStep> _runSave(GatedStore store, _SaveJob job) async {
     if (job.state == _SaveState.failed) {
       tally.hiveSavesFailed += 1;
       return const JournalContinues();
@@ -655,8 +656,8 @@ final class ActionJournal {
     return const JournalContinues();
   }
 
-  Future<StrategyData?> _readStore(LibraryStore store, String id) async =>
-      switch (await readStoredRows(store, id)) {
+  Future<StrategyData?> _readStore(GatedStore store, String id) async =>
+      switch (await store.use((store) => readStoredRows(store, id))) {
         StoredRowsRead(:final rows) => switch (strategyFromRows(rows)) {
             StrategyDataMade(:final strategy) => strategy,
             StrategyDataRefused() => null,
@@ -665,10 +666,10 @@ final class ActionJournal {
       };
 
   static Future<bool> _holdsWhatAnImageCannotDrop(
-    LibraryStore store,
+    GatedStore store,
     String id,
   ) async =>
-      switch (await readStoredRows(store, id)) {
+      switch (await store.use((store) => readStoredRows(store, id))) {
         StoredRowsRead(:final rows) =>
           rows.pages.any((page) => page is TrashedPage) ||
               rows.elements.any((row) => row is DeletedElement) ||
