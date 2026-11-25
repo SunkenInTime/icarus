@@ -214,7 +214,9 @@ final class CloudShadow {
     required this.build,
     required this.canRead,
     required Future<void> Function() breathe,
-  }) : _breathe = breathe;
+  }) : _breathe = breathe {
+    store.takeCloudResultsFrom(CloudResults.liveQueries);
+  }
 
   final LibraryStore store;
   final String build;
@@ -545,7 +547,7 @@ final class CloudShadow {
     final session = await _sessionOf(entry);
     if (session == null) return false;
     final recorded = await _record(entry.strategyId, entry, [
-      BaseArrived(base, session: session),
+      BaseArrived(base, session: session, from: const LiveResult()),
     ]);
     if (recorded == null) return false;
     for (final outcome in recorded.outcomes) {

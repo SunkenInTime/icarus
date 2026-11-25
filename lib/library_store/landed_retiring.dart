@@ -39,22 +39,45 @@ final class Retiring {
     RetiringTiming timing,
     RetireReads reads,
   ) {
-    if (cloud.queue.landed.isEmpty) return (read: null, due: null);
-    final quietAt = (_active[id] ?? now).add(timing.quiet);
-    if (quietAt.isAfter(now)) return (read: null, due: quietAt);
     DateTime? due;
-    for (final MapEntry(key: page, value: works)
-        in landedByPage(cloud).entries) {
-      final prior = reads[page];
-      if (prior == null) return (read: page, due: null);
-      final stuck =
-          prior.works.containsAll(works) && prior.rounds >= timing.rounds;
-      final again = prior.at.add(stuck ? timing.stuck : timing.again);
-      if (!again.isAfter(now)) return (read: page, due: null);
-      if (due == null || again.isBefore(due)) due = again;
+    for (final (page, at) in wanted(id, cloud, now, timing, reads)) {
+      if (!at.isAfter(now)) return (read: page, due: null);
+      if (due == null || at.isBefore(due)) due = at;
     }
     return (read: null, due: due);
   }
+
+  List<(String, DateTime)> wanted(
+    String id,
+    CloudStrategy cloud,
+    DateTime now,
+    RetiringTiming timing,
+    RetireReads reads,
+  ) {
+    if (cloud.queue.landed.isEmpty) return const [];
+    final quietAt = (_active[id] ?? now).add(timing.quiet);
+    return [
+      for (final MapEntry(key: page, value: works)
+          in landedByPage(cloud).entries)
+        (
+          page,
+          switch (reads[page]) {
+            null => quietAt,
+            final prior => _later(
+                quietAt,
+                prior.at.add(
+                  prior.works.containsAll(works) &&
+                          prior.rounds >= timing.rounds
+                      ? timing.stuck
+                      : timing.again,
+                ),
+              ),
+          },
+        ),
+    ];
+  }
+
+  static DateTime _later(DateTime a, DateTime b) => a.isAfter(b) ? a : b;
 
   void settled(String id, ({String? read, DateTime? due}) next) {
     if (next == (read: null, due: null)) _clear.add(id);

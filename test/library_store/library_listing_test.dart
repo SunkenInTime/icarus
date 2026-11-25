@@ -357,7 +357,8 @@ void main() {
   test(
       'a Hive strategy whose id the store holds as a cloud strategy is drawn from Hive with the mark even when the mirror never refused it, and a cloud strategy Hive does not hold adds no row and no mark',
       () async {
-    final store = await _store();
+    final store = await _store()
+      ..takeCloudResultsFrom(CloudResults.thisDevicesReads);
     for (final (id, name) in [
       ('z-in-both', 'In the cloud'),
       ('y-cloud-only', 'Only in the cloud'),

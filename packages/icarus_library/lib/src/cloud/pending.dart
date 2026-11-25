@@ -4,6 +4,7 @@ import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
 import '../rows.dart';
+import 'shown.dart';
 import 'version.dart';
 
 const retriesBeforePause = 8;
@@ -848,6 +849,7 @@ final class LandedWork {
     this.produced,
     this.movedRow,
     this.shownWithout = false,
+    required this.answeredAt,
   });
 
   final int attempt;
@@ -861,6 +863,7 @@ final class LandedWork {
   final ProducedRow? produced;
   final Row? movedRow;
   final bool shownWithout;
+  final ReadStart answeredAt;
 
   LandedWork withoutProduced() => LandedWork(
     attempt: attempt,
@@ -873,6 +876,7 @@ final class LandedWork {
     firstSentAt: firstSentAt,
     movedRow: movedRow,
     shownWithout: shownWithout,
+    answeredAt: answeredAt,
   );
 
   LandedWork seenWithout() => LandedWork(
@@ -887,6 +891,7 @@ final class LandedWork {
     produced: produced,
     movedRow: movedRow,
     shownWithout: true,
+    answeredAt: answeredAt,
   );
 
   @override
@@ -902,7 +907,8 @@ final class LandedWork {
       other.firstSentAt == firstSentAt &&
       other.produced == produced &&
       other.movedRow == movedRow &&
-      other.shownWithout == shownWithout;
+      other.shownWithout == shownWithout &&
+      other.answeredAt == answeredAt;
 
   @override
   int get hashCode => Object.hash(

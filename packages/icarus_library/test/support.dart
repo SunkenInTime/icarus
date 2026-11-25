@@ -5,6 +5,8 @@ const strategyId = 'strategy-1';
 
 final strategyCreatedAt = DateTime.utc(2026, 1, 2, 3);
 
+final viewedLife = strategyCreatedAt.millisecondsSinceEpoch;
+
 const fixtureLife = 1767326400000;
 
 const _bornAtFixture = {'createdAt': fixtureLife};

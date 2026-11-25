@@ -305,14 +305,14 @@ void main() {
       'serverTime': 1000,
       'heldAtMicros': heldAt.inMicroseconds,
     });
-    switch (decodeEntry(entry.place, json)) {
+    switch (decodeEntry(entry.place, json, sendable: true)) {
       case Read(:final value):
         expect(value, entry);
       case final other:
         fail('$other');
     }
     final older = {...json}..remove('basis');
-    switch (decodeEntry(entry.place, older)) {
+    switch (decodeEntry(entry.place, older, sendable: true)) {
       case Read(value: final PendingOp read):
         expect(read.basis, isNull);
       case final other:

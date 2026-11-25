@@ -123,6 +123,7 @@ void main() {
       BaseArrived(
         pageReadOf(initialRows(), 'page-a'),
         session: client.queue.session.number,
+        from: readFrom(client.queue),
       ),
     );
     entryViews(client.queue, now);

@@ -321,6 +321,19 @@ final class LibraryStore {
   final CanRead _canRead;
   final DateTime Function() _clock;
   final String _build;
+  CloudResults? _cloudResults;
+
+  CloudResults? get cloudResults => _cloudResults;
+
+  void takeCloudResultsFrom(CloudResults results) {
+    if (_cloudResults case final chosen? when chosen != results) {
+      throw StateError(
+        'this run takes results from ${chosen.name}, not ${results.name}',
+      );
+    }
+    _cloudResults = results;
+  }
+
   _State _state = const _Ready();
   Future<void> _tail = Future.value();
   Future<Releasing>? _released;
@@ -1070,6 +1083,7 @@ final class LibraryStore {
     final loaded = strategy.loadedPage(pageDigest)!;
     return Found(
       PageContent(
+        strategyLife: null,
         page: page,
         settings: switch (strategy.settingsOf(pagePublicId)) {
           final row? => SettingsStored(row),
@@ -1267,8 +1281,9 @@ final class LibraryStore {
   Future<CommitResult> commitAs(
     Account account,
     String strategyPublicId,
-    StrategyOp op,
-  ) => _single(commitAllAs(account, strategyPublicId, [op]));
+    StrategyOp op, {
+    required StrategyRead seen,
+  }) => _single(commitAllAs(account, strategyPublicId, [op], seen: seen));
 
   static Future<CommitResult> _single(Future<BatchResult> batch) async =>
       switch (await batch) {
@@ -1317,14 +1332,16 @@ final class LibraryStore {
   Future<BatchResult> commitAllAs(
     Account account,
     String strategyPublicId,
-    List<StrategyOp> ops,
-  ) => _commitAll(account, strategyPublicId, ops);
+    List<StrategyOp> ops, {
+    required StrategyRead seen,
+  }) => _commitAll(account, strategyPublicId, ops, madeOn: seen.strategyLife);
 
   Future<BatchResult> _commitAll(
     Account? account,
     String strategyPublicId,
-    List<StrategyOp> ops,
-  ) {
+    List<StrategyOp> ops, {
+    int? madeOn,
+  }) {
     final asked = List<StrategyOp>.of(ops);
     return _inTurn(() async {
       if (_settle() case StorageFailed(:final failure)) {
@@ -1359,7 +1376,11 @@ final class LibraryStore {
           return Refused(refusal);
         }
         return switch (open) {
-          final _CloudReady cloud => await _commitCloud(cloud, asked),
+          final _CloudReady cloud => await _commitCloud(
+            cloud,
+            asked,
+            madeOn: madeOn,
+          ),
           _CloudHeld(:final rows) => Refused(QueueHeld(rows)),
           _CloudUnread(:final failure) => NotSaved(failure),
           _CloudRefused(:final refusal) => Refused(refusal),

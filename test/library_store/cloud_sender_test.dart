@@ -247,6 +247,7 @@ void main() {
           BaseArrived(
             world.server.headerOf(strategyId),
             session: world.cloud().queue.session.number,
+            from: ReadOfThisDevice(world.cloud().queue.session.readStart),
           ),
         ]).then((value) => recorded = value);
         world.async.flushMicrotasks();
@@ -539,6 +540,127 @@ void main() {
           );
         }
         expect(reads.length, inInclusiveRange(3, 4));
+        expect(world.face(), Face.unreadableWork);
+      });
+    });
+
+    test(
+        'a record holding a strategy life a year after the server\'s recovers '
+        'after one refused batch: the calls are the send, the list and the '
+        'page, the move is set aside, and the next edit is sent and '
+        'confirmed', () {
+      inWorld((world) {
+        final truth = world.server.rows[strategyId]!;
+        world.replaceStrategyOnServer(later: const Duration(days: 365));
+        world.aheadOfTheServer();
+        final ahead = world.viewedLife();
+        expect(ahead,
+            truth.strategy.createdAt.millisecondsSinceEpoch + 365 * 86400000);
+        world.server.rows[strategyId] = truth;
+        world.server.log.clear();
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 10));
+        expect(world.server.log, ['send move-1', 'list', 'page p1']);
+        expect(world.viewedLife(),
+            truth.strategy.createdAt.millisecondsSinceEpoch);
+        final generation = (world.cloud().queue.strategy.setAside as SetAside)
+            .generations
+            .single;
+        expect(generation.writtenIn, ahead);
+        expect(generation.entries.map((entry) => entry.id), ['move-1']);
+        world.commitMove(2);
+        world.settle(const Duration(minutes: 1));
+        expect(world.server.log, [
+          'send move-1',
+          'list',
+          'page p1',
+          'send move-2',
+          'page p1',
+        ]);
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
+        'with nothing to send, a record holding a later life than the '
+        'server\'s reads the list at the read backoff, never twice in one '
+        'tick, and shows unreadable work at the bound', () {
+      inWorld((world) {
+        final truth = world.server.rows[strategyId]!;
+        world.replaceStrategyOnServer(later: const Duration(days: 365));
+        world.aheadOfTheServer();
+        world.server.rows[strategyId] = truth;
+        final reads = <Duration>[];
+        world.server.overrideRead = (call) {
+          if (call.page == null) reads.add(world.async.elapsed);
+          return null;
+        };
+        final page = truth.pages.first as LivePage;
+        world.recordAsRead([
+          PageRead(
+            page: bornIn(
+              LivePage(
+                publicId: 'p-new',
+                strategyPublicId: page.strategyPublicId,
+                name: 'New',
+                isAutoNamed: false,
+                sortIndex: page.sortIndex + 1,
+                isAttack: page.isAttack,
+                revision: 1,
+              ),
+              truth.strategy.createdAt.millisecondsSinceEpoch + 5000,
+            ) as PageRow,
+            elements: const [],
+            lineupGroups: const [],
+          ),
+        ]);
+        expect(world.queueLength(), 0);
+        world.settle(const Duration(minutes: 10));
+        for (var at = 1; at < reads.length; at++) {
+          expect(
+            reads[at] - reads[at - 1],
+            greaterThanOrEqualTo(const Duration(seconds: 2)),
+          );
+        }
+        expect(reads.length, inInclusiveRange(3, 4));
+        expect(world.face(), Face.unreadableWork);
+      });
+    });
+
+    test(
+        'when the write marking a refused page fails, the next refusal writes '
+        'it, and the strategy shows unreadable work', () {
+      inWorld((world) {
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(
+            StoreBatchAnswered(
+              [
+                RejectedAnswer(
+                  call.opIds.single,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+              ],
+              complete: true,
+            ),
+          ),
+        );
+        world.server.overrideRead = (call) {
+          if (call.page != pageId) return null;
+          final held = world.server.rows[strategyId]!.page(pageId)! as LivePage;
+          return StoreReadAnswered(
+            PageRead(
+              page: bornIn(held, lifeOfRow(held.key) + 1000) as PageRow,
+              elements: const [],
+              lineupGroups: const [],
+            ),
+          );
+        };
+        world.slowStore.refusesRefusedResult = 1;
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 30));
+        expect(world.slowStore.refusesRefusedResult, 0);
         expect(world.face(), Face.unreadableWork);
       });
     });
@@ -1342,18 +1464,24 @@ void main() {
       ..pageList(strategyId, pageList(serverRows()), 0)
       ..page(strategyId, pageSnapshot(serverRows()), 0);
     await shadow.idle;
-    final row = switch (await store.readStrategy(strategyId)) {
-      Found(:final value) => value.strategy,
+    final seen = switch (await store.readStrategy(strategyId)) {
+      Found(:final value) => value,
       final other => throw StateError('$other'),
     };
+    final row = seen.strategy;
     expect(
-      await store.commitAllAs(servedAccount, strategyId, [
-        StrategyPatchOp(
-          opId: 'rename',
-          expectedStrategyRevision: (row.toJson()! as Map)['revision']! as int,
-          name: 'Renamed',
-        ),
-      ]),
+      await store.commitAllAs(
+          servedAccount,
+          strategyId,
+          [
+            StrategyPatchOp(
+              opId: 'rename',
+              expectedStrategyRevision:
+                  (row.toJson()! as Map)['revision']! as int,
+              name: 'Renamed',
+            ),
+          ],
+          seen: seen),
       isA<Saved<List<Committed>, CommitRefusal>>(),
     );
 
@@ -2025,6 +2153,260 @@ void main() {
         expect(
           readsAfter(world, before),
           [for (var n = 0; n < 12; n++) 'page p1'],
+        );
+      });
+    });
+  });
+
+  group(
+      'a result the queue does not take is read again on the backoff, '
+      'whatever the reason for reading', () {
+    StoreReadAnswered earlierList(
+      World world, {
+      StoreReadRole role = StoreReadRole.owner,
+    }) {
+      final header = world.server.headerOf(strategyId);
+      final held = header.strategy as ReadableStrategy;
+      return StoreReadAnswered(
+        HeaderRead(
+          strategy: ReadableStrategy(
+            publicId: held.publicId,
+            name: held.name,
+            mapData: held.mapData,
+            revision: held.revision,
+            createdAt: held.createdAt.subtract(const Duration(days: 1)),
+            updatedAt: held.updatedAt,
+          ),
+          pages: header.pages,
+          settings: header.settings,
+        ),
+        role: role,
+      );
+    }
+
+    StoreReadAnswered earlierPage(World world, String page) {
+      final rows = world.server.rows[strategyId]!;
+      final held = rows.page(page)! as LivePage;
+      return StoreReadAnswered(
+        PageRead(
+          page: bornIn(held, lifeOfRow(held.key) - 1000) as PageRow,
+          elements: [for (final row in rows.elementsOn(page)) lived(row)],
+          lineupGroups: const [],
+        ),
+      );
+    }
+
+    final reasons = <String, ({String read, void Function(World) start})>{
+      'confirming landed work': (
+        read: 'list',
+        start: (world) {
+          world.server.overrideRead =
+              (call) => call.page == null ? earlierList(world) : null;
+          world.commitRename(strategyId, 'rename-1');
+        },
+      ),
+      'checking edit access': (
+        read: 'list',
+        start: (world) {
+          world.server.answerWith(
+            strategyId,
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          );
+          world.server.overrideRead = (call) => call.page == null
+              ? earlierList(world, role: StoreReadRole.viewer)
+              : null;
+          world.commitMove(1);
+        },
+      ),
+      'a page the queue owes': (
+        read: 'page $pageId',
+        start: (world) {
+          world.server.answerNext(
+            strategyId,
+            (call) => Future.value(
+              StoreBatchAnswered(
+                [
+                  RejectedAnswer(
+                    call.opIds.single,
+                    RejectionReason.rowReplaced,
+                    const NoServerCopy(),
+                  ),
+                ],
+                complete: true,
+              ),
+            ),
+          );
+          world.server.overrideRead =
+              (call) => call.page == pageId ? earlierPage(world, pageId) : null;
+          world.commitMove(1);
+        },
+      ),
+      'a page not read since the strategy was taken up': (
+        read: 'page $pageId',
+        start: (world) {
+          world.server.overrideRead =
+              (call) => call.page == pageId ? earlierPage(world, pageId) : null;
+          world.sender.adopt(strategyId);
+        },
+      ),
+    };
+    for (final MapEntry(key: reason, value: (:read, :start))
+        in reasons.entries) {
+      test(
+          '$reason: reads at most four times in ten minutes, never twice in '
+          'one tick', () {
+        inWorld(
+          (world) {
+            world.server.readCalls.clear();
+            final seen = world.server.onRead;
+            world.server.onRead = (call) {
+              seen?.call(call);
+              if (world.server.readCalls.length > 40) {
+                world.sender.hold('the test saw more than forty reads');
+              }
+            };
+            start(world);
+            world.settle(const Duration(minutes: 10));
+            final times = [
+              for (final call in world.server.readCalls)
+                if ('$call' == read) call.at!,
+            ];
+            for (var at = 1; at < times.length; at++) {
+              expect(
+                times[at].difference(times[at - 1]),
+                greaterThanOrEqualTo(const Duration(seconds: 2)),
+                reason: '$reason, reads at $times',
+              );
+            }
+            expect(times.length, inInclusiveRange(2, 4), reason: reason);
+          },
+          addStrategy: reason !=
+              'a page not read since the strategy was '
+                  'taken up',
+        );
+      });
+    }
+  });
+
+  test(
+      'after a replacement the strategy is read as on first take-up: the page '
+      'list, then every page in the list\'s order', () {
+    final storage = MemoryStorage();
+    final server = FakeServer();
+    List<String> pagesAfter(World world, int from) => [
+          for (final call in world.server.readCalls.skip(from))
+            if (call.page case final page?) page,
+        ];
+    inWorld(
+      (world) {
+        world.pagesOnServer(['p2', 'p3']);
+        final before = world.server.readCalls.length;
+        world.sender.adopt(strategyId);
+        world.settle(const Duration(minutes: 1));
+        final takeUp = pagesAfter(world, before);
+        expect(takeUp, ['p1', 'p2', 'p3']);
+        expect(world.server.readCalls[before].page, isNull);
+        world.server.log.clear();
+        final replaced = world.server.readCalls.length;
+        world.server.answerNext(strategyId, (call) {
+          world.replaceStrategyOnServer();
+          return Future.value(
+            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+          );
+        });
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 10));
+        expect(world.server.log, [
+          'send move-1',
+          'list',
+          'page p1',
+          'page p2',
+          'page p3',
+        ]);
+        expect(pagesAfter(world, replaced), takeUp);
+      },
+      storage: storage,
+      server: server,
+      addStrategy: false,
+    );
+  });
+
+  group('a read is stamped when it is made, not when it answers', () {
+    void heldPageRead(
+      World world,
+      Completer<StoreReadOutcome> answer,
+      List<String> notes,
+    ) {
+      world.sender.views.listen((view) {
+        if (view.strategies[strategyId] case final note?) notes.add(note);
+      });
+      world.server.answerNext(
+        strategyId,
+        (call) => Future.value(
+          StoreBatchAnswered(
+            [
+              RejectedAnswer(
+                call.opIds.single,
+                RejectionReason.rowReplaced,
+                const NoServerCopy(),
+              ),
+            ],
+            complete: true,
+          ),
+        ),
+      );
+      world.server.answerReadNext(strategyId, (call) => answer.future);
+      world.commitMove(1);
+      world.settle();
+      expect(world.server.readCalls.last.page, pageId);
+    }
+
+    StoreReadAnswered pageAsItWas(World world) => StoreReadAnswered(
+          PageRead(
+            page: lived(world.server.rows[strategyId]!.page(pageId)!),
+            elements: [
+              for (final row
+                  in world.server.rows[strategyId]!.elementsOn(pageId))
+                lived(row),
+            ],
+            lineupGroups: const [],
+          ),
+        );
+
+    test(
+        'a page read in flight while the record adopts a replacement is '
+        'dropped as read in another life', () {
+      inWorld((world) {
+        final answer = Completer<StoreReadOutcome>();
+        final notes = <String>[];
+        heldPageRead(world, answer, notes);
+        final asItWas = pageAsItWas(world);
+        world.replaceStrategyOnServer();
+        world.recordRead([world.server.headerOf(strategyId)]);
+        answer.complete(asItWas);
+        world.settle();
+        expect(
+          notes,
+          contains(contains('a result read while this device held another '
+              'life of the strategy')),
+        );
+      });
+    });
+
+    test(
+        'a page read in flight while a later read of the same page is taken '
+        'is dropped as older', () {
+      inWorld((world) {
+        final answer = Completer<StoreReadOutcome>();
+        final notes = <String>[];
+        heldPageRead(world, answer, notes);
+        final asItWas = pageAsItWas(world);
+        world.recordRead([(asItWas.base as PageRead)]);
+        answer.complete(asItWas);
+        world.settle();
+        expect(
+          notes,
+          contains(contains('a result read before one already taken')),
         );
       });
     });

@@ -28,7 +28,14 @@ Future<(LibraryStore, MemoryStorage)> withWork() async {
   final storage = MemoryStorage();
   final store = await openCloudStore(MemoryEngine(storage));
   await addCloud(store, initialRows());
-  savedValue(await store.commitAs(testAccount, strategyId, movePatch('mine')));
+  savedValue(
+    await store.commitAs(
+      testAccount,
+      strategyId,
+      movePatch('mine'),
+      seen: await seenIn(store),
+    ),
+  );
   return (store, storage);
 }
 
@@ -137,17 +144,18 @@ void main() {
         >[
           (
             'an edit',
-            (store, _) => store.commitAs(
+            (store, _) async => store.commitAs(
               otherAccount,
               strategyId,
               movePatch('theirs', elementId: 'e2'),
+              seen: await seenIn(store),
             ),
           ),
           (
             'a batch of edits',
-            (store, _) => store.commitAllAs(otherAccount, strategyId, [
+            (store, _) async => store.commitAllAs(otherAccount, strategyId, [
               movePatch('theirs', elementId: 'e2'),
-            ]),
+            ], seen: await seenIn(store)),
           ),
           (
             'a claim',
@@ -188,8 +196,12 @@ void main() {
           ),
           (
             'a result of the current session',
-            (store, session) => store.record(otherAccount, strategyId, [
-              BaseArrived(headerReadOf(renamedRows()), session: session),
+            (store, session) async => store.record(otherAccount, strategyId, [
+              BaseArrived(
+                headerReadOf(renamedRows()),
+                session: session,
+                from: await readStartOf(store),
+              ),
             ]),
           ),
           (
@@ -222,7 +234,11 @@ void main() {
       final (store, _) = await withWork();
       final session = (await syncOf(store)).queue.session.number;
       final recorded = await recordAll(store, [
-        BaseArrived(headerReadOf(renamedRows()), session: session),
+        BaseArrived(
+          headerReadOf(renamedRows()),
+          session: session,
+          from: await readStartOf(store),
+        ),
       ]);
       expect(recorded.outcomes.single, isA<ReportApplied>());
       expect(
@@ -250,7 +266,12 @@ void main() {
       );
       final before = editable(disk.contents);
       expect(
-        await store.commitAs(otherAccount, strategyId, movePatch('theirs')),
+        await store.commitAs(
+          otherAccount,
+          strategyId,
+          movePatch('theirs'),
+          seen: await seenIn(store),
+        ),
         anotherAccountsWork(),
       );
       expect(
@@ -260,7 +281,12 @@ void main() {
         anotherAccountsWork(),
       );
       expect(
-        await store.commitAs(testAccount, strategyId, movePatch('mine again')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('mine again'),
+          seen: await seenIn(store),
+        ),
         refusedWith<QueueHeld>(),
       );
       expect(sameContents(disk.contents, before), isTrue);
@@ -272,6 +298,7 @@ void main() {
       final elsewhere = BaseArrived(
         headerReadOf(otherStrategyRows()),
         session: (await syncOf(store)).queue.session.number,
+        from: await readStartOf(store),
       );
       expect(
         await store.record(otherAccount, strategyId, [elsewhere]),
@@ -338,7 +365,12 @@ void main() {
     for (final store in [refusing, reading]) {
       await store.record(testAccount, strategyId, const [ConnectionReturned()]);
       savedValue(
-        await store.commitAs(testAccount, strategyId, movePatch('next')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('next'),
+          seen: await seenIn(store),
+        ),
       );
     }
     final refusedNext = await syncOf(refusing);
@@ -357,13 +389,20 @@ void main() {
       MemoryStorage disk,
       Counts counts,
       Matcher refusal,
+      StrategyRead seen,
     ) async {
       final before = editable(disk.contents);
       final commitsBefore = counts.commits;
       for (final call in <Future<Saving<Object?, CommitRefusal>> Function()>[
-        () => store.commitAs(otherAccount, strategyId, movePatch('theirs')),
-        () =>
-            store.commitAllAs(otherAccount, strategyId, [movePatch('theirs')]),
+        () => store.commitAs(
+          otherAccount,
+          strategyId,
+          movePatch('theirs'),
+          seen: seen,
+        ),
+        () => store.commitAllAs(otherAccount, strategyId, [
+          movePatch('theirs'),
+        ], seen: seen),
         () => store.record(otherAccount, strategyId, const [
           ConnectionReturned(),
         ]),
@@ -381,6 +420,7 @@ void main() {
 
     test('a missing strategy row', () async {
       final (store, storage) = await withWork();
+      final seen = await seenIn(store);
       await store.close();
       final contents = editable(storage.contents);
       contents[area]!.remove('strategy');
@@ -396,11 +436,13 @@ void main() {
           'reason',
           anyOf(isA<StrategyNotReadable>(), isA<NoSuchStrategy>()),
         ),
+        seen,
       );
     });
 
     test('a read that fails', () async {
       final (store, storage) = await withWork();
+      final seen = await seenIn(store);
       await store.close();
       final disk = MemoryStorage(editable(storage.contents));
       final (counted, counts) = counting(MemoryEngine(disk));
@@ -411,6 +453,7 @@ void main() {
         disk,
         counts,
         isA<NotSaved<Object?, CommitRefusal>>(),
+        seen,
       );
     });
   });
@@ -434,7 +477,12 @@ void main() {
     savedValue(await local.putStrategy(initialRows()));
     final localBefore = editable(localDisk.contents);
     expect(
-      await local.commitAs(testAccount, strategyId, movePatch('someone')),
+      await local.commitAs(
+        testAccount,
+        strategyId,
+        movePatch('someone'),
+        seen: await seenIn(local),
+      ),
       refusedWith<NotACloudStrategy>(),
     );
     expect(sameContents(localDisk.contents, localBefore), isTrue);
@@ -463,7 +511,12 @@ void main() {
             .having((sync) => sync.tally.standing, 'standing', Standing.held),
       );
       expect(
-        await store.commitAs(testAccount, strategyId, movePatch('next')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('next'),
+          seen: await seenIn(store),
+        ),
         refusedWith<QueueHeld>(),
       );
       expect(

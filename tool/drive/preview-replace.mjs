@@ -19,11 +19,27 @@ if (strategyName === "logs") {
     ],
     {
       env: process.env,
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
     },
   );
+  let deadlinePassed = false;
   child.stdout.on("data", (chunk) => process.stdout.write(chunk));
-  setTimeout(() => {
+  child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+  child.on("error", (error) => {
+    console.error(`the log stream could not start: ${error.message}`);
+    process.exit(1);
+  });
+  child.on("close", (code, signal) => {
+    if (deadlinePassed) return;
+    clearTimeout(deadline);
+    console.error(
+      `the log stream ended before its ${seconds} s window was over ` +
+        `(exit ${code ?? signal}), so it does not hold every call`,
+    );
+    process.exitCode = 1;
+  });
+  const deadline = setTimeout(() => {
+    deadlinePassed = true;
     child.kill();
     process.exit(0);
   }, seconds * 1000);
@@ -115,7 +131,22 @@ async function replace() {
       },
     }),
   );
-  if (mode === "show") return;
+  if (mode === "show") {
+    console.log(
+      JSON.stringify({
+        events: table("operationEvents")
+          .filter((event) => event.strategyId === strategy._id)
+          .map((event) => ({
+            clientId: event.clientId,
+            opId: event.opId,
+            opType: event.opType,
+            status: event.status,
+            createdAt: event.createdAt,
+          })),
+      }),
+    );
+    return;
+  }
 
   const page = pagesOf(strategy._id).sort(
     (a, b) => a.sortIndex - b.sortIndex,

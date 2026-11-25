@@ -175,8 +175,10 @@ final class Model {
     final entries = world.cloud(strategy).queue.entries;
     final lastEntry = entries.isEmpty ? null : entries.last.id;
     Saving<List<Committed>, CommitRefusal>? saved;
-    world.store.commitAllAs(
-        servedAccount, strategy, [op]).then((value) => saved = value);
+    world.store
+        .commitAllAs(servedAccount, strategy, [op],
+            seen: world.seenNow(strategy))
+        .then((value) => saved = value);
     async.flushMicrotasks();
     if (saved is! Saved) return;
     final id = op.opId;

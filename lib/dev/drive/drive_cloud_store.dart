@@ -108,7 +108,8 @@ Future<String> storeAdd(
     payload: payload,
     sortIndex: 1000 + Random().nextInt(1000),
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store
+      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: add $kind $itemId to page $page of '
       '$strategyId at (${at.$1}, ${at.$2})';
@@ -128,7 +129,8 @@ Future<String> storeAddPage(ProviderContainer c) async {
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store
+      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: add page ${op.pagePublicId} to '
       '$strategyId with no editor open';
@@ -232,9 +234,12 @@ Future<String> storeMove(
             ),
             merge: merge ? FieldMerge(fields: const ['position']) : null,
           );
-          final saved = await store.commitAllAs(_signedIn(c), strategyId, [
-            op,
-          ]);
+          final saved = await store.commitAllAs(
+            _signedIn(c),
+            strategyId,
+            [op],
+            seen: content.value,
+          );
           if (saved case Saved()) {
             return 'CLOUDSTORE committed ${op.opId}: $itemId of $strategyId '
                 'to (${position['dx']}, ${position['dy']}) over revision '
@@ -248,7 +253,7 @@ Future<String> storeMove(
   throw StateError('the store holds no item $itemId');
 }
 
-Future<(String, LiveElement)> _storedElement(
+Future<(String, LiveElement, PageContent)> _storedElement(
   LibraryStore store,
   String itemId,
 ) async {
@@ -260,7 +265,7 @@ Future<(String, LiveElement)> _storedElement(
       if (content is! Found<PageContent>) continue;
       for (final element in content.value.elements) {
         if (element case final LiveElement live when live.publicId == itemId) {
-          return (strategyId, live);
+          return (strategyId, live, content.value);
         }
       }
     }
@@ -270,14 +275,15 @@ Future<(String, LiveElement)> _storedElement(
 
 Future<String> storeDelete(ProviderContainer c, String itemId) async {
   final store = _storeOf(c);
-  final (strategyId, element) = await _storedElement(store, itemId);
+  final (strategyId, element, seen) = await _storedElement(store, itemId);
   final op = queue.ElementDeleteOp(
     opId: const Uuid().v4(),
     elementPublicId: element.publicId,
     pagePublicId: element.pagePublicId,
     expectedElementRevision: element.revision,
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store
+      .commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: delete $itemId of $strategyId over '
       'revision ${element.revision}';
@@ -290,7 +296,7 @@ Future<String> storeSetField(
   Object? value,
 ) async {
   final store = _storeOf(c);
-  final (strategyId, element) = await _storedElement(store, itemId);
+  final (strategyId, element, seen) = await _storedElement(store, itemId);
   final payload = element.payload;
   final op = ElementPatchOp(
     opId: const Uuid().v4(),
@@ -304,7 +310,8 @@ Future<String> storeSetField(
     ),
     merge: FieldMerge(fields: [field]),
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store
+      .commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: $field of $itemId of $strategyId '
       'set to $value as a field merge over revision ${element.revision}';
@@ -353,7 +360,8 @@ Future<String> storeDeletePage(ProviderContainer c, int index) async {
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store
+      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: delete page $page of $strategyId '
       'with no editor open';

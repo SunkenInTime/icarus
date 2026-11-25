@@ -68,6 +68,7 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: before.session.number,
+          from: readFrom(before),
         ),
         now: client.at,
       );
@@ -119,6 +120,7 @@ void main() {
               ),
             ),
             session: client.queue.session.number,
+            from: readFrom(client.queue),
           ),
         ),
         isA<NotApplicable>(),
@@ -133,7 +135,16 @@ void main() {
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
-      client.arrive(headerReadOf(initialRows()));
+      expect(
+        client.step(
+          BaseArrived(
+            headerReadOf(initialRows()),
+            session: client.queue.session.number,
+            from: client.beginRead(),
+          ),
+        ),
+        isA<NotApplicable>(),
+      );
       expect(setAsideIds(client.queue), isEmpty);
       expect(isDebt(client.queue.shown.list), isTrue);
       client.arrive(headerReadOf(replaced(initialRows())));
@@ -312,13 +323,19 @@ void main() {
       await addCloud(store, initialRows());
       await recordAll(store, [const AppRestarted(build: build)]);
       savedValue(
-        await store.commitAs(testAccount, strategyId, movePatch('move')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('move'),
+          seen: await seenIn(store),
+        ),
       );
       savedValue(
         await store.commitAs(
           testAccount,
           strategyId,
           movePatch('later', elementId: 'e2'),
+          seen: await seenIn(store),
         ),
       );
       await store.close();
@@ -333,6 +350,7 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: await sessionOf(store),
+          from: await readStartOf(store),
         ),
       ]);
     }

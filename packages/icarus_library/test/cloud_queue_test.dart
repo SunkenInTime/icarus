@@ -670,7 +670,13 @@ void main() {
       client.must(const ConnectionReturned());
       expect(
         notApplicable(
-          client.step(BaseArrived(headerReadOf(initialRows()), session: old)),
+          client.step(
+            BaseArrived(
+              headerReadOf(initialRows()),
+              session: old,
+              from: readFrom(client.queue),
+            ),
+          ),
         ),
         isA<FromAnEndedSession>(),
       );
