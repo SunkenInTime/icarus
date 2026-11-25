@@ -811,6 +811,29 @@ void main() {
             ]),
         'open from the store',
       ),
+      'a lineup whose spot was deleted': (
+        (s) {
+          final graph = sharedSpotLineups('${s.id}-l');
+          return s.copyWith(pages: [
+            s.pages[0].copyWith(
+              lineUpGraph: LineUpGraph(
+                origins: graph.origins.skip(1).toList(),
+                landings: graph.landings,
+                links: graph.links,
+              ),
+            ),
+            s.pages[1],
+          ]);
+        },
+        'open from Hive: ${FromHiveBecause.mayDiffer.words}',
+      ),
+      'pages at positions with gaps between them': (
+        (s) => s.copyWith(pages: [
+              s.pages[0].copyWith(sortIndex: 0),
+              s.pages[1].copyWith(sortIndex: 5),
+            ]),
+        'open from the store',
+      ),
       'the same item id on two pages': (
         (s) => s.copyWith(pages: [
               s.pages[0],
@@ -845,6 +868,15 @@ void main() {
         await h.settle();
 
         expect(h.loads.single, startsWith(served));
+        if (name == 'the same item id twice on one page') {
+          final duplicated = s.pages[0].agentData.first.id;
+          expect(
+            container
+                .read(agentProvider)
+                .where((agent) => agent.id == duplicated),
+            hasLength(2),
+          );
+        }
         expect(hiveBytes(s.id), before, reason: h.loads.single);
       });
     }
