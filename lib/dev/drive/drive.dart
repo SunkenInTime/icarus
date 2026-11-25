@@ -1573,6 +1573,7 @@ const _keys = {
   'digit3': (LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3, '3'),
   'keyA': (LogicalKeyboardKey.keyA, PhysicalKeyboardKey.keyA, 'a'),
   'keyC': (LogicalKeyboardKey.keyC, PhysicalKeyboardKey.keyC, 'c'),
+  'keyD': (LogicalKeyboardKey.keyD, PhysicalKeyboardKey.keyD, 'd'),
   'keyE': (LogicalKeyboardKey.keyE, PhysicalKeyboardKey.keyE, 'e'),
   'keyF': (LogicalKeyboardKey.keyF, PhysicalKeyboardKey.keyF, 'f'),
   'keyQ': (LogicalKeyboardKey.keyQ, PhysicalKeyboardKey.keyQ, 'q'),
