@@ -1091,7 +1091,7 @@ Offset _wordsPoint(String words, {int nth = 0, bool clickable = false}) {
             );
       if (boxes.isNotEmpty) {
         final at = node.localToGlobal(boxes.first.toRect().center);
-        if (!clickable || clickReaches(node, at)) {
+        if (!clickable || takesTheTap(node, at)) {
           found.add(at);
         } else {
           covered = [...covered, at];
@@ -1105,7 +1105,8 @@ Offset _wordsPoint(String words, {int nth = 0, bool clickable = false}) {
   if (found.length <= nth) {
     if (covered.isNotEmpty) {
       throw StateError('"$words" drawn ${found.length + covered.length} times, '
-          '${covered.length} covered by ${coverAt(covered.first)}');
+          '${found.length} can be tapped; the first that cannot: '
+          '${whyNotTapped(covered.first)}');
     }
     throw StateError('"$words" drawn ${found.length} times');
   }
