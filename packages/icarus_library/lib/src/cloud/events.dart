@@ -285,6 +285,12 @@ final class ReadBegun extends QueueEvent {
   const ReadBegun();
 }
 
+final class ReadRefusedForUpgrade extends QueueEvent {
+  const ReadRefusedForUpgrade({required this.build});
+
+  final String build;
+}
+
 sealed class ResultSource {
   const ResultSource();
 }

@@ -818,6 +818,13 @@ Set<ResultSubject> owedReads(CloudQueue queue) => {
     if (isDebt(value)) PageResult(key),
 };
 
+Set<String> pagesNeverRead(CloudQueue queue) => {
+  for (final page in queue.shown.pages.keys)
+    if (!queue.shown.content.containsKey(page) &&
+        !isDebt(queue.shown.pageRead(page)))
+      page,
+};
+
 int refusedReads(CloudQueue queue) => [
   queue.shown.list,
   ...queue.shown.pageReads.values,

@@ -7,6 +7,7 @@ import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
+import 'package:icarus/library_store/read_governor.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
@@ -356,11 +357,28 @@ final class FakeServer {
     );
   }
 
+  final floorBroken = <String>[];
+  final _lastRead = <(String, String?), DateTime>{};
+
+  void appStarted() => _lastRead.clear();
+
   Future<StoreReadOutcome> _read(ReadCall call) {
     call
       ..at = clock?.call()
       ..why = whyNow?.call()
       ..role = roles[call.strategyId] ?? StoreReadRole.owner;
+    if (call.at case final at?) {
+      final key = (call.strategyId, call.page);
+      if (_lastRead[key] case final last?
+          when at.difference(last) < timing.readFloor) {
+        floorBroken.add(
+          '$call of ${call.strategyId} read at ${at.toIso8601String()}, '
+          'only ${at.difference(last).inMilliseconds} ms after the read at '
+          '${last.toIso8601String()}',
+        );
+      }
+      _lastRead[key] = at;
+    }
     readCalls.add(call);
     log.add('$call');
     onRead?.call(call);
@@ -499,6 +517,7 @@ final class SlowSenderStore extends SenderStore {
   var readsThrow = false;
   var claimWaits = Duration.zero;
   var refusesRefusedResult = 0;
+  var refusesBaseWrites = 0;
 
   @override
   Future<ClaimResult> claim(
@@ -539,6 +558,10 @@ final class SlowSenderStore extends SenderStore {
     if (throwsOnBase && events.any((event) => event is BaseArrived)) {
       throwsOnBase = false;
       throw StateError('the store broke');
+    }
+    if (refusesBaseWrites > 0 && events.any((event) => event is BaseArrived)) {
+      refusesBaseWrites--;
+      return const WriteTroubled(NotWrittenNow('the test refused the write'));
     }
     if (refusesRefusedResult > 0 &&
         events.any((event) => event is ResultRefused)) {
@@ -1038,6 +1061,11 @@ final class World {
   List<EntryView> views([String strategy = strategyId]) =>
       cloud(strategy).views.values.toList();
 
+  bool holds([String strategy = strategyId]) => (store.library as LibraryOpen)
+      .list
+      .strategies
+      .any((summary) => summary.publicId == strategy);
+
   Face? face([String strategy = strategyId]) {
     final summary = (store.library as LibraryOpen)
         .list
@@ -1076,6 +1104,20 @@ final class World {
       '${sender.view.strategies[strategy]}';
 }
 
+void expectTheLadder(List<Duration> reads, {Object? reason}) {
+  for (var n = 1; n < reads.length; n++) {
+    final rung = timing.settleAfter(n);
+    expect(
+      reads[n] - reads[n - 1],
+      allOf(
+        greaterThanOrEqualTo(rung),
+        lessThan(rung + const Duration(seconds: 1)),
+      ),
+      reason: 'read ${n + 1} of $reads${reason == null ? '' : ', $reason'}',
+    );
+  }
+}
+
 void inWorld(
   void Function(World world) body, {
   MemoryStorage? storage,
@@ -1086,6 +1128,7 @@ void inWorld(
   String build = 'test-build',
 }) {
   fakeAsync((async) {
+    server?.appStarted();
     final world = World.open(
       async,
       storage: storage,
@@ -1095,6 +1138,11 @@ void inWorld(
     );
     if (addStrategy) world.addServedStrategy();
     body(world);
+    expect(
+      world.server.floorBroken,
+      isEmpty,
+      reason: 'a subject was read twice inside the floor',
+    );
     if (!keepOpen) {
       world.sender.dispose();
       world.store.close();

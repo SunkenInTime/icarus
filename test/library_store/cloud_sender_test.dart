@@ -8,6 +8,8 @@ import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart' show useCloudAs;
 import 'package:icarus/library_store/cloud_sender.dart';
+import 'package:icarus/library_store/read_governor.dart';
+import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
@@ -487,7 +489,7 @@ void main() {
 
     test(
         'a page that keeps coming back in a later life than its list is read '
-        'again at the read backoff, never twice in one tick, and shows '
+        'again on the doubling ladder, never twice in one tick, and shows '
         'unreadable work at the bound', () {
       inWorld((world) {
         final drawn = world.firstElement();
@@ -533,13 +535,8 @@ void main() {
         };
         world.commitMove(1);
         world.settle(const Duration(minutes: 10));
-        for (var at = 1; at < reads.length; at++) {
-          expect(
-            reads[at] - reads[at - 1],
-            greaterThanOrEqualTo(const Duration(seconds: 2)),
-          );
-        }
-        expect(reads.length, inInclusiveRange(3, 4));
+        expectTheLadder(reads);
+        expect(reads, hasLength(9));
         expect(world.face(), Face.unreadableWork);
       });
     });
@@ -583,8 +580,8 @@ void main() {
 
     test(
         'with nothing to send, a record holding a later life than the '
-        'server\'s reads the list at the read backoff, never twice in one '
-        'tick, and shows unreadable work at the bound', () {
+        'server\'s reads the list on the doubling ladder, never twice in '
+        'one tick, and shows unreadable work at the bound', () {
       inWorld((world) {
         final truth = world.server.rows[strategyId]!;
         world.replaceStrategyOnServer(later: const Duration(days: 365));
@@ -616,13 +613,8 @@ void main() {
         ]);
         expect(world.queueLength(), 0);
         world.settle(const Duration(minutes: 10));
-        for (var at = 1; at < reads.length; at++) {
-          expect(
-            reads[at] - reads[at - 1],
-            greaterThanOrEqualTo(const Duration(seconds: 2)),
-          );
-        }
-        expect(reads.length, inInclusiveRange(3, 4));
+        expectTheLadder(reads);
+        expect(reads, hasLength(9));
         expect(world.face(), Face.unreadableWork);
       });
     });
@@ -1820,8 +1812,8 @@ void main() {
     String secondId() => secondPage().page.publicId;
 
     test(
-        'a result the disk refuses to write is not counted as read: the page '
-        'is read again and recorded', () {
+        'a result the disk refuses to write is kept and written again, not '
+        'read again: the page is read once and recorded', () {
       inWorld(
         (world) {
           var refused = false;
@@ -1833,7 +1825,7 @@ void main() {
           };
           world.sender.adopt(strategyId);
           world.settle(const Duration(seconds: 10));
-          expect(readsAfter(world, 0), ['list', 'page p1', 'page p1']);
+          expect(readsAfter(world, 0), ['list', 'page p1']);
           expect(world.readsRecorded(), ['the page list', 'page p1']);
           expect(world.sender.adopting(strategyId), isFalse);
         },
@@ -1878,8 +1870,8 @@ void main() {
     });
 
     test(
-        'a need that its reads cannot settle is read three times, then shown '
-        'as could not resolve, and read again once every ten minutes', () {
+        'a need that its reads cannot settle is read on the doubling ladder, '
+        'and shown as could not resolve from the third read', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       inWorld(
@@ -1899,30 +1891,17 @@ void main() {
               : null;
           server.readCalls.clear();
           world.commitPageDelete('delete-p2', secondId());
-          world.settle(const Duration(minutes: 1));
-          final pageReads = [
-            for (final call in server.readCalls)
-              if (call.page == secondId()) call,
-          ];
-          expect(pageReads, hasLength(3));
+          List<Duration> pageReads() => [
+                for (final call in server.readCalls)
+                  if (call.page == secondId()) call.at!.difference(start),
+              ];
+          world.settle(const Duration(seconds: 7));
+          expect(pageReads(), hasLength(3));
           expect(world.sender.couldNotResolve(strategyId), isNotNull);
           expect(world.views().single.holds, isNotEmpty);
-          world.settle(const Duration(minutes: 8));
-          expect(
-            [
-              for (final call in server.readCalls)
-                if (call.page == secondId()) call
-            ],
-            hasLength(3),
-          );
-          world.settle(const Duration(minutes: 2));
-          expect(
-            [
-              for (final call in server.readCalls)
-                if (call.page == secondId()) call
-            ],
-            hasLength(4),
-          );
+          world.settle(const Duration(minutes: 20));
+          expectTheLadder(pageReads());
+          expect(pageReads(), hasLength(10));
         },
         storage: storage,
         server: server,
@@ -2061,8 +2040,9 @@ void main() {
     });
 
     test(
-        'a first adoption whose write the disk refuses waits the write retry '
-        'delay before it reads the page list again', () {
+        'a first adoption whose write the disk refuses keeps the page list it '
+        'read and writes it again on the write retry delay, never reading it '
+        'again', () {
       inWorld(
         (world) {
           world.lease.refuseNext = 3;
@@ -2072,8 +2052,9 @@ void main() {
             world.async.elapse(const Duration(milliseconds: 100));
           }
           expect(readsAfter(world, 0), ['list']);
-          world.settle(const Duration(seconds: 3));
-          expect(readsAfter(world, 0), ['list', 'list']);
+          world.settle(const Duration(seconds: 30));
+          expect(readsAfter(world, 0), ['list', 'page p1']);
+          expect(world.sender.adopting(strategyId), isFalse);
         },
         addStrategy: false,
       );
@@ -2158,7 +2139,7 @@ void main() {
   });
 
   group(
-      'a result the queue does not take is read again on the backoff, '
+      'a result the queue does not take is read again on the ladder, '
       'whatever the reason for reading', () {
     StoreReadAnswered earlierList(
       World world, {
@@ -2252,8 +2233,8 @@ void main() {
     for (final MapEntry(key: reason, value: (:read, :start))
         in reasons.entries) {
       test(
-          '$reason: reads at most four times in ten minutes, never twice in '
-          'one tick', () {
+          '$reason: reads on the doubling ladder, nine times in ten '
+          'minutes', () {
         inWorld(
           (world) {
             world.server.readCalls.clear();
@@ -2270,14 +2251,11 @@ void main() {
               for (final call in world.server.readCalls)
                 if ('$call' == read) call.at!,
             ];
-            for (var at = 1; at < times.length; at++) {
-              expect(
-                times[at].difference(times[at - 1]),
-                greaterThanOrEqualTo(const Duration(seconds: 2)),
-                reason: '$reason, reads at $times',
-              );
-            }
-            expect(times.length, inInclusiveRange(2, 4), reason: reason);
+            expectTheLadder(
+              [for (final at in times) at.difference(times.first)],
+              reason: reason,
+            );
+            expect(times, hasLength(9), reason: reason);
           },
           addStrategy: reason !=
               'a page not read since the strategy was '
@@ -2442,9 +2420,9 @@ void main() {
     });
 
     test(
-        'a page delete whose page read the disk refuses to write is read '
-        'again, and a refused read is not counted toward could not resolve',
-        () {
+        'a page delete whose page result the disk refuses to write is '
+        'written again from the result it holds, and the refusals are not '
+        'counted toward could not resolve', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       withSecondPage(storage, server);
@@ -2462,7 +2440,7 @@ void main() {
           world.settle(const Duration(minutes: 1));
           expect(
             readsAfter(world, before).where((read) => read == 'page p2'),
-            hasLength(4),
+            hasLength(1),
           );
           expect(
             world.readsRecorded().where((read) => read == 'page p2'),
@@ -2575,7 +2553,11 @@ void main() {
           final seeded = (
             under: readsUnder(world.sender.inputs),
             settle: {
-              'page $pageId': (count: 3, at: now),
+              'page $pageId': (
+                count: 3,
+                at: now,
+                why: StallExit.unsettledResult
+              ),
             },
             retired: {
               Retiring.list: (works: {(1, 0)}, at: now, rounds: 3),

@@ -673,7 +673,7 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
     final UpgradeTold upgrade = switch (fields.json['upgradeTold']) {
       null => const NoUpgradeTold(),
       {'build': final String build, 'attempt': final num attempt}
-          when isSafeWhole(attempt) && attempt >= 1 =>
+          when isSafeWhole(attempt) && attempt >= 0 =>
         UpgradeToldTo(build, attempt: attempt.toInt()),
       _ => () {
         fields.reject('an unreadable upgrade request');

@@ -1302,6 +1302,14 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       );
     case BatchRefused(:final attempt, :final refusal):
       return _batchRefused(edit, attempt, refusal);
+    case ReadRefusedForUpgrade(:final build):
+      edit.strategy = edit.strategy.copyWith(
+        upgradeTold: UpgradeToldTo(build, attempt: edit.nextAttempt - 1),
+      );
+      if (build == edit.session.build) {
+        edit.effects.add(const HoldSendingForUpgrade());
+      }
+      return edit.done();
     case OpAnswered(:final attempt, :final answer):
       return _answered(edit, attempt, answer);
     case AppRestarted(:final build):

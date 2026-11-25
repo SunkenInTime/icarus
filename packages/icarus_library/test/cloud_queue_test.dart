@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/codec.dart';
 import 'package:icarus_library/src/cloud/fold.dart';
 import 'package:icarus_library/src/cloud/op_facts.dart'
     show CopyExpanded, CopyNotExpanded, expandCopy;
@@ -783,6 +786,49 @@ void main() {
         client.must(const AppRestarted(build: 'build-3'));
         expect(standingOf(client.queue), Standing.good);
       }
+    });
+
+    test('a read refused for an upgrade shows the upgrade before any batch '
+        'was sent, holds sending, keeps across a write, and a newer build '
+        'clears it', () {
+      final client = online();
+      client.edit(movePatch('waiting'));
+      final told = client.step(const ReadRefusedForUpgrade(build: build));
+      expect(
+        told,
+        isA<Stepped>().having(
+          (step) => step.effects,
+          'effects',
+          contains(isA<HoldSendingForUpgrade>()),
+        ),
+      );
+      expect(standingOf(client.queue), Standing.upgradeRequired);
+      expect(
+        syncStateOf(
+          OwnedBy(testAccount),
+          Tally.of(client.queue, now),
+          network: Network.online,
+          signedIn: SignedInAs(testAccount),
+        ),
+        isA<Outstanding>().having(
+          (state) => state.face,
+          'face',
+          Face.upgradeRequired,
+        ),
+      );
+      final stored = factsFromText(
+        jsonEncode(factsToJson(testAccount, client.queue.strategy)),
+      );
+      expect(
+        stored,
+        isA<CloudRowRead<CloudFacts>>().having(
+          (read) => read.value.facts,
+          'facts',
+          client.queue.strategy,
+        ),
+      );
+      client.must(const AppRestarted(build: 'build-newer'));
+      expect(standingOf(client.queue), Standing.good);
     });
 
     test('an empty queue on a deleted strategy is not plain all saved', () {

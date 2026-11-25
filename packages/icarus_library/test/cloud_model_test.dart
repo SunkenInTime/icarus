@@ -495,7 +495,10 @@ final class Model {
         client.queue.entries.isEmpty &&
         client.queue.strategy.setAside.count == 0 &&
         standingOf(client.queue) != Standing.deletedOnServer &&
-        standingOf(client.queue) != Standing.editAccessLost;
+        standingOf(client.queue) != Standing.editAccessLost &&
+        client.queue.shown.pages.keys.every(
+          client.queue.shown.content.containsKey,
+        );
     if ((sync is AllSaved) != quiet) {
       throw StateError('sync $sync with ${client.queue.entries}');
     }

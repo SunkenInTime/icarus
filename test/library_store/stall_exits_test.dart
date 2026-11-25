@@ -12,13 +12,29 @@ import 'sender_world.dart';
 
 typedef Call = ({Duration at, String what});
 
-typedef Stall = ({
-  void Function(World world)? prepare,
-  bool adopts,
-  void Function(World world) start,
-  void Function(World world) goAgain,
-  bool Function(World world, List<Call> after) wentAgain,
-});
+final class Stall {
+  const Stall({
+    required this.start,
+    required this.goAgain,
+    required this.wentAgain,
+    this.prepare,
+    this.adopts = false,
+    this.held = true,
+    this.look = const Duration(hours: 1),
+    this.named = true,
+    this.sendsAgainAtOnce = false,
+  });
+
+  final void Function(World world)? prepare;
+  final bool adopts;
+  final bool held;
+  final Duration look;
+  final bool named;
+  final bool sendsAgainAtOnce;
+  final void Function(World world) start;
+  final void Function(World world) goAgain;
+  final bool Function(World world, List<Call> after) wentAgain;
+}
 
 const pageId = 'p1';
 
@@ -86,8 +102,26 @@ bool read(List<Call> after) =>
     after.any((call) => !call.what.startsWith('send'));
 
 final stalls = <StallExit, Stall>{
-  StallExit.unsettledResult: (
-    prepare: null,
+  StallExit.firstRead: Stall(
+    held: false,
+    look: const Duration(seconds: 20),
+    named: false,
+    start: (world) {
+      world.pagesOnServer(['p2']);
+      for (var n = 0; n < 3; n++) {
+        world.server.answerReadNext(strategyId, (call) {
+          final answer = world.server.answerNow(call);
+          return call.page == null
+              ? Future.value(answer)
+              : Future.delayed(const Duration(seconds: 30), () => answer);
+        });
+      }
+      world.sender.adopt(strategyId);
+    },
+    goAgain: (world) {},
+    wentAgain: (world, after) => world.face() == null,
+  ),
+  StallExit.unsettledResult: Stall(
     adopts: true,
     start: (world) {
       world.server.overrideRead = (call) => call.page == 'p2'
@@ -103,14 +137,13 @@ final stalls = <StallExit, Stall>{
       ..connection = 3,
     wentAgain: (world, after) => after.any((call) => call.what == 'page p2'),
   ),
-  StallExit.refusedResult: (
+  StallExit.refusedResult: Stall(
     prepare: (world) {
       final truth = world.server.rows[strategyId]!;
       world.replaceStrategyOnServer(later: const Duration(days: 365));
       world.aheadOfTheServer();
       world.server.rows[strategyId] = truth;
     },
-    adopts: false,
     start: (world) => world.recordRead([newPageOf(world)]),
     goAgain: (world) {
       world.replaceStrategyOnServer(later: const Duration(days: 400));
@@ -118,9 +151,7 @@ final stalls = <StallExit, Stall>{
     },
     wentAgain: (world, after) => world.face() != Face.unreadableWork,
   ),
-  StallExit.pageAheadOfList: (
-    prepare: null,
-    adopts: false,
+  StallExit.pageAheadOfList: Stall(
     start: (world) {
       world.server.answerNext(
         strategyId,
@@ -136,8 +167,7 @@ final stalls = <StallExit, Stall>{
     },
     wentAgain: (world, after) => world.face() != Face.unreadableWork,
   ),
-  StallExit.lostRead: (
-    prepare: null,
+  StallExit.lostRead: Stall(
     adopts: true,
     start: (world) {
       world.server.overrideRead = (call) => call.page == 'p2'
@@ -156,9 +186,7 @@ final stalls = <StallExit, Stall>{
     },
     wentAgain: (world, after) => after.any((call) => call.what == 'page p2'),
   ),
-  StallExit.viewerOnly: (
-    prepare: null,
-    adopts: false,
+  StallExit.viewerOnly: Stall(
     start: (world) {
       world.server.roles[strategyId] = StoreReadRole.viewer;
       world.server.answerWith(
@@ -172,9 +200,7 @@ final stalls = <StallExit, Stall>{
       ..signIn(servedAccount),
     wentAgain: (world, after) => read(after),
   ),
-  StallExit.forbidden: (
-    prepare: null,
-    adopts: false,
+  StallExit.forbidden: Stall(
     start: (world) {
       world.server.answerWith(
         strategyId,
@@ -189,9 +215,7 @@ final stalls = <StallExit, Stall>{
       ..signIn(servedAccount),
     wentAgain: (world, after) => read(after),
   ),
-  StallExit.signIn: (
-    prepare: null,
-    adopts: false,
+  StallExit.signIn: Stall(
     start: (world) {
       world.server.answerWith(
         strategyId,
@@ -202,9 +226,7 @@ final stalls = <StallExit, Stall>{
     goAgain: (world) => world.signIn(servedAccount),
     wentAgain: (world, after) => sent(after),
   ),
-  StallExit.upgrade: (
-    prepare: null,
-    adopts: false,
+  StallExit.upgrade: Stall(
     start: (world) {
       world.server.answerWith(
         strategyId,
@@ -215,9 +237,7 @@ final stalls = <StallExit, Stall>{
     goAgain: (world) {},
     wentAgain: (world, after) => after.isEmpty,
   ),
-  StallExit.lostSend: (
-    prepare: null,
-    adopts: false,
+  StallExit.lostSend: Stall(
     start: (world) {
       answerEverySend(
         world,
@@ -231,9 +251,7 @@ final stalls = <StallExit, Stall>{
     },
     wentAgain: (world, after) => sent(after),
   ),
-  StallExit.replaced: (
-    prepare: null,
-    adopts: false,
+  StallExit.replaced: Stall(
     start: (world) {
       world.server.answerNext(strategyId, (call) {
         world.replaceStrategyOnServer();
@@ -246,9 +264,7 @@ final stalls = <StallExit, Stall>{
     goAgain: (world) => record(world, const [UserDiscardedReplaced()]),
     wentAgain: (world, after) => world.face() == null,
   ),
-  StallExit.deletedOnServer: (
-    prepare: null,
-    adopts: false,
+  StallExit.deletedOnServer: Stall(
     start: (world) {
       world.server.answerWith(
         strategyId,
@@ -259,9 +275,7 @@ final stalls = <StallExit, Stall>{
     goAgain: (world) => record(world, const [UserDiscarded('move-1')]),
     wentAgain: (world, after) => world.queueLength() == 0,
   ),
-  StallExit.refusedEdit: (
-    prepare: null,
-    adopts: false,
+  StallExit.refusedEdit: Stall(
     start: (world) {
       world.server.answerNext(
         strategyId,
@@ -284,9 +298,72 @@ final stalls = <StallExit, Stall>{
     goAgain: (world) => record(world, const [UserDiscarded('move-1')]),
     wentAgain: (world, after) => world.queueLength() == 0,
   ),
-  StallExit.notBeingRead: (
-    prepare: null,
-    adopts: false,
+  StallExit.landedWork: Stall(
+    look: const Duration(seconds: 10),
+    start: (world) => world.commitMove(1),
+    goAgain: (world) => world.commitMove(2),
+    wentAgain: (world, after) => sent(after),
+  ),
+  StallExit.viewerOnTakeUp: Stall(
+    held: false,
+    start: (world) {
+      world.server.roles[strategyId] = StoreReadRole.viewer;
+      world.sender.adopt(strategyId);
+    },
+    goAgain: (world) {
+      world.server.roles[strategyId] = StoreReadRole.owner;
+      world.sender.adopt(strategyId);
+    },
+    wentAgain: (world, after) => read(after) && world.holds(strategyId),
+  ),
+  StallExit.goneOnTakeUp: Stall(
+    held: false,
+    start: (world) {
+      world.server.overrideRead = (call) =>
+          call.page == null ? const StoreReadAnswered(StrategyGone()) : null;
+      world.sender.adopt(strategyId);
+    },
+    goAgain: (world) {
+      world.server.overrideRead = null;
+      world.sender.adopt(strategyId);
+    },
+    wentAgain: (world, after) => read(after) && world.holds(strategyId),
+  ),
+  StallExit.uncheckedTooLate: Stall(
+    named: false,
+    sendsAgainAtOnce: true,
+    start: (world) {
+      world.server.answerNext(
+        strategyId,
+        (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+      );
+      world.commitMove(1);
+    },
+    goAgain: (world) => world.commitMove(2),
+    wentAgain: (world, after) => sent(after),
+  ),
+  StallExit.localTrouble: Stall(
+    start: (world) {
+      world.server.answerNext(
+        strategyId,
+        (call) => Future.value(rowReplaced(call)),
+      );
+      world.slowStore.refusesBaseWrites = 1000;
+      world.commitMove(1);
+    },
+    goAgain: (world) => world.slowStore.refusesBaseWrites = 0,
+    wentAgain: (world, after) =>
+        after.isEmpty &&
+        world.sender.waitingOn(strategyId) != StallExit.localTrouble &&
+        world.readsRecorded().where((read) => read == 'page p1').length == 2,
+  ),
+  StallExit.editsSettling: Stall(
+    look: const Duration(milliseconds: 100),
+    start: (world) => world.commitMove(1),
+    goAgain: (world) => world.commitMove(2),
+    wentAgain: (world, after) => sent(after),
+  ),
+  StallExit.notBeingRead: Stall(
     start: (world) => world.teammateMoves(1),
     goAgain: (world) => world.commitMove(2),
     wentAgain: (world, after) => sent(after),
@@ -294,38 +371,55 @@ final stalls = <StallExit, Stall>{
 };
 
 const logs = <StallExit, List<String>>{
+  StallExit.firstRead: [
+    '0 s list',
+    '0 s page p1',
+    '30 s page p2',
+  ],
   StallExit.unsettledResult: [
     '0 s list',
     '0 s page p2',
     '2 s page p2',
     '6 s page p2',
-    '606 s page p2',
-    '1206 s page p2',
-    '1806 s page p2',
-    '2406 s page p2',
-    '3006 s page p2',
-    '3606 s page p2',
-    '4206 s page p2',
-    '4806 s page p2',
-    '5406 s page p2',
-    '6006 s page p2',
-    '6606 s page p2',
+    '14 s page p2',
+    '30 s page p2',
+    '62 s page p2',
+    '126 s page p2',
+    '254 s page p2',
+    '510 s page p2',
+    '1022 s page p2',
+    '1622 s page p2',
+    '2222 s page p2',
+    '2822 s page p2',
+    '3422 s page p2',
+    '4022 s page p2',
+    '4622 s page p2',
+    '5222 s page p2',
+    '5822 s page p2',
+    '6422 s page p2',
+    '7022 s page p2',
   ],
   StallExit.refusedResult: [
     '0 s list',
     '2 s list',
     '6 s list',
-    '606 s list',
-    '1206 s list',
-    '1806 s list',
-    '2406 s list',
-    '3006 s list',
-    '3606 s list',
-    '4206 s list',
-    '4806 s list',
-    '5406 s list',
-    '6006 s list',
-    '6606 s list',
+    '14 s list',
+    '30 s list',
+    '62 s list',
+    '126 s list',
+    '254 s list',
+    '510 s list',
+    '1022 s list',
+    '1622 s list',
+    '2222 s list',
+    '2822 s list',
+    '3422 s list',
+    '4022 s list',
+    '4622 s list',
+    '5222 s list',
+    '5822 s list',
+    '6422 s list',
+    '7022 s list',
   ],
   StallExit.pageAheadOfList: [
     '0 s send move-1',
@@ -335,45 +429,67 @@ const logs = <StallExit, List<String>>{
     '2 s list',
     '6 s page p1',
     '6 s list',
-    '606 s page p1',
-    '606 s list',
-    '1206 s page p1',
-    '1206 s list',
-    '1806 s page p1',
-    '1806 s list',
-    '2406 s page p1',
-    '2406 s list',
-    '3006 s page p1',
-    '3006 s list',
-    '3606 s page p1',
-    '3606 s list',
-    '4206 s page p1',
-    '4206 s list',
-    '4806 s page p1',
-    '4806 s list',
-    '5406 s page p1',
-    '5406 s list',
-    '6006 s page p1',
-    '6006 s list',
-    '6606 s page p1',
-    '6606 s list',
+    '14 s page p1',
+    '14 s list',
+    '30 s page p1',
+    '30 s list',
+    '62 s page p1',
+    '62 s list',
+    '126 s page p1',
+    '126 s list',
+    '254 s page p1',
+    '254 s list',
+    '510 s page p1',
+    '510 s list',
+    '1022 s page p1',
+    '1022 s list',
+    '1622 s page p1',
+    '1622 s list',
+    '2222 s page p1',
+    '2222 s list',
+    '2822 s page p1',
+    '2822 s list',
+    '3422 s page p1',
+    '3422 s list',
+    '4022 s page p1',
+    '4022 s list',
+    '4622 s page p1',
+    '4622 s list',
+    '5222 s page p1',
+    '5222 s list',
+    '5822 s page p1',
+    '5822 s list',
+    '6422 s page p1',
+    '6422 s list',
+    '7022 s page p1',
+    '7022 s list',
   ],
   StallExit.lostRead: [
     '0 s list',
     '0 s page p2',
     '2 s page p2',
     '6 s page p2',
-    '606 s page p2',
-    '1206 s page p2',
-    '1806 s page p2',
-    '2406 s page p2',
-    '3006 s page p2',
-    '3606 s page p2',
-    '4206 s page p2',
-    '4806 s page p2',
-    '5406 s page p2',
-    '6006 s page p2',
-    '6606 s page p2',
+    '14 s page p2',
+    '30 s page p2',
+    '62 s page p2',
+    '126 s page p2',
+    '254 s page p2',
+    '510 s page p2',
+    '1022 s page p2',
+    '1622 s page p2',
+    '2222 s page p2',
+    '2822 s page p2',
+    '3422 s page p2',
+    '4022 s page p2',
+    '4622 s page p2',
+    '5222 s page p2',
+    '5822 s page p2',
+    '6422 s page p2',
+    '7022 s page p2',
+  ],
+  StallExit.landedWork: [
+    '0 s send move-1',
+    '30 s page p1',
   ],
   StallExit.viewerOnly: [
     '0 s send move-1',
@@ -393,6 +509,12 @@ const logs = <StallExit, List<String>>{
     '2400 s list',
     '3000 s list',
   ],
+  StallExit.viewerOnTakeUp: [
+    '0 s list',
+  ],
+  StallExit.goneOnTakeUp: [
+    '0 s list',
+  ],
   StallExit.signIn: [
     '0 s send move-1',
   ],
@@ -409,6 +531,11 @@ const logs = <StallExit, List<String>>{
     '37 s send move-1',
     '57 s send move-1',
   ],
+  StallExit.uncheckedTooLate: [
+    '0 s send move-1',
+    '0 s send move-1',
+    '30 s page p1',
+  ],
   StallExit.replaced: [
     '0 s send move-1',
     '0 s list',
@@ -419,6 +546,14 @@ const logs = <StallExit, List<String>>{
   ],
   StallExit.refusedEdit: [
     '0 s send move-1',
+  ],
+  StallExit.localTrouble: [
+    '0 s send move-1',
+    '0 s page p1',
+  ],
+  StallExit.editsSettling: [
+    '0 s send move-1',
+    '30 s page p1',
   ],
   StallExit.notBeingRead: [],
 };
@@ -432,8 +567,9 @@ String tableOf(SenderTiming timing) => [
       for (final row in StallExit.values)
         '| ${row.title} | ${row.waitsFor} | ${row.calls} | '
             '${row.schedule(timing)} | ${row.bound(timing)} | '
-            '${row.onScreen?.name ?? 'saved'} | '
-            '${measured[row]!.firstHour} | ${measured[row]!.laterHour} | '
+            '${row.shown} | '
+            '${measured[row]?.firstHour ?? 'not run here'} | '
+            '${measured[row]?.laterHour ?? 'not run here'} | '
             '${row.goesAgain} |',
     ].join('\n');
 
@@ -444,6 +580,7 @@ const closing = '<!-- end of stall exits -->';
 
 void main() {
   for (final row in StallExit.values) {
+    if (!row.inSenderWorld) continue;
     test('${row.name}: ${row.title}', () {
       final stall = stalls[row]!;
       inWorld(
@@ -465,26 +602,37 @@ void main() {
             sends?.call(call);
             calls.add((
               at: world.async.elapsed,
-              what: 'send ${call.opIds.join(',')}',
+              what: 'send ${call.opIds.join(',')}'
+                  '${call.basis == null ? '' : ' on a live basis'}',
             ));
           };
           final begun = world.async.elapsed;
           stall.start(world);
-          world.settle(const Duration(hours: 1));
+          world.settle(stall.look);
+          if (row.shownAs?.startsWith('nothing: not in the library') ?? false) {
+            expect(world.holds(strategyId), isFalse, reason: row.name);
+          } else {
+            expect(world.face(), row.onScreen, reason: row.name);
+          }
+          if (stall.named) {
+            expect(world.sender.waitingOn(strategyId), row, reason: row.name);
+          }
+          world.settle(const Duration(hours: 1) - stall.look);
           final firstHour = calls.length;
           world.settle(const Duration(hours: 1));
           final laterHour = calls.length - firstHour;
           final ticks = [for (final call in calls) (call.at, call.what)];
-          expect(ticks.toSet().length, ticks.length, reason: '$calls');
-          expect(world.face(), row.onScreen, reason: row.name);
+          expect(
+            ticks.toSet().length,
+            ticks.length - (stall.sendsAgainAtOnce ? 1 : 0),
+            reason: '$calls',
+          );
           measured[row] = (firstHour: firstHour, laterHour: laterHour);
           final log = [
             for (final call in calls)
               '${(call.at - begun).inSeconds} s ${call.what}',
           ];
           expect(log, logs[row], reason: row.name);
-          printOnFailure('${row.name} after ${world.async.elapsed - begun}: '
-              '${[for (final call in calls) call.what]}');
           final before = calls.length;
           stall.goAgain(world);
           world.settle(const Duration(minutes: 2));
@@ -494,7 +642,7 @@ void main() {
             reason: '${row.name}: ${calls.sublist(before)}',
           );
         },
-        addStrategy: !stall.adopts,
+        addStrategy: stall.held && !stall.adopts,
       );
     });
   }
@@ -532,12 +680,12 @@ void main() {
             lineupGroups: const [],
           ),
         ]);
-        world.settle(const Duration(minutes: 1));
+        world.settle(const Duration(seconds: 40));
         final stalled = listReads(world).length;
         expect(stalled, greaterThanOrEqualTo(3));
         world.replaceStrategyOnServer(later: const Duration(days: 400));
         world.commitMove(1);
-        world.settle(const Duration(minutes: 2));
+        world.settle(const Duration(seconds: 15));
         expect(listReads(world), hasLength(stalled));
         world.sender.retryNow(strategyId);
         world.settle();
@@ -636,7 +784,7 @@ void main() {
             ..connection = null
             ..connection = 2;
           world.commitPageDelete('delete-p2', 'p2');
-          world.settle(const Duration(minutes: 1));
+          world.settle(const Duration(seconds: 40));
           bool p2(ReadCall call) => call.page == 'p2';
           final stalled = world.server.readCalls.where(p2).length;
           final sends = world.server.calls.length;
@@ -644,7 +792,7 @@ void main() {
             world.commitMove(n);
             world.settle(const Duration(milliseconds: 400));
           }
-          world.settle(const Duration(minutes: 1));
+          world.settle(const Duration(seconds: 10));
           expect(world.server.calls.length, greaterThan(sends));
           expect(world.server.readCalls.where(p2).length, stalled);
         },
