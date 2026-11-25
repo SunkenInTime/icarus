@@ -903,7 +903,7 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     }
     _typeInto(target.name);
     await _waitFor(() => _countOf((w) => _isText(w, target.name)) > 0, 10);
-    await _seconds(1);
+    if (step['soon'] != true) await _seconds(1);
     final tile = _centerOf((w) => _isText(w, target.name));
     final mirrorAtStart = mirrorPhaseNow(c);
     final pointer = _pointer++;

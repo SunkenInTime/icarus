@@ -1,6 +1,4 @@
 [
-  {"tapIcon": "x", "optional": true},
-  {"resize": [1600, 900]},
-  {"openFirstFrame": "largest", "runs": 12},
+  {"openFirstFrame": "largest", "runs": 1, "soon": true},
   {"exit": 1}
 ]
