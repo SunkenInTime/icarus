@@ -3,7 +3,6 @@ import 'package:test/test.dart';
 
 import 'cloud_store_support.dart';
 import 'cloud_support.dart';
-import 'store_support.dart';
 import 'support.dart';
 
 Future<ResultSource> beganIn(LibraryStore store) async {

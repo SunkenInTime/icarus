@@ -1595,10 +1595,7 @@ Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
           PageLeft(page),
         ...adopted.decisions,
       ]);
-      edit.shown = adopted.shown.fencedAt(
-        edit.readsAfterThis(),
-        after: taken,
-      );
+      edit.shown = adopted.shown.fencedAt(edit.readsAfterThis(), after: taken);
       return edit.done();
     case ResultFit.applies:
       break;

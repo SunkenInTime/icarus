@@ -1845,9 +1845,8 @@ extension _CloudStore on LibraryStore {
           session: queue.session.number,
           from: switch (results) {
             CloudResults.liveQueries => const LiveResult(),
-            CloudResults.thisDevicesReads => ReadOfThisDevice(
-              queue.session.readStart,
-            ),
+            CloudResults.thisDevicesReads =>
+              ReadOfThisDevice(queue.session.readStart),
           },
         ),
     ];
