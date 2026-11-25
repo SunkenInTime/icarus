@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/providers/strategy_opening_provider.dart';
@@ -86,8 +87,16 @@ void main() {
       expect(reads, hasLength(timing.unresolvedRounds));
       expect(world.face(), isNot(Face.unreadableWork));
       world.slowStore.refusesRefusedResult = 0;
+      final recovered = world.async.elapsed;
       world.settle(const Duration(seconds: 61));
       expect(world.face(), Face.unreadableWork);
+      final again = readTimes(world, pageId, after: recovered);
+      expect(again.length, greaterThanOrEqualTo(2), reason: '$again');
+      expect(
+        again[1] - again[0],
+        greaterThanOrEqualTo(timing.settleAfter(timing.unresolvedRounds + 1)),
+        reason: 'the read that reached the bound was counted: $again',
+      );
     });
   });
 
@@ -242,11 +251,12 @@ void main() {
     inWorld(
       (world) {
         var added = false;
-        world.server.onRead = (call) {
-          if (call.page == null && !added) {
-            added = true;
-            world.pagesOnServer(['p2']);
-          }
+        world.server.overrideRead = (call) {
+          if (call.page != null || added) return null;
+          added = true;
+          final before = world.server.answerNow(call);
+          world.pagesOnServer(['p2']);
+          return before;
         };
         world.lease.refuseNext = 3;
         world.sender.adopt(strategyId);
@@ -296,6 +306,128 @@ void main() {
       final gone = world.server.readCalls.length;
       world.settle(const Duration(hours: 1));
       expect(world.server.readCalls, hasLength(gone));
+    });
+  });
+
+  group('a write after a server answer goes through one keep-and-retry path',
+      () {
+    test(
+        '1b: a page the store will not keep marks it unreadable from memory: '
+        'with the marker write refused, the page is not read again, and the '
+        'marker lands once the disk takes it', () {
+      inWorld((world) {
+        world.server.answerNext(strategyId, rowReplaced);
+        world.slowStore
+          ..rejectsBasesOutOfPlace = 1 << 30
+          ..refusesRefusedResult = 1 << 30;
+        final from = world.async.elapsed;
+        world.commitMove(1);
+        world.settle(const Duration(hours: 2));
+        expect(
+          readTimes(world, pageId, after: from).length,
+          lessThanOrEqualTo(timing.unresolvedRounds),
+        );
+        world.slowStore.refusesRefusedResult = 0;
+        world.settle(const Duration(seconds: 61));
+        expect(world.face(), Face.unreadableWork);
+      });
+    });
+
+    test(
+        '2b: an upgrade status the disk refuses is written again while sends '
+        'are held, and then shown', () {
+      inWorld((world) {
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 5));
+        world.slowStore.refusesUpgradeWrites = 3;
+        world.server.overrideRead = (call) => const StoreReadRefused(
+              StoreReadRefusal.upgradeRequired,
+              'upgrade',
+            );
+        world.settle(const Duration(minutes: 1));
+        final sends = world.server.calls.length;
+        world.commitMove(2);
+        world.settle(const Duration(minutes: 5));
+        expect(world.face(), Face.upgradeRequired);
+        expect(world.server.calls, hasLength(sends));
+      });
+    });
+  });
+
+  test(
+      '3c: a strategy is looked at whenever the planner would read it: a '
+      'fresh read owed in memory, with nothing in the saved status, is made',
+      () {
+    inWorld((world) {
+      world.settle(const Duration(minutes: 5));
+      final before = readTimes(world, null).length;
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+      world.settle(const Duration(seconds: 10));
+      expect(readTimes(world, null), hasLength(before + 1));
+    });
+  });
+
+  test(
+      '4: a batch refused again and again is spaced on the lost-send ladder: '
+      'the eight sends are 0.6, 1.2, 2.4, 4.8, 9.6, 19.2 and 19.2 s apart', () {
+    inWorld((world) {
+      for (var n = 0; n < 40; n++) {
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+        );
+      }
+      world.commitMove(1);
+      world.settle(const Duration(minutes: 5));
+      final times = sendTimes(world);
+      expect(times, hasLength(retriesBeforePause));
+      final gaps = [
+        for (var n = 1; n < times.length; n++) times[n] - times[n - 1],
+      ];
+      printOnFailure('sends at $times, gaps $gaps');
+      for (var n = 1; n < times.length; n++) {
+        final rung = Duration(milliseconds: 300 * (1 << n.clamp(0, 6)));
+        expect(
+          gaps[n - 1],
+          allOf(
+            greaterThanOrEqualTo(rung),
+            lessThan(rung + const Duration(milliseconds: 500)),
+          ),
+          reason: 'send ${n + 1}: $gaps',
+        );
+      }
+    });
+  });
+
+  test(
+      '4b: refusals after a lost send count on the same ladder, with their '
+      'own times', () {
+    inWorld((world) {
+      world.server.answerNext(
+        strategyId,
+        (call) => Future.value(
+          const StoreBatchLost(TransportFailure.network, 'lost'),
+        ),
+      );
+      for (var n = 0; n < 40; n++) {
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+        );
+      }
+      world.commitMove(1);
+      world.settle(const Duration(minutes: 5));
+      final times = sendTimes(world);
+      expect(times, hasLength(retriesBeforePause));
+      for (var n = 2; n < times.length; n++) {
+        expect(
+          times[n] - times[n - 1],
+          greaterThanOrEqualTo(
+            Duration(milliseconds: 300 * (1 << n.clamp(0, 6))),
+          ),
+          reason: '$times',
+        );
+      }
     });
   });
 }

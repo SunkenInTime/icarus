@@ -169,7 +169,7 @@ final class CallGovernor {
   final _access = <String, AccessRung>{};
   final _held = <(String, ReadOf), HeldResult>{};
   final _fresh = <(String, ReadOf)>{};
-  final _markers = <(String, ReadOf), String>{};
+  final _kept = <(String, Object), QueueEvent>{};
   final _sentAt = <String, DateTime>{};
   String? _opened;
   var issued = 0;
@@ -201,7 +201,7 @@ final class CallGovernor {
     _memory.removeWhere((id, _) => !keep(id));
     _held.removeWhere((key, _) => !keep(key.$1));
     _fresh.removeWhere((key) => !keep(key.$1));
-    _markers.removeWhere((key, _) => !keep(key.$1));
+    _kept.removeWhere((key, _) => !keep(key.$1));
     final now = _clock();
     _issuedAt.removeWhere((_, at) => !at.add(_timing.readFloor).isAfter(now));
   }
@@ -255,15 +255,17 @@ final class CallGovernor {
           if (owner == id) read,
       };
 
-  void owesMarker(String id, ReadOf read, String problem) =>
-      _markers[(id, read)] = problem;
+  void keep(String id, Object subject, QueueEvent write) =>
+      _kept[(id, subject)] = write;
 
-  Map<ReadOf, String> markersOwed(String id) => {
-        for (final MapEntry(key: (owner, read), :value) in _markers.entries)
-          if (owner == id) read: value,
+  Map<Object, QueueEvent> kept(String id) => {
+        for (final MapEntry(key: (owner, subject), :value) in _kept.entries)
+          if (owner == id) subject: value,
       };
 
-  void markerWritten(String id, ReadOf read) => _markers.remove((id, read));
+  Set<String> get keeping => {for (final (id, _) in _kept.keys) id};
+
+  void keptWritten(String id, Object subject) => _kept.remove((id, subject));
 
   ReadWhen readAt(String id, ReadOf read, Snapshot snap) {
     final access = this.access(id, snap);

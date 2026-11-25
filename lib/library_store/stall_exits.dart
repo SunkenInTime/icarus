@@ -290,7 +290,10 @@ enum StallExit {
             'the user is asked',
         uncheckedTooLate => 'one send again in checked form; a refusal after '
             'that climbs the lost-send ladder',
-        sendSpacing => 'the floor',
+        sendSpacing => 'the floor. It only spaces batches that are ready at '
+            'once; fresh edits already wait to settle, so a user dragging '
+            'makes at most a batch a second, and a batch refused or lost '
+            'again climbs the lost-send ladder',
         localTrouble => 'none while the app runs',
         editsSettling => '${timing.longestWait.inSeconds} s',
         viewerOnTakeUp || goneOnTakeUp => 'one read',

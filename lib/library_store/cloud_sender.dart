@@ -328,6 +328,12 @@ final class CloudSender {
   bool accessCheckStopped(String strategyId) =>
       _governor.accessStopped(strategyId, _inputs);
 
+  @visibleForTesting
+  void owesFreshRead(String strategyId, ReadOf read) {
+    _governor.written(strategyId, read, late: true);
+    wake();
+  }
+
   StallExit? waitingOn(String strategyId) => switch (runHold) {
         UpgradeHold() => StallExit.upgrade,
         SignInHold() => StallExit.signIn,
@@ -349,7 +355,20 @@ final class CloudSender {
         _ => strategy.hasWorkToSend ||
             strategy.needsReading ||
             _unread.contains(strategy.id) ||
-            retiring.mayRetire(strategy.id),
+            retiring.mayRetire(strategy.id) ||
+            _governor.keeping.contains(strategy.id) ||
+            switch (_lastSeen[strategy.id]) {
+              final cloud? => switch (_plan(
+                  strategy.id,
+                  cloud,
+                  _clock(),
+                  _inputs,
+                )) {
+                  (planned: null, due: null, why: _) => false,
+                  _ => true,
+                },
+              null => false,
+            },
       };
 
   bool adopting(String strategyId) =>
@@ -505,6 +524,12 @@ final class CloudSender {
           snap.account == null ||
           upgradeAsked ||
           signInWaitFrom == snap.signIns) {
+        if ((held, snap.account) case (null, final account?)) {
+          inStep = true;
+          due = await _writeKeptWhileHeld(account);
+          inStep = false;
+          if (disposed) return;
+        }
         _publish();
         continue;
       }
@@ -702,29 +727,7 @@ final class CloudSender {
         return _troubled(id, trouble);
     }
     if (disposed) return const _Ended();
-    for (final MapEntry(key: read, value: problem)
-        in _governor.markersOwed(id).entries) {
-      if (_shownRefused(cloud, read)) {
-        _governor.markerWritten(id, read);
-        continue;
-      }
-      final noted = await _store.write(owner, id, [
-        ResultRefused(
-          page: switch (read) {
-            ReadOfPage(:final page) => page,
-            ReadOfList() => null,
-          },
-          problem: problem,
-        ),
-      ]);
-      if (disposed) return const _Ended();
-      if (noted case WriteTroubled(:final trouble)) {
-        return _troubled(id, trouble);
-      }
-      _governor.markerWritten(id, read);
-      _note(id, 'wrote the refused mark for $read it had kept');
-      return const _Acted();
-    }
+    if (await _writeKept(id, owner, cloud) case final step?) return step;
     retiring.looked(id, cloud, now);
     _forgetResolved(id, cloud, snap);
     _lastSeen[id] = cloud;
@@ -1061,19 +1064,7 @@ final class CloudSender {
         switch (written) {
           case WriteTroubled(trouble: ResultNotStored(:final why)):
             _governor.written(id, read, late: kept != null);
-            final noted = await _store.write(owner, id, [
-              ResultRefused(
-                page: switch (read) {
-                  ReadOfPage(:final page) => page,
-                  ReadOfList() => null,
-                },
-                problem: why,
-              ),
-            ]);
-            if (disposed) return const _Ended();
-            if (noted case WriteTroubled(:final trouble)) {
-              return _troubled(id, trouble);
-            }
+            _governor.keep(id, read, _refusedMark(read, why));
             return _unsettled(
               id,
               owner,
@@ -1192,24 +1183,73 @@ final class CloudSender {
     if (marking != null &&
         count >= _timing.unresolvedRounds &&
         !_shownRefused(marking, read)) {
-      final noted = await _store.write(owner, id, [
-        ResultRefused(
-          page: switch (read) {
-            ReadOfPage(:final page) => page,
-            ReadOfList() => null,
-          },
-          problem: why,
-        ),
-      ]);
-      if (disposed) return const _Ended();
-      if (noted case WriteTroubled(:final trouble)) {
-        _governor.owesMarker(id, read, why);
-        return _troubled(id, trouble);
-      }
+      _governor.keep(id, read, _refusedMark(read, why));
     }
+    if (await _writeKept(id, owner) case final step?) return step;
     final at = _readAgainAt(id, read, snap);
     _note(id, '$why ($count in a row); reading $read again at $at');
     return _Skipped(row, at);
+  }
+
+  static QueueEvent _refusedMark(ReadOf read, String problem) => ResultRefused(
+        page: switch (read) {
+          ReadOfPage(:final page) => page,
+          ReadOfList() => null,
+        },
+        problem: problem,
+      );
+
+  Future<_Step?> _writeKept(
+    String id,
+    Account owner, [
+    CloudStrategy? seen,
+  ]) async {
+    final kept = _governor.kept(id);
+    if (kept.isEmpty) return null;
+    var cloud = seen;
+    if (cloud == null) {
+      switch (await _store.read(id)) {
+        case QueueFound(cloud: final found):
+          cloud = found;
+        case QueueTroubled(:final trouble):
+          return _troubled(id, trouble);
+      }
+      if (disposed) return const _Ended();
+    }
+    for (final MapEntry(key: subject, value: write) in kept.entries) {
+      if (subject case final ReadOf read when _shownRefused(cloud, read)) {
+        _governor.keptWritten(id, subject);
+        continue;
+      }
+      final written = await _store.write(owner, id, [write]);
+      if (disposed) return const _Ended();
+      if (written case WriteTroubled(:final trouble)) {
+        return _troubled(id, trouble);
+      }
+      _governor.keptWritten(id, subject);
+      _note(id, 'wrote what it had kept: $write');
+    }
+    return null;
+  }
+
+  Future<DateTime?> _writeKeptWhileHeld(Account owner) async {
+    DateTime? due;
+    for (final id in _governor.keeping) {
+      if (notBefore[id] case final at? when at.isAfter(_clock())) {
+        due = _earliest(due, at);
+        continue;
+      }
+      switch (await _writeKept(id, owner)) {
+        case _Skipped(due: final at?):
+          due = _earliest(due, at);
+        case _Ended():
+          return null;
+        case _:
+          break;
+      }
+      if (disposed) return null;
+    }
+    return due;
   }
 
   Future<_Step> _readRefused(
@@ -1233,13 +1273,8 @@ final class CloudSender {
       case StoreReadRefused(refusal: StoreReadRefusal.upgradeRequired):
         upgradeAsked = true;
         if (held) {
-          final told = await _store.write(owner, id, [
-            ReadRefusedForUpgrade(build: build),
-          ]);
-          if (disposed) return const _Ended();
-          if (told case WriteTroubled(:final trouble)) {
-            return _troubled(id, trouble);
-          }
+          _governor.keep(id, #upgrade, ReadRefusedForUpgrade(build: build));
+          if (await _writeKept(id, owner) case final step?) return step;
         }
         _note(id, 'the read asks for a newer build');
         return const _Acted();

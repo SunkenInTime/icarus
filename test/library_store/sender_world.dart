@@ -523,6 +523,8 @@ final class SlowSenderStore extends SenderStore {
   var claimWaits = Duration.zero;
   var refusesRefusedResult = 0;
   var refusesBaseWrites = 0;
+  var rejectsBasesOutOfPlace = 0;
+  var refusesUpgradeWrites = 0;
 
   @override
   Future<ClaimResult> claim(
@@ -566,6 +568,17 @@ final class SlowSenderStore extends SenderStore {
     }
     if (refusesBaseWrites > 0 && events.any((event) => event is BaseArrived)) {
       refusesBaseWrites--;
+      return const WriteTroubled(NotWrittenNow('the test refused the write'));
+    }
+    if (rejectsBasesOutOfPlace > 0 &&
+        events.any((event) => event is BaseArrived)) {
+      rejectsBasesOutOfPlace--;
+      return const WriteTroubled(
+          ResultNotStored('the test put it out of place'));
+    }
+    if (refusesUpgradeWrites > 0 &&
+        events.any((event) => event is ReadRefusedForUpgrade)) {
+      refusesUpgradeWrites--;
       return const WriteTroubled(NotWrittenNow('the test refused the write'));
     }
     if (refusesRefusedResult > 0 &&

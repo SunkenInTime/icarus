@@ -786,30 +786,27 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
         (attempt, at),
   ];
   final failures = failed.where((f) => f.$1.number > entry.retriedAfter).length;
-  if (failures + refused.length >= retriesBeforePause) {
+  final climbed = failures + refused.length;
+  if (climbed >= retriesBeforePause) {
     return const NeedsUser(RetriesExhausted());
   }
+  final latest = [
+    if (failures > 0) failed.last.$2,
+    if (refused.isNotEmpty) refused.last.$2,
+  ].fold<DateTime?>(null, (a, b) => a == null || b.isAfter(a) ? b : a);
+  final backoff = switch (latest) {
+    final at? => RetryAfter(retryTimeAfter(at, climbed), failedAt: at),
+    null => const RetryNow(),
+  };
   if (failed.isEmpty) {
     if (refused.isEmpty) return const Waiting();
-    return RefusedAgain(
-      refusals: refused.length,
-      backoff: RetryAfter(
-        retryTimeAfter(refused.last.$2, refused.length),
-        failedAt: refused.last.$2,
-      ),
-    );
+    return RefusedAgain(refusals: refused.length, backoff: backoff);
   }
   return Unanswered(
     clientId: failed.first.$1.clientId,
     firstSentAt: failed.first.$1.at,
     failures: failures,
-    backoff: switch (failures) {
-      0 => const RetryNow(),
-      _ => RetryAfter(
-        retryTimeAfter(failed.last.$2, failures),
-        failedAt: failed.last.$2,
-      ),
-    },
+    backoff: backoff,
   );
 }
 
@@ -866,7 +863,7 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   final pages = _pagesOf(entry);
   final place = entry.place;
   final state = stateFor(entry.id);
-  if (state is! Waiting && state is! Unanswered) {
+  if (state is! Waiting && state is! Unanswered && state is! RefusedAgain) {
     return (EntryView(state, const []), null);
   }
   if (_oversized(entry)) {
