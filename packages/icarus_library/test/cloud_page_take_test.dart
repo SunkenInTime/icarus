@@ -29,14 +29,40 @@ StrategyRowSet dense({int round = 0, int changed = 0}) => strategyRows(
   ],
 );
 
-Future<void> takePage(LibraryStore store, StrategyRowSet server) async =>
-    recordAll(store, [
-      BaseArrived(
-        pageReadOf(server, 'page-a'),
-        session: await sessionOf(store),
-        from: await readStartOf(store),
-      ),
-    ]);
+StrategyRowSet threePages({int round = 0, int changed = 0}) => strategyRows(
+  pages: [
+    for (final (index, id) in const ['page-a', 'page-b', 'page-c'].indexed)
+      page(id, sortIndex: index),
+  ],
+  elements: [
+    for (final id in const ['page-a', 'page-b', 'page-c'])
+      for (var i = 0; i < 100; i++)
+        element(
+          '$id-e$i',
+          pageId: id,
+          sortIndex: i,
+          revision: id == 'page-b' && i < changed ? round + 1 : 1,
+          fields: {
+            'position': {
+              'dx': id == 'page-b' && i < changed ? 1000.5 + round : i * 1.5,
+              'dy': 20,
+            },
+          },
+        ),
+  ],
+);
+
+Future<void> takePage(
+  LibraryStore store,
+  StrategyRowSet server, [
+  String page = 'page-a',
+]) async => recordAll(store, [
+  BaseArrived(
+    pageReadOf(server, page),
+    session: await sessionOf(store),
+    from: await readStartOf(store),
+  ),
+]);
 
 Future<Shown> shownIn(LibraryStore store) async =>
     (await syncOf(store)).queue.shown;
@@ -101,13 +127,31 @@ void main() {
         await takePage(store, dense(round: 1, changed: changed));
         expect(shownWork.contentRowsDigested, changed);
         expect(storeWork.rowsEncoded, changed);
+        expect(storeWork.resultGroupsEncoded, 2);
         shownWork.reset();
         storeWork.reset();
         await takePage(store, dense(round: 1, changed: changed));
         expect(shownWork.contentRowsDigested, 0);
         expect(storeWork.rowsEncoded, 0);
+        expect(storeWork.resultGroupsEncoded, 0);
       });
     }
+
+    test('on one page of three encodes the page list\'s results and that '
+        'page\'s, and leaves the other pages\' as stored', () async {
+      shownTakesChecked = false;
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, threePages());
+      for (final page in const ['page-a', 'page-b', 'page-c']) {
+        await takePage(store, threePages(), page);
+      }
+      shownWork.reset();
+      storeWork.reset();
+      await takePage(store, threePages(round: 1, changed: 1), 'page-b');
+      expect(shownWork.contentRowsDigested, 1);
+      expect(storeWork.rowsEncoded, 1);
+      expect(storeWork.resultGroupsEncoded, 2);
+    });
   });
 
   group('digests stored by an older build', () {

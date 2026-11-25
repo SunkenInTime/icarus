@@ -14,17 +14,7 @@ const strategyAreaPrefix = 's/';
 
 const _digestLength = 32;
 
-const _digestsRemembered = 16384;
-
-final _digests = <String, String>{};
-
 String digestOf(String text) {
-  if (_digests[text] case final known?) return known;
-  if (_digests.length >= _digestsRemembered) _digests.clear();
-  return _digests[text] = _sha256Of(text);
-}
-
-String _sha256Of(String text) {
   final bytes = ByteData(text.length * 2);
   for (var i = 0; i < text.length; i++) {
     bytes.setUint16(i * 2, text.codeUnitAt(i), Endian.little);

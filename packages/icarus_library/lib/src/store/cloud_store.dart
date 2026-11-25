@@ -205,6 +205,72 @@ CommitRefusal? _unfitResult(String strategyPublicId, List<QueueEvent> events) {
   return null;
 }
 
+final class _ItemDigests {
+  _ItemDigests(this.strategy);
+
+  final LoadedStrategy strategy;
+  final _known = <String, String>{};
+
+  void learnPage(String pageDigest) {
+    if (strategy.loadedPage(pageDigest) case final loaded?) {
+      for (final MapEntry(key: digest, value: row) in loaded.elements.entries) {
+        _known[row.publicId] = digest;
+      }
+      for (final MapEntry(:key, :value) in loaded.lineupGroups.entries) {
+        _known[value.publicId] = key;
+      }
+    }
+  }
+
+  String of(String id) => _known[id] ??= digestOf(id);
+
+  StoreName nameOf(Row row) => switch (row) {
+    ElementRow(:final pagePublicId, :final publicId) => ElementName(
+      of(pagePublicId),
+      of(publicId),
+    ),
+    LineupGroupRow(:final pagePublicId, :final publicId) => LineupName(
+      of(pagePublicId),
+      of(publicId),
+    ),
+    _ => nameOf(row),
+  };
+
+  bool unchangedHere(Row row, StoreName name) {
+    final (held, pages) = switch (name) {
+      ElementName(:final page, :final digest) => (
+        strategy.loadedPage(page)?.elements[digest] as Row?,
+        strategy.pagesOfElementAt(digest),
+      ),
+      LineupName(:final page, :final digest) => (
+        strategy.loadedPage(page)?.lineupGroups[digest],
+        strategy.pagesOfLineupGroupAt(digest),
+      ),
+      _ => (null, const <String>[]),
+    };
+    final revision = revisionOfRow(row);
+    final same =
+        shownTakesReuse &&
+        held != null &&
+        revision != null &&
+        held.runtimeType == row.runtimeType &&
+        revisionOfRow(held) == revision &&
+        createdAtOf(held) == createdAtOf(row) &&
+        pages.length == 1 &&
+        switch (name) {
+          ElementName(:final page) ||
+          LineupName(:final page) => pages.first == page,
+          _ => false,
+        };
+    if (same &&
+        shownTakesChecked &&
+        !sameJsonTree(held.toJsonView(), row.toJsonView())) {
+      throw TakesDiffer.stored('${row.key}');
+    }
+    return same;
+  }
+}
+
 String _groupName(String? page) => switch (page) {
   null => const HeaderReadName().name,
   final page => PageReadName(digestOf(page)).name,
@@ -245,16 +311,42 @@ Set<String> _pagesShowingRow(
   _ => const {},
 };
 
-Map<String?, String> _groupTexts(Shown shown) {
-  final texts = <String?, String>{};
-  for (final MapEntry(:key, :value) in shownToGroups(shown).entries) {
-    switch (encodeJson(value)) {
-      case Encoded(:final text):
-        texts[key] = text;
-        storeWork.resultGroupsEncoded++;
-      case NotEncoded(:final problem):
-        throw StateError(problem);
+String _groupText(Map<String, Object?> group) {
+  switch (encodeJson(group)) {
+    case Encoded(:final text):
+      storeWork.resultGroupsEncoded++;
+      return text;
+    case NotEncoded(:final problem):
+      throw StateError(problem);
+  }
+}
+
+Map<String?, String> _groupTextsSince(
+  Shown before,
+  Map<String?, String> written,
+  Shown shown,
+) {
+  final texts = <String?, String>{
+    for (final MapEntry(:key, :value) in shownToGroupsSince(
+      before,
+      shown,
+    ).entries)
+      key: switch ((value, written[key])) {
+        (null, final kept?) => kept,
+        (final group?, _) => _groupText(group),
+        (null, null) => _groupText(shownToGroups(shown)[key]!),
+      },
+  };
+  if (shownTakesChecked) {
+    final whole = {
+      for (final MapEntry(:key, :value) in shownToGroups(shown).entries)
+        key: encodeJson(value),
+    };
+    for (final MapEntry(:key, :value) in whole.entries) {
+      if (value case Encoded(:final text) when text == texts[key]) continue;
+      throw TakesDiffer.group(key);
     }
+    if (texts.length != whole.length) throw TakesDiffer.group(null);
   }
   return texts;
 }
@@ -881,6 +973,7 @@ extension _CloudStore on LibraryStore {
   ) async {
     final area = strategy.area;
     final digests = <String>{};
+    final items = _ItemDigests(strategy);
     for (final arrival in arrivals) {
       switch (arrival) {
         case HeaderRead(strategy: final header, :final pages):
@@ -891,12 +984,16 @@ extension _CloudStore on LibraryStore {
                 : strategy.pageDigests.where((d) => !listed.contains(d)),
           );
         case PageRead(:final page, :final elements, :final lineupGroups):
-          digests.add(digestOf(page.publicId));
+          final pageDigest = items.of(page.publicId);
+          items.learnPage(pageDigest);
+          digests.add(pageDigest);
           for (final row in elements) {
-            digests.addAll(strategy.pagesOfElement(row.publicId));
+            digests.addAll(strategy.pagesOfElementAt(items.of(row.publicId)));
           }
           for (final row in lineupGroups) {
-            digests.addAll(strategy.pagesOfLineupGroup(row.publicId));
+            digests.addAll(
+              strategy.pagesOfLineupGroupAt(items.of(row.publicId)),
+            );
           }
         case PageGone(:final pagePublicId):
           digests.add(digestOf(pagePublicId));
@@ -1066,9 +1163,13 @@ extension _CloudStore on LibraryStore {
           }
         case PageRead(:final page, :final elements, :final lineupGroups):
           put(page);
+          final pageDigest = items.of(page.publicId);
+          items.learnPage(pageDigest);
           final found = <String>{};
           for (final row in <Row>[...elements, ...lineupGroups]) {
-            found.add(nameOf(row).name);
+            final name = items.nameOf(row);
+            found.add(name.name);
+            if (items.unchangedHere(row, name)) continue;
             final elsewhere = heldElsewhere(row, page.publicId);
             final version = versionOfRow(row);
             if (elsewhere != null && version != null && elsewhere > version) {
@@ -1076,12 +1177,14 @@ extension _CloudStore on LibraryStore {
             }
             put(row);
           }
-          if (strategy.loadedPage(digestOf(page.publicId)) case final loaded?) {
-            for (final row in [
-              ...loaded.elements.values,
-              ...loaded.lineupGroups.values,
+          if (strategy.loadedPage(pageDigest) case final loaded?) {
+            for (final name in <StoreName>[
+              for (final digest in loaded.elements.keys)
+                ElementName(pageDigest, digest),
+              for (final digest in loaded.lineupGroups.keys)
+                LineupName(pageDigest, digest),
             ]) {
-              if (!found.contains(nameOf(row).name)) drop(nameOf(row));
+              if (!found.contains(name.name)) drop(name);
             }
             for (final name in [...loaded.unplaced.keys]) {
               if (found.contains(name)) continue;
@@ -1107,7 +1210,8 @@ extension _CloudStore on LibraryStore {
       for (final (name, was) in before.values)
         ...switch ((was, held(name))) {
           (HeldRow(:final row), final now?)
-              when sameJsonTree(now.toJsonView(), row.toJsonView()) =>
+              when now.runtimeType == row.runtimeType &&
+                  sameJsonTree(now.toJsonView(), row.toJsonView()) =>
             const <_Write>[],
           (_, final now?) => [_PutRow(area, now)],
           (HeldRow() || HeldUnplaced(), null) => [_DeleteName(area, name.name)],
@@ -1146,7 +1250,11 @@ extension _CloudStore on LibraryStore {
     final queued = _queueWrites(strategy, disk, owner, next);
     final groups = identical(next.shown, disk.shown)
         ? {...disk.groups}
-        : _groupTexts(next.shown);
+        : _groupTextsSince(
+            shownTakesReuse ? disk.shown : Shown.nothing,
+            shownTakesReuse ? disk.groups : const {},
+            next.shown,
+          );
     final header = _baseHeader(strategy, cloud.header);
     final previous = _summaries[digest];
     final StrategySummary summary;
@@ -1170,15 +1278,18 @@ extension _CloudStore on LibraryStore {
         asBefore();
         return NotSaved(failure);
       }
+      final loadedRows = <Target, Iterable<String>>{
+        for (final digest in cachedOnChanged)
+          if (strategy.loadedPage(digest) case final loaded?) ...{
+            for (final MapEntry(key: id, value: row) in loaded.elements.entries)
+              ElementTarget(row.publicId): strategy.pagesOfElementAt(id),
+            for (final MapEntry(key: id, value: row)
+                in loaded.lineupGroups.entries)
+              LineupTarget(row.publicId): strategy.pagesOfLineupGroupAt(id),
+          },
+      };
       final changedRows = {
         ...base.rows,
-        for (final digest in cachedOnChanged)
-          if (strategy.loadedPage(digest) case final loaded?) ...[
-            for (final row in loaded.elements.values)
-              ElementTarget(row.publicId),
-            for (final row in loaded.lineupGroups.values)
-              LineupTarget(row.publicId),
-          ],
         for (final entry in next.entries)
           if (entry is PendingOp && pagesOf(entry).any(changedPages.contains))
             targetOf(entry.op),
@@ -1188,8 +1299,14 @@ extension _CloudStore on LibraryStore {
       };
       final touched = {
         ...changedPages,
+        for (final MapEntry(key: target, value: pages)
+            in loadedRows.entries) ...{
+          for (final digest in pages) ?strategy.pageIdOf(digest),
+          ...pagesShowing(next, target),
+        },
         for (final target in changedRows)
-          ..._pagesShowingRow(strategy, next, target),
+          if (!loadedRows.containsKey(target))
+            ..._pagesShowingRow(strategy, next, target),
       };
       final StrategyRowSet rows;
       switch (await _visibleFor(strategy, header, next, SomePages(touched))) {

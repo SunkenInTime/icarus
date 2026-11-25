@@ -281,10 +281,16 @@ final class LoadedStrategy {
   Set<String> get pageDigests => {..._pages.keys, ..._contentPages};
 
   Iterable<String> pagesOfElement(String elementPublicId) =>
-      _elementPages[digestOf(elementPublicId)] ?? const {};
+      pagesOfElementAt(digestOf(elementPublicId));
 
   Iterable<String> pagesOfLineupGroup(String lineupPublicId) =>
-      _lineupPages[digestOf(lineupPublicId)] ?? const {};
+      pagesOfLineupGroupAt(digestOf(lineupPublicId));
+
+  Iterable<String> pagesOfElementAt(String digest) =>
+      _elementPages[digest] ?? const {};
+
+  Iterable<String> pagesOfLineupGroupAt(String digest) =>
+      _lineupPages[digest] ?? const {};
 
   LoadedPage _mustBeLoaded(String pageDigest) =>
       _loaded[pageDigest] ??

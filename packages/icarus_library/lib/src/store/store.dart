@@ -508,7 +508,10 @@ final class LibraryStore {
           case Encoded(:final text):
             final back = _parseAt(area, name, admit(text));
             return switch (back) {
-              Placed(row: final back) when back == row && back.key == row.key =>
+              Placed(row: final back)
+                  when back.key == row.key &&
+                      back.runtimeType == row.runtimeType &&
+                      sameJsonTree(back.toJsonView(), row.toJsonView()) =>
                 Done(Put(area, name.name, text)),
               Placed(row: final back) => wouldNot(name.name, 'reads as $back'),
               Unplaced(:final problem) => wouldNot(name.name, problem),

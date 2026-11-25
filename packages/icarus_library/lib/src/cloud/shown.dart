@@ -11,6 +11,8 @@ bool shownTakesChecked =
     const bool.fromEnvironment('ICARUS_DRIVE') ||
     !const bool.fromEnvironment('dart.vm.product');
 
+bool shownTakesReuse = true;
+
 final class ShownWork {
   int contentRowsDigested = 0;
 
@@ -26,6 +28,18 @@ final class TakesDiffer extends StateError {
     : super(
         'page $page taken with digests of this run differs from the same '
         'result taken from scratch',
+      );
+
+  TakesDiffer.group(String? page)
+    : super(
+        'the stored results of ${page ?? 'the page list'} kept from before '
+        'differ from encoding them again',
+      );
+
+  TakesDiffer.stored(String id)
+    : super(
+        'item $id arrived at the revision and life the store holds, but '
+        'differs from the stored copy',
       );
 }
 
@@ -660,7 +674,7 @@ final class Shown {
   );
 
   static Shown _checkedTake(String page, Shown Function(bool reuse) take) {
-    final taken = take(true);
+    final taken = take(shownTakesReuse);
     if (shownTakesChecked && take(false) != taken) throw TakesDiffer(page);
     return taken;
   }
