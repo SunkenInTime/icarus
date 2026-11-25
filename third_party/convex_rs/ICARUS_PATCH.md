@@ -152,3 +152,26 @@ later transition at the same time
 a reconnect the client also accepts a first transition whatever its time. The
 snapshot number has neither problem; it is only comparable within one run of
 the client.
+
+Every stamp also names its client and connection. `QueryResults::client` numbers
+the clients built in this process from 1, so snapshots of two clients are never
+compared as if they were one count. `QueryResults::connection` is 0 on the
+first socket and one more per reconnect. Results kept from an old connection
+keep its number until the new connection's first transition replaces them, so a
+reader can tell a result taken before a reconnect from one taken after it,
+whatever order they reach it in
+(`base_client::tests::test_the_snapshot_count_goes_on_across_a_reconnect`, which
+also shows the count going on when the new connection starts at an earlier
+server time).
+
+`ConvexClient::mutation_timed` gives a mutation's answer with the stamp of the
+results the client held when it completed it, and `mutation` and `action`
+return the same answers without it. A success completes on the first transition
+at or after its commit timestamp, so its snapshot is that transition's: a
+result with that snapshot or a later one is at or after the commit (whether it
+shows the write rests on the protocol rule above). A failure completes when its
+response arrives, and its snapshot is the last transition applied before it.
+That is a fact about when this client handled the answer, not about which server
+state the failed mutation ran against; nothing on the wire says that.
+`base_client::tests::test_a_mutation_answer_carries_the_snapshot_its_write_is_visible_in`
+and its neighbours cover the three cases.

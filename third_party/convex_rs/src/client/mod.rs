@@ -1024,10 +1024,12 @@ pub mod tests {
                 .expect("a one-shot answer in time")?;
 
         let error = next(&mut live).await;
-        assert!(
-            matches!(error.value, FunctionResult::ConvexError(_)),
-            "{error:?}"
-        );
+        let denied = FunctionResult::ConvexError(crate::ConvexError {
+            message: "denied".to_string(),
+            data: Value::from("DENIED"),
+        });
+        assert_eq!(error.value, denied);
+        assert_eq!(one_shot.value, FunctionResult::Value(2.into()));
         assert_eq!((error.ts, error.snapshot), (Some(at_first.ts), 1));
         assert_eq!((one_shot.ts, one_shot.snapshot), (Some(at_second.ts), 2));
 
@@ -1039,10 +1041,7 @@ pub mod tests {
             tokio::time::timeout(PATIENCE, client.query_timed("getCounter", btreemap! {}))
                 .await
                 .expect("a one-shot answer in time")?;
-        assert!(
-            matches!(failed_read.value, FunctionResult::ConvexError(_)),
-            "{failed_read:?}"
-        );
+        assert_eq!(failed_read.value, denied);
         assert_eq!(
             (failed_read.ts, failed_read.snapshot),
             (Some(at_third.ts), 3)

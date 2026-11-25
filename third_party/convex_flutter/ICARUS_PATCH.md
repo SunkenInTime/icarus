@@ -47,6 +47,11 @@ each result from a spawned task, as `subscribe` does, so results can reach Dart
 out of order, and a one-shot read can arrive before a live result from an older
 snapshot; the snapshot numbers put them back in order. Both are native only,
 like `subscribeGroup`: Icarus's web build uses Convex's JavaScript client.
+`mutationTimed` and `subscribeGroupTimed` do the same for a mutation's answer
+and for a group's updates (`TimedGroupUpdate`, whose values all come from one
+snapshot), and every stamp carries its client and connection numbers too. A
+failed mutation is an answer with its snapshot, like a query error. The crate's
+patch notes say what a mutation answer's snapshot means.
 `tool/convex_client_gauntlet/runtime/test/timed_results_test.dart` checks the
 snapshots reach Dart, on a local deployment, in the gauntlet lane.
 

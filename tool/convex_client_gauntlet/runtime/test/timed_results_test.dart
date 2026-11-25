@@ -48,13 +48,22 @@ void main() {
         args: treeArgs,
         onResult: live.add,
       );
+      final grouped = <convex_flutter.TimedGroupUpdate>[];
+      final groupHandle = await client.subscribeGroupTimed(
+        queries: [
+          (name: tree, args: treeArgs),
+          (name: 'users:me', args: const {}),
+        ],
+        onUpdate: grouped.add,
+      );
       final reads = [await client.queryTimed(tree, treeArgs)];
       final written = <String>[];
+      final answers = <String, convex_flutter.TimedAnswer>{};
 
       for (var write = 0; write < _writes; write++) {
         final name =
             'Timed results $write ${DateTime.now().microsecondsSinceEpoch}';
-        await client.mutation(
+        final answer = await client.mutationTimed(
           name: 'folders:create',
           args: {
             'clientProtocolVersion': cloudProtocolVersion,
@@ -63,7 +72,11 @@ void main() {
             'name': name,
           },
         );
+        expect(answer.error, isNull);
+        expect(answer.snapshot, greaterThan(reads.last.snapshot));
+        answers[name] = answer;
         final read = await client.queryTimed(tree, treeArgs);
+        expect(read.snapshot, greaterThanOrEqualTo(answer.snapshot));
         expect(_folderNames(read), contains(name));
         expect(read.snapshot, greaterThan(reads.last.snapshot));
         expect(read.ts!, greaterThan(reads.last.ts!));
@@ -79,8 +92,52 @@ void main() {
         written.add(name);
       }
       handle.cancel();
+      groupHandle.cancel();
 
       final results = [...reads, ...live];
+      final stamps = [...results, ...answers.values];
+      expect(stamps.map((answer) => answer.client).toSet(), hasLength(1));
+      expect(stamps.map((answer) => answer.connection).toSet(), {0});
+      for (final MapEntry(key: name, value: answer) in answers.entries) {
+        for (final result in results) {
+          if (result.snapshot >= answer.snapshot) {
+            expect(
+              _folderNames(result),
+              contains(name),
+              reason:
+                  'a result at or after the answer\'s snapshot has the write',
+            );
+          }
+        }
+      }
+
+      expect(grouped, isNotEmpty);
+      for (var at = 1; at < grouped.length; at++) {
+        expect(grouped[at].snapshot, greaterThan(grouped[at - 1].snapshot));
+      }
+      for (final update in grouped) {
+        expect(update.error, isNull);
+        expect(update.ts, isNotNull);
+        expect(update.client, stamps.first.client);
+        if (update.values.first case final tree?) {
+          final names = [
+            for (final folder in jsonDecode(tree) as List)
+              (folder as Map)['name'] as String,
+          ];
+          for (final MapEntry(key: name, value: answer) in answers.entries) {
+            if (update.snapshot >= answer.snapshot) {
+              expect(names, contains(name));
+            }
+          }
+        }
+      }
+      final lastTree = grouped.lastWhere(
+        (update) => update.values.first != null,
+      );
+      expect([
+        for (final folder in jsonDecode(lastTree.values.first!) as List)
+          (folder as Map)['name'] as String,
+      ], containsAll(written));
       final now = DateTime.now().microsecondsSinceEpoch * 1000;
       for (final answer in results) {
         expect(answer.error, isNull);
@@ -145,6 +202,20 @@ void main() {
       expect(liveErrors.first.error?.data, refused.error!.data);
       expect(liveErrors.first.ts, isNotNull);
       expect(liveErrors.first.snapshot, greaterThanOrEqualTo(refused.snapshot));
+
+      final failed = await client.mutationTimed(
+        name: 'folders:create',
+        args: const {
+          'clientProtocolVersion': cloudProtocolVersion,
+          'publicId': 'timed-results-orphan',
+          'name': 'Orphan',
+          'parentFolderPublicId': 'timed-results-no-such-folder',
+        },
+      );
+      expect(failed.value, isNull);
+      expect(failed.error?.data, isNotNull);
+      expect(failed.ts, isNotNull);
+      expect(failed.snapshot, greaterThanOrEqualTo(liveErrors.first.snapshot));
     },
     timeout: const Timeout(Duration(minutes: 3)),
     skip: deploymentUrl.isEmpty
