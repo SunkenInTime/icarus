@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -193324100;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 52953044;
 
 // Section: executor
 
@@ -420,7 +420,7 @@ fn wire__crate__MobileConvexClient_action_impl(
         },
     )
 }
-fn wire__crate__MobileConvexClient_connection_generation_impl(
+fn wire__crate__MobileConvexClient_generation_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -428,7 +428,7 @@ fn wire__crate__MobileConvexClient_connection_generation_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "MobileConvexClient_connection_generation",
+            debug_name: "MobileConvexClient_generation",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -467,8 +467,7 @@ fn wire__crate__MobileConvexClient_connection_generation_impl(
                         }
                         let api_that_guard = api_that_guard.unwrap();
                         let output_ok =
-                            crate::MobileConvexClient::connection_generation(&*api_that_guard)
-                                .await?;
+                            crate::MobileConvexClient::generation(&*api_that_guard).await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -1776,6 +1775,18 @@ impl SseDecode for crate::ClientError {
     }
 }
 
+impl SseDecode for crate::ClientGeneration {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_client = <i64>::sse_decode(deserializer);
+        let mut var_connection = <i64>::sse_decode(deserializer);
+        return crate::ClientGeneration {
+            client: var_client,
+            connection: var_connection,
+        };
+    }
+}
+
 impl SseDecode for crate::GroupQuery {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1998,12 +2009,7 @@ fn pde_ffi_dispatcher_primary_impl(
         5 => wire__crate__CallbackSubscriber_on_error_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__CallbackSubscriber_on_update_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__MobileConvexClient_action_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__MobileConvexClient_connection_generation_impl(
-            port,
-            ptr,
-            rust_vec_len,
-            data_len,
-        ),
+        8 => wire__crate__MobileConvexClient_generation_impl(port, ptr, rust_vec_len, data_len),
         9 => wire__crate__MobileConvexClient_mutation_impl(port, ptr, rust_vec_len, data_len),
         10 => {
             wire__crate__MobileConvexClient_mutation_timed_impl(port, ptr, rust_vec_len, data_len)
@@ -2170,6 +2176,22 @@ impl flutter_rust_bridge::IntoDart for crate::ClientError {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ClientError {}
 impl flutter_rust_bridge::IntoIntoDart<crate::ClientError> for crate::ClientError {
     fn into_into_dart(self) -> crate::ClientError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ClientGeneration {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.client.into_into_dart().into_dart(),
+            self.connection.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::ClientGeneration {}
+impl flutter_rust_bridge::IntoIntoDart<crate::ClientGeneration> for crate::ClientGeneration {
+    fn into_into_dart(self) -> crate::ClientGeneration {
         self
     }
 }
@@ -2419,6 +2441,14 @@ impl SseEncode for crate::ClientError {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::ClientGeneration {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i64>::sse_encode(self.client, serializer);
+        <i64>::sse_encode(self.connection, serializer);
     }
 }
 

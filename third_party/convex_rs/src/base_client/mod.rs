@@ -501,6 +501,16 @@ pub struct BaseConvexClient {
 
 static CLIENTS_BUILT: AtomicU64 = AtomicU64::new(0);
 
+/// Which client, and which connection of it, results come from: the pair a
+/// result's stamp carries as `client` and `connection`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Generation {
+    /// The client, numbered in the order clients were built in this process.
+    pub client: u64,
+    /// The connection generation of that client.
+    pub connection: u64,
+}
+
 impl BaseConvexClient {
     /// Construct a new [`BaseConvexClient`].
     pub fn new() -> Self {
@@ -792,6 +802,15 @@ impl BaseConvexClient {
     /// starts the client again on a new socket.
     pub fn connection(&self) -> u64 {
         self.connection
+    }
+
+    /// The client and the connection generation it is on, as each result's
+    /// [`QueryResults::client`] and [`QueryResults::connection`] number them.
+    pub fn generation(&self) -> Generation {
+        Generation {
+            client: self.state.latest_results.client,
+            connection: self.connection,
+        }
     }
 
     /// Grab a snapshot of the latest query results to all subscribed queries.

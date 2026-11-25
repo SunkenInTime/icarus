@@ -33,6 +33,7 @@ use crate::SubscriberId;
 use crate::{
     base_client::{
         BaseConvexClient,
+        Generation,
         QueryResults,
         TimedResult,
     },
@@ -488,15 +489,15 @@ impl ConvexClient {
             .expect("INTERNAL BUG: Worker has gone away");
     }
 
-    /// The connection generation the client is on (see
-    /// [`QueryResults::connection`]). The worker answers between its own
-    /// steps, so after a reconnect the answer is the generation the client
-    /// started again on, never an earlier one. Results stamped with a lower
-    /// generation come from a connection before it.
-    pub async fn connection_generation(&self) -> anyhow::Result<u64> {
+    /// The client and the connection generation it is on (see
+    /// [`QueryResults::client`] and [`QueryResults::connection`]). The
+    /// worker answers between its own steps, so after a reconnect the answer
+    /// is the generation the client started again on, never an earlier one.
+    /// Results stamped with a lower generation come from a connection
+    /// before it.
+    pub async fn generation(&self) -> anyhow::Result<Generation> {
         let (tx, rx) = oneshot::channel();
-        self.request_sender
-            .send(ClientRequest::ConnectionGeneration(tx))?;
+        self.request_sender.send(ClientRequest::Generation(tx))?;
         Ok(rx.await?)
     }
 

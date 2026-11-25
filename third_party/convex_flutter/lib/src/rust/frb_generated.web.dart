@@ -200,6 +200,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ClientError dco_decode_client_error(dynamic raw);
 
   @protected
+  ClientGeneration dco_decode_client_generation(dynamic raw);
+
+  @protected
   GroupQuery dco_decode_group_query(dynamic raw);
 
   @protected
@@ -373,6 +376,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ClientError sse_decode_client_error(SseDeserializer deserializer);
+
+  @protected
+  ClientGeneration sse_decode_client_generation(SseDeserializer deserializer);
 
   @protected
   GroupQuery sse_decode_group_query(SseDeserializer deserializer);
@@ -628,6 +634,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_client_error(ClientError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_client_generation(
+    ClientGeneration self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_group_query(GroupQuery self, SseSerializer serializer);

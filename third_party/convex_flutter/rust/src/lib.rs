@@ -285,6 +285,13 @@ pub struct TimedGroupUpdate {
     pub client: i64,
 }
 
+/// The client and the connection generation it is on, as a stamp's `client`
+/// and `connection` number them (see [MobileConvexClient::generation]).
+pub struct ClientGeneration {
+    pub client: i64,
+    pub connection: i64,
+}
+
 /// A query's error: the message, and a `ConvexError`'s data as JSON.
 pub struct QueryFailure {
     pub message: String,
@@ -707,14 +714,18 @@ impl MobileConvexClient {
         handle_direct_function_result(result)
     }
 
-    /// The connection generation the client is on, as each stamp's
-    /// `connection` numbers it (see `convex::QueryResults::connection`).
+    /// The client and the connection generation it is on, as each stamp's
+    /// `client` and `connection` number them (see `convex::Generation`).
     /// After a reconnect it is the generation the client started again on,
     /// never an earlier one.
     #[frb]
-    pub async fn connection_generation(&self) -> Result<i64, ClientError> {
+    pub async fn generation(&self) -> Result<ClientGeneration, ClientError> {
         let client = self.connected_client().await?;
-        Ok(client.connection_generation().await? as i64)
+        let generation = client.generation().await?;
+        Ok(ClientGeneration {
+            client: generation.client as i64,
+            connection: generation.connection as i64,
+        })
     }
 
     /// [mutation], with the snapshot the client held when it completed the

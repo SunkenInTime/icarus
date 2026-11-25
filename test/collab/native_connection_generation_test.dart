@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 final class _Restarting implements MobileConvexClient {
   @override
-  Future<int> connectionGeneration() => Completer<int>().future;
+  Future<ClientGeneration> generation() => Completer<ClientGeneration>().future;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -15,8 +15,8 @@ final class _Restarting implements MobileConvexClient {
 
 void main() {
   test(
-      'asking the connection generation of a client that never answers '
-      'times out like its other calls', () async {
+      'asking the generation of a client that never answers times out like '
+      'its other calls', () async {
     final client = NativeConvexClient.over(
       _Restarting(),
       const ConvexConfig(
@@ -26,7 +26,7 @@ void main() {
     );
 
     await expectLater(
-      client.connectionGeneration(),
+      client.generation(),
       throwsA(isA<TimeoutException>()),
     );
   });

@@ -194,7 +194,7 @@ abstract interface class StampedConvexTransport implements ConvexTransport {
     List<(String name, ConvexObject args)> queries,
   );
 
-  Future<int> connectionGeneration();
+  Future<({int client, int connection})> generation();
 }
 
 abstract interface class ConvexTransport {

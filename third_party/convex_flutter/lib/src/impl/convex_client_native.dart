@@ -154,8 +154,8 @@ class NativeConvexClient implements IConvexClient {
   }
 
   @override
-  Future<int> connectionGeneration() =>
-      _rustClient.connectionGeneration().timeout(config.operationTimeout);
+  Future<ClientGeneration> generation() =>
+      _rustClient.generation().timeout(config.operationTimeout);
 
   @override
   Future<TimedAnswer> mutationTimed({

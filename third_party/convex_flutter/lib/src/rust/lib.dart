@@ -50,11 +50,11 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required Map<String, String> args,
   });
 
-  /// The connection generation the client is on, as each stamp's
-  /// `connection` numbers it (see `convex::QueryResults::connection`).
+  /// The client and the connection generation it is on, as each stamp's
+  /// `client` and `connection` number them (see `convex::Generation`).
   /// After a reconnect it is the generation the client started again on,
   /// never an earlier one.
-  Future<PlatformInt64> connectionGeneration();
+  Future<ClientGeneration> generation();
 
   /// Executes a mutation on the Convex backend.
   Future<String> mutation({
@@ -208,6 +208,26 @@ sealed class ClientError with _$ClientError implements FrbException {
   /// An unexpected server-side error from a remote Convex function.
   const factory ClientError.serverError({required String msg}) =
       ClientError_ServerError;
+}
+
+/// The client and the connection generation it is on, as a stamp's `client`
+/// and `connection` number them (see [MobileConvexClient::generation]).
+class ClientGeneration {
+  final PlatformInt64 client;
+  final PlatformInt64 connection;
+
+  const ClientGeneration({required this.client, required this.connection});
+
+  @override
+  int get hashCode => client.hashCode ^ connection.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ClientGeneration &&
+          runtimeType == other.runtimeType &&
+          client == other.client &&
+          connection == other.connection;
 }
 
 /// One query of a group subscribed together (see
