@@ -1452,9 +1452,13 @@ rows sit beside them, each versioned and each read back before it is written:
   whose page, revision and life are the ones `Shown` holds keeps its digest,
   because the server raises an item's revision with every change to what the
   digest covers (every convex test checks this through
-  `convex/revisionGuard.setup.ts`). Tests and driver builds also take every
-  page from scratch and fail on any difference (`shownTakesChecked`, on
-  unless the build is a release without `ICARUS_DRIVE`).
+  `convex/revisionGuard.setup.ts`). For the same reason the store leaves an
+  item it already holds at that revision and life, on that page only, as
+  stored, and encodes a group here again only when what it holds changed.
+  Tests and driver builds also take every page from scratch, compare every
+  item they leave as stored and encode every group, and fail on any
+  difference (`shownTakesChecked`, on unless the build is a release without
+  `ICARUS_DRIVE`).
 
 Any row under one of these names, or under the `pending/`, `attempt/`,
 `landed/` or `read/` prefixes, marks the area as a cloud strategy

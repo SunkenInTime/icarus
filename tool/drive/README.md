@@ -84,9 +84,9 @@ With `"ahead": "median"` (`scripts/open-first-frame-abandoned.json`) each press 
 
 `{"pageTakeCost": 300, "changed": 1, "runs": 51}` times the cloud store taking a live page result, on SQLite in a temporary folder: a cloud strategy with one page of that many items (one in ten a 250-point freehand drawing, the shapes `tool/convex_cost/lib/content.mjs` writes), and a result in which `changed` of them changed. It logs a `TAKE` line with the median and worst of the longest main-isolate stretch during `record` and of the whole `record`, first as the store runs in a release build, then with every take also checked against one from scratch, as tests and driver builds run it. `"budget": {"longestStepMs": x, "recordMs": y}` judges the two medians of the first, with `within budget` and `over budget` lines like `READBACK`'s, and fails the step if either is over. `scripts/page-take-budget.json` judges one changed item on 300, and logs one on 60, ten on 300 and all 300:
 
-| Page | Longest step target | Record target |
-| --- | --- | --- |
-| 1 of 300 items changed | 4 ms | 8 ms |
+| Page | Longest step target | Windows release, 2026-11-25 | Record target | Windows release, 2026-11-25 |
+| --- | --- | --- | --- | --- |
+| 1 of 300 items changed | 4 ms | 3.83 ms | 8 ms | 5.72 ms |
 
 `scripts/read-mode-round.json` is a round to rerun before read mode is turned on. Make its library with `ICARUS_READ_ROUND_FIXTURE=<new folder> ICARUS_READ_ROUND_SOURCES=<Hive stores separated by ;> flutter test test/library_store/read_mode_round_test.dart`. That copies the stores, makes duplicate names unique against every name in them (a second `A` beside an existing `A (2)` becomes `A (3)`), and adds a strategy with an agent at x = -0.0, one with lineups saved interleaved and one page of dense strokes. Run the script on that library in read mode and in mirror mode. Then `ICARUS_READ_ROUND_BEFORE=<library> ICARUS_READ_ROUND_AFTER=<run>/store-main` with the same test compares Hive before and after, strategy by strategy, save time aside: only the strategy the script edits may differ. At the end of every mirror or read run, the store check lists a strategy the mirror recorded as reading back differently as `STORE expected`. It fails on a difference the mirror did not record, or on a strategy recorded as different that reads back equal.
 
