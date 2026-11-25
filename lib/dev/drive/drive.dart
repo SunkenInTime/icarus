@@ -1381,16 +1381,16 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       File(path.join(images.path, 'race-unused-$run-$i.png'))
           .writeAsBytesSync(List.filled(16384, run % 251));
     }
+    final page = clickableCenterOf(
+      note: _log,
+      (w) => _isText(w, pageName),
+      what: 'the page "$pageName"',
+    );
     final switcher = _point(step, 'switcherAt');
     await _tap(switcher);
     final item = _nearest(
       clickableCentersOf((w) => _isText(w, openedName)),
       switcher,
-    );
-    final page = clickableCenterOf(
-      note: _log,
-      (w) => _isText(w, pageName),
-      what: 'the page "$pageName"',
     );
     final clock = Stopwatch();
     int? cleared;

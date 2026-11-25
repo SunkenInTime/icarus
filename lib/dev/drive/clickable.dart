@@ -145,23 +145,22 @@ Offset clickableCenterOf(
 }) {
   final found = matchesInTree(test);
   final tappable = [
-    for (final match in found)
-      if (takesTheTap(match.box, match.at)) match,
+    for (final (index, match) in found.indexed)
+      if (takesTheTap(match.box, match.at)) index,
   ];
   final untapped = [
-    for (final match in found)
-      if (!tappable.contains(match)) match,
+    for (var index = 0; index < found.length; index++)
+      if (!tappable.contains(index)) index,
   ];
   if (tappable.length > nth) {
-    final picked = tappable[nth];
-    final index = found.indexOf(picked);
+    final index = tappable[nth];
     if (index != nth) {
       note?.call('TAP $what: the ${_ordinal(nth + 1)} match that can be '
           'tapped is the ${_ordinal(index + 1)} of ${found.length} in the '
           'tree; ${untapped.length} cannot be tapped, the first because '
-          '${whyNotTapped(untapped.first.at)}');
+          '${whyNotTapped(found[untapped.first].at)}');
     }
-    return picked.at;
+    return found[index].at;
   }
   if (found.isEmpty) throw StateError('$what: found 0');
   final asked = nth == 0 ? '' : ', asked for the ${_ordinal(nth + 1)}';
@@ -170,7 +169,7 @@ Offset clickableCenterOf(
   }
   final can = tappable.isEmpty ? 'none' : '${tappable.length}';
   throw StateError('$what: found ${found.length}, $can can be tapped$asked; '
-      'the first that cannot: ${whyNotTapped(untapped.first.at)}');
+      'the first that cannot: ${whyNotTapped(found[untapped.first].at)}');
 }
 
 List<Offset> clickableCentersOf(bool Function(Widget) test) => [

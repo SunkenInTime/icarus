@@ -357,6 +357,30 @@ void main() {
     );
   });
 
+  testWidgets(
+      'two matches that are one thing on screen count as two, as on main, and '
+      'the second taps the same thing', (tester) async {
+    await tester.pumpWidget(_app(Center(
+      child: GestureDetector(
+        onTap: _counts('page 1'),
+        child:
+            const KeyedSubtree(key: ValueKey('page-1'), child: Text('Page 1')),
+      ),
+    )));
+
+    await tester.tapAt(clickableCenterOf(
+      (widget) =>
+          widget.key == const ValueKey('page-1') ||
+          (widget is Text && widget.data == 'Page 1'),
+      what: 'tapText "Page 1"',
+      nth: 1,
+      note: (line) => fail('no note expected: $line'),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(_taps, {'page 1': 1});
+  });
+
   testWidgets('asking past the last match says how many there are',
       (tester) async {
     await tester.pumpWidget(_app(const Center(child: Text(_name))));
