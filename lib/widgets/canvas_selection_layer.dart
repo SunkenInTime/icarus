@@ -769,10 +769,9 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
     ref.listen(strategyOpeningProvider, (before, now) {
       if (before == null || now != null) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
         final held = FocusManager.instance.primaryFocus;
-        if (mounted && (held == null || held is FocusScopeNode)) {
-          _focus.requestFocus();
-        }
+        if (held == null || held is FocusScopeNode) _focus.requestFocus();
       });
     });
     // Read as soon as the map shows, so the first drag has them.

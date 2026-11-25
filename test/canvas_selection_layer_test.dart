@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -86,6 +87,8 @@ Widget _item(
       ),
     );
 
+var _insidePresses = 0;
+
 Widget _gatedIf(bool gated, Widget layer) => gated
     ? Column(
         mainAxisSize: MainAxisSize.min,
@@ -107,6 +110,16 @@ Widget _gatedIf(bool gated, Widget layer) => gated
                   top: 400,
                   width: 150,
                   child: Material(child: TextField(key: ValueKey('field'))),
+                ),
+                Positioned(
+                  left: 600,
+                  top: 20,
+                  child: Material(
+                    child: TextButton(
+                      onPressed: () => _insidePresses++,
+                      child: const Text('Inside'),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -512,6 +525,76 @@ void main() {
       await selectAllThenDelete(tester);
 
       expect(container.read(agentProvider), hasLength(3));
+    });
+
+    testWidgets(
+        'with focus on a top-strip button, a canvas focus request queued '
+        'before the open starts never lands: Ctrl+A and Delete change '
+        'nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      final button = Focus.of(tester.element(find.text('Library')));
+      button.requestFocus();
+      await tester.pump();
+
+      backButtonDown(tester);
+      await Future<void>.microtask(() {});
+      beginOpen();
+      await tester.pump();
+      await selectAllThenDelete(tester);
+
+      expect(container.read(agentProvider), hasLength(3));
+    });
+
+    testWidgets(
+        'an open ending under a dialog with nothing focused leaves the canvas '
+        'without the keyboard; once the dialog closes, a click gives it back',
+        (tester) async {
+      await pumpCanvas(tester, gated: true);
+      final attempt = beginOpen();
+      await tester.pump();
+      unawaited(showDialog<void>(
+        context: tester.element(find.byType(CanvasSelectionLayer)),
+        builder: (_) => const Dialog(child: SizedBox.square(dimension: 80)),
+      ));
+      await tester.pumpAndSettle();
+
+      container.read(strategyOpeningProvider.notifier).settle(attempt);
+      await tester.pump();
+      await tester.pump();
+      await selectAllThenDelete(tester);
+      expect(container.read(agentProvider), hasLength(3));
+
+      Navigator.of(tester.element(find.byType(Dialog))).pop();
+      await tester.pumpAndSettle();
+      await tester.tapAt(canvasPoint(tester));
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(container.read(canvasSelectionProvider), {_a, _b, _c});
+    });
+
+    testWidgets(
+        "a screen reader's tap on a button inside the editor does nothing "
+        'once the open has started', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpCanvas(tester, gated: true);
+      _insidePresses = 0;
+      tester.semantics.tap(find.semantics.byLabel('Inside'));
+      await tester.pump();
+      expect(_insidePresses, 1);
+
+      beginOpen();
+      await tester.pump();
+      expect(
+        () => tester.semantics.tap(find.semantics.byLabel('Inside')),
+        throwsA(anything),
+        reason: 'the button offers no tap while the open runs',
+      );
+      await tester.pump();
+      expect(_insidePresses, 1);
+      semantics.dispose();
     });
 
     testWidgets('Tab reaches nothing in the editor', (tester) async {

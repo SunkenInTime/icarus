@@ -35,17 +35,38 @@ class _EditorInputGateState extends ConsumerState<EditorInputGate> {
   @override
   void initState() {
     super.initState();
-    _opening = ref.listenManual(strategyOpeningProvider, (before, now) {
-      _focus.descendantsAreFocusable = now == null;
-      if (before != null || now == null) return;
-      ref.read(captionCardProvider.notifier).closeNow();
-      ref.read(deleteMenuProvider.notifier).requestClose();
-      ContextMenuRegion.closeOpen();
-    });
+    _opening = ref.listenManual(
+      strategyOpeningProvider,
+      (before, now) {
+        _close(now != null);
+        if (before != null || now == null) return;
+        ref.read(captionCardProvider.notifier).closeNow();
+        ref.read(deleteMenuProvider.notifier).requestClose();
+        ContextMenuRegion.closeOpen();
+      },
+      fireImmediately: true,
+    );
+  }
+
+  void _close(bool closed) {
+    _focus.descendantsAreFocusable = !closed;
+    FocusManager.instance.removeListener(_sendFocusOut);
+    if (closed) {
+      FocusManager.instance.addListener(_sendFocusOut);
+      _sendFocusOut();
+    }
+  }
+
+  void _sendFocusOut() {
+    final held = FocusManager.instance.primaryFocus;
+    if (held != null && held != _focus && held.ancestors.contains(_focus)) {
+      held.unfocus();
+    }
   }
 
   @override
   void dispose() {
+    FocusManager.instance.removeListener(_sendFocusOut);
     _opening.close();
     _focus.dispose();
     super.dispose();
@@ -53,15 +74,15 @@ class _EditorInputGateState extends ConsumerState<EditorInputGate> {
 
   @override
   Widget build(BuildContext context) {
-    final open = ref.watch(strategyOpeningProvider) == null;
+    final opening = ref.watch(strategyOpeningProvider) != null;
     return _ClosedWhile(
       closed: () => _closed,
-      child: Focus(
-        focusNode: _focus,
-        canRequestFocus: false,
-        skipTraversal: true,
-        descendantsAreFocusable: open,
-        child: widget.child,
+      child: AbsorbPointer(
+        absorbing: opening,
+        child: Focus.withExternalFocusNode(
+          focusNode: _focus,
+          child: widget.child,
+        ),
       ),
     );
   }
