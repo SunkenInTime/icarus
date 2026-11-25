@@ -454,6 +454,7 @@ final class StoreMirror extends LocalLibraryFollower {
           strategies: strategies,
           folders: folders,
           handedOff: _handedOff,
+          breathe: betweenAnimations,
         );
       } finally {
         _strategiesInFlight = const {};

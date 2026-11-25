@@ -127,4 +127,28 @@ void main() {
     expect(images.of(first).readBack, isA<ReadsBackEqual>());
     expect(images.of(second).readBack, isA<ReadsBackEqual>());
   });
+
+  test(
+      'as the mirror runs it, the check breaks between frames after the rows '
+      'and after each page, and comes to the same answer as in one go',
+      () async {
+    final strategy = _strategy('between');
+    final changed = _withPage(
+      strategy,
+      strategy.pages[1].copyWith(lineUpGraph: _interleaved('between-l')),
+    );
+    for (final checked in [strategy, changed]) {
+      var breaths = 0;
+      final stepped = await StrategyImages().between(checked, () async {
+        breaths += 1;
+      });
+      final whole = StrategyImages().of(checked);
+      String words(ReadBack readBack) => switch (readBack) {
+            ReadsBackDifferently(:final words) => words,
+            ReadsBackEqual() => 'equal',
+          };
+      expect(words(stepped.readBack), words(whole.readBack));
+      expect(breaths, greaterThanOrEqualTo(1 + checked.pages.length));
+    }
+  });
 }

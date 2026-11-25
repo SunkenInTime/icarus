@@ -2451,7 +2451,7 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'openFirstFrame':
       await _openFirstFrame(step);
     case 'readBackCost':
-      _log(readBackCost(value as String, (step['runs'] ?? 21) as int));
+      _log(await readBackCost(value as String, (step['runs'] ?? 21) as int));
     case 'openStoredCloudStrategy':
       unawaited(
         Navigator.of(appNavigatorKey.currentContext!).push(

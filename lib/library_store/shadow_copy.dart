@@ -294,6 +294,8 @@ Future<ShadowCopy> mirrorImage(
 
 bool _keptHere(String strategyId) => false;
 
+Future<void> _noBreath() async {}
+
 Future<ShadowCopy> mirrorIds(
   HiveReads reads,
   LibraryStore store,
@@ -302,6 +304,7 @@ Future<ShadowCopy> mirrorIds(
   required Set<String> strategies,
   required Set<String> folders,
   bool Function(String strategyId) handedOff = _keptHere,
+  Future<void> Function() breathe = _noBreath,
 }) async {
   final strategyResults = <StrategyCopy>[];
   final folderResults = <FolderCopy>[];
@@ -341,7 +344,8 @@ Future<ShadowCopy> mirrorIds(
     switch (reads.strategy(id)) {
       case InHive(value: final strategy):
         if (await _putImage(
-                store, holds, id, images.of(strategy), strategyResults)
+                store, holds, id, await images.between(strategy, breathe),
+                strategyResults)
             case final stop?) {
           return stopped(stop);
         }
@@ -437,7 +441,7 @@ Future<ShadowCopy> _bringUpToDate(
   final chosen = hive.strategies;
   for (final (index, strategy) in chosen.indexed) {
     final id = strategy.id;
-    final image = images.of(strategy);
+    final image = await images.between(strategy, breathe);
     switch (image.rows) {
       case StrategyRowsRefused(:final problems):
         strategies.add(StrategyNotMirrored(id, ConverterRefused(problems)));

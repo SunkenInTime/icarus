@@ -361,7 +361,7 @@ StrategyData _withFirstPageRenamed(StrategyData strategy) => strategy.copyWith(
       ],
     );
 
-String readBackCost(String pick, int runs) {
+Future<String> readBackCost(String pick, int runs) async {
   int items(StrategyData strategy) => strategy.pages.fold(
         0,
         (sum, page) =>
@@ -405,6 +405,33 @@ String readBackCost(String pick, int runs) {
   var turn = 0;
   final afterOnePage =
       timed(() => images.of(turn++ % 2 == 0 ? edited : held));
+  Future<int> longestTask(StrategyImages images, StrategyData strategy) async {
+    var longest = 0;
+    final clock = Stopwatch()..start();
+    await images.between(strategy, () async {
+      if (clock.elapsedMicroseconds > longest) {
+        longest = clock.elapsedMicroseconds;
+      }
+      await Future<void>.delayed(Duration.zero);
+      clock
+        ..reset()
+        ..start();
+    });
+    return clock.elapsedMicroseconds > longest
+        ? clock.elapsedMicroseconds
+        : longest;
+  }
+
+  final coldTasks = [
+    for (var turn = 0; turn < runs; turn++)
+      await longestTask(StrategyImages(), held),
+  ]..sort();
+  final warmImages = StrategyImages();
+  await longestTask(warmImages, held);
+  final warmTasks = [
+    for (var turn = 0; turn < runs; turn++)
+      await longestTask(warmImages, turn.isEven ? edited : held),
+  ]..sort();
   final readBack = StrategyImages().of(held).readBack;
   return 'READBACK $pick (${target.pages.length} pages, ${items(target)} '
       'items, ${readBack is ReadsBackEqual ? 'reads back equal' : 'reads back differently'}), '
@@ -414,7 +441,10 @@ String readBackCost(String pick, int runs) {
       'median ${ms(checked[runs ~/ 2] - rows[runs ~/ 2])} ms; after one page '
       'changed median ${ms(afterOnePage[runs ~/ 2])} ms, worst '
       '${ms(afterOnePage.last)} ms, added median '
-      '${ms(afterOnePage[runs ~/ 2] - rows[runs ~/ 2])} ms';
+      '${ms(afterOnePage[runs ~/ 2] - rows[runs ~/ 2])} ms; as the mirror '
+      'runs it, with a break between frames after the rows and after each '
+      'page, the longest single task: cold worst ${ms(coldTasks.last)} ms, '
+      'after one page changed worst ${ms(warmTasks.last)} ms';
 }
 
 String holdStore(ProviderContainer c) =>
