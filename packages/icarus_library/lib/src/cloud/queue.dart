@@ -1319,8 +1319,13 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         attempt,
         AttemptFailed(TransportCut(failure), at),
       );
-    case BatchRefused(:final attempt, :final refusal, :final at):
-      return _batchRefused(edit, attempt, refusal, at);
+    case BatchRefused(
+      :final attempt,
+      :final refusal,
+      :final at,
+      :final currentLife,
+    ):
+      return _batchRefused(edit, attempt, refusal, at, currentLife);
     case ReadRefusedForUpgrade(:final build):
       edit.strategy = edit.strategy.copyWith(
         upgradeTold: UpgradeToldTo(build, attempt: edit.nextAttempt - 1),
@@ -1445,6 +1450,7 @@ Step _batchRefused(
   int attempt,
   BatchRefusal refusal,
   DateTime? at,
+  int? currentLife,
 ) {
   final fact = edit.attempts[attempt];
   if (fact == null) return NotApplicable(edit.original, NoSuchAttempt(attempt));
@@ -1478,6 +1484,7 @@ Step _batchRefused(
       edit.shown = edit.shown.owingListPast(
         edit.shown.strategy?.life,
         edit.readsAfterThis(),
+        named: currentLife,
       );
     case BatchRefusal.uncheckedTooLate:
       edit.session = edit.session.withConnection(
@@ -1522,6 +1529,11 @@ ResultFit resultFit(
     HeaderRead(:final strategy) => switch ((held, createdAtOf(strategy))) {
       (_, final listed?) when listed == _refusedLife(shown.list) =>
         ResultFit.older,
+      (_, final listed?) when (namedLifeOf(shown.list) ?? listed) > listed =>
+        ResultFit.older,
+      (final held?, final listed?)
+          when namedLifeOf(shown.list) != null && listed != held =>
+        ResultFit.adopts,
       (final held?, final listed?) when listed > held => ResultFit.adopts,
       (final held?, final listed?)
           when listed < held && _refusedLife(shown.list) == held =>

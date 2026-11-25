@@ -542,6 +542,26 @@ void main() {
     });
 
     test(
+        'a batch refused as STRATEGY_REPLACED hands the queue the life the '
+        'server names, and the queue owes a list of that life', () {
+      inWorld((world) {
+        world.replaceStrategyOnServer();
+        final current = createdAtOf(world.server.rows[strategyId]!.strategy);
+        world.server.overrideRead = (call) =>
+            const StoreReadLost(TransportFailure.network, 'held by the test');
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 1));
+        expect(
+          namedLifeOf(world.cloud().queue.shown.list),
+          allOf(isNotNull, current),
+        );
+        world.server.overrideRead = null;
+        world.settle(const Duration(minutes: 1));
+        expect(world.viewedLife(), current);
+      });
+    });
+
+    test(
         'a record holding a strategy life a year after the server\'s recovers '
         'after one refused batch: the calls are the send, the list and the '
         'page, the move is set aside, and the next edit is sent and '

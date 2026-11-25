@@ -253,7 +253,10 @@ final class FakeServer {
     if (rows[call.strategyId] case final held?
         when call.strategyLife != null &&
             (createdAtOf(held.strategy) ?? firstLife) != call.strategyLife) {
-      return const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced);
+      return StoreBatchRefusedWhole(
+        BatchRefusal.strategyReplaced,
+        currentLife: createdAtOf(held.strategy) ?? firstLife,
+      );
     }
     final now = serverNow;
     final asked = call.serverTime is ServerTimeAsked;

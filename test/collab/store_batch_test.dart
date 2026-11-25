@@ -5,6 +5,7 @@ import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/collab/generated/icarus_convex_api.dart';
+import 'package:icarus/collab/src/convex_client_types.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -451,6 +452,83 @@ void main() {
           'failure',
           TransportFailure.malformedAnswer,
         ),
+      );
+    });
+
+    test(
+        'STRATEGY_REPLACED carries the life the server names, from the '
+        'desktop and the web clients, and none when an older server sends '
+        'none', () {
+      const life = 1795176055837;
+      int? named(Object error) => switch (storeBatchOutcomeOfError(error)) {
+            StoreBatchRefusedWhole(
+              refusal: BatchRefusal.strategyReplaced,
+              :final currentLife,
+            ) =>
+              currentLife,
+            final other => fail('expected a replaced refusal, got $other'),
+          };
+      ConvexFunctionException desktop(ConvexValue? data) =>
+          ConvexFunctionException(
+            code: ConvexErrorCode.strategyReplaced,
+            rawCode: 'STRATEGY_REPLACED',
+            message: 'replaced',
+            data: data,
+          );
+      expect(
+        named(
+          desktop(
+            ConvexObject({
+              'code': const ConvexString('STRATEGY_REPLACED'),
+              'currentLife': const ConvexInteger(life),
+            }),
+          ),
+        ),
+        life,
+      );
+      expect(
+        named(
+          desktop(
+            ConvexObject({
+              'code': const ConvexString('STRATEGY_REPLACED'),
+              'currentLife': ConvexFloat(life.toDouble()),
+            }),
+          ),
+        ),
+        life,
+      );
+      expect(
+        named(
+          const ConvexClientFunctionError(
+            rawCode: 'STRATEGY_REPLACED',
+            message: 'replaced',
+            data: {'code': 'STRATEGY_REPLACED', 'currentLife': life},
+          ),
+        ),
+        life,
+      );
+      expect(named(desktop(null)), isNull);
+      expect(
+        named(
+          desktop(
+            ConvexObject({
+              'code': const ConvexString('STRATEGY_REPLACED'),
+              'currentLife': const ConvexFloat(1.5),
+            }),
+          ),
+        ),
+        isNull,
+      );
+      expect(
+        named(
+          desktop(
+            ConvexObject({
+              'code': const ConvexString('STRATEGY_REPLACED'),
+              'currentLife': const ConvexString('soon'),
+            }),
+          ),
+        ),
+        isNull,
       );
     });
 

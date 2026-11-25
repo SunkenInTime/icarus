@@ -98,6 +98,92 @@ void main() {
     });
   });
 
+  group('a STRATEGY_REPLACED that names the current life', () {
+    test(
+      'a list of the named life is adopted, and a list of any life between '
+      'the record\'s and the named one is dropped with the list still owed',
+      () {
+        final client = Client();
+        client.edit(movePatch('move'));
+        final attempt = client.claim(['move']);
+        client.must(
+          BatchRefused(
+            attempt,
+            BatchRefusal.strategyReplaced,
+            currentLife: thirdLife,
+          ),
+        );
+        expect(
+          client.queue.shown.list,
+          owed(unlessLife: strategyLife, namedLife: thirdLife),
+        );
+        final between = client.step(
+          BaseArrived(
+            headerReadOf(replaced(initialRows(), life: laterLife)),
+            session: client.queue.session.number,
+            from: client.beginRead(),
+          ),
+        );
+        expect(notApplicable(between), isA<OlderResult>());
+        expect(client.queue.shown.strategy?.life, strategyLife);
+        expect(isDebt(client.queue.shown.list), isTrue);
+        client.arrive(headerReadOf(replaced(initialRows(), life: thirdLife)));
+        expect(client.queue.shown.strategy?.life, thirdLife);
+        expect(isDebt(client.queue.shown.list), isFalse);
+        expect(setAsideIds(client.queue), ['move']);
+      },
+    );
+
+    test('a record a year ahead adopts the named earlier life, and drops a '
+        'list of any other earlier life', () {
+      final client = Client();
+      client.read(replaced(initialRows(), life: yearAhead));
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(
+        BatchRefused(
+          attempt,
+          BatchRefusal.strategyReplaced,
+          currentLife: strategyLife,
+        ),
+      );
+      final other = client.step(
+        BaseArrived(
+          headerReadOf(replaced(initialRows(), life: strategyLife - 1000)),
+          session: client.queue.session.number,
+          from: client.beginRead(),
+        ),
+      );
+      expect(notApplicable(other), isA<OlderResult>());
+      expect(client.queue.shown.strategy?.life, yearAhead);
+      client.arrive(headerReadOf(initialRows()));
+      expect(client.queue.shown.strategy?.life, strategyLife);
+      expect(setAsideIds(client.queue), ['move']);
+    });
+
+    test('a later refusal of the list keeps the named life', () {
+      final client = Client();
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(
+        BatchRefused(
+          attempt,
+          BatchRefusal.strategyReplaced,
+          currentLife: laterLife,
+        ),
+      );
+      client.must(const ResultRefused(page: null, problem: 'lifeless'));
+      expect(
+        client.queue.shown.list,
+        isA<ReadRefused>().having(
+          (state) => state.namedLife,
+          'namedLife',
+          laterLife,
+        ),
+      );
+    });
+  });
+
   group('a record holding a later life than the server\'s', () {
     test('a list read after a STRATEGY_REPLACED for the record\'s own life is '
         'adopted though its life is earlier, and the edits written in the '

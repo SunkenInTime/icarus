@@ -50,10 +50,19 @@ export type ErrorCode = (typeof errorCodes)[number];
 type ErrorData = {
   code: ErrorCode;
   message: string;
+  currentLife?: number;
 };
 
 function makeError(code: ErrorCode, message: string): ConvexError<ErrorData> {
   return new ConvexError({ code, message });
+}
+
+export function strategyReplacedError(currentLife: number): ConvexError<ErrorData> {
+  return new ConvexError({
+    code: "STRATEGY_REPLACED",
+    message: "This strategy was deleted and made again since these changes were made",
+    currentLife,
+  });
 }
 
 export function unauthenticatedError(): ConvexError<ErrorData> {

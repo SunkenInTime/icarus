@@ -719,7 +719,8 @@
           }
         ],
         "strategyLife": "L0",
-        "refused": "STRATEGY_REPLACED"
+        "refused": "STRATEGY_REPLACED",
+        "currentLife": "L1"
       },
       {
         "send": [

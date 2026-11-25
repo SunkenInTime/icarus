@@ -35,7 +35,7 @@ type Step =
   | { recreate: true }
   | { purge: true }
   | { send: Json[]; strategyLife?: string; expect: Json[] }
-  | { send: Json[]; strategyLife: string; refused: string };
+  | { send: Json[]; strategyLife: string; refused: string; currentLife: string };
 type Case = { name: string; steps: Step[] };
 
 const cases = JSON.parse(
@@ -184,7 +184,9 @@ describe("the stand-in server in packages/icarus_library/test/cloud_server.dart 
               () => "",
               (error: { data?: unknown }) => String(error.data),
             );
-            expect(JSON.parse(refused).code).toBe(step.refused);
+            const data = JSON.parse(refused);
+            expect(data.code).toBe(step.refused);
+            expect(lives.name(data.currentLife)).toBe(step.currentLife);
           } else {
             const answer = (await sent) as { results: Json[] };
             const got = answer.results.map((result) => normalized(result, lives));

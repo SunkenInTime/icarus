@@ -1626,8 +1626,13 @@ List<QueueEvent> answersOf(
               at: at,
             ),
         ],
-      StoreBatchRefusedWhole(:final refusal) => [
-          BatchRefused(batch.attempt, refusal, at: at),
+      StoreBatchRefusedWhole(:final refusal, :final currentLife) => [
+          BatchRefused(
+            batch.attempt,
+            refusal,
+            at: at,
+            currentLife: currentLife,
+          ),
         ],
       StoreBatchLost(:final failure) => [
           TransportFailed(batch.attempt, failure, at: at),
