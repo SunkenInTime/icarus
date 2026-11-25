@@ -34,12 +34,14 @@ final class StoreWork {
   int rowsDrawn = 0;
   int resultGroupsEncoded = 0;
   int rowsEncoded = 0;
+  int rowsCompared = 0;
   int Function() sessionRecords = () => 0;
 
   void reset() {
     rowsDrawn = 0;
     resultGroupsEncoded = 0;
     rowsEncoded = 0;
+    rowsCompared = 0;
   }
 }
 

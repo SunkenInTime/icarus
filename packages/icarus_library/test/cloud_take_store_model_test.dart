@@ -41,8 +41,11 @@ String differences(Contents left, Contents right) => [
       if (left[area]?[key] != right[area]?[key]) '$area $key',
 ].join('; ');
 
-Future<Map<String, int>> runSeed(int seed, int steps) async {
+typedef Counts = ({Map<String, int> applied, Map<String, int> generated});
+
+Future<Counts> runSeed(int seed, int steps) async {
   final server = RandomServer(Random(seed));
+  final applied = <String, int>{};
   final reusing = MemoryStorage();
   final fresh = MemoryStorage();
   final stores = [
@@ -54,12 +57,17 @@ Future<Map<String, int>> runSeed(int seed, int steps) async {
   }
   for (var step = 0; step < steps; step++) {
     if (server.random.nextBool()) server.change();
-    final base = server.random.nextInt(8) == 0
-        ? headerReadOf(server.rows())
+    final result = server.random.nextInt(8) == 0
+        ? server.pageList()
         : server.read();
-    final kept = await takeInto(stores.first, base, reuse: true);
-    final scratch = await takeInto(stores.last, base, reuse: false);
+    final kept = await takeInto(stores.first, result.base, reuse: true);
+    final scratch = await takeInto(stores.last, result.base, reuse: false);
     expect(kept, scratch, reason: 'seed $seed step $step');
+    if (kept == 'ReportApplied') {
+      for (final what in result.cases) {
+        applied[what] = (applied[what] ?? 0) + 1;
+      }
+    }
     final apart = differences(reusing.contents, fresh.contents);
     if (apart.isNotEmpty) {
       fail(
@@ -72,7 +80,7 @@ Future<Map<String, int>> runSeed(int seed, int steps) async {
   for (final store in stores) {
     await store.close();
   }
-  return server.reached;
+  return (applied: applied, generated: server.generated);
 }
 
 void main() {
@@ -85,13 +93,25 @@ void main() {
     final checked = shownTakesChecked;
     shownTakesChecked = false;
     addTearDown(() => shownTakesChecked = checked);
-    final reached = <String, int>{};
+    final applied = <String, int>{};
+    final generated = <String, int>{};
     for (var seed = 1; seed <= seeds; seed++) {
-      for (final MapEntry(:key, :value) in (await runSeed(
-        seed,
-        steps,
-      )).entries) {
-        reached[key] = (reached[key] ?? 0) + value;
+      final counts = await runSeed(seed, steps);
+      for (final (into, from) in [
+        (applied, counts.applied),
+        (generated, counts.generated),
+      ]) {
+        for (final MapEntry(:key, :value) in from.entries) {
+          into[key] = (into[key] ?? 0) + value;
+        }
+      }
+    }
+    if (environment['TAKE_MODEL_COUNTS'] == '1') {
+      for (final what in {...generated.keys, ...applied.keys}) {
+        stdout.writeln(
+          '$what: ${applied[what] ?? 0} applied of ${generated[what] ?? 0} '
+          'generated',
+        );
       }
     }
     for (final what in const [
@@ -100,11 +120,14 @@ void main() {
       'deleted',
       'restored',
       'life changed at the same revision',
-      'page trashed or restored',
+      'reordered',
+      'page trashed',
+      'page restored',
+      'trashed page read',
       'stale read',
       'rows left out of a read',
     ]) {
-      expect(reached[what] ?? 0, greaterThan(20), reason: what);
+      expect(applied[what] ?? 0, greaterThan(20), reason: what);
     }
   });
 }

@@ -622,8 +622,10 @@ final class Bench {
 final class TakeTimes {
   final wall = <int>[];
   final longest = <int>[];
+  final busy = <int>[];
 
   int get wallMedian => _median(wall);
+  int get busyMedian => _median(busy);
   int get wallWorst => wall.reduce(math.max);
   int get longestMedian => _median(longest);
   int get longestWorst => longest.reduce(math.max);
@@ -636,6 +638,7 @@ final class TakeTimes {
     'wallWorst': wallWorst,
     'longestMedian': longestMedian,
     'longestWorst': longestWorst,
+    'busyMedian': busyMedian,
   };
 }
 
@@ -652,6 +655,7 @@ Future<int> _timedTake(
   ticker.stop();
   times?.wall.add(took);
   times?.longest.add(ticker.longest);
+  times?.busy.add(ticker.busy);
   return took;
 }
 

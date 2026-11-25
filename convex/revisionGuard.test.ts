@@ -7,7 +7,6 @@ import { mutation } from "./lib/functions";
 import {
   ContentChangedWithoutRevision,
   changedWithoutRevision,
-  digestedFields,
 } from "./revisionGuard.setup";
 import schema from "./schema";
 import { modules } from "./test.setup";
@@ -121,7 +120,14 @@ describe("the revision guard every convex test runs under", () => {
       payloadKind: "text",
       payload: { kind: "agent", payloadVersion: 1, data: { a: 2 } },
     };
-    for (const field of digestedFields) {
+    for (const field of [
+      "pageId",
+      "sortIndex",
+      "deleted",
+      "elementType",
+      "payloadKind",
+      "payload",
+    ]) {
       expect(
         changedWithoutRevision(before, { ...before, [field]: changed[field] }),
       ).toEqual([field]);
@@ -136,5 +142,30 @@ describe("the revision guard every convex test runs under", () => {
         revision: 4,
       }),
     ).toEqual([]);
+  });
+
+  test("refuses any write that lowers a row's revision", () => {
+    const before: Row = { sortIndex: 0, revision: 3, createdAt: 10 };
+    expect(changedWithoutRevision(before, { ...before, revision: 2 })).toEqual([
+      "revision",
+    ]);
+    expect(
+      changedWithoutRevision(before, {
+        ...before,
+        sortIndex: 4,
+        revision: 1,
+        createdAt: 11,
+      }),
+    ).toEqual(["revision"]);
+  });
+
+  test("refuses a real write that lowers the revision and nothing else", async () => {
+    const { t, element } = await seeded();
+    const lowering = writing((row) => ({
+      revision: (row.revision as number) - 1,
+    }));
+    await expect(
+      t.run((ctx) => lowering._handler(ctx, { id: element._id, row: element })),
+    ).rejects.toThrow(/lowered its revision/);
   });
 });

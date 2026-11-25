@@ -109,6 +109,57 @@ Contents olderBuildDigests(Contents contents) {
   };
 }
 
+Future<LibraryStore> reopened(MemoryStorage storage) async {
+  final store = await openCloudStore(MemoryEngine(storage));
+  final opened = await recordAll(store, const [
+    AppRestarted(build: build),
+    ConnectionReturned(),
+  ]);
+  expect(opened.outcomes, everyElement(isA<ReportApplied>()));
+  return store;
+}
+
+Future<List<Object?>> storedRows(LibraryStore store, String page) async => [
+  for (final row in pageOf(await store.readPage(strategyId, page)).elements)
+    row.toJson(),
+];
+
+Future<List<Object?>> rowsOnDisk(MemoryStorage storage, String page) async {
+  final copy = await openCloudStore(
+    MemoryEngine(MemoryStorage(editable(storage.contents))),
+  );
+  final rows = await storedRows(copy, page);
+  await copy.close();
+  return rows;
+}
+
+Contents withOwedReads(Contents contents, Set<String> groups) => {
+  for (final MapEntry(key: area, value: keys) in contents.entries)
+    area: {
+      for (final MapEntry(:key, :value) in keys.entries)
+        key: groups.contains(key)
+            ? jsonEncode({
+                ...(jsonDecode(value) as Map<String, Object?>),
+                'read': 'owed',
+              })
+            : value,
+    },
+};
+
+String? storedGroup(Contents contents, String group) =>
+    [for (final keys in contents.values) ?keys[group]].firstOrNull;
+
+final class RefusingLease extends ForwardingLease {
+  RefusingLease(super.inner, this.refusing);
+
+  final bool Function() refusing;
+
+  @override
+  Future<Committing> commit(List<Change> changes) async => refusing()
+      ? const CommitRefused(DeviceFailure('the write is refused for this test'))
+      : super.commit(changes);
+}
+
 void main() {
   late bool checked;
   setUp(() => checked = shownTakesChecked);
@@ -127,12 +178,14 @@ void main() {
         await takePage(store, dense(round: 1, changed: changed));
         expect(shownWork.contentRowsDigested, changed);
         expect(storeWork.rowsEncoded, changed);
+        expect(storeWork.rowsCompared, changed + 1);
         expect(storeWork.resultGroupsEncoded, 2);
         shownWork.reset();
         storeWork.reset();
         await takePage(store, dense(round: 1, changed: changed));
         expect(shownWork.contentRowsDigested, 0);
         expect(storeWork.rowsEncoded, 0);
+        expect(storeWork.rowsCompared, 1);
         expect(storeWork.resultGroupsEncoded, 0);
       });
     }
@@ -150,6 +203,7 @@ void main() {
       await takePage(store, threePages(round: 1, changed: 1), 'page-b');
       expect(shownWork.contentRowsDigested, 1);
       expect(storeWork.rowsEncoded, 1);
+      expect(storeWork.rowsCompared, 2);
       expect(storeWork.resultGroupsEncoded, 2);
     });
   });
@@ -237,5 +291,159 @@ void main() {
       ),
     ]);
     await expectLater(takePage(store, rewritten), throwsA(isA<TakesDiffer>()));
+  });
+
+  group('stored results in an older shape', () {
+    final pageB = 'read/page/${digestOf('page-b')}';
+    const pageList = 'read/header';
+
+    test('are encoded again once when a result arrives after the store '
+        'reopens, whichever group holds them', () async {
+      final storage = MemoryStorage();
+      final first = await openCloudStore(MemoryEngine(storage));
+      await addCloud(first, initialRows());
+      await first.close();
+      final old = MemoryStorage(
+        withOwedReads(storage.contents, {pageList, pageB}),
+      );
+      for (final group in [pageList, pageB]) {
+        expect(storedGroup(old.contents, group), contains('"owed"'));
+      }
+      final store = await reopened(old);
+      final taken = await recordAll(store, [
+        BaseArrived(
+          pageReadOf(initialRows(), 'page-a'),
+          session: await sessionOf(store),
+          from: await readStartOf(store),
+        ),
+      ]);
+      expect(taken.outcomes, everyElement(isA<ReportApplied>()));
+      for (final group in [pageList, pageB]) {
+        expect(storedGroup(old.contents, group), isNot(contains('"owed"')));
+      }
+      expect(
+        await storedRows(store, 'page-a'),
+        await rowsOnDisk(old, 'page-a'),
+      );
+    });
+
+    test('on page B leave an update of page A taken, and are encoded only '
+        'the first time', () async {
+      final storage = MemoryStorage();
+      final first = await openCloudStore(MemoryEngine(storage));
+      await addCloud(first, initialRows());
+      await first.close();
+      final old = MemoryStorage(withOwedReads(storage.contents, {pageB}));
+      final store = await reopened(old);
+      await takePage(store, initialRows());
+      expect(storedGroup(old.contents, pageB), isNot(contains('"owed"')));
+      storeWork.reset();
+      await takePage(store, withOp(initialRows(), movePatch('m', x: 40)));
+      expect(storeWork.resultGroupsEncoded, 2);
+      expect(
+        await storedRows(store, 'page-a'),
+        await rowsOnDisk(old, 'page-a'),
+      );
+    });
+  });
+
+  test('an item stored before this run is compared whole on the first result '
+      'after the store reopens', () async {
+    final storage = MemoryStorage();
+    final first = await openCloudStore(MemoryEngine(storage));
+    await addCloud(first, initialRows());
+    await first.close();
+    final store = await reopened(storage);
+    final moved = initialRows().withRows([element('e1', sortIndex: 400)]);
+    await takePage(store, moved);
+    final e1 = elementOn(
+      pageOf(await store.readPage(strategyId, 'page-a')),
+      'e1',
+    );
+    expect((e1.toJson()! as Map)['sortIndex'], 400);
+    expect(
+      (await shownIn(store)).rows[const ElementTarget('e1')]!.digest,
+      rowDigest(moved.element('e1')!),
+    );
+    expect(
+      await storedRows(store, 'page-a'),
+      await rowsOnDisk(storage, 'page-a'),
+    );
+  });
+
+  group('a take that fails part of the way through', () {
+    final moved = withOp(initialRows(), movePatch('m', x: 40));
+
+    Future<void> nextIsTaken(LibraryStore store, MemoryStorage storage) async {
+      await takePage(store, moved);
+      final e1 = elementOn(
+        pageOf(await store.readPage(strategyId, 'page-a')),
+        'e1',
+      );
+      expect((e1.toJson()! as Map)['revision'], 2);
+      expect(
+        await storedRows(store, 'page-a'),
+        await rowsOnDisk(storage, 'page-a'),
+      );
+    }
+
+    test('because a check throws leaves the page as stored, and the next '
+        'result is taken', () async {
+      shownTakesChecked = true;
+      final storage = MemoryStorage();
+      final store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      final odd = moved.withRows([
+        LiveElement(
+          publicId: 'e2',
+          pagePublicId: 'page-a',
+          payload: agentPayload('e2', const {}),
+          sortIndex: 0,
+          revision: 1,
+          unknownFields: jsonObject(const {
+            'createdAt': fixtureLife,
+            'note': 'not what the store holds',
+          }),
+        ),
+      ]);
+      expect(
+        [for (final row in odd.elementsOn('page-a')) row.publicId],
+        ['e1', 'e2'],
+      );
+      await expectLater(takePage(store, odd), throwsA(isA<TakesDiffer>()));
+      expect(
+        await storedRows(store, 'page-a'),
+        await rowsOnDisk(storage, 'page-a'),
+      );
+      await nextIsTaken(store, storage);
+    });
+
+    test('because the write fails leaves the page as stored, and the next '
+        'result is taken', () async {
+      var refusing = false;
+      final storage = MemoryStorage();
+      final store = await openCloudStore(
+        WrappingEngine(
+          MemoryEngine(storage),
+          (lease) => RefusingLease(lease, () => refusing),
+        ),
+      );
+      await addCloud(store, initialRows());
+      refusing = true;
+      final result = await store.record(testAccount, strategyId, [
+        BaseArrived(
+          pageReadOf(moved, 'page-a'),
+          session: await sessionOf(store),
+          from: await readStartOf(store),
+        ),
+      ]);
+      refusing = false;
+      expect(result, isA<NotSaved<Recorded, CommitRefusal>>());
+      expect(
+        await storedRows(store, 'page-a'),
+        await rowsOnDisk(storage, 'page-a'),
+      );
+      await nextIsTaken(store, storage);
+    });
   });
 }

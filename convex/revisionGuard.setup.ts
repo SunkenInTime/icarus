@@ -30,9 +30,10 @@ function canonical(value: unknown): string {
 }
 
 export function changedWithoutRevision(before: Row, after: Row): string[] {
-  const raised = (after.revision as number) > (before.revision as number);
-  const sameLife = after.createdAt === before.createdAt;
-  if (raised || !sameLife) return [];
+  const from = before.revision as number;
+  const to = after.revision as number;
+  if (to < from) return ["revision"];
+  if (to > from || after.createdAt !== before.createdAt) return [];
   return digestedFields.filter(
     (field) => canonical(before[field]) !== canonical(after[field]),
   );
@@ -64,7 +65,9 @@ function guardedDb(raw: DatabaseWriter): DatabaseWriter {
         const fields = changedWithoutRevision(before, after);
         if (fields.length > 0) {
           throw new ContentChangedWithoutRevision(
-            `${table} ${String(before.publicId)} changed ${fields.join(", ")} at revision ${String(after.revision)} without raising it`,
+            fields.includes("revision")
+              ? `${table} ${String(before.publicId)} lowered its revision from ${String(before.revision)} to ${String(after.revision)}`
+              : `${table} ${String(before.publicId)} changed ${fields.join(", ")} at revision ${String(after.revision)} without raising it`,
           );
         }
       }

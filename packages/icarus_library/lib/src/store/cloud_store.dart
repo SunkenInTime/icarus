@@ -17,6 +17,7 @@ final class _OnDisk {
   StrategyFacts? facts;
   final Map<(int, int), LandedWork> landed;
   final Map<String?, String> groups;
+  final groupsEncodedThisRun = <String?>{};
   Shown shown;
 }
 
@@ -237,21 +238,24 @@ final class _ItemDigests {
   };
 
   bool unchangedHere(Row row, StoreName name) {
-    final (held, pages) = switch (name) {
+    final (held, pages, page) = switch (name) {
       ElementName(:final page, :final digest) => (
         strategy.loadedPage(page)?.elements[digest] as Row?,
         strategy.pagesOfElementAt(digest),
+        strategy.loadedPage(page),
       ),
       LineupName(:final page, :final digest) => (
         strategy.loadedPage(page)?.lineupGroups[digest],
         strategy.pagesOfLineupGroupAt(digest),
+        strategy.loadedPage(page),
       ),
-      _ => (null, const <String>[]),
+      _ => (null, const <String>[], null),
     };
     final revision = revisionOfRow(row);
     final same =
         shownTakesReuse &&
         held != null &&
+        (page?.keptThisRun.contains(name.name) ?? false) &&
         revision != null &&
         held.runtimeType == row.runtimeType &&
         revisionOfRow(held) == revision &&
@@ -269,6 +273,12 @@ final class _ItemDigests {
     }
     return same;
   }
+}
+
+bool _comparedEqual(Row now, Row before) {
+  storeWork.rowsCompared++;
+  return now.runtimeType == before.runtimeType &&
+      sameJsonTree(now.toJsonView(), before.toJsonView());
 }
 
 String _groupName(String? page) => switch (page) {
@@ -324,6 +334,7 @@ String _groupText(Map<String, Object?> group) {
 Map<String?, String> _groupTextsSince(
   Shown before,
   Map<String?, String> written,
+  Set<String?> encodedThisRun,
   Shown shown,
 ) {
   final texts = <String?, String>{
@@ -332,9 +343,9 @@ Map<String?, String> _groupTextsSince(
       shown,
     ).entries)
       key: switch ((value, written[key])) {
-        (null, final kept?) => kept,
+        (null, final kept?) when encodedThisRun.contains(key) => kept,
         (final group?, _) => _groupText(group),
-        (null, null) => _groupText(shownToGroups(shown)[key]!),
+        (null, _) => _groupText(shownToGroups(shown)[key]!),
       },
   };
   if (shownTakesChecked) {
@@ -936,6 +947,9 @@ extension _CloudStore on LibraryStore {
     disk.groups
       ..clear()
       ..addAll(groups);
+    disk.groupsEncodedThisRun
+      ..clear()
+      ..addAll(groups.keys);
     disk.shown = next.shown;
   }
 
@@ -1209,9 +1223,7 @@ extension _CloudStore on LibraryStore {
       for (final name in gone) _DeleteName(area, name),
       for (final (name, was) in before.values)
         ...switch ((was, held(name))) {
-          (HeldRow(:final row), final now?)
-              when now.runtimeType == row.runtimeType &&
-                  sameJsonTree(now.toJsonView(), row.toJsonView()) =>
+          (HeldRow(:final row), final now?) when _comparedEqual(now, row) =>
             const <_Write>[],
           (_, final now?) => [_PutRow(area, now)],
           (HeldRow() || HeldUnplaced(), null) => [_DeleteName(area, name.name)],
@@ -1238,154 +1250,161 @@ extension _CloudStore on LibraryStore {
       _numbers = numbersBefore;
     }
 
-    final _BaseApplied base;
-    switch (await _applyBase(strategy, arrivals)) {
-      case StorageFailed(:final failure):
-        asBefore();
-        return NotSaved(failure);
-      case Done(:final value):
-        base = value;
-    }
-    final owner = cloud.queue.owner;
-    final queued = _queueWrites(strategy, disk, owner, next);
-    final groups = identical(next.shown, disk.shown)
-        ? {...disk.groups}
-        : _groupTextsSince(
-            shownTakesReuse ? disk.shown : Shown.nothing,
-            shownTakesReuse ? disk.groups : const {},
-            next.shown,
-          );
-    final header = _baseHeader(strategy, cloud.header);
-    final previous = _summaries[digest];
-    final StrategySummary summary;
-    if (previous == null) {
-      switch (await _cloudSummaryAll(strategy, header, owner, next)) {
+    try {
+      final _BaseApplied base;
+      switch (await _applyBase(strategy, arrivals)) {
         case StorageFailed(:final failure):
           asBefore();
           return NotSaved(failure);
         case Done(:final value):
-          summary = value;
+          base = value;
       }
-    } else {
-      final changedPages = {...base.pages, ...queued.pages, ...edited};
-      final cachedOnChanged = [
-        for (final page in changedPages)
-          if (strategy.hasPageRow(digestOf(page))) digestOf(page),
-      ];
-      if (await _loadPages(strategy, cachedOnChanged) case StorageFailed(
-        :final failure,
-      )) {
-        asBefore();
-        return NotSaved(failure);
-      }
-      final loadedRows = <Target, Iterable<String>>{
-        for (final digest in cachedOnChanged)
-          if (strategy.loadedPage(digest) case final loaded?) ...{
-            for (final MapEntry(key: id, value: row) in loaded.elements.entries)
-              ElementTarget(row.publicId): strategy.pagesOfElementAt(id),
-            for (final MapEntry(key: id, value: row)
-                in loaded.lineupGroups.entries)
-              LineupTarget(row.publicId): strategy.pagesOfLineupGroupAt(id),
-          },
-      };
-      final changedRows = {
-        ...base.rows,
-        for (final entry in next.entries)
-          if (entry is PendingOp && pagesOf(entry).any(changedPages.contains))
-            targetOf(entry.op),
-        for (final work in next.landed)
-          if (pagesNeeded(work.op).any(changedPages.contains))
-            targetOf(work.op),
-      };
-      final touched = {
-        ...changedPages,
-        for (final MapEntry(key: target, value: pages)
-            in loadedRows.entries) ...{
-          for (final digest in pages) ?strategy.pageIdOf(digest),
-          ...pagesShowing(next, target),
-        },
-        for (final target in changedRows)
-          if (!loadedRows.containsKey(target))
-            ..._pagesShowingRow(strategy, next, target),
-      };
-      final StrategyRowSet rows;
-      switch (await _visibleFor(strategy, header, next, SomePages(touched))) {
-        case StorageFailed(:final failure):
-          asBefore();
-          return NotSaved(failure);
-        case Done(:final value):
-          rows = value;
-      }
-      final missing = [
-        for (final page in rows.pages)
-          if (!touched.contains(page.publicId) &&
-              !previous.tallies.containsKey(page.publicId))
-            page.publicId,
-      ];
-      var all = rows;
-      if (missing.isNotEmpty) {
-        switch (await _visibleFor(
-          strategy,
-          header,
-          next,
-          SomePages({...touched, ...missing}),
-        )) {
+      final owner = cloud.queue.owner;
+      final queued = _queueWrites(strategy, disk, owner, next);
+      final groups = identical(next.shown, disk.shown)
+          ? {...disk.groups}
+          : _groupTextsSince(
+              shownTakesReuse ? disk.shown : Shown.nothing,
+              shownTakesReuse ? disk.groups : const {},
+              disk.groupsEncodedThisRun,
+              next.shown,
+            );
+      final header = _baseHeader(strategy, cloud.header);
+      final previous = _summaries[digest];
+      final StrategySummary summary;
+      if (previous == null) {
+        switch (await _cloudSummaryAll(strategy, header, owner, next)) {
           case StorageFailed(:final failure):
             asBefore();
             return NotSaved(failure);
           case Done(:final value):
-            all = value;
+            summary = value;
         }
+      } else {
+        final changedPages = {...base.pages, ...queued.pages, ...edited};
+        final cachedOnChanged = [
+          for (final page in changedPages)
+            if (strategy.hasPageRow(digestOf(page))) digestOf(page),
+        ];
+        if (await _loadPages(strategy, cachedOnChanged) case StorageFailed(
+          :final failure,
+        )) {
+          asBefore();
+          return NotSaved(failure);
+        }
+        final loadedRows = <Target, Iterable<String>>{
+          for (final digest in cachedOnChanged)
+            if (strategy.loadedPage(digest) case final loaded?) ...{
+              for (final MapEntry(key: id, value: row)
+                  in loaded.elements.entries)
+                ElementTarget(row.publicId): strategy.pagesOfElementAt(id),
+              for (final MapEntry(key: id, value: row)
+                  in loaded.lineupGroups.entries)
+                LineupTarget(row.publicId): strategy.pagesOfLineupGroupAt(id),
+            },
+        };
+        final changedRows = {
+          ...base.rows,
+          for (final entry in next.entries)
+            if (entry is PendingOp && pagesOf(entry).any(changedPages.contains))
+              targetOf(entry.op),
+          for (final work in next.landed)
+            if (pagesNeeded(work.op).any(changedPages.contains))
+              targetOf(work.op),
+        };
+        final touched = {
+          ...changedPages,
+          for (final MapEntry(key: target, value: pages)
+              in loadedRows.entries) ...{
+            for (final digest in pages) ?strategy.pageIdOf(digest),
+            ...pagesShowing(next, target),
+          },
+          for (final target in changedRows)
+            if (!loadedRows.containsKey(target))
+              ..._pagesShowingRow(strategy, next, target),
+        };
+        final StrategyRowSet rows;
+        switch (await _visibleFor(strategy, header, next, SomePages(touched))) {
+          case StorageFailed(:final failure):
+            asBefore();
+            return NotSaved(failure);
+          case Done(:final value):
+            rows = value;
+        }
+        final missing = [
+          for (final page in rows.pages)
+            if (!touched.contains(page.publicId) &&
+                !previous.tallies.containsKey(page.publicId))
+              page.publicId,
+        ];
+        var all = rows;
+        if (missing.isNotEmpty) {
+          switch (await _visibleFor(
+            strategy,
+            header,
+            next,
+            SomePages({...touched, ...missing}),
+          )) {
+            case StorageFailed(:final failure):
+              asBefore();
+              return NotSaved(failure);
+            case Done(:final value):
+              all = value;
+          }
+        }
+        summary = StrategySummary.of(
+          strategy: all.strategy,
+          pages: all.pages,
+          settings: all.settings,
+          tallies: {
+            for (final page in all.pages)
+              page.publicId:
+                  touched.contains(page.publicId) ||
+                      missing.contains(page.publicId)
+                  ? _tallyOn(strategy, all, page.publicId)
+                  : previous.tallies[page.publicId]!,
+          },
+          elsewhere: strategy.elsewhere,
+          sync: _syncOf(owner, next, _cloudNow()),
+        );
       }
-      summary = StrategySummary.of(
-        strategy: all.strategy,
-        pages: all.pages,
-        settings: all.settings,
-        tallies: {
-          for (final page in all.pages)
-            page.publicId:
-                touched.contains(page.publicId) ||
-                    missing.contains(page.publicId)
-                ? _tallyOn(strategy, all, page.publicId)
-                : previous.tallies[page.publicId]!,
-        },
-        elsewhere: strategy.elsewhere,
-        sync: _syncOf(owner, next, _cloudNow()),
-      );
+      final numbers = _higher(_numbers, _numbersOf(next));
+      final writes = [
+        ...base.writes,
+        ...queued.writes,
+        ..._resultWrites(area, disk, groups),
+        if (_numbersRow != _NumbersRowRead(numbers)) _PutNumbers(numbers),
+        if (summary != previous || _unsaved.contains(digest))
+          _PutSummary(digest, summary),
+      ];
+      _numbers = numbers;
+      if (writes.isEmpty) {
+        cloud.queue.current = next;
+        _sessions[digest] = (session: next.session, shown: next.shown);
+        return Saved(take(summary));
+      }
+      final result = await _commit<T, CommitRefusal>(writes, () {
+        _written(disk, owner, next, groups);
+        cloud.queue.current = next;
+        _sessions[digest] = (session: next.session, shown: next.shown);
+        _summaries[digest] = summary;
+        _unsaved.remove(digest);
+        _numbersRow = _NumbersRowRead(numbers);
+        return take(summary);
+      });
+      switch (result) {
+        case Saved() || NothingToSave():
+          break;
+        case NotSaved() || Refused():
+          asBefore();
+        case SaveInDoubt():
+          _forgetCloud(digest);
+      }
+      return result;
+    } catch (_) {
+      asBefore();
+      rethrow;
     }
-    final numbers = _higher(_numbers, _numbersOf(next));
-    final writes = [
-      ...base.writes,
-      ...queued.writes,
-      ..._resultWrites(area, disk, groups),
-      if (_numbersRow != _NumbersRowRead(numbers)) _PutNumbers(numbers),
-      if (summary != previous || _unsaved.contains(digest))
-        _PutSummary(digest, summary),
-    ];
-    _numbers = numbers;
-    if (writes.isEmpty) {
-      cloud.queue.current = next;
-      _sessions[digest] = (session: next.session, shown: next.shown);
-      return Saved(take(summary));
-    }
-    final result = await _commit<T, CommitRefusal>(writes, () {
-      _written(disk, owner, next, groups);
-      cloud.queue.current = next;
-      _sessions[digest] = (session: next.session, shown: next.shown);
-      _summaries[digest] = summary;
-      _unsaved.remove(digest);
-      _numbersRow = _NumbersRowRead(numbers);
-      return take(summary);
-    });
-    switch (result) {
-      case Saved() || NothingToSave():
-        break;
-      case NotSaved() || Refused():
-        asBefore();
-      case SaveInDoubt():
-        _forgetCloud(digest);
-    }
-    return result;
   }
 
   Set<String> _ownPages(

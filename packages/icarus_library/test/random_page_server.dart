@@ -95,6 +95,13 @@ final class HeldItem {
   }
 }
 
+final class ServerResult {
+  ServerResult(this.base, this.cases);
+
+  final ArrivedBase base;
+  final List<String> cases;
+}
+
 final class RandomServer {
   RandomServer(this.random) {
     for (var i = 0; i < 12; i++) {
@@ -112,11 +119,16 @@ final class RandomServer {
   final Random random;
   final held = <HeldItem>[];
   final trashed = <String>{};
-  final pageRevisions = {for (final page in serverPages) page: 1};
-  final snapshots = <PageRead>[];
-  final reached = <String, int>{};
+  final snapshots = <ServerResult>[];
+  final generated = <String, int>{};
+  final _itemCases = <String, List<String>>{};
+  final _pageCases = <String, List<String>>{};
 
-  void count(String what) => reached[what] = (reached[what] ?? 0) + 1;
+  void _generated(String what, {HeldItem? item, String? page}) {
+    _made(what);
+    if (item != null) (_itemCases[item.id] ??= []).add(what);
+    if (page != null) (_pageCases[page] ??= []).add(what);
+  }
 
   void change() {
     final row = held[random.nextInt(held.length)];
@@ -125,95 +137,126 @@ final class RandomServer {
         row
           ..x = random.nextDouble() * 1000
           ..revision += 1;
-        count('payload changed');
+        _generated('payload changed', item: row);
       case 2:
         row
           ..page = serverPages
               .where((page) => page != row.page)
               .toList()[random.nextInt(2)]
           ..revision += 1;
-        count('moved between pages');
+        _generated('moved between pages', item: row);
       case 3:
         row
           ..live = !row.live
           ..revision += 1;
-        count(row.live ? 'restored' : 'deleted');
+        _generated(row.live ? 'restored' : 'deleted', item: row);
       case 4:
         row
           ..life += 1000
           ..x = random.nextDouble() * 1000;
-        count('life changed at the same revision');
+        _generated('life changed at the same revision', item: row);
       case 5:
         row
           ..sortIndex = random.nextInt(20)
           ..revision += 1;
-        count('reordered');
+        _generated('reordered', item: row);
       case 6:
         final page = serverPages[random.nextInt(serverPages.length)];
-        if (!trashed.remove(page)) trashed.add(page);
-        pageRevisions[page] = pageRevisions[page]! + 1;
-        count('page trashed or restored');
+        final trashing = trashed.add(page);
+        if (!trashing) trashed.remove(page);
+        _generated(trashing ? 'page trashed' : 'page restored', page: page);
       case _:
         break;
     }
   }
 
-  PageRow pageRow(String page) => trashed.contains(page)
-      ? PendingTrashedPage(
-          publicId: page,
-          strategyPublicId: strategyId,
-          name: page,
-          sortIndex: serverPages.indexOf(page),
-          isAttack: true,
-          revision: pageRevisions[page]!,
-          unknownFields: jsonObject(const {'createdAt': fixtureLife}),
-        )
-      : LivePage(
-          publicId: page,
-          strategyPublicId: strategyId,
-          name: page,
-          sortIndex: serverPages.indexOf(page),
-          isAttack: true,
-          revision: pageRevisions[page]!,
-          unknownFields: jsonObject(const {'createdAt': fixtureLife}),
-        );
+  LivePage pageRow(String page) => LivePage(
+    publicId: page,
+    strategyPublicId: strategyId,
+    name: page,
+    sortIndex: serverPages.indexOf(page),
+    isAttack: true,
+    revision: 1,
+    unknownFields: jsonObject(const {'createdAt': fixtureLife}),
+  );
 
   StrategyRowSet rows() => strategyRows(
-    pages: [for (final page in serverPages) pageRow(page)],
+    pages: [
+      for (final page in serverPages)
+        if (!trashed.contains(page)) pageRow(page),
+    ],
     elements: [
       for (final item in held)
-        if (item.row case final ElementRow row) row,
+        if (!trashed.contains(item.page))
+          if (item.row case final ElementRow row) row,
     ],
     lineupGroups: [
       for (final item in held)
-        if (item.row case final LineupGroupRow row) row,
+        if (!trashed.contains(item.page))
+          if (item.row case final LineupGroupRow row) row,
     ],
   );
 
-  PageRead read() {
+  List<String> _deliveredPage(String page) => [...?_pageCases.remove(page)];
+
+  void _made(String what) => generated[what] = (generated[what] ?? 0) + 1;
+
+  ServerResult pageList() {
+    _made('page list');
+    return ServerResult(
+      HeaderRead(
+        strategy: rows().strategy,
+        pages: rows().pages.toList(),
+        settings: rows().settings.toList(),
+      ),
+      ['page list', for (final page in serverPages) ..._deliveredPage(page)],
+    );
+  }
+
+  ServerResult read() {
     if (snapshots.isNotEmpty && random.nextInt(6) == 0) {
-      count('stale read');
-      return snapshots[random.nextInt(snapshots.length)];
+      final stale = snapshots[random.nextInt(snapshots.length)];
+      _made('stale read');
+      return ServerResult(stale.base, const ['stale read']);
     }
     final page = serverPages[random.nextInt(serverPages.length)];
+    if (trashed.contains(page)) {
+      _made('trashed page read');
+      final gone = ServerResult(PageGone(page), [
+        'trashed page read',
+        ..._deliveredPage(page),
+      ]);
+      snapshots.add(gone);
+      return gone;
+    }
     final leaving = random.nextInt(5) == 0;
-    final rows = [
+    final included = [
       for (final each in held)
-        if (each.page == page && !(leaving && random.nextBool())) each.row,
+        if (each.page == page && !(leaving && random.nextBool())) each,
     ];
-    if (leaving) count('rows left out of a read');
-    final read = PageRead(
-      page: pageRow(page),
-      elements: [
-        for (final row in rows)
-          if (row is ElementRow) row,
-      ],
-      lineupGroups: [
-        for (final row in rows)
-          if (row is LineupGroupRow) row,
+    if (leaving) {
+      _made('rows left out of a read');
+    }
+    final rows = [for (final item in included) item.row];
+    final result = ServerResult(
+      PageRead(
+        page: pageRow(page),
+        elements: [
+          for (final row in rows)
+            if (row is ElementRow) row,
+        ],
+        lineupGroups: [
+          for (final row in rows)
+            if (row is LineupGroupRow) row,
+        ],
+      ),
+      [
+        if (leaving) 'rows left out of a read',
+        ..._deliveredPage(page),
+        for (final item in included) ...?_itemCases.remove(item.id),
       ],
     );
-    snapshots.add(read);
-    return read;
+    snapshots.add(result);
+    return result;
   }
 }

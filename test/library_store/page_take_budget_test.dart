@@ -4,6 +4,8 @@ import 'package:icarus/dev/drive/drive_page_take.dart';
 import 'package:icarus_library/icarus_library.dart' show shownTakesChecked;
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('without a budget the step logs its one TAKE line', () async {
     final lines = await pageTakeCost(items: 60, changed: 1, runs: 3);
 
@@ -27,7 +29,7 @@ void main() {
         matches(
           RegExp(
             r'^TAKE 1 of 60 items changed within budget: longest '
-            r'step \d+\.\d\d ms, target 60000 ms$',
+            r'step median of 3 takes \d+\.\d\d ms, target 60000 ms$',
           ),
         ),
       );
@@ -36,7 +38,7 @@ void main() {
         matches(
           RegExp(
             r'^TAKE 1 of 60 items changed within budget: record '
-            r'\d+\.\d\d ms, target 60000 ms$',
+            r'median of 3 takes \d+\.\d\d ms, target 60000 ms$',
           ),
         ),
       );
@@ -63,7 +65,8 @@ void main() {
       matches(
         RegExp(
           r'^TAKE 1 of 60 items changed over budget: longest step '
-          r'(\d+\.\d\d) ms, target 0 ms, over by \1 ms$',
+          r'median of 3 takes (\d+\.\d\d) ms, target 0 ms, over by \1 ms; '
+          r'PC busy \S+ before, \S+ after$',
         ),
       ),
     );

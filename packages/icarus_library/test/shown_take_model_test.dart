@@ -43,24 +43,28 @@ Shown fromScratch(Shown shown) => Shown(
 
 Map<String, int> runSeed(int seed, int steps) {
   final server = RandomServer(Random(seed));
+  final delivered = <String, int>{};
   var cached = Shown.nothing;
   var scratch = Shown.nothing;
   for (var step = 0; step < steps; step++) {
     if (server.random.nextBool()) server.change();
-    final read = server.read();
-    cached = cached.take(read, started: null);
-    scratch = fromScratch(scratch).take(read, started: null);
+    final result = server.read();
+    cached = cached.take(result.base, started: null);
+    scratch = fromScratch(scratch).take(result.base, started: null);
     if (cached != scratch) {
       fail(
-        'seed $seed step $step: taking ${read.page.publicId} with this '
+        'seed $seed step $step: taking ${result.base} with this '
         'run\'s digests differs from taking it from scratch',
       );
+    }
+    for (final what in result.cases) {
+      delivered[what] = (delivered[what] ?? 0) + 1;
     }
     for (final MapEntry(key: target, value: row) in cached.rows.entries) {
       expect(row.digestedThisRun, isTrue, reason: 'seed $seed $target');
     }
   }
-  return server.reached;
+  return delivered;
 }
 
 void main() {
@@ -73,10 +77,10 @@ void main() {
     final checked = shownTakesChecked;
     shownTakesChecked = false;
     addTearDown(() => shownTakesChecked = checked);
-    final reached = <String, int>{};
+    final delivered = <String, int>{};
     for (var seed = 1; seed <= seeds; seed++) {
       for (final MapEntry(:key, :value) in runSeed(seed, steps).entries) {
-        reached[key] = (reached[key] ?? 0) + value;
+        delivered[key] = (delivered[key] ?? 0) + value;
       }
     }
     for (final what in const [
@@ -86,11 +90,13 @@ void main() {
       'restored',
       'life changed at the same revision',
       'reordered',
-      'page trashed or restored',
+      'page trashed',
+      'page restored',
+      'trashed page read',
       'stale read',
       'rows left out of a read',
     ]) {
-      expect(reached[what] ?? 0, greaterThan(100), reason: what);
+      expect(delivered[what] ?? 0, greaterThan(100), reason: what);
     }
   });
 }
