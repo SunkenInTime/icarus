@@ -162,7 +162,10 @@ void main() {
           (
             'an answer',
             (store, _) => store.record(otherAccount, strategyId, [
-              const OpAnswered(1, AppliedAnswer('mine', revision: 2)),
+              const OpAnswered(
+                1,
+                AppliedAnswer('mine', revision: 2, life: fixtureLife),
+              ),
             ]),
           ),
           (

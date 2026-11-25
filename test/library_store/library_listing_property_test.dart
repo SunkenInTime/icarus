@@ -228,8 +228,13 @@ void main() {
             Account('account-a'),
             HeaderRead(
               strategy: rows.strategy,
-              pages: rows.pages.toList(),
-              settings: rows.settings.toList(),
+              pages: [
+                for (final page in rows.pages) bornIn(page, 1) as PageRow,
+              ],
+              settings: [
+                for (final row in rows.settings)
+                  bornIn(row, 1) as PageSettingsRow,
+              ],
             ),
             const [],
           ),

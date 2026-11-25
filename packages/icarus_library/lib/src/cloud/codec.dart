@@ -82,6 +82,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
         'serverTime': basis.serverTime,
         'heldAtMicros': basis.heldAt.inMicroseconds,
       },
+    'strategyLife': ?entry.strategyLife,
   },
   RetiredOp(:final opId, :final clientId, :final landing, :final stored) => {
     'version': cloudRowVersion,
@@ -203,6 +204,8 @@ Map<String, Object?> _refusalToJson(ServerRefusal refusal) => switch (refusal) {
         'value': value.toJson(),
       },
   },
+  AnsweredWithoutLife(:final revision) => {'withoutLife': revision},
+  StrategyReplacedOnServer() => {'strategyReplaced': true},
   FailedOnServer(:final code, :final message) => {
     'failed': '$code',
     'message': message,
@@ -260,6 +263,9 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
         if (op != null && scope != null && !_scopeFits(op, scope)) {
           fields.reject('a scope or field base that does not fit its op');
         }
+        final strategyLife = fields.has('strategyLife')
+            ? fields.whole('strategyLife')
+            : null;
         final behindOwn = switch (fields.json['behindOwn']) {
           null => false,
           true => true,
@@ -292,6 +298,7 @@ Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
           refusal: refused == null ? const NotRefused() : RefusedWith(refused),
           retriedAfter: retriedAfter,
           window: windowPassed ? const WindowPassed() : const WindowOpen(),
+          strategyLife: strategyLife,
         );
       default:
         fields.reject('an entry kind this build does not read');
@@ -438,6 +445,16 @@ Decoded<ServerRefusal> _refusal(Object? json) =>
           }(),
         };
         return () => RejectedByServer(reason!, current);
+      }
+      if (fields.has('withoutLife')) {
+        final revision = fields.whole('withoutLife');
+        return () => AnsweredWithoutLife(revision);
+      }
+      if (fields.has('strategyReplaced')) {
+        if (fields.json['strategyReplaced'] != true) {
+          fields.reject('an unreadable strategy replacement');
+        }
+        return () => const StrategyReplacedOnServer();
       }
       final code = fields.string('failed');
       final message = fields.string('message');
@@ -871,6 +888,7 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
             _targetKey(key): ?value.lifeOnTheWire,
         },
       }),
+      if (shown.listOwed) 'listOwed': true,
     },
     for (final page in pages)
       page: {
@@ -925,6 +943,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
   final highest = <Target, Version>{};
   final content = <String, Map<SeenPart, String>>{};
   final rows = <Target, ShownRow>{};
+  var listOwed = false;
   for (final MapEntry(key: group, value: text) in texts.entries) {
     final reading = _fromText<void>(
       text,
@@ -936,6 +955,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
             final Map<String, Object?> lives => lives,
             _ => null,
           };
+          if (lives == null) fields.reject('unreadable lives');
           final strategyLives = _livesFrom(lives?['strategy']);
           final pageLives = _livesFrom(lives?['pages']);
           final settingsLives = _livesFrom(lives?['settings']);
@@ -951,6 +971,12 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
               strategyRows.keys.any((key) => key != 'strategy')) {
             fields.reject('an unreadable strategy row');
           }
+          final owed = switch (fields.json['listOwed']) {
+            null => false,
+            final bool owed => owed,
+            _ => null,
+          };
+          if (owed == null) fields.reject('an unreadable page list debt');
           final pageRows = _shownRows(fields.json['pages']);
           final settingsRows = _shownRows(fields.json['settings']);
           final tops = _highest(fields.json['highest']);
@@ -958,6 +984,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
             fields.reject('unreadable shown rows');
           }
           return () {
+            listOwed = owed!;
             strategy = _withLives(strategyRows!, strategyLives!)['strategy'];
             pages.addAll(_withLives(pageRows!, pageLives!));
             settings.addAll(_withLives(settingsRows!, settingsLives!));
@@ -1019,6 +1046,7 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
       content: content,
       rows: rows,
       highest: highest,
+      listOwed: listOwed,
     ),
   );
 }

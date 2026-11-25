@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart' show useCloudAs;
@@ -77,6 +78,116 @@ void main() {
           expect(world.queueLength(), 0);
         });
       }
+    });
+
+    test(
+        'an element move the server refuses as replaced asks the user and is '
+        'not sent again, and the element\'s page is read once, so the element '
+        'as the server now holds it is what the store draws', () {
+      inWorld((world) {
+        world.server.log.clear();
+        final drawn = world.firstElement();
+        final putBack = LiveElement(
+          publicId: drawn.publicId,
+          pagePublicId: drawn.pagePublicId,
+          payload: drawn.payload,
+          sortIndex: drawn.sortIndex,
+          revision: 1,
+          unknownFields: jsonObject({'createdAt': firstLife + 1000}),
+        );
+        world.server.answerNext(strategyId, (call) {
+          world.server.rows[strategyId] =
+              world.server.rows[strategyId]!.withRows([putBack]);
+          return Future.value(
+            StoreBatchAnswered(
+              [
+                RejectedAnswer(
+                  call.opIds.single,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+              ],
+              complete: true,
+            ),
+          );
+        });
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 1));
+        expect(world.server.log, ['send move-1', 'page ${drawn.pagePublicId}']);
+        expect(world.views().single.state, isA<NeedsUser>());
+        expect(world.firstElement().toJson(), putBack.toJson());
+      });
+    });
+
+    group(
+        'a batch refused whole is not sent again until something has '
+        'changed: a read recorded, a backoff elapsed or the user\'s answer',
+        () {
+      final refusals = <String, (StoreBatchOutcome, List<String>)>{
+        'STRATEGY_REPLACED': (
+          const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+          ['send move-1', 'list'],
+        ),
+        'ACCOUNT_MISMATCH': (
+          const StoreBatchAccountMismatch('refused'),
+          ['send move-1'],
+        ),
+        'UNCHECKED_OUTSIDE_WINDOW': (
+          const StoreBatchOutsideWindow('refused'),
+          ['send move-1', 'send move-1', 'page p1'],
+        ),
+        'CLIENT_UPGRADE_REQUIRED': (
+          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired),
+          ['send move-1'],
+        ),
+        'UNAUTHENTICATED': (
+          const StoreBatchRefusedWhole(BatchRefusal.unauthenticated),
+          ['send move-1'],
+        ),
+        'FORBIDDEN': (
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          ['send move-1', 'list', 'send move-1', 'page p1'],
+        ),
+        'NOT_FOUND': (
+          const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted),
+          ['send move-1'],
+        ),
+      };
+      for (final MapEntry(key: code, value: (refusal, log))
+          in refusals.entries) {
+        test(code, () {
+          inWorld((world) {
+            world.server.log.clear();
+            world.server.answerWith(strategyId, refusal);
+            world.commitMove(1);
+            world.settle(const Duration(minutes: 1));
+            expect(world.server.log, log);
+            if (refusal is StoreBatchOutsideWindow) {
+              expect(world.server.calls.last.unchecked, isEmpty);
+            }
+          });
+        });
+      }
+    });
+
+    test(
+        'an applied answer without a life is not read: the batch is lost, the '
+        'move is sent again and lands, and its page is read to retire it', () {
+      inWorld((world) {
+        world.server.log.clear();
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(
+            storeBatchOutcomeOf(call.ops, [
+              app.AppliedOpAck(opId: call.opIds.single, revision: 2),
+            ]),
+          ),
+        );
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 1));
+        expect(world.server.log, ['send move-1', 'send move-1', 'page p1']);
+        expect(world.queueLength(), 0);
+      });
     });
 
     test('a start with saved work sends it with no wake from outside', () {
@@ -2083,6 +2194,8 @@ void main() {
               required strategyPublicId,
               required clientId,
               required ops,
+              required lives,
+              required strategyLife,
               required account,
               required serverTime,
             }) {
@@ -2115,7 +2228,7 @@ void main() {
         expect(sender.view.run, 'disposed');
         answer.complete(
           StoreBatchAnswered(
-            [const AppliedAnswer('move-1', revision: 3)],
+            [const AppliedAnswer('move-1', revision: 3, life: firstLife)],
             complete: true,
           ),
         );

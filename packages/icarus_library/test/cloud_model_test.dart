@@ -40,6 +40,8 @@ final class Model {
   final writtenAt = <String, int>{};
   final teammateWrote = <(Target, String), int>{};
   final refusedLate = <String>{};
+  final livesSent = <String, int>{};
+  final refusedOps = <String>{};
 
   int get serverNow => clock.millisecondsSinceEpoch + skew.inMilliseconds;
 
@@ -153,7 +155,10 @@ final class Model {
     recordHistory();
     final before = revisionsOf(server.rows);
     final beforeRow = rowOf(server.rows, checkTargetOf(op));
-    final answer = server.apply(owner, op);
+    final answer = server.apply(owner, op, expectedLife: livesSent[op.opId]);
+    if (answer case RejectedAnswer(reason: RejectionReason.rowReplaced)) {
+      count('ops refused as naming a row life that was replaced');
+    }
     if (answer case AppliedAnswer()) {
       final target = checkTargetOf(op);
       final named = expectedOf(op);
@@ -203,6 +208,15 @@ final class Model {
     if (result case Stepped(queue: final after, :final effects)) {
       checkRemovals(before, after, effects, event);
       client.queue = after;
+      for (final entry in after.entries) {
+        if (entry case PendingOp(
+          refusal: RefusedWith(
+            refusal: RejectedByServer() || StrategyReplacedOnServer(),
+          ),
+        )) {
+          refusedOps.add(entry.id);
+        }
+      }
       count(event.runtimeType.toString());
       if (event case OpAnswered(
         answer: NoopAnswer(replay: NoopReplay.notApplied),
@@ -651,6 +665,16 @@ final class Model {
       'claim $ids as $owner',
     );
     final sent = result.effects.whereType<SendBatch>().single;
+    livesSent.addAll(sent.lives);
+    for (final op in sent.ops) {
+      if (refusedOps.contains(op.opId)) {
+        throw StateError(
+          '${op.opId} was sent again after the server refused it',
+        );
+      }
+    }
+    count('ops sent naming a row life', sent.lives.length);
+    if (sent.strategyLife != null) count('batches naming the strategy life');
     int? oldest;
     for (final op in sent.ops) {
       inFlightLog[op.opId] = '${op.toJson()}';
@@ -984,7 +1008,7 @@ final class Model {
         ),
       };
       if (applyOp(server.rows, op) case final OpApplied done) {
-        server.rows = server.rows.withRows(done.rows);
+        server.write(done);
         count('teammate ${op.type.wireName}');
       } else {
         return;
@@ -1025,7 +1049,7 @@ final class Model {
         sortIndex: row.sortIndex,
       );
       if (applyOp(server.rows, back) case final OpApplied done) {
-        server.rows = server.rows.withRows(done.rows);
+        server.write(done);
         teammateEdited = true;
         count('teammate puts a purged element back at revision 1');
       }

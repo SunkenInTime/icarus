@@ -926,6 +926,7 @@ final class CloudSender {
         for (final view in cloud.views.values)
           for (final hold in view.holds)
             if (hold case AwaitingResult(:final subject)) subject,
+        ...owedReads(cloud.queue),
       };
 
   static DateTime? _earliest(DateTime? a, DateTime? b) => switch ((a, b)) {
@@ -1288,6 +1289,8 @@ final class CloudSender {
           strategyPublicId: batch.strategyId,
           clientId: batch.clientId,
           ops: batch.ops,
+          lives: batch.lives,
+          strategyLife: batch.strategyLife,
           account: batch.account,
           serverTime: ServerTimeAsked(basis: batch.basis),
         ),

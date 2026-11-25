@@ -12,8 +12,11 @@ final class ClaimedBatch {
     required this.clientId,
     required List<StrategyOp> ops,
     required this.session,
+    required this.strategyLife,
     this.basis,
-  }) : ops = List.unmodifiable(ops);
+    Map<String, int> lives = const {},
+  })  : ops = List.unmodifiable(ops),
+        lives = Map.unmodifiable(lives);
 
   final String strategyId;
   final Account account;
@@ -21,7 +24,9 @@ final class ClaimedBatch {
   final String clientId;
   final List<StrategyOp> ops;
   final int session;
+  final int? strategyLife;
   final int? basis;
+  final Map<String, int> lives;
 
   List<String> get unchecked => [
         for (final op in ops)
@@ -144,7 +149,8 @@ final class StoredStrategy {
 
   bool get needsReading => switch (tally) {
         Tally(standing: Standing.editAccessLost) => true,
-        Tally(:final waiting) => waiting.containsKey(Underway.awaitingResult),
+        Tally(:final waiting, :final readsOwed) =>
+          readsOwed > 0 || waiting.containsKey(Underway.awaitingResult),
         null => false,
       };
 
@@ -426,6 +432,8 @@ base class SenderStore {
                 :final clientId,
                 :final ops,
                 :final basis,
+                :final lives,
+                :final strategyLife,
               )) {
             return Claimed(
               ClaimedBatch(
@@ -436,6 +444,8 @@ base class SenderStore {
                 ops: ops,
                 session: session,
                 basis: basis,
+                lives: lives,
+                strategyLife: strategyLife,
               ),
             );
           }

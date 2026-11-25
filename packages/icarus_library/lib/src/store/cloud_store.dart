@@ -170,11 +170,33 @@ RowKey? _outOfPlace(String strategyPublicId, ArrivedBase base) =>
       PageGone() || StrategyGone() => null,
     };
 
-RowKey? _firstOutOfPlace(String strategyPublicId, List<QueueEvent> events) => [
-  for (final event in events)
-    if (event case BaseArrived(:final base))
-      ?_outOfPlace(strategyPublicId, base),
-].firstOrNull;
+List<Row> _rowsOf(ArrivedBase base) => switch (base) {
+  HeaderRead(:final strategy, :final pages, :final settings) => [
+    strategy,
+    ...pages,
+    ...settings,
+  ],
+  PageRead(:final page, :final elements, :final lineupGroups) => [
+    page,
+    ...elements,
+    ...lineupGroups,
+  ],
+  PageGone() || StrategyGone() => const [],
+};
+
+CommitRefusal? _unfitResult(String strategyPublicId, List<QueueEvent> events) {
+  for (final event in events) {
+    if (event case BaseArrived(:final base)) {
+      if (_outOfPlace(strategyPublicId, base) case final key?) {
+        return ResultOutOfPlace(key);
+      }
+      for (final row in _rowsOf(base)) {
+        if (createdAtOf(row) == null) return ResultWithoutLife(row.key);
+      }
+    }
+  }
+  return null;
+}
 
 String _groupName(String? page) => switch (page) {
   null => const HeaderReadName().name,
@@ -1404,8 +1426,8 @@ extension _CloudStore on LibraryStore {
       return Refused(refusal);
     }
     if (open is! _CloudRefused && open is! _CloudUnread) {
-      if (_firstOutOfPlace(strategyPublicId, events) case final key?) {
-        return Refused(ResultOutOfPlace(key));
+      if (_unfitResult(strategyPublicId, events) case final refusal?) {
+        return Refused(refusal);
       }
     }
     final _CloudReady cloud;
@@ -1427,8 +1449,8 @@ extension _CloudStore on LibraryStore {
     List<QueueEvent> events,
   ) async {
     final strategyPublicId = cloud.header.publicId;
-    if (_firstOutOfPlace(strategyPublicId, events) case final key?) {
-      return Refused(ResultOutOfPlace(key));
+    if (_unfitResult(strategyPublicId, events) case final refusal?) {
+      return Refused(refusal);
     }
     final now = _cloudNow();
     final outcomes = <ReportOutcome>[];

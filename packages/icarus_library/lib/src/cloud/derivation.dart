@@ -730,6 +730,10 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         RefusedByServer(refusal: RejectedByServer()) =>
           Attention.rejectedByServer,
         RefusedByServer(refusal: FailedOnServer()) => Attention.failedOnServer,
+        RefusedByServer(refusal: StrategyReplacedOnServer()) =>
+          Attention.rejectedByServer,
+        RefusedByServer(refusal: AnsweredWithoutLife()) =>
+          Attention.serverForgotAnswer,
         WindowClosed() => Attention.serverForgotAnswer,
         WrittenLongAgo() => Attention.writtenLongAgo,
         RetriesExhausted() => Attention.retriesExhausted,
@@ -810,7 +814,12 @@ Map<String, EntryView> entryViews(CloudQueue queue, DateTime now) =>
   );
 }
 
+Set<ResultSubject> owedReads(CloudQueue queue) => {
+  if (queue.shown.listOwed) const PageListResult(),
+};
+
 Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
+  ...owedReads(queue),
   for (final view in _derive(queue, now).views.values)
     for (final hold in view.holds)
       if (hold case AwaitingResult(:final subject)) subject,
@@ -834,7 +843,9 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   if (_oversized(entry)) {
     return (EntryView(const NeedsUser(Oversized()), const []), null);
   }
-  final holds = <Hold>[];
+  final holds = <Hold>[
+    if (queue.shown.listOwed) const AwaitingResult(PageListResult()),
+  ];
   DateTime? until;
 
   void behind(String? id, Dependency why) {

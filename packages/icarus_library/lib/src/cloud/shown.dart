@@ -135,6 +135,7 @@ final class Shown {
     required Map<String, Map<SeenPart, String>> content,
     required Map<Target, ShownRow> rows,
     this.headerThisSession = false,
+    this.listOwed = false,
     Set<String> pagesThisSession = const {},
     Set<String> goneThisSession = const {},
     Map<Target, Version> highest = const {},
@@ -223,6 +224,7 @@ final class Shown {
         digest: strategyDigest(row, pages),
       );
   final bool headerThisSession;
+  final bool listOwed;
   final Set<String> pagesThisSession;
   final Set<String> goneThisSession;
   final Map<Target, Version> highest;
@@ -292,6 +294,7 @@ final class Shown {
     PageGone(:final pagePublicId) => Shown(
       fresh: fresh.afterPage(pagePublicId, gone: true),
       headerThisSession: headerThisSession,
+      listOwed: listOwed,
       pagesThisSession: {...pagesThisSession}..remove(pagePublicId),
       goneThisSession: {...goneThisSession, pagePublicId},
       highest: highest,
@@ -319,6 +322,7 @@ final class Shown {
   Shown withGone(String page) => Shown(
     fresh: fresh,
     headerThisSession: headerThisSession,
+    listOwed: listOwed,
     pagesThisSession: pagesThisSession,
     goneThisSession: {...goneThisSession, page},
     highest: highest,
@@ -332,6 +336,7 @@ final class Shown {
   Shown touched(Iterable<String> pages, {required bool list}) => Shown(
     fresh: fresh.touched(pages, list: list),
     headerThisSession: headerThisSession,
+    listOwed: listOwed,
     pagesThisSession: pagesThisSession,
     goneThisSession: goneThisSession,
     highest: highest,
@@ -342,7 +347,36 @@ final class Shown {
     rows: rows,
   );
 
+  Shown owingList() => Shown(
+    fresh: fresh,
+    headerThisSession: headerThisSession,
+    listOwed: true,
+    pagesThisSession: pagesThisSession,
+    goneThisSession: goneThisSession,
+    highest: highest,
+    strategy: strategy,
+    pages: pages,
+    settings: settings,
+    content: content,
+    rows: rows,
+  );
+
+  Shown owingPage(String page) => Shown(
+    fresh: fresh,
+    headerThisSession: headerThisSession,
+    listOwed: listOwed,
+    pagesThisSession: pagesThisSession,
+    goneThisSession: goneThisSession,
+    highest: highest,
+    strategy: strategy,
+    pages: pages,
+    settings: settings,
+    content: {...content}..remove(page),
+    rows: rows,
+  );
+
   Shown inNewSession() => Shown(
+    listOwed: listOwed,
     highest: highest,
     strategy: strategy,
     pages: pages,
@@ -378,6 +412,7 @@ final class Shown {
     return Shown(
       fresh: fresh.afterPage(page, gone: pageRow is TrashedPage),
       headerThisSession: headerThisSession,
+      listOwed: listOwed,
       pagesThisSession: {...pagesThisSession, page},
       goneThisSession: {...goneThisSession}..remove(page),
       highest: raised,
@@ -401,6 +436,7 @@ final class Shown {
       other.strategy == strategy &&
       other.fresh == fresh &&
       other.headerThisSession == headerThisSession &&
+      other.listOwed == listOwed &&
       const SetEquality<String>().equals(
         other.goneThisSession,
         goneThisSession,

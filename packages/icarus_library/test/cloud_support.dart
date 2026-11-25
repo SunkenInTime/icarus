@@ -6,6 +6,8 @@ import 'package:test/test.dart';
 
 import 'support.dart';
 
+export 'support.dart' show fixtureLife;
+
 const clientId = 'client-1';
 
 const build = 'build-1';
@@ -125,6 +127,18 @@ int? visibleRevision(StrategyRows rows, StrategyOp op) =>
         final row? => revisionOfRowForTest(row),
         null => null,
       },
+    };
+
+int? lifeOfCheckedRowForTest(StrategyRows rows, StrategyOp op) =>
+    switch (switch (checkTargetOf(op)) {
+      StrategyTarget() => rows.strategy,
+      PageTarget(:final pagePublicId) => rows.page(pagePublicId),
+      SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
+      ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+      LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+    }) {
+      final Row row => createdAtOf(row),
+      null => null,
     };
 
 int? revisionOfRowForTest(Row row) => switch (row) {
@@ -282,9 +296,13 @@ final class Client {
   EntryView view(String opId) => entryViews(queue, at)[opId]!;
 }
 
+const addedLife = fixtureLife + 1;
+
 StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
     switch (applyOp(rows, op)) {
-      final OpApplied done => rows.withRows(done.rows),
+      final OpApplied done => rows.withRows([
+        for (final row in done.rows) bornIn(row, addedLife),
+      ]),
       final other => fail('expected $op to apply, got $other'),
     };
 

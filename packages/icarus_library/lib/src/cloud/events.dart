@@ -248,13 +248,31 @@ sealed class OpAnswer {
 }
 
 final class AppliedAnswer extends OpAnswer {
-  const AppliedAnswer(super.opId, {required this.revision});
+  const AppliedAnswer(super.opId, {required this.revision, required this.life});
 
   final int revision;
+  final int life;
 }
 
 final class NoopAnswer extends OpAnswer {
-  const NoopAnswer(super.opId, {required this.revision, required this.replay});
+  const NoopAnswer(
+    super.opId, {
+    required this.revision,
+    required this.replay,
+    required this.life,
+  });
+
+  final int revision;
+  final NoopReplay replay;
+  final int life;
+}
+
+final class ReplayWithoutLife extends OpAnswer {
+  const ReplayWithoutLife(
+    super.opId, {
+    required this.revision,
+    required this.replay,
+  });
 
   final int revision;
   final NoopReplay replay;

@@ -6,6 +6,7 @@ import '../strategy_rows.dart';
 import 'op_facts.dart';
 import 'pending.dart';
 import 'queue.dart';
+import 'version.dart';
 
 sealed class Pages {
   const Pages();
@@ -32,16 +33,34 @@ Set<String> pagesToLoad(CloudQueue queue, Pages pages) => {
         ?queue.shown.rows[targetOf(work.op)]?.page,
 };
 
-int? _visibleRevision(StrategyRows rows, StrategyOp op) {
-  final row = switch (targetOf(op)) {
-    StrategyTarget() => rows.strategy,
-    PageTarget(:final pagePublicId) => rows.page(pagePublicId),
-    SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
-    ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
-    LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
-  };
-  return row == null ? null : revisionOfRow(row);
-}
+Row? _visibleRow(StrategyRows rows, StrategyOp op) => switch (targetOf(op)) {
+  StrategyTarget() => rows.strategy,
+  PageTarget(:final pagePublicId) => rows.page(pagePublicId),
+  SettingsTarget(:final pagePublicId) => rows.settingsOf(pagePublicId),
+  ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+  LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+};
+
+int? _visibleRevision(StrategyRows rows, StrategyOp op) =>
+    switch (_visibleRow(rows, op)) {
+      final row? => revisionOfRow(row),
+      null => null,
+    };
+
+bool _ofTheRowsLife(StrategyRows rows, StrategyOp op, int? life) =>
+    switch ((life, _visibleRow(rows, op))) {
+      (final life?, final row?) => switch (createdAtOf(row)) {
+        final born? => born == life,
+        null => true,
+      },
+      _ => true,
+    };
+
+bool _drawn(CloudQueue queue, StrategyRows rows, PendingOp entry) =>
+    switch ((entry.strategyLife, queue.shown.strategy?.life)) {
+      (final written?, final shown?) when written != shown => false,
+      _ => _ofTheRowsLife(rows, entry.op, expectedLifeOf(entry)),
+    };
 
 StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
   var rows = base;
@@ -72,13 +91,17 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
         target,
   };
   for (final work in queue.landed) {
-    if (_visiblePage(work.op, pages) ||
-        _leaves(rows, work.op, pages) ||
-        followed.contains(targetOf(work.op))) {
-      rows = _strategyAtLeast(
-        onTop(
-          _withMovedRow(rows, work.op, work.movedRow, work.revision),
-          work.op,
+    if ((_visiblePage(work.op, pages) ||
+            _leaves(rows, work.op, pages) ||
+            followed.contains(targetOf(work.op))) &&
+        _ofTheRowsLife(rows, work.op, work.life)) {
+      rows = _bornInLandedLife(
+        _strategyAtLeast(
+          onTop(
+            _withMovedRow(rows, work.op, work.movedRow, work.revision),
+            work.op,
+          ),
+          work,
         ),
         work,
       );
@@ -99,7 +122,9 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
         entry.place: entry,
     }.values.toList()..sort((a, b) => a.place.compareTo(b.place)),
   };
-  for (final PendingOp(:op, :authored) in entries) {
+  for (final entry in entries) {
+    if (!_drawn(queue, rows, entry)) continue;
+    final PendingOp(:op, :authored) = entry;
     final moved = switch (authored) {
       AuthoredRow(:final movedRow?) => movedRow,
       _ => null,
@@ -140,6 +165,18 @@ StrategyRowSet _strategyAtLeast(StrategyRowSet rows, LandedWork work) =>
         rows.withRows([rows.strategy.rewritten(revision: work.revision)]),
       _ => rows,
     };
+
+StrategyRowSet _bornInLandedLife(StrategyRowSet rows, LandedWork work) {
+  final row = switch (targetOf(work.op)) {
+    ElementTarget(:final elementPublicId) => rows.element(elementPublicId),
+    LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
+    _ => null,
+  };
+  return switch ((row, work.life)) {
+    (final row?, final life?) => rows.withRows([bornIn(row, life)]),
+    _ => rows,
+  };
+}
 
 StrategyRowSet _beforeMove(StrategyRowSet rows, StrategyOp op, Row moved) {
   final missing = switch (moved) {

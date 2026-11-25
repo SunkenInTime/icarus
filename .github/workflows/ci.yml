@@ -207,7 +207,7 @@ jobs:
           lane web ''
           lane replay '^native/replay/'
           # The contract scripts in tool/ run in this lane, against its preview.
-          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$|tool/check_convex_shipped_clients(\.test)?\.mjs$|tool/check_convex_deploy\.mjs$|tool/convex_cost/lib/backend\.mjs$|tool/convex_opt_in_results\.json$|presence/src/pass\.ts$)' guarded
+          lane convex '^(convex/|package(-lock)?\.json$|tsconfig\.json$|vitest\.config|tool/(snapshot|audit)_convex_contract\.mjs$|tool/check_convex_shipped_clients(\.test)?\.mjs$|tool/check_convex_deploy\.mjs$|tool/convex_cost/lib/backend\.mjs$|tool/convex_opt_in_results\.json$|tool/server_cases/|packages/icarus_library/test/server_cases\.json$|presence/src/pass\.ts$)' guarded
           # A server change can make a cloud flow cost more without failing a
           # test: the cost lane runs whenever the server, its packages or the
           # run changes.

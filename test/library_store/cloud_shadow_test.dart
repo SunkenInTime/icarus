@@ -103,6 +103,7 @@ RemotePageSnapshot pageSnapshot(
             sortIndex: json(element)['sortIndex']! as int,
             revision: json(element)['revision']! as int,
             deleted: json(element)['deleted']! as bool,
+            createdAt: at,
           ),
       ],
       lineups: const [],
@@ -216,7 +217,10 @@ void main() {
     expect(shadow.ledger, hasLength(3));
     final shown = await store.readPage(strategyId, pageId);
     final element = (shown as Found<PageContent>).value.elements.single;
-    expect(element, after.elementsOn(pageId).single);
+    expect(
+      element,
+      bornIn(after.elementsOn(pageId).single, at.millisecondsSinceEpoch),
+    );
   });
 
   test('a teammate\'s edit reaches the store with the next page result',
@@ -860,7 +864,10 @@ void main() {
       final shown = await store.readPage(strategyId, pageId);
       expect(
         (shown as Found<PageContent>).value.elements.single,
-        serverRows().elementsOn(pageId).single,
+        bornIn(
+          serverRows().elementsOn(pageId).single,
+          at.millisecondsSinceEpoch,
+        ),
       );
     });
   });

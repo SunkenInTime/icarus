@@ -26,6 +26,7 @@ final class Tally {
     Map<Underway, int> waiting = const {},
     Map<Attention, int> attention = const {},
     this.unreadable = 0,
+    this.readsOwed = 0,
   }) : waiting = Map.unmodifiable({
          for (final MapEntry(:key, :value) in waiting.entries)
            if (value > 0) key: value,
@@ -43,45 +44,53 @@ final class Tally {
       standing: standingOf(queue),
       waiting: counts.waiting,
       attention: counts.attention,
+      readsOwed: owedReads(queue).length,
     );
   }
 
-  static Decoded<Tally> decode(Object? json) =>
-      JsonFields.read(json, 'sync tally', (fields) {
-        final standing = Standing.values.asNameMap()[fields.json['standing']];
-        if (standing == null) fields.reject('expected a standing');
-        Map<T, int> counts<T extends Enum>(String key, List<T> values) {
-          final found = <T, int>{};
-          final raw = fields.has(key) ? fields.object(key) : JsonObject.empty;
-          for (final MapEntry(:key, :value) in raw.entries) {
-            final name = values.asNameMap()[key];
-            if (name == null || !isSafeWhole(value) || (value! as num) <= 0) {
-              fields.reject('expected a positive count for "$key"');
-            } else {
-              found[name] = (value as num).toInt();
-            }
+  static Decoded<Tally> decode(Object? json) => JsonFields.read(
+    json,
+    'sync tally',
+    (fields) {
+      final standing = Standing.values.asNameMap()[fields.json['standing']];
+      if (standing == null) fields.reject('expected a standing');
+      Map<T, int> counts<T extends Enum>(String key, List<T> values) {
+        final found = <T, int>{};
+        final raw = fields.has(key) ? fields.object(key) : JsonObject.empty;
+        for (final MapEntry(:key, :value) in raw.entries) {
+          final name = values.asNameMap()[key];
+          if (name == null || !isSafeWhole(value) || (value! as num) <= 0) {
+            fields.reject('expected a positive count for "$key"');
+          } else {
+            found[name] = (value as num).toInt();
           }
-          return found;
         }
+        return found;
+      }
 
-        final waiting = counts('waiting', Underway.values);
-        final attention = counts('attention', Attention.values);
-        final unreadable = fields.has('unreadable')
-            ? fields.whole('unreadable')
-            : 0;
-        if (unreadable < 0) fields.reject('expected a count of unreadable');
-        return () => Tally(
-          standing: standing!,
-          waiting: waiting,
-          attention: attention,
-          unreadable: unreadable,
-        );
-      });
+      final waiting = counts('waiting', Underway.values);
+      final attention = counts('attention', Attention.values);
+      final unreadable = fields.has('unreadable')
+          ? fields.whole('unreadable')
+          : 0;
+      if (unreadable < 0) fields.reject('expected a count of unreadable');
+      final readsOwed = fields.has('readsOwed') ? fields.whole('readsOwed') : 0;
+      if (readsOwed < 0) fields.reject('expected a count of reads owed');
+      return () => Tally(
+        standing: standing!,
+        waiting: waiting,
+        attention: attention,
+        unreadable: unreadable,
+        readsOwed: readsOwed,
+      );
+    },
+  );
 
   final Standing standing;
   final Map<Underway, int> waiting;
   final Map<Attention, int> attention;
   final int unreadable;
+  final int readsOwed;
 
   int get needingYou => attention.values.fold(0, (sum, count) => sum + count);
 
@@ -100,6 +109,7 @@ final class Tally {
         why: (attention[why] ?? 0) + (other.attention[why] ?? 0),
     },
     unreadable: unreadable + other.unreadable,
+    readsOwed: readsOwed + other.readsOwed,
   );
 
   static Standing _worse(Standing a, Standing b) => a.index >= b.index ? a : b;
@@ -115,6 +125,7 @@ final class Tally {
         for (final MapEntry(:key, :value) in attention.entries) key.name: value,
       },
     if (unreadable > 0) 'unreadable': unreadable,
+    if (readsOwed > 0) 'readsOwed': readsOwed,
   };
 
   @override
@@ -123,7 +134,8 @@ final class Tally {
       other.standing == standing &&
       sameMap(other.waiting, waiting) &&
       sameMap(other.attention, attention) &&
-      other.unreadable == unreadable;
+      other.unreadable == unreadable &&
+      other.readsOwed == readsOwed;
 
   @override
   int get hashCode =>

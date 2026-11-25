@@ -60,6 +60,7 @@ final class PendingOp extends QueueEntry {
     this.window = const WindowOpen(),
     this.behindOwn = false,
     this.basis,
+    this.strategyLife,
   });
 
   final Work work;
@@ -72,6 +73,7 @@ final class PendingOp extends QueueEntry {
   final ResendWindow window;
   final bool behindOwn;
   final ServerTimeBasis? basis;
+  final int? strategyLife;
 
   StrategyOp get op => work.op;
 
@@ -99,6 +101,7 @@ final class PendingOp extends QueueEntry {
     window: window ?? this.window,
     behindOwn: behindOwn,
     basis: dropBasis ? null : basis,
+    strategyLife: strategyLife,
   );
 
   @override
@@ -114,7 +117,8 @@ final class PendingOp extends QueueEntry {
       other.retriedAfter == retriedAfter &&
       other.window == window &&
       other.behindOwn == behindOwn &&
-      other.basis == basis;
+      other.basis == basis &&
+      other.strategyLife == strategyLife;
 
   @override
   int get hashCode => Object.hash(
@@ -558,6 +562,35 @@ final class RejectedByServer extends ServerRefusal {
   String toString() => 'RejectedByServer(${reason.wireName})';
 }
 
+final class AnsweredWithoutLife extends ServerRefusal {
+  const AnsweredWithoutLife(this.revision);
+
+  final int revision;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AnsweredWithoutLife && other.revision == revision;
+
+  @override
+  int get hashCode => Object.hash(AnsweredWithoutLife, revision);
+
+  @override
+  String toString() => 'AnsweredWithoutLife($revision)';
+}
+
+final class StrategyReplacedOnServer extends ServerRefusal {
+  const StrategyReplacedOnServer();
+
+  @override
+  bool operator ==(Object other) => other is StrategyReplacedOnServer;
+
+  @override
+  int get hashCode => (StrategyReplacedOnServer).hashCode;
+
+  @override
+  String toString() => 'StrategyReplacedOnServer()';
+}
+
 final class FailedOnServer extends ServerRefusal {
   const FailedOnServer(this.code, this.message);
 
@@ -764,6 +797,7 @@ enum BatchRefusal {
   editAccessRemoved,
   strategyDeleted,
   uncheckedTooLate,
+  strategyReplaced,
 }
 
 sealed class SendCut {

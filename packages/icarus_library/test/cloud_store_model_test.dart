@@ -1253,7 +1253,11 @@ final class StoreModel {
         () => store.record(otherAccount, strategyId, [
           OpAnswered(
             attempt,
-            AppliedAnswer(someEntry, revision: target?.revision ?? 1),
+            AppliedAnswer(
+              someEntry,
+              revision: target?.revision ?? 1,
+              life: fixtureLife,
+            ),
           ),
         ]),
       ),

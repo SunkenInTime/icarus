@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import '../json.dart';
 import '../ops.dart';
+import '../outcome.dart';
 import 'events.dart';
 import 'fold.dart';
 import 'held_page_delete.dart';
@@ -618,13 +619,22 @@ final class OpRemoved extends QueueEffect {
 }
 
 final class SendBatch extends QueueEffect {
-  SendBatch(this.attempt, this.clientId, List<StrategyOp> ops, {this.basis})
-    : ops = List.unmodifiable(ops);
+  SendBatch(
+    this.attempt,
+    this.clientId,
+    List<StrategyOp> ops, {
+    this.basis,
+    this.strategyLife,
+    Map<String, int> lives = const {},
+  }) : ops = List.unmodifiable(ops),
+       lives = Map.unmodifiable(lives);
 
   final int attempt;
   final String clientId;
   final List<StrategyOp> ops;
   final int? basis;
+  final int? strategyLife;
+  final Map<String, int> lives;
 
   @override
   String toString() =>
@@ -1001,6 +1011,7 @@ final class _Edit {
 
   CloudQueue build() {
     _pruneAttempts(this);
+    if (shown.listOwed != original.shown.listOwed) change.everything = true;
     return CloudQueue._(
       entries: entries,
       attempts: attempts,
@@ -1209,6 +1220,18 @@ Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
       }
     case BatchRefusal.strategyDeleted:
       edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
+    case BatchRefusal.strategyReplaced:
+      edit.shown = edit.shown.owingList();
+      for (final op in fact.ops) {
+        if (edit.index.byId[op.opId] case final PendingOp entry
+            when entry.refusal is NotRefused) {
+          edit.put(
+            entry.copyWith(
+              refusal: const RefusedWith(StrategyReplacedOnServer()),
+            ),
+          );
+        }
+      }
     case BatchRefusal.uncheckedTooLate:
       edit.session = QueueSession(
         connected: edit.session.connected,
@@ -1459,6 +1482,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       retriedAfter: edit.lastAttempt,
       behindOwn: behindOwn,
       basis: edit.session.basis,
+      strategyLife: queue.shown.strategy?.life,
     ),
   );
   return edit.done();
@@ -1820,7 +1844,9 @@ Step _claim(
   final views = entryViews(queue, now);
   var previous = -1;
   final ops = <StrategyOp>[];
+  final lives = <String, int>{};
   int? basis;
+  int? strategyLife;
   for (final opId in opIds) {
     final index = edit.indexOf(opId);
     if (index == -1) return NotApplicable(queue, NoSuchOp(opId));
@@ -1842,12 +1868,22 @@ Step _claim(
     ) when owner != clientId) {
       return NotApplicable(queue, OtherClient(opId, owner));
     }
+    if (entry.strategyLife case final life?) {
+      if (strategyLife != null && life != strategyLife) {
+        return NotApplicable(
+          queue,
+          NotInThatState(opId, 'written in another life of the strategy'),
+        );
+      }
+      strategyLife = life;
+    }
     final named = switch ((view.state, _judge(queue, entry, now))) {
       (Waiting(), _NameAt(:final revision?)) => _named(edit, entry, revision),
       _ => entry,
     };
     final sent = sendable(queue, named, elapsed);
     ops.add(sent);
+    if (expectedLifeOf(entry) case final life?) lives[sent.opId] = life;
     if (isUncheckedSend(sent)) {
       final own = named.basis!.serverTime;
       if (basis == null || own < basis) basis = own;
@@ -1864,9 +1900,23 @@ Step _claim(
       outcome: const AttemptOpen(),
     ),
   );
-  edit.effects.add(SendBatch(number, clientId, ops, basis: basis));
+  edit.effects.add(
+    SendBatch(
+      number,
+      clientId,
+      ops,
+      basis: basis,
+      strategyLife: strategyLife,
+      lives: lives,
+    ),
+  );
   return edit.done();
 }
+
+int? expectedLifeOf(PendingOp entry) => switch (entry.authored) {
+  AuthoredRow(:final life) || KeptOverServer(:final life) => life,
+  AuthoredNoRow() || AuthoredUnreadable() => null,
+};
 
 StrategyOp sendable(CloudQueue queue, PendingOp entry, Duration? elapsed) =>
     sendForm(
@@ -1924,24 +1974,49 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
   final sent = (attempt: attempt, position: position, op: fact.ops[position]);
   _resultsStale(edit, entry, sent.op);
   switch (answer) {
-    case AppliedAnswer(:final revision):
-      _landed(edit, entry, sent, revision, ours: true);
+    case AppliedAnswer(:final revision, :final life):
+      _landed(edit, entry, sent, revision, life: life, ours: true);
       edit.remove(entry.id, const Delivered(Delivery.applied));
     case NoopAnswer(
       :final revision,
+      :final life,
       replay: NoopReplay.appliedWhenFirstReceived,
     ):
-      _landed(edit, entry, sent, revision, ours: true);
+      _landed(edit, entry, sent, revision, life: life, ours: true);
       edit.remove(entry.id, const Delivered(Delivery.applied));
-    case NoopAnswer(:final revision, replay: NoopReplay.notApplied):
-      _landed(edit, entry, sent, revision, ours: false);
+    case NoopAnswer(
+      :final revision,
+      :final life,
+      replay: NoopReplay.notApplied,
+    ):
+      _landed(edit, entry, sent, revision, life: life, ours: false);
       edit.remove(entry.id, const Delivered(Delivery.alreadyThere));
+    case ReplayWithoutLife(:final revision):
+      edit.put(
+        entry.copyWith(refusal: RefusedWith(AnsweredWithoutLife(revision))),
+      );
     case NoopWithoutRevision():
       edit.remove(entry.id, const Delivered(Delivery.nothingToDo));
+    case RejectedAnswer(reason: RejectionReason.rowReplaced, :final current):
+      _oweTheRowsRead(edit, entry);
+      edit.put(
+        entry.copyWith(
+          refusal: RefusedWith(
+            RejectedByServer(RejectionReason.rowReplaced, current),
+          ),
+        ),
+      );
     case RejectedAnswer(:final reason, :final current):
       if (current case final ServerSnapshot snapshot
           when _alreadyAsWritten(entry.op, snapshot)) {
-        _landed(edit, entry, sent, snapshot.revision, ours: false);
+        _landed(
+          edit,
+          entry,
+          sent,
+          snapshot.revision,
+          life: snapshot.life,
+          ours: false,
+        );
         edit.remove(entry.id, const Delivered(Delivery.alreadyAsWritten));
       } else {
         edit.put(
@@ -1983,11 +2058,25 @@ bool _alreadyAsWritten(StrategyOp op, ServerSnapshot snapshot) {
   };
 }
 
+void _oweTheRowsRead(_Edit edit, PendingOp entry) {
+  final page = switch (targetOf(entry.op)) {
+    StrategyTarget() || PageTarget() || SettingsTarget() => null,
+    final row => edit.shown.rows[row]?.page ?? _pagesOf(entry).firstOrNull,
+  };
+  if (page == null) {
+    edit.shown = edit.shown.owingList();
+  } else {
+    edit.change.pages.add(page);
+    edit.shown = edit.shown.owingPage(page);
+  }
+}
+
 void _landed(
   _Edit edit,
   PendingOp entry,
   ({int attempt, int position, StrategyOp op}) carried,
   int revision, {
+  required int? life,
   required bool ours,
 }) {
   final sent = carried.op;
@@ -2014,6 +2103,7 @@ void _landed(
     position: carried.position,
     op: sent,
     revision: revision,
+    life: life,
     shape: _shapeOf(sent),
     own: ours,
     firstSentAt: firstSent ?? edit.attempts[carried.attempt]!.at,
@@ -2102,6 +2192,7 @@ Step _keepMine(
       authoredAt: now,
       refusal: const NotRefused(),
       retriedAfter: edit.lastAttempt,
+      strategyLife: entry.strategyLife,
     ),
   );
   edit.effects.add(

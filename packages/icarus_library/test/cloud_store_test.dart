@@ -36,7 +36,10 @@ void main() {
     final sent = await claimAll(store);
     expect(sent.ops.map((op) => op.opId), ['move', 'add']);
     await recordAll(store, [
-      OpAnswered(sent.attempt, const AppliedAnswer('move', revision: 2)),
+      OpAnswered(
+        sent.attempt,
+        const AppliedAnswer('move', revision: 2, life: fixtureLife),
+      ),
     ]);
     final before = await syncOf(store);
     await store.close();
@@ -72,7 +75,10 @@ void main() {
       final sent = await claimAll(store);
       final server = withOp(initialRows(), sent.ops.single);
       await recordAll(store, [
-        OpAnswered(sent.attempt, const AppliedAnswer('move', revision: 2)),
+        OpAnswered(
+          sent.attempt,
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+        ),
       ]);
       await readServer(store, server, pages: ['page-a']);
       expect((await syncOf(store)).queue.entries, isEmpty);
@@ -183,7 +189,10 @@ void main() {
       expect(sent, isNotEmpty);
       counts.reset();
       await recordAll(store, [
-        const OpAnswered(1, AppliedAnswer('add7', revision: 1)),
+        const OpAnswered(
+          1,
+          AppliedAnswer('add7', revision: 1, life: fixtureLife),
+        ),
       ]);
       expect(
         counts.written.map((write) => write.$2),
@@ -349,7 +358,11 @@ void main() {
           answers.add(
             OpAnswered(
               sent.attempt,
-              AppliedAnswer(op.opId, revision: visibleRevision(server, op)!),
+              AppliedAnswer(
+                op.opId,
+                revision: visibleRevision(server, op)!,
+                life: fixtureLife,
+              ),
             ),
           );
         }
@@ -764,6 +777,7 @@ void main() {
         }),
         sortIndex: row.sortIndex,
         revision: revision,
+        unknownFields: row.unknownFields,
       );
     }
 
@@ -1035,7 +1049,10 @@ void main() {
     Future<void> answer(LibraryStore store, String opId, int revision) async {
       final sent = await claimAll(store);
       await recordAll(store, [
-        OpAnswered(sent.attempt, AppliedAnswer(opId, revision: revision)),
+        OpAnswered(
+          sent.attempt,
+          AppliedAnswer(opId, revision: revision, life: fixtureLife),
+        ),
       ]);
     }
 
@@ -1538,7 +1555,7 @@ void main() {
             await recordAll(store, [
               OpAnswered(
                 sent.attempt,
-                const AppliedAnswer('move', revision: 2),
+                const AppliedAnswer('move', revision: 2, life: fixtureLife),
               ),
             ]);
           }
@@ -1914,6 +1931,7 @@ void main() {
             payload: agentPayload('e9', const {}),
             sortIndex: 0,
             revision: 1,
+            unknownFields: jsonObject({'createdAt': fixtureLife}),
           ),
         ]);
         await recordAll(store, [
