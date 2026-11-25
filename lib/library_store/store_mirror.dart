@@ -458,9 +458,9 @@ final class StoreMirror extends LocalLibraryFollower {
             _batches++;
             if (written case ShadowCopyStopped(:final stop)) {
               _stop(MirrorStoreStopped(stop));
+              return;
             }
             _record(written, {strategyId}, const {});
-            if (written is ShadowCopyStopped) return;
         }
         continue;
       }
@@ -488,9 +488,9 @@ final class StoreMirror extends LocalLibraryFollower {
       _batches++;
       if (batch case ShadowCopyStopped(:final stop)) {
         _stop(MirrorStoreStopped(stop));
+        return;
       }
       _record(batch, strategies, folders);
-      if (batch is ShadowCopyStopped) return;
     }
   }
 

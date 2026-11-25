@@ -111,8 +111,10 @@ final class ShadowFinished extends ShadowState {
   final ShadowRun run;
 }
 
-final class ShadowClosedWithTheApp extends ShadowState {
-  const ShadowClosedWithTheApp();
+final class ShadowMirrorStopped extends ShadowState {
+  const ShadowMirrorStopped(this.stop);
+
+  final MirrorStop stop;
 }
 
 final class ShadowNotOpened extends ShadowState {
@@ -225,8 +227,8 @@ class ShadowNotifier extends Notifier<ShadowState> {
             progress: progress,
           ),
       };
-      if (copy is ShadowCopyCancelled) {
-        state = const ShadowClosedWithTheApp();
+      if (_mirrorStop case final stop?) {
+        state = ShadowMirrorStopped(stop);
         return;
       }
       final copyTook = copyClock.elapsed;
@@ -235,8 +237,8 @@ class ShadowNotifier extends Notifier<ShadowState> {
       checkWatch.start();
       final checkClock = Stopwatch()..start();
       final check = await _check(store, foreignNames);
-      if (check is StoreCheckCancelled) {
-        state = const ShadowClosedWithTheApp();
+      if (_mirrorStop case final stop?) {
+        state = ShadowMirrorStopped(stop);
         return;
       }
       final checkTook = checkClock.elapsed;
@@ -269,6 +271,12 @@ class ShadowNotifier extends Notifier<ShadowState> {
       await writes.stop();
     }
   }
+
+  MirrorStop? get _mirrorStop => switch (mode) {
+        Mirroring(mirror: StoreMirror(phase: MirrorStopped(:final stop))) =>
+          stop,
+        Mirroring() || ShadowOnly() => null,
+      };
 
   Future<StoreCheck> checkAgain(LibraryStoreReady ready) =>
       _check(ready.store, ready.foreignNames);

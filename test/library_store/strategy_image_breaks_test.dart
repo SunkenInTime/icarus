@@ -277,42 +277,110 @@ void main() {
       }
     }, timeout: const Timeout(Duration(minutes: 10)));
 
+    for (final fails in [true, false]) {
+      test(
+          'while a save\'s store write is in flight and then '
+          '${fails ? 'fails' : 'succeeds'}, its result is not published, '
+          'nothing more is written and the mirror stays closed with the app',
+          () async {
+        final gate = CommitGate();
+        final (h, id, _) = await open(gate: gate);
+        addTearDown(h.dispose);
+        final before = gate.commits;
+        gate.hold();
+        await _moveAgent(container, 0);
+        final moved = container.read(agentProvider).last;
+        final saving = _save(container, id);
+        await _until(() => gate.commits > before);
+        h.mirror.closeWithTheApp();
+        final inFlight = gate.commits;
+        final published = <MirrorWrote>[];
+        final listening = h.mirror.updates.listen(published.add);
+        gate
+          ..failNext = fails
+          ..release();
+        await saving;
+        await h.settle();
+        await listening.cancel();
+
+        expect(h.mirror.phase, _closedWithTheApp);
+        expect(gate.commits, inFlight);
+        expect(published, isEmpty);
+        bool holdsTheMove(StrategyData strategy) =>
+            strategy.pages.single.agentData.any((agent) =>
+                agent.id == moved.id && agent.position == moved.position);
+        expect(holdsTheMove(_stored(id)), isTrue, reason: 'Hive');
+        expect(holdsTheMove(await _inStore(h.store, id)), !fails,
+            reason: 'the store commits a write it accepted before the close');
+      });
+    }
+
     test(
-        'while a save\'s store write is in flight, its result is not '
-        'published, and a store failure after the close does not replace the '
-        'reason the mirror stopped', () async {
+        'catching up before the app closes waits for the save the mirror is '
+        'writing, publishes it, then stops the mirror', () async {
       final gate = CommitGate();
       final (h, id, _) = await open(gate: gate);
       addTearDown(h.dispose);
       final before = gate.commits;
+      final published = <(MirrorWrote, MirrorPhase)>[];
+      final listening = h.mirror.updates
+          .listen((wrote) => published.add((wrote, h.mirror.phase)));
+      addTearDown(listening.cancel);
       gate.hold();
       await _moveAgent(container, 0);
+      final moved = container.read(agentProvider).last;
       final saving = _save(container, id);
       await _until(() => gate.commits > before);
-      h.mirror.closeWithTheApp();
-      final inFlight = gate.commits;
-      final published = <MirrorWrote>[];
-      final listening = h.mirror.updates.listen(published.add);
-      gate
-        ..failNext = true
-        ..release();
+      final closing = storeCatchUpBeforeClose()!;
+      for (var turn = 0; turn < 20; turn++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(h.mirror.phase, isA<MirrorFollowing>());
+      gate.release();
       await saving;
-      await h.settle();
-      await listening.cancel();
+      await closing;
 
       expect(h.mirror.phase, _closedWithTheApp);
-      expect(gate.commits, inFlight);
-      expect(published, isEmpty);
-      expect(_stored(id).pages.single.agentData.first.position,
-          container.read(agentProvider).first.position);
+      expect(
+        published.where((event) => event.$1.strategies.contains(id)),
+        [
+          isA<(MirrorWrote, MirrorPhase)>()
+              .having((e) => e.$2, 'phase', isA<MirrorFollowing>())
+        ],
+      );
+      expect(
+        (await _inStore(h.store, id)).pages.single.agentData.any((agent) =>
+            agent.id == moved.id && agent.position == moved.position),
+        isTrue,
+      );
     });
+  });
 
-    test('catching up before the app closes stops the mirror', () async {
-      final (h, _, _) = await open();
-      addTearDown(h.dispose);
-      await storeCatchUpBeforeClose();
-      expect(h.mirror.phase, _closedWithTheApp);
-    });
+  test(
+      'a follow-up batch the store fails stops the mirror without publishing '
+      'the batch, and nothing is published after the stop', () async {
+    final gate = CommitGate();
+    final (h, id, _) = await open(gate: gate);
+    addTearDown(h.dispose);
+    final published = <(MirrorWrote, MirrorPhase)>[];
+    final listening = h.mirror.updates
+        .listen((wrote) => published.add((wrote, h.mirror.phase)));
+    addTearDown(listening.cancel);
+    gate.failNext = true;
+    await _moveAgent(container, 0);
+    await _save(container, id);
+    await h.settle();
+
+    expect(
+      h.mirror.phase,
+      isA<MirrorStopped>()
+          .having((phase) => phase.stop, 'stop', isA<MirrorStoreStopped>()),
+    );
+    expect(
+        published.where((event) => event.$1.strategies.contains(id)), isEmpty);
+    final stopped = published.indexWhere((event) => event.$2 is MirrorStopped);
+    expect(stopped, isNonNegative);
+    expect(published.skip(stopped + 1), isEmpty);
   });
 
   group('once the app closes during the first copy', () {
@@ -395,57 +463,94 @@ void main() {
       expect(gate.commits, commits);
     });
 
-    test(
-        'while one of its store writes is in flight, the copy is cancelled, '
-        'and the write failing does not replace the reason', () async {
-      final (mirror, store, gate, _) = await beforeCopy();
-      final before = gate.commits;
-      gate.hold();
-      final copying = copy(mirror, store);
-      await _until(() => gate.commits > before);
-      mirror.closeWithTheApp();
-      final inFlight = gate.commits;
-      gate
-        ..failNext = true
-        ..release();
-      expect(await copying, isA<ShadowCopyCancelled>());
-      expect(mirror.phase, _closedWithTheApp);
-      expect(await check(mirror), isA<StoreCheckCancelled>());
-      expect(gate.commits, inFlight);
-    });
+    for (final fails in [true, false]) {
+      test(
+          'while one of its store writes is in flight and then '
+          '${fails ? 'fails' : 'succeeds'}, the copy is cancelled, nothing '
+          'more is written and the mirror stays closed with the app', () async {
+        final (mirror, store, gate, _) = await beforeCopy();
+        final before = gate.commits;
+        gate.hold();
+        final copying = copy(mirror, store);
+        await _until(() => gate.commits > before);
+        mirror.closeWithTheApp();
+        final inFlight = gate.commits;
+        gate
+          ..failNext = fails
+          ..release();
+        expect(await copying, isA<ShadowCopyCancelled>());
+        expect(mirror.phase, _closedWithTheApp);
+        expect(await check(mirror), isA<StoreCheckCancelled>());
+        expect(gate.commits, inFlight);
+        final list = switch (store.library) {
+          LibraryOpen(:final list) => list,
+          LibraryShut(:final failure) => fail('the store shut: $failure'),
+        };
+        expect(list.folders, hasLength(fails ? 0 : 1),
+            reason: 'the store commits a write it accepted before the close');
+        expect(list.strategies, isEmpty);
+      });
+    }
 
-    test(
-        'the startup run ends as closed with the app and never starts its '
-        'check', () async {
-      final (mirror, store, _, breaks) = await beforeCopy();
-      breaks
-        ..armed = true
-        ..at = 3
-        ..then = () async => mirror.closeWithTheApp();
-      final states = <ShadowState>[];
-      final listening = container.listen(
-        shadowProvider,
-        (_, next) => states.add(next),
-      );
-      addTearDown(listening.close);
-      final notifier = container.read(shadowProvider.notifier)
-        ..begin(
-          opening: Future.value(LibraryStoreReady(
-            File('${hiveDirectory.path}/library.sqlite'),
-            store,
-            const StorageCreated(),
-            const [],
-            store.close,
-          )),
-          firstFrame: Future.value(),
-          hiveDirectory: hiveDirectory.path,
-          mode: Mirroring(mirror),
+    final stops =
+        <String, (void Function(StoreMirror, CommitGate, _Breaks), Matcher)>{
+      'the app closing at a break': (
+        (mirror, _, breaks) =>
+            breaks.then = () async => mirror.closeWithTheApp(),
+        isA<MirrorClosedWithTheApp>(),
+      ),
+      'a fault at a break': (
+        (mirror, _, breaks) => breaks.then = () async => mirror.onFault(
+              StateError('a fault during the copy'),
+              StackTrace.empty,
+            ),
+        isA<MirrorFaulted>(),
+      ),
+      'a folder write the store fails': (
+        (_, gate, __) => gate.failNext = true,
+        isA<MirrorStoreStopped>(),
+      ),
+    };
+    for (final MapEntry(key: name, value: (stopWith, reason))
+        in stops.entries) {
+      test(
+          'the startup run stopped by $name says the mirror stopped with that '
+          'reason and never starts its check', () async {
+        final (mirror, store, gate, breaks) = await beforeCopy();
+        breaks
+          ..armed = true
+          ..at = 3;
+        stopWith(mirror, gate, breaks);
+        final states = <ShadowState>[];
+        final listening = container.listen(
+          shadowProvider,
+          (_, next) => states.add(next),
         );
-      await notifier.running;
+        addTearDown(listening.close);
+        final notifier = container.read(shadowProvider.notifier)
+          ..begin(
+            opening: Future.value(LibraryStoreReady(
+              File('${hiveDirectory.path}/library.sqlite'),
+              store,
+              const StorageCreated(),
+              const [],
+              store.close,
+            )),
+            firstFrame: Future.value(),
+            hiveDirectory: hiveDirectory.path,
+            mode: Mirroring(mirror),
+          );
+        await notifier.running;
 
-      expect(container.read(shadowProvider), isA<ShadowClosedWithTheApp>());
-      expect(states.whereType<ShadowChecking>(), isEmpty);
-      expect(mirror.phase, _closedWithTheApp);
-    });
+        expect(mirror.phase,
+            isA<MirrorStopped>().having((phase) => phase.stop, 'stop', reason));
+        expect(
+          container.read(shadowProvider),
+          isA<ShadowMirrorStopped>().having((state) => state.stop, 'stop',
+              same((mirror.phase as MirrorStopped).stop)),
+        );
+        expect(states.whereType<ShadowChecking>(), isEmpty);
+      });
+    }
   });
 }

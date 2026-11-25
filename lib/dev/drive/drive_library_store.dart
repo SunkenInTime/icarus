@@ -25,6 +25,7 @@ import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/library_store/store_page_reads.dart';
 import 'package:icarus/library_store/strategy_image.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/startup/launch_clock.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_library_view.dart';
@@ -77,7 +78,7 @@ String _describeState(ShadowState state) => switch (state) {
       ShadowCopying(:final done, :final total) => 'copying $done of $total',
       ShadowChecking() => 'checking',
       ShadowFinished() => 'finished',
-      ShadowClosedWithTheApp() => 'closed with the app',
+      ShadowMirrorStopped(:final stop) => 'stopped: $stop',
       ShadowNotOpened(:final opened) => _describeOpened(opened),
     };
 
@@ -114,7 +115,9 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
           'STORE check could not read: '
               '${storageFailureWords(failure, StoreStep.read)} ($failure)',
         ],
-      StoreCheckCancelled() => ['STORE check not run: the app closed'],
+      StoreCheckCancelled() => [
+          'STORE check not run: the mirror had stopped',
+        ],
       final StoreChecked checked => [
           'STORE check Hive ${checked.hiveStrategies} strategies '
               '${checked.hiveFolders} folders; the same in the store '
@@ -204,7 +207,7 @@ List<String> _describeCopy(ShadowRun run) {
         'finished while Hive changed ($hiveWrites writes), so it may not reflect Hive',
       ShadowCopyStopped(:final stop) => 'stopped: $stop',
       ShadowCopyFaulted(:final error) => 'met an error: $error',
-      ShadowCopyCancelled() => 'cancelled: the app closed',
+      ShadowCopyCancelled() => 'cancelled: the mirror had stopped',
     }}: copied ${_count<StrategyCopied>(strategies)}, unchanged '
         '${_count<StrategyUnchanged>(strategies)}, took the Hive version '
         '${_count<StrategyTookHiveVersion>(strategies)}, removed with Hive '
@@ -256,10 +259,12 @@ Future<List<String>> waitForShadowStore(
     ShadowFinished(:final run) => run,
     ShadowNotOpened(:final opened) =>
       throw StoreStepFailed(['the store ${_describeOpened(opened)}']),
+    ShadowMirrorStopped(:final stop) => throw StoreStepFailed(
+        ['the mirror stopped before its copy and check finished: $stop'],
+      ),
     ShadowIdle() ||
     ShadowCopying() ||
-    ShadowChecking() ||
-    ShadowClosedWithTheApp() =>
+    ShadowChecking() =>
       throw StoreStepFailed(['the shadow copy is ${_describeState(state)}']),
   };
   final (file, origin) = switch (c.read(libraryStoreProvider)) {
@@ -314,7 +319,7 @@ Future<List<String>> waitForShadowStore(
       StoreChangedDuringCheck() => 'Hive changed during the check',
       StoreNotChecked(:final failure) => 'the check failed: '
           '${storageFailureWords(failure, StoreStep.read)} ($failure)',
-      StoreCheckCancelled() => 'the check did not run: the app closed',
+      StoreCheckCancelled() => 'the check did not run: the mirror had stopped',
     },
     if (libraryChanged.isNotEmpty && !mirroring)
       'library boxes changed: ${libraryChanged.join(', ')}',
@@ -369,7 +374,7 @@ String mirrorPhaseNow(ProviderContainer c) =>
     cloneStrategy(strategy).copyWith(lastEdited: DateTime.now()),
   );
   for (final page in changed.pages) {
-    for (final drawing in page.drawingData.whereType<FreeDrawing>()) {
+    for (final drawing in _strokesOn(page)) {
       _redraw(drawing, [
         for (final point in drawing.listOfPoints) point + const Offset(0.5, 0),
       ]);
@@ -390,25 +395,29 @@ String mirrorPhaseNow(ProviderContainer c) =>
   );
 }
 
-StrategyData? _withOneItemDiffering(StrategyData strategy) {
+(StrategyData, String)? _withOneItemDiffering(StrategyData strategy) {
   final changed = strategyAsHiveHoldsIt(
     cloneStrategy(strategy).copyWith(lastEdited: DateTime.now()),
   );
   for (final page in changed.pages) {
-    for (final drawing in page.drawingData.whereType<FreeDrawing>()) {
+    for (final drawing in _strokesOn(page)) {
       final [first, ...rest] = drawing.listOfPoints;
       _redraw(drawing, [Offset(-0.0, first.dy), ...rest]);
-      return changed;
+      return (changed, page.id);
     }
   }
   for (final page in changed.pages) {
     if (page.agentData.isEmpty) continue;
     final agent = page.agentData.first;
     agent.position = Offset(-0.0, agent.position.dy);
-    return changed;
+    return (changed, page.id);
   }
   return null;
 }
+
+Iterable<FreeDrawing> _strokesOn(StrategyPage page) => page.drawingData
+    .whereType<FreeDrawing>()
+    .where((drawing) => drawing.listOfPoints.isNotEmpty);
 
 void _redraw(FreeDrawing drawing, List<Offset> points) => drawing
   ..replacePoints(points)
@@ -566,8 +575,9 @@ Future<List<String>> readBackFrames(
 }) async {
   final held = strategyAsHiveHoldsIt(_picked(pick));
   final (edited, change) = _withOneItemChanged(held);
-  final differing = _withOneItemDiffering(held) ??
+  final (differing, differingPage) = _withOneItemDiffering(held) ??
       (throw StoreStepFailed(['READBACK $pick has no stroke or agent']));
+  final planted = 'page $differingPage reads back differently';
   final images = StrategyImages();
   final runs = [
     ('cold', await _framesAcrossSteps(images, held)),
@@ -595,6 +605,7 @@ Future<List<String>> readBackFrames(
   ];
   final problems = [
     for (final (label, run) in runs) ...[
+      if (run.frames == 0) '$label: no frame ran during the check',
       if (run.timedFrames < run.frames)
         '$label: ${run.frames - run.timedFrames} of the check\'s '
             '${run.frames} frames were not timed',
@@ -605,8 +616,9 @@ Future<List<String>> readBackFrames(
             '$longestStepMs ms by '
             '${_ms(run.longestStepMicros - (longestStepMs * 1000).round())} ms',
     ],
-    if (runs.last.$2.readBack is ReadsBackEqual)
-      'the item meant to read back differently reads back equal',
+    if (runs.last.$2.readBack case final readBack
+        when readBack is! ReadsBackDifferently || readBack.words != planted)
+      'the item at -0.0 should read back as "$planted"',
   ];
   if (problems.isNotEmpty) {
     throw StoreStepFailed([
@@ -763,6 +775,12 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
     ...describeCheck(check, checkClock.elapsed),
   ];
   if (endSave != null) throw StoreStepFailed(lines);
+  if (check is StoreCheckCancelled) {
+    throw StoreStepFailed([
+      ...lines,
+      'the check did not run: the mirror ${_describePhase(mirror.phase)}',
+    ]);
+  }
   if (actionOpsEndProblem(mirror) case final problem?) {
     throw StoreStepFailed([...lines, problem]);
   }
