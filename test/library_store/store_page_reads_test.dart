@@ -22,6 +22,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -547,6 +548,18 @@ void main() {
       await h.settle();
     }
 
+    test(
+        'the editor is closed to input for the whole read: the open is '
+        'running, naming the strategy it opens, until its page is applied',
+        () async {
+      expect(container.read(strategyOpeningProvider)?.strategyId, b.id);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(container.read(strategyOpeningProvider)?.strategyId, b.id);
+      await openEnds();
+      expect(container.read(strategyOpeningProvider), isNull);
+      expect(container.read(canvasShowsProvider), isA<ShowsPage>());
+    });
+
     test('a Save writes nothing and says the work was not saved', () async {
       h.editor.setUnsaved();
       await expectLater(h.editor.saveToHive(b.id), throwsStateError);
@@ -612,8 +625,10 @@ void main() {
     await h.editor.saveToHive(s.id);
     await h.settle();
 
-    expect(h.loads.single,
-        startsWith('open from Hive: ${FromHiveBecause.readsBackDifferently.words}'));
+    expect(
+        h.loads.single,
+        startsWith(
+            'open from Hive: ${FromHiveBecause.readsBackDifferently.words}'));
     expect(hiveBytes(s.id), before);
   });
 
@@ -652,7 +667,10 @@ void main() {
       final h = await reading([s]);
       await h.plantInStoreOnly(s, 'only in the store');
       await landAtApply((stored) => cloneStrategy(stored)
-        ..pages.firstWhere((page) => page.sortIndex == 0).agentData.first
+        ..pages
+            .firstWhere((page) => page.sortIndex == 0)
+            .agentData
+            .first
             .caption = 'newer');
 
       expect(await h.editor.loadFromHive(s.id), isTrue);
@@ -671,8 +689,7 @@ void main() {
         () async {
       final s = strategy();
       final h = await reading([s]);
-      final newerMap =
-          MapValue.values.firstWhere((map) => map != s.mapData);
+      final newerMap = MapValue.values.firstWhere((map) => map != s.mapData);
       final newerPalette = MapThemePalette(
         baseColorValue: 0xFF102030,
         detailColorValue: 0xFF405060,
@@ -688,7 +705,8 @@ void main() {
       await h.settle();
 
       expect(container.read(mapProvider).currentMap, newerMap);
-      expect(container.read(strategyThemeProvider).overridePalette?.baseColorValue,
+      expect(
+          container.read(strategyThemeProvider).overridePalette?.baseColorValue,
           newerPalette.baseColorValue);
       await h.editor.saveToHive(s.id);
       await h.settle();
@@ -732,6 +750,104 @@ void main() {
 
     expect(await opening, isFalse);
     expect(h.loads, ['open ${const GaveWay()}']);
+  });
+
+  group(
+      'shapes the real libraries do not have, through the mirror, a read-mode '
+      'open and a Save with no edits', () {
+    StrategyData withoutPictures(StrategyData strategy) => strategy.copyWith(
+          pages: [
+            for (final page in strategy.pages)
+              page.copyWith(imageData: const []),
+          ],
+        );
+
+    LineUpGraph interleaved(String prefix) {
+      final graph = sharedSpotLineups(prefix);
+      return LineUpGraph(
+        origins: graph.origins,
+        landings: graph.landings,
+        links: [graph.links[3], ...graph.links.take(3)],
+      );
+    }
+
+    final shapes = <String, (StrategyData Function(StrategyData), String)>{
+      'lineups grouped by their shared spot': (
+        (s) => s.copyWith(pages: [
+              s.pages[0].copyWith(lineUpGraph: sharedSpotLineups('${s.id}-l')),
+              s.pages[1],
+            ]),
+        'open from the store',
+      ),
+      'lineups saved interleaved': (
+        (s) => s.copyWith(pages: [
+              s.pages[0].copyWith(lineUpGraph: interleaved('${s.id}-l')),
+              s.pages[1],
+            ]),
+        'open from Hive: ${FromHiveBecause.readsBackDifferently.words}',
+      ),
+      'two pages at the same position': (
+        (s) => s.copyWith(pages: [
+              s.pages[0],
+              s.pages[1].copyWith(sortIndex: s.pages[0].sortIndex),
+            ]),
+        'open from Hive: ${FromHiveBecause.tiedPositions.words}',
+      ),
+      'pages saved out of their position order': (
+        (s) => s.copyWith(pages: [s.pages[1], s.pages[0]]),
+        'open from Hive: ${FromHiveBecause.readsBackDifferently.words}',
+      ),
+      'a page with nothing on it': (
+        (s) => s.copyWith(pages: [
+              s.pages[0].copyWith(
+                agentData: const [],
+                abilityData: const [],
+                drawingData: const [],
+                textData: const [],
+                utilityData: const [],
+                lineUpGraph: LineUpGraph.empty,
+              ),
+              s.pages[1],
+            ]),
+        'open from the store',
+      ),
+      'the same item id on two pages': (
+        (s) => s.copyWith(pages: [
+              s.pages[0],
+              s.pages[1].copyWith(agentData: [
+                s.pages[0].agentData.first,
+                ...s.pages[1].agentData.skip(1),
+              ]),
+            ]),
+        'open from the store',
+      ),
+      'the same item id twice on one page': (
+        (s) => s.copyWith(pages: [
+              s.pages[0].copyWith(agentData: [
+                s.pages[0].agentData.first,
+                s.pages[0].agentData.first,
+                ...s.pages[0].agentData.skip(1),
+              ]),
+              s.pages[1],
+            ]),
+        'open from the store',
+      ),
+    };
+
+    for (final MapEntry(key: name, value: (shape, served)) in shapes.entries) {
+      test('$name: $served', () async {
+        final s = withoutPictures(shape(strategy()));
+        final h = await reading([s], allCopied: false);
+        final before = hiveBytes(s.id);
+
+        expect(await h.editor.loadFromHive(s.id), isTrue);
+        await h.editor.saveToHive(s.id);
+        await h.settle();
+
+        expect(h.loads.single, startsWith(served));
+        expect(hiveBytes(s.id), before, reason: h.loads.single);
+      });
+    }
   });
 
   test('only the read mode reads pages from the store', () {

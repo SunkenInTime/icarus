@@ -1,4 +1,6 @@
-import 'package:icarus/library_rows/round_trip.dart';
+import 'dart:convert';
+
+import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
@@ -24,38 +26,51 @@ final class StrategyImage {
 }
 
 StrategyImage imageOf(StrategyData strategy) {
-  final RoundTrip trip;
+  final rows = strategyToRows(strategy);
+  final StrategyRowsMade made;
+  switch (rows) {
+    case StrategyRowsRefused():
+      return StrategyImage(
+        rows,
+        const ReadsBackDifferently('the converter refuses it'),
+      );
+    case final StrategyRowsMade madeRows:
+      made = madeRows;
+  }
   try {
-    trip = roundTrip(strategy);
+    return StrategyImage(made, _readBack(strategy, made));
   } on Object catch (error) {
     return StrategyImage(
-      strategyToRows(strategy),
+      made,
       ReadsBackDifferently('it cannot be compared: $error'),
     );
   }
-  return _imageOf(trip);
 }
 
-StrategyImage _imageOf(RoundTrip trip) => switch (trip) {
-      RoundTripSame(:final made) => StrategyImage(made, const ReadsBackEqual()),
-      RoundTripDiffers(:final made, :final differences, :final back) =>
-        StrategyImage(
-          made,
-          ReadsBackDifferently([
-            ...differences.take(3).map((difference) => '$difference'),
-            if (differences.length > 3) '${differences.length - 3} more',
-            if (back.unreadable.isNotEmpty) 'rows it cannot read',
-            if (back.notInStrategy.isNotEmpty) 'rows outside the strategy',
-          ].join(', ')),
-        ),
-      RoundTripRefusedFromRows(:final made, :final refused) => StrategyImage(
-          made,
-          ReadsBackDifferently(
-            'its rows are refused: ${refused.problems.join('; ')}',
-          ),
-        ),
-      RoundTripRefusedToRows(:final refused) => StrategyImage(
-          refused,
-          const ReadsBackDifferently('the converter refuses it'),
-        ),
-    };
+ReadBack _readBack(StrategyData strategy, StrategyRowsMade made) {
+  final StrategyDataMade back;
+  switch (strategyFromRows(made.rows)) {
+    case StrategyDataRefused(:final problems):
+      return ReadsBackDifferently(
+        'its rows are refused: ${problems.join('; ')}',
+      );
+    case final StrategyDataMade madeBack:
+      back = madeBack;
+  }
+  if (back.unreadable.isNotEmpty) {
+    return const ReadsBackDifferently('rows it cannot read');
+  }
+  if (back.notInStrategy.isNotEmpty) {
+    return const ReadsBackDifferently('rows outside the strategy');
+  }
+  if (jsonEncode(strategyFingerprint(strategy)) ==
+      jsonEncode(strategyFingerprint(back.strategy))) {
+    return const ReadsBackEqual();
+  }
+  final differences = strategyDifferences(strategy, back.strategy);
+  if (differences.isEmpty) return const ReadsBackEqual();
+  return ReadsBackDifferently([
+    ...differences.take(3).map((difference) => '$difference'),
+    if (differences.length > 3) '${differences.length - 3} more',
+  ].join(', '));
+}
