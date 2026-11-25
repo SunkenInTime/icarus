@@ -562,6 +562,29 @@ void main() {
     });
 
     test(
+        'a strategy replaced again between the refusal and the list read: '
+        'the list of the later life than the one named is adopted', () {
+      inWorld((world) {
+        world.replaceStrategyOnServer();
+        final named = createdAtOf(world.server.rows[strategyId]!.strategy);
+        world.server.overrideRead = (call) =>
+            const StoreReadLost(TransportFailure.network, 'held by the test');
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 1));
+        expect(namedLifeOf(world.cloud().queue.shown.list), named);
+        world.replaceStrategyOnServer();
+        final later = createdAtOf(world.server.rows[strategyId]!.strategy)!;
+        expect(later, greaterThan(named!));
+        world.server.overrideRead = null;
+        world.settle(const Duration(minutes: 1));
+        expect(world.viewedLife(), later);
+        world.commitMove(2);
+        world.settle(const Duration(minutes: 1));
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
         'a record holding a strategy life a year after the server\'s recovers '
         'after one refused batch: the calls are the send, the list and the '
         'page, the move is set aside, and the next edit is sent and '

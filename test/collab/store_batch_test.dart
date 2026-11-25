@@ -508,6 +508,44 @@ void main() {
         life,
       );
       expect(named(desktop(null)), isNull);
+      for (final past in [
+        const ConvexInteger(9007199254740992),
+        const ConvexFloat(9007199254740992.0),
+      ]) {
+        expect(
+          named(
+            desktop(
+              ConvexObject({
+                'code': const ConvexString('STRATEGY_REPLACED'),
+                'currentLife': past,
+              }),
+            ),
+          ),
+          isNull,
+          reason: 'a life past the largest whole number JavaScript holds '
+              'exactly, as ${past.runtimeType}',
+        );
+      }
+      for (final notATime in [
+        const ConvexInteger(0),
+        const ConvexInteger(-1),
+        const ConvexInteger(-9223372036854775808),
+        const ConvexFloat(-1795613794067.0),
+      ]) {
+        expect(
+          named(
+            desktop(
+              ConvexObject({
+                'code': const ConvexString('STRATEGY_REPLACED'),
+                'currentLife': notATime,
+              }),
+            ),
+          ),
+          isNull,
+          reason: 'a life is a creation time, so it is above zero; '
+              'got ${notATime.runtimeType}',
+        );
+      }
       expect(
         named(
           desktop(
