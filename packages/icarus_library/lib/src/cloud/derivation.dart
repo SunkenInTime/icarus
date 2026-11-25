@@ -815,8 +815,15 @@ Map<String, EntryView> entryViews(CloudQueue queue, DateTime now) =>
 }
 
 Set<ResultSubject> owedReads(CloudQueue queue) => {
-  if (queue.shown.listOwed) const PageListResult(),
+  if (isDebt(queue.shown.list)) const PageListResult(),
+  for (final MapEntry(:key, :value) in queue.shown.pageReads.entries)
+    if (isDebt(value)) PageResult(key),
 };
+
+int refusedReads(CloudQueue queue) => [
+  queue.shown.list,
+  ...queue.shown.pageReads.values,
+].whereType<ReadRefused>().length;
 
 Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
   ...owedReads(queue),
@@ -844,7 +851,9 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
     return (EntryView(const NeedsUser(Oversized()), const []), null);
   }
   final holds = <Hold>[
-    if (queue.shown.listOwed) const AwaitingResult(PageListResult()),
+    if (isDebt(queue.shown.list)) const AwaitingResult(PageListResult()),
+    for (final page in pages)
+      if (isDebt(queue.shown.pageRead(page))) AwaitingResult(PageResult(page)),
   ];
   DateTime? until;
 

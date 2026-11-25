@@ -234,6 +234,13 @@ final class UserDiscarded extends UserAction {
   const UserDiscarded(super.opId);
 }
 
+final class ResultRefused extends QueueEvent {
+  const ResultRefused({required this.page, required this.problem});
+
+  final String? page;
+  final String problem;
+}
+
 final class BaseArrived extends QueueEvent {
   const BaseArrived(this.base, {required this.session});
 
@@ -267,15 +274,10 @@ final class NoopAnswer extends OpAnswer {
   final int life;
 }
 
-final class ReplayWithoutLife extends OpAnswer {
-  const ReplayWithoutLife(
-    super.opId, {
-    required this.revision,
-    required this.replay,
-  });
+final class AnswerWithoutLife extends OpAnswer {
+  const AnswerWithoutLife(super.opId, {required this.revision});
 
-  final int revision;
-  final NoopReplay replay;
+  final int? revision;
 }
 
 enum NoopReplay { appliedWhenFirstReceived, notApplied }

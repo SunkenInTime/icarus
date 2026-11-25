@@ -44,47 +44,47 @@ final class Tally {
       standing: standingOf(queue),
       waiting: counts.waiting,
       attention: counts.attention,
-      readsOwed: owedReads(queue).length,
+      readsOwed: owedReads(queue).length - refusedReads(queue),
+      unreadable: refusedReads(queue),
     );
   }
 
-  static Decoded<Tally> decode(Object? json) => JsonFields.read(
-    json,
-    'sync tally',
-    (fields) {
-      final standing = Standing.values.asNameMap()[fields.json['standing']];
-      if (standing == null) fields.reject('expected a standing');
-      Map<T, int> counts<T extends Enum>(String key, List<T> values) {
-        final found = <T, int>{};
-        final raw = fields.has(key) ? fields.object(key) : JsonObject.empty;
-        for (final MapEntry(:key, :value) in raw.entries) {
-          final name = values.asNameMap()[key];
-          if (name == null || !isSafeWhole(value) || (value! as num) <= 0) {
-            fields.reject('expected a positive count for "$key"');
-          } else {
-            found[name] = (value as num).toInt();
+  static Decoded<Tally> decode(Object? json) =>
+      JsonFields.read(json, 'sync tally', (fields) {
+        final standing = Standing.values.asNameMap()[fields.json['standing']];
+        if (standing == null) fields.reject('expected a standing');
+        Map<T, int> counts<T extends Enum>(String key, List<T> values) {
+          final found = <T, int>{};
+          final raw = fields.has(key) ? fields.object(key) : JsonObject.empty;
+          for (final MapEntry(:key, :value) in raw.entries) {
+            final name = values.asNameMap()[key];
+            if (name == null || !isSafeWhole(value) || (value! as num) <= 0) {
+              fields.reject('expected a positive count for "$key"');
+            } else {
+              found[name] = (value as num).toInt();
+            }
           }
+          return found;
         }
-        return found;
-      }
 
-      final waiting = counts('waiting', Underway.values);
-      final attention = counts('attention', Attention.values);
-      final unreadable = fields.has('unreadable')
-          ? fields.whole('unreadable')
-          : 0;
-      if (unreadable < 0) fields.reject('expected a count of unreadable');
-      final readsOwed = fields.has('readsOwed') ? fields.whole('readsOwed') : 0;
-      if (readsOwed < 0) fields.reject('expected a count of reads owed');
-      return () => Tally(
-        standing: standing!,
-        waiting: waiting,
-        attention: attention,
-        unreadable: unreadable,
-        readsOwed: readsOwed,
-      );
-    },
-  );
+        final waiting = counts('waiting', Underway.values);
+        final attention = counts('attention', Attention.values);
+        final unreadable = fields.has('unreadable')
+            ? fields.whole('unreadable')
+            : 0;
+        if (unreadable < 0) fields.reject('expected a count of unreadable');
+        final readsOwed = fields.has('readsOwed')
+            ? fields.whole('readsOwed')
+            : 0;
+        if (readsOwed < 0) fields.reject('expected a count of reads owed');
+        return () => Tally(
+          standing: standing!,
+          waiting: waiting,
+          attention: attention,
+          unreadable: unreadable,
+          readsOwed: readsOwed,
+        );
+      });
 
   final Standing standing;
   final Map<Underway, int> waiting;
@@ -96,7 +96,7 @@ final class Tally {
 
   int get stillGoing => waiting.values.fold(0, (sum, count) => sum + count);
 
-  int get total => stillGoing + needingYou + unreadable;
+  int get total => stillGoing + needingYou + unreadable + readsOwed;
 
   Tally plus(Tally other) => Tally(
     standing: _worse(standing, other.standing),

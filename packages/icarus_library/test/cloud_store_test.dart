@@ -1048,10 +1048,17 @@ void main() {
 
     Future<void> answer(LibraryStore store, String opId, int revision) async {
       final sent = await claimAll(store);
+      final op = sent.ops.firstWhere((op) => op.opId == opId);
       await recordAll(store, [
         OpAnswered(
           sent.attempt,
-          AppliedAnswer(opId, revision: revision, life: fixtureLife),
+          AppliedAnswer(
+            opId,
+            revision: revision,
+            life: checkTargetOf(op) is StrategyTarget
+                ? strategyCreatedAt.millisecondsSinceEpoch
+                : fixtureLife,
+          ),
         ),
       ]);
     }

@@ -171,8 +171,8 @@ void main() {
     });
 
     test(
-        'an applied answer without a life is not read: the batch is lost, the '
-        'move is sent again and lands, and its page is read to retire it', () {
+        'an applied answer without a life is that op\'s own answer: the move '
+        'asks the user and is not sent again', () {
       inWorld((world) {
         world.server.log.clear();
         world.server.answerNext(
@@ -185,8 +185,128 @@ void main() {
         );
         world.commitMove(1);
         world.settle(const Duration(minutes: 1));
-        expect(world.server.log, ['send move-1', 'send move-1', 'page p1']);
-        expect(world.queueLength(), 0);
+        expect(world.server.log, ['send move-1']);
+        expect(
+          world.views().single.state,
+          const NeedsUser(RefusedByServer(AnsweredWithoutLife(2))),
+        );
+      });
+    });
+
+    test(
+        'the lives the queue names reach the wire: the move names its row\'s '
+        'life and the batch the strategy\'s, which differ', () {
+      inWorld((world) {
+        world.server.calls.clear();
+        final element = world.firstElement();
+        world.commitMove(1);
+        world.settle();
+        final call = world.server.calls.single;
+        final strategyLife =
+            createdAtOf(world.server.rows[strategyId]!.strategy);
+        expect(call.lives, {'move-1': createdAtOf(element)});
+        expect(call.strategyLife, strategyLife);
+        expect(createdAtOf(element), isNot(strategyLife));
+      });
+    });
+
+    test(
+        'ops written in two lives of the strategy go out in separate '
+        'batches, so the newer one is sent though the older is refused', () {
+      inWorld((world) {
+        world.server.log.clear();
+        world.sender.hold('the test writes both edits first');
+        world.commitMove(1);
+        final held = world.server.rows[strategyId]!;
+        final old = held.strategy;
+        world.server.rows[strategyId] = StrategyRowSet(
+          strategy: ReadableStrategy(
+            publicId: old.publicId,
+            name: old.name,
+            mapData: old.mapData,
+            revision: old.revision,
+            createdAt: old.createdAt.add(const Duration(days: 1)),
+            updatedAt: old.updatedAt.add(const Duration(days: 1)),
+          ),
+          pages: held.pages,
+          settings: held.settings,
+          elements: held.elements,
+          lineupGroups: held.lineupGroups,
+        );
+        Saving<Recorded, CommitRefusal>? recorded;
+        world.store.record(servedAccount, strategyId, [
+          BaseArrived(
+            world.server.headerOf(strategyId),
+            session: world.cloud().queue.session.number,
+          ),
+        ]).then((value) => recorded = value);
+        world.async.flushMicrotasks();
+        expect(recorded, isA<Saved<Recorded, CommitRefusal>>());
+        world.commit([
+          StrategyPatchOp(
+            opId: 'rename',
+            expectedStrategyRevision: old.revision,
+            name: 'Renamed',
+          ),
+        ]);
+        world.server.log.clear();
+        world.sender.release();
+        world.settle(const Duration(minutes: 1));
+        expect(world.server.log.first, 'send move-1');
+        expect(world.server.log, contains('send rename'));
+        expect(world.server.calls.map((call) => call.opIds), [
+          ['move-1'],
+          ['rename'],
+        ]);
+      });
+    });
+
+    test(
+        'a page result the store will not keep is recorded as refused, so the '
+        'strategy shows unreadable work and the page is read again later', () {
+      inWorld((world) {
+        final drawn = world.firstElement();
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(
+            StoreBatchAnswered(
+              [
+                RejectedAnswer(
+                  call.opIds.single,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+              ],
+              complete: true,
+            ),
+          ),
+        );
+        final page = world.server.rows[strategyId]!.page(drawn.pagePublicId)!;
+        world.server.answerReadWith(
+          strategyId,
+          StoreReadAnswered(
+            PageRead(
+              page: lived(page),
+              elements: [
+                LiveElement(
+                  publicId: drawn.publicId,
+                  pagePublicId: drawn.pagePublicId,
+                  payload: drawn.payload,
+                  sortIndex: drawn.sortIndex,
+                  revision: 1,
+                ),
+              ],
+              lineupGroups: const [],
+            ),
+          ),
+        );
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 10));
+        expect(
+          world.cloud().queue.shown.pageRead(drawn.pagePublicId),
+          isA<ReadRefused>(),
+        );
+        expect(world.face(), Face.unreadableWork);
       });
     });
 

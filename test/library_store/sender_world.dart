@@ -101,7 +101,12 @@ int? visibleRevision(StrategyRowSet rows, StrategyOp op) =>
 
 const firstLife = 1761955200000;
 
-R lived<R extends Row>(R row) => bornIn(row, firstLife) as R;
+R lived<R extends Row>(R row) => bornIn(row, lifeOfRow(row.key)) as R;
+
+int lifeOfRow(RowKey key) =>
+    firstLife +
+    1 +
+    '$key'.codeUnits.fold(0, (sum, unit) => sum * 31 + unit) % 100000;
 
 StrategyRowSet livedRows(StrategyRowSet rows) => StrategyRowSet(
       strategy: rows.strategy,
@@ -172,7 +177,12 @@ final class FakeServer {
   void answerReadWith(String strategyId, StoreReadOutcome outcome) =>
       answerReadNext(strategyId, (_) => Future.value(outcome));
 
-  OpAnswer _applyOne(String strategy, String client, StrategyOp op) {
+  OpAnswer _applyOne(
+    String strategy,
+    String client,
+    StrategyOp op, {
+    int? expectedLife,
+  }) {
     final key = (strategy, client, op.opId);
     switch (receipts[key]) {
       case AppliedAnswer(:final revision, :final life):
@@ -188,6 +198,13 @@ final class FakeServer {
         break;
     }
     final now = livedRows(rows[strategy]!);
+    if (expectedLife != null && expectedLife != lifeOfChecked(now, op)) {
+      return receipts[key] = RejectedAnswer(
+        op.opId,
+        RejectionReason.rowReplaced,
+        const NoServerCopy(),
+      );
+    }
     final OpAnswer answer;
     switch (applyOp(now, op)) {
       case final OpApplied done:
@@ -253,7 +270,12 @@ final class FakeServer {
     return StoreBatchAnswered(
       [
         for (final op in call.ops)
-          _applyOne(call.strategyId, call.clientId, op),
+          _applyOne(
+            call.strategyId,
+            call.clientId,
+            op,
+            expectedLife: call.lives[op.opId],
+          ),
       ],
       complete: true,
       serverTime: asked ? now : null,

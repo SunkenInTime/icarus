@@ -1871,8 +1871,38 @@ page is read again. The server refuses a batch whose strategy life is not the
 strategy's as `STRATEGY_REPLACED`: its ops go to the user, the page list is
 owed, and while it is owed nothing is sendable. The debt is stored with the
 results (`listOwed`), counted in the tally (`readsOwed`), and paid by the next
-page list. A replay answered with no life asks the user, as a forgotten
-answer does. A queued edit is drawn only over its own row's life, and only in
+page list. An answer with no life (applied, replayed or rejected with a copy
+that has none) is that op's own answer, `AnswerWithoutLife`: the op asks the
+user, as a forgotten answer does, and the batch's other answers are kept.
+Two edits of a row fold only when they name the same row life and the same
+strategy life, and `fitsBatch` is the one rule for which ops may share a batch:
+the queue's claim and the app's picker both use it.
+
+**What has been read.** The page list and each page have one read state:
+not read this session, read this session, owed, or refused. A read is owed
+when an answer says what was shown may be stale (`row_replaced` owes the row's
+page, `STRATEGY_REPLACED` the list); it is refused when the server sent a
+result the store would not keep (`ResultWithoutLife`, `ResultOutOfPlace`), and
+the sender records that as `ResultRefused`. Owed and refused reads are stored
+with the results and survive a restart. While the list is owed or refused
+nothing is sendable, and while a page is, nothing on it is. Owed reads count as
+`readsOwed` and keep the strategy from showing as saved; refused reads count as
+unreadable work, the face other unreadable work has. The sender reads an owed
+page at once and a refused one on its read backoff; a read the store keeps, or
+an answer that the strategy is gone, pays the debt.
+
+**Where revisions still meet as numbers.** Every place two rows' versions are
+ordered uses `Version`: the highest version shown, which of two shown rows is
+newer, whether a result has shown landed work, the queue's known row for a
+target, whether a list shows this device's landed page add, and the store's
+and the shadow's choice of page for a row seen on two pages. What remains
+compares revisions for equality inside one row's justification (a prediction
+against the revision it was made at, a whole write behind this device's own
+landed work, a put-back over its own delete) or does arithmetic on one row's
+own revision (a folded prediction). Those choose which revision an op names;
+the op still names the life it was written over, so a match across lives is
+refused by the server as `row_replaced`, never applied. Local undo compares
+revisions of local rows, which have no lives. A queued edit is drawn only over its own row's life, and only in
 the strategy life it was written in. What the server does not refuse: a
 re-add of a purged id goes through unless the put-back is checked. The cases
 in `test/server_cases.json` pin this down; `test/server_cases_test.dart` runs

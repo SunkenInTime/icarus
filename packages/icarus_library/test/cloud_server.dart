@@ -23,11 +23,12 @@ Map<String, Object?> liveContent(StrategyRowSet rows) => {
       '${row.key}': switch (row.toJson()) {
         final Map<String, Object?> json => {
           for (final MapEntry(:key, :value) in json.entries)
-            if (key != 'revision' &&
-                key != 'updatedAt' &&
-                key != 'sortIndex' &&
-                key != 'createdAt')
-              key: value,
+            if (key != 'revision' && key != 'updatedAt' && key != 'sortIndex')
+              key: switch ((key, value)) {
+                ('createdAt', final num life) when life >= addedLife =>
+                  'born in the run',
+                _ => value,
+              },
         },
         final other => other,
       },
@@ -92,6 +93,7 @@ final class Server {
     final life = nextLife++;
     rows = StrategyRowSet(
       strategy: strategyRow(
+        name: 'Case',
         revision: 0,
         createdAt: DateTime.fromMillisecondsSinceEpoch(life, isUtc: true),
       ),
@@ -113,6 +115,16 @@ final class Server {
               apply(client, op, expectedLife: batch.lives[op.opId]),
             ),
         ];
+
+  void recreate() {
+    heldIds.addAll([
+      for (final row in rows.elements) row.publicId,
+      for (final row in rows.lineupGroups) row.publicId,
+    ]);
+    create();
+    recorded.clear();
+    firstClient.clear();
+  }
 
   void reupload() {
     heldIds.addAll([
@@ -138,10 +150,21 @@ final class Server {
       return const NoServerCopy();
     }
     final (kind, value) = switch (row) {
-      ReadableStrategy(:final name, :final mapData) => (
-        SnapshotTarget.strategy,
-        <String, Object?>{'name': name, 'mapData': mapData},
-      ),
+      ReadableStrategy(
+        :final name,
+        :final mapData,
+        :final themeProfileId,
+        :final themeOverridePalette,
+      ) =>
+        (
+          SnapshotTarget.strategy,
+          <String, Object?>{
+            'name': name,
+            'mapData': mapData,
+            'themeProfileId': themeProfileId,
+            'themeOverridePalette': themeOverridePalette?.toJson(),
+          },
+        ),
       ReadablePageRow(:final name, :final sortIndex, :final isAttack) => (
         SnapshotTarget.page,
         <String, Object?>{
@@ -172,9 +195,8 @@ final class Server {
     );
   }
 
-  void write(OpApplied done) => rows = rows.withRows([
-    for (final row in done.rows) bornIn(row, nextLife++),
-  ]);
+  void write(OpApplied done) =>
+      rows = bornWhereNew(rows, done.rows, nextLife++);
 
   OpAnswer apply(String client, StrategyOp op, {int? expectedLife}) {
     sends++;

@@ -377,7 +377,7 @@ final class ProducedRow {
     required this.page,
     required this.revision,
     required this.digest,
-    this.life,
+    required this.life,
     this.justifies = true,
   });
 
@@ -418,7 +418,7 @@ final class AuthoredRow extends Authored {
   const AuthoredRow({
     required this.revision,
     required this.digest,
-    this.life,
+    required this.life,
     this.payloadVersion,
     this.produces,
     this.movedRow,
@@ -452,6 +452,15 @@ final class AuthoredRow extends Authored {
     movedRow,
   );
 
+  AuthoredRow withProduces(ProducedRow? produces) => AuthoredRow(
+    revision: revision,
+    life: life,
+    digest: digest,
+    payloadVersion: payloadVersion,
+    produces: produces,
+    movedRow: movedRow,
+  );
+
   @override
   String toString() => 'AuthoredRow($revision, $digest)';
 }
@@ -470,7 +479,7 @@ final class AuthoredUnreadable extends Authored {
 }
 
 final class KeptOverServer extends Authored {
-  const KeptOverServer(this.revision, {this.life});
+  const KeptOverServer(this.revision, {required this.life});
 
   final int revision;
   final int? life;
@@ -565,7 +574,7 @@ final class RejectedByServer extends ServerRefusal {
 final class AnsweredWithoutLife extends ServerRefusal {
   const AnsweredWithoutLife(this.revision);
 
-  final int revision;
+  final int? revision;
 
   @override
   bool operator ==(Object other) =>

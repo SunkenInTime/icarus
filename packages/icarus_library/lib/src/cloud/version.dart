@@ -49,6 +49,15 @@ int? createdAtOf(Row row) => switch (row) {
     final num life when isSafeWhole(life) => life.toInt(),
     _ => null,
   },
+  _ => switch (row.toJsonView()) {
+    final JsonObject stored => _lifeIn(viewsOf(stored)),
+    final Map<String, Object?> stored => _lifeIn(stored),
+    _ => null,
+  },
+};
+
+int? _lifeIn(Map<String, Object?> fields) => switch (fields['createdAt']) {
+  final num life when isSafeWhole(life) => life.toInt(),
   _ => null,
 };
 

@@ -140,12 +140,15 @@ final class _Expected {
     final placed = <String, T>{};
     for (final row in rows) {
       final id = _idOf(row);
-      final revision = _revisionOf(row);
+      final version = _versionOf(row);
       final newerElsewhere = held.entries.any(
         (entry) =>
             entry.key != pageId &&
-            revision != null &&
-            (_revisionOf(entry.value[id] ?? row) ?? -1) > revision,
+            version != null &&
+            switch (_versionOf(entry.value[id] ?? row)) {
+              final elsewhere? => elsewhere > version,
+              null => false,
+            },
       );
       if (newerElsewhere) continue;
       for (final MapEntry(:key, :value) in held.entries) {
@@ -157,12 +160,12 @@ final class _Expected {
   }
 }
 
-int? _revisionOf(Row row) => switch (row) {
-      LiveElement(:final revision) ||
-      DeletedElement(:final revision) ||
-      LiveLineupGroup(:final revision) ||
-      DeletedLineupGroup(:final revision) =>
-        revision,
+Version? _versionOf(Row row) => switch (row) {
+      LiveElement() ||
+      DeletedElement() ||
+      LiveLineupGroup() ||
+      DeletedLineupGroup() =>
+        versionOfRow(row),
       _ => null,
     };
 

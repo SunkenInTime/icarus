@@ -298,6 +298,58 @@ final class Client {
 
 const addedLife = fixtureLife + 1;
 
+StrategyRowSet bornWhereNew(
+  StrategyRowSet before,
+  Iterable<Row> written,
+  int life,
+) => before.withRows([
+  for (final row in written)
+    before.rows.any((held) => held.key == row.key)
+        ? bornIn(row, life)
+        : bornIn(_withoutLife(row), life),
+]);
+
+Row _withoutLife(Row row) {
+  JsonObject lifeless(JsonObject fields) =>
+      jsonObject({...fields.toMap()}..remove('createdAt'));
+  return switch (row) {
+    LiveElement() => LiveElement(
+      publicId: row.publicId,
+      pagePublicId: row.pagePublicId,
+      payload: row.payload,
+      sortIndex: row.sortIndex,
+      revision: row.revision,
+      unknownFields: lifeless(row.unknownFields),
+    ),
+    LiveLineupGroup() => LiveLineupGroup(
+      publicId: row.publicId,
+      strategyPublicId: row.strategyPublicId,
+      pagePublicId: row.pagePublicId,
+      payload: row.payload,
+      sortIndex: row.sortIndex,
+      revision: row.revision,
+      unknownFields: lifeless(row.unknownFields),
+    ),
+    LivePage() => LivePage(
+      publicId: row.publicId,
+      strategyPublicId: row.strategyPublicId,
+      name: row.name,
+      isAutoNamed: row.isAutoNamed,
+      sortIndex: row.sortIndex,
+      isAttack: row.isAttack,
+      revision: row.revision,
+      unknownFields: lifeless(row.unknownFields),
+    ),
+    ReadablePageSettings() => ReadablePageSettings(
+      pagePublicId: row.pagePublicId,
+      settings: row.settings,
+      revision: row.revision,
+      unknownFields: lifeless(row.unknownFields),
+    ),
+    _ => row,
+  };
+}
+
 StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
     switch (applyOp(rows, op)) {
       final OpApplied done => rows.withRows([

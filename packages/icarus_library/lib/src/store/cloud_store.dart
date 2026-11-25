@@ -990,7 +990,7 @@ extension _CloudStore on LibraryStore {
       }
     }
 
-    int? heldElsewhere(Row row, String page) {
+    Version? heldElsewhere(Row row, String page) {
       final (ids, nameAt) = switch (row) {
         ElementRow(:final publicId) => (
           strategy.pagesOfElement(publicId),
@@ -1007,13 +1007,13 @@ extension _CloudStore on LibraryStore {
           (String digest) => PageName(digest) as StoreName,
         ),
       };
-      int? most;
+      Version? most;
       for (final digest in [...ids]) {
         if (digest == digestOf(page)) continue;
         if (held(nameAt(digest)) case final other?) {
-          final revision = revisionOfRow(other);
-          if (revision != null && (most == null || revision > most)) {
-            most = revision;
+          final version = versionOfRow(other);
+          if (version != null && (most == null || version > most)) {
+            most = version;
           }
         }
       }
@@ -1046,8 +1046,8 @@ extension _CloudStore on LibraryStore {
           for (final row in <Row>[...elements, ...lineupGroups]) {
             found.add(nameOf(row).name);
             final elsewhere = heldElsewhere(row, page.publicId);
-            final revision = revisionOfRow(row);
-            if (elsewhere != null && revision != null && elsewhere > revision) {
+            final version = versionOfRow(row);
+            if (elsewhere != null && version != null && elsewhere > version) {
               continue;
             }
             put(row);

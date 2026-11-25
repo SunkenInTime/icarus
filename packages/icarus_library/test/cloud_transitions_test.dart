@@ -134,6 +134,13 @@ final rows = <Row>[
       return client..edit(pageDelete('x', 'page-a'));
     },
   ),
+  Row('nothing queued, the page list owed', () {
+    final client = Client()..edit(movePatch('x'));
+    final attempt = client.claim(['x']);
+    return client
+      ..must(BatchRefused(attempt, BatchRefusal.strategyReplaced))
+      ..must(const UserDiscarded('x'));
+  }),
   Row('sending in attempt 1', () {
     final client = Client()..edit(movePatch('x'));
     client.claim(['x']);
@@ -300,15 +307,8 @@ final events = <String, QueueEvent Function(Client)>{
   ),
   'noop without a revision': (c) =>
       const OpAnswered(1, NoopWithoutRevision('x')),
-  'noop at 2 with no life, applied when first received': (c) =>
-      const OpAnswered(
-        1,
-        ReplayWithoutLife(
-          'x',
-          revision: 2,
-          replay: NoopReplay.appliedWhenFirstReceived,
-        ),
-      ),
+  'answered at 2 with no life': (c) =>
+      const OpAnswered(1, AnswerWithoutLife('x', revision: 2)),
   for (final reason in RejectionReason.values)
     'rejected: ${reason.wireName}': (c) =>
         OpAnswered(1, RejectedAnswer('x', reason, const NoServerCopy())),
@@ -396,6 +396,14 @@ String outcome(Client before, Step result) {
             '$id: ${describe(after, id)}',
         if (standingOf(queue) != standingOf(before.queue))
           'standing ${standingOf(queue).name}',
+        if (queue.shown.list != before.queue.shown.list)
+          'page list ${queue.shown.list}',
+        for (final page in {
+          ...queue.shown.pageReads.keys,
+          ...before.queue.shown.pageReads.keys,
+        })
+          if (queue.shown.pageRead(page) != before.queue.shown.pageRead(page))
+            '$page ${queue.shown.pageRead(page)}',
         for (final work in queue.landed)
           if (!before.queue.landed.contains(work))
             'draws ${work.op.opId} as landed at ${work.revision} '
@@ -442,7 +450,9 @@ String renderTable() {
       'the queue or hands it to the user. Applied or nothing to do: done. '
       'Rejected: the user decides, and later work on that row waits behind '
       'it, unless the row the rejection carries already holds what the op '
-      'wrote. Failed: the user decides.',
+      'wrote, which never applies to `row_replaced`: that row is another life '
+      'of the row, so the op is not delivered whatever its value. Failed: the '
+      'user decides.',
     )
     ..writeln(
       '- When the user gives up an entry (takes the cloud\'s version or '
@@ -611,7 +621,10 @@ String renderTable() {
       ..writeln()
       ..writeln('## ${row.label}')
       ..writeln()
-      ..writeln('Starts as: ${describe(client, row.subject)}.')
+      ..writeln(
+        'Starts as: ${describe(client, row.subject)}'
+        '${isDebt(client.queue.shown.list) ? '; page list ${client.queue.shown.list}' : ''}.',
+      )
       ..writeln()
       ..writeln('| Event | Result |')
       ..writeln('| --- | --- |');
@@ -654,7 +667,9 @@ void main() {
     for (final row in rows) {
       final client = row.build();
       final views = entryViews(client.queue, client.at);
-      kinds.add(kindOf(client.queue.entry(row.subject)!, views[row.subject]));
+      if (client.queue.entry(row.subject) case final entry?) {
+        kinds.add(kindOf(entry, views[row.subject]));
+      }
       standings.add(standingOf(client.queue));
     }
     expect(kinds, Kind.values.toSet());

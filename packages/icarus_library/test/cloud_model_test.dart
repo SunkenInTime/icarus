@@ -423,7 +423,12 @@ final class Model {
       final state = views[entry.id]!.state;
       final bad = switch (state) {
         Waiting() => server.landed(entry.id) || server.refused(entry.id),
-        NeedsUser(reason: RefusedByServer()) => server.landed(entry.id),
+        NeedsUser(
+          reason: RefusedByServer(
+            refusal: RejectedByServer() || FailedOnServer(),
+          ),
+        ) =>
+          server.landed(entry.id),
         _ => false,
       };
       if (bad) throw StateError('${entry.id} is $state against the server');
@@ -626,7 +631,7 @@ final class Model {
     if (!stepped) return;
     if (applyOp(reference, onVisible(reference, op))
         case final OpApplied done) {
-      reference = reference.withRows(done.rows);
+      reference = bornWhereNew(reference, done.rows, addedLife);
     }
   }
 
@@ -636,18 +641,21 @@ final class Model {
     client.queue = seen.queue;
     final views = seen.views;
     String? owner;
+    int? strategyLife;
     final ids = <String>[];
     final most = 1 + random.nextInt(4);
     for (final entry in client.queue.entries) {
       if (ids.length == most) break;
       final view = views[entry.id];
-      if (view == null || !view.sendable) continue;
+      if (view == null || !view.sendable || entry is! PendingOp) continue;
       final mine = switch (view.state) {
         Unanswered(:final clientId) => clientId,
         _ => owner ?? clientId,
       };
       if (owner != null && mine != owner) continue;
+      if (!fitsBatch(entry, strategyLife)) continue;
       owner = mine;
+      strategyLife = entry.strategyLife ?? strategyLife;
       ids.add(entry.id);
     }
     if (ids.isEmpty) return;
@@ -775,7 +783,22 @@ final class Model {
       }
       return;
     }
-    final order = [...answers];
+    final order = [
+      for (final answer in answers)
+        switch (answer) {
+          NoopAnswer(
+            :final opId,
+            :final revision,
+            replay: NoopReplay.appliedWhenFirstReceived,
+          )
+              when teammates && random.nextInt(4) == 0 =>
+            () {
+              count('replays answered without a life');
+              return AnswerWithoutLife(opId, revision: revision);
+            }(),
+          _ => answer,
+        },
+    ];
     if (roll == 8) order.shuffle(random);
     for (final answer in order) {
       apply(OpAnswered(attempt, answer), 'answer ${answer.opId}');
@@ -1292,6 +1315,8 @@ const minimums = {
   'teammate makes this device\'s change': 20,
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
+  'ops refused as naming a row life that was replaced': 1,
+  'replays answered without a life': 1,
   'teammate changes a page\'s settings': 50,
   'waits for a result that a read would settle': 200,
   'unchecked sends': 20,

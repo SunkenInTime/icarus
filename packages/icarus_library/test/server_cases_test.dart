@@ -27,16 +27,17 @@ Map<String, Object?> wireOf(OpAnswer answer, Lives lives) => switch (answer) {
     'appliedRevision': revision,
     'appliedLife': lives.name(life),
   },
-  NoopAnswer(:final opId, :final revision, :final life) => {
+  NoopAnswer(:final opId, :final revision, :final life, :final replay) => {
     'opId': opId,
     'status': 'noop',
     'currentRevision': revision,
     'currentLife': lives.name(life),
+    if (replay == NoopReplay.appliedWhenFirstReceived) 'wasApplied': true,
   },
-  ReplayWithoutLife(:final opId, :final revision) => {
+  AnswerWithoutLife(:final opId, :final revision) => {
     'opId': opId,
-    'status': 'noop',
-    'currentRevision': revision,
+    'answered without a life': true,
+    'revision': ?revision,
   },
   NoopWithoutRevision(:final opId) => {'opId': opId, 'status': 'noop'},
   RejectedAnswer(:final opId, :final reason, :final current) => {
@@ -47,11 +48,13 @@ Map<String, Object?> wireOf(OpAnswer answer, Lives lives) => switch (answer) {
       :final target,
       :final revision,
       life: final life?,
+      :final value,
     ))
       'current': {
         'type': target.name,
         'revision': revision,
         'life': lives.name(life),
+        'value': value.toJson(),
       },
   },
   FailedAnswer(:final opId, :final code) => {
@@ -66,56 +69,70 @@ void main() {
       jsonDecode(File('test/server_cases.json').readAsStringSync())
           as List<Object?>;
   group(
-    'the stand-in server answers these cases as convex/ops.ts does '
-    '(tool/server_cases/serverCases.test.ts runs the same file against the real one)',
+    'the stand-in server answers these cases, sent through its batch method, '
+    'as convex/ops.ts does (tool/server_cases/serverCases.test.ts runs the '
+    'same file against the real one)',
     () {
       for (final raw in cases.cast<Map<String, Object?>>()) {
         test(raw['name']! as String, () {
           final server = Server();
           final lives = Lives();
+          var attempt = 0;
           for (final step
               in (raw['steps']! as List).cast<Map<String, Object?>>()) {
             if (step['create'] == true) {
               server.create();
             } else if (step['recreate'] == true) {
-              server.reupload();
+              server.recreate();
             } else if (step['purge'] == true) {
               server.purgeAfterThirtyDays();
             } else {
-              final replaced = switch (step['strategyLife']) {
-                final String named =>
-                  createdAtOf(server.rows.strategy) != lives.number(named),
-                _ => false,
-              };
+              final ops = <StrategyOp>[];
+              final named = <String, int>{};
+              for (final op
+                  in (step['send']! as List).cast<Map<String, Object?>>()) {
+                final decoded = switch (StrategyOp.decode({
+                  for (final MapEntry(:key, :value) in op.entries)
+                    if (key != 'expectedLife') key: value,
+                })) {
+                  Read(:final value) => value,
+                  CouldNotRead(:final problem) => fail(problem),
+                };
+                ops.add(decoded);
+                if (op['expectedLife'] case final String life) {
+                  named[decoded.opId] = lives.number(life);
+                }
+              }
+              final events = server.answer(
+                'device',
+                SendBatch(
+                  ++attempt,
+                  'device',
+                  ops,
+                  strategyLife: switch (step['strategyLife']) {
+                    final String life => lives.number(life),
+                    _ => null,
+                  },
+                  lives: named,
+                ),
+              );
               if (step['refused'] case final String code) {
-                expect(replaced, isTrue);
+                expect(events, [
+                  isA<BatchRefused>().having(
+                    (event) => event.refusal,
+                    'refusal',
+                    BatchRefusal.strategyReplaced,
+                  ),
+                ]);
                 expect(code, 'STRATEGY_REPLACED');
                 continue;
               }
-              expect(replaced, isFalse);
               final answers = [
-                for (final op
-                    in (step['send']! as List).cast<Map<String, Object?>>())
-                  () {
-                    final named = op['expectedLife'];
-                    final decoded = switch (StrategyOp.decode({
-                      for (final MapEntry(:key, :value) in op.entries)
-                        if (key != 'expectedLife') key: value,
-                    })) {
-                      Read(:final value) => value,
-                      CouldNotRead(:final problem) => fail(problem),
-                    };
-                    return wireOf(
-                      server.apply(
-                        'device',
-                        decoded,
-                        expectedLife: named is String
-                            ? lives.number(named)
-                            : null,
-                      ),
-                      lives,
-                    );
-                  }(),
+                for (final event in events)
+                  switch (event) {
+                    OpAnswered(:final answer) => wireOf(answer, lives),
+                    _ => fail('expected answers, got $event'),
+                  },
               ];
               expect(answers, step['expect']);
             }

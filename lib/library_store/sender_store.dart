@@ -52,6 +52,10 @@ final class StrategyHeld extends StoreTrouble {
   const StrategyHeld(super.why);
 }
 
+final class ResultNotStored extends StoreTrouble {
+  const ResultNotStored(super.why);
+}
+
 final class StoreShut extends StoreTrouble {
   const StoreShut(super.why);
 }
@@ -320,6 +324,10 @@ base class SenderStore {
         return _writtenWith(strategyId, effects, notApplied, readSession);
       case NothingToSave():
         return _writtenWith(strategyId, const [], const [], readSession);
+      case Refused(reason: final ResultWithoutLife reason):
+        return _troubled(strategyId, ResultNotStored('$reason'));
+      case Refused(reason: final ResultOutOfPlace reason):
+        return _troubled(strategyId, ResultNotStored('$reason'));
       case Refused(:final reason):
         return _troubled(
           strategyId,
@@ -469,6 +477,7 @@ List<int> openAttempts(CloudStrategy cloud) => [
 Pick pick(CloudStrategy cloud, String newClientId) {
   final ids = <String>[];
   String? client;
+  int? strategyLife;
   var bytes = 0;
   var awaiting = 0;
   DateTime? retryAt;
@@ -491,6 +500,7 @@ Pick pick(CloudStrategy cloud, String newClientId) {
       _ => newClientId,
     };
     if (client != null && owned != client) continue;
+    if (!fitsBatch(entry, strategyLife)) continue;
     final size = serializedConvexValueUtf8Bytes(entry.op.toJson());
     if (ids.isNotEmpty &&
         (ids.length >= _mostOpsInABatch ||
@@ -498,6 +508,7 @@ Pick pick(CloudStrategy cloud, String newClientId) {
       break;
     }
     client = owned;
+    strategyLife = entry.strategyLife ?? strategyLife;
     bytes += size;
     ids.add(entry.id);
   }

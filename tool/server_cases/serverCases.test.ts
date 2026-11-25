@@ -1,8 +1,16 @@
 import { convexTest, type TestConvexForDataModel } from "convex-test";
 import { makeFunctionReference } from "convex/server";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
 import type { DataModel } from "../../convex/_generated/dataModel";
 import { markAssetReferencesReady } from "../../convex/lib/assetReferences";
 import { CURRENT_CLOUD_PROTOCOL_VERSION } from "../../convex/lib/cloudProtocol";
@@ -36,6 +44,15 @@ const cases = JSON.parse(
     "utf8",
   ),
 ) as Case[];
+
+const recording = process.env.SERVER_CASES_RECORD;
+const recorded: Json[] = [];
+
+afterAll(() => {
+  if (recording !== undefined) {
+    writeFileSync(recording, JSON.stringify(recorded, null, 2));
+  }
+});
 
 const strategyPublicId = "case-strategy";
 const start = Date.UTC(2026, 10, 24, 12, 0, 0);
@@ -82,10 +99,11 @@ function normalized(result: Json, lives: Lives): Json {
         ...(typeof current.life === "number"
           ? { life: lives.name(current.life) }
           : {}),
+        value: current.value,
       };
     } else if (key.endsWith("Life") && typeof value === "number") {
       out[key] = lives.name(value);
-    } else if (key !== "wasApplied") {
+    } else {
       out[key] = value;
     }
   }
@@ -169,9 +187,12 @@ describe("the stand-in server in packages/icarus_library/test/cloud_server.dart 
             expect(JSON.parse(refused).code).toBe(step.refused);
           } else {
             const answer = (await sent) as { results: Json[] };
-            expect(
-              answer.results.map((result) => normalized(result, lives)),
-            ).toEqual(step.expect);
+            const got = answer.results.map((result) => normalized(result, lives));
+            if (recording !== undefined) {
+              recorded.push({ name, step: steps.indexOf(step), got });
+            } else {
+              expect(got).toEqual(step.expect);
+            }
           }
         }
       }

@@ -47,8 +47,14 @@ int? _visibleRevision(StrategyRows rows, StrategyOp op) =>
       null => null,
     };
 
+Row? _checkedRow(StrategyRows rows, StrategyOp op) =>
+    switch (checkTargetOf(op)) {
+      StrategyTarget() => rows.strategy,
+      _ => _visibleRow(rows, op),
+    };
+
 bool _ofTheRowsLife(StrategyRows rows, StrategyOp op, int? life) =>
-    switch ((life, _visibleRow(rows, op))) {
+    switch ((life, _checkedRow(rows, op))) {
       (final life?, final row?) => switch (createdAtOf(row)) {
         final born? => born == life,
         null => true,

@@ -145,7 +145,8 @@ StoreBatchOutcome storeBatchOutcomeOf(
 store.OpAnswer? storeAnswerOf(OpAck ack) => switch (ack) {
       AppliedOpAck(:final opId, :final revision, life: final life?) =>
         store.AppliedAnswer(opId, revision: revision, life: life),
-      AppliedOpAck() => null,
+      AppliedOpAck(:final opId, :final revision) =>
+        store.AnswerWithoutLife(opId, revision: revision),
       NoopOpAck(
         :final opId,
         currentRevision: final revision?,
@@ -158,22 +159,16 @@ store.OpAnswer? storeAnswerOf(OpAck ack) => switch (ack) {
           life: life,
           replay: _replayOf(wasApplied),
         ),
-      NoopOpAck(
-        :final opId,
-        currentRevision: final revision?,
-        :final wasApplied
-      ) =>
-        store.ReplayWithoutLife(
-          opId,
-          revision: revision,
-          replay: _replayOf(wasApplied),
-        ),
+      NoopOpAck(:final opId, currentRevision: final revision?) =>
+        store.AnswerWithoutLife(opId, revision: revision),
       NoopOpAck(:final opId) => store.NoopWithoutRevision(opId),
       RejectedOpAck(:final opId, :final rejectionReason, :final current) =>
         switch ((_rejectionOf(rejectionReason), _copyOf(current))) {
           (final reason?, final copy?) =>
             store.RejectedAnswer(opId, reason, copy),
-          _ => null,
+          (_?, null) =>
+            store.AnswerWithoutLife(opId, revision: current?.revision),
+          (null, _) => null,
         },
       FailedOpAck(:final opId, :final code, :final rawCode, :final message) =>
         store.FailedAnswer(

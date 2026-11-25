@@ -3,6 +3,7 @@ import 'dart:collection';
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
+import '../rows.dart';
 import 'events.dart';
 import 'fold.dart';
 import 'held_page_delete.dart';
@@ -10,6 +11,7 @@ import 'op_facts.dart';
 import 'pending.dart';
 import 'shown.dart';
 import 'sync.dart';
+import 'version.dart';
 
 part 'derivation.dart';
 
@@ -1011,7 +1013,15 @@ final class _Edit {
 
   CloudQueue build() {
     _pruneAttempts(this);
-    if (shown.listOwed != original.shown.listOwed) change.everything = true;
+    if (shown.list != original.shown.list) change.everything = true;
+    for (final page in {
+      ...shown.pageReads.keys,
+      ...original.shown.pageReads.keys,
+    }) {
+      if (shown.pageRead(page) != original.shown.pageRead(page)) {
+        change.pages.add(page);
+      }
+    }
     return CloudQueue._(
       entries: entries,
       attempts: attempts,
@@ -1165,6 +1175,12 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         return edit.done();
       }
       return NotApplicable(queue, NotInThatState(opId, '${view?.state}'));
+    case ResultRefused(:final page, :final problem):
+      edit.shown = switch (page) {
+        final page? => edit.shown.pageRefused(page, problem),
+        null => edit.shown.listRefused(problem),
+      };
+      return edit.done();
     case BaseArrived(:final base, :final session):
       if (session == 0 || session != edit.session.number) {
         return NotApplicable(queue, FromAnEndedSession(session));
@@ -1254,6 +1270,7 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
 Step _arrived(_Edit edit, ArrivedBase base) {
   if (base is StrategyGone) {
     edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
+    edit.shown = edit.shown.take(base);
     return edit.done();
   }
   final before = edit.shown;
@@ -1262,7 +1279,7 @@ Step _arrived(_Edit edit, ArrivedBase base) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
           when work.own &&
-              (revisionOfRow(strategy) ?? 0) >= work.revision &&
+              _listShowsLanded(strategy, work, before.strategy?.life) &&
               !edit.shown.pages.containsKey(pagePublicId)) {
         edit.shown = edit.shown.withGone(pagePublicId);
       }
@@ -1316,6 +1333,12 @@ Step _arrived(_Edit edit, ArrivedBase base) {
   return edit.done();
 }
 
+bool _listShowsLanded(StrategyRow listed, LandedWork work, int? landedIn) =>
+    switch (versionOfRow(listed)) {
+      final version? => version >= Version(work.revision, life: landedIn),
+      null => false,
+    };
+
 bool _unchangedPrediction(Authored authored) => switch (authored) {
   AuthoredRow(:final revision, :final produces?) =>
     produces.revision == revision,
@@ -1350,19 +1373,7 @@ void _laterUnjustified(_Edit edit, PendingOp entry, LandedWork work) {
 
 Authored _withProduces(Authored authored, ProducedRow produces) =>
     switch (authored) {
-      AuthoredRow(
-        :final revision,
-        :final digest,
-        :final payloadVersion,
-        :final movedRow,
-      ) =>
-        AuthoredRow(
-          revision: revision,
-          digest: digest,
-          payloadVersion: payloadVersion,
-          produces: produces,
-          movedRow: movedRow,
-        ),
+      final AuthoredRow row => row.withProduces(produces),
       AuthoredNoRow() => AuthoredNoRow(produces: produces),
       final other => other,
     };
@@ -1428,6 +1439,8 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
         last.work is OpWork &&
         last.scope == change.scope &&
         last.authoredIn == edit.session.number &&
+        expectedLifeOf(last) == _lifeAuthored(change.authored) &&
+        last.strategyLife == queue.shown.strategy?.life &&
         view.state is Waiting &&
         view.holds.every((hold) => _foldableHold(hold, views))) {
       switch (fold(last.op, op)) {
@@ -1591,18 +1604,21 @@ final class _KnownRow extends _Known {
     this.revision,
     this.digest, {
     required this.current,
+    required this.life,
   });
 
   final String? page;
   final int revision;
   final String? digest;
   final bool current;
+  final int? life;
 }
 
 final class _NotKnown extends _Known {
-  const _NotKnown(this.revision);
+  const _NotKnown(this.revision, {required this.life});
 
   final int revision;
+  final int? life;
 }
 
 _Known? _knownRow(CloudQueue queue, Target row) {
@@ -1610,37 +1626,43 @@ _Known? _knownRow(CloudQueue queue, Target row) {
   final result = _shownRow(shown, row);
   final current = switch (row) {
     PageTarget() || SettingsTarget() => shown.headerThisSession,
-    _ => result != null && shown.pagesThisSession.contains(result.page),
+    _ => result != null && shown.pageReadThisSession(result.page),
   };
   _Known? best = switch ((row, result)) {
     (StrategyTarget(), _) => switch (shown.strategy) {
-      ShownRow(revision: final revision?, :final digest) => _KnownRow(
-        null,
-        revision,
-        digest,
-        current: shown.headerThisSession,
-      ),
+      ShownRow(revision: final revision?, :final digest, :final life) =>
+        _KnownRow(
+          null,
+          revision,
+          digest,
+          current: shown.headerThisSession,
+          life: life,
+        ),
       _ => null,
     },
-    (_, ShownRow(:final page, revision: final revision?, :final digest)) =>
-      _KnownRow(page, revision, digest, current: current),
+    (
+      _,
+      ShownRow(
+        :final page,
+        revision: final revision?,
+        :final digest,
+        :final life,
+      ),
+    ) =>
+      _KnownRow(page, revision, digest, current: current, life: life),
     _ => null,
   };
-  int revisionOf(_Known known) => switch (known) {
-    _KnownRow(:final revision) => revision,
-    _NotKnown(:final revision) => revision,
+  Version versionOf(_Known known) => switch (known) {
+    _KnownRow(:final revision, :final life) ||
+    _NotKnown(:final revision, :final life) => Version(revision, life: life),
   };
   for (final work in queue.landed) {
     if (targetOf(work.op) != row) continue;
-    if (best != null && revisionOf(best) >= work.revision) continue;
+    if (best != null && versionOf(best) >= work.version) continue;
     best = switch (work.produced) {
-      ProducedRow(:final page, :final revision, :final digest) => _KnownRow(
-        page,
-        revision,
-        digest,
-        current: true,
-      ),
-      null => _NotKnown(work.revision),
+      ProducedRow(:final page, :final revision, :final digest, :final life) =>
+        _KnownRow(page, revision, digest, current: true, life: life),
+      null => _NotKnown(work.revision, life: work.life),
     };
   }
   return best;
@@ -1797,7 +1819,7 @@ _Verdict _wholeBehindOwn(
       );
       final pageCurrent = switch (row) {
         PageTarget() || SettingsTarget() => shown.headerThisSession,
-        _ => page != null && shown.pagesThisSession.contains(page),
+        _ => page != null && shown.pageReadThisSession(page),
       };
       if (left ||
           (pageCurrent &&
@@ -1868,15 +1890,13 @@ Step _claim(
     ) when owner != clientId) {
       return NotApplicable(queue, OtherClient(opId, owner));
     }
-    if (entry.strategyLife case final life?) {
-      if (strategyLife != null && life != strategyLife) {
-        return NotApplicable(
-          queue,
-          NotInThatState(opId, 'written in another life of the strategy'),
-        );
-      }
-      strategyLife = life;
+    if (!fitsBatch(entry, strategyLife)) {
+      return NotApplicable(
+        queue,
+        NotInThatState(opId, 'written in another life of the strategy'),
+      );
     }
+    strategyLife = entry.strategyLife ?? strategyLife;
     final named = switch ((view.state, _judge(queue, entry, now))) {
       (Waiting(), _NameAt(:final revision?)) => _named(edit, entry, revision),
       _ => entry,
@@ -1913,7 +1933,14 @@ Step _claim(
   return edit.done();
 }
 
-int? expectedLifeOf(PendingOp entry) => switch (entry.authored) {
+bool fitsBatch(PendingOp entry, int? batchStrategyLife) =>
+    entry.strategyLife == null ||
+    batchStrategyLife == null ||
+    entry.strategyLife == batchStrategyLife;
+
+int? expectedLifeOf(PendingOp entry) => _lifeAuthored(entry.authored);
+
+int? _lifeAuthored(Authored authored) => switch (authored) {
   AuthoredRow(:final life) || KeptOverServer(:final life) => life,
   AuthoredNoRow() || AuthoredUnreadable() => null,
 };
@@ -1991,7 +2018,7 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer) {
     ):
       _landed(edit, entry, sent, revision, life: life, ours: false);
       edit.remove(entry.id, const Delivered(Delivery.alreadyThere));
-    case ReplayWithoutLife(:final revision):
+    case AnswerWithoutLife(:final revision):
       edit.put(
         entry.copyWith(refusal: RefusedWith(AnsweredWithoutLife(revision))),
       );

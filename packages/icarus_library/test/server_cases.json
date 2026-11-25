@@ -35,6 +35,69 @@
     ]
   },
   {
+    "name": "an op sent again after it applied replays as applied when first received, with its life",
+    "steps": [
+      {
+        "create": true
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "appliedLife": "L0",
+            "appliedRevision": 1,
+            "opId": "add",
+            "status": "applied"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
+            "opId": "add",
+            "type": "element.add",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett"
+              }
+            },
+            "sortIndex": 0
+          }
+        ],
+        "expect": [
+          {
+            "currentLife": "L0",
+            "currentRevision": 1,
+            "opId": "add",
+            "status": "noop",
+            "wasApplied": true
+          }
+        ]
+      }
+    ]
+  },
+  {
     "name": "a move naming a life that was purged and put back is row_replaced with the current row, and a resend reads it fresh",
     "steps": [
       {
@@ -143,14 +206,23 @@
         ],
         "expect": [
           {
-            "opId": "move",
-            "status": "rejected",
-            "reason": "row_replaced",
             "current": {
               "type": "element",
               "revision": 1,
-              "life": "L1"
-            }
+              "life": "L1",
+              "value": {
+                "data": {
+                  "id": "e1",
+                  "rotation": 135,
+                  "type": "jett"
+                },
+                "kind": "agent",
+                "payloadVersion": 1
+              }
+            },
+            "opId": "move",
+            "reason": "row_replaced",
+            "status": "rejected"
           }
         ]
       },
@@ -179,14 +251,23 @@
         ],
         "expect": [
           {
-            "opId": "move",
-            "status": "rejected",
-            "reason": "row_replaced",
             "current": {
               "type": "element",
               "revision": 1,
-              "life": "L1"
-            }
+              "life": "L1",
+              "value": {
+                "data": {
+                  "id": "e1",
+                  "rotation": 135,
+                  "type": "jett"
+                },
+                "kind": "agent",
+                "payloadVersion": 1
+              }
+            },
+            "opId": "move",
+            "reason": "row_replaced",
+            "status": "rejected"
           }
         ]
       }
@@ -275,6 +356,33 @@
             "reason": "not_found"
           }
         ]
+      },
+      {
+        "send": [
+          {
+            "opId": "probe",
+            "type": "element.patch",
+            "elementPublicId": "e1",
+            "pagePublicId": "p",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett",
+                "rotation": 90
+              }
+            },
+            "expectedElementRevision": 1
+          }
+        ],
+        "expect": [
+          {
+            "opId": "probe",
+            "reason": "not_found",
+            "status": "rejected"
+          }
+        ]
       }
     ]
   },
@@ -321,14 +429,20 @@
         ],
         "expect": [
           {
-            "opId": "old-rename",
-            "status": "rejected",
-            "reason": "row_replaced",
             "current": {
               "type": "strategy",
               "revision": 0,
-              "life": "L1"
-            }
+              "life": "L1",
+              "value": {
+                "mapData": "ascent",
+                "name": "Case",
+                "themeOverridePalette": null,
+                "themeProfileId": null
+              }
+            },
+            "opId": "old-rename",
+            "reason": "row_replaced",
+            "status": "rejected"
           }
         ]
       },
@@ -509,14 +623,26 @@
         ],
         "expect": [
           {
-            "opId": "stale",
-            "status": "rejected",
-            "reason": "revision_mismatch",
             "current": {
               "type": "element",
               "revision": 2,
-              "life": "L0"
-            }
+              "life": "L0",
+              "value": {
+                "data": {
+                  "id": "e1",
+                  "position": {
+                    "dx": 40,
+                    "dy": 0
+                  },
+                  "type": "jett"
+                },
+                "kind": "agent",
+                "payloadVersion": 1
+              }
+            },
+            "opId": "stale",
+            "reason": "revision_mismatch",
+            "status": "rejected"
           }
         ]
       }
@@ -580,14 +706,20 @@
         ],
         "expect": [
           {
-            "opId": "look",
-            "status": "rejected",
-            "reason": "row_replaced",
             "current": {
               "type": "strategy",
               "revision": 0,
-              "life": "L1"
-            }
+              "life": "L1",
+              "value": {
+                "mapData": "ascent",
+                "name": "Case",
+                "themeOverridePalette": null,
+                "themeProfileId": null
+              }
+            },
+            "opId": "look",
+            "reason": "row_replaced",
+            "status": "rejected"
           }
         ]
       },

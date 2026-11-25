@@ -177,17 +177,17 @@ void main() {
         strategyPublicId: strategy,
         clientId: 'client-1',
         ops: [rename('op-1'), rename('op-2'), rename('op-3'), rename('op-4')],
-        lives: const {'op-1': life, 'op-3': 1700000000000},
-        strategyLife: life,
+        lives: const {'op-1': 1700000000101, 'op-3': 1700000000303},
+        strategyLife: 1700000000999,
         account: owner,
         serverTime: const ServerTimeNotAsked(),
       );
       final (_, args) = transport.mutations.single;
       expect(args['sendsLives'], true);
-      expect(args['strategyLife'], life);
+      expect(args['strategyLife'], 1700000000999);
       expect(
         [for (final op in args['ops']! as List) (op as Map)['expectedLife']],
-        [life, null, life, null],
+        [1700000000101, null, 1700000000303, null],
       );
       if (outcome is StoreBatchLost) fail(outcome.why);
       final answers = (outcome as StoreBatchAnswered).answers;
@@ -314,35 +314,17 @@ void main() {
 
   group('the server\'s answers as the queue reads them', () {
     test(
-        'an answer with a revision but no life: a replayed receipt written '
-        'before the server sent lives is its own answer, and anything else '
-        'without a life is not read', () {
-      expect(
-        storeAnswerOf(
+        'an answer without a life is its own answer for that op, applied, '
+        'replayed or rejected with a copy, and the batch\'s other answers '
+        'are kept', () {
+      for (final (ack, revision) in [
+        (
           const app.NoopOpAck(opId: 'a', currentRevision: 4, wasApplied: true),
+          4,
         ),
-        isA<ReplayWithoutLife>()
-            .having((answer) => answer.revision, 'revision', 4)
-            .having(
-              (answer) => answer.replay,
-              'replay',
-              NoopReplay.appliedWhenFirstReceived,
-            ),
-      );
-      expect(
-        storeAnswerOf(const app.NoopOpAck(opId: 'a', currentRevision: 4)),
-        isA<ReplayWithoutLife>().having(
-          (answer) => answer.replay,
-          'replay',
-          NoopReplay.notApplied,
-        ),
-      );
-      expect(
-        storeAnswerOf(const app.AppliedOpAck(opId: 'a', revision: 4)),
-        isNull,
-      );
-      expect(
-        storeAnswerOf(
+        (const app.NoopOpAck(opId: 'a', currentRevision: 4), 4),
+        (const app.AppliedOpAck(opId: 'a', revision: 4), 4),
+        (
           const app.RejectedOpAck(
             opId: 'a',
             rejectionReason: app.OpRejectionReason.revisionMismatch,
@@ -351,9 +333,30 @@ void main() {
               value: {'payload': {}},
             ),
           ),
+          5,
         ),
-        isNull,
+      ]) {
+        expect(
+          storeAnswerOf(ack),
+          isA<AnswerWithoutLife>()
+              .having((answer) => answer.revision, 'revision', revision),
+        );
+      }
+      final outcome = storeBatchOutcomeOf(
+        [rename('a'), rename('b')],
+        [
+          const app.AppliedOpAck(opId: 'a', revision: 4),
+          const app.AppliedOpAck(opId: 'b', revision: 3, life: life),
+        ],
       );
+      expect(
+        (outcome as StoreBatchAnswered).answers,
+        [
+          isA<AnswerWithoutLife>(),
+          isA<AppliedAnswer>().having((answer) => answer.life, 'life', life),
+        ],
+      );
+      expect(outcome.complete, isTrue);
     });
 
     test('applied, changed nothing, rejected and failed', () {

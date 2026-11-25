@@ -5,7 +5,7 @@ const strategyId = 'strategy-1';
 
 final strategyCreatedAt = DateTime.utc(2026, 1, 2, 3);
 
-const fixtureLife = 1767322800000;
+const fixtureLife = 1767326400000;
 
 const _bornAtFixture = {'createdAt': fixtureLife};
 
