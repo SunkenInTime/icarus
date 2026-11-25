@@ -1048,7 +1048,7 @@ async fn _worker_once<T: SyncProtocol>(
                         subscriber_id,
                         request_sender,
                         watch,
-                        initial: base_client.latest_results().get(&subscriber_id).cloned(),
+                        initial: base_client.latest_results().timed(&subscriber_id),
                     };
                     let _ = tx.send(subscription);
                     send_result?;

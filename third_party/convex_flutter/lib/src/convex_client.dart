@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:convex_flutter/src/impl/convex_client_interface.dart';
 import 'package:convex_flutter/src/impl/convex_client_factory.dart';
 import 'package:convex_flutter/src/rust/lib.dart'
-    show WebSocketConnectionState, SubscriptionHandle, AuthHandle;
+    show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -165,6 +165,18 @@ class ConvexClient {
   Future<String> query(String name, Map<String, dynamic> args) =>
       _impl.query(name, args);
 
+  /// [query], with the snapshot the result comes from. A query error is an
+  /// answer here, with its snapshot, not a thrown error: [TimedAnswer.value]
+  /// or [TimedAnswer.error] is set.
+  ///
+  /// [TimedAnswer.snapshot] orders results of one query from this client:
+  /// the higher is the newer, and equal numbers mean the same result, however
+  /// late either reaches Dart. [TimedAnswer.ts] is that snapshot's server
+  /// time in nanoseconds; two snapshots can share it.
+  /// Native only.
+  Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args) =>
+      _impl.queryTimed(name, args);
+
   /// Executes a Convex mutation operation with timeout.
   ///
   /// [name] - Name of the mutation function to execute
@@ -208,6 +220,15 @@ class ConvexClient {
     onUpdate: onUpdate,
     onError: onError,
   );
+
+  /// [subscribe], with each result's snapshot, as [queryTimed] gives it.
+  /// Values and errors both come to [onResult]. Results can reach it out of
+  /// order; their snapshots say which is newer. Native only.
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, dynamic> args,
+    required void Function(TimedAnswer) onResult,
+  }) => _impl.subscribeTimed(name: name, args: args, onResult: onResult);
 
   /// Subscribes to [queries] together, so their values always come from one
   /// server state. Separate subscriptions can each answer from a different

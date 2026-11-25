@@ -53,6 +53,7 @@ mod query_result;
 pub use query_result::{
     FunctionResult,
     QueryResults,
+    TimedResult,
 };
 
 use self::request_manager::RequestType;
@@ -677,6 +678,8 @@ impl BaseConvexClient {
                 for (id, result) in changed_query_ids {
                     self.state.latest_results.results.insert(id, result);
                 }
+                self.state.latest_results.ts = Some(end_version.ts);
+                self.state.latest_results.snapshot += 1;
                 // Publish only results the server holds on this connection. A
                 // reconnect starts the remote query set empty while these
                 // results stay, so a transition before the server answers the

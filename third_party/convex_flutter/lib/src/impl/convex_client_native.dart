@@ -131,6 +131,13 @@ class NativeConvexClient implements IConvexClient {
   }
 
   @override
+  Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args) async {
+    return await _rustClient
+        .queryTimed(name: name, args: buildArgs(args))
+        .timeout(config.operationTimeout);
+  }
+
+  @override
   Future<String> mutation({
     required String name,
     required Map<String, dynamic> args,
@@ -165,6 +172,19 @@ class NativeConvexClient implements IConvexClient {
       args: formattedArgs,
       onUpdate: (value) => onUpdate(value),
       onError: (message, value) => onError(message, value),
+    );
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, dynamic> args,
+    required void Function(TimedAnswer) onResult,
+  }) async {
+    return await _rustClient.subscribeTimed(
+      name: name,
+      args: buildArgs(args),
+      onResult: (answer) => onResult(answer),
     );
   }
 

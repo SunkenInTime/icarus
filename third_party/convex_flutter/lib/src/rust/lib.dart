@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `parse_json_args`, `report_auth`
+// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `of`, `parse_json_args`, `report_auth`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `GroupStep`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
@@ -94,6 +94,13 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required Map<String, String> args,
   });
 
+  /// [query], with the snapshot the result comes from. A query error is an
+  /// answer here, with its snapshot, not a thrown error.
+  Future<TimedAnswer> queryTimed({
+    required String name,
+    required Map<String, String> args,
+  });
+
   /// Forces a WebSocket reconnect while retaining current client state.
   Future<void> reconnectNow({required String reason});
 
@@ -139,6 +146,16 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required List<GroupQuery> queries,
     required FutureOr<void> Function(List<String?>) onUpdate,
     required FutureOr<void> Function(String, String?) onError,
+  });
+
+  /// [subscribe], with each result's snapshot, values and errors alike.
+  /// Each call to [on_result] is posted from its own task, as [subscribe]
+  /// posts its updates, so results can reach Dart out of order; their
+  /// snapshots say which is newer.
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, String> args,
+    required FutureOr<void> Function(TimedAnswer) onResult,
   });
 }
 
@@ -189,6 +206,59 @@ class GroupQuery {
           runtimeType == other.runtimeType &&
           name == other.name &&
           args == other.args;
+}
+
+/// A query's error: the message, and a `ConvexError`'s data as JSON.
+class QueryFailure {
+  final String message;
+  final String? data;
+
+  const QueryFailure({required this.message, this.data});
+
+  @override
+  int get hashCode => message.hashCode ^ data.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is QueryFailure &&
+          runtimeType == other.runtimeType &&
+          message == other.message &&
+          data == other.data;
+}
+
+/// A query's result with the snapshot it comes from: a value as JSON, or an
+/// error, as `query` and `subscribe` would give it.
+///
+/// `snapshot` orders results of one query from this client: the higher is the
+/// newer, and equal numbers mean the same result. It is the number of
+/// transitions the client had applied when the result was taken (see
+/// `convex::QueryResults::snapshot`), so it never goes backwards, a reconnect
+/// included, and restarts only with the client. `ts` is the server time of
+/// that snapshot in nanoseconds: an unchanged value carries the time of the
+/// snapshot it was taken from, two snapshots can share a time, and it is never
+/// null for a result the client delivered.
+class TimedAnswer {
+  final String? value;
+  final QueryFailure? error;
+  final PlatformInt64? ts;
+  final PlatformInt64 snapshot;
+
+  const TimedAnswer({this.value, this.error, this.ts, required this.snapshot});
+
+  @override
+  int get hashCode =>
+      value.hashCode ^ error.hashCode ^ ts.hashCode ^ snapshot.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TimedAnswer &&
+          runtimeType == other.runtimeType &&
+          value == other.value &&
+          error == other.error &&
+          ts == other.ts &&
+          snapshot == other.snapshot;
 }
 
 /// WebSocket connection state exposed to Flutter/Dart.

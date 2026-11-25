@@ -77,6 +77,7 @@ try {
     fs.copyFileSync(reportPath, process.env.GAUNTLET_REPORT);
   }
   printSummary(report);
+  if (adapter === "") await runTimedResults(tokens[0]);
 } catch (error) {
   console.error("--- local deployment log (last part) ---");
   console.error(backendLog);
@@ -280,6 +281,27 @@ async function runGauntlet([accessToken, refreshedAccessToken]) {
     console.log(`Checkpoint at seed ${report.seed}, ${where}; restarting the process`);
   }
   throw new Error("The gauntlet did not pass after its process restart");
+}
+
+async function runTimedResults(accessToken) {
+  const started = Date.now();
+  const exitCode = await run(
+    flutter[0],
+    [...flutter.slice(1), "test", "test/timed_results_test.dart", "--reporter", "expanded"],
+    {
+      cwd: runtimeDir,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+      env: {
+        ...process.env,
+        CONVEX_URL: deploymentUrl,
+        GAUNTLET_ACCESS_TOKEN: accessToken,
+        FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR: nativeLibDir,
+      },
+    },
+  );
+  if (exitCode !== 0) throw new Error(`The timed results check failed (exit ${exitCode})`);
+  console.log(`Timed results check passed in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 }
 
 function printSummary(report) {
