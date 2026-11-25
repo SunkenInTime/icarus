@@ -849,9 +849,9 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     _ => unique.firstWhere((strategy) => strategy.name == pick),
   };
   final others = [
-    for (final strategy in openable)
-      if (strategy.id != target.id) strategy,
-  ];
+    for (final strategy in const LocalLibrary().storedStrategies)
+      if (strategy.pages.isNotEmpty && strategy.id != target.id) strategy,
+  ]..sort((a, b) => _itemsIn(a).compareTo(_itemsIn(b)));
   final ahead = switch (step['ahead']) {
     null => null,
     _ when others.isEmpty =>
