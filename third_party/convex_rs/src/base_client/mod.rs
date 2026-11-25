@@ -786,6 +786,14 @@ impl BaseConvexClient {
         Ok(None)
     }
 
+    /// The connection generation the client is on, as
+    /// [`QueryResults::connection`] numbers it: one more each time
+    /// [`resend_ongoing_queries_mutations`](Self::resend_ongoing_queries_mutations)
+    /// starts the client again on a new socket.
+    pub fn connection(&self) -> u64 {
+        self.connection
+    }
+
     /// Grab a snapshot of the latest query results to all subscribed queries.
     pub fn latest_results(&self) -> &QueryResults {
         &self.state.latest_results

@@ -116,7 +116,7 @@ impl SubscriptionHandle {
     #[frb(sync)]
     pub fn cancel(&self) {
         if let Some(sender) = self.cancel_sender.lock().take() {
-            sender.send(()).unwrap();
+            let _ = sender.send(());
         }
     }
 }
@@ -707,6 +707,16 @@ impl MobileConvexClient {
         handle_direct_function_result(result)
     }
 
+    /// The connection generation the client is on, as each stamp's
+    /// `connection` numbers it (see `convex::QueryResults::connection`).
+    /// After a reconnect it is the generation the client started again on,
+    /// never an earlier one.
+    #[frb]
+    pub async fn connection_generation(&self) -> Result<i64, ClientError> {
+        let client = self.connected_client().await?;
+        Ok(client.connection_generation().await? as i64)
+    }
+
     /// [mutation], with the snapshot the client held when it completed the
     /// mutation (see [TimedAnswer]). A server function failure is an answer
     /// here, with its snapshot; a timeout or a bridge error still throws.
@@ -946,6 +956,23 @@ mod tests {
 
     fn step(results: &HashMap<u32, FunctionResult>, sent: Option<&[FunctionResult]>) -> GroupStep {
         group_step(&[1, 2], |id| results.get(id), sent)
+    }
+
+    #[test]
+    fn cancelling_after_the_subscription_task_ended_does_not_panic() {
+        let (sender, receiver) = futures::channel::oneshot::channel::<()>();
+        drop(receiver);
+        let handle = super::SubscriptionHandle::new(sender);
+        handle.cancel();
+        handle.cancel();
+    }
+
+    #[test]
+    fn cancelling_a_running_subscription_signals_its_task() {
+        let (sender, mut receiver) = futures::channel::oneshot::channel::<()>();
+        let handle = super::SubscriptionHandle::new(sender);
+        handle.cancel();
+        assert_eq!(receiver.try_recv(), Ok(Some(())));
     }
 
     #[test]

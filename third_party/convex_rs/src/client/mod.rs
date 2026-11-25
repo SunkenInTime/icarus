@@ -488,6 +488,18 @@ impl ConvexClient {
             .expect("INTERNAL BUG: Worker has gone away");
     }
 
+    /// The connection generation the client is on (see
+    /// [`QueryResults::connection`]). The worker answers between its own
+    /// steps, so after a reconnect the answer is the generation the client
+    /// started again on, never an earlier one. Results stamped with a lower
+    /// generation come from a connection before it.
+    pub async fn connection_generation(&self) -> anyhow::Result<u64> {
+        let (tx, rx) = oneshot::channel();
+        self.request_sender
+            .send(ClientRequest::ConnectionGeneration(tx))?;
+        Ok(rx.await?)
+    }
+
     /// Whether the server keeps refusing this client's auth. It turns true
     /// once the server has refused the token from the auth callback (or set
     /// with [`ConvexClient::set_auth`]) several times in a row, and false

@@ -153,3 +153,145 @@ abstract base class NormalizedConvexTransport implements ConvexTransport {
     );
   }
 }
+
+abstract base class StampedNormalizedTransport extends NormalizedConvexTransport
+    implements StampedConvexTransport {
+  const StampedNormalizedTransport(this.stamped) : super(stamped);
+
+  final StampedValueSource stamped;
+
+  @override
+  Future<Stamped<ConvexValue>> queryStamped(
+    String name,
+    ConvexObject args,
+  ) async =>
+      _stampedOf(
+        '$name.returns',
+        await stamped.queryStamped(name, args.toDart()),
+        (value, path) => _normalize(value, path),
+      );
+
+  @override
+  Future<Stamped<ConvexValue>> mutationStamped(
+    String name,
+    ConvexObject args,
+  ) async =>
+      _stampedOf(
+        '$name.returns',
+        await stamped.mutationStamped(name: name, args: args.toDart()),
+        (value, path) => _normalize(value, path),
+      );
+
+  @override
+  Stream<Stamped<ConvexValue>> subscribeStamped(
+    String name,
+    ConvexObject args,
+  ) =>
+      _watchStamped<Object?, ConvexValue>(
+        (onResult, onBroken) => stamped.subscribeStamped(
+          name: name,
+          args: args.toDart(),
+          onResult: onResult,
+          onBroken: onBroken,
+        ),
+        (outcome) => _stampedOf(
+          '$name.returns',
+          outcome,
+          (value, path) => _normalize(value, path),
+        ),
+      );
+
+  @override
+  Stream<Stamped<List<ConvexValue>>> subscribeTogetherStamped(
+    List<(String name, ConvexObject args)> queries,
+  ) =>
+      _watchStamped<List<Object?>, List<ConvexValue>>(
+        (onResult, onBroken) => stamped.subscribeValuesStamped(
+          queries: [
+            for (final (name, args) in queries)
+              (name: name, args: args.toDart()),
+          ],
+          onResult: onResult,
+          onBroken: onBroken,
+        ),
+        (outcome) => _stampedOf(
+          '',
+          outcome,
+          (values, _) => [
+            for (final (index, value) in values.indexed)
+              _normalize(value, '${queries[index].$1}.returns'),
+          ],
+        ),
+      );
+
+  @override
+  Future<int> connectionGeneration() => stamped.connectionGeneration();
+
+  Stamped<T> _stampedOf<V, T>(
+    String path,
+    StampedOutcome<V> outcome,
+    T Function(V value, String path) normalize,
+  ) =>
+      switch (outcome) {
+        StampedAnswer(:final value, :final stamp) =>
+          StampedValue(normalize(value, path), stamp),
+        StampedFunctionError(:final error, :final stamp) =>
+          StampedError(_transportError(error), stamp),
+      };
+
+  Stream<Stamped<T>> _watchStamped<V, T>(
+    Future<SubscriptionHandle> Function(
+      void Function(StampedOutcome<V> outcome) onResult,
+      void Function(Object error, StackTrace stackTrace) onBroken,
+    ) subscribe,
+    Stamped<T> Function(StampedOutcome<V> outcome) normalize,
+  ) {
+    late final StreamController<Stamped<T>> controller;
+    SubscriptionHandle? handle;
+    var active = false;
+
+    Future<void> closeForContractFailure(
+        Object error, StackTrace stackTrace) async {
+      if (!active) return;
+      active = false;
+      controller.addError(error, stackTrace);
+      handle?.cancel();
+      handle = null;
+      await controller.close();
+    }
+
+    Future<void> start() async {
+      active = true;
+      try {
+        final nextHandle = await subscribe(
+          (outcome) {
+            if (!active) return;
+            try {
+              controller.add(normalize(outcome));
+            } catch (error, stackTrace) {
+              closeForContractFailure(error, stackTrace);
+            }
+          },
+          closeForContractFailure,
+        );
+        if (!active) {
+          nextHandle.cancel();
+          return;
+        }
+        handle = nextHandle;
+      } catch (error, stackTrace) {
+        await closeForContractFailure(error, stackTrace);
+      }
+    }
+
+    controller = StreamController<Stamped<T>>(
+      onListen: start,
+      onCancel: () {
+        active = false;
+        handle?.cancel();
+        handle = null;
+      },
+    );
+    return controller.stream;
+  }
+}

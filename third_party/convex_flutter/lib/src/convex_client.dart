@@ -194,6 +194,12 @@ class ConvexClient {
     required Map<String, dynamic> args,
   }) => _impl.mutation(name: name, args: args);
 
+  /// The connection generation the client is on, as each stamp's
+  /// `connection` numbers it: one more each time the client starts again on
+  /// a new socket, so a stamp with a lower number comes from an earlier
+  /// connection. Native only.
+  Future<int> connectionGeneration() => _impl.connectionGeneration();
+
   /// [mutation], with the snapshot the client held when it completed it.
   /// For a success, a snapshot whose time is at or after the commit: the
   /// first such transition when the response came first, else the snapshot
