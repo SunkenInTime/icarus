@@ -44,7 +44,7 @@ final class Tally {
       standing: standingOf(queue),
       waiting: counts.waiting,
       attention: counts.attention,
-      readsOwed: owedReads(queue).length - refusedReads(queue),
+      readsOwed: owedReads(queue).length,
       unreadable: refusedReads(queue),
     );
   }

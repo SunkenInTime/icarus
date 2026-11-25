@@ -301,12 +301,60 @@ void main() {
           ),
         );
         world.commitMove(1);
-        world.settle(const Duration(seconds: 10));
+        world.settle(const Duration(milliseconds: 1500));
         expect(
           world.cloud().queue.shown.pageRead(drawn.pagePublicId),
           isA<ReadRefused>(),
         );
         expect(world.face(), Face.unreadableWork);
+        world.settle(const Duration(minutes: 10));
+        expect(
+          world.cloud().queue.shown.pageRead(drawn.pagePublicId),
+          const ReadThisSession(),
+        );
+      });
+    });
+
+    test(
+        'a page list the store would not keep is read again, with nothing '
+        'else pending, and a list it keeps clears the unreadable mark', () {
+      inWorld((world) {
+        world.server.log.clear();
+        world.server.answerWith(
+          strategyId,
+          const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+        );
+        final header = world.server.headerOf(strategyId);
+        world.server.answerReadWith(
+          strategyId,
+          StoreReadAnswered(
+            HeaderRead(
+              strategy: header.strategy,
+              pages: [
+                for (final page in header.pages.cast<LivePage>())
+                  LivePage(
+                    publicId: page.publicId,
+                    strategyPublicId: page.strategyPublicId,
+                    name: page.name,
+                    isAutoNamed: page.isAutoNamed,
+                    sortIndex: page.sortIndex,
+                    isAttack: page.isAttack,
+                    revision: page.revision,
+                  ),
+              ],
+              settings: header.settings,
+            ),
+          ),
+        );
+        world.commitMove(1);
+        world.settle(const Duration(milliseconds: 1500));
+        expect(world.server.log, ['send move-1', 'list']);
+        expect(world.cloud().queue.shown.list, isA<ReadRefused>());
+        expect(world.face(), Face.unreadableWork);
+        world.settle(const Duration(minutes: 10));
+        expect(world.cloud().queue.shown.list, const ReadThisSession());
+        expect(world.face(), isNot(Face.unreadableWork));
+        expect(world.server.log.where((call) => call == 'list'), hasLength(2));
       });
     });
 

@@ -519,6 +519,47 @@ void main() {
       expect(owedReads(client.queue), isEmpty);
     });
 
+    test('a refused page is still refused after the store is closed and '
+        'opened again, and the app starts again', () async {
+      final storage = MemoryStorage();
+      var store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      await recordAll(store, [
+        const ResultRefused(page: 'page-a', problem: 'ResultWithoutLife(e1)'),
+      ]);
+      await store.close();
+      store = await openCloudStore(MemoryEngine(storage));
+      await recordAll(store, [const AppRestarted(build: build)]);
+      final queue = (await syncOf(store)).queue;
+      expect(
+        queue.shown.pageRead('page-a'),
+        const ReadRefused('ResultWithoutLife(e1)'),
+      );
+      expect(Tally.of(queue, now).unreadable, 1);
+    });
+
+    test(
+      'an edit made after the store is opened again and the app starts '
+      'again names the life of the row as read in the earlier session',
+      () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        store = await openCloudStore(MemoryEngine(storage));
+        await recordAll(store, [const AppRestarted(build: build)]);
+        savedValue(
+          await store.commitAs(testAccount, strategyId, movePatch('move')),
+        );
+        final claimed = await recordAll(store, [
+          BatchClaimed(clientId: clientId, opIds: const ['move'], at: now),
+        ]);
+        expect(effectsOf(claimed).whereType<SendBatch>().single.lives, {
+          'move': fixtureLife,
+        });
+      },
+    );
+
     test('the refusal is stored with the results', () async {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
@@ -644,6 +685,48 @@ void main() {
       client.edit(movePatch('move'));
       client.claim(['move']);
       expect(lastBatch(client).lives, {'move': fixtureLife});
+    });
+
+    test('this device\'s landed page delete is drawn: its answer names the '
+        'strategy\'s life, the row a page delete is checked against, not the '
+        'page\'s', () {
+      final client = Client();
+      client.edit(pageDelete('delete', 'page-b'));
+      final attempt = client.claim(['delete']);
+      client.must(
+        OpAnswered(
+          attempt,
+          AppliedAnswer(
+            'delete',
+            revision: 2,
+            life: strategyCreatedAt.millisecondsSinceEpoch,
+          ),
+        ),
+      );
+      expect(client.queue.landed, isNotEmpty);
+      expect(client.visible.page('page-b'), anyOf(isNull, isA<TrashedPage>()));
+    });
+
+    test('this device\'s move answered after a result showed its row '
+        'replaced is not drawn as landed, and the next write goes at the '
+        'replacement\'s revision and life', () {
+      final client = Client();
+      client.edit(movePatch('first', x: 40));
+      final attempt = client.claim(['first']);
+      client.base = withE1BornAgain(x: 7);
+      client.arrive(pageReadOf(client.base, 'page-a'));
+      client.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('first', revision: 5, life: fixtureLife),
+        ),
+      );
+      expect(client.queue.landed, isEmpty);
+      client.edit(movePatch('second', x: 90));
+      client.claim(['second']);
+      final sent = client.lastSent().single as ElementPatchOp;
+      expect(sent.expectedElementRevision, 1);
+      expect(lastBatch(client).lives, {'second': newerLife});
     });
 
     test('a field edit of a replacement row does not fold into an unsent '
