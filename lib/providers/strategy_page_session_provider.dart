@@ -1251,24 +1251,32 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final readsPages = source == StrategySource.local &&
         ref.read(localPageReadsProvider) != null;
     bool givesWay() => readsPages && superseded();
-    final pageData = await pageSource.loadPage(pageId);
-    if (givesWay()) {
-      ref.read(localPageReadsProvider)?.neverShown(pageData);
-      return _PageSwitch.superseded;
+    final String? shownPageId;
+    try {
+      final pageData = await pageSource.loadPage(pageId);
+      if (givesWay()) {
+        ref.read(localPageReadsProvider)?.neverShown(pageData);
+        return _PageSwitch.superseded;
+      }
+      onTargetRead?.call(pageData);
+      shownPageId = await _applyLoadedPageData(
+        pageData,
+        strategyId: strategyId,
+        source: source,
+        loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+        canApply: readsPages ? () => !givesWay() : null,
+      );
+    } on Object catch (error) {
+      ref
+          .read(localPageReadsProvider)
+          ?.switchFailed(strategyId, pageId, error);
+      if (givesWay()) return _PageSwitch.superseded;
+      rethrow;
     }
-    onTargetRead?.call(pageData);
-    var current = true;
-    await _applyLoadedPageData(
-      pageData,
-      strategyId: strategyId,
-      source: source,
-      loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
-      canApply: readsPages ? () => current = !givesWay() : null,
-    );
-    if (!current) return _PageSwitch.superseded;
+    if (shownPageId == null) return _PageSwitch.superseded;
 
     if (animated && direction != null) {
-      _updateHydrationBookkeeping(pageData.pageId);
+      _updateHydrationBookkeeping(shownPageId);
     }
     return _PageSwitch.switched;
   }
@@ -1334,7 +1342,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
   }
 
-  Future<void> _applyLoadedPageData(
+  Future<String?> _applyLoadedPageData(
     StrategyEditorPageData pageData, {
     required String strategyId,
     required StrategySource source,
@@ -1356,7 +1364,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           );
     if (canApply != null && !canApply()) {
       ref.read(localPageReadsProvider)?.neverShown(pageData);
-      return;
+      return null;
     }
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
@@ -1373,30 +1381,31 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             ? served.themeOverridePalette
             : _resolveThemeOverridePalette(source, strategyId);
 
-    state = state.copyWith(
-      isApplyingPage: true,
-      activePageId: pageData.pageId,
-      availablePageIds: availablePageIds,
-    );
-
-    final retainedTextDrafts = preserveTextDrafts
-        ? Map<String, String>.from(ref.read(textDraftProvider))
-        : const <String, String>{};
     final reads = ref.read(localPageReadsProvider);
-    var page = pageData;
-    var pageThemeProfileId = themeProfileId;
-    var pageThemeOverridePalette = themeOverridePalette;
-    List<String>? hivePageIds;
-    if (reads != null && reads.hiveWrittenSinceRead(page)) {
-      final hive = LocalStrategyPageSource.hiveNow(strategyId, page.pageId);
-      page = reads.redrawnFromHive(page, hive.page);
-      pageThemeProfileId = _resolveThemeProfileId(source, strategyId);
-      pageThemeOverridePalette =
-          _resolveThemeOverridePalette(source, strategyId);
-      hivePageIds = hive.pageIds;
-    }
-    final shownPageId = page.pageId;
+    var shownPageId = pageData.pageId;
     try {
+      state = state.copyWith(
+        isApplyingPage: true,
+        activePageId: pageData.pageId,
+        availablePageIds: availablePageIds,
+      );
+
+      final retainedTextDrafts = preserveTextDrafts
+          ? Map<String, String>.from(ref.read(textDraftProvider))
+          : const <String, String>{};
+      var page = pageData;
+      var pageThemeProfileId = themeProfileId;
+      var pageThemeOverridePalette = themeOverridePalette;
+      List<String>? hivePageIds;
+      if (reads != null && reads.hiveWrittenSinceRead(page)) {
+        final hive = LocalStrategyPageSource.hiveNow(strategyId, page.pageId);
+        page = reads.redrawnFromHive(page, hive.page);
+        pageThemeProfileId = _resolveThemeProfileId(source, strategyId);
+        pageThemeOverridePalette =
+            _resolveThemeOverridePalette(source, strategyId);
+        hivePageIds = hive.pageIds;
+      }
+      shownPageId = page.pageId;
       await opening.wait(
         applyStrategyEditorPageData(
           ref,
@@ -1450,6 +1459,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         _resumePendingRemoteReapplyIfPossible();
       }
     }
+    return shownPageId;
   }
 
   StrategyPageSource _resolvePageSource(

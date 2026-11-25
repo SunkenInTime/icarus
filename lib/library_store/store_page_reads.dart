@@ -57,8 +57,8 @@ final class GaveWay extends PageLoadOutcome {
       'never shown: it was closed or replaced before its page was applied';
 }
 
-final class OpenFailed extends PageLoadOutcome {
-  const OpenFailed(this.error);
+final class LoadFailed extends PageLoadOutcome {
+  const LoadFailed(this.error);
 
   final Object error;
 
@@ -94,8 +94,16 @@ final class PageLoad {
 }
 
 final class _Load {
-  _Load(this.kind, this.strategyId, this.pageId, this.read, this.took);
+  _Load(
+    this.open,
+    this.kind,
+    this.strategyId,
+    this.pageId,
+    this.read,
+    this.took,
+  );
 
+  final int? open;
   final PageLoadKind kind;
   final String strategyId;
   final String pageId;
@@ -133,49 +141,51 @@ final class StorePageReads implements LocalPageReads {
   final _loads = <PageLoad>[];
   final _unshown = <_Load>[];
   final _fellBack = <(String, String), _Load>{};
-  ({String strategyId, bool migrated})? _opening;
+  final _unended = <int, String>{};
+  ({int open, String strategyId, bool migrated})? _opening;
   ({LibraryStore store, String strategyId})? _loaded;
 
   List<PageLoad> get loads => List.unmodifiable(_loads);
 
   var _opens = 0;
+  var _readings = 0;
 
   @override
-  int opening(String strategyId, {required bool migrated}) {
+  int opening(String strategyId) {
     _opens += 1;
-    _gaveWay();
-    _opening = (strategyId: strategyId, migrated: migrated);
+    _unended[_opens] = strategyId;
     return _opens;
   }
 
   @override
-  void openFailed(int open, Object error) {
-    if (open != _opens) return;
-    final failed = OpenFailed(error);
-    _openEndsUnread(failed);
-    for (final load in [..._unshown]) {
-      if (load.kind != PageLoadKind.open) continue;
-      _unshown.remove(load);
-      _ended(load, failed);
+  void reading(int open, {required bool migrated}) {
+    _readings += 1;
+    _gaveWay();
+    if (_unended[open] case final strategyId?) {
+      _opening = (open: open, strategyId: strategyId, migrated: migrated);
     }
   }
 
   @override
-  void openEnded(int open) {
-    if (open != _opens) return;
-    _gaveWay();
-  }
+  void openFailed(int open, Object error) => _openEnds(open, LoadFailed(error));
 
   @override
-  void openedWithoutPage(String strategyId) {
-    _opening = null;
-    _loads.add(PageLoad(
-      kind: PageLoadKind.open,
-      strategyId: strategyId,
-      pageId: null,
-      outcome: const NoPageToShow(),
-      took: Duration.zero,
-    ));
+  void openEnded(int open) => _openEnds(open, const GaveWay());
+
+  @override
+  void openedWithoutPage(int open) => _openEnds(open, const NoPageToShow());
+
+  @override
+  void switchFailed(String strategyId, String pageId, Object error) {
+    final load = _unshown
+        .where((load) =>
+            load.open == null &&
+            load.strategyId == strategyId &&
+            load.pageId == pageId)
+        .lastOrNull;
+    if (load == null) return;
+    _unshown.remove(load);
+    _ended(load, LoadFailed(error));
   }
 
   @override
@@ -200,6 +210,7 @@ final class StorePageReads implements LocalPageReads {
     _served[served] = null;
     if (load == null || !_unshown.remove(load)) return hive;
     final again = _Load(
+      load.open,
       load.kind,
       load.strategyId,
       load.pageId,
@@ -245,19 +256,25 @@ final class StorePageReads implements LocalPageReads {
   }
 
   void _gaveWay() {
-    _openEndsUnread(const GaveWay());
+    if (_opening case final unread?) _openEnds(unread.open, const GaveWay());
     _unshown.forEach(_neverShown);
     _unshown.clear();
     _fellBack.clear();
   }
 
-  void _openEndsUnread(PageLoadOutcome outcome) {
-    final unread = _opening;
-    _opening = null;
-    if (unread == null) return;
+  void _openEnds(int open, PageLoadOutcome outcome) {
+    if (_opening?.open == open) _opening = null;
+    final load = _unshown.where((load) => load.open == open).firstOrNull;
+    if (load != null) {
+      _unshown.remove(load);
+      _ended(load, outcome);
+      return;
+    }
+    final strategyId = _unended.remove(open);
+    if (strategyId == null) return;
     _loads.add(PageLoad(
       kind: PageLoadKind.open,
-      strategyId: unread.strategyId,
+      strategyId: strategyId,
       pageId: null,
       outcome: outcome,
       took: Duration.zero,
@@ -266,13 +283,16 @@ final class StorePageReads implements LocalPageReads {
 
   void _neverShown(_Load load) => _ended(load, const GaveWay());
 
-  void _ended(_Load load, PageLoadOutcome outcome) => _loads.add(PageLoad(
-        kind: load.kind,
-        strategyId: load.strategyId,
-        pageId: load.pageId,
-        outcome: outcome,
-        took: load.took,
-      ));
+  void _ended(_Load load, PageLoadOutcome outcome) {
+    if (load.open case final open? when _unended.remove(open) == null) return;
+    _loads.add(PageLoad(
+      kind: load.kind,
+      strategyId: load.strategyId,
+      pageId: load.pageId,
+      outcome: outcome,
+      took: load.took,
+    ));
+  }
 
   @override
   Future<StrategyEditorPageData?> page(
@@ -283,7 +303,7 @@ final class StorePageReads implements LocalPageReads {
     final opening = _opening;
     _opening = null;
     final opened = opening?.strategyId == strategyId;
-    final opens = _opens;
+    final readings = _readings;
     final begun = _mirror.reads.strategyWritesBegun(strategyId);
     final clock = Stopwatch()..start();
     final answer = await _answer(
@@ -292,6 +312,7 @@ final class StorePageReads implements LocalPageReads {
       migrated: migrated || (opened && opening!.migrated),
     );
     final load = _Load(
+      opened ? opening!.open : null,
       opened ? PageLoadKind.open : PageLoadKind.pageSwitch,
       strategyId,
       pageId,
@@ -301,7 +322,7 @@ final class StorePageReads implements LocalPageReads {
       },
       clock.elapsed,
     );
-    if (opens != _opens) {
+    if (readings != _readings) {
       _neverShown(load);
       return null;
     }

@@ -797,7 +797,7 @@ Map<String, int> pageLoadCounts(List<PageLoad> loads) {
         count('${kind}GaveWay');
       case NoPageToShow():
         count('${kind}NoPage');
-      case OpenFailed():
+      case LoadFailed():
         count('${kind}Failed');
     }
   }

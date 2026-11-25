@@ -15,13 +15,17 @@ final class LocalPageServed {
 }
 
 abstract interface class LocalPageReads {
-  int opening(String strategyId, {required bool migrated});
+  int opening(String strategyId);
+
+  void reading(int open, {required bool migrated});
 
   void openFailed(int open, Object error);
 
   void openEnded(int open);
 
-  void openedWithoutPage(String strategyId);
+  void openedWithoutPage(int open);
+
+  void switchFailed(String strategyId, String pageId, Object error);
 
   Future<StrategyEditorPageData?> page(
     String strategyId,

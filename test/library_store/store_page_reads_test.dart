@@ -778,6 +778,20 @@ void main() {
     });
 
     test(
+        'that removes every page after the read chose Hive ends the open as '
+        'failed, with the editor no longer applying a page', () async {
+      final s = strategy();
+      final h = await reading([s], follow: false);
+      await landAtApply((stored) => stored.copyWith(pages: const []));
+
+      await expectLater(h.editor.loadFromHive(s.id), throwsStateError);
+
+      expect(
+          container.read(strategyPageSessionProvider).isApplyingPage, isFalse);
+      expect(h.loads, ['open failed: Bad state: No element']);
+    });
+
+    test(
         'when the reader already chose Hive, is still the caption the canvas '
         'shows and the Save keeps', () async {
       final s = strategy();
@@ -893,6 +907,104 @@ void main() {
       'pageSwitch from Hive: ${FromHiveBecause.mayDiffer.words}',
       'pageSwitch ${const GaveWay()}',
     ]);
+  });
+
+  test('an open of a strategy Hive does not hold records that it failed',
+      () async {
+    final h = await reading([strategy()]);
+
+    expect(await h.editor.loadFromHive('not-in-hive'), isFalse);
+
+    expect(
+        h.loads, ['open failed: Bad state: Strategy not-in-hive not found.']);
+  });
+
+  test('an open closed before its page is read is recorded as never shown',
+      () async {
+    final s = strategy();
+    final h = await reading([s]);
+
+    final opening = h.editor.loadFromHive(s.id);
+    await h.editor.clearCurrentStrategy();
+
+    expect(await opening, isFalse);
+    expect(h.loads, ['open ${const GaveWay()}']);
+  });
+
+  Future<(_Reading, _ReadGate)> switchReadFromTheStore(
+    StrategyData s, {
+    List<StrategyData> others = const [],
+  }) async {
+    final gate = _ReadGate();
+    final h = await reading(
+      [s, ...others],
+      allCopied: false,
+      engine: (memory) => _ReadGatedEngine(memory, gate),
+    );
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+    final stored = const LocalLibrary().storedStrategy(s.id)!;
+    (await const LocalLibrary().changePages(
+      stored.copyWith(pages: stored.pages.skip(1).toList()),
+    ))
+        .orThrow();
+    await h.settle();
+    await h.store.unload(s.id);
+    return (h, gate);
+  }
+
+  test(
+      'a page switch whose strategy is deleted while its store read is held '
+      'records that it failed, and the next open does not record it again',
+      () async {
+    final s = strategy(sortIndexes: [0, 1, 2]);
+    final other = strategy();
+    final (h, gate) = await switchReadFromTheStore(s, others: [other]);
+    final held = gate.hold();
+
+    final switching = h.editor.setActivePage(s.pages[1].id);
+    await held;
+    (await const LocalLibrary().deleteStrategy(s.id)).orThrow();
+    gate.release();
+    await expectLater(switching, throwsStateError);
+    expect(await h.editor.loadFromHive(other.id), isTrue);
+    await h.settle();
+
+    expect(h.loads.take(2), [
+      'open from the store',
+      'pageSwitch failed: Bad state: Strategy ${s.id} not found.',
+    ]);
+    expect(h.loads, hasLength(3));
+  });
+
+  test(
+      'a page switch overtaken by an open while its store read is held, whose '
+      'strategy is then deleted, leaves the strategy opened alone: an edit and '
+      'a Save there work', () async {
+    final a = strategy(sortIndexes: [0, 1, 2]);
+    final b = strategy().copyWith(versionNumber: Settings.versionNumber - 1);
+    final (h, gate) = await switchReadFromTheStore(a, others: [b]);
+    final held = gate.hold();
+
+    final switching = h.editor.selectPage(a.pages[1].id);
+    await held;
+    expect(await h.editor.loadFromHive(b.id), isTrue);
+    (await const LocalLibrary().deleteStrategy(a.id)).orThrow();
+    gate.release();
+    final thrown = await switching.then<Object?>(
+      (_) => null,
+      onError: (Object error) => error,
+    );
+    await h.settle();
+
+    expect(container.read(strategyProvider).strategyId, b.id);
+    expect(container.read(strategyPageSessionProvider).activePageId,
+        b.pages[0].id);
+    expect(thrown, isNull);
+    final agent = container.read(agentProvider).first;
+    container.read(agentProvider.notifier).setCaption(agent.id, 'edited in b');
+    await h.editor.saveToHive(b.id);
+    await h.settle();
+    expect(savedCaption(b.id, b.pages[0].id), 'edited in b');
   });
 
   group(

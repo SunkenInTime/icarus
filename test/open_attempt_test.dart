@@ -76,7 +76,7 @@ void main() {
       (provider, 'Future<bool> loadFromHive(', 'opening.wait('),
       (session, 'Future<void> initializeForStrategy(', 'opening.wait('),
       (session, 'Future<void> _rehydrateActivePageFromSource(', 'opening.wait('),
-      (session, 'Future<void> _applyLoadedPageData(', 'opening.wait('),
+      (session, 'Future<String?> _applyLoadedPageData(', 'opening.wait('),
       (editor, 'Future<void> _loadInitialStrategy(', '_unlessLeft('),
     ]) {
       test('$signature in $path', () {
