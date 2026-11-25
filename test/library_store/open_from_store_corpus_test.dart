@@ -268,6 +268,7 @@ void main() {
             ServedFromHive(:final reason) => 'from Hive: ${reason.name}',
             GaveWay() => 'never shown',
             NoPageToShow() => 'no page to show',
+            OpenFailed() => 'failed',
           }}',
         );
       }

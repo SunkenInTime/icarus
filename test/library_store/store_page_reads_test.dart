@@ -602,11 +602,12 @@ void main() {
 
   test(
       'a strategy whose rows read back differently from Hive, lineups saved '
-      'interleaved, opens from Hive with that reason, and a Save with no edits '
-      'writes Hive back byte for byte, its save time aside', () async {
+      'with their spots reordered, opens from Hive with that reason, and a '
+      'Save with no edits writes Hive back byte for byte, its save time aside',
+      () async {
     final s = strategy();
     final graph = sharedSpotLineups('${s.id}-lineups');
-    final interleaved = s.copyWith(pages: [
+    final reordered = s.copyWith(pages: [
       s.pages[0].copyWith(
         lineUpGraph: LineUpGraph(
           origins: graph.origins,
@@ -617,10 +618,40 @@ void main() {
       ),
       s.pages[1].copyWith(imageData: const []),
     ]);
-    final h = await reading([interleaved]);
+    final h = await reading([reordered]);
     final before = hiveBytes(s.id);
 
     expect(h.mirror.strategiesReadingBackDifferently, contains(s.id));
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+    await h.editor.saveToHive(s.id);
+    await h.settle();
+
+    expect(
+        h.loads.single,
+        startsWith(
+            'open from Hive: ${FromHiveBecause.readsBackDifferently.words}'));
+    expect(hiveBytes(s.id), before);
+  });
+
+  StrategyData withSignedZero(StrategyData strategy) {
+    final signed = cloneStrategy(strategy);
+    final agent = signed.pages[0].agentData.first;
+    agent.position = Offset(-0.0, agent.position.dy);
+    return signed;
+  }
+
+  test(
+      'an agent at x = -0.0, which the store keeps as 0, opens from Hive after '
+      'the store unloads the strategy, and a Save with no edits writes Hive '
+      'back byte for byte, its save time aside', () async {
+    final made = strategy();
+    final s = withSignedZero(made.copyWith(pages: [
+      for (final page in made.pages) page.copyWith(imageData: const []),
+    ]));
+    final h = await reading([s]);
+    await h.store.unload(s.id);
+    final before = hiveBytes(s.id);
+
     expect(await h.editor.loadFromHive(s.id), isTrue);
     await h.editor.saveToHive(s.id);
     await h.settle();
@@ -695,9 +726,11 @@ void main() {
         detailColorValue: 0xFF405060,
         highlightColorValue: 0xFF708090,
       );
+      const newerProfile = MapThemeProfilesProvider.immutableValorantProfileId;
+      expect(s.themeProfileId, isNot(newerProfile));
       await landAtApply((stored) => cloneStrategy(stored).copyWith(
             mapData: newerMap,
-            themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+            themeProfileId: newerProfile,
             themeOverridePalette: newerPalette,
           ));
 
@@ -705,6 +738,7 @@ void main() {
       await h.settle();
 
       expect(container.read(mapProvider).currentMap, newerMap);
+      expect(container.read(strategyThemeProvider).profileId, newerProfile);
       expect(
           container.read(strategyThemeProvider).overridePalette?.baseColorValue,
           newerPalette.baseColorValue);
@@ -712,8 +746,58 @@ void main() {
       await h.settle();
       final saved = const LocalLibrary().storedStrategy(s.id)!;
       expect(saved.mapData, newerMap);
+      expect(saved.themeProfileId, newerProfile);
       expect(saved.themeOverridePalette?.baseColorValue,
           newerPalette.baseColorValue);
+    });
+
+    test(
+        'that removes the page being applied leaves the editor on the page it '
+        'draws, and an edit there is saved', () async {
+      final s = strategy();
+      final h = await reading([s]);
+      await landAtApply((stored) => stored.copyWith(
+            pages: [stored.pages.firstWhere((page) => page.sortIndex == 1)],
+          ));
+
+      expect(await h.editor.loadFromHive(s.id), isTrue);
+      await h.settle();
+
+      final session = container.read(strategyPageSessionProvider);
+      expect(session.activePageId, s.pages[1].id);
+      expect(session.availablePageIds, [s.pages[1].id]);
+      expect(h.captionOnCanvas(), s.pages[1].agentData.first.caption);
+      expect(h.loads, [
+        'open from Hive: ${FromHiveBecause.hiveWriteBeforeApply.words}',
+      ]);
+      final agent = container.read(agentProvider).first;
+      container.read(agentProvider.notifier).setCaption(agent.id, 'edited');
+      await h.editor.saveToHive(s.id);
+      await h.settle();
+      expect(savedCaption(s.id, s.pages[1].id), 'edited');
+    });
+
+    test(
+        'when the reader already chose Hive, is still the caption the canvas '
+        'shows and the Save keeps', () async {
+      final s = strategy();
+      final h = await reading([s], follow: false);
+      await landAtApply((stored) => cloneStrategy(stored)
+        ..pages
+            .firstWhere((page) => page.sortIndex == 0)
+            .agentData
+            .first
+            .caption = 'newer');
+
+      expect(await h.editor.loadFromHive(s.id), isTrue);
+      await h.settle();
+
+      expect(h.captionOnCanvas(), 'newer');
+      expect(h.loads,
+          ['open from Hive: ${FromHiveBecause.mirrorNotFollowing.words}']);
+      await h.editor.saveToHive(s.id);
+      await h.settle();
+      expect(savedCaption(s.id, s.pages[0].id), 'newer');
     });
   });
 
@@ -752,6 +836,65 @@ void main() {
     expect(h.loads, ['open ${const GaveWay()}']);
   });
 
+  test(
+      'an open whose strategy is deleted after its first page was picked, '
+      'before its page was read, records that it failed', () async {
+    final s = strategy();
+    final h = await reading([s]);
+    var deleted = false;
+    final listening = container.listen(
+      strategyPageSessionProvider.select((state) => state.activePageId),
+      (_, pageId) {
+        if (pageId != s.pages[0].id || deleted) return;
+        deleted = true;
+        unawaited(
+            Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(s.id));
+      },
+    );
+    addTearDown(listening.close);
+
+    await expectLater(h.editor.loadFromHive(s.id), throwsStateError);
+
+    expect(h.loads, ['open failed: Bad state: Strategy ${s.id} not found.']);
+  });
+
+  test(
+      'a page switch overtaken by a newer switch while its store read is held '
+      'is not applied, and is recorded as never shown', () async {
+    final s = strategy(sortIndexes: [0, 1, 2]);
+    final gate = _ReadGate();
+    final h =
+        await reading([s], engine: (memory) => _ReadGatedEngine(memory, gate));
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+    final stored = const LocalLibrary().storedStrategy(s.id)!;
+    (await const LocalLibrary().changePages(
+      stored.copyWith(pages: stored.pages.skip(1).toList()),
+    ))
+        .orThrow();
+    await h.settle();
+    await h.store.unload(s.id);
+    final held = gate.hold();
+
+    final first = h.editor.setActivePage(s.pages[1].id);
+    await held;
+    final newer = cloneStrategy(const LocalLibrary().storedStrategy(s.id)!);
+    newer.pages.last.agentData.first.caption = 'on the last page';
+    (await const LocalLibrary().savePageOnScreen(newer)).orThrow();
+    await h.editor.setActivePage(s.pages[2].id);
+    gate.release();
+    await first;
+    await h.settle();
+
+    expect(container.read(strategyPageSessionProvider).activePageId,
+        s.pages[2].id);
+    expect(h.captionOnCanvas(), 'on the last page');
+    expect(h.loads, [
+      'open from the store',
+      'pageSwitch from Hive: ${FromHiveBecause.mayDiffer.words}',
+      'pageSwitch ${const GaveWay()}',
+    ]);
+  });
+
   group(
       'shapes the real libraries do not have, through the mirror, a read-mode '
       'open and a Save with no edits', () {
@@ -762,12 +905,21 @@ void main() {
           ],
         );
 
-    LineUpGraph interleaved(String prefix) {
+    LineUpGraph reorderedSpots(String prefix) {
       final graph = sharedSpotLineups(prefix);
       return LineUpGraph(
         origins: graph.origins,
         landings: graph.landings,
         links: [graph.links[3], ...graph.links.take(3)],
+      );
+    }
+
+    LineUpGraph interleaved(String prefix) {
+      final graph = sharedSpotLineups(prefix);
+      return LineUpGraph(
+        origins: graph.origins,
+        landings: graph.landings,
+        links: [graph.links[0], graph.links[3], graph.links[1], graph.links[2]],
       );
     }
 
@@ -779,11 +931,22 @@ void main() {
             ]),
         'open from the store',
       ),
+      'lineups saved with their spots reordered': (
+        (s) => s.copyWith(pages: [
+              s.pages[0].copyWith(lineUpGraph: reorderedSpots('${s.id}-l')),
+              s.pages[1],
+            ]),
+        'open from Hive: ${FromHiveBecause.readsBackDifferently.words}',
+      ),
       'lineups saved interleaved': (
         (s) => s.copyWith(pages: [
               s.pages[0].copyWith(lineUpGraph: interleaved('${s.id}-l')),
               s.pages[1],
             ]),
+        'open from Hive: ${FromHiveBecause.readsBackDifferently.words}',
+      ),
+      'an agent at x = -0.0': (
+        withSignedZero,
         'open from Hive: ${FromHiveBecause.readsBackDifferently.words}',
       ),
       'two pages at the same position': (

@@ -2337,6 +2337,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             ref.read(strategyPageSessionProvider).activePageId == null) {
           reads.openedWithoutPage(migratedStrategy.id);
         }
+      } on OpenGaveWay {
+        rethrow;
+      } on Object catch (error) {
+        if (open != null) reads?.openFailed(open, error);
+        rethrow;
       } finally {
         if (open != null) reads?.openEnded(open);
       }

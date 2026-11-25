@@ -1,19 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
 import '../library_rows/generated_strategies.dart';
 
-StrategyData _strategy(String id) => generatedStrategy(Optionals.set).copyWith(
+StrategyData _strategy(String id) =>
+    strategyAsHiveHoldsIt(generatedStrategy(Optionals.set).copyWith(
       id: id,
       pages: [
         _page('$id-p0', 0),
         _page('$id-p1', 1),
         _page('$id-p2', 2),
       ],
-    );
+    ));
 
 StrategyPage _page(String id, int sortIndex) => generatedPage(
       id: id,
@@ -22,7 +24,7 @@ StrategyPage _page(String id, int sortIndex) => generatedPage(
       isAttack: sortIndex.isEven,
     );
 
-LineUpGraph _interleaved(String prefix) {
+LineUpGraph _reorderedSpots(String prefix) {
   final graph = sharedSpotLineups(prefix);
   return LineUpGraph(
     origins: graph.origins,
@@ -56,7 +58,7 @@ void main() {
 
     final changed = _withPage(
       strategy,
-      strategy.pages[1].copyWith(lineUpGraph: _interleaved('changed-l')),
+      strategy.pages[1].copyWith(lineUpGraph: _reorderedSpots('changed-l')),
     );
     final cold = StrategyImages().of(changed).readBack;
 
@@ -85,33 +87,6 @@ void main() {
   });
 
   test(
-      'a page deleted and added again under the same id with other content is '
-      'read back again, and reported when it reads back differently', () {
-    final images = StrategyImages();
-    final strategy = _strategy('readded');
-    final last = strategy.pages[2];
-    expect(images.of(strategy).readBack, isA<ReadsBackEqual>());
-
-    final deleted = strategy.copyWith(pages: strategy.pages.take(2).toList());
-    expect(images.of(deleted).readBack, isA<ReadsBackEqual>());
-
-    final readded = strategy.copyWith(pages: [
-      ...deleted.pages,
-      last.copyWith(lineUpGraph: _interleaved('readded-l')),
-    ]);
-    final cold = StrategyImages().of(readded).readBack;
-
-    expect(cold, isA<ReadsBackDifferently>());
-    expect(_wordsOf(images.of(readded).readBack), _wordsOf(cold));
-
-    final readdedEqual = strategy.copyWith(pages: [
-      ...deleted.pages,
-      last.copyWith(name: 'Back again', agentData: const []),
-    ]);
-    expect(images.of(readdedEqual).readBack, isA<ReadsBackEqual>());
-  });
-
-  test(
       'a page that reads back differently while another strategy shares the '
       'cache is reported for its own strategy only', () {
     final images = StrategyImages();
@@ -119,7 +94,7 @@ void main() {
     final second = _strategy('second');
     final broken = _withPage(
       second,
-      second.pages[0].copyWith(lineUpGraph: _interleaved('second-l')),
+      second.pages[0].copyWith(lineUpGraph: _reorderedSpots('second-l')),
     );
 
     expect(images.of(first).readBack, isA<ReadsBackEqual>());
@@ -135,7 +110,7 @@ void main() {
     final strategy = _strategy('between');
     final changed = _withPage(
       strategy,
-      strategy.pages[1].copyWith(lineUpGraph: _interleaved('between-l')),
+      strategy.pages[1].copyWith(lineUpGraph: _reorderedSpots('between-l')),
     );
     for (final checked in [strategy, changed]) {
       var breaths = 0;

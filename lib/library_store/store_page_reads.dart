@@ -57,6 +57,15 @@ final class GaveWay extends PageLoadOutcome {
       'never shown: it was closed or replaced before its page was applied';
 }
 
+final class OpenFailed extends PageLoadOutcome {
+  const OpenFailed(this.error);
+
+  final Object error;
+
+  @override
+  String toString() => 'failed: $error';
+}
+
 final class NoPageToShow extends PageLoadOutcome {
   const NoPageToShow();
 
@@ -140,9 +149,20 @@ final class StorePageReads implements LocalPageReads {
   }
 
   @override
+  void openFailed(int open, Object error) {
+    if (open != _opens) return;
+    final failed = OpenFailed(error);
+    _openEndsUnread(failed);
+    for (final load in [..._unshown]) {
+      if (load.kind != PageLoadKind.open) continue;
+      _unshown.remove(load);
+      _ended(load, failed);
+    }
+  }
+
+  @override
   void openEnded(int open) {
     if (open != _opens) return;
-    _opening = null;
     _gaveWay();
   }
 
@@ -167,7 +187,7 @@ final class StorePageReads implements LocalPageReads {
     final load = _drawnBy[page];
     if (begun == null || load == null) return false;
     return _mirror.reads.strategyWritesBegun(load.strategyId) != begun ||
-        _notServed(load.strategyId) != null;
+        (_served[page] != null && _notServed(load.strategyId) != null);
   }
 
   @override
@@ -183,7 +203,11 @@ final class StorePageReads implements LocalPageReads {
       load.kind,
       load.strategyId,
       load.pageId,
-      const ServedFromHive(FromHiveBecause.hiveWriteBeforeApply),
+      switch (load.read) {
+        ServedFromStore() =>
+          const ServedFromHive(FromHiveBecause.hiveWriteBeforeApply),
+        final fromHive => fromHive,
+      },
       load.took,
     );
     _unshown.add(again);
@@ -199,6 +223,7 @@ final class StorePageReads implements LocalPageReads {
   ) {
     if (_fellBack.remove((strategyId, pageId)) case final load?) {
       _drawnBy[page] = load;
+      _writesBegunAtRead[page] = _mirror.reads.strategyWritesBegun(strategyId);
     }
     return page;
   }
@@ -208,26 +233,44 @@ final class StorePageReads implements LocalPageReads {
     final load = _drawnBy[page];
     if (load == null || !_unshown.remove(load)) return;
     _drawnBy[page] = null;
-    _loads.add(PageLoad(
-      kind: load.kind,
-      strategyId: load.strategyId,
-      pageId: load.pageId,
-      outcome: load.read,
-      took: load.took,
-    ));
+    _ended(load, load.read);
+  }
+
+  @override
+  void neverShown(StrategyEditorPageData page) {
+    final load = _drawnBy[page];
+    _drawnBy[page] = null;
+    if (load == null || !_unshown.remove(load)) return;
+    _neverShown(load);
   }
 
   void _gaveWay() {
+    _openEndsUnread(const GaveWay());
     _unshown.forEach(_neverShown);
     _unshown.clear();
     _fellBack.clear();
   }
 
-  void _neverShown(_Load load) => _loads.add(PageLoad(
+  void _openEndsUnread(PageLoadOutcome outcome) {
+    final unread = _opening;
+    _opening = null;
+    if (unread == null) return;
+    _loads.add(PageLoad(
+      kind: PageLoadKind.open,
+      strategyId: unread.strategyId,
+      pageId: null,
+      outcome: outcome,
+      took: Duration.zero,
+    ));
+  }
+
+  void _neverShown(_Load load) => _ended(load, const GaveWay());
+
+  void _ended(_Load load, PageLoadOutcome outcome) => _loads.add(PageLoad(
         kind: load.kind,
         strategyId: load.strategyId,
         pageId: load.pageId,
-        outcome: const GaveWay(),
+        outcome: outcome,
         took: load.took,
       ));
 

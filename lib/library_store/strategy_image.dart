@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -129,13 +130,13 @@ ReadBack _pageDifferences(
   String pageId,
 ) {
   final page = strategy.pages.firstWhere((page) => page.id == pageId);
-  final back = strategyFromRows(StrategyRowSet(
+  final back = strategyFromRows(_asStored(StrategyRowSet(
     strategy: rows.strategy,
     pages: [if (rows.page(pageId) case final row?) row],
     settings: [if (rows.settingsOf(pageId) case final settings?) settings],
     elements: rows.elementsOn(pageId),
     lineupGroups: rows.lineupGroupsOn(pageId),
-  ));
+  )));
   final differences = switch (back) {
     StrategyDataMade(strategy: final made) when made.pages.length == 1 =>
       strategyDifferences(strategy.copyWith(pages: [page]), made),
@@ -170,11 +171,11 @@ bool _everyRowOnAPage(StrategyRowSet rows) => [
 
 bool _outlineReadsBackEqual(StrategyData strategy, StrategyRowSet rows) =>
     _everyRowOnAPage(rows) &&
-    switch (strategyFromRows(StrategyRowSet(
+    switch (strategyFromRows(_asStored(StrategyRowSet(
       strategy: rows.strategy,
       pages: rows.pages,
       settings: rows.settings,
-    ))) {
+    )))) {
       StrategyDataMade(
         strategy: final back,
         :final unreadable,
@@ -186,13 +187,13 @@ bool _outlineReadsBackEqual(StrategyData strategy, StrategyRowSet rows) =>
     };
 
 String? _pageReadBack(StrategyRowSet rows, String pageId) =>
-    switch (strategyFromRows(StrategyRowSet(
+    switch (strategyFromRows(_asStored(StrategyRowSet(
       strategy: rows.strategy,
       pages: [if (rows.page(pageId) case final page?) page],
       settings: [if (rows.settingsOf(pageId) case final settings?) settings],
       elements: rows.elementsOn(pageId),
       lineupGroups: rows.lineupGroupsOn(pageId),
-    ))) {
+    )))) {
       StrategyDataMade(
         strategy: final back,
         :final unreadable,
@@ -203,4 +204,41 @@ String? _pageReadBack(StrategyRowSet rows, String pageId) =>
               back.pages.length == 1 =>
         _pageText(back, back.pages.single),
       StrategyDataMade() || StrategyDataRefused() => null,
+    };
+
+StrategyRowSet _asStored(StrategyRowSet rows) => StrategyRowSet(
+      strategy: _stored(rows.strategy, StrategyRow.decode),
+      pages: [for (final row in rows.pages) _stored(row, PageRow.decode)],
+      settings: [
+        for (final row in rows.settings) _stored(row, PageSettingsRow.decode),
+      ],
+      elements: [
+        for (final row in rows.elements)
+          _stored(
+            row,
+            (json) => ElementRow.decode(json, canRead: appCanRead.element),
+          ),
+      ],
+      lineupGroups: [
+        for (final row in rows.lineupGroups)
+          _stored(
+            row,
+            (json) => LineupGroupRow.decode(
+              json,
+              canRead: appCanRead.lineupGroup,
+            ),
+          ),
+      ],
+    );
+
+R _stored<R extends Row>(Row row, Decoded<R> Function(Object? json) decode) =>
+    switch (encodeJson(row.toJsonView())) {
+      Encoded(:final text) => switch (admit(text)) {
+          Admitted(:final json) => switch (decode(json)) {
+              Read(:final value) => value,
+              CouldNotRead(:final problem) => throw StateError(problem),
+            },
+          NotAdmitted(:final problem) => throw StateError(problem),
+        },
+      NotEncoded(:final problem) => throw StateError(problem),
     };

@@ -1248,14 +1248,23 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       await remote.setActivePage(pageId, fetched: target);
     }
 
+    final claimedSession = source == StrategySource.cloud;
+    bool givesWay() => !claimedSession && superseded();
     final pageData = await pageSource.loadPage(pageId);
+    if (givesWay()) {
+      ref.read(localPageReadsProvider)?.neverShown(pageData);
+      return _PageSwitch.superseded;
+    }
     onTargetRead?.call(pageData);
+    var current = true;
     await _applyLoadedPageData(
       pageData,
       strategyId: strategyId,
       source: source,
       loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+      canApply: () => current = !givesWay(),
     );
+    if (!current) return _PageSwitch.superseded;
 
     if (animated && direction != null) {
       _updateHydrationBookkeeping(pageData.pageId);
@@ -1344,7 +1353,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         : await opening.wait(
             _resolvePageSource(strategyId, source).listPageIds(),
           );
-    if (canApply != null && !canApply()) return;
+    if (canApply != null && !canApply()) {
+      ref.read(localPageReadsProvider)?.neverShown(pageData);
+      return;
+    }
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
         _lastHydratedRemotePageKey?.pageId == pageData.pageId;
@@ -1374,7 +1386,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     var pageThemeProfileId = themeProfileId;
     var pageThemeOverridePalette = themeOverridePalette;
     List<String>? hivePageIds;
-    if (reads != null && served != null && reads.hiveWrittenSinceRead(page)) {
+    if (reads != null && reads.hiveWrittenSinceRead(page)) {
       final hive = LocalStrategyPageSource.hiveNow(strategyId, page.pageId);
       page = reads.redrawnFromHive(page, hive.page);
       pageThemeProfileId = _resolveThemeProfileId(source, strategyId);
@@ -1382,6 +1394,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           _resolveThemeOverridePalette(source, strategyId);
       hivePageIds = hive.pageIds;
     }
+    final shownPageId = page.pageId;
     try {
       await opening.wait(
         applyStrategyEditorPageData(
@@ -1396,7 +1409,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       );
       reads?.applied(page);
       if (hivePageIds != null) {
-        state = state.copyWith(availablePageIds: hivePageIds);
+        state = state.copyWith(
+          activePageId: shownPageId,
+          availablePageIds: hivePageIds,
+        );
       }
       for (final entry in retainedTextDrafts.entries) {
         ref.read(textDraftProvider.notifier).setDraft(entry.key, entry.value);
@@ -1409,17 +1425,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         }
         ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
               strategyPublicId: strategyId,
-              pageId: pageData.pageId,
+              pageId: shownPageId,
               snapshot: loadedRemoteSnapshot,
             );
         _lastAppliedRemoteSnapshot = loadedRemoteSnapshot;
       }
       _updateHydrationBookkeeping(
-        pageData.pageId,
+        shownPageId,
         hydrationKey: source == StrategySource.cloud
             ? _buildRemotePageHydrationKey(
                 loadedRemoteSnapshot!,
-                pageData.pageId,
+                shownPageId,
               )
             : hydrationKey,
       );
@@ -1427,7 +1443,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       // After an open gave way the session belongs to what replaced it.
       if (opening.isCurrent) {
         state = state.copyWith(
-          activePageId: pageData.pageId,
+          activePageId: shownPageId,
           isApplyingPage: false,
         );
         _resumePendingRemoteReapplyIfPossible();

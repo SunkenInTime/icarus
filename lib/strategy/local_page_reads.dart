@@ -17,6 +17,8 @@ final class LocalPageServed {
 abstract interface class LocalPageReads {
   int opening(String strategyId, {required bool migrated});
 
+  void openFailed(int open, Object error);
+
   void openEnded(int open);
 
   void openedWithoutPage(String strategyId);
@@ -43,6 +45,8 @@ abstract interface class LocalPageReads {
   );
 
   void applied(StrategyEditorPageData page);
+
+  void neverShown(StrategyEditorPageData page);
 }
 
 final localPageReadsProvider = Provider<LocalPageReads?>((ref) => null);
