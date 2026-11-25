@@ -286,7 +286,7 @@ void main() {
 
       test('an entry keeps the strategy life it was written in through a '
           'write and a read', () {
-        final client = Client();
+        final client = Client(clock: asStored(now));
         client.edit(movePatch('move'));
         final entry = client.queue.entries.single as PendingOp;
         final read = decodeEntry(

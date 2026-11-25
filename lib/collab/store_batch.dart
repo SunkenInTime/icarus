@@ -218,12 +218,15 @@ int? _currentLifeIn(Object error) => switch (switch (error) {
       ConvexClientFunctionError(:final data) => data,
       _ => null,
     }) {
-      {'currentLife': final int life} => life,
-      {'currentLife': final double life}
-          when life == life.roundToDouble() && life.abs() < 1e15 =>
+      {'currentLife': final num life}
+          when life.isFinite &&
+              life == life.truncate() &&
+              life.abs() <= _largestSafeWhole =>
         life.toInt(),
       _ => null,
     };
+
+const _largestSafeWhole = 9007199254740991;
 
 StoreBatchOutcome storeBatchOutcomeOfError(Object error) {
   if (isClientUpgradeRequiredError(error)) {
