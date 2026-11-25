@@ -35,17 +35,14 @@ class _EditorInputGateState extends ConsumerState<EditorInputGate> {
   @override
   void initState() {
     super.initState();
-    _opening = ref.listenManual(
-      strategyOpeningProvider,
-      (before, now) {
-        _close(now != null);
-        if (before != null || now == null) return;
-        ref.read(captionCardProvider.notifier).closeNow();
-        ref.read(deleteMenuProvider.notifier).requestClose();
-        ContextMenuRegion.closeOpen();
-      },
-      fireImmediately: true,
-    );
+    _opening = ref.listenManual(strategyOpeningProvider, (before, now) {
+      _close(now != null);
+      if (before != null || now == null) return;
+      ref.read(captionCardProvider.notifier).closeNow();
+      ref.read(deleteMenuProvider.notifier).requestClose();
+      ContextMenuRegion.closeOpen();
+    });
+    _close(_closed);
   }
 
   void _close(bool closed) {

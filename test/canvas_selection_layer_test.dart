@@ -166,11 +166,17 @@ void main() {
     WidgetTester tester, {
     bool lineUp = false,
     bool gated = false,
+    bool opening = false,
   }) async {
     container = ProviderContainer(
       overrides: [strategyProvider.overrideWith(_NoopStrategyProvider.new)],
     );
     addTearDown(container.dispose);
+    if (opening) {
+      container
+          .read(strategyOpeningProvider.notifier)
+          .begin('opened', source: StrategySource.local);
+    }
     container.read(agentProvider.notifier).fromHive([
       for (final id in ['a', 'b', 'c'])
         PlacedAgent(id: id, type: AgentType.jett, position: Offset.zero),
@@ -595,6 +601,35 @@ void main() {
       await tester.pump();
       expect(_insidePresses, 1);
       semantics.dispose();
+    });
+
+    testWidgets(
+        'a gate mounted while an open runs refuses clicks and focus from the '
+        'start, and takes both once the open ends', (tester) async {
+      await pumpCanvas(tester, gated: true, opening: true);
+      final field = tester
+          .widget<EditableText>(find.descendant(
+            of: find.byKey(const ValueKey('field')),
+            matching: find.byType(EditableText),
+          ))
+          .focusNode;
+      _insidePresses = 0;
+
+      await tester.tap(find.text('Inside'), warnIfMissed: false);
+      field.requestFocus();
+      await tester.pump();
+      expect(_insidePresses, 0);
+      expect(field.hasFocus, isFalse);
+
+      container
+          .read(strategyOpeningProvider.notifier)
+          .settle(container.read(strategyOpeningProvider)!.attempt);
+      await tester.pump();
+      await tester.tap(find.text('Inside'));
+      field.requestFocus();
+      await tester.pump();
+      expect(_insidePresses, 1);
+      expect(field.hasFocus, isTrue);
     });
 
     testWidgets('Tab reaches nothing in the editor', (tester) async {
