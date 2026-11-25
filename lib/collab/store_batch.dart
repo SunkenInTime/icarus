@@ -221,7 +221,8 @@ int? _currentLifeIn(Object error) => switch (switch (error) {
       {'currentLife': final num life}
           when life.isFinite &&
               life == life.truncate() &&
-              life.abs() <= _largestSafeWhole =>
+              life > 0 &&
+              life <= _largestSafeWhole =>
         life.toInt(),
       _ => null,
     };

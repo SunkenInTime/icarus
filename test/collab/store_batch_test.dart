@@ -526,6 +526,26 @@ void main() {
               'exactly, as ${past.runtimeType}',
         );
       }
+      for (final notATime in [
+        const ConvexInteger(0),
+        const ConvexInteger(-1),
+        const ConvexInteger(-9223372036854775808),
+        const ConvexFloat(-1795613794067.0),
+      ]) {
+        expect(
+          named(
+            desktop(
+              ConvexObject({
+                'code': const ConvexString('STRATEGY_REPLACED'),
+                'currentLife': notATime,
+              }),
+            ),
+          ),
+          isNull,
+          reason: 'a life is a creation time, so it is above zero; '
+              'got ${notATime.runtimeType}',
+        );
+      }
       expect(
         named(
           desktop(
