@@ -25,7 +25,6 @@ StrategyData _generated(String id, String name) =>
     generatedStrategy(Optionals.set).copyWith(
       id: id,
       name: name,
-      folderID: null,
       pages: [
         for (final (index, sortIndex) in [0, 1].indexed)
           generatedPage(
@@ -143,7 +142,7 @@ void main() {
         }
       }
       for (final made in [_signedZero(), _interleaved(), _denseStrokes()]) {
-        strategies[made.id] = made;
+        strategies[made.id] = made..folderID = null;
       }
       final seen = <String, int>{};
       final named = [
