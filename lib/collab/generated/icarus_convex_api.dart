@@ -30,6 +30,9 @@ final class ConvexQuery<T> {
   Stream<T> watch() =>
       _watchDecoded(() => _transport.subscribe(_name, _args), _decode);
 
+  StampedConvexQuery<T> stampedOn(StampedConvexTransport transport) =>
+      StampedConvexQuery._(transport, this);
+
   /// Watches [queries] together: each update holds every query's value, in
   /// the order given, all from one server state. Queries watched one by one
   /// can each answer from a different state. The queries share a transport.
@@ -50,6 +53,92 @@ final class ConvexQuery<T> {
       ],
     );
   }
+}
+
+final class StampedConvexQuery<T> {
+  const StampedConvexQuery._(this._transport, this._query);
+
+  final StampedConvexTransport _transport;
+  final ConvexQuery<T> _query;
+
+  Future<Stamped<T>> fetch() async => _decodeStamped(
+    await _transport.queryStamped(_query._name, _query._args),
+    _query._decode,
+  );
+
+  Stream<Stamped<T>> watch() => _decodeEachStamped(
+    _transport.subscribeStamped(_query._name, _query._args),
+    _query._decode,
+  );
+
+  static Stream<Stamped<List<Object?>>> watchTogether(
+    StampedConvexTransport transport,
+    List<ConvexQuery<Object?>> queries,
+  ) {
+    final watched = List.of(queries);
+    return _decodeEachStamped(
+      transport.subscribeTogetherStamped([
+        for (final query in watched) (query._name, query._args),
+      ]),
+      (values) => [
+        for (final (index, value) in values.indexed)
+          watched[index]._decode(value),
+      ],
+    );
+  }
+}
+
+Stamped<T> _decodeStamped<V, T>(Stamped<V> stamped, T Function(V) decode) =>
+    switch (stamped) {
+      StampedValue(:final value, :final stamp) => StampedValue(
+        decode(value),
+        stamp,
+      ),
+      StampedError(:final error, :final stamp) => StampedError(error, stamp),
+    };
+
+Stream<Stamped<T>> _decodeEachStamped<V, T>(
+  Stream<Stamped<V>> stamped,
+  T Function(V) decode,
+) {
+  late final StreamController<Stamped<T>> controller;
+  StreamSubscription<Stamped<V>>? subscription;
+  var active = false;
+
+  void end(Object error, StackTrace stackTrace) {
+    if (!active) return;
+    active = false;
+    controller.addError(error, stackTrace);
+    subscription?.cancel();
+    controller.close();
+  }
+
+  controller = StreamController<Stamped<T>>(
+    onListen: () {
+      active = true;
+      subscription = stamped.listen(
+        (each) {
+          if (!active) return;
+          try {
+            controller.add(_decodeStamped(each, decode));
+          } catch (error, stackTrace) {
+            end(error, stackTrace);
+          }
+        },
+        onError: end,
+        onDone: () {
+          if (!active) return;
+          active = false;
+          controller.close();
+        },
+      );
+    },
+    onCancel: () {
+      active = false;
+      return subscription?.cancel();
+    },
+  );
+  return controller.stream;
 }
 
 /// What [subscribe] delivers, each value through [decode]. A function error

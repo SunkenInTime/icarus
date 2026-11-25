@@ -1,3 +1,5 @@
+import 'package:icarus/collab/transport/convex_transport.dart' show ResultStamp;
+
 const defaultConvexHealthCheckQuery = 'health:ping';
 
 class ConvexConfig {
@@ -72,4 +74,49 @@ abstract interface class ConvexClientValueSource {
     required void Function(List<Object?> values) onUpdate,
     required void Function(ConvexClientFunctionError error) onError,
   });
+}
+
+sealed class StampedOutcome<T> {
+  const StampedOutcome(this.stamp);
+
+  final ResultStamp stamp;
+}
+
+final class StampedAnswer<T> extends StampedOutcome<T> {
+  const StampedAnswer(this.value, super.stamp);
+
+  final T value;
+}
+
+final class StampedFunctionError<T> extends StampedOutcome<T> {
+  const StampedFunctionError(this.error, super.stamp);
+
+  final ConvexClientFunctionError error;
+}
+
+abstract interface class StampedValueSource implements ConvexClientValueSource {
+  Future<StampedOutcome<Object?>> queryStamped(
+    String name,
+    Map<String, Object?> args,
+  );
+
+  Future<StampedOutcome<Object?>> mutationStamped({
+    required String name,
+    required Map<String, Object?> args,
+  });
+
+  Future<SubscriptionHandle> subscribeStamped({
+    required String name,
+    required Map<String, Object?> args,
+    required void Function(StampedOutcome<Object?> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
+  });
+
+  Future<SubscriptionHandle> subscribeValuesStamped({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(StampedOutcome<List<Object?>> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
+  });
+
+  Future<({int client, int connection})> generation();
 }

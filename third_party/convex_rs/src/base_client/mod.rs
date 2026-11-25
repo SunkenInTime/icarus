@@ -12,6 +12,10 @@ use std::{
     },
     future::Future,
     pin::Pin,
+    sync::atomic::{
+        AtomicU64,
+        Ordering,
+    },
 };
 
 use convex_sync_types::{
@@ -53,6 +57,7 @@ mod query_result;
 pub use query_result::{
     FunctionResult,
     QueryResults,
+    TimedResult,
 };
 
 use self::request_manager::RequestType;
@@ -491,13 +496,27 @@ pub struct BaseConvexClient {
     next_request_id: SessionRequestSeqNumber,
     outgoing_message_queue: VecDeque<ClientMessage>,
     max_observed_timestamp: Option<Timestamp>,
+    connection: u64,
+}
+
+static CLIENTS_BUILT: AtomicU64 = AtomicU64::new(0);
+
+/// Which client, and which connection of it, results come from: the pair a
+/// result's stamp carries as `client` and `connection`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Generation {
+    /// The client, numbered in the order clients were built in this process.
+    pub client: u64,
+    /// The connection generation of that client.
+    pub connection: u64,
 }
 
 impl BaseConvexClient {
     /// Construct a new [`BaseConvexClient`].
     pub fn new() -> Self {
         let request_manager = RequestManager::new();
-        let state = LocalSyncState::default();
+        let mut state = LocalSyncState::default();
+        state.latest_results.client = CLIENTS_BUILT.fetch_add(1, Ordering::Relaxed) + 1;
         let remote_query_set = RemoteQuerySet::new();
         let optimistic_query_results: OptimisticQueryResults = Default::default();
         let next_request_id: SessionRequestSeqNumber = 0;
@@ -510,6 +529,7 @@ impl BaseConvexClient {
             next_request_id,
             outgoing_message_queue: VecDeque::new(),
             max_observed_timestamp: None,
+            connection: 0,
         }
     }
 
@@ -555,7 +575,7 @@ impl BaseConvexClient {
         &mut self,
         udf_path: UdfPath,
         args: BTreeMap<String, Value>,
-    ) -> oneshot::Receiver<FunctionResult> {
+    ) -> oneshot::Receiver<TimedResult> {
         let request_id = self.next_request_id;
         self.next_request_id = request_id + 1;
         tracing::info!("Starting mutation {udf_path} with id {request_id}");
@@ -585,7 +605,7 @@ impl BaseConvexClient {
         &mut self,
         udf_path: UdfPath,
         args: BTreeMap<String, Value>,
-    ) -> oneshot::Receiver<FunctionResult> {
+    ) -> oneshot::Receiver<TimedResult> {
         let request_id = self.next_request_id;
         self.next_request_id = request_id + 1;
         tracing::info!("Starting action {udf_path:?} with id {request_id:?}");
@@ -670,9 +690,12 @@ impl BaseConvexClient {
             ServerMessage::Transition { end_version, .. } => {
                 self.observe_timestamp(end_version.ts);
                 self.remote_query_set.transition(message)?;
+                self.state.latest_results.ts = Some(end_version.ts);
+                self.state.latest_results.snapshot += 1;
+                self.state.latest_results.connection = self.connection;
                 let completed_requests = self
                     .request_manager
-                    .remove_and_notify_completed(end_version.ts);
+                    .remove_and_notify_completed(end_version.ts, &self.state.latest_results);
                 let changed_query_ids = self.on_query_result_changes(completed_requests)?;
                 for (id, result) in changed_query_ids {
                     self.state.latest_results.results.insert(id, result);
@@ -715,13 +738,16 @@ impl BaseConvexClient {
                     RequestType::Mutation,
                     result.into(),
                     ts,
+                    &self.state.latest_results,
                 )?;
                 // A successful mutation may commit at a timestamp the client
                 // has already seen a transition for, since the server doesn't
                 // order responses before transitions.
                 if !completed {
-                    self.request_manager
-                        .remove_and_notify_completed(self.remote_query_set.version.ts);
+                    self.request_manager.remove_and_notify_completed(
+                        self.remote_query_set.version.ts,
+                        &self.state.latest_results,
+                    );
                 }
             },
             ServerMessage::AuthError {
@@ -755,6 +781,7 @@ impl BaseConvexClient {
                     RequestType::Action,
                     result.into(),
                     None,
+                    &self.state.latest_results,
                 )?;
             },
             ServerMessage::Ping => {
@@ -767,6 +794,23 @@ impl BaseConvexClient {
             },
         }
         Ok(None)
+    }
+
+    /// The connection generation the client is on, as
+    /// [`QueryResults::connection`] numbers it: one more each time
+    /// [`resend_ongoing_queries_mutations`](Self::resend_ongoing_queries_mutations)
+    /// starts the client again on a new socket.
+    pub fn connection(&self) -> u64 {
+        self.connection
+    }
+
+    /// The client and the connection generation it is on, as each result's
+    /// [`QueryResults::client`] and [`QueryResults::connection`] number them.
+    pub fn generation(&self) -> Generation {
+        Generation {
+            client: self.state.latest_results.client,
+            connection: self.connection,
+        }
     }
 
     /// Grab a snapshot of the latest query results to all subscribed queries.
@@ -792,6 +836,7 @@ impl BaseConvexClient {
         let mut ongoing_mutation_messages = self.request_manager.restart();
 
         self.remote_query_set = RemoteQuerySet::new();
+        self.connection += 1;
         for state_restart_message in state_restart_messages {
             self.outgoing_message_queue.push_back(state_restart_message);
         }
@@ -1132,7 +1177,7 @@ mod tests {
 
     fn start_mutation(
         client: &mut BaseConvexClient,
-    ) -> (oneshot::Receiver<FunctionResult>, SessionRequestSeqNumber) {
+    ) -> (oneshot::Receiver<TimedResult>, SessionRequestSeqNumber) {
         let result_receiver =
             client.mutation("counter:increment".parse().unwrap(), BTreeMap::new());
         match client.pop_next_message() {
@@ -1177,7 +1222,7 @@ mod tests {
 
         apply_query_update(&mut client, &mut version, query_id, 6.0.into());
         assert_eq!(
-            result_receiver.try_recv().unwrap(),
+            result_receiver.try_recv().unwrap().value,
             FunctionResult::Value(Value::Null)
         );
     }
@@ -1201,7 +1246,7 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(
-            result_receiver.try_recv().unwrap(),
+            result_receiver.try_recv().unwrap().value,
             FunctionResult::Value(Value::Null)
         );
     }
@@ -1222,9 +1267,199 @@ mod tests {
             ))
             .unwrap();
         assert!(matches!(
-            result_receiver.try_recv().unwrap(),
+            result_receiver.try_recv().unwrap().value,
             FunctionResult::ConvexError(_)
         ));
+    }
+
+    #[test]
+    fn test_a_mutation_answer_carries_the_snapshot_its_write_is_visible_in() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        let subscriber = client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+        let committed_at = version.ts.succ().unwrap().succ().unwrap();
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Ok(Value::Null),
+                Some(committed_at),
+            ))
+            .unwrap();
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        assert!(result_receiver.try_recv().is_err());
+        apply_query_update(&mut client, &mut version, query_id, 2.0.into());
+
+        let answer = result_receiver.try_recv().unwrap();
+        let visible = client.latest_results().timed(&subscriber).unwrap();
+        assert_eq!(answer.value, FunctionResult::Value(Value::Null));
+        assert_eq!(
+            (answer.snapshot, answer.ts, answer.connection, answer.client),
+            (3, Some(committed_at), 0, client.latest_results().client())
+        );
+        assert_eq!(
+            (visible.snapshot, visible.value),
+            (3, FunctionResult::Value(2.0.into()))
+        );
+    }
+
+    #[test]
+    fn test_a_mutation_whose_transition_came_first_carries_that_snapshot() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 2.0.into());
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Ok(Value::Null),
+                Some(version.ts),
+            ))
+            .unwrap();
+        assert_eq!(result_receiver.try_recv().unwrap().snapshot, 2);
+    }
+
+    #[test]
+    fn test_a_failed_mutation_carries_the_snapshot_applied_before_its_response() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Err(ErrorPayload::ErrorData {
+                    message: "nope".into(),
+                    data: Value::from("REFUSED"),
+                }),
+                None,
+            ))
+            .unwrap();
+        let answer = result_receiver.try_recv().unwrap();
+        assert!(matches!(answer.value, FunctionResult::ConvexError(_)));
+        assert_eq!((answer.snapshot, answer.ts), (1, Some(version.ts)));
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        assert_eq!(client.latest_results().snapshot(), 2);
+    }
+
+    #[test]
+    fn test_a_late_response_carries_the_snapshot_current_when_it_is_handled() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 2.0.into());
+        let committed_at = version.ts;
+        apply_query_update(&mut client, &mut version, query_id, 3.0.into());
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Ok(Value::Null),
+                Some(committed_at),
+            ))
+            .unwrap();
+        let answer = result_receiver.try_recv().unwrap();
+        assert_eq!((answer.snapshot, answer.ts), (3, Some(version.ts)));
+        assert!(answer.ts.unwrap() > committed_at);
+    }
+
+    #[test]
+    fn test_a_failure_carries_the_snapshot_applied_after_its_request_was_made() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        client.subscribe("counter:get".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        let (mut result_receiver, request_id) = start_mutation(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 1.0.into());
+        client
+            .receive_message(mutation_response(
+                request_id,
+                Err(ErrorPayload::Message("boom".into())),
+                None,
+            ))
+            .unwrap();
+        let answer = result_receiver.try_recv().unwrap();
+        assert_eq!(answer.value, FunctionResult::ErrorMessage("boom".into()));
+        assert_eq!((answer.snapshot, answer.ts), (2, Some(version.ts)));
+    }
+
+    #[tokio::test]
+    async fn test_the_snapshot_count_goes_on_across_a_reconnect() {
+        let mut client = BaseConvexClient::new();
+        let mut version = StateVersion::initial();
+        let subscriber = client.subscribe("getValue1".parse().unwrap(), BTreeMap::new());
+        let query_id = drain_add_message(&mut client);
+        apply_query_update(&mut client, &mut version, query_id, 10.into());
+        apply_query_update(&mut client, &mut version, query_id, 11.into());
+        apply_query_update(&mut client, &mut version, query_id, 12.into());
+        let before = client.latest_results().timed(&subscriber).unwrap();
+        assert_eq!((before.snapshot, before.connection), (3, 0));
+
+        client.resend_ongoing_queries_mutations().await;
+        while client.pop_next_message().is_some() {}
+        let kept = client.latest_results().timed(&subscriber).unwrap();
+        assert_eq!(
+            kept, before,
+            "a result kept from the old connection keeps its stamp"
+        );
+
+        // The new connection's first transition ends at an earlier time than
+        // the old connection's last one, and answers no query yet.
+        let start = StateVersion::initial();
+        let reauthenticated = StateVersion {
+            identity: start.identity + 1,
+            ts: start.ts.succ().unwrap(),
+            ..start
+        };
+        assert!(reauthenticated.ts < version.ts);
+        client
+            .receive_message(ServerMessage::Transition {
+                start_version: start,
+                end_version: reauthenticated,
+                modifications: vec![],
+                client_clock_skew: None,
+                server_ts: None,
+            })
+            .unwrap();
+        assert_eq!(
+            (
+                client.latest_results().snapshot(),
+                client.latest_results().connection()
+            ),
+            (4, 1)
+        );
+        assert_eq!(client.latest_results().timed(&subscriber), None);
+
+        let mut version = reauthenticated;
+        apply_query_update(&mut client, &mut version, query_id, 12.into());
+        let after = client.latest_results().timed(&subscriber).unwrap();
+        assert_eq!((after.snapshot, after.connection), (5, 1));
+        assert!(
+            after.ts < before.ts,
+            "the server's time went back; the count did not"
+        );
+        assert_eq!(after.client, before.client);
+    }
+
+    #[test]
+    fn test_each_client_has_its_own_number() {
+        let first = BaseConvexClient::new();
+        let second = BaseConvexClient::new();
+        assert!(first.latest_results().client() >= 1);
+        assert_ne!(
+            first.latest_results().client(),
+            second.latest_results().client()
+        );
     }
 
     #[tokio::test]

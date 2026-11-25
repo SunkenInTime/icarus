@@ -33,7 +33,9 @@ use crate::SubscriberId;
 use crate::{
     base_client::{
         BaseConvexClient,
+        Generation,
         QueryResults,
+        TimedResult,
     },
     client::{
         subscription::{
@@ -291,6 +293,24 @@ impl ConvexClient {
             .expect("INTERNAL BUG: Convex Client dropped prematurely."))
     }
 
+    /// [`ConvexClient::query`], with the snapshot the result comes from (see
+    /// [`QueryResults::snapshot`]), so it can be ordered against results of a
+    /// live subscription. An error is a result too, and carries its snapshot
+    /// the same way.
+    pub async fn query_timed(
+        &mut self,
+        name: &str,
+        args: BTreeMap<String, Value>,
+    ) -> anyhow::Result<TimedResult> {
+        Ok(self
+            .subscribe(name, args)
+            .await?
+            .timed()
+            .next()
+            .await
+            .expect("INTERNAL BUG: Convex Client dropped prematurely."))
+    }
+
     /// Perform a mutation `name` with `args` and return a future
     /// containing the return value of the mutation once it completes.
     ///
@@ -312,6 +332,26 @@ impl ConvexClient {
         name: &str,
         args: BTreeMap<String, Value>,
     ) -> anyhow::Result<FunctionResult> {
+        Ok(self.mutation_timed(name, args).await?.value)
+    }
+
+    /// [`ConvexClient::mutation`], with the stamp of the results the client
+    /// held when it completed the mutation (see [`QueryResults::snapshot`]).
+    ///
+    /// A successful mutation's snapshot has a timestamp at or after the one it
+    /// committed at. If the response arrives first, the mutation completes on
+    /// the first transition that reaches that timestamp, and carries it; if a
+    /// qualifying transition arrived first, it carries the snapshot current
+    /// when the response is handled, which qualifies but need not be the
+    /// first that did. Whether results from that snapshot on show the write
+    /// rests on the sync protocol, as the patch notes say. A mutation whose
+    /// server function fails completes when its response arrives, with the
+    /// last snapshot applied before it.
+    pub async fn mutation_timed(
+        &mut self,
+        name: &str,
+        args: BTreeMap<String, Value>,
+    ) -> anyhow::Result<TimedResult> {
         let (tx, rx) = oneshot::channel();
 
         let udf_path: UdfPath = name.parse()?;
@@ -354,7 +394,7 @@ impl ConvexClient {
             .send(ClientRequest::Action(request, tx))?;
 
         let res = rx.await?;
-        Ok(res.await?)
+        Ok(res.await?.value)
     }
 
     /// Get a consistent view of the results of multiple queries (query set).
@@ -447,6 +487,18 @@ impl ConvexClient {
         self.request_sender
             .send(ClientRequest::Reconnect(reason.to_owned()))
             .expect("INTERNAL BUG: Worker has gone away");
+    }
+
+    /// The client and the connection generation it is on (see
+    /// [`QueryResults::client`] and [`QueryResults::connection`]). The
+    /// worker answers between its own steps, so after a reconnect the answer
+    /// is the generation the client started again on, never an earlier one.
+    /// Results stamped with a lower generation come from a connection
+    /// before it.
+    pub async fn generation(&self) -> anyhow::Result<Generation> {
+        let (tx, rx) = oneshot::channel();
+        self.request_sender.send(ClientRequest::Generation(tx))?;
+        Ok(rx.await?)
     }
 
     /// Whether the server keeps refusing this client's auth. It turns true
@@ -586,7 +638,9 @@ pub mod tests {
             SyncProtocol,
         },
         value::Value,
+        QuerySetSubscription,
         QuerySubscription,
+        TimedResult,
     };
 
     impl ConvexClient {
@@ -756,6 +810,259 @@ pub mod tests {
         assert_eq!(
             subscription.next().await,
             Some(FunctionResult::Value(2.into()))
+        );
+        Ok(())
+    }
+
+    const PATIENCE: Duration = Duration::from_secs(5);
+
+    fn transition_after(
+        start_version: StateVersion,
+        nanos: u64,
+        modifications: Vec<StateModification<Value>>,
+    ) -> (ServerMessage, StateVersion) {
+        let end_version = StateVersion {
+            ts: start_version
+                .ts
+                .add(Duration::from_nanos(nanos))
+                .expect("a later timestamp"),
+            ..start_version
+        };
+        (
+            ServerMessage::Transition {
+                start_version,
+                end_version,
+                modifications,
+                client_clock_skew: None,
+                server_ts: None,
+            },
+            end_version,
+        )
+    }
+
+    fn updated(query_id: QueryId, value: Value) -> StateModification<Value> {
+        StateModification::QueryUpdated {
+            query_id,
+            value,
+            journal: None,
+            log_lines: LogLinesMessage(vec![]),
+        }
+    }
+
+    fn failed(query_id: QueryId, message: &str) -> StateModification<Value> {
+        StateModification::QueryFailed {
+            query_id,
+            error_message: message.to_string(),
+            log_lines: LogLinesMessage(vec![]),
+            journal: None,
+            error_data: Some(Value::from("DENIED")),
+        }
+    }
+
+    async fn applied(watch: &mut QuerySetSubscription, snapshot: u64) {
+        tokio::time::timeout(PATIENCE, async {
+            loop {
+                let results = watch.next().await.expect("the client still publishes");
+                if results.snapshot() == snapshot {
+                    break;
+                }
+            }
+        })
+        .await
+        .expect("the client applies the transition");
+    }
+
+    async fn next<S: futures::Stream<Item = TimedResult> + Unpin>(live: &mut S) -> TimedResult {
+        tokio::time::timeout(PATIENCE, live.next())
+            .await
+            .expect("a live result in time")
+            .expect("a live result")
+    }
+
+    #[tokio::test]
+    async fn test_one_shot_and_live_results_carry_the_server_order() -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let mut live = client.subscribe("getCounter", btreemap! {}).await?.timed();
+        let query_id = QueryId::new(0);
+        test_protocol.take_sent().await;
+        let mut watch = client.watch_all();
+        let (first, at_first) = transition_after(
+            StateVersion::initial(),
+            7_000,
+            vec![updated(query_id, 1.into())],
+        );
+        test_protocol.fake_server_response(first).await?;
+        let earlier = next(&mut live).await;
+        assert_eq!(earlier.value, FunctionResult::Value(1.into()));
+        assert_eq!(earlier.ts, Some(at_first.ts));
+        assert_eq!(earlier.snapshot, 1);
+
+        let (second, at_second) =
+            transition_after(at_first, 13_000, vec![updated(query_id, 2.into())]);
+        test_protocol.fake_server_response(second).await?;
+        applied(&mut watch, 2).await;
+        let one_shot =
+            tokio::time::timeout(PATIENCE, client.query_timed("getCounter", btreemap! {}))
+                .await
+                .expect("a one-shot answer in time")?;
+        assert_eq!(one_shot.value, FunctionResult::Value(2.into()));
+        assert_eq!(one_shot.ts, Some(at_second.ts));
+        assert_eq!(one_shot.snapshot, 2);
+        assert!(earlier.ts < one_shot.ts && earlier.snapshot < one_shot.snapshot);
+
+        let later = next(&mut live).await;
+        assert_eq!(later, one_shot);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_a_live_result_from_an_earlier_snapshot_read_after_a_one_shot_sorts_before_it(
+    ) -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let _first_reader = client.subscribe("getCounter", btreemap! {}).await?;
+        let query_id = QueryId::new(0);
+        test_protocol.take_sent().await;
+        let mut watch = client.watch_all();
+        let (first, at_first) = transition_after(
+            StateVersion::initial(),
+            7_000,
+            vec![updated(query_id, 1.into())],
+        );
+        test_protocol.fake_server_response(first).await?;
+        applied(&mut watch, 1).await;
+        let mut live = client.subscribe("getCounter", btreemap! {}).await?.timed();
+
+        let (second, at_second) =
+            transition_after(at_first, 13_000, vec![updated(query_id, 2.into())]);
+        test_protocol.fake_server_response(second).await?;
+        applied(&mut watch, 2).await;
+        let one_shot =
+            tokio::time::timeout(PATIENCE, client.query_timed("getCounter", btreemap! {}))
+                .await
+                .expect("a one-shot answer in time")?;
+        assert_eq!(one_shot.value, FunctionResult::Value(2.into()));
+        assert_eq!((one_shot.ts, one_shot.snapshot), (Some(at_second.ts), 2));
+
+        let arriving_later = next(&mut live).await;
+        assert_eq!(arriving_later.value, FunctionResult::Value(1.into()));
+        assert_eq!(
+            (arriving_later.ts, arriving_later.snapshot),
+            (Some(at_first.ts), 1)
+        );
+        assert!(
+            arriving_later.snapshot < one_shot.snapshot && arriving_later.ts < one_shot.ts,
+            "read after the one-shot, but from an earlier snapshot, so it sorts before it"
+        );
+        assert_eq!(next(&mut live).await, one_shot);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_a_lagging_live_subscription_yields_its_latest_snapshot() -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let mut live = client.subscribe("getCounter", btreemap! {}).await?.timed();
+        let query_id = QueryId::new(0);
+        test_protocol.take_sent().await;
+        let mut watch = client.watch_all();
+        let (first, at_first) = transition_after(
+            StateVersion::initial(),
+            7_000,
+            vec![updated(query_id, 1.into())],
+        );
+        test_protocol.fake_server_response(first).await?;
+        let (second, at_second) =
+            transition_after(at_first, 13_000, vec![updated(query_id, 2.into())]);
+        test_protocol.fake_server_response(second).await?;
+        applied(&mut watch, 2).await;
+
+        let latest = next(&mut live).await;
+        assert_eq!(latest.value, FunctionResult::Value(2.into()));
+        assert_eq!((latest.ts, latest.snapshot), (Some(at_second.ts), 2));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_two_snapshots_at_one_timestamp_order_by_snapshot() -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let mut live = client.subscribe("getCounter", btreemap! {}).await?.timed();
+        let query_id = QueryId::new(0);
+        test_protocol.take_sent().await;
+        let (first, at_first) = transition_after(
+            StateVersion::initial(),
+            7_000,
+            vec![updated(query_id, 1.into())],
+        );
+        test_protocol.fake_server_response(first).await?;
+        assert_eq!(next(&mut live).await.snapshot, 1);
+
+        // The server moves to T2 and leaves this query out, as it does for a
+        // query it has not run again yet, then sends its new value at T2.
+        let (left_out, at_second) = transition_after(at_first, 13_000, vec![]);
+        test_protocol.fake_server_response(left_out).await?;
+        let kept = next(&mut live).await;
+        let (caught_up, at_same) =
+            transition_after(at_second, 0, vec![updated(query_id, 2.into())]);
+        test_protocol.fake_server_response(caught_up).await?;
+        let fresh = next(&mut live).await;
+
+        assert_eq!(at_same.ts, at_second.ts);
+        assert_eq!(
+            (kept.value, kept.ts, kept.snapshot),
+            (FunctionResult::Value(1.into()), Some(at_second.ts), 2)
+        );
+        assert_eq!(
+            (fresh.value, fresh.ts, fresh.snapshot),
+            (FunctionResult::Value(2.into()), Some(at_second.ts), 3)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_an_error_result_carries_its_snapshot() -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let _first_reader = client.subscribe("getCounter", btreemap! {}).await?;
+        let query_id = QueryId::new(0);
+        test_protocol.take_sent().await;
+        let mut watch = client.watch_all();
+        let (first, at_first) = transition_after(
+            StateVersion::initial(),
+            7_000,
+            vec![failed(query_id, "denied")],
+        );
+        test_protocol.fake_server_response(first).await?;
+        applied(&mut watch, 1).await;
+        let mut live = client.subscribe("getCounter", btreemap! {}).await?.timed();
+        let (second, at_second) =
+            transition_after(at_first, 13_000, vec![updated(query_id, 2.into())]);
+        test_protocol.fake_server_response(second).await?;
+        applied(&mut watch, 2).await;
+        let one_shot =
+            tokio::time::timeout(PATIENCE, client.query_timed("getCounter", btreemap! {}))
+                .await
+                .expect("a one-shot answer in time")?;
+
+        let error = next(&mut live).await;
+        let denied = FunctionResult::ConvexError(crate::ConvexError {
+            message: "denied".to_string(),
+            data: Value::from("DENIED"),
+        });
+        assert_eq!(error.value, denied);
+        assert_eq!(one_shot.value, FunctionResult::Value(2.into()));
+        assert_eq!((error.ts, error.snapshot), (Some(at_first.ts), 1));
+        assert_eq!((one_shot.ts, one_shot.snapshot), (Some(at_second.ts), 2));
+
+        let (third, at_third) =
+            transition_after(at_second, 11_000, vec![failed(query_id, "denied")]);
+        test_protocol.fake_server_response(third).await?;
+        applied(&mut watch, 3).await;
+        let failed_read =
+            tokio::time::timeout(PATIENCE, client.query_timed("getCounter", btreemap! {}))
+                .await
+                .expect("a one-shot answer in time")?;
+        assert_eq!(failed_read.value, denied);
+        assert_eq!(
+            (failed_read.ts, failed_read.snapshot),
+            (Some(at_third.ts), 3)
         );
         Ok(())
     }

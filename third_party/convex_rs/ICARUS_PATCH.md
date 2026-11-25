@@ -108,3 +108,93 @@ and a response to a mutation that already completed (one resent after a
 reconnect) is ignored instead of causing a reconnect.
 `client::tests::test_mutation_waits_for_its_commit_transition` checks the same
 through the public client and this crate's worker.
+
+What that establishes is that this client has applied a transition at or after
+the write's commit timestamp. The client does not check that any query changed:
+that its results then show the write rests on the sync protocol's rule that a
+transition leaves every subscribed query at its end timestamp, the same rule
+the JS client relies on. It does not establish that Dart has seen those
+results. The worker can wake the mutation's caller before a
+`convex_flutter` subscription callback carrying the same transition has run, so
+"the mutation resolved, so the live result I hold includes my write" is true of
+the Rust client's state and not yet of what Dart was handed. Code that needs
+the updated state in Dart has to observe it there, by the result snapshots
+described below.
+
+One behavior changed for slow transitions. If a transition older than the
+write arrives before the `convex_flutter` bridge's deadline on the call (30
+seconds by default), and the one that reaches the commit timestamp arrives after it, 0.10.4
+reported success where this now times out. If Icarus's outbox retries, it
+sends the same op ids again, and the server answers them as replays of the
+write it already applied; it can instead pause at its attempt limit.
+
+Every query result, a value or an error, now carries the snapshot it was taken
+from. `QueryResults::snapshot` is the number of transitions the client has
+applied: it counts up by one with every transition, across reconnects, and
+restarts only with the client. Results with the same number come from one
+snapshot, which holds one result per query, so for two results of one query
+the higher number is the newer and equal numbers mean the same result.
+`QueryResults::ts` is that snapshot's server time, the end timestamp of the
+last transition applied (`None` before the first); a value that last changed
+earlier carries it too. `QuerySubscription::timed` yields each result with both
+(`TimedResult`), and `ConvexClient::query_timed` does the same for a one-shot
+read. Upstream exposes neither, so a reader had no way to tell which of two
+results is newer: a subscription's first result is the snapshot when it
+subscribed, and it can be read after a one-shot answered from a newer one
+(`client::tests::test_a_live_result_from_an_earlier_snapshot_read_after_a_one_shot_sorts_before_it`).
+
+The timestamp alone does not order two results. Two snapshots can share one:
+a transition may end at the time the one before it ended, and if the server
+moves to a new time while leaving out a query it has not run again, the client
+keeps that query's old result under the new time, then gets its new value in a
+later transition at the same time
+(`client::tests::test_two_snapshots_at_one_timestamp_order_by_snapshot`). After
+a reconnect the client also accepts a first transition whatever its time. The
+snapshot number has neither problem; it is only comparable within one run of
+the client.
+
+Every stamp also names its client and connection. `QueryResults::client` numbers
+the clients built in this process from 1, so snapshots of two clients are never
+compared as if they were one count. `QueryResults::connection` is a
+generation: 0 until the first reconnect, then one more each time the client
+starts again on a new socket, a failed dial included, so the first socket that
+opens can be 1 and numbers can be skipped. A higher number is a later
+connection. Results kept from an old connection keep its number until the new
+connection's first transition replaces them, so a reader can tell a result
+taken before a reconnect from one taken after it, whatever order they reach it
+in (`base_client::tests::test_the_snapshot_count_goes_on_across_a_reconnect`).
+That test also shows a new connection starting at an earlier server time, so a
+higher snapshot on a later connection is a later snapshot of this client, not
+necessarily a later server time.
+
+`ConvexClient::mutation_timed` gives a mutation's answer with the stamp of the
+results the client held when it completed it, and `mutation` and `action`
+return the same answers without it. A success's snapshot has a timestamp at or
+after its commit. When the response arrives first, the mutation completes on
+the first transition that reaches the commit and carries it. When a qualifying
+transition arrived first, it carries the snapshot current when the response is
+handled: that qualifies, but need not be the first that did. What the stamp
+establishes is a snapshot whose time is at or after the commit; that results
+show the write rests on the protocol rule above. Across a reconnect, a reader
+that needs a result to include the write checks both: its snapshot at or after
+the answer's, and its time at or after the answer's. A mutation whose server
+function fails completes when its response arrives, with the last snapshot
+applied before it (snapshot 0 and no time before the first transition). That is
+a fact about when this client handled the answer, not about which server state
+the failed mutation ran against; nothing on the wire says that. A Dart timeout
+or a bridge error still throws. The tests next to
+`base_client::tests::test_a_mutation_answer_carries_the_snapshot_its_write_is_visible_in`
+cover each case.
+
+`ConvexClient::generation` gives the client and the connection generation it
+is on (`Generation`), asked of the worker between its steps, so after a
+reconnect it is the generation the client started again on, never an earlier
+one
+(`client::worker::tests::test_the_generation_moves_on_with_a_reconnect_on_the_same_client`).
+A reader that holds it can tell that any stamp of that client with a lower
+connection comes from an earlier connection, even one that reaches it later.
+
+Unlike upstream, `BaseConvexClient::mutation` and `BaseConvexClient::action`
+hand back a `TimedResult` rather than a `FunctionResult`, which would break a
+Rust program using the base client directly. Icarus has none; `ConvexClient`'s
+methods keep upstream's types.

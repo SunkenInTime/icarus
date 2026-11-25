@@ -32,7 +32,7 @@
 // Input, the way a mouse and keyboard deliver it
 //   {"tapText": t, "nth": n?, "button": "secondary"?}
 //   {"tapKey": valueKey, "nth": n?}    {"tapIcon": name, "nth": n?}
-//   {"tapAt": [x, y], "hold": s?}      {"hoverAt": [x, y]}
+//   {"tapAt": [x, y], "hold": s?}      {"hoverAt": [x, y]}  {"backButton": [x, y]}
 //   {"tapDoor": id}  {"hoverDoor": id}  the middle of a map door's bar
 //                                      hold: seconds down, for a long press
 //   {"tapWords": t, "nth": n?, "times": k?, "touch": b?, "button": "secondary"?}
@@ -52,7 +52,7 @@
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?, "cone": "viewCone90"?, "facing": degrees?, "length": n?, "enemy": b?}
 //   {"addHighTide": id, "at": [x, y], "wall": [[dx, dy], ...]?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
-//   {"setCaption": id, "text": t}      what the caption dialog's Done does
+//   {"setCaption": id, "text": t}      {"setWeapon": id, "weapon": name}  {"setWallPath": id, "path": [[x, y], ...]}
 //   {"addUtility": id, "type": name, "at": [x, y], "door": id?, "zone": b?}
 //                                      spike, customRectangle, customCircle
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
@@ -104,11 +104,11 @@
 //   {"logUtilities": tag}              every utility's type, position and door
 //   {"logDoors": tag}                  the map doors changed on the page
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
-//   {"logCaptions": tag}  {"logCard": tag}  every caption; the open card
-//   {"logLineups": tag}                {"logImages": tag}
+//   {"logCaptions": tag}  {"logCard": tag}  {"logWeapons": tag}  every caption; the open card; weapons
+//   {"logLineups": tag}                {"logImages": tag}  {"rememberPage": tag}  {"expectPage": tag, "changed": b?}  fails unless the page's items are as remembered, or with changed, unless they are not
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
-//   {"expectText": t, "count": n}      fails unless t is on screen n times
+//   {"expectText": t, "count": n}      fails unless t is on screen n times  {"expectTopRoute": name}  unless no route covers name
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectOpened": [urls]}           fails unless these are the links opened so
 //                                      far, in order; a run opens no browser
@@ -153,6 +153,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -175,6 +176,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
+import 'package:icarus/dev/drive/drive_load_copy_cost.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/clickable.dart';
 import 'package:icarus/interactive_map.dart';
@@ -287,6 +289,7 @@ String? _signals;
 String _out = '.';
 String _here = '.';
 final _entries = <String>[];
+final _rememberedPages = <String, String>{};
 var _flutterErrors = 0;
 var _failedSteps = 0;
 var _steps = 0;
@@ -1816,6 +1819,16 @@ bool _settled() {
       c.read(cloudSyncStatusProvider) == CloudSyncStatus.synced;
 }
 
+String _pageItems(ProviderContainer c) => jsonEncode([
+      AgentProvider.objectToJson(c.read(agentProvider)),
+      AbilityProvider.objectToJson(c.read(abilityProvider)),
+      UtilityProvider.objectToJson(c.read(utilityProvider)),
+      TextProvider.objectToJson(c.read(textProvider)),
+      DrawingProvider.objectToJson(c.read(drawingProvider).elements),
+      [for (final image in c.read(placedImageProvider).images) image.toJson()],
+      LineUpProvider.objectToJson(c.read(lineUpProvider).graph),
+    ]);
+
 String _probe() {
   final c = appProviderContainer;
   final snapshot = c.read(remoteEditorSnapshotProvider).valueOrNull;
@@ -2051,6 +2064,9 @@ Future<void> _run(Map<String, dynamic> step) async {
           milliseconds: (((step['hold'] ?? 0.06) as num) * 1000).round(),
         ),
       );
+    case 'backButton':
+      _pressMouse(_point(step, name), buttons: kBackMouseButton);
+      await _frames();
     case 'hoverAt':
       await _hover(_point(step, name));
     case 'tapWords':
@@ -2482,6 +2498,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _cloudOpenTime(step);
     case 'openFirstFrame':
       await _openFirstFrame(step);
+    case 'loadCopyCost':
+      (await loadCopyCost(value as String, (step['runs'] ?? 51) as int))
+          .forEach(_log);
     case 'readBackCost':
       final budget = step['budget'] as Map<String, dynamic>?;
       (await _storeLines(readBackCost(
@@ -2836,6 +2855,24 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'setCaption':
       setCaption(c, value as String, step['text'] as String);
+    case 'setWeapon':
+      c.read(agentProvider.notifier).setWeapon(
+            value as String,
+            WeaponType.values.byName(step['weapon'] as String),
+          );
+    case 'setWallPath':
+      c.read(abilityProvider.notifier).setWallPath(value as String, [
+        for (final point in step['path'] as List)
+          Offset(
+            ((point as List)[0] as num).toDouble(),
+            (point[1] as num).toDouble(),
+          ),
+      ]);
+    case 'logWeapons':
+      _log('WEAPONS $value ${jsonEncode({
+            for (final agent in c.read(agentProvider))
+              agent.id: agent.weapon.name,
+          })}');
     case 'logCard':
       final root = RendererBinding.instance.renderViews.first.child;
       _log('CARD $value ${c.read(captionCardProvider)} '
@@ -2878,6 +2915,18 @@ Future<void> _run(Map<String, dynamic> step) async {
       _logLibrary('$value', libraryOnScreen());
     case 'logPagesBar':
       _logPagesBar('$value', pagesBarOnScreen());
+    case 'rememberPage':
+      _rememberedPages[value as String] = _pageItems(c);
+    case 'expectPage':
+      final remembered = _rememberedPages[value as String];
+      if (remembered == null) throw StateError('no page remembered as "$value"');
+      final same = _pageItems(c) == remembered;
+      if (step['changed'] == true && same) {
+        throw StateError('the page\'s items are still as they were at "$value"');
+      }
+      if (step['changed'] != true && !same) {
+        throw StateError('the page\'s items are not as they were at "$value"');
+      }
     case 'logPage':
       _log(
         'PAGE $value strategy=${c.read(strategyProvider).strategyName} '
@@ -2924,6 +2973,11 @@ Future<void> _run(Map<String, dynamic> step) async {
       final selected = c.read(canvasSelectionProvider).length;
       if (selected != value) {
         throw StateError('$selected selected, expected $value');
+      }
+    case 'expectTopRoute':
+      final top = mouseNavigationRouteObserver.topRoute?.settings.name;
+      if (top != value) {
+        throw StateError('the top route is $top, expected $value');
       }
     case 'expectText':
       final count = _countOf(

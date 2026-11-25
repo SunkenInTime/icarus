@@ -23,7 +23,9 @@ use crate::{
     base_client::{
         AuthTokenFetcher,
         BaseConvexClient,
+        Generation,
         SubscriberId,
+        TimedResult,
     },
     client::{
         subscription::{
@@ -40,7 +42,6 @@ use crate::{
         SyncProtocol,
     },
     value::Value,
-    FunctionResult,
 };
 
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
@@ -98,11 +99,11 @@ impl AuthRecovery {
 pub enum ClientRequest {
     Mutation(
         MutationRequest,
-        oneshot::Sender<oneshot::Receiver<FunctionResult>>,
+        oneshot::Sender<oneshot::Receiver<TimedResult>>,
     ),
     Action(
         ActionRequest,
-        oneshot::Sender<oneshot::Receiver<FunctionResult>>,
+        oneshot::Sender<oneshot::Receiver<TimedResult>>,
     ),
     Subscribe(
         SubscribeRequest,
@@ -117,6 +118,7 @@ pub enum ClientRequest {
     Unsubscribe(UnsubscribeRequest),
     Authenticate(Option<AuthTokenFetcher>),
     Reconnect(String),
+    Generation(oneshot::Sender<Generation>),
 }
 
 pub struct MutationRequest {
@@ -542,6 +544,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_the_generation_moves_on_with_a_reconnect_on_the_same_client() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let TestWorker {
+            requests: request_sender,
+            handle: worker,
+            ..
+        } = start_worker(&protocol, response_receiver);
+        let generation = || async {
+            let (tx, rx) = oneshot::channel();
+            request_sender.send(ClientRequest::Generation(tx))?;
+            anyhow::Ok(tokio::time::timeout(Duration::from_secs(2), rx).await??)
+        };
+        let before = generation().await?;
+        assert_eq!(before.connection, 0);
+
+        request_sender.send(ClientRequest::Reconnect("convex_flutter:manual".into()))?;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while protocol.reconnects.lock().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
+        let after = generation().await?;
+        assert_eq!(after.connection, 1);
+        assert_eq!(after.client, before.client);
+        worker.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_action_answered_by_the_old_socket_is_not_sent_again() -> anyhow::Result<()> {
         let (response_sender, response_receiver) = mpsc::channel(1);
         let protocol = FakeProtocol::new(response_sender.clone());
@@ -578,7 +611,10 @@ mod tests {
         request_sender.send(ClientRequest::Reconnect("convex_flutter:manual".into()))?;
 
         let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
-        assert_eq!(result, FunctionResult::Value(Value::from("upload url")));
+        assert_eq!(
+            result.value,
+            FunctionResult::Value(Value::from("upload url"))
+        );
         // Wait for the state to be resent on the new connection, then check
         // the resend left the action out.
         tokio::time::timeout(Duration::from_secs(2), async {
@@ -669,7 +705,7 @@ mod tests {
             .await?;
         let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
         worker.handle.abort();
-        assert_eq!(result, FunctionResult::Value(Value::from("applied")));
+        assert_eq!(result.value, FunctionResult::Value(Value::from("applied")));
         Ok(())
     }
 
@@ -806,7 +842,10 @@ mod tests {
             .await?;
         let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
         worker.handle.abort();
-        assert_eq!(result, FunctionResult::Value(Value::from("upload url")));
+        assert_eq!(
+            result.value,
+            FunctionResult::Value(Value::from("upload url"))
+        );
         Ok(())
     }
 
@@ -1048,7 +1087,7 @@ async fn _worker_once<T: SyncProtocol>(
                         subscriber_id,
                         request_sender,
                         watch,
-                        initial: base_client.latest_results().get(&subscriber_id).cloned(),
+                        initial: base_client.latest_results().timed(&subscriber_id),
                     };
                     let _ = tx.send(subscription);
                     send_result?;
@@ -1125,6 +1164,9 @@ async fn _worker_once<T: SyncProtocol>(
                         auth_recovery,
                     )
                     .await?;
+                },
+                ClientRequest::Generation(tx) => {
+                    let _ = tx.send(base_client.generation());
                 },
                 ClientRequest::Unsubscribe(unsubscribe) => {
                     let UnsubscribeRequest {subscriber_id} = unsubscribe;

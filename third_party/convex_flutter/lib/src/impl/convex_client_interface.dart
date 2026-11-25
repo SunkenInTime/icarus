@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle;
+import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer, TimedGroupUpdate, ClientGeneration;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -33,6 +33,16 @@ abstract class IConvexClient {
   /// - [ClientError] for Convex-specific errors
   Future<String> query(String name, Map<String, dynamic> args);
 
+  /// [query], with the snapshot the result comes from. A query error is an
+  /// answer here, with its snapshot, not a thrown error: [TimedAnswer.value]
+  /// or [TimedAnswer.error] is set.
+  ///
+  /// [TimedAnswer.snapshot] orders results of one query from this client:
+  /// the higher is the newer, and equal numbers mean the same result, however
+  /// late either reaches Dart. [TimedAnswer.ts] is that snapshot's server
+  /// time in nanoseconds; two snapshots can share it.
+  Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args);
+
   /// Executes a Convex mutation operation.
   ///
   /// [name] - Name of the mutation function to execute
@@ -44,6 +54,24 @@ abstract class IConvexClient {
   /// - [TimeoutException] if operation exceeds configured timeout
   /// - [ClientError] for Convex-specific errors
   Future<String> mutation({
+    required String name,
+    required Map<String, dynamic> args,
+  });
+
+  /// The client and the connection generation it is on, as each stamp's
+  /// `client` and `connection` number them: the connection goes up each time
+  /// the client starts again on a new socket, so a stamp with a lower number
+  /// comes from an earlier connection.
+  Future<ClientGeneration> generation();
+
+  /// [mutation], with the snapshot the client held when it completed it.
+  /// For a success, a snapshot whose time is at or after the commit: the
+  /// first such transition when the response came first, else the snapshot
+  /// current when the response was handled. That live results from it on
+  /// show the write rests on the sync protocol. When the server function
+  /// fails, the last snapshot applied before the response; that failure is
+  /// an answer here, not a thrown error, but a timeout still throws.
+  Future<TimedAnswer> mutationTimed({
     required String name,
     required Map<String, dynamic> args,
   });
@@ -78,6 +106,15 @@ abstract class IConvexClient {
     required void Function(String, String?) onError,
   });
 
+  /// [subscribe], with each result's snapshot, as [queryTimed] gives it.
+  /// Values and errors both come to [onResult]. Results can reach it out of
+  /// order; their snapshots say which is newer.
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, dynamic> args,
+    required void Function(TimedAnswer) onResult,
+  });
+
   /// Subscribes to [queries] together, so their values always come from one
   /// server state. Separate subscriptions can each answer from a different
   /// one.
@@ -93,6 +130,13 @@ abstract class IConvexClient {
     required List<({String name, Map<String, dynamic> args})> queries,
     required void Function(List<String?>) onUpdate,
     required void Function(String, String?) onError,
+  });
+
+  /// [subscribeGroup], with each update's snapshot, as [queryTimed] gives
+  /// it. A failure comes to [onUpdate] too, as an update with `error` set.
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(TimedGroupUpdate) onUpdate,
   });
 
   // ============================================================================

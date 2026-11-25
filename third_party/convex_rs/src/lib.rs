@@ -55,6 +55,7 @@ pub use client::{
         QuerySetSubscription,
         QuerySubscription,
         SubscribedSet,
+        TimedQuerySubscription,
     },
     ConvexClient,
     ConvexClientBuilder,
@@ -68,9 +69,14 @@ pub mod base_client;
 pub use base_client::{
     AuthTokenFetcher,
     FunctionResult,
+    Generation,
     QueryResults,
     SubscriberId,
+    TimedResult,
 };
-pub use convex_sync_types::AuthenticationToken;
+pub use convex_sync_types::{
+    AuthenticationToken,
+    Timestamp,
+};
 
 mod sync;

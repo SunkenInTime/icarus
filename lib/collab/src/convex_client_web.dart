@@ -61,7 +61,7 @@ extension type _JsReadableUint8Array._(JSObject _) implements JSObject {
   external int operator [](int index);
 }
 
-class ConvexClient implements ConvexClientValueSource {
+class ConvexClient implements StampedValueSource {
   ConvexClient._(this._client, this.config) {
     _setConnectionState(
       _client.connectionState().isWebSocketConnected
@@ -449,6 +449,43 @@ class ConvexClient implements ConvexClientValueSource {
       data: data,
     );
   }
+
+  static Never _notOnWeb(String call) =>
+      throw UnsupportedError('$call is not available on web yet.');
+
+  @override
+  Future<StampedOutcome<Object?>> queryStamped(
+    String name,
+    Map<String, Object?> args,
+  ) =>
+      _notOnWeb('queryStamped');
+
+  @override
+  Future<StampedOutcome<Object?>> mutationStamped({
+    required String name,
+    required Map<String, Object?> args,
+  }) =>
+      _notOnWeb('mutationStamped');
+
+  @override
+  Future<SubscriptionHandle> subscribeStamped({
+    required String name,
+    required Map<String, Object?> args,
+    required void Function(StampedOutcome<Object?> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
+  }) =>
+      _notOnWeb('subscribeStamped');
+
+  @override
+  Future<SubscriptionHandle> subscribeValuesStamped({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(StampedOutcome<List<Object?>> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
+  }) =>
+      _notOnWeb('subscribeValuesStamped');
+
+  @override
+  Future<({int client, int connection})> generation() => _notOnWeb('generation');
 }
 
 JSAny? _toJsConvex(Object? value) {

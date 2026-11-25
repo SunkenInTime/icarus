@@ -128,6 +128,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  FutureOr<void> Function(TimedAnswer)
+  dco_decode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(
+    dynamic raw,
+  );
+
+  @protected
+  FutureOr<void> Function(TimedGroupUpdate)
+  dco_decode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(
+    dynamic raw,
+  );
+
+  @protected
   FutureOr<void> Function(WebSocketConnectionState)
   dco_decode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     dynamic raw,
@@ -179,13 +191,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  QueryFailure dco_decode_box_autoadd_query_failure(dynamic raw);
+
+  @protected
   ClientError dco_decode_client_error(dynamic raw);
+
+  @protected
+  ClientGeneration dco_decode_client_generation(dynamic raw);
 
   @protected
   GroupQuery dco_decode_group_query(dynamic raw);
 
   @protected
   int dco_decode_i_32(dynamic raw);
+
+  @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
 
   @protected
   PlatformInt64 dco_decode_isize(dynamic raw);
@@ -206,7 +230,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  QueryFailure? dco_decode_opt_box_autoadd_query_failure(dynamic raw);
+
+  @protected
+  QueryFailure dco_decode_query_failure(dynamic raw);
+
+  @protected
   (String, String) dco_decode_record_string_string(dynamic raw);
+
+  @protected
+  TimedAnswer dco_decode_timed_answer(dynamic raw);
+
+  @protected
+  TimedGroupUpdate dco_decode_timed_group_update(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -328,13 +367,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  QueryFailure sse_decode_box_autoadd_query_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ClientError sse_decode_client_error(SseDeserializer deserializer);
+
+  @protected
+  ClientGeneration sse_decode_client_generation(SseDeserializer deserializer);
 
   @protected
   GroupQuery sse_decode_group_query(SseDeserializer deserializer);
 
   @protected
   int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
 
   @protected
   PlatformInt64 sse_decode_isize(SseDeserializer deserializer);
@@ -357,9 +410,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  QueryFailure? sse_decode_opt_box_autoadd_query_failure(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  QueryFailure sse_decode_query_failure(SseDeserializer deserializer);
+
+  @protected
   (String, String) sse_decode_record_string_string(
     SseDeserializer deserializer,
   );
+
+  @protected
+  TimedAnswer sse_decode_timed_answer(SseDeserializer deserializer);
+
+  @protected
+  TimedGroupUpdate sse_decode_timed_group_update(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -482,6 +552,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(
+    FutureOr<void> Function(TimedAnswer) self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(
+    FutureOr<void> Function(TimedGroupUpdate) self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void
   sse_encode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     FutureOr<void> Function(WebSocketConnectionState) self,
@@ -539,13 +621,34 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_query_failure(
+    QueryFailure self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_client_error(ClientError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_client_generation(
+    ClientGeneration self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_group_query(GroupQuery self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
 
   @protected
   void sse_encode_isize(PlatformInt64 self, SseSerializer serializer);
@@ -575,8 +678,32 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_query_failure(
+    QueryFailure? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_query_failure(QueryFailure self, SseSerializer serializer);
+
+  @protected
   void sse_encode_record_string_string(
     (String, String) self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_timed_answer(TimedAnswer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_timed_group_update(
+    TimedGroupUpdate self,
     SseSerializer serializer,
   );
 

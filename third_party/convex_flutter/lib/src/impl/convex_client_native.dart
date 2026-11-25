@@ -50,6 +50,11 @@ class NativeConvexClient implements IConvexClient {
   /// Private constructor
   NativeConvexClient._(this._rustClient, this.config);
 
+  /// A client over [rustClient] that has not connected, for tests.
+  @visibleForTesting
+  NativeConvexClient.over(MobileConvexClient rustClient, ConvexConfig config)
+    : this._(rustClient, config);
+
   /// Factory method to create and initialize a native client.
   ///
   /// This handles:
@@ -131,6 +136,13 @@ class NativeConvexClient implements IConvexClient {
   }
 
   @override
+  Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args) async {
+    return await _rustClient
+        .queryTimed(name: name, args: buildArgs(args))
+        .timeout(config.operationTimeout);
+  }
+
+  @override
   Future<String> mutation({
     required String name,
     required Map<String, dynamic> args,
@@ -138,6 +150,20 @@ class NativeConvexClient implements IConvexClient {
     final formattedArgs = buildArgs(args);
     return await _rustClient
         .mutation(name: name, args: formattedArgs)
+        .timeout(config.operationTimeout);
+  }
+
+  @override
+  Future<ClientGeneration> generation() =>
+      _rustClient.generation().timeout(config.operationTimeout);
+
+  @override
+  Future<TimedAnswer> mutationTimed({
+    required String name,
+    required Map<String, dynamic> args,
+  }) async {
+    return await _rustClient
+        .mutationTimed(name: name, args: buildArgs(args))
         .timeout(config.operationTimeout);
   }
 
@@ -165,6 +191,33 @@ class NativeConvexClient implements IConvexClient {
       args: formattedArgs,
       onUpdate: (value) => onUpdate(value),
       onError: (message, value) => onError(message, value),
+    );
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, dynamic> args,
+    required void Function(TimedAnswer) onResult,
+  }) async {
+    return await _rustClient.subscribeTimed(
+      name: name,
+      args: buildArgs(args),
+      onResult: (answer) => onResult(answer),
+    );
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(TimedGroupUpdate) onUpdate,
+  }) async {
+    return await _rustClient.subscribeGroupTimed(
+      queries: [
+        for (final query in queries)
+          GroupQuery(name: query.name, args: buildArgs(query.args)),
+      ],
+      onUpdate: (update) => onUpdate(update),
     );
   }
 

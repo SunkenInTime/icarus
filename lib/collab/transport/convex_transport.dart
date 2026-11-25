@@ -133,6 +133,70 @@ final class ConvexNormalizationError implements Exception {
   String toString() => 'ConvexNormalizationError($path, $cause)';
 }
 
+final class ResultStamp {
+  const ResultStamp({
+    required this.client,
+    required this.connection,
+    required this.snapshot,
+    this.serverTime,
+  });
+
+  final int client;
+  final int connection;
+  final int snapshot;
+  final int? serverTime;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ResultStamp &&
+      other.client == client &&
+      other.connection == connection &&
+      other.snapshot == snapshot &&
+      other.serverTime == serverTime;
+
+  @override
+  int get hashCode => Object.hash(client, connection, snapshot, serverTime);
+
+  @override
+  String toString() =>
+      'client $client, connection $connection, snapshot $snapshot';
+}
+
+sealed class Stamped<T> {
+  const Stamped(this.stamp);
+
+  final ResultStamp stamp;
+}
+
+final class StampedValue<T> extends Stamped<T> {
+  const StampedValue(this.value, super.stamp);
+
+  final T value;
+}
+
+final class StampedError<T> extends Stamped<T> {
+  const StampedError(this.error, super.stamp);
+
+  final ConvexTransportError error;
+}
+
+abstract interface class StampedConvexTransport implements ConvexTransport {
+  Future<Stamped<ConvexValue>> queryStamped(String name, ConvexObject args);
+
+  Future<Stamped<ConvexValue>> mutationStamped(String name, ConvexObject args);
+
+  Stream<Stamped<ConvexValue>> subscribeStamped(
+    String name,
+    ConvexObject args,
+  );
+
+  Stream<Stamped<List<ConvexValue>>> subscribeTogetherStamped(
+    List<(String name, ConvexObject args)> queries,
+  );
+
+  Future<({int client, int connection})> generation();
+}
+
 abstract interface class ConvexTransport {
   Future<ConvexValue> query(String name, ConvexObject args);
 

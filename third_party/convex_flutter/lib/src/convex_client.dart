@@ -3,7 +3,13 @@ import 'dart:async';
 import 'package:convex_flutter/src/impl/convex_client_interface.dart';
 import 'package:convex_flutter/src/impl/convex_client_factory.dart';
 import 'package:convex_flutter/src/rust/lib.dart'
-    show WebSocketConnectionState, SubscriptionHandle, AuthHandle;
+    show
+        WebSocketConnectionState,
+        SubscriptionHandle,
+        AuthHandle,
+        TimedAnswer,
+        TimedGroupUpdate,
+        ClientGeneration;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -165,6 +171,18 @@ class ConvexClient {
   Future<String> query(String name, Map<String, dynamic> args) =>
       _impl.query(name, args);
 
+  /// [query], with the snapshot the result comes from. A query error is an
+  /// answer here, with its snapshot, not a thrown error: [TimedAnswer.value]
+  /// or [TimedAnswer.error] is set.
+  ///
+  /// [TimedAnswer.snapshot] orders results of one query from this client:
+  /// the higher is the newer, and equal numbers mean the same result, however
+  /// late either reaches Dart. [TimedAnswer.ts] is that snapshot's server
+  /// time in nanoseconds; two snapshots can share it.
+  /// Native only.
+  Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args) =>
+      _impl.queryTimed(name, args);
+
   /// Executes a Convex mutation operation with timeout.
   ///
   /// [name] - Name of the mutation function to execute
@@ -176,6 +194,24 @@ class ConvexClient {
     required String name,
     required Map<String, dynamic> args,
   }) => _impl.mutation(name: name, args: args);
+
+  /// The client and the connection generation it is on, as each stamp's
+  /// `client` and `connection` number them: the connection goes up each time
+  /// the client starts again on a new socket, so a stamp with a lower number
+  /// comes from an earlier connection. Native only.
+  Future<ClientGeneration> generation() => _impl.generation();
+
+  /// [mutation], with the snapshot the client held when it completed it.
+  /// For a success, a snapshot whose time is at or after the commit: the
+  /// first such transition when the response came first, else the snapshot
+  /// current when the response was handled. That live results from it on
+  /// show the write rests on the sync protocol. When the server function
+  /// fails, the last snapshot applied before the response; that failure is
+  /// an answer here, not a thrown error, but a timeout still throws. Native only.
+  Future<TimedAnswer> mutationTimed({
+    required String name,
+    required Map<String, dynamic> args,
+  }) => _impl.mutationTimed(name: name, args: args);
 
   /// Executes a Convex action operation with timeout.
   ///
@@ -209,6 +245,15 @@ class ConvexClient {
     onError: onError,
   );
 
+  /// [subscribe], with each result's snapshot, as [queryTimed] gives it.
+  /// Values and errors both come to [onResult]. Results can reach it out of
+  /// order; their snapshots say which is newer. Native only.
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, dynamic> args,
+    required void Function(TimedAnswer) onResult,
+  }) => _impl.subscribeTimed(name: name, args: args, onResult: onResult);
+
   /// Subscribes to [queries] together, so their values always come from one
   /// server state. Separate subscriptions can each answer from a different
   /// one.
@@ -229,6 +274,13 @@ class ConvexClient {
     onUpdate: onUpdate,
     onError: onError,
   );
+
+  /// [subscribeGroup], with each update's snapshot, as [queryTimed] gives
+  /// it. A failure comes to [onUpdate] too, as an update with `error` set. Native only.
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(TimedGroupUpdate) onUpdate,
+  }) => _impl.subscribeGroupTimed(queries: queries, onUpdate: onUpdate);
 
   // ============================================================================
   // Authentication API

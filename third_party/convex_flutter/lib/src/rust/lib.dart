@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `parse_json_args`, `report_auth`
+// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe_group`, `internal_subscribe`, `new`, `new`, `of`, `of`, `parse_json_args`, `report_auth`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `GroupStep`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
@@ -50,8 +50,22 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required Map<String, String> args,
   });
 
+  /// The client and the connection generation it is on, as each stamp's
+  /// `client` and `connection` number them (see `convex::Generation`).
+  /// After a reconnect it is the generation the client started again on,
+  /// never an earlier one.
+  Future<ClientGeneration> generation();
+
   /// Executes a mutation on the Convex backend.
   Future<String> mutation({
+    required String name,
+    required Map<String, String> args,
+  });
+
+  /// [mutation], with the snapshot the client held when it completed the
+  /// mutation (see [TimedAnswer]). A server function failure is an answer
+  /// here, with its snapshot; a timeout or a bridge error still throws.
+  Future<TimedAnswer> mutationTimed({
     required String name,
     required Map<String, String> args,
   });
@@ -90,6 +104,13 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
 
   /// Executes a query on the Convex backend.
   Future<String> query({
+    required String name,
+    required Map<String, String> args,
+  });
+
+  /// [query], with the snapshot the result comes from. A query error is an
+  /// answer here, with its snapshot, not a thrown error.
+  Future<TimedAnswer> queryTimed({
     required String name,
     required Map<String, String> args,
   });
@@ -140,6 +161,24 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required FutureOr<void> Function(List<String?>) onUpdate,
     required FutureOr<void> Function(String, String?) onError,
   });
+
+  /// [subscribe_group], with each update's snapshot. A failure comes to
+  /// [on_update] too, as an update with `error` set. Updates arrive in
+  /// order, each after the last one's callback returned.
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(TimedGroupUpdate) onUpdate,
+  });
+
+  /// [subscribe], with each result's snapshot, values and errors alike.
+  /// Each call to [on_result] is posted from its own task, as [subscribe]
+  /// posts its updates, so results can reach Dart out of order; their
+  /// snapshots say which is newer.
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, String> args,
+    required FutureOr<void> Function(TimedAnswer) onResult,
+  });
 }
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SubscriptionHandle>>
@@ -171,6 +210,26 @@ sealed class ClientError with _$ClientError implements FrbException {
       ClientError_ServerError;
 }
 
+/// The client and the connection generation it is on, as a stamp's `client`
+/// and `connection` number them (see [MobileConvexClient::generation]).
+class ClientGeneration {
+  final PlatformInt64 client;
+  final PlatformInt64 connection;
+
+  const ClientGeneration({required this.client, required this.connection});
+
+  @override
+  int get hashCode => client.hashCode ^ connection.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ClientGeneration &&
+          runtimeType == other.runtimeType &&
+          client == other.client &&
+          connection == other.connection;
+}
+
 /// One query of a group subscribed together (see
 /// [MobileConvexClient::subscribe_group]).
 class GroupQuery {
@@ -189,6 +248,129 @@ class GroupQuery {
           runtimeType == other.runtimeType &&
           name == other.name &&
           args == other.args;
+}
+
+/// A query's error: the message, and a `ConvexError`'s data as JSON.
+class QueryFailure {
+  final String message;
+  final String? data;
+
+  const QueryFailure({required this.message, this.data});
+
+  @override
+  int get hashCode => message.hashCode ^ data.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is QueryFailure &&
+          runtimeType == other.runtimeType &&
+          message == other.message &&
+          data == other.data;
+}
+
+/// A query's result with the snapshot it comes from: a value as JSON, or an
+/// error, as `query` and `subscribe` would give it.
+///
+/// `snapshot` orders results of one query from this client: the higher is the
+/// newer, and equal numbers mean the same result. It is the number of
+/// transitions the client had applied when the result was taken (see
+/// `convex::QueryResults::snapshot`), so it never goes backwards, a reconnect
+/// included, and restarts only with the client. `ts` is the server time of
+/// that snapshot in nanoseconds: an unchanged value carries the time of the
+/// snapshot it was taken from, and two snapshots can share a time. It is null
+/// only for an answer given before the client applied any transition (a
+/// mutation failure, an empty group). `connection` is the connection
+/// generation the snapshot was taken on (see `convex::QueryResults::connection`:
+/// a higher number is a later connection, and numbers can be skipped), and
+/// `client` the client it comes from: snapshots of different clients do not
+/// compare.
+///
+/// A successful mutation's answer carries a snapshot whose time is at or after
+/// its commit: the first such transition if the response came first, else the
+/// snapshot current when the response was handled. A mutation whose server
+/// function failed carries the last snapshot applied before its response.
+class TimedAnswer {
+  final String? value;
+  final QueryFailure? error;
+  final PlatformInt64? ts;
+  final PlatformInt64 snapshot;
+  final PlatformInt64 connection;
+  final PlatformInt64 client;
+
+  const TimedAnswer({
+    this.value,
+    this.error,
+    this.ts,
+    required this.snapshot,
+    required this.connection,
+    required this.client,
+  });
+
+  @override
+  int get hashCode =>
+      value.hashCode ^
+      error.hashCode ^
+      ts.hashCode ^
+      snapshot.hashCode ^
+      connection.hashCode ^
+      client.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TimedAnswer &&
+          runtimeType == other.runtimeType &&
+          value == other.value &&
+          error == other.error &&
+          ts == other.ts &&
+          snapshot == other.snapshot &&
+          connection == other.connection &&
+          client == other.client;
+}
+
+/// One update of a group of queries subscribed together (see
+/// `subscribe_group`), with the snapshot all of its values come from, as in
+/// [TimedAnswer]. `values` holds each query's JSON in the order given, or
+/// None where it is the same as in the last update; `error` is set instead
+/// when any query fails.
+class TimedGroupUpdate {
+  final List<String?> values;
+  final QueryFailure? error;
+  final PlatformInt64? ts;
+  final PlatformInt64 snapshot;
+  final PlatformInt64 connection;
+  final PlatformInt64 client;
+
+  const TimedGroupUpdate({
+    required this.values,
+    this.error,
+    this.ts,
+    required this.snapshot,
+    required this.connection,
+    required this.client,
+  });
+
+  @override
+  int get hashCode =>
+      values.hashCode ^
+      error.hashCode ^
+      ts.hashCode ^
+      snapshot.hashCode ^
+      connection.hashCode ^
+      client.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TimedGroupUpdate &&
+          runtimeType == other.runtimeType &&
+          values == other.values &&
+          error == other.error &&
+          ts == other.ts &&
+          snapshot == other.snapshot &&
+          connection == other.connection &&
+          client == other.client;
 }
 
 /// WebSocket connection state exposed to Flutter/Dart.
