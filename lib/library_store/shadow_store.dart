@@ -135,10 +135,19 @@ StoreMirror storeMirror() => StoreMirror(
       betweenAnimations: betweenAnimations,
     );
 
-Future<void> betweenAnimations() => Future.any([
-      SchedulerBinding.instance.scheduleTask<void>(() {}, Priority.idle),
+Future<void> betweenAnimations() async {
+  final scheduler = SchedulerBinding.instance;
+  await Future.any([
+    scheduler.scheduleTask<void>(() {}, Priority.idle),
+    Future<void>.delayed(const Duration(milliseconds: 500)),
+  ]);
+  if (scheduler.hasScheduledFrame) {
+    await Future.any([
+      scheduler.endOfFrame,
       Future<void>.delayed(const Duration(milliseconds: 500)),
     ]);
+  }
+}
 
 final shadowProvider = NotifierProvider<ShadowNotifier, ShadowState>(
   ShadowNotifier.new,

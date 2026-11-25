@@ -372,31 +372,38 @@ final class ReadBackBudget {
   final num addedPerSaveMs;
 }
 
+int _items(StrategyData strategy) => strategy.pages.fold(
+      0,
+      (sum, page) =>
+          sum +
+          page.agentData.length +
+          page.abilityData.length +
+          page.drawingData.length +
+          page.textData.length +
+          page.imageData.length +
+          page.utilityData.length +
+          page.lineUpLinks.length,
+    );
+
+StrategyData _picked(String pick) {
+  final strategies = [...const LocalLibrary().storedStrategies]
+    ..sort((a, b) => _items(a).compareTo(_items(b)));
+  if (strategies.isEmpty) throw StateError('no strategy to measure');
+  return switch (pick) {
+    'largest' => strategies.last,
+    'median' => strategies[strategies.length ~/ 2],
+    _ => strategies.firstWhere((strategy) => strategy.name == pick),
+  };
+}
+
+String _ms(int micros) => (micros / 1000).toStringAsFixed(2);
+
 Future<List<String>> readBackCost(
   String pick,
   int runs, {
   ReadBackBudget? budget,
 }) async {
-  int items(StrategyData strategy) => strategy.pages.fold(
-        0,
-        (sum, page) =>
-            sum +
-            page.agentData.length +
-            page.abilityData.length +
-            page.drawingData.length +
-            page.textData.length +
-            page.imageData.length +
-            page.utilityData.length +
-            page.lineUpLinks.length,
-      );
-  final strategies = [...const LocalLibrary().storedStrategies]
-    ..sort((a, b) => items(a).compareTo(items(b)));
-  if (strategies.isEmpty) throw StateError('no strategy to measure');
-  final target = switch (pick) {
-    'largest' => strategies.last,
-    'median' => strategies[strategies.length ~/ 2],
-    _ => strategies.firstWhere((strategy) => strategy.name == pick),
-  };
+  final target = _picked(pick);
   final held = strategyAsHiveHoldsIt(target);
   List<int> timed(void Function() run) {
     for (var warm = 0; warm < 5; warm++) {
@@ -412,64 +419,73 @@ Future<List<String>> readBackCost(
     ]..sort();
   }
 
-  String ms(int micros) => (micros / 1000).toStringAsFixed(2);
   final rows = timed(() => strategyToRows(held));
-  final checked = timed(() => StrategyImages().of(held));
   final edited = _withFirstPageRenamed(held);
-  final images = StrategyImages()..of(held);
-  var turn = 0;
-  final afterOnePage =
-      timed(() => images.of(turn++ % 2 == 0 ? edited : held));
-  Future<int> longestTask(StrategyImages images, StrategyData strategy) async {
+  Future<({int longest, int total})> stepped(
+    StrategyImages images,
+    StrategyData strategy,
+  ) async {
     var longest = 0;
+    var total = 0;
     final clock = Stopwatch()..start();
+    void endStep() {
+      final step = clock.elapsedMicroseconds;
+      total += step;
+      if (step > longest) longest = step;
+    }
+
     await images.between(strategy, () async {
-      if (clock.elapsedMicroseconds > longest) {
-        longest = clock.elapsedMicroseconds;
-      }
+      endStep();
       await Future<void>.delayed(Duration.zero);
       clock
         ..reset()
         ..start();
     });
-    return clock.elapsedMicroseconds > longest
-        ? clock.elapsedMicroseconds
-        : longest;
+    endStep();
+    return (longest: longest, total: total);
   }
 
-  final coldTasks = [
+  for (var warm = 0; warm < 5; warm++) {
+    await stepped(StrategyImages(), held);
+  }
+  final cold = [
     for (var turn = 0; turn < runs; turn++)
-      await longestTask(StrategyImages(), held),
-  ]..sort();
+      await stepped(StrategyImages(), held),
+  ];
   final warmImages = StrategyImages();
-  await longestTask(warmImages, held);
-  final warmTasks = [
+  await stepped(warmImages, held);
+  final warm = [
     for (var turn = 0; turn < runs; turn++)
-      await longestTask(warmImages, turn.isEven ? edited : held),
-  ]..sort();
-  final readBack = StrategyImages().of(held).readBack;
-  final line = 'READBACK $pick (${target.pages.length} pages, ${items(target)} '
-      'items, ${readBack is ReadsBackEqual ? 'reads back equal' : 'reads back differently'}), '
-      '$runs runs: rows median ${ms(rows[runs ~/ 2])} ms, worst '
-      '${ms(rows.last)} ms; rows and read-back median '
-      '${ms(checked[runs ~/ 2])} ms, worst ${ms(checked.last)} ms; added '
-      'median ${ms(checked[runs ~/ 2] - rows[runs ~/ 2])} ms; after one page '
-      'changed median ${ms(afterOnePage[runs ~/ 2])} ms, worst '
-      '${ms(afterOnePage.last)} ms, added median '
-      '${ms(afterOnePage[runs ~/ 2] - rows[runs ~/ 2])} ms; as the mirror '
-      'runs it, with a break between frames after the rows and after each '
-      'page, the longest single task: cold worst ${ms(coldTasks.last)} ms, '
-      'after one page changed worst ${ms(warmTasks.last)} ms';
+      await stepped(warmImages, turn.isEven ? edited : held),
+  ];
+  int median(List<int> values) => (values.toList()..sort())[values.length ~/ 2];
+  int worst(List<int> values) => values.reduce((a, b) => a > b ? a : b);
+  final coldTotal = median([for (final run in cold) run.total]);
+  final warmTotal = median([for (final run in warm) run.total]);
+  final coldLongest = worst([for (final run in cold) run.longest]);
+  final warmLongest = worst([for (final run in warm) run.longest]);
+  final readBack = switch (StrategyImages().of(held).readBack) {
+    ReadsBackEqual() => 'reads back equal',
+    ReadsBackDifferently() => 'reads back differently',
+  };
+  final line = 'READBACK $pick (${target.pages.length} pages, '
+      '${_items(target)} items, $readBack), $runs runs: rows in one go median '
+      '${_ms(rows[runs ~/ 2])} ms; as the mirror runs it, in steps: total work '
+      'cold median ${_ms(coldTotal)} ms, added '
+      '${_ms(coldTotal - rows[runs ~/ 2])} ms; after one page changed median '
+      '${_ms(warmTotal)} ms, added ${_ms(warmTotal - rows[runs ~/ 2])} ms; the '
+      'longest single step: cold worst ${_ms(coldLongest)} ms, after one page '
+      'changed worst ${_ms(warmLongest)} ms';
   if (budget == null) return [line];
   final measured = [
     (
       'longest step',
-      coldTasks.last > warmTasks.last ? coldTasks.last : warmTasks.last,
+      coldLongest > warmLongest ? coldLongest : warmLongest,
       budget.longestStepMs,
     ),
     (
       'added per save',
-      afterOnePage[runs ~/ 2] - rows[runs ~/ 2],
+      warmTotal - rows[runs ~/ 2],
       budget.addedPerSaveMs,
     ),
   ];
@@ -478,10 +494,10 @@ Future<List<String>> readBackCost(
       (
         over: micros / 1000 > targetMs,
         line: micros / 1000 > targetMs
-            ? 'READBACK $pick over budget: $name ${ms(micros)} ms, target '
+            ? 'READBACK $pick over budget: $name ${_ms(micros)} ms, target '
                 '$targetMs ms, over by '
-                '${ms(micros - (targetMs * 1000).round())} ms'
-            : 'READBACK $pick within budget: $name ${ms(micros)} ms, target '
+                '${_ms(micros - (targetMs * 1000).round())} ms'
+            : 'READBACK $pick within budget: $name ${_ms(micros)} ms, target '
                 '$targetMs ms',
       ),
   ];
@@ -490,6 +506,81 @@ Future<List<String>> readBackCost(
     throw StoreStepFailed(lines);
   }
   return lines;
+}
+
+Future<List<String>> readBackFrames(String pick) async {
+  final frames = await _framesAcrossSteps(
+    StrategyImages(),
+    strategyAsHiveHoldsIt(_picked(pick)),
+  );
+  final line = 'READBACK $pick frames, with a frame asked for every frame '
+      'and betweenAnimations between steps (an idle-priority task, then the '
+      'scheduled frame): ${frames.steps} steps, ${frames.frames} frames, '
+      '${frames.breaksWithoutFrame} breaks with no frame in them, the longest '
+      'a frame started after its vsync ${_ms(frames.worstVsyncWaitMicros)} '
+      'ms, the check took ${_ms(frames.tookMicros)} ms';
+  if (frames.breaksWithoutFrame > 0) throw StoreStepFailed([line]);
+  return [line];
+}
+
+Future<
+    ({
+      int steps,
+      int breaksWithoutFrame,
+      int frames,
+      int worstVsyncWaitMicros,
+      int tookMicros,
+    })> _framesAcrossSteps(
+  StrategyImages images,
+  StrategyData strategy,
+) async {
+  final scheduler = SchedulerBinding.instance;
+  var frames = 0;
+  var asking = true;
+  void askAgain(Duration _) {
+    frames += 1;
+    if (!asking) return;
+    scheduler
+      ..addPostFrameCallback(askAgain)
+      ..scheduleFrame();
+  }
+
+  var worstVsyncWait = 0;
+  void timings(List<FrameTiming> timings) {
+    for (final timing in timings) {
+      final wait = timing.vsyncOverhead.inMicroseconds;
+      if (wait > worstVsyncWait) worstVsyncWait = wait;
+    }
+  }
+
+  await scheduler.endOfFrame;
+  scheduler
+    ..addTimingsCallback(timings)
+    ..addPostFrameCallback(askAgain)
+    ..scheduleFrame();
+  await scheduler.endOfFrame;
+  var steps = 1;
+  var breaksWithoutFrame = 0;
+  final framesBefore = frames;
+  final clock = Stopwatch()..start();
+  await images.between(strategy, () async {
+    final before = frames;
+    await betweenAnimations();
+    steps += 1;
+    if (frames == before) breaksWithoutFrame += 1;
+  });
+  final took = clock.elapsedMicroseconds;
+  final framesDuring = frames - framesBefore;
+  asking = false;
+  await Future<void>.delayed(const Duration(seconds: 2));
+  scheduler.removeTimingsCallback(timings);
+  return (
+    steps: steps,
+    breaksWithoutFrame: breaksWithoutFrame,
+    frames: framesDuring,
+    worstVsyncWaitMicros: worstVsyncWait,
+    tookMicros: took,
+  );
 }
 
 String holdStore(ProviderContainer c) =>
@@ -563,8 +654,7 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
         differing: differing,
         recordedDifferent: recorded,
         readBackNow: (id) => StrategyImages()
-            .of(strategyAsHiveHoldsIt(
-                const LocalLibrary().storedStrategy(id)!))
+            .of(strategyAsHiveHoldsIt(const LocalLibrary().storedStrategy(id)!))
             .readBack,
       );
       final restExact = checked.foreignNames.isEmpty &&
