@@ -176,6 +176,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
+import 'package:icarus/dev/drive/drive_load_copy_cost.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/clickable.dart';
 import 'package:icarus/interactive_map.dart';
@@ -2494,6 +2495,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _cloudOpenTime(step);
     case 'openFirstFrame':
       await _openFirstFrame(step);
+    case 'loadCopyCost':
+      (await loadCopyCost(value as String, (step['runs'] ?? 51) as int))
+          .forEach(_log);
     case 'readBackCost':
       final budget = step['budget'] as Map<String, dynamic>?;
       (await _storeLines(readBackCost(
