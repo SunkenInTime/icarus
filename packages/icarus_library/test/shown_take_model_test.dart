@@ -95,8 +95,8 @@ Map<String, int> runSeed(int seed, int steps) {
   for (var step = 0; step < steps; step++) {
     if (server.random.nextBool()) server.change();
     final result = server.read();
-    cached = cached.take(result.base, started: null);
-    scratch = fromScratch(scratch).take(result.base, started: null);
+    cached = cached.taken(result.base, started: null).shown;
+    scratch = fromScratch(scratch).taken(result.base, started: null).shown;
     if (cached != scratch) {
       fail(
         'seed $seed step $step: taking ${result.base} with this '

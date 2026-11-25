@@ -608,7 +608,7 @@ Starts as: needs user: page delete held (pageChanged).
 | user: delete anyway | x: waiting |
 | user: discard | x: gone; removes x (RemovedByUser(discarded, notLanded)) |
 | result: header as it is | unchanged |
-| result: page-a with the item at revision 2 | x: waiting |
+| result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | page-b not read this session |
 | result: strategy gone | standing deletedOnServer |

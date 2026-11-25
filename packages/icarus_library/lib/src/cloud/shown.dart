@@ -307,6 +307,135 @@ int? namedLifeOf(ReadState state) => switch (state) {
 
 bool isDebt(ReadState state) => state is ReadOwed || state is ReadRefused;
 
+bool replaces(ShownRow? held, Row incoming) =>
+    held == null || !_outranks(held.version, versionOfRow(incoming));
+
+enum KeptBecause { heldIsNewer, leftByANewerResult }
+
+sealed class RowDecision {
+  const RowDecision();
+}
+
+final class RowTaken extends RowDecision {
+  const RowTaken(this.row);
+
+  final Row row;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RowTaken && other.row.key == row.key && other.row == row;
+
+  @override
+  int get hashCode => Object.hash(RowTaken, row.key);
+
+  @override
+  String toString() => 'taken ${row.key}';
+}
+
+final class RowKept extends RowDecision {
+  const RowKept(this.row, this.because);
+
+  final Row row;
+  final KeptBecause because;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RowKept && other.row.key == row.key && other.because == because;
+
+  @override
+  int get hashCode => Object.hash(RowKept, row.key, because);
+
+  @override
+  String toString() => 'kept ${row.key}: ${because.name}';
+}
+
+final class ItemLeft extends RowDecision {
+  const ItemLeft(this.target, {required this.page});
+
+  final Target target;
+  final String page;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ItemLeft && other.target == target && other.page == page;
+
+  @override
+  int get hashCode => Object.hash(ItemLeft, target, page);
+
+  @override
+  String toString() => '$target left page $page';
+}
+
+final class PageLeft extends RowDecision {
+  const PageLeft(this.page);
+
+  final String page;
+
+  @override
+  bool operator ==(Object other) => other is PageLeft && other.page == page;
+
+  @override
+  int get hashCode => Object.hash(PageLeft, page);
+
+  @override
+  String toString() => 'page $page left';
+}
+
+final class SettingsLeft extends RowDecision {
+  const SettingsLeft(this.page);
+
+  final String page;
+
+  @override
+  bool operator ==(Object other) => other is SettingsLeft && other.page == page;
+
+  @override
+  int get hashCode => Object.hash(SettingsLeft, page);
+
+  @override
+  String toString() => 'settings of $page left';
+}
+
+final class PageContentTaken extends RowDecision {
+  PageContentTaken(this.page, Iterable<Row> carried)
+    : carried = List.unmodifiable(carried);
+
+  final String page;
+  final List<Row> carried;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PageContentTaken &&
+      other.page == page &&
+      const SetEquality<RowKey>().equals(
+        {for (final row in other.carried) row.key},
+        {for (final row in carried) row.key},
+      );
+
+  @override
+  int get hashCode => Object.hash(PageContentTaken, page, carried.length);
+
+  @override
+  String toString() => 'content of $page taken';
+}
+
+final class Taken {
+  Taken(this.shown, Iterable<RowDecision> decisions)
+    : decisions = List.unmodifiable(decisions);
+
+  final Shown shown;
+  final List<RowDecision> decisions;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Taken &&
+      other.shown == shown &&
+      const ListEquality<RowDecision>().equals(other.decisions, decisions);
+
+  @override
+  int get hashCode => Object.hash(shown, decisions.length);
+}
+
 final class Shown {
   Shown({
     required this.strategy,
@@ -314,6 +443,9 @@ final class Shown {
     required Map<String, ShownRow> settings,
     required Map<String, Map<SeenPart, String>> content,
     required Map<Target, ShownRow> rows,
+    Map<String, ShownRow> trashed = const {},
+    Map<Target, ReadStart> tombstones = const {},
+    Map<Target, ReadStart> placedAt = const {},
     this.list = const NotReadThisSession(),
     Map<String, ReadState> pageReads = const {},
     Set<String> goneThisSession = const {},
@@ -331,6 +463,9 @@ final class Shown {
        goneThisSession = Set.unmodifiable(goneThisSession),
        highest = Map.unmodifiable(highest),
        pages = Map.unmodifiable(pages),
+       trashed = Map.unmodifiable(trashed),
+       tombstones = Map.unmodifiable(tombstones),
+       placedAt = Map.unmodifiable(placedAt),
        settings = Map.unmodifiable(settings),
        content = Map.unmodifiable(content),
        rows = Map.unmodifiable(rows);
@@ -360,6 +495,10 @@ final class Shown {
       pages: {
         for (final page in rows.pages)
           if (page is! TrashedPage) page.publicId: _rowOf(page, page),
+      },
+      trashed: {
+        for (final page in rows.pages)
+          if (page is TrashedPage) page.publicId: _rowOf(page, page),
       },
       settings: {
         for (final row in rows.settings)
@@ -417,6 +556,9 @@ final class Shown {
   Shown fencedAt(ReadStart fence, {required Shown after}) => Shown(
     strategy: strategy,
     pages: pages,
+    trashed: trashed,
+    tombstones: tombstones,
+    placedAt: placedAt,
     settings: settings,
     content: content,
     rows: rows,
@@ -448,6 +590,9 @@ final class Shown {
   final Set<String> goneThisSession;
   final Map<Target, Version> highest;
   final Map<String, ShownRow> pages;
+  final Map<String, ShownRow> trashed;
+  final Map<Target, ReadStart> tombstones;
+  final Map<Target, ReadStart> placedAt;
   final Map<String, ShownRow> settings;
   final Map<String, Map<SeenPart, String>> content;
   final Map<Target, ShownRow> rows;
@@ -488,6 +633,9 @@ final class Shown {
     Set<String>? goneThisSession,
     Map<Target, Version>? highest,
     Map<String, ShownRow>? pages,
+    Map<String, ShownRow>? trashed,
+    Map<Target, ReadStart>? tombstones,
+    Map<Target, ReadStart>? placedAt,
     Map<String, ShownRow>? settings,
     Map<String, Map<SeenPart, String>>? content,
     Map<Target, ShownRow>? rows,
@@ -504,112 +652,155 @@ final class Shown {
     highest: highest ?? this.highest,
     strategy: strategy,
     pages: pages ?? this.pages,
+    trashed: trashed ?? this.trashed,
+    tombstones: tombstones ?? this.tombstones,
+    placedAt: placedAt ?? this.placedAt,
     settings: settings ?? this.settings,
     content: content ?? this.content,
     rows: rows ?? this.rows,
   );
 
-  Shown take(
-    ArrivedBase result, {
-    required ReadStart? started,
-  }) => switch (result) {
-    HeaderRead(:final strategy, :final pages, :final settings) => Shown(
-      fence: fence,
-      listTaken: started ?? listTaken,
-      pagesTaken: {
-        for (final MapEntry(:key, :value) in pagesTaken.entries)
-          if (pages.any((page) => page.publicId == key)) key: value,
-      },
-      fresh: fresh.afterList([
-        for (final page in pages)
-          if (page is! TrashedPage) page.publicId,
-      ]),
-      list: switch ((list, createdAtOf(strategy))) {
-        (final owed, _) when !paidBy(owed, started) => owed,
-        (
-          ReadOwed(namedLife: final named?) ||
-              ReadRefused(namedLife: final named?),
-          final listed,
-        )
-            when listed == null || listed < named =>
-          list,
-        (
-          ReadOwed(unlessLife: final unlessLife?, namedLife: null) ||
-              ReadRefused(unlessLife: final unlessLife?, namedLife: null),
-          final listed,
-        )
-            when listed == null || listed <= unlessLife =>
-          list,
-        _ => const ReadThisSession(),
-      },
-      pageReads: pageReads,
-      goneThisSession: {
-        for (final page in goneThisSession)
-          if (!pages.any((row) => row.publicId == page && row is! TrashedPage))
-            page,
-      },
-      highest: _raised(highest, {
-        const StrategyTarget(): ?versionOfRow(strategy),
-        for (final page in pages)
-          if (page is! TrashedPage)
-            PageTarget(page.publicId): ?versionOfRow(page),
-        for (final row in settings)
-          SettingsTarget(row.pagePublicId): ?versionOfRow(row),
-      }),
-      strategy: _strategyRow(strategy, pages),
-      pages: {
-        for (final page in pages)
-          if (page is! TrashedPage) page.publicId: _rowOf(page, page),
-      },
-      settings: {
-        for (final row in settings)
-          row.pagePublicId: _rowOf(row, row.pagePublicId),
-      },
-      content: {
-        for (final MapEntry(:key, :value) in content.entries)
-          if (pages.any((page) => page.publicId == key && page is! TrashedPage))
-            key: value,
-      },
-      rows: {
-        for (final MapEntry(:key, :value) in rows.entries)
-          if (pages.any(
-            (page) => page.publicId == value.page && page is! TrashedPage,
-          ))
-            key: value,
-      },
-    ),
-    PageRead(:final page, :final elements, :final lineupGroups) => _checkedTake(
-      page.publicId,
-      (reuse) => _withPage(
-        page,
-        [...elements, ...lineupGroups],
-        paid: paidBy(pageRead(page.publicId), started),
-        started: started,
-        reuse: reuse,
+  Taken taken(ArrivedBase result, {required ReadStart? started}) =>
+      switch (result) {
+        HeaderRead() => _withList(result, started),
+        PageRead(:final page, :final elements, :final lineupGroups) =>
+          _checkedTake(
+            page.publicId,
+            (reuse) => _withPage(
+              page,
+              [...elements, ...lineupGroups],
+              paid: paidBy(pageRead(page.publicId), started),
+              started: started,
+              reuse: reuse,
+            ),
+          ),
+        PageGone(:final pagePublicId) => Taken(
+          _with(
+            pagesTaken: {...pagesTaken, pagePublicId: ?started},
+            fresh: fresh.afterPage(pagePublicId, gone: true),
+            pageReads: {...pageReads}..remove(pagePublicId),
+            goneThisSession: {...goneThisSession, pagePublicId},
+            pages: {...pages}..remove(pagePublicId),
+            trashed: {...trashed}..remove(pagePublicId),
+            settings: {...settings}..remove(pagePublicId),
+            content: {...content}..remove(pagePublicId),
+            rows: {
+              for (final MapEntry(:key, :value) in rows.entries)
+                if (value.page != pagePublicId) key: value,
+            },
+          ),
+          [PageLeft(pagePublicId)],
+        ),
+        StrategyGone() => Taken(
+          _with(
+            listTaken: started,
+            list: paidBy(list, started) ? const ReadThisSession() : list,
+            pageReads: {
+              for (final MapEntry(:key, :value) in pageReads.entries)
+                if (!isDebt(value) || !paidBy(value, started)) key: value,
+            },
+          ),
+          const [],
+        ),
+      };
+
+  Taken _withList(HeaderRead result, ReadStart? started) {
+    final HeaderRead(strategy: strategyRow, pages: listed, :settings) = result;
+    final listedIds = {for (final page in listed) page.publicId};
+    final decisions = <RowDecision>[
+      for (final page in {...pages.keys, ...trashed.keys})
+        if (!listedIds.contains(page)) PageLeft(page),
+      RowTaken(strategyRow),
+    ];
+    final nextPages = <String, ShownRow>{};
+    final nextTrashed = <String, ShownRow>{};
+    for (final page in listed) {
+      final id = page.publicId;
+      final heldLive = pages[id];
+      final held = heldLive ?? trashed[id];
+      if (replaces(held, page)) {
+        decisions.add(RowTaken(page));
+        (page is TrashedPage ? nextTrashed : nextPages)[id] = _rowOf(
+          page,
+          page,
+        );
+      } else {
+        decisions.add(RowKept(page, KeptBecause.heldIsNewer));
+        (heldLive != null ? nextPages : nextTrashed)[id] = held!;
+      }
+    }
+    final withSettings = {for (final row in settings) row.pagePublicId};
+    decisions.addAll([
+      for (final page in listedIds)
+        if (!withSettings.contains(page)) SettingsLeft(page),
+      for (final row in settings) RowTaken(row),
+    ]);
+    final live = nextPages.keys.toSet();
+    return Taken(
+      Shown(
+        fence: fence,
+        listTaken: started ?? listTaken,
+        pagesTaken: {
+          for (final MapEntry(:key, :value) in pagesTaken.entries)
+            if (listedIds.contains(key)) key: value,
+        },
+        fresh: fresh.afterList(live),
+        list: switch ((list, createdAtOf(strategyRow))) {
+          (final owed, _) when !paidBy(owed, started) => owed,
+          (
+            ReadOwed(namedLife: final named?) ||
+                ReadRefused(namedLife: final named?),
+            final listedLife,
+          )
+              when listedLife == null || listedLife < named =>
+            list,
+          (
+            ReadOwed(unlessLife: final unlessLife?, namedLife: null) ||
+                ReadRefused(unlessLife: final unlessLife?, namedLife: null),
+            final listedLife,
+          )
+              when listedLife == null || listedLife <= unlessLife =>
+            list,
+          _ => const ReadThisSession(),
+        },
+        pageReads: pageReads,
+        goneThisSession: {
+          for (final page in goneThisSession)
+            if (!live.contains(page)) page,
+        },
+        highest: _raised(highest, {
+          const StrategyTarget(): ?versionOfRow(strategyRow),
+          for (final page in listed)
+            if (page is! TrashedPage)
+              PageTarget(page.publicId): ?versionOfRow(page),
+          for (final row in settings)
+            SettingsTarget(row.pagePublicId): ?versionOfRow(row),
+        }),
+        strategy: _strategyRow(strategyRow, listed),
+        pages: nextPages,
+        trashed: nextTrashed,
+        tombstones: tombstones,
+        placedAt: {
+          for (final MapEntry(:key, :value) in placedAt.entries)
+            if (rows[key] case final held? when live.contains(held.page))
+              key: value,
+        },
+        settings: {
+          for (final row in settings)
+            row.pagePublicId: _rowOf(row, row.pagePublicId),
+        },
+        content: {
+          for (final MapEntry(:key, :value) in content.entries)
+            if (live.contains(key)) key: value,
+        },
+        rows: {
+          for (final MapEntry(:key, :value) in rows.entries)
+            if (live.contains(value.page)) key: value,
+        },
       ),
-    ),
-    PageGone(:final pagePublicId) => _with(
-      pagesTaken: {...pagesTaken, pagePublicId: ?started},
-      fresh: fresh.afterPage(pagePublicId, gone: true),
-      pageReads: {...pageReads}..remove(pagePublicId),
-      goneThisSession: {...goneThisSession, pagePublicId},
-      pages: {...pages}..remove(pagePublicId),
-      settings: {...settings}..remove(pagePublicId),
-      content: {...content}..remove(pagePublicId),
-      rows: {
-        for (final MapEntry(:key, :value) in rows.entries)
-          if (value.page != pagePublicId) key: value,
-      },
-    ),
-    StrategyGone() => _with(
-      listTaken: started,
-      list: paidBy(list, started) ? const ReadThisSession() : list,
-      pageReads: {
-        for (final MapEntry(:key, :value) in pageReads.entries)
-          if (!isDebt(value) || !paidBy(value, started)) key: value,
-      },
-    ),
-  };
+      decisions,
+    );
+  }
 
   static Map<Target, Version> _raised(
     Map<Target, Version> highest,
@@ -668,18 +859,19 @@ final class Shown {
     highest: highest,
     strategy: strategy,
     pages: pages,
+    trashed: trashed,
     settings: settings,
     content: content,
     rows: rows,
   );
 
-  static Shown _checkedTake(String page, Shown Function(bool reuse) take) {
+  static Taken _checkedTake(String page, Taken Function(bool reuse) take) {
     final taken = take(shownTakesReuse);
     if (shownTakesChecked && take(false) != taken) throw TakesDiffer(page);
     return taken;
   }
 
-  Shown _withPage(
+  Taken _withPage(
     PageRow pageRow,
     List<Row> found, {
     required bool paid,
@@ -687,59 +879,107 @@ final class Shown {
     required bool reuse,
   }) {
     final page = pageRow.publicId;
-    final next = {
-      for (final MapEntry(:key, :value) in rows.entries)
-        if (value.page != page) key: value,
-    };
+    final heldLive = pages[page];
+    final heldPage = heldLive ?? trashed[page];
+    final pageTaken = replaces(heldPage, pageRow);
+    final decisions = <RowDecision>[
+      pageTaken ? RowTaken(pageRow) : RowKept(pageRow, KeptBecause.heldIsNewer),
+    ];
+    final trashedNow = pageTaken
+        ? pageRow is TrashedPage
+        : heldLive == null && heldPage != null;
+    final next = {...rows};
+    final nextTombstones = {...tombstones};
+    final nextPlaced = {...placedAt};
     final raised = {...highest};
-    final live = <SeenPart, String>{};
+    final carried = <Target>{};
+    final liveNow = <Target, bool>{};
     for (final row in found) {
-      final (target, part) = switch (row) {
-        ElementRow(:final publicId) => (
-          ElementTarget(publicId) as Target,
-          SeenElement(publicId) as SeenPart,
-        ),
-        LineupGroupRow(:final publicId) => (
-          LineupTarget(publicId),
-          SeenLineupGroup(publicId),
-        ),
+      final target = switch (row) {
+        ElementRow(:final publicId) => ElementTarget(publicId) as Target,
+        LineupGroupRow(:final publicId) => LineupTarget(publicId),
         _ => throw StateError('only page content is read with a page'),
       };
-      final shown = switch (rows[target]) {
+      carried.add(target);
+      if ((tombstones[target], started) case (
+        final left?,
+        final at?,
+      ) when at.isBefore(left)) {
+        decisions.add(RowKept(row, KeptBecause.leftByANewerResult));
+        continue;
+      }
+      final held = rows[target];
+      final shown = switch (held) {
         final held? when reuse && held.holdsDigestOf(row, page) => held,
         _ => _digested(row, page),
       };
-      if (lifeOfRow(row) == Life.live) live[part] = shown.digest;
       if (shown.version case final version?
           when raised[target] == null || version > raised[target]!) {
         raised[target] = version;
       }
-      final elsewhere = next[target];
-      if (elsewhere != null && _outranks(elsewhere.version, shown.version)) {
+      if (!replaces(held, row)) {
+        decisions.add(RowKept(row, KeptBecause.heldIsNewer));
         continue;
       }
+      if (held != shown) decisions.add(RowTaken(row));
       next[target] = shown;
+      liveNow[target] = lifeOfRow(row) == Life.live;
+      nextTombstones.remove(target);
+      if (started != null) nextPlaced[target] = started;
     }
-    return _with(
-      pagesTaken: {...pagesTaken, page: ?started},
-      fresh: fresh.afterPage(page, gone: pageRow is TrashedPage),
-      pageReads: {
-        ...pageReads,
-        page: paid ? const ReadThisSession() : pageRead(page),
-      },
-      goneThisSession: {...goneThisSession}..remove(page),
-      highest: raised,
-      pages: switch ((pageRow, pages[page]?.version)) {
-        (TrashedPage(), _) => {...pages}..remove(page),
-        (_, final known?) when _outranks(known, versionOfRow(pageRow)) => pages,
-        _ => {...pages, page: _rowOf(pageRow, pageRow)},
-      },
-      content: pageRow is TrashedPage
-          ? ({...content}..remove(page))
-          : {...content, page: live},
-      rows: next,
+    for (final MapEntry(:key, :value) in rows.entries) {
+      if (value.page != page) continue;
+      if (carried.contains(key)) continue;
+      next.remove(key);
+      decisions.add(ItemLeft(key, page: page));
+      if (nextPlaced.remove(key) case final placed?) {
+        nextTombstones[key] = placed;
+      }
+    }
+    decisions.add(PageContentTaken(page, found));
+    final before = content[page] ?? const <SeenPart, String>{};
+    final live = <SeenPart, String>{
+      for (final MapEntry(:key, :value) in next.entries)
+        if (value.page == page)
+          if (_partOf(key) case final part?)
+            if (liveNow[key] ?? before.containsKey(part)) part: value.digest,
+    };
+    return Taken(
+      _with(
+        pagesTaken: {...pagesTaken, page: ?started},
+        fresh: fresh.afterPage(page, gone: trashedNow),
+        pageReads: {
+          ...pageReads,
+          page: paid ? const ReadThisSession() : pageRead(page),
+        },
+        goneThisSession: {...goneThisSession}..remove(page),
+        highest: raised,
+        pages: switch ((pageTaken, trashedNow)) {
+          (true, true) => {...pages}..remove(page),
+          (true, false) => {...pages, page: _rowOf(pageRow, pageRow)},
+          (false, _) => pages,
+        },
+        trashed: switch ((pageTaken, trashedNow)) {
+          (true, true) => {...trashed, page: _rowOf(pageRow, pageRow)},
+          (true, false) => {...trashed}..remove(page),
+          (false, _) => trashed,
+        },
+        tombstones: nextTombstones,
+        placedAt: nextPlaced,
+        content: trashedNow
+            ? ({...content}..remove(page))
+            : {...content, page: live},
+        rows: next,
+      ),
+      decisions,
     );
   }
+
+  static SeenPart? _partOf(Target target) => switch (target) {
+    ElementTarget(:final elementPublicId) => SeenElement(elementPublicId),
+    LineupTarget(:final lineupPublicId) => SeenLineupGroup(lineupPublicId),
+    _ => null,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -762,6 +1002,9 @@ final class Shown {
         goneThisSession,
       ) &&
       sameMap(other.pages, pages) &&
+      sameMap(other.trashed, trashed) &&
+      sameMap(other.tombstones, tombstones) &&
+      sameMap(other.placedAt, placedAt) &&
       sameMap(other.settings, settings) &&
       const DeepCollectionEquality().equals(other.content, content) &&
       sameMap(other.rows, rows) &&

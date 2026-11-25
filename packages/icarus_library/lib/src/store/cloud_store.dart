@@ -150,13 +150,6 @@ final class _CloudUnread extends _CloudOpen {
   final StorageFailure failure;
 }
 
-bool _ofAnotherLife(LoadedStrategy strategy, StrategyRow listed) =>
-    switch ((strategy.header, createdAtOf(listed))) {
-      (HeaderPlaced(row: final ReadableStrategy held), final life?) =>
-        life != held.createdAt.millisecondsSinceEpoch,
-      _ => false,
-    };
-
 RowKey? _outOfPlace(String strategyPublicId, ArrivedBase base) =>
     switch (base) {
       HeaderRead(:final strategy, :final pages, :final settings) => [
@@ -236,43 +229,6 @@ final class _ItemDigests {
     ),
     _ => nameOf(row),
   };
-
-  bool unchangedHere(Row row, StoreName name) {
-    final (held, pages, page) = switch (name) {
-      ElementName(:final page, :final digest) => (
-        strategy.loadedPage(page)?.elements[digest] as Row?,
-        strategy.pagesOfElementAt(digest),
-        strategy.loadedPage(page),
-      ),
-      LineupName(:final page, :final digest) => (
-        strategy.loadedPage(page)?.lineupGroups[digest],
-        strategy.pagesOfLineupGroupAt(digest),
-        strategy.loadedPage(page),
-      ),
-      _ => (null, const <String>[], null),
-    };
-    final revision = revisionOfRow(row);
-    final same =
-        shownTakesReuse &&
-        held != null &&
-        (page?.keptThisRun.contains(name.name) ?? false) &&
-        revision != null &&
-        held.runtimeType == row.runtimeType &&
-        revisionOfRow(held) == revision &&
-        createdAtOf(held) == createdAtOf(row) &&
-        pages.length == 1 &&
-        switch (name) {
-          ElementName(:final page) ||
-          LineupName(:final page) => pages.first == page,
-          _ => false,
-        };
-    if (same &&
-        shownTakesChecked &&
-        !sameJsonTree(held.toJsonView(), row.toJsonView())) {
-      throw TakesDiffer.stored('${row.key}');
-    }
-    return same;
-  }
 }
 
 bool _comparedEqual(Row now, Row before) {
@@ -983,35 +939,31 @@ extension _CloudStore on LibraryStore {
 
   Future<Stored<_BaseApplied>> _applyBase(
     LoadedStrategy strategy,
-    List<ArrivedBase> arrivals,
+    List<RowDecision> decisions,
   ) async {
     final area = strategy.area;
     final digests = <String>{};
     final items = _ItemDigests(strategy);
-    for (final arrival in arrivals) {
-      switch (arrival) {
-        case HeaderRead(strategy: final header, :final pages):
-          final listed = {for (final page in pages) digestOf(page.publicId)};
-          digests.addAll(
-            _ofAnotherLife(strategy, header)
-                ? strategy.pageDigests
-                : strategy.pageDigests.where((d) => !listed.contains(d)),
-          );
-        case PageRead(:final page, :final elements, :final lineupGroups):
-          final pageDigest = items.of(page.publicId);
-          items.learnPage(pageDigest);
-          digests.add(pageDigest);
-          for (final row in elements) {
-            digests.addAll(strategy.pagesOfElementAt(items.of(row.publicId)));
-          }
-          for (final row in lineupGroups) {
-            digests.addAll(
-              strategy.pagesOfLineupGroupAt(items.of(row.publicId)),
-            );
-          }
-        case PageGone(:final pagePublicId):
-          digests.add(digestOf(pagePublicId));
-        case StrategyGone():
+    for (final decision in decisions) {
+      switch (decision) {
+        case RowTaken(row: final PageRow row):
+          digests.add(items.of(row.publicId));
+        case RowTaken(row: final PageSettingsRow row):
+          digests.add(items.of(row.pagePublicId));
+        case RowTaken(row: final ElementRow row):
+          digests
+            ..add(items.of(row.pagePublicId))
+            ..addAll(strategy.pagesOfElementAt(items.of(row.publicId)));
+        case RowTaken(row: final LineupGroupRow row):
+          digests
+            ..add(items.of(row.pagePublicId))
+            ..addAll(strategy.pagesOfLineupGroupAt(items.of(row.publicId)));
+        case ItemLeft(:final page) ||
+            PageLeft(:final page) ||
+            SettingsLeft(:final page) ||
+            PageContentTaken(:final page):
+          digests.add(items.of(page));
+        case RowTaken() || RowKept():
           break;
       }
     }
@@ -1021,6 +973,9 @@ extension _CloudStore on LibraryStore {
         ])
         case StorageFailed(:final failure)) {
       return StorageFailed(failure);
+    }
+    for (final digest in digests) {
+      items.learnPage(digest);
     }
     final before = <String, (StoreName, Held)>{};
     final gone = <String>{};
@@ -1122,86 +1077,56 @@ extension _CloudStore on LibraryStore {
       }
     }
 
-    Version? heldElsewhere(Row row, String page) {
-      final (ids, nameAt) = switch (row) {
-        ElementRow(:final publicId) => (
-          strategy.pagesOfElement(publicId),
-          (String digest) =>
-              ElementName(digest, digestOf(publicId)) as StoreName,
-        ),
-        LineupGroupRow(:final publicId) => (
-          strategy.pagesOfLineupGroup(publicId),
-          (String digest) =>
-              LineupName(digest, digestOf(publicId)) as StoreName,
-        ),
-        _ => (
-          const <String>[],
-          (String digest) => PageName(digest) as StoreName,
-        ),
-      };
-      Version? most;
-      for (final digest in [...ids]) {
-        if (digest == digestOf(page)) continue;
-        if (held(nameAt(digest)) case final other?) {
-          final version = versionOfRow(other);
-          if (version != null && (most == null || version > most)) {
-            most = version;
-          }
-        }
-      }
-      return most;
-    }
+    StoreName itemName(Target target, String page) => switch (target) {
+      ElementTarget(:final elementPublicId) => ElementName(
+        items.of(page),
+        items.of(elementPublicId),
+      ),
+      LineupTarget(:final lineupPublicId) => LineupName(
+        items.of(page),
+        items.of(lineupPublicId),
+      ),
+      _ => throw StateError('$target is not an item on a page'),
+    };
 
-    for (final arrival in arrivals) {
-      switch (arrival) {
-        case HeaderRead(strategy: final header, :final pages, :final settings):
-          final replaced = _ofAnotherLife(strategy, header);
-          put(header);
-          final listed = {for (final page in pages) page.publicId};
-          for (final page in [...strategy.pages]) {
-            if (replaced || !listed.contains(page.publicId)) {
-              dropPage(page.publicId);
-            }
-          }
-          for (final page in pages) {
-            put(page);
-          }
-          final withSettings = {for (final row in settings) row.pagePublicId};
-          for (final page in listed) {
-            if (!withSettings.contains(page)) {
-              drop(SettingsName(digestOf(page)));
-            }
-          }
-          for (final row in settings) {
-            put(row);
-          }
-        case PageRead(:final page, :final elements, :final lineupGroups):
-          put(page);
-          final pageDigest = items.of(page.publicId);
-          items.learnPage(pageDigest);
-          final found = <String>{};
-          for (final row in <Row>[...elements, ...lineupGroups]) {
+    final settled = {
+      for (final decision in decisions)
+        if (decision case RowTaken(:final row) || RowKept(:final row)) row.key,
+    };
+    for (final decision in decisions) {
+      switch (decision) {
+        case RowTaken(:final row):
+          put(row);
+        case RowKept():
+          break;
+        case ItemLeft(:final target, :final page):
+          drop(itemName(target, page));
+          pages.add(page);
+        case PageLeft(:final page):
+          if (strategy.hasPageRow(items.of(page))) dropPage(page);
+        case SettingsLeft(:final page):
+          drop(SettingsName(items.of(page)));
+        case PageContentTaken(:final page, :final carried):
+          for (final row in carried) {
             final name = items.nameOf(row);
-            found.add(name.name);
-            if (items.unchangedHere(row, name)) continue;
-            final elsewhere = heldElsewhere(row, page.publicId);
-            final version = versionOfRow(row);
-            if (elsewhere != null && version != null && elsewhere > version) {
-              continue;
+            switch (strategy.heldUnder(name)) {
+              case HeldUnplaced():
+                put(row);
+              case HeldRow(row: final held)
+                  when shownTakesChecked &&
+                      !settled.contains(row.key) &&
+                      !sameJsonTree(held.toJsonView(), row.toJsonView()):
+                throw TakesDiffer.stored('${row.key}');
+              case HeldRow() || HeldNothing():
+                break;
             }
-            put(row);
           }
-          if (strategy.loadedPage(pageDigest) case final loaded?) {
-            for (final name in <StoreName>[
-              for (final digest in loaded.elements.keys)
-                ElementName(pageDigest, digest),
-              for (final digest in loaded.lineupGroups.keys)
-                LineupName(pageDigest, digest),
-            ]) {
-              if (!found.contains(name.name)) drop(name);
-            }
+          final carriedNames = {
+            for (final row in carried) items.nameOf(row).name,
+          };
+          if (strategy.loadedPage(items.of(page)) case final loaded?) {
             for (final name in [...loaded.unplaced.keys]) {
-              if (found.contains(name)) continue;
+              if (carriedNames.contains(name)) continue;
               gone.add(name);
               loaded.unplaced.remove(name);
             }
@@ -1210,13 +1135,7 @@ extension _CloudStore on LibraryStore {
             }
             loaded.unknownKinds.clear();
           }
-          pages.add(page.publicId);
-        case PageGone(:final pagePublicId):
-          if (strategy.hasPageRow(digestOf(pagePublicId))) {
-            dropPage(pagePublicId);
-          }
-        case StrategyGone():
-          break;
+          pages.add(page);
       }
     }
     final writes = <_Write>[
@@ -1236,7 +1155,7 @@ extension _CloudStore on LibraryStore {
   Future<Saving<T, CommitRefusal>> _finishCloud<T>(
     _CloudReady cloud,
     CloudQueue next,
-    List<ArrivedBase> arrivals,
+    List<RowDecision> decisions,
     Set<String> edited,
     T Function(StrategySummary summary) take,
   ) async {
@@ -1252,7 +1171,7 @@ extension _CloudStore on LibraryStore {
 
     try {
       final _BaseApplied base;
-      switch (await _applyBase(strategy, arrivals)) {
+      switch (await _applyBase(strategy, decisions)) {
         case StorageFailed(:final failure):
           asBefore();
           return NotSaved(failure);
@@ -1661,7 +1580,7 @@ extension _CloudStore on LibraryStore {
     }
     final now = _cloudNow();
     final outcomes = <ReportOutcome>[];
-    final arrivals = <ArrivedBase>[];
+    final decisions = <RowDecision>[];
     var queue = recordExpiries(
       cloud.queue.current.raisedTo(
         nextAttempt: _numbers.nextAttempt,
@@ -1680,33 +1599,20 @@ extension _CloudStore on LibraryStore {
         outcomes.add(ReportNotApplicable(NotThisModesResults(_cloudResults)));
         continue;
       }
-      final fits = switch (event) {
-        BaseArrived(:final base, :final from) => resultFit(
-          queue.shown,
-          queue.session,
-          base,
-          from,
-        ),
-        _ => null,
-      };
       final step = transition(queue, event, now: now);
       queue = step.queue;
       switch (step) {
         case NotApplicable(:final why):
           outcomes.add(ReportNotApplicable(why));
-        case Stepped(:final effects):
-          if (event case BaseArrived(
-            :final base,
-          ) when fits == ResultFit.applies || fits == ResultFit.adopts) {
-            arrivals.add(base);
-          }
+        case Stepped(:final effects, decisions: final taken):
+          decisions.addAll(taken);
           outcomes.add(ReportApplied(effects));
       }
     }
     final result = await _finishCloud(
       cloud,
       queue,
-      arrivals,
+      decisions,
       const {},
       (summary) => Recorded(outcomes: outcomes, summary: summary),
     );
@@ -1939,8 +1845,9 @@ extension _CloudStore on LibraryStore {
           session: queue.session.number,
           from: switch (results) {
             CloudResults.liveQueries => const LiveResult(),
-            CloudResults.thisDevicesReads =>
-              ReadOfThisDevice(queue.session.readStart),
+            CloudResults.thisDevicesReads => ReadOfThisDevice(
+              queue.session.readStart,
+            ),
           },
         ),
     ];
