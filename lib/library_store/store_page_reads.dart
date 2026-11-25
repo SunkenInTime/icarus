@@ -95,7 +95,7 @@ final class PageLoad {
 
 final class _Load {
   _Load(
-    this.open,
+    this.attempt,
     this.kind,
     this.strategyId,
     this.pageId,
@@ -103,7 +103,7 @@ final class _Load {
     this.took,
   );
 
-  final int? open;
+  final int? attempt;
   final PageLoadKind kind;
   final String strategyId;
   final String pageId;
@@ -141,52 +141,61 @@ final class StorePageReads implements LocalPageReads {
   final _loads = <PageLoad>[];
   final _unshown = <_Load>[];
   final _fellBack = <(String, String), _Load>{};
-  final _unended = <int, String>{};
+  final _unended =
+      <int, ({PageLoadKind kind, String strategyId, String? pageId})>{};
   ({int open, String strategyId, bool migrated})? _opening;
+  ({int attempt, String strategyId, String pageId})? _switching;
   ({LibraryStore store, String strategyId})? _loaded;
 
   List<PageLoad> get loads => List.unmodifiable(_loads);
 
-  var _opens = 0;
+  var _attempts = 0;
   var _readings = 0;
 
   @override
-  int opening(String strategyId) {
-    _opens += 1;
-    _unended[_opens] = strategyId;
-    return _opens;
+  int opening(String strategyId) =>
+      _attempt((kind: PageLoadKind.open, strategyId: strategyId, pageId: null));
+
+  @override
+  int switching(String strategyId, String pageId) {
+    final attempt = _attempt(
+      (kind: PageLoadKind.pageSwitch, strategyId: strategyId, pageId: pageId),
+    );
+    _switching = (attempt: attempt, strategyId: strategyId, pageId: pageId);
+    return attempt;
+  }
+
+  int _attempt(({PageLoadKind kind, String strategyId, String? pageId}) of) {
+    _attempts += 1;
+    _unended[_attempts] = of;
+    return _attempts;
   }
 
   @override
   void reading(int open, {required bool migrated}) {
     _readings += 1;
     _gaveWay();
-    if (_unended[open] case final strategyId?) {
+    if (_unended[open]
+        case (:final strategyId, kind: PageLoadKind.open, pageId: _)) {
       _opening = (open: open, strategyId: strategyId, migrated: migrated);
     }
   }
 
   @override
-  void openFailed(int open, Object error) => _openEnds(open, LoadFailed(error));
+  void openFailed(int open, Object error) => _ends(open, LoadFailed(error));
 
   @override
-  void openEnded(int open) => _openEnds(open, const GaveWay());
+  void openEnded(int open) => _ends(open, const GaveWay());
 
   @override
-  void openedWithoutPage(int open) => _openEnds(open, const NoPageToShow());
+  void openedWithoutPage(int open) => _ends(open, const NoPageToShow());
 
   @override
-  void switchFailed(String strategyId, String pageId, Object error) {
-    final load = _unshown
-        .where((load) =>
-            load.open == null &&
-            load.strategyId == strategyId &&
-            load.pageId == pageId)
-        .lastOrNull;
-    if (load == null) return;
-    _unshown.remove(load);
-    _ended(load, LoadFailed(error));
-  }
+  void switchFailed(int attempt, Object error) =>
+      _ends(attempt, LoadFailed(error));
+
+  @override
+  void switchEnded(int attempt) => _ends(attempt, const GaveWay());
 
   @override
   LocalPageServed? servedWith(StrategyEditorPageData page) => _served[page];
@@ -210,7 +219,7 @@ final class StorePageReads implements LocalPageReads {
     _served[served] = null;
     if (load == null || !_unshown.remove(load)) return hive;
     final again = _Load(
-      load.open,
+      load.attempt,
       load.kind,
       load.strategyId,
       load.pageId,
@@ -244,38 +253,31 @@ final class StorePageReads implements LocalPageReads {
     final load = _drawnBy[page];
     if (load == null || !_unshown.remove(load)) return;
     _drawnBy[page] = null;
-    _ended(load, load.read);
-  }
-
-  @override
-  void neverShown(StrategyEditorPageData page) {
-    final load = _drawnBy[page];
-    _drawnBy[page] = null;
-    if (load == null || !_unshown.remove(load)) return;
-    _neverShown(load);
+    _ended(load, load.read, shownPageId: page.pageId);
   }
 
   void _gaveWay() {
-    if (_opening case final unread?) _openEnds(unread.open, const GaveWay());
+    if (_opening case final unread?) _ends(unread.open, const GaveWay());
     _unshown.forEach(_neverShown);
     _unshown.clear();
     _fellBack.clear();
   }
 
-  void _openEnds(int open, PageLoadOutcome outcome) {
-    if (_opening?.open == open) _opening = null;
-    final load = _unshown.where((load) => load.open == open).firstOrNull;
+  void _ends(int attempt, PageLoadOutcome outcome) {
+    if (_opening?.open == attempt) _opening = null;
+    if (_switching?.attempt == attempt) _switching = null;
+    final load = _unshown.where((load) => load.attempt == attempt).firstOrNull;
     if (load != null) {
       _unshown.remove(load);
       _ended(load, outcome);
       return;
     }
-    final strategyId = _unended.remove(open);
-    if (strategyId == null) return;
+    final unread = _unended.remove(attempt);
+    if (unread == null) return;
     _loads.add(PageLoad(
-      kind: PageLoadKind.open,
-      strategyId: strategyId,
-      pageId: null,
+      kind: unread.kind,
+      strategyId: unread.strategyId,
+      pageId: unread.pageId,
       outcome: outcome,
       took: Duration.zero,
     ));
@@ -283,12 +285,15 @@ final class StorePageReads implements LocalPageReads {
 
   void _neverShown(_Load load) => _ended(load, const GaveWay());
 
-  void _ended(_Load load, PageLoadOutcome outcome) {
-    if (load.open case final open? when _unended.remove(open) == null) return;
+  void _ended(_Load load, PageLoadOutcome outcome, {String? shownPageId}) {
+    if (load.attempt case final attempt?
+        when _unended.remove(attempt) == null) {
+      return;
+    }
     _loads.add(PageLoad(
       kind: load.kind,
       strategyId: load.strategyId,
-      pageId: load.pageId,
+      pageId: shownPageId ?? load.pageId,
       outcome: outcome,
       took: load.took,
     ));
@@ -303,6 +308,11 @@ final class StorePageReads implements LocalPageReads {
     final opening = _opening;
     _opening = null;
     final opened = opening?.strategyId == strategyId;
+    final switching = _switching;
+    _switching = null;
+    final switched = !opened &&
+        switching?.strategyId == strategyId &&
+        switching?.pageId == pageId;
     final readings = _readings;
     final begun = _mirror.reads.strategyWritesBegun(strategyId);
     final clock = Stopwatch()..start();
@@ -312,7 +322,11 @@ final class StorePageReads implements LocalPageReads {
       migrated: migrated || (opened && opening!.migrated),
     );
     final load = _Load(
-      opened ? opening!.open : null,
+      opened
+          ? opening!.open
+          : switched
+              ? switching!.attempt
+              : null,
       opened ? PageLoadKind.open : PageLoadKind.pageSwitch,
       strategyId,
       pageId,

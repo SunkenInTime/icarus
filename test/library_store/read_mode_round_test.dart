@@ -19,7 +19,8 @@ import '../library_rows/library_sources.dart';
 
 const fixtureVariable = 'ICARUS_READ_ROUND_FIXTURE';
 const sourcesVariable = 'ICARUS_READ_ROUND_SOURCES';
-const compareVariable = 'ICARUS_READ_ROUND_COMPARE';
+const beforeVariable = 'ICARUS_READ_ROUND_BEFORE';
+const afterVariable = 'ICARUS_READ_ROUND_AFTER';
 
 StrategyData _generated(String id, String name) =>
     generatedStrategy(Optionals.set).copyWith(
@@ -104,6 +105,24 @@ Future<void> _write(
   await Hive.close();
 }
 
+List<String> uniqueNames(List<String> names) {
+  final taken = {...names};
+  final given = <String>{};
+  String unique(String name) {
+    if (given.add(name)) return name;
+    var copy = 2;
+    while (taken.contains('$name ($copy)')) {
+      copy += 1;
+    }
+    final named = '$name ($copy)';
+    taken.add(named);
+    given.add(named);
+    return named;
+  }
+
+  return [for (final name in names) unique(name)];
+}
+
 List<int> _bytes(StrategyData strategy) {
   final writer = BinaryWriterImpl(Hive)
     ..write(strategy.copyWith(lastEdited: DateTime.utc(2000)));
@@ -116,9 +135,20 @@ void main() {
     if (!Hive.isAdapterRegistered(20)) registerIcarusAdapters(Hive);
   });
 
+  test(
+      'names are made unique against every name given out, a name that '
+      'already ends in a number included: A, A, A (2) become A, A (3), A (2)',
+      () {
+    expect(uniqueNames(['A', 'A', 'A (2)']), ['A', 'A (3)', 'A (2)']);
+    expect(uniqueNames(['A (2)', 'A', 'A', 'A']),
+        ['A (2)', 'A', 'A (3)', 'A (4)']);
+    expect(uniqueNames(['B', 'C']), ['B', 'C']);
+  });
+
   final fixture = Platform.environment[fixtureVariable];
   final sources = Platform.environment[sourcesVariable];
-  final compare = Platform.environment[compareVariable];
+  final before = Platform.environment[beforeVariable];
+  final after = Platform.environment[afterVariable];
 
   test(
     'writes the read-mode round library: the source stores, each name made '
@@ -144,13 +174,12 @@ void main() {
       for (final made in [_signedZero(), _interleaved(), _denseStrokes()]) {
         strategies[made.id] = made..folderID = null;
       }
-      final seen = <String, int>{};
+      final names = uniqueNames([
+        for (final strategy in strategies.values) strategy.name,
+      ]);
       final named = [
-        for (final strategy in strategies.values)
-          switch (seen[strategy.name] = (seen[strategy.name] ?? 0) + 1) {
-            1 => strategy,
-            final copy => strategy.copyWith(name: '${strategy.name} ($copy)'),
-          },
+        for (final (index, strategy) in strategies.values.indexed)
+          strategy.copyWith(name: names[index]),
       ];
       await _write(Directory(fixture!), named, folders.values);
     },
@@ -159,19 +188,18 @@ void main() {
   test(
     'compares two libraries strategy by strategy in Hive encoding, save time '
     'aside, and names what differs',
-    skip: compare == null
-        ? 'set $compareVariable to <before store>:<after store>'
+    skip: before == null || after == null
+        ? 'set $beforeVariable and $afterVariable to the two Hive stores'
         : false,
     () async {
-      final [before, after] = compare!.split(':');
       final left = {
         for (final strategy
-            in (await loadHiveStore(Directory(before))).strategies)
+            in (await loadHiveStore(Directory(before!))).strategies)
           strategy.id: strategy,
       };
       final right = {
         for (final strategy
-            in (await loadHiveStore(Directory(after))).strategies)
+            in (await loadHiveStore(Directory(after!))).strategies)
           strategy.id: strategy,
       };
       final lines = <String>[];
