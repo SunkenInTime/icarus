@@ -94,10 +94,13 @@ It fails if no frame ran, if a break had no frame, if any frame of the check was
 
 `scripts/read-back-budget.json` runs both in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
 
-| Strategy | Longest step target | Windows release, 2026-11-25 | Added per save target | Windows release, 2026-11-25 |
+| Strategy | Longest step target | Windows release, worst of three rounds | Added per save target | Windows release, worst of three rounds |
 | --- | --- | --- | --- | --- |
-| largest | 4 ms | 9.9 ms | 8 ms | 3.8 ms |
-| Dense strokes | 16 ms | 128 ms | 160 ms | 110 ms |
+| largest | 4 ms | 2.8 ms | 8 ms | 5.0 ms |
+| Dense strokes | 16 ms | 13.6 ms | 160 ms | 30.8 ms |
+| Dense strokes, one item reading back differently (`readBackFrames`, not judged) | 16 ms | 234 ms | | |
+
+Before the check ran in steps, main measured 9.9 ms and 128 ms for the longest step, and 3.8 ms and 110 ms added per save.
 
 `{"pageTakeCost": 300, "changed": 1, "runs": 51}` times the cloud store taking a live page result, on SQLite in a temporary folder: a cloud strategy with one page of that many items (one in ten a 250-point freehand drawing, the shapes `tool/convex_cost/lib/content.mjs` writes), and a result in which `changed` of them changed. It logs a `TAKE` line with the median and worst of the longest main-isolate stretch during `record` and of the whole `record`, the median time the main isolate was busy, how many frames the app drew while it measured, and how busy the whole computer was just before and just after (all processes, from Windows' processor counter or Linux's `/proc/stat`), first as the store runs in a release build, then with every take also checked against one from scratch, as tests and driver builds run it. `"budget": {"longestStepMs": x, "recordMs": y}` judges the medians over all the step's takes (each take's longest stretch, and each take's whole `record`), never one take, with `within budget` and `over budget` lines like `READBACK`'s; an over line repeats how busy the computer was, so a failure on a busy computer can be read as one. The step fails if either median is over. `scripts/page-take-budget.json` judges one changed item on 300, and logs one on 60, ten on 300 and all 300:
 
