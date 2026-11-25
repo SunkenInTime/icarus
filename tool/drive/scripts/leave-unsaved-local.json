@@ -18,7 +18,6 @@
   {"shot": "{out}/0-autosave-off.png"},
   {"tapAt": [1152, 68]},
   {"wait": 1},
-
   {"addAgent": "home-dont-save", "agent": "jett", "at": [600, 430]},
   {"tapIcon": "house300"},
   {"waitText": "Don't save", "seconds": 10},
@@ -26,9 +25,9 @@
   {"tapText": "Don't save"},
   {"wait": 3},
   {"shot": "{out}/1-home-dont-save.png"},
+  {"expectText": "ASCENT", "count": 0},
   {"expectText": "Leave unsaved", "count": 1},
   {"expectText": "Leave unsaved other", "count": 1},
-
   {"tapText": "Leave unsaved"},
   {"wait": 6},
   {"tapIcon": "x", "optional": true},
@@ -38,9 +37,9 @@
   {"tapText": "Save"},
   {"wait": 3},
   {"shot": "{out}/2-home-save.png"},
+  {"expectText": "ASCENT", "count": 0},
   {"expectText": "Leave unsaved", "count": 1},
   {"expectText": "Leave unsaved other", "count": 1},
-
   {"tapText": "Leave unsaved"},
   {"wait": 6},
   {"tapIcon": "x", "optional": true},
@@ -53,16 +52,17 @@
   {"wait": 4},
   {"shot": "{out}/3-switcher-dont-save.png"},
   {"probe": "after switching with Don't save"},
-  {"expectText": "Leave unsaved other", "count": 1},
-  {"expectText": "Leave unsaved", "count": 0},
-
+  {"expectText": "ASCENT", "count": 1},
+  {"expectText": "Leave unsaved other", "count": 2},
+  {"expectText": "Leave unsaved", "count": 1},
   {"addAgent": "back-dont-save", "agent": "sage", "at": [600, 330]},
   {"backButton": [600, 600]},
   {"waitText": "Don't save", "seconds": 10},
   {"tapText": "Don't save"},
   {"wait": 3},
   {"shot": "{out}/4-back-button-dont-save.png"},
-  {"expectText": "Leave unsaved", "count": 1},
+  {"expectText": "ASCENT", "count": 1},
+  {"expectText": "Leave unsaved", "count": 2},
   {"expectText": "Leave unsaved other", "count": 1},
   {"exit": 1}
 ]
