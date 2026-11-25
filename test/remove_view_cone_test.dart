@@ -68,9 +68,11 @@ void main() {
     );
     final notifier = container.read(agentProvider.notifier);
     notifier.fromHive([original]);
+    final loaded = container.read(agentProvider).single;
 
     expect(notifier.convertViewConeAgentToPlain(id: original.id), isFalse);
-    expect(container.read(agentProvider).single, same(original));
+    expect(container.read(agentProvider).single, same(loaded));
+    expect(loaded.toJson(), original.toJson());
     expect(container.read(actionProvider), isEmpty);
   });
 

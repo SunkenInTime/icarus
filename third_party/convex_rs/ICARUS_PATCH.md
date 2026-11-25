@@ -186,6 +186,13 @@ or a bridge error still throws. The tests next to
 `base_client::tests::test_a_mutation_answer_carries_the_snapshot_its_write_is_visible_in`
 cover each case.
 
+`ConvexClient::connection_generation` gives the connection generation the client
+is on, asked of the worker between its steps, so after a reconnect it is the
+generation the client started again on, never an earlier one
+(`client::worker::tests::test_the_connection_generation_moves_on_with_a_reconnect`).
+A reader that holds it can tell that any stamp with a lower generation comes from
+an earlier connection, even one that reaches it later.
+
 Unlike upstream, `BaseConvexClient::mutation` and `BaseConvexClient::action`
 hand back a `TimedResult` rather than a `FunctionResult`, which would break a
 Rust program using the base client directly. Icarus has none; `ConvexClient`'s

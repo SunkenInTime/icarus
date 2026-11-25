@@ -77,7 +77,10 @@ try {
     fs.copyFileSync(reportPath, process.env.GAUNTLET_REPORT);
   }
   printSummary(report);
-  if (adapter === "") await runTimedResults(tokens[0]);
+  if (adapter === "") {
+    await runTimedResults(tokens[0]);
+    await runStampedTransport(tokens[0]);
+  }
 } catch (error) {
   console.error("--- local deployment log (last part) ---");
   console.error(backendLog);
@@ -302,6 +305,30 @@ async function runTimedResults(accessToken) {
   );
   if (exitCode !== 0) throw new Error(`The timed results check failed (exit ${exitCode})`);
   console.log(`Timed results check passed in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+}
+
+async function runStampedTransport(accessToken) {
+  const started = Date.now();
+  const exitCode = await run(
+    flutter[0],
+    [
+      ...flutter.slice(1),
+      "test",
+      "test/collab/live/stamped_transport_live_test.dart",
+      `--dart-define=CONVEX_URL=${deploymentUrl}`,
+      `--dart-define=GAUNTLET_ACCESS_TOKEN=${accessToken}`,
+      "--reporter",
+      "expanded",
+    ],
+    {
+      cwd: repoDir,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+      env: { ...process.env, FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR: nativeLibDir },
+    },
+  );
+  if (exitCode !== 0) throw new Error(`The stamped transport check failed (exit ${exitCode})`);
+  console.log(`Stamped transport check passed in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 }
 
 function printSummary(report) {

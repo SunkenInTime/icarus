@@ -313,7 +313,7 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
         container.dispose();
       });
-      container.read(abilityProvider.notifier).fromHive([placedAbility]);
+      container.read(abilityProvider.notifier).addAbility(placedAbility);
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -369,7 +369,7 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
         container.dispose();
       });
-      container.read(abilityProvider.notifier).fromHive([placedAbility]);
+      container.read(abilityProvider.notifier).addAbility(placedAbility);
 
       await tester.pumpWidget(
         UncontrolledProviderScope(

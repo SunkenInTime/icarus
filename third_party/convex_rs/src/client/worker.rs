@@ -117,6 +117,7 @@ pub enum ClientRequest {
     Unsubscribe(UnsubscribeRequest),
     Authenticate(Option<AuthTokenFetcher>),
     Reconnect(String),
+    ConnectionGeneration(oneshot::Sender<u64>),
 }
 
 pub struct MutationRequest {
@@ -538,6 +539,34 @@ mod tests {
         worker.abort();
         let reconnects = protocol.reconnects.lock();
         assert_eq!(reconnects.len(), 1, "reconnected for {reconnects:?}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_the_connection_generation_moves_on_with_a_reconnect() -> anyhow::Result<()> {
+        let (response_sender, response_receiver) = mpsc::channel(1);
+        let protocol = FakeProtocol::new(response_sender.clone());
+        let TestWorker {
+            requests: request_sender,
+            handle: worker,
+            ..
+        } = start_worker(&protocol, response_receiver);
+        let generation = || async {
+            let (tx, rx) = oneshot::channel();
+            request_sender.send(ClientRequest::ConnectionGeneration(tx))?;
+            anyhow::Ok(tokio::time::timeout(Duration::from_secs(2), rx).await??)
+        };
+        assert_eq!(generation().await?, 0);
+
+        request_sender.send(ClientRequest::Reconnect("convex_flutter:manual".into()))?;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while protocol.reconnects.lock().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
+        assert_eq!(generation().await?, 1);
+        worker.abort();
         Ok(())
     }
 
@@ -1131,6 +1160,9 @@ async fn _worker_once<T: SyncProtocol>(
                         auth_recovery,
                     )
                     .await?;
+                },
+                ClientRequest::ConnectionGeneration(tx) => {
+                    let _ = tx.send(base_client.connection());
                 },
                 ClientRequest::Unsubscribe(unsubscribe) => {
                     let UnsubscribeRequest {subscriber_id} = unsubscribe;

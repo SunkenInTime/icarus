@@ -809,7 +809,7 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
         container.dispose();
       });
-      container.read(abilityProvider.notifier).fromHive([sectorAbility]);
+      container.read(abilityProvider.notifier).addAbility(sectorAbility);
 
       await tester.pumpWidget(
         _buildHarness(
@@ -1532,7 +1532,7 @@ Future<void> _pumpPlacedAbility(
     await tester.pumpWidget(const SizedBox.shrink());
     container.dispose();
   });
-  container.read(abilityProvider.notifier).fromHive([ability]);
+  container.read(abilityProvider.notifier).addAbility(ability);
 
   await tester.pumpWidget(
     _buildHarness(

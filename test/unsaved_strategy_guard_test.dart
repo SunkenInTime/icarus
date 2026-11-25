@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -374,6 +375,28 @@ void main() {
       await tester.pump();
     }
 
+    Future<void> pumpLibraryUnderEditor(WidgetTester tester) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const ShadApp(home: Scaffold(body: Text('Library'))),
+        ),
+      );
+      final library = tester.element(find.text('Library'));
+      unawaited(Navigator.of(library).push(MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          body: Consumer(
+            builder: (buildContext, widgetRef, _) {
+              context = buildContext;
+              ref = widgetRef;
+              return const Text('Editor');
+            },
+          ),
+        ),
+      )));
+      await tester.pumpAndSettle();
+    }
+
     setUp(() {
       appProviderContainer.read(inAppDebugProvider.notifier).clearLogs();
     });
@@ -549,6 +572,113 @@ void main() {
       expect(notifier.forceSaveCalls, 0);
       expect(notifier.cancelPendingSaveCalls, 0);
       expect(continueCalls, 0);
+    });
+
+    for (final choice in ["Don't save", 'Save']) {
+      testWidgets(
+          'leaving the editor for the library through "$choice" leaves the '
+          'library on screen', (tester) async {
+        notifier = _FakeGuardStrategyProvider(
+          initialState: const StrategyState(
+            strategyId: 'strategy-left',
+            strategyName: 'Strategy Left',
+            source: StrategySource.local,
+            storageDirectory: null,
+            isOpen: true,
+          ),
+          flushResult: false,
+        );
+        container = ProviderContainer(
+          overrides: [
+            strategyProvider.overrideWith(() => notifier),
+          ],
+        );
+        addTearDown(container.dispose);
+        container.read(strategySaveStateProvider.notifier).markDirty();
+        await pumpLibraryUnderEditor(tester);
+
+        final guardFuture = guardUnsavedStrategyExit(
+          context: context,
+          ref: ref,
+          source: 'guard-test-leave-to-library',
+          onContinue: () async {
+            Navigator.pop(context);
+            notifier.setFromState(const StrategyState(
+              strategyId: null,
+              strategyName: null,
+              source: StrategySource.local,
+              storageDirectory: null,
+            ));
+          },
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Save changes?'), findsOneWidget);
+
+        await tester.tap(find.text(choice));
+        await tester.pumpAndSettle();
+
+        expect(await guardFuture, isTrue);
+        expect(find.text('Save changes?'), findsNothing);
+        expect(find.text('Library'), findsOneWidget);
+        expect(find.text('Editor'), findsNothing);
+      });
+    }
+
+    testWidgets(
+        'once another strategy is the open one, the save dialog closes under '
+        'a screen pushed over it and leaves that screen showing',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'strategy-covered',
+          strategyName: 'Strategy Covered',
+          source: StrategySource.local,
+          storageDirectory: null,
+          isOpen: true,
+        ),
+        flushResult: false,
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      await pumpLibraryUnderEditor(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-covered',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+      unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('Pushed over the dialog')),
+      )));
+      await tester.pumpAndSettle();
+
+      notifier.setFromState(const StrategyState(
+        strategyId: 'strategy-other',
+        strategyName: 'Strategy Other',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pushed over the dialog'), findsOneWidget);
+      expect(find.text('Save changes?', skipOffstage: false), findsNothing);
+      expect(await guardFuture, isFalse);
+      expect(continueCalls, 0);
+      Navigator.of(tester.element(find.text('Pushed over the dialog'))).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Editor'), findsOneWidget);
     });
 
     testWidgets(

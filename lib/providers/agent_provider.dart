@@ -603,7 +603,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     poppedAgents = [];
     _pendingEditBefore.clear();
     _draggedCopies.clear();
-    state = hiveAgents;
+    state = [for (final item in hiveAgents) item.deepCopy<PlacedAgentNode>()];
   }
 
   static List<PlacedAgentNode> fromJson(String jsonString) {

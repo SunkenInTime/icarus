@@ -75,9 +75,14 @@ class _AsksWhileOpen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final asking = ModalRoute.of(context);
     ref.listen(strategyProvider.select((state) => state.strategyId), (_, now) {
-      if (now != strategyId) {
-        Navigator.of(context).pop(UnsavedStrategyDecision.cancel);
+      if (now == strategyId || asking == null || !asking.isActive) return;
+      final navigator = Navigator.of(context);
+      if (asking.isCurrent) {
+        navigator.pop(UnsavedStrategyDecision.cancel);
+      } else {
+        navigator.removeRoute(asking, UnsavedStrategyDecision.cancel);
       }
     });
     return child;

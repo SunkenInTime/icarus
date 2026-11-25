@@ -394,7 +394,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     poppedAbility = [];
     _pendingEditBefore.clear();
     _draggedCopies.clear();
-    state = hiveAbilities;
+    state = [for (final item in hiveAbilities) item.deepCopy<PlacedAbility>()];
   }
 
   /// Takes the server's copy of every item but those [keep] names; see

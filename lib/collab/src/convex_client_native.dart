@@ -5,8 +5,9 @@ import 'dart:typed_data';
 import 'package:convex_flutter/convex_flutter.dart' as native;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:icarus/collab/src/convex_client_types.dart';
+import 'package:icarus/collab/transport/convex_transport.dart' show ResultStamp;
 
-class ConvexClient implements ConvexClientValueSource {
+class ConvexClient implements StampedValueSource {
   ConvexClient._(this._client, this.config);
 
   @visibleForTesting
@@ -152,6 +153,112 @@ class ConvexClient implements ConvexClientValueSource {
     return _NativeSubscriptionHandle(handle);
   }
 
+  @override
+  Future<StampedOutcome<Object?>> queryStamped(
+    String name,
+    Map<String, Object?> args,
+  ) async {
+    return _outcomeOf(await _client.queryTimed(name, _convexDartToJson(args)));
+  }
+
+  @override
+  Future<StampedOutcome<Object?>> mutationStamped({
+    required String name,
+    required Map<String, Object?> args,
+  }) async {
+    return _outcomeOf(
+      await _client.mutationTimed(name: name, args: _convexDartToJson(args)),
+    );
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeStamped({
+    required String name,
+    required Map<String, Object?> args,
+    required void Function(StampedOutcome<Object?> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
+  }) async {
+    var active = true;
+    final handle = await _client.subscribeTimed(
+      name: name,
+      args: _convexDartToJson(args),
+      onResult: (answer) {
+        if (!active) return;
+        final StampedOutcome<Object?> outcome;
+        try {
+          outcome = _outcomeOf(answer);
+        } catch (error, stackTrace) {
+          active = false;
+          onBroken(error, stackTrace);
+          return;
+        }
+        onResult(outcome);
+      },
+    );
+    return _NativeSubscriptionHandle(handle);
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeValuesStamped({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(StampedOutcome<List<Object?>> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
+  }) async {
+    if (queries.isEmpty) {
+      throw ArgumentError.value(queries, 'queries', 'needs at least one query');
+    }
+    List<Object?>? latest;
+    var active = true;
+    final handle = await _client.subscribeGroupTimed(
+      queries: [
+        for (final query in queries)
+          (name: query.name, args: _convexDartToJson(query.args)),
+      ],
+      onUpdate: (update) {
+        if (!active) return;
+        final stamp = ResultStamp(
+          client: update.client,
+          connection: update.connection,
+          snapshot: update.snapshot,
+          serverTime: update.ts,
+        );
+        if (update.error case final failure?) {
+          latest = null;
+          onResult(
+            StampedFunctionError(
+              _nativeFunctionError(
+                message: failure.message,
+                encodedData: failure.data,
+              ),
+              stamp,
+            ),
+          );
+          return;
+        }
+        final previous = latest;
+        final List<Object?> values;
+        try {
+          values = [
+            for (final (index, value) in update.values.indexed)
+              value == null
+                  ? previous![index]
+                  : _convexJsonToDart(jsonDecode(value)),
+          ];
+        } catch (error, stackTrace) {
+          active = false;
+          onBroken(error, stackTrace);
+          return;
+        }
+        latest = values;
+        onResult(StampedAnswer(values, stamp));
+      },
+    );
+    return _NativeSubscriptionHandle(handle);
+  }
+
+  @override
+  Future<int> connectionGeneration() => _client.connectionGeneration();
+
   int _authChanges = 0;
 
   int get authChanges => _authChanges;
@@ -195,6 +302,30 @@ class ConvexClient implements ConvexClientValueSource {
         ? WebSocketConnectionState.connected
         : WebSocketConnectionState.connecting;
   }
+}
+
+StampedOutcome<Object?> _outcomeOf(native.TimedAnswer answer) {
+  final stamp = ResultStamp(
+    client: answer.client,
+    connection: answer.connection,
+    snapshot: answer.snapshot,
+    serverTime: answer.ts,
+  );
+  return switch ((answer.value, answer.error)) {
+    (final value?, null) =>
+      StampedAnswer(_convexJsonToDart(jsonDecode(value)), stamp),
+    (null, final failure?) => StampedFunctionError(
+        _nativeFunctionError(
+          message: failure.message,
+          encodedData: failure.data,
+        ),
+        stamp,
+      ),
+    _ => throw FormatException(
+        'A timed answer must hold a value or an error, not '
+        '${answer.value == null ? 'neither' : 'both'}',
+      ),
+  };
 }
 
 ConvexClientFunctionError _nativeFunctionError({
