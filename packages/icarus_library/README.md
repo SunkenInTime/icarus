@@ -1837,6 +1837,18 @@ and `_judge` is the only place an outgoing revision is chosen.
   its first send (`WindowClosed`). Keep mine starts the 29 days again.
 - Live sends: a delete sent live is last writer wins, as in the shipped app.
 
+**A row's life.** A revision orders writes within one life of a row. A row's
+life is its `createdAt`, which the server sets on insert and never rewrites,
+so a row deleted and created again under the same id starts a new life at
+revision 1. Wherever the queue stores a revision (shown rows and the highest
+version each row has shown, authored, produced and kept-over-server rows,
+server copies and landed work) it also stores the row's life when it knows it.
+A `Version` orders by life first when both lives are known, and by revision
+otherwise, so a higher revision under an older life never outranks a newer
+life. Records written before lives were stored read back with no life and
+compare by revision, as they did. Nothing is sent or refused on a life yet:
+batches still name only revisions.
+
 **Landed work.** An answered op is drawn on top of the latest results until
 a result shows its row at the answered revision or later. The queue keeps
 the highest revision any result has shown for each row, so a page trashed and

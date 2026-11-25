@@ -72,6 +72,7 @@ export 'src/cloud/account.dart';
 export 'src/cloud/events.dart';
 export 'src/cloud/held_page_delete.dart';
 export 'src/cloud/shown.dart';
+export 'src/cloud/version.dart';
 export 'src/cloud/op_facts.dart'
     show
         Target,

@@ -1371,11 +1371,9 @@ Iterable<Target> _shownOn(Shown shown, String page) => [
 ];
 
 bool _alreadyShown(Shown shown, LandedWork work) {
-  final revision = shown.highest[checkTargetOf(work.op)];
-  if (revision == null) return false;
-  return _ownDelete(work)
-      ? revision > work.revision
-      : revision >= work.revision;
+  final shownAt = shown.highest[checkTargetOf(work.op)];
+  if (shownAt == null) return false;
+  return _ownDelete(work) ? shownAt > work.version : shownAt >= work.version;
 }
 
 bool _ownDelete(LandedWork work) =>
@@ -1691,18 +1689,21 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
               digest == last.digest ? revision : revision + 1,
             _ => first.revision,
           },
+          life: last.life,
           digest: last.digest,
           justifies: first.justifies,
         );
   return switch (earlier) {
     AuthoredRow(
       :final revision,
+      :final life,
       :final digest,
       :final payloadVersion,
       :final movedRow,
     ) =>
       AuthoredRow(
         revision: revision,
+        life: life,
         digest: digest,
         payloadVersion: payloadVersion,
         produces: produces,
@@ -2085,7 +2086,16 @@ Step _keepMine(
       },
       scope: entry.scope,
       authored: switch (expectedOf(replacement)) {
-        final revision? => KeptOverServer(revision),
+        final revision? => KeptOverServer(
+          revision,
+          life: switch (entry.refusal) {
+            RefusedWith(
+              refusal: RejectedByServer(current: ServerSnapshot(:final life)),
+            ) =>
+              life,
+            _ => null,
+          },
+        ),
         null => authored,
       },
       authoredIn: edit.session.number,
