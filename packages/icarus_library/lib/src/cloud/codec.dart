@@ -1,3 +1,5 @@
+import 'package:collection/collection.dart';
+
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
@@ -933,65 +935,129 @@ Map<String, ShownRow> _withLives(
 };
 
 Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
-  final pages = {
-    ...shown.content.keys,
-    for (final row in shown.rows.values) row.page,
-    for (final MapEntry(:key, :value) in shown.pageReads.entries)
-      if (isDebt(value)) key,
-  };
+  final byPage = _rowsByPage(shown);
   return {
-    null: {
-      'version': cloudRowVersion,
-      'strategy': [
-        if (shown.strategy case final strategy?)
-          _shownRow('strategy', strategy),
-      ],
-      'pages': [
-        for (final MapEntry(:key, :value) in shown.pages.entries)
-          _shownRow(key, value),
-      ],
-      'settings': [
-        for (final MapEntry(:key, :value) in shown.settings.entries)
-          _shownRow(key, value),
-      ],
-      'highest': [
-        for (final MapEntry(:key, :value) in shown.highest.entries)
-          [_targetKey(key), value.revisionOnTheWire],
-      ],
-      'lives': ?_unlessEmpty({
-        'strategy': _livesOf({'strategy': ?shown.strategy}),
-        'pages': _livesOf(shown.pages),
-        'settings': _livesOf(shown.settings),
-        'highest': {
-          for (final MapEntry(:key, :value) in shown.highest.entries)
-            _targetKey(key): ?value.lifeOnTheWire,
-        },
-      }),
-      'read': ?_readToJson(shown.list),
-    },
-    for (final page in pages)
-      page: {
-        'version': cloudRowVersion,
-        'page': page,
-        'content': switch (shown.content[page]) {
-          null => null,
-          final content => [
-            for (final MapEntry(:key, :value) in content.entries)
-              ['$key', value],
-          ],
-        },
-        'rows': [
-          for (final MapEntry(:key, :value) in shown.rows.entries)
-            if (value.page == page) _shownRow(_targetKey(key), value),
-        ],
-        'lives': ?_unlessEmpty({
-          for (final MapEntry(:key, :value) in shown.rows.entries)
-            if (value.page == page) _targetKey(key): ?value.life,
-        }),
-        'read': ?_readToJson(shown.pageRead(page)),
-      },
+    null: _headerGroup(shown),
+    for (final page in _groupPages(shown, byPage))
+      page: _pageGroup(shown, page, byPage[page] ?? const []),
   };
 }
+
+Map<String?, Map<String, Object?>?> shownToGroupsSince(
+  Shown before,
+  Shown after, {
+  required bool Function(String? group) kept,
+}) {
+  final beforeByPage = _rowsByPage(before);
+  final afterByPage = _rowsByPage(after);
+  return {
+    null: kept(null) && _sameHeader(before, after) ? null : _headerGroup(after),
+    for (final page in _groupPages(after, afterByPage))
+      page:
+          kept(page) &&
+              _samePage(before, after, page, beforeByPage, afterByPage)
+          ? null
+          : _pageGroup(after, page, afterByPage[page] ?? const []),
+  };
+}
+
+typedef _PageRows = List<(Target, ShownRow)>;
+
+Map<String, _PageRows> _rowsByPage(Shown shown) {
+  final byPage = <String, _PageRows>{};
+  for (final MapEntry(:key, :value) in shown.rows.entries) {
+    (byPage[value.page] ??= []).add((key, value));
+  }
+  return byPage;
+}
+
+Set<String> _groupPages(Shown shown, Map<String, _PageRows> byPage) => {
+  ...shown.content.keys,
+  ...byPage.keys,
+  for (final MapEntry(:key, :value) in shown.pageReads.entries)
+    if (isDebt(value)) key,
+};
+
+bool _sameInOrder<K, V>(Map<K, V>? left, Map<K, V>? right) {
+  if (identical(left, right)) return true;
+  if (left == null || right == null || left.length != right.length) {
+    return false;
+  }
+  final others = right.entries.iterator;
+  for (final MapEntry(:key, :value) in left.entries) {
+    others.moveNext();
+    if (others.current.key != key || others.current.value != value) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _sameHeader(Shown before, Shown after) =>
+    before.strategy == after.strategy &&
+    before.list == after.list &&
+    _sameInOrder(before.pages, after.pages) &&
+    _sameInOrder(before.settings, after.settings) &&
+    _sameInOrder(before.highest, after.highest);
+
+bool _samePage(
+  Shown before,
+  Shown after,
+  String page,
+  Map<String, _PageRows> beforeByPage,
+  Map<String, _PageRows> afterByPage,
+) =>
+    before.pageRead(page) == after.pageRead(page) &&
+    _sameInOrder(before.content[page], after.content[page]) &&
+    const ListEquality<(Target, ShownRow)>().equals(
+      beforeByPage[page] ?? const [],
+      afterByPage[page] ?? const [],
+    );
+
+Map<String, Object?> _headerGroup(Shown shown) => {
+  'version': cloudRowVersion,
+  'strategy': [
+    if (shown.strategy case final strategy?) _shownRow('strategy', strategy),
+  ],
+  'pages': [
+    for (final MapEntry(:key, :value) in shown.pages.entries)
+      _shownRow(key, value),
+  ],
+  'settings': [
+    for (final MapEntry(:key, :value) in shown.settings.entries)
+      _shownRow(key, value),
+  ],
+  'highest': [
+    for (final MapEntry(:key, :value) in shown.highest.entries)
+      [_targetKey(key), value.revisionOnTheWire],
+  ],
+  'lives': ?_unlessEmpty({
+    'strategy': _livesOf({'strategy': ?shown.strategy}),
+    'pages': _livesOf(shown.pages),
+    'settings': _livesOf(shown.settings),
+    'highest': {
+      for (final MapEntry(:key, :value) in shown.highest.entries)
+        _targetKey(key): ?value.lifeOnTheWire,
+    },
+  }),
+  'read': ?_readToJson(shown.list),
+};
+
+Map<String, Object?> _pageGroup(Shown shown, String page, _PageRows rows) => {
+  'version': cloudRowVersion,
+  'page': page,
+  'content': switch (shown.content[page]) {
+    null => null,
+    final content => [
+      for (final MapEntry(:key, :value) in content.entries) ['$key', value],
+    ],
+  },
+  'rows': [for (final (key, value) in rows) _shownRow(_targetKey(key), value)],
+  'lives': ?_unlessEmpty({
+    for (final (key, value) in rows) _targetKey(key): ?value.life,
+  }),
+  'read': ?_readToJson(shown.pageRead(page)),
+};
 
 Object? _readToJson(ReadState state) => switch (state) {
   ReadOwed(:final unlessLife, :final namedLife, :final since) => {

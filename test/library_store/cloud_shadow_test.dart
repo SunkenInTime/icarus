@@ -206,7 +206,18 @@ void main() {
       'and recorded in order once it comes', () async {
     final store = await openStore(MemoryStorage());
     final before = serverRows();
-    final after = serverRows(agentAt: const Offset(300, 40));
+    final moved = serverRows(agentAt: const Offset(300, 40));
+    final after = before.withRows([
+      for (final row in moved.elementsOn(pageId))
+        if (row case LiveElement element)
+          LiveElement(
+            publicId: element.publicId,
+            pagePublicId: element.pagePublicId,
+            payload: element.payload,
+            sortIndex: element.sortIndex,
+            revision: element.revision + 1,
+          ),
+    ]);
     final shadow = shadowOn(store)
       ..page(strategyId, pageSnapshot(before), tag(0))
       ..page(strategyId, pageSnapshot(after), tag(0))

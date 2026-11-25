@@ -224,7 +224,12 @@ final rows = <Row>[
   }),
   Row('needs user: page delete held, page changed (until #670)', () {
     final client = Client()..edit(pageDelete('x', 'page-a'));
-    return client..read(withOp(initialRows(), movePatch('t', rotation: 90)));
+    return client..read(
+      withOp(
+        withOp(initialRows(), movePatch('t', rotation: 45)),
+        movePatch('u', expected: 2, rotation: 90),
+      ),
+    );
   }),
   Row('needs user: oversized', () {
     return Client()..edit(

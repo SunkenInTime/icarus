@@ -177,6 +177,7 @@ import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_load_copy_cost.dart';
+import 'package:icarus/dev/drive/drive_page_take.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/clickable.dart';
 import 'package:icarus/interactive_map.dart';
@@ -2511,6 +2512,20 @@ Future<void> _run(Map<String, dynamic> step) async {
             : ReadBackBudget(
                 longestStepMs: budget['longestStepMs'] as num,
                 addedPerSaveMs: budget['addedPerSaveMs'] as num,
+              ),
+      )))
+          .forEach(_log);
+    case 'pageTakeCost':
+      final budget = step['budget'] as Map<String, dynamic>?;
+      (await _storeLines(pageTakeCost(
+        items: value as int,
+        changed: (step['changed'] ?? 1) as int,
+        runs: (step['runs'] ?? 51) as int,
+        budget: budget == null
+            ? null
+            : PageTakeBudget(
+                longestStepMs: budget['longestStepMs'] as num,
+                recordMs: budget['recordMs'] as num,
               ),
       )))
           .forEach(_log);
