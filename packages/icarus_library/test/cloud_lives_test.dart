@@ -751,6 +751,39 @@ void main() {
     });
   });
 
+  test('a batch refused at a time read from a real clock is kept, at the '
+      'millisecond, as a lost batch\'s time is', () async {
+    final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+    await addCloud(store, initialRows());
+    await recordAll(store, [const AppRestarted(build: build)]);
+    savedValue(
+      await store.commitAs(
+        testAccount,
+        strategyId,
+        movePatch('move'),
+        seen: await seenIn(store),
+      ),
+    );
+    final claimed = await recordAll(store, [
+      BatchClaimed(clientId: clientId, opIds: const ['move'], at: now),
+    ]);
+    final attempt = effectsOf(claimed).whereType<SendBatch>().single.attempt;
+    final clockTime = DateTime(2026, 11, 25, 8, 23, 8, 839, 877);
+    await recordAll(store, [
+      BatchRefused(attempt, BatchRefusal.uncheckedTooLate, at: clockTime),
+    ]);
+    expect(
+      (await syncOf(store)).queue.attempts[attempt]!.outcome,
+      AttemptRefusedWhole(
+        BatchRefusal.uncheckedTooLate,
+        at: DateTime.fromMillisecondsSinceEpoch(
+          clockTime.millisecondsSinceEpoch,
+          isUtc: true,
+        ),
+      ),
+    );
+  });
+
   group('review of the first lives push', () {
     test('a resend after the app starts again names the life the user '
         'edited, even once a result shows a replacement', () {
