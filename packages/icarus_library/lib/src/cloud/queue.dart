@@ -897,6 +897,14 @@ final class NotInAttempt extends Inapplicable {
   String toString() => 'NotInAttempt($opId, $attempt)';
 }
 
+final class NotOfAnotherLife extends Inapplicable {
+  const NotOfAnotherLife();
+
+  @override
+  String toString() =>
+      'an edit said to be of another life names the record\'s own life';
+}
+
 final class OpIdTaken extends Inapplicable {
   const OpIdTaken(this.opId);
 
@@ -1370,6 +1378,12 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         null => edit.shown.listRefused(problem, since),
       };
       return edit.done();
+    case EditOfAnotherLife(edit: final change, :final madeOn):
+      final recordLife = edit.shown.strategy?.life;
+      if (recordLife == null || madeOn == recordLife) {
+        return NotApplicable(queue, const NotOfAnotherLife());
+      }
+      return _setAsideEdit(edit, change, madeOn, recordLife, now);
     case ReadBegun():
       edit.effects.add(ReadStartIssued(edit.readsAfterThis()));
       return edit.done();
@@ -1681,13 +1695,16 @@ bool _ownDelete(LandedWork work) =>
 Step _setAsideEdit(
   _Edit edit,
   Edit change,
-  int madeOn,
+  int? madeOn,
   int recordLife,
   DateTime now,
 ) {
   final queue = edit.original;
   final op = change.op;
   if (!isJson(op.toJson())) return NotApplicable(queue, NotJson(op.opId));
+  if (_opIdTaken(edit, op.opId)) {
+    return NotApplicable(queue, OpIdTaken(op.opId));
+  }
   final entry = PendingOp(
     place: edit.nextPlace,
     work: switch (change) {
@@ -1732,11 +1749,18 @@ Step _setAsideEdit(
   return edit.done();
 }
 
+bool _opIdTaken(_Edit edit, String opId) =>
+    edit.indexOf(opId) != -1 ||
+    switch (edit.strategy.setAside) {
+      SetAside(:final entries) => entries.any((entry) => entry.id == opId),
+      NothingSetAside() => false,
+    };
+
 Step _userEdited(_Edit edit, Edit change, DateTime now) {
   final queue = edit.original;
   final op = change.op;
   if (!isJson(op.toJson())) return NotApplicable(queue, NotJson(op.opId));
-  if (edit.indexOf(op.opId) != -1) {
+  if (_opIdTaken(edit, op.opId)) {
     return NotApplicable(queue, OpIdTaken(op.opId));
   }
   final target = targetOf(op);

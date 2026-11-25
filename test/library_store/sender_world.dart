@@ -498,6 +498,7 @@ final class SlowSenderStore extends SenderStore {
   void Function()? duringSessionWrite;
   var readsThrow = false;
   var claimWaits = Duration.zero;
+  var refusesRefusedResult = 0;
 
   @override
   Future<ClaimResult> claim(
@@ -538,6 +539,11 @@ final class SlowSenderStore extends SenderStore {
     if (throwsOnBase && events.any((event) => event is BaseArrived)) {
       throwsOnBase = false;
       throw StateError('the store broke');
+    }
+    if (refusesRefusedResult > 0 &&
+        events.any((event) => event is ResultRefused)) {
+      refusesRefusedResult--;
+      return const WriteTroubled(NotWrittenNow('the test refused the write'));
     }
     if (readSession) {
       final during = duringSessionWrite;

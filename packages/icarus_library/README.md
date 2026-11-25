@@ -1950,8 +1950,9 @@ item missing.
 
 **A record ahead of the server.** A page list of an earlier life than the
 record's is dropped, except after a `STRATEGY_REPLACED` for the record's own
-life: then the next list read after that refusal is adopted whatever its life,
-and the edits written in the record's life are set aside. The server's
+life: then the next list read after that refusal is adopted when it shows a
+different life, earlier or later (a list showing the very life just refused is
+dropped), and the edits written in the record's life are set aside. The server's
 refusal names no life ([#772](https://github.com/SunkenInTime/icarus/issues/772)),
 so the record infers the current life from that list. If the list were older
 than the state the refusal was judged against, the record would adopt a stale
@@ -1963,8 +1964,12 @@ the real read path doing it.
 **An edit names its view.** `commitAs` and `commitAllAs` take `seen:`, the
 `StrategyContent` or `PageContent` the edit was built from, and the life the
 edit names comes from that same object. An edit seen in another life than the
-record's, earlier or later, is never applied to the current rows: it is kept
-with the set-aside edits and refused to the caller as `EditOfAReplacedStrategy`.
+record's, earlier or later, or seen in a read that names no life, is never
+applied to the current rows: it is kept with the set-aside edits and refused to
+the caller as `EditOfAReplacedStrategy`. The store cannot tell whether `seen` is
+the read the edit was really built from; the editor, when it moves onto the
+store, must make the edit and keep the read it came from together, so that a
+caller cannot pair one read's edit with another read's `seen`.
 
 **Where revisions still meet as numbers.** Every place two rows' versions are
 ordered uses `Version`: the highest version shown, which of two shown rows is

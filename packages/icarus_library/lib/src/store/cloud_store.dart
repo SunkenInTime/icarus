@@ -1273,14 +1273,14 @@ extension _CloudStore on LibraryStore {
     _CloudReady cloud,
     CloudQueue start,
     List<StrategyOp> asked,
-    int madeOn,
+    int? madeOn,
     DateTime now,
   ) async {
     var queue = start;
     for (final op in asked) {
       switch (transition(
         queue,
-        UserEdited(editOfAnotherLife(op), madeOn: madeOn),
+        EditOfAnotherLife(editOfAnotherLife(op), madeOn: madeOn),
         now: now,
       )) {
         case NotApplicable(:final why):
@@ -1319,11 +1319,9 @@ extension _CloudStore on LibraryStore {
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
     );
-    if ((queue.shown.strategy?.life, madeOn) case (
-      final recordLife?,
-      final made?,
-    ) when recordLife != made) {
-      return _commitOfAnotherLife(cloud, queue, asked, made, now);
+    if (queue.shown.strategy?.life case final recordLife?
+        when recordLife != madeOn) {
+      return _commitOfAnotherLife(cloud, queue, asked, madeOn, now);
     }
     final pages = {for (final op in asked) ..._ownPages(strategy, queue, op)};
     StrategyRowSet rows;
@@ -1737,6 +1735,8 @@ extension _CloudStore on LibraryStore {
     HeaderRead header,
     List<PageRead> pages,
   ) async {
+    final results = _cloudResults;
+    if (results == null) return const Refused(CloudResultsNotChosen());
     final ReadableStrategy strategyRow;
     switch (header.strategy) {
       case final ReadableStrategy row:
@@ -1786,10 +1786,10 @@ extension _CloudStore on LibraryStore {
         BaseArrived(
           base,
           session: queue.session.number,
-          from: switch (_cloudResults) {
+          from: switch (results) {
             CloudResults.liveQueries => const LiveResult(),
-            CloudResults.thisDevicesReads ||
-            null => ReadOfThisDevice(queue.session.readStart),
+            CloudResults.thisDevicesReads =>
+              ReadOfThisDevice(queue.session.readStart),
           },
         ),
     ];

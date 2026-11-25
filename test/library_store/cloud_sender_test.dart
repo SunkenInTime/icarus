@@ -627,6 +627,44 @@ void main() {
       });
     });
 
+    test(
+        'when the write marking a refused page fails, the next refusal writes '
+        'it, and the strategy shows unreadable work', () {
+      inWorld((world) {
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(
+            StoreBatchAnswered(
+              [
+                RejectedAnswer(
+                  call.opIds.single,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+              ],
+              complete: true,
+            ),
+          ),
+        );
+        world.server.overrideRead = (call) {
+          if (call.page != pageId) return null;
+          final held = world.server.rows[strategyId]!.page(pageId)! as LivePage;
+          return StoreReadAnswered(
+            PageRead(
+              page: bornIn(held, lifeOfRow(held.key) + 1000) as PageRow,
+              elements: const [],
+              lineupGroups: const [],
+            ),
+          );
+        };
+        world.slowStore.refusesRefusedResult = 1;
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 30));
+        expect(world.slowStore.refusesRefusedResult, 0);
+        expect(world.face(), Face.unreadableWork);
+      });
+    });
+
     test('a start with saved work sends it with no wake from outside', () {
       final storage = MemoryStorage();
       final server = FakeServer();
@@ -2240,7 +2278,7 @@ void main() {
                 reason: '$reason, reads at $times',
               );
             }
-            expect(times.length, inInclusiveRange(1, 4), reason: reason);
+            expect(times.length, inInclusiveRange(2, 4), reason: reason);
           },
           addStrategy: reason !=
               'a page not read since the strategy was '

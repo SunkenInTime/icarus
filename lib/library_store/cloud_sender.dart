@@ -1140,8 +1140,8 @@ final class CloudSender {
   ) async {
     final now = _clock();
     final reads = _deferred[id] ??= {};
-    final count = (reads['$read']?.count ?? 0) + 1;
-    reads['$read'] = (count: count, at: now);
+    final previous = reads['$read'];
+    final count = (previous?.count ?? 0) + 1;
     if (count == _timing.unresolvedRounds) {
       final noted = await _store.write(owner, id, [
         ResultRefused(
@@ -1157,6 +1157,7 @@ final class CloudSender {
         return _troubled(id, trouble);
       }
     }
+    reads['$read'] = (count: count, at: now);
     _note(id, '$why ($count in a row); $read is read again later');
     return const _Acted();
   }

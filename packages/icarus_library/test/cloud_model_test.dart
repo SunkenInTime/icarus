@@ -326,17 +326,21 @@ final class Model {
       for (var round = 0; round < 3 && awaited.isNotEmpty; round++) {
         for (final hold in awaited) {
           for (final base in resultsFor(hold.subject)) {
-            if (transition(
-                  read,
-                  BaseArrived(
-                    base,
-                    session: read.session.number,
-                    from: readFrom(read),
-                  ),
-                  now: clock,
-                )
-                case Stepped(:final queue)) {
-              read = queue;
+            final begun = transition(read, const ReadBegun(), now: clock);
+            if (begun case Stepped(queue: final started, :final effects)) {
+              read = started;
+              if (transition(
+                    read,
+                    BaseArrived(
+                      base,
+                      session: read.session.number,
+                      from: effects.whereType<ReadStartIssued>().single.source,
+                    ),
+                    now: clock,
+                  )
+                  case Stepped(:final queue)) {
+                read = queue;
+              }
             }
           }
         }
@@ -923,7 +927,11 @@ final class Model {
   }
 
   void arrive(ArrivedBase base, String label) {
-    final from = readFrom(client.queue);
+    final from = switch (apply(const ReadBegun(), 'a read begins')) {
+      Stepped(:final effects) =>
+        effects.whereType<ReadStartIssued>().single.source,
+      final other => throw StateError('no read start was issued: $other'),
+    };
     final session = client.queue.session.number;
     if (lateness.nextInt(16) == 0) {
       readsInFlight.add((base, from, session, label));

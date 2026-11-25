@@ -29,15 +29,16 @@ if (strategyName === "logs") {
     console.error(`the log stream could not start: ${error.message}`);
     process.exit(1);
   });
-  child.on("exit", (code, signal) => {
+  child.on("close", (code, signal) => {
     if (deadlinePassed) return;
+    clearTimeout(deadline);
     console.error(
       `the log stream ended before its ${seconds} s window was over ` +
         `(exit ${code ?? signal}), so it does not hold every call`,
     );
-    process.exit(1);
+    process.exitCode = 1;
   });
-  setTimeout(() => {
+  const deadline = setTimeout(() => {
     deadlinePassed = true;
     child.kill();
     process.exit(0);
@@ -130,7 +131,22 @@ async function replace() {
       },
     }),
   );
-  if (mode === "show") return;
+  if (mode === "show") {
+    console.log(
+      JSON.stringify({
+        events: table("operationEvents")
+          .filter((event) => event.strategyId === strategy._id)
+          .map((event) => ({
+            clientId: event.clientId,
+            opId: event.opId,
+            opType: event.opType,
+            status: event.status,
+            createdAt: event.createdAt,
+          })),
+      }),
+    );
+    return;
+  }
 
   const page = pagesOf(strategy._id).sort(
     (a, b) => a.sortIndex - b.sortIndex,

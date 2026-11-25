@@ -83,6 +83,15 @@ final class NoSuchStrategy implements CommitRefusal, LibraryRefusal {
   String toString() => 'NoSuchStrategy($strategyPublicId)';
 }
 
+final class CloudResultsNotChosen implements CommitRefusal, LibraryRefusal {
+  const CloudResultsNotChosen();
+
+  @override
+  String toString() =>
+      'CloudResultsNotChosen: this run has not said where its results come '
+      'from, so it cannot keep a cloud strategy';
+}
+
 final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
   const UnreadableRowInTheWay(this.row);
 

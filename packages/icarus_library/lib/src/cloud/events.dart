@@ -274,6 +274,13 @@ final class BaseArrived extends QueueEvent {
   final ResultSource from;
 }
 
+final class EditOfAnotherLife extends QueueEvent {
+  const EditOfAnotherLife(this.edit, {required this.madeOn});
+
+  final Edit edit;
+  final int? madeOn;
+}
+
 final class ReadBegun extends QueueEvent {
   const ReadBegun();
 }

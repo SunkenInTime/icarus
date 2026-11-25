@@ -91,6 +91,174 @@ void main() {
     });
   });
 
+  group('the review round on 8dac5684', () {
+    test('a list read started before an adoption is not taken after it, though '
+        'it shows the adopted life', () {
+      final client = Client();
+      final before = client.beginRead();
+      client.arrive(headerReadOf(replaced(initialRows())));
+      final late = client.step(
+        BaseArrived(
+          headerReadOf(replaced(initialRows())),
+          session: client.queue.session.number,
+          from: before,
+        ),
+      );
+      expect(notApplicable(late), isA<StartedInAnotherLife>());
+    });
+
+    test('a result from a session that ended is not taken, and the store '
+        'writes nothing for it', () async {
+      final storage = MemoryStorage();
+      final store = await openCloudStore(MemoryEngine(storage));
+      await addCloud(store, initialRows());
+      await recordAll(store, [const AppRestarted(build: build)]);
+      final ended = await sessionOf(store);
+      final from = await readStartOf(store);
+      await recordAll(store, [
+        const ConnectionLost(),
+        const ConnectionReturned(),
+      ]);
+      final before = Map.of(storage.contents);
+      final recorded = await store.record(testAccount, strategyId, [
+        BaseArrived(
+          pageReadOf(withOp(initialRows(), movePatch('t', x: 9)), 'page-a'),
+          session: ended,
+          from: from,
+        ),
+      ]);
+      expect(
+        (recorded as Saved<Recorded, CommitRefusal>).value.outcomes.single,
+        isA<ReportNotApplicable>().having(
+          (outcome) => outcome.why,
+          'why',
+          isA<FromAnEndedSession>(),
+        ),
+      );
+      expect(storage.contents.keys, before.keys);
+    });
+
+    test(
+      'a store cannot change where its results come from once chosen',
+      () async {
+        final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+        expect(
+          () => store.takeCloudResultsFrom(CloudResults.liveQueries),
+          throwsStateError,
+        );
+        store.takeCloudResultsFrom(CloudResults.thisDevicesReads);
+      },
+    );
+
+    test('a store that has not chosen where its results come from refuses to '
+        'add a cloud strategy and keeps nothing', () async {
+      final store = switch (await LibraryStore.open(
+        MemoryEngine(MemoryStorage()),
+        canRead: readsKnownKinds,
+        clock: fixedClock,
+        build: build,
+      )) {
+        StoreOpened(:final store) => store,
+        StoreNotOpened(:final problem) => fail('$problem'),
+      };
+      expect(
+        await store.addCloudStrategy(
+          testAccount,
+          headerReadOf(initialRows()),
+          pageReadsOf(initialRows()),
+        ),
+        isA<Refused<StrategySummary, LibraryRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<CloudResultsNotChosen>(),
+        ),
+      );
+      expect(await store.readStrategy(strategyId), isA<NotFound<Object>>());
+      expect((store.library as LibraryOpen).list.strategies, isEmpty);
+    });
+
+    test('an edit whose read names no life is of another life than a record '
+        'that has one: it is set aside, never applied', () async {
+      final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+      await addCloud(store, initialRows());
+      await recordAll(store, [const AppRestarted(build: build)]);
+      final page =
+          ((await store.readPage(strategyId, 'page-a')) as Found<PageContent>)
+              .value;
+      final lifeless = PageContent(
+        strategyLife: null,
+        page: page.page,
+        settings: page.settings,
+        elements: page.elements,
+        lineupGroups: page.lineupGroups,
+        unknownKinds: page.unknownKinds,
+        unplaced: page.unplaced,
+        foreignNames: page.foreignNames,
+      );
+      expect(
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('late', x: 77),
+          seen: lifeless,
+        ),
+        isA<Refused<Committed, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<EditOfAReplacedStrategy>(),
+        ),
+      );
+      expect(setAsideIds((await syncOf(store)).queue), ['late']);
+    });
+
+    test(
+      'an op id already kept aside cannot be used again, on either path',
+      () {
+        final client = Client();
+        client.must(
+          UserEdited(
+            (client.editEvent(movePatch('kept')) as UserEdited).edit,
+            madeOn: laterLife,
+          ),
+        );
+        expect(setAsideIds(client.queue), ['kept']);
+        expect(
+          notApplicable(
+            client.step(
+              UserEdited(
+                (client.editEvent(movePatch('kept', elementId: 'e2'))
+                        as UserEdited)
+                    .edit,
+                madeOn: laterLife,
+              ),
+            ),
+          ),
+          isA<OpIdTaken>(),
+        );
+        expect(
+          notApplicable(
+            client.step(client.editEvent(movePatch('kept', elementId: 'e2'))),
+          ),
+          isA<OpIdTaken>(),
+        );
+        client.edit(movePatch('queued', elementId: 'e2'));
+        expect(
+          notApplicable(
+            client.step(
+              UserEdited(
+                (client.editEvent(movePatch('queued', elementId: 'e3'))
+                        as UserEdited)
+                    .edit,
+                madeOn: laterLife,
+              ),
+            ),
+          ),
+          isA<OpIdTaken>(),
+        );
+      },
+    );
+  });
+
   group('a commit takes the life from the read it was built from', () {
     test(
       'an edit built from a read made before the replacement is set aside, '

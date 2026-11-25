@@ -64,10 +64,44 @@ if [ "$logs_status" -ne 0 ]; then
   tee -a "$log" < "$base-calls.err"
   exit 1
 fi
-client_calls=$(grep -cE '"identifier":"(ops:applyBatch|strategy:getPageList)"' "$base-calls.jsonl" || true)
-if [ "$client_calls" -eq 0 ]; then
-  say "the server's log holds no ops:applyBatch and no page list read, so this run proves nothing about what was sent"
+python3 - "$base-calls.jsonl" "$base-server.jsonl" "$out/main.log" "$(cat "$out/run-id")" <<'PY' | tee -a "$log"
+import json, re, sys
+calls_path, server_path, main_log, run = sys.argv[1:5]
+calls = [json.loads(line) for line in open(calls_path) if line.startswith("{")]
+refused = [
+    call for call in calls
+    if call.get("identifier") == "ops:applyBatch"
+    and "STRATEGY_REPLACED" in json.dumps(call.get("error"))
+]
+events = []
+for line in open(server_path):
+    row = json.loads(line)
+    events = row.get("events", events)
+log = open(main_log).read()
+moved = dict(re.findall(r"CLOUDSTORE committed ([0-9a-f-]{36}): ((?:o1|o2|t3)-%s) of " % run, log))
+problems = []
+if len(refused) != 1:
+    problems.append(f"{len(refused)} batches were refused as STRATEGY_REPLACED, not one")
+third = [op for op, item in moved.items() if item.startswith("t3-")]
+old = [op for op, item in moved.items() if not item.startswith("t3-")]
+if len(third) != 1 or len(old) != 2:
+    problems.append(f"the teammate's log names moves {moved}, not two old ones and one third")
+landed = [e for e in events if e["opId"] in third and e["status"] == "applied"]
+if not landed:
+    problems.append("the server holds no applied event for the teammate's third move")
+resent = [e for e in events if e["opId"] in old]
+if resent:
+    problems.append(f"the server holds events for the set-aside moves: {resent}")
+for problem in problems:
+    print(f"CHECK FAILED {problem}")
+if problems:
+    sys.exit(1)
+print(f"CHECK the server refused one batch as STRATEGY_REPLACED, applied the third move {third[0]} "
+      f"from client {landed[0]['clientId']}, and holds nothing for the set-aside moves {old}")
+PY
+check=${PIPESTATUS[0]}
+if [ "$check" -ne 0 ]; then
+  say "the server's log and rows do not show what this run claims"
   exit 1
 fi
-say "the server's log holds $client_calls batches and page list reads"
 exit $status
