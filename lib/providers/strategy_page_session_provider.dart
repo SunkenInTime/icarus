@@ -1248,8 +1248,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       await remote.setActivePage(pageId, fetched: target);
     }
 
-    final claimedSession = source == StrategySource.cloud;
-    bool givesWay() => !claimedSession && superseded();
+    final readsPages = source == StrategySource.local &&
+        ref.read(localPageReadsProvider) != null;
+    bool givesWay() => readsPages && superseded();
     final pageData = await pageSource.loadPage(pageId);
     if (givesWay()) {
       ref.read(localPageReadsProvider)?.neverShown(pageData);
@@ -1262,7 +1263,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       strategyId: strategyId,
       source: source,
       loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
-      canApply: () => current = !givesWay(),
+      canApply: readsPages ? () => current = !givesWay() : null,
     );
     if (!current) return _PageSwitch.superseded;
 
