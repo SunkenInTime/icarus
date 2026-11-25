@@ -8,7 +8,6 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/utilities.dart';
 import 'package:icarus/const/weapons.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
