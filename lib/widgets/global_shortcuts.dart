@@ -244,7 +244,10 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
           ),
           UndoActionIntent: CallbackAction<UndoActionIntent>(
             onInvoke: (intent) {
-              if (!capabilities.canEditPages) return null;
+              if (!capabilities.canEditPages ||
+                  ref.read(strategyOpeningProvider) != null) {
+                return null;
+              }
               _dismissDeleteMenu();
               ref.read(actionProvider.notifier).undoAction();
               return null;
@@ -310,7 +313,10 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
           ),
           RedoActionIntent: CallbackAction<RedoActionIntent>(
             onInvoke: (intent) {
-              if (!capabilities.canEditPages) return null;
+              if (!capabilities.canEditPages ||
+                  ref.read(strategyOpeningProvider) != null) {
+                return null;
+              }
               _dismissDeleteMenu();
               ref.read(actionProvider.notifier).redoAction();
               return null;

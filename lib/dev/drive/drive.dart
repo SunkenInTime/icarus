@@ -760,22 +760,27 @@ Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
     await openAndSettle(left);
     final clock = Stopwatch();
     int? swapped;
-    final subscription = c.listen(
-      strategyProvider.select((state) => state.strategyId),
-      (_, id) {
-        if (id == opened) swapped ??= clock.elapsedMicroseconds;
-      },
-    );
+    int? shownAt;
+    final subscriptions = [
+      c.listen(
+        strategyProvider.select((state) => state.strategyId),
+        (_, id) {
+          if (id == opened) swapped ??= clock.elapsedMicroseconds;
+        },
+      ),
+      c.listen(canvasShowsProvider, (_, now) {
+        if (now case ShowsPage(:final strategyId) when strategyId == opened) {
+          shownAt ??= clock.elapsedMicroseconds;
+        }
+      }),
+    ];
     clock.start();
     _pressMouse(restAt, buttons: kBackMouseButton);
-    await _waitFor(
-      () =>
-          swapped != null &&
-          !c.read(strategyPageSessionProvider).isApplyingPage,
-      60,
-    );
-    final shown = clock.elapsedMicroseconds;
-    subscription.close();
+    await _waitFor(() => swapped != null && shownAt != null, 60);
+    final shown = shownAt!;
+    for (final subscription in subscriptions) {
+      subscription.close();
+    }
     shownAfter.add(shown);
     reads.add(swapped!);
     _log('CLOUDOPEN run $run: $openedName read ${ms(swapped!)} ms after the '
@@ -787,7 +792,16 @@ Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
   reads.sort();
   String spread(List<int> values) =>
       'median ${ms(values[values.length ~/ 2])} ms, worst ${ms(values.last)} ms';
-  _log('CLOUDOPEN summary $openedName ($pages pages, $items items a page): '
+  final measuredPages =
+      c.read(strategyPageSessionProvider).availablePageIds.length;
+  final onShownPage = c.read(agentProvider).length +
+      c.read(abilityProvider).length +
+      c.read(drawingProvider).elements.length +
+      c.read(textProvider).length +
+      c.read(placedImageProvider).images.length +
+      c.read(utilityProvider).length;
+  _log('CLOUDOPEN summary $openedName ($measuredPages pages, $onShownPage '
+      'items on the page shown): '
       '$runs runs; back button to the read done ${spread(reads)}; to its '
       'page shown ${spread(shownAfter)}');
 }

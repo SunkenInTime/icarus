@@ -226,6 +226,25 @@ void main() {
   }
 
   testWidgets(
+      'Ctrl+Z pressed in the same frame an open starts, before the editor '
+      'rebuilds, undoes nothing', (tester) async {
+    final container = await _editor(tester);
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'placed-before',
+          type: AgentType.jett,
+          position: const Offset(300, 300),
+        ));
+    await tester.pump();
+
+    _beginOpen(container);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    expect(container.read(agentProvider), hasLength(1));
+  });
+
+  testWidgets(
       'an open starting takes focus from a field on the canvas and closes '
       'a caption being read; the canvas takes input again once it ends',
       (tester) async {

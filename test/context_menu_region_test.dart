@@ -319,4 +319,22 @@ void main() {
 
     expect(builders, isEmpty);
   });
+
+  testWidgets(
+      'a menu asked for in the frame before an open closes menus never '
+      'shows, and the next right-click opens it as usual', (tester) async {
+    await tester.pumpWidget(const _Menus());
+
+    await tester.tap(
+      find.byKey(const ValueKey('first')),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    ContextMenuRegion.closeOpen();
+    await tester.pumpAndSettle();
+    expect(find.text('First item'), findsNothing);
+
+    await _rightClick(tester, 'first');
+    expect(find.text('First item'), findsOneWidget);
+  });
 }
