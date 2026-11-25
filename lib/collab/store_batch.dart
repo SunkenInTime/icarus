@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart';
+import 'package:icarus/collab/src/convex_client_types.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus_library/icarus_library.dart' as store;
 
@@ -23,9 +25,10 @@ final class StoreBatchAnswered extends StoreBatchOutcome {
 }
 
 final class StoreBatchRefusedWhole extends StoreBatchOutcome {
-  const StoreBatchRefusedWhole(this.refusal);
+  const StoreBatchRefusedWhole(this.refusal, {this.currentLife});
 
   final store.BatchRefusal refusal;
+  final int? currentLife;
 }
 
 final class StoreBatchLost extends StoreBatchOutcome {
@@ -210,6 +213,18 @@ store.RejectionReason? _rejectionOf(OpRejectionReason reason) =>
         .where((known) => known.wireName == reason.wireName)
         .firstOrNull;
 
+int? _currentLifeIn(Object error) => switch (switch (error) {
+      ConvexFunctionException(:final data?) => data.toDart(),
+      ConvexClientFunctionError(:final data) => data,
+      _ => null,
+    }) {
+      {'currentLife': final int life} => life,
+      {'currentLife': final double life}
+          when life == life.roundToDouble() && life.abs() < 1e15 =>
+        life.toInt(),
+      _ => null,
+    };
+
 StoreBatchOutcome storeBatchOutcomeOfError(Object error) {
   if (isClientUpgradeRequiredError(error)) {
     return const StoreBatchRefusedWhole(store.BatchRefusal.upgradeRequired);
@@ -230,7 +245,10 @@ StoreBatchOutcome storeBatchOutcomeOfError(Object error) {
     return const StoreBatchRefusedWhole(store.BatchRefusal.strategyDeleted);
   }
   if (isStrategyReplacedError(error)) {
-    return const StoreBatchRefusedWhole(store.BatchRefusal.strategyReplaced);
+    return StoreBatchRefusedWhole(
+      store.BatchRefusal.strategyReplaced,
+      currentLife: _currentLifeIn(error),
+    );
   }
   if (error is TimeoutException) {
     return StoreBatchLost(store.TransportFailure.timeout, '$error');

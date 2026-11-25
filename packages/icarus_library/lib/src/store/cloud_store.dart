@@ -308,11 +308,18 @@ QueueEvent _atStoredPrecision(QueueEvent event) => switch (event) {
     failure,
     at: _storedPrecision(at),
   ),
-  BatchRefused(:final attempt, :final refusal, :final at?) => BatchRefused(
-    attempt,
-    refusal,
-    at: _storedPrecision(at),
-  ),
+  BatchRefused(
+    :final attempt,
+    :final refusal,
+    :final at?,
+    :final currentLife,
+  ) =>
+    BatchRefused(
+      attempt,
+      refusal,
+      at: _storedPrecision(at),
+      currentLife: currentLife,
+    ),
   _ => event,
 };
 

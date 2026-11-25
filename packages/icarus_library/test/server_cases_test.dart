@@ -118,11 +118,20 @@ void main() {
               );
               if (step['refused'] case final String code) {
                 expect(events, [
-                  isA<BatchRefused>().having(
-                    (event) => event.refusal,
-                    'refusal',
-                    BatchRefusal.strategyReplaced,
-                  ),
+                  isA<BatchRefused>()
+                      .having(
+                        (event) => event.refusal,
+                        'refusal',
+                        BatchRefusal.strategyReplaced,
+                      )
+                      .having(
+                        (event) => switch (event.currentLife) {
+                          final life? => lives.name(life),
+                          null => null,
+                        },
+                        'currentLife',
+                        step['currentLife'],
+                      ),
                 ]);
                 expect(code, 'STRATEGY_REPLACED');
                 continue;

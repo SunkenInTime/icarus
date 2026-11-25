@@ -59,6 +59,7 @@ import {
   errorWithCode,
   invalidPayloadError,
   pageDeletedError,
+  strategyReplacedError,
 } from "./lib/errors";
 
 type ElementPayload = Doc<"elements">["payload"];
@@ -2088,10 +2089,7 @@ export const applyBatch = mutation({
       args.strategyLife !== undefined &&
       args.strategyLife !== strategy.createdAt
     ) {
-      throw errorWithCode(
-        "STRATEGY_REPLACED",
-        "This strategy was deleted and made again since these changes were made",
-      );
+      throw strategyReplacedError(strategy.createdAt);
     }
     const results: PublicOperationResult[] = [];
     let acceptedStrategyBatchBaseRevision: number | undefined;

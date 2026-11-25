@@ -194,7 +194,11 @@ describe("a batch made in a strategy life that is gone", () => {
     const refused = await refusal(
       send(me, ops, { sendsLives: true, strategyLife: firstLife }),
     );
-    expect(refused).toContain("STRATEGY_REPLACED");
+    const data: unknown = JSON.parse(refused);
+    expect(typeof data === "string" ? JSON.parse(data) : data).toMatchObject({
+      code: "STRATEGY_REPLACED",
+      currentLife: secondLife,
+    });
     expect(await stored(t)).toEqual(before);
   });
 

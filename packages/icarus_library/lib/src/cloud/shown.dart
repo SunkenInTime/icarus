@@ -194,32 +194,42 @@ final class ReadThisSession extends ReadState {
 }
 
 final class ReadOwed extends ReadState {
-  const ReadOwed({this.unlessLife, required this.since});
+  const ReadOwed({this.unlessLife, this.namedLife, required this.since});
 
   final int? unlessLife;
+  final int? namedLife;
   final ReadStart since;
 
   @override
   bool operator ==(Object other) =>
       other is ReadOwed &&
       other.unlessLife == unlessLife &&
+      other.namedLife == namedLife &&
       other.since == since;
 
   @override
-  int get hashCode => Object.hash(ReadOwed, unlessLife, since);
+  int get hashCode => Object.hash(ReadOwed, unlessLife, namedLife, since);
 
   @override
-  String toString() => unlessLife == null
-      ? 'owed'
-      : 'owed by a list of another life than $unlessLife, read after the '
-            'refusal';
+  String toString() => switch ((unlessLife, namedLife)) {
+    (null, _) => 'owed',
+    (final refused?, null) =>
+      'owed by a list of another life than $refused, read after the refusal',
+    (_, final named?) => 'owed by a list of life $named or later',
+  };
 }
 
 final class ReadRefused extends ReadState {
-  const ReadRefused(this.problem, {this.unlessLife, required this.since});
+  const ReadRefused(
+    this.problem, {
+    this.unlessLife,
+    this.namedLife,
+    required this.since,
+  });
 
   final String problem;
   final int? unlessLife;
+  final int? namedLife;
   final ReadStart since;
 
   @override
@@ -227,17 +237,28 @@ final class ReadRefused extends ReadState {
       other is ReadRefused &&
       other.problem == problem &&
       other.unlessLife == unlessLife &&
+      other.namedLife == namedLife &&
       other.since == since;
 
   @override
-  int get hashCode => Object.hash(ReadRefused, problem, unlessLife, since);
+  int get hashCode =>
+      Object.hash(ReadRefused, problem, unlessLife, namedLife, since);
 
   @override
-  String toString() => unlessLife == null
-      ? 'refused: $problem'
-      : 'refused: $problem, owed by a list of another life than '
-            '$unlessLife, read after the refusal';
+  String toString() => switch ((unlessLife, namedLife)) {
+    (null, _) => 'refused: $problem',
+    (final refused?, null) =>
+      'refused: $problem, owed by a list of another life than $refused, read '
+          'after the refusal',
+    (_, final named?) =>
+      'refused: $problem, owed by a list of life $named or later',
+  };
 }
+
+int? namedLifeOf(ReadState state) => switch (state) {
+  ReadOwed(:final namedLife) || ReadRefused(:final namedLife) => namedLife,
+  NotReadThisSession() || ReadThisSession() => null,
+};
 
 bool isDebt(ReadState state) => state is ReadOwed || state is ReadRefused;
 
@@ -455,7 +476,15 @@ final class Shown {
       list: switch ((list, createdAtOf(strategy))) {
         (final owed, _) when !paidBy(owed, started) => owed,
         (
-          ReadOwed(:final unlessLife?) || ReadRefused(:final unlessLife?),
+          ReadOwed(namedLife: final named?) ||
+              ReadRefused(namedLife: final named?),
+          final listed,
+        )
+            when listed == null || listed < named =>
+          list,
+        (
+          ReadOwed(unlessLife: final unlessLife?, namedLife: null) ||
+              ReadRefused(unlessLife: final unlessLife?, namedLife: null),
           final listed,
         )
             when listed == null || listed <= unlessLife =>
@@ -544,8 +573,8 @@ final class Shown {
 
   Shown owingList(ReadStart since) => _with(list: ReadOwed(since: since));
 
-  Shown owingListPast(int? life, ReadStart since) => _with(
-    list: ReadOwed(unlessLife: life, since: since),
+  Shown owingListPast(int? life, ReadStart since, {int? named}) => _with(
+    list: ReadOwed(unlessLife: life, namedLife: named, since: since),
   );
 
   Shown owingPage(String page, ReadStart since) => _with(
@@ -563,6 +592,7 @@ final class Shown {
         ReadRefused(:final unlessLife) => unlessLife,
         NotReadThisSession() || ReadThisSession() => null,
       },
+      namedLife: namedLifeOf(list),
       since: since,
     ),
   );

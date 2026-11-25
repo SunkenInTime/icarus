@@ -107,7 +107,13 @@ final class Server {
   List<QueueEvent> answer(String client, SendBatch batch) =>
       batch.strategyLife != null &&
           createdAtOf(rows.strategy) != batch.strategyLife
-      ? [BatchRefused(batch.attempt, BatchRefusal.strategyReplaced)]
+      ? [
+          BatchRefused(
+            batch.attempt,
+            BatchRefusal.strategyReplaced,
+            currentLife: createdAtOf(rows.strategy),
+          ),
+        ]
       : [
           for (final op in batch.ops)
             OpAnswered(

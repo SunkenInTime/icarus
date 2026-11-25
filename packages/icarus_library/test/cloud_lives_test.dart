@@ -784,6 +784,49 @@ void main() {
     );
   });
 
+  test('the life a STRATEGY_REPLACED names is stored with the debt, also '
+      'when the refusal carries a clock time: it survives the store being '
+      'closed and opened again', () async {
+    final storage = MemoryStorage();
+    var store = await openCloudStore(MemoryEngine(storage));
+    await addCloud(store, initialRows());
+    await recordAll(store, [const AppRestarted(build: build)]);
+    savedValue(
+      await store.commitAs(
+        testAccount,
+        strategyId,
+        movePatch('move'),
+        seen: await seenIn(store),
+      ),
+    );
+    final claimed = await recordAll(store, [
+      BatchClaimed(clientId: clientId, opIds: const ['move'], at: now),
+    ]);
+    final attempt = effectsOf(claimed).whereType<SendBatch>().single.attempt;
+    final named = strategyCreatedAt.millisecondsSinceEpoch + 86400000;
+    await recordAll(store, [
+      BatchRefused(
+        attempt,
+        BatchRefusal.strategyReplaced,
+        at: DateTime(2026, 11, 25, 8, 23, 8, 839, 877),
+        currentLife: named,
+      ),
+      const ResultRefused(page: null, problem: 'the test refused it'),
+    ]);
+    await store.close();
+    store = await openCloudStore(MemoryEngine(storage));
+    expect(
+      (await syncOf(store)).queue.shown.list,
+      isA<ReadRefused>()
+          .having(
+            (state) => state.unlessLife,
+            'unlessLife',
+            strategyCreatedAt.millisecondsSinceEpoch,
+          )
+          .having((state) => state.namedLife, 'namedLife', named),
+    );
+  });
+
   group('review of the first lives push', () {
     test('a resend after the app starts again names the life the user '
         'edited, even once a result shows a replacement', () {

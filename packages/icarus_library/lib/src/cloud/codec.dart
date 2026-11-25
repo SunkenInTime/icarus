@@ -994,15 +994,23 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
 }
 
 Object? _readToJson(ReadState state) => switch (state) {
-  ReadOwed(:final unlessLife, :final since) => {
+  ReadOwed(:final unlessLife, :final namedLife, :final since) => {
     'owedSince': _startToJson(since),
     'unless': ?unlessLife,
+    'named': ?namedLife,
   },
-  ReadRefused(:final problem, :final unlessLife, :final since) => {
-    'refused': problem,
-    'unless': ?unlessLife,
-    'since': _startToJson(since),
-  },
+  ReadRefused(
+    :final problem,
+    :final unlessLife,
+    :final namedLife,
+    :final since,
+  ) =>
+    {
+      'refused': problem,
+      'unless': ?unlessLife,
+      'named': ?namedLife,
+      'since': _startToJson(since),
+    },
   NotReadThisSession() || ReadThisSession() => null,
 };
 
@@ -1022,7 +1030,37 @@ ReadStart? _startFrom(Object? raw) => switch (raw) {
   _ => null,
 };
 
+int? _namedFrom(Map<Object?, Object?> raw) => switch (raw['named']) {
+  final num life when isSafeWhole(life) => life.toInt(),
+  _ => null,
+};
+
 ReadState? _readFrom(Object? raw) => switch (raw) {
+  {'named': final Object? named} when named is! num || !isSafeWhole(named) =>
+    null,
+  {'owedSince': _, 'named': _} => switch (_readFrom({
+    for (final MapEntry(:key, :value) in raw.entries)
+      if (key != 'named') key: value,
+  })) {
+    ReadOwed(:final unlessLife, :final since) => ReadOwed(
+      unlessLife: unlessLife,
+      namedLife: _namedFrom(raw),
+      since: since,
+    ),
+    _ => null,
+  },
+  {'refused': _, 'named': _} => switch (_readFrom({
+    for (final MapEntry(:key, :value) in raw.entries)
+      if (key != 'named') key: value,
+  })) {
+    ReadRefused(:final problem, :final unlessLife, :final since) => ReadRefused(
+      problem,
+      unlessLife: unlessLife,
+      namedLife: _namedFrom(raw),
+      since: since,
+    ),
+    _ => null,
+  },
   null => const NotReadThisSession(),
   'owed' => const ReadOwed(since: ReadStart.beforeAnyRead),
   {'owedUnless': final num life} when isSafeWhole(life) && raw.length == 1 =>

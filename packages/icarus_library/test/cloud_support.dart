@@ -384,11 +384,9 @@ Matcher awaitingResult(ResultSubject subject) =>
 ResultSource readFrom(CloudQueue queue) =>
     ReadOfThisDevice(queue.session.readStart);
 
-Matcher owed({int? unlessLife}) => isA<ReadOwed>().having(
-  (state) => state.unlessLife,
-  'unlessLife',
-  unlessLife,
-);
+Matcher owed({int? unlessLife, int? namedLife}) => isA<ReadOwed>()
+    .having((state) => state.unlessLife, 'unlessLife', unlessLife)
+    .having((state) => state.namedLife, 'namedLife', namedLife);
 
 Matcher refusedRead(String problem) =>
     isA<ReadRefused>().having((state) => state.problem, 'problem', problem);
