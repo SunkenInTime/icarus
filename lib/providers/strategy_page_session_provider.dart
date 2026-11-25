@@ -1248,16 +1248,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       await remote.setActivePage(pageId, fetched: target);
     }
 
-    final readsPages = source == StrategySource.local &&
-        ref.read(localPageReadsProvider) != null;
+    final reads = source == StrategySource.local
+        ? ref.read(localPageReadsProvider)
+        : null;
+    final readsPages = reads != null;
     bool givesWay() => readsPages && superseded();
+    final attempt = reads?.switching(strategyId, pageId);
     final String? shownPageId;
     try {
       final pageData = await pageSource.loadPage(pageId);
-      if (givesWay()) {
-        ref.read(localPageReadsProvider)?.neverShown(pageData);
-        return _PageSwitch.superseded;
-      }
+      if (givesWay()) return _PageSwitch.superseded;
       onTargetRead?.call(pageData);
       shownPageId = await _applyLoadedPageData(
         pageData,
@@ -1265,13 +1265,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         source: source,
         loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
         canApply: readsPages ? () => !givesWay() : null,
+        attempt: readsPages
+            ? OpenAttempt(
+                () => ref.read(strategyProvider).strategyId == strategyId,
+              )
+            : null,
       );
     } on Object catch (error) {
-      ref
-          .read(localPageReadsProvider)
-          ?.switchFailed(strategyId, pageId, error);
       if (givesWay()) return _PageSwitch.superseded;
+      if (attempt != null) reads?.switchFailed(attempt, error);
       rethrow;
+    } finally {
+      if (attempt != null) reads?.switchEnded(attempt);
     }
     if (shownPageId == null) return _PageSwitch.superseded;
 
@@ -1362,10 +1367,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         : await opening.wait(
             _resolvePageSource(strategyId, source).listPageIds(),
           );
-    if (canApply != null && !canApply()) {
-      ref.read(localPageReadsProvider)?.neverShown(pageData);
-      return null;
-    }
+    if (canApply != null && !canApply()) return null;
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
         _lastHydratedRemotePageKey?.pageId == pageData.pageId;

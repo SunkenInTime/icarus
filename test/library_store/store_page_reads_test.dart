@@ -429,8 +429,9 @@ void main() {
   });
 
   test(
-      'a Hive save the mirror has copied before the held store read ends '
-      'still sends the open to Hive', () async {
+      'a Hive save that lands while the store read is held waits for the '
+      'store, which the read holds, and sends the open to Hive; the mirror '
+      'copies it once the read lets the store go', () async {
     final s = strategy();
     final gate = _ReadGate();
     final h =
@@ -445,6 +446,7 @@ void main() {
     for (var turn = 0; turn < 20; turn++) {
       await Future<void>.delayed(Duration.zero);
     }
+    expect(h.mirror.strategiesNotKnownEqual, contains(s.id));
     gate.release();
 
     expect(await opening, isTrue);
@@ -770,6 +772,7 @@ void main() {
       expect(h.loads, [
         'open from Hive: ${FromHiveBecause.hiveWriteBeforeApply.words}',
       ]);
+      expect(h.reads.loads.single.pageId, s.pages[1].id);
       final agent = container.read(agentProvider).first;
       container.read(agentProvider.notifier).setCaption(agent.id, 'edited');
       await h.editor.saveToHive(s.id);
@@ -1005,6 +1008,52 @@ void main() {
     await h.editor.saveToHive(b.id);
     await h.settle();
     expect(savedCaption(b.id, b.pages[0].id), 'edited in b');
+  });
+
+  test(
+      'a page switch in a strategy deleted from Hive while it is open records '
+      'that it failed, under the page asked for, though it fails before its '
+      'page is read', () async {
+    final s = strategy();
+    final h = await reading([s]);
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+    (await const LocalLibrary().deleteStrategy(s.id)).orThrow();
+
+    await expectLater(h.editor.setActivePage(s.pages[1].id), throwsStateError);
+
+    expect(h.loads, [
+      'open from the store',
+      'pageSwitch failed: Bad state: Strategy ${s.id} not found.',
+    ]);
+    expect(h.reads.loads.last.pageId, s.pages[1].id);
+  });
+
+  test(
+      'a page switch whose strategy is closed while its page is applied '
+      'leaves the closed session empty, and is recorded as never shown',
+      () async {
+    final s = strategy();
+    final h = await reading([s]);
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+    var closed = false;
+    final listening = container.listen(canvasShowsProvider, (_, shows) {
+      if (closed || shows is! ShowsPage || shows.pageId != s.pages[1].id) {
+        return;
+      }
+      closed = true;
+      unawaited(h.editor.clearCurrentStrategy());
+    });
+    addTearDown(listening.close);
+
+    await h.editor.setActivePage(s.pages[1].id);
+    await h.settle();
+
+    expect(closed, isTrue);
+    final session = container.read(strategyPageSessionProvider);
+    expect(session.activePageId, isNull);
+    expect(session.availablePageIds, isEmpty);
+    expect(session.isApplyingPage, isFalse);
+    expect(h.loads.last, 'pageSwitch ${const GaveWay()}');
   });
 
   group(

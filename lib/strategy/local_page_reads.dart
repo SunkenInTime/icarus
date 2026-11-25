@@ -25,7 +25,11 @@ abstract interface class LocalPageReads {
 
   void openedWithoutPage(int open);
 
-  void switchFailed(String strategyId, String pageId, Object error);
+  int switching(String strategyId, String pageId);
+
+  void switchFailed(int attempt, Object error);
+
+  void switchEnded(int attempt);
 
   Future<StrategyEditorPageData?> page(
     String strategyId,
@@ -49,8 +53,6 @@ abstract interface class LocalPageReads {
   );
 
   void applied(StrategyEditorPageData page);
-
-  void neverShown(StrategyEditorPageData page);
 }
 
 final localPageReadsProvider = Provider<LocalPageReads?>((ref) => null);
