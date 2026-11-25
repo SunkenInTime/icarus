@@ -1,4 +1,6 @@
 [
+  {"waitText": "Your library is still here", "seconds": 20},
+  {"tapIcon": "x"},
   {"resize": [1600, 900]},
   {"openFirstFrame": "largest", "runs": 1, "soon": true},
   {"exit": 1}
