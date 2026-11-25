@@ -50,6 +50,51 @@ void holdNextWrite(MemoryStorage storage, void Function() atIt) {
 
 void main() {
   group('the loop over the real queue', () {
+    test(
+        'a page read answered on a newer connection before the sender has '
+        'heard of it opens the session from its stamp and is taken once, and '
+        'the reconnect the sender writes after it opens no other session', () {
+      inWorld((world) {
+        world.server.answerReadNext(
+          strategyId,
+          (call) => Future.value(world.server.answerNow(call)),
+        );
+        world.server.answerReadNext(strategyId, (call) {
+          world.server.connection = 2;
+          return Future.value(world.server.answerNow(call));
+        });
+        world.sender.adopt(strategyId);
+        world.settle();
+        final opened = world.cloud().queue;
+        expect(
+          opened.session.generation,
+          const Generation(client: 1, connection: 2),
+        );
+        expect(world.written().whereType<ConnectionReturned>(), isEmpty);
+        expect(opened.shown.list, const NotReadThisSession());
+        final pageReads =
+            world.server.readCalls.where((call) => call.page != null).toList();
+        expect(pageReads, hasLength(1));
+        expect(
+          opened.shown.pageRead(pageReads.single.page!),
+          const ReadThisSession(),
+        );
+
+        world.connection = 2;
+        world.commitMove(1);
+        world.settle();
+        expect(world.server.calls, hasLength(1));
+        expect(world.queueLength(), 0);
+        final returned = world.written().whereType<ConnectionReturned>();
+        expect(returned, hasLength(1));
+        expect(
+          returned.last.generation,
+          const Generation(client: 1, connection: 2),
+        );
+        expect(world.cloud().queue.session.number, opened.session.number);
+      }, addStrategy: false);
+    });
+
     test('sends a commit once, after the wait, as the strategy\'s owner', () {
       inWorld((world) {
         world.commitMove(1);
