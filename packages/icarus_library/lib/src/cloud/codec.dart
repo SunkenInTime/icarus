@@ -205,7 +205,6 @@ Map<String, Object?> _refusalToJson(ServerRefusal refusal) => switch (refusal) {
       },
   },
   AnsweredWithoutLife(:final revision) => {'withoutLife': revision ?? true},
-  StrategyReplacedOnServer() => {'strategyReplaced': true},
   FailedOnServer(:final code, :final message) => {
     'failed': '$code',
     'message': message,
@@ -453,12 +452,6 @@ Decoded<ServerRefusal> _refusal(Object? json) =>
         };
         return () => AnsweredWithoutLife(revision);
       }
-      if (fields.has('strategyReplaced')) {
-        if (fields.json['strategyReplaced'] != true) {
-          fields.reject('an unreadable strategy replacement');
-        }
-        return () => const StrategyReplacedOnServer();
-      }
       final code = fields.string('failed');
       final message = fields.string('message');
       return () => FailedOnServer(switch (FailureCode.values
@@ -635,6 +628,19 @@ Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
   'accessConfirmedAt': facts.accessConfirmedAt,
   if (facts.upgradeTold case UpgradeToldTo(:final build, :final attempt))
     'upgradeTold': {'build': build, 'attempt': attempt},
+  if (facts.setAside case SetAside(:final generations))
+    'setAside': [
+      for (final SetAsideGeneration(:writtenIn, :replacedBy, :entries)
+          in generations)
+        {
+          'writtenIn': ?writtenIn,
+          'replacedBy': replacedBy,
+          'entries': [
+            for (final entry in entries)
+              {'place': entry.place, 'entry': entryToJson(entry)},
+          ],
+        },
+    ],
 };
 
 CloudOwner ownerFromText(String text) => switch (admit(text)) {
@@ -671,6 +677,11 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
         return const NoUpgradeTold();
       }(),
     };
+    final setAside = switch (fields.json['setAside']) {
+      null => const NothingSetAside(),
+      final Object raw => _setAside(raw),
+    };
+    if (setAside == null) fields.reject('an unreadable set-aside record');
     return () => CloudFacts(
       Account(account),
       StrategyFacts(
@@ -678,10 +689,54 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
         accessLostAt: lost,
         accessConfirmedAt: confirmed,
         upgradeTold: upgrade,
+        setAside: setAside!,
       ),
     );
   }),
 );
+
+SetAside? _setAside(Object raw) {
+  if (raw is! List<Object?> || raw.isEmpty) return null;
+  final generations = <SetAsideGeneration>[];
+  for (final each in raw) {
+    final generation = each == null ? null : _generation(each);
+    if (generation == null) return null;
+    generations.add(generation);
+  }
+  return SetAside(generations);
+}
+
+SetAsideGeneration? _generation(Object raw) {
+  if (raw case {
+    'replacedBy': final num replacedBy,
+    'entries': final List<Object?> stored,
+  } when isSafeWhole(replacedBy)) {
+    final writtenIn = raw['writtenIn'];
+    if (writtenIn != null && !isSafeWhole(writtenIn)) return null;
+    final entries = <QueueEntry>[];
+    for (final each in stored) {
+      if (each case {
+        'place': final num place,
+        'entry': final Object? json,
+      } when isSafeWhole(place)) {
+        switch (decodeEntry(place.toInt(), json)) {
+          case Read(:final value):
+            entries.add(value);
+          case CouldNotRead():
+            return null;
+        }
+      } else {
+        return null;
+      }
+    }
+    return SetAsideGeneration(
+      writtenIn: (writtenIn as num?)?.toInt(),
+      replacedBy: replacedBy.toInt(),
+      entries: entries,
+    );
+  }
+  return null;
+}
 
 final class Counters {
   const Counters({required this.nextAttempt, required this.nextSession});
@@ -920,15 +975,26 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
 }
 
 Object? _readToJson(ReadState state) => switch (state) {
-  ReadOwed() => 'owed',
-  ReadRefused(:final problem) => {'refused': problem},
+  ReadOwed(unlessLife: null) => 'owed',
+  ReadOwed(:final unlessLife?) => {'owedUnless': unlessLife},
+  ReadRefused(:final problem, :final unlessLife) => {
+    'refused': problem,
+    'unless': ?unlessLife,
+  },
   NotReadThisSession() || ReadThisSession() => null,
 };
 
 ReadState? _readFrom(Object? raw) => switch (raw) {
   null => const NotReadThisSession(),
   'owed' => const ReadOwed(),
-  {'refused': final String problem} => ReadRefused(problem),
+  {'owedUnless': final num life} when isSafeWhole(life) => ReadOwed(
+    unlessLife: life.toInt(),
+  ),
+  {'refused': final String problem, 'unless': final num life}
+      when isSafeWhole(life) =>
+    ReadRefused(problem, unlessLife: life.toInt()),
+  {'refused': final String problem} when !raw.containsKey('unless') =>
+    ReadRefused(problem),
   _ => null,
 };
 

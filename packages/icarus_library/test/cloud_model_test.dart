@@ -17,7 +17,8 @@ void count(String what, [int by = 1]) =>
 
 final class Model {
   Model(this.seed, {required this.teammates, required this.folding})
-    : random = Random(seed) {
+    : random = Random(seed),
+      replacing = Random(seed * 7919 + 1) {
     skew = Duration(milliseconds: random.nextInt(180001) - 90000);
   }
 
@@ -25,6 +26,7 @@ final class Model {
   final bool teammates;
   final bool folding;
   final Random random;
+  final Random replacing;
   final server = Server();
   final client = Client();
   StrategyRowSet reference = initialRows();
@@ -42,6 +44,17 @@ final class Model {
   final refusedLate = <String>{};
   final livesSent = <String, int>{};
   final refusedOps = <String>{};
+  final strategyLifeSent = <String, int>{};
+  final setAsideIds = <String>{};
+  final refusedStrategyLives = <int>{};
+  bool adoptedReplacement = false;
+
+  bool namesAnotherStrategyLife(List<StrategyOp> ops) => ops.any(
+    (op) => switch (strategyLifeSent[op.opId]) {
+      final life? => life != createdAtOf(server.rows.strategy),
+      null => false,
+    },
+  );
 
   int get serverNow => clock.millisecondsSinceEpoch + skew.inMilliseconds;
 
@@ -51,6 +64,10 @@ final class Model {
   }
 
   List<OpAnswer>? receive(String owner, List<StrategyOp> ops, int? basis) {
+    if (namesAnotherStrategyLife(ops)) {
+      count('batches naming a replaced strategy life applied nothing');
+      return const [];
+    }
     final at = serverNow;
     final unchecked = [
       for (final op in ops)
@@ -206,16 +223,24 @@ final class Model {
       }}',
     );
     if (result case Stepped(queue: final after, :final effects)) {
+      if ((before.shown.strategy?.life, after.shown.strategy?.life) case (
+        final was?,
+        final now?,
+      ) when now > was) {
+        reference = server.rows;
+        adoptedReplacement = true;
+      }
       checkRemovals(before, after, effects, event);
       client.queue = after;
       for (final entry in after.entries) {
         if (entry case PendingOp(
-          refusal: RefusedWith(
-            refusal: RejectedByServer() || StrategyReplacedOnServer(),
-          ),
+          refusal: RefusedWith(refusal: RejectedByServer()),
         )) {
           refusedOps.add(entry.id);
         }
+      }
+      if (after.strategy.setAside case SetAside(:final entries)) {
+        setAsideIds.addAll([for (final entry in entries) entry.id]);
       }
       count(event.runtimeType.toString());
       if (event case OpAnswered(
@@ -224,6 +249,9 @@ final class Model {
         count('nothing to do at another revision');
       }
       for (final effect in effects) {
+        if (effect is StrategySetAside) {
+          count('StrategySetAside');
+        }
         if (effect case OpRemoved(:final opId, :final cause)) {
           count('removed ${cause.runtimeType}');
           if (cause case FoldedInto(opId: final into)) {
@@ -359,7 +387,12 @@ final class Model {
     List<QueueEffect> effects,
     QueueEvent event,
   ) {
-    final kept = {for (final entry in after.entries) entry.id};
+    final kept = {
+      for (final entry in after.entries) entry.id,
+      if (after.strategy.setAside case SetAside(:final entries))
+        if (event is BaseArrived && event.base is HeaderRead)
+          for (final entry in entries) entry.id,
+    };
     final removed = {
       for (final effect in effects)
         if (effect case OpRemoved(:final opId, :final cause)) opId: cause,
@@ -439,8 +472,12 @@ final class Model {
       network: Network.online,
       signedIn: SignedInAs(testAccount),
     );
+    if (Tally.of(queue, clock).setAside != queue.strategy.setAside.count) {
+      throw StateError('the tally does not count what was set aside');
+    }
     final quiet =
         client.queue.entries.isEmpty &&
+        client.queue.strategy.setAside.count == 0 &&
         standingOf(client.queue) != Standing.deletedOnServer &&
         standingOf(client.queue) != Standing.editAccessLost;
     if ((sync is AllSaved) != quiet) {
@@ -641,7 +678,7 @@ final class Model {
     client.queue = seen.queue;
     final views = seen.views;
     String? owner;
-    int? strategyLife;
+    PendingOp? first;
     final ids = <String>[];
     final most = 1 + random.nextInt(4);
     for (final entry in client.queue.entries) {
@@ -653,9 +690,9 @@ final class Model {
         _ => owner ?? clientId,
       };
       if (owner != null && mine != owner) continue;
-      if (!fitsBatch(entry, strategyLife)) continue;
+      if (!fitsBatch(entry, first)) continue;
       owner = mine;
-      strategyLife = entry.strategyLife ?? strategyLife;
+      first ??= entry;
       ids.add(entry.id);
     }
     if (ids.isEmpty) return;
@@ -675,6 +712,17 @@ final class Model {
     final sent = result.effects.whereType<SendBatch>().single;
     livesSent.addAll(sent.lives);
     for (final op in sent.ops) {
+      if (sent.strategyLife case final life?) strategyLifeSent[op.opId] = life;
+      if (sent.strategyLife case final life?
+          when refusedStrategyLives.contains(life)) {
+        throw StateError(
+          '${op.opId} was sent naming strategy life $life after the server '
+          'refused that life',
+        );
+      }
+      if (setAsideIds.contains(op.opId)) {
+        throw StateError('${op.opId} was sent after it was set aside');
+      }
       if (refusedOps.contains(op.opId)) {
         throw StateError(
           '${op.opId} was sent again after the server refused it',
@@ -739,6 +787,17 @@ final class Model {
       apply(
         BatchRefused(attempt, BatchRefusal.strategyDeleted),
         'refused: gone',
+      );
+      return;
+    }
+    if (namesAnotherStrategyLife(ops)) {
+      count('batches refused as the strategy was replaced');
+      refusedStrategyLives.addAll([
+        for (final op in ops) ?strategyLifeSent[op.opId],
+      ]);
+      apply(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced),
+        'refused: the strategy was replaced',
       );
       return;
     }
@@ -808,6 +867,12 @@ final class Model {
       ServerTimeHeld(serverNow, at: elapsed, session: session),
       'server time $serverNow from session $session',
     );
+  }
+
+  void ownerReplaces() {
+    server.reupload();
+    count('the strategy is replaced');
+    log.add('the strategy is replaced');
   }
 
   void teammateWrites() {
@@ -1122,6 +1187,10 @@ final class Model {
     final seen = look(client.queue, clock);
     client.queue = seen.queue;
     final views = seen.views;
+    if (client.queue.strategy.setAside.count > 0 &&
+        (draining || random.nextBool())) {
+      apply(const UserDiscardedReplaced(), 'user discards what was set aside');
+    }
     for (final entry in client.queue.entries) {
       final view = views[entry.id];
       final UserAction? action = switch ((entry, view)) {
@@ -1194,7 +1263,11 @@ final class Model {
       case 15:
         lane();
       case 16:
-        if (teammates) teammateWrites();
+        if (replacing.nextInt(30) == 0) {
+          ownerReplaces();
+        } else if (teammates) {
+          teammateWrites();
+        }
       case 22:
         final quiet = Duration(milliseconds: 10000 + random.nextInt(35000));
         if (random.nextBool()) {
@@ -1264,6 +1337,11 @@ final class Model {
       throw StateError('the drain helped the user $drainHelps times');
     }
     if (!teammateEdited && !userRemoved && server.exists) {
+      count(
+        adoptedReplacement
+            ? 'end content compared after a replacement'
+            : 'end content compared without a replacement',
+      );
       final want = liveContent(reference);
       final got = liveContent(server.rows);
       if (!const DeepCollectionEquality().equals(want, got)) {
@@ -1316,6 +1394,12 @@ const minimums = {
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
   'ops refused as naming a row life that was replaced': 1,
+  'the strategy is replaced': 5,
+  'end content compared after a replacement': 5,
+  'end content compared without a replacement': 80,
+  'batches refused as the strategy was replaced': 50,
+  'StrategySetAside': 5,
+  'UserDiscardedReplaced': 5,
   'replays answered without a life': 1,
   'teammate changes a page\'s settings': 50,
   'waits for a result that a read would settle': 200,

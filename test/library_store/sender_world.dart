@@ -821,6 +821,25 @@ final class World {
 
   void commit(List<StrategyOp> ops) => _commit(strategyId, servedAccount, ops);
 
+  void replaceStrategyOnServer() {
+    final held = server.rows[strategyId]!;
+    final old = held.strategy;
+    server.rows[strategyId] = StrategyRowSet(
+      strategy: ReadableStrategy(
+        publicId: old.publicId,
+        name: old.name,
+        mapData: old.mapData,
+        revision: old.revision,
+        createdAt: old.createdAt.add(const Duration(days: 1)),
+        updatedAt: old.updatedAt.add(const Duration(days: 1)),
+      ),
+      pages: held.pages,
+      settings: held.settings,
+      elements: held.elements,
+      lineupGroups: held.lineupGroups,
+    );
+  }
+
   T rowOf<T extends Row>(T? Function(StrategyContent content) find) {
     Reading<StrategyContent>? read;
     store.readStrategy(strategyId).then((value) => read = value);

@@ -153,8 +153,8 @@ final class StoredStrategy {
 
   bool get needsReading => switch (tally) {
         Tally(standing: Standing.editAccessLost) => true,
-        Tally(:final waiting, :final readsOwed) =>
-          readsOwed > 0 || waiting.containsKey(Underway.awaitingResult),
+        Tally(:final waiting, :final readsNeeded) =>
+          readsNeeded > 0 || waiting.containsKey(Underway.awaitingResult),
         null => false,
       };
 
@@ -477,7 +477,7 @@ List<int> openAttempts(CloudStrategy cloud) => [
 Pick pick(CloudStrategy cloud, String newClientId) {
   final ids = <String>[];
   String? client;
-  int? strategyLife;
+  PendingOp? first;
   var bytes = 0;
   var awaiting = 0;
   DateTime? retryAt;
@@ -500,7 +500,7 @@ Pick pick(CloudStrategy cloud, String newClientId) {
       _ => newClientId,
     };
     if (client != null && owned != client) continue;
-    if (!fitsBatch(entry, strategyLife)) continue;
+    if (!fitsBatch(entry, first)) continue;
     final size = serializedConvexValueUtf8Bytes(entry.op.toJson());
     if (ids.isNotEmpty &&
         (ids.length >= _mostOpsInABatch ||
@@ -508,7 +508,7 @@ Pick pick(CloudStrategy cloud, String newClientId) {
       break;
     }
     client = owned;
-    strategyLife = entry.strategyLife ?? strategyLife;
+    first ??= entry;
     bytes += size;
     ids.add(entry.id);
   }

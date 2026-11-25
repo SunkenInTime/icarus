@@ -234,6 +234,10 @@ final class UserDiscarded extends UserAction {
   const UserDiscarded(super.opId);
 }
 
+final class UserDiscardedReplaced extends QueueEvent {
+  const UserDiscardedReplaced();
+}
+
 final class ResultRefused extends QueueEvent {
   const ResultRefused({required this.page, required this.problem});
 

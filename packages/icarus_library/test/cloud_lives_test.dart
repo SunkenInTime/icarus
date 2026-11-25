@@ -177,32 +177,30 @@ void main() {
       return client;
     }
 
-    test('refuses the batch\'s ops for the user and owes the page list, and '
-        'while the list is owed nothing is sendable', () {
+    test('owes the page list and leaves the ops waiting for it: while the '
+        'list is owed nothing is sendable', () {
       final client = refused();
-      expect(
-        stateOf(client, 'move'),
-        const NeedsUser(RefusedByServer(StrategyReplacedOnServer())),
-      );
-      expect(
-        client.view('later').holds,
-        contains(awaitingResult(const PageListResult())),
-      );
-      expect(client.view('later').sendable, isFalse);
+      expect(stateOf(client, 'move'), isA<Waiting>());
+      for (final id in ['move', 'later']) {
+        expect(
+          client.view(id).holds,
+          contains(awaitingResult(const PageListResult())),
+        );
+        expect(client.view(id).sendable, isFalse);
+      }
       expect(owedReads(client.queue), {const PageListResult()});
       expect(Tally.of(client.queue, now).readsOwed, 1);
     });
 
-    test('a page list pays the debt; the refused op still is not sent', () {
+    test('a page list of the life the batch named does not pay the debt: it '
+        'is from before the strategy was replaced', () {
       final client = refused();
       client.arrive(headerReadOf(initialRows()));
-      expect(client.queue.shown.list, const ReadThisSession());
-      expect(owedReads(client.queue), isEmpty);
-      expect(client.view('later').sendable, isTrue);
       expect(
-        client.step(BatchClaimed(clientId: clientId, opIds: ['move'], at: now)),
-        isA<NotApplicable>(),
+        client.queue.shown.list,
+        ReadOwed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
       );
+      expect(client.view('later').sendable, isFalse);
     });
 
     test('the debt is stored with the results', () {
@@ -212,7 +210,10 @@ void main() {
         for (final MapEntry(:key, :value) in groups.entries)
           key: jsonEncode(value),
       });
-      expect((read as ShownRead).shown.list, const ReadOwed());
+      expect(
+        (read as ShownRead).shown.list,
+        ReadOwed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
+      );
     });
   });
 
@@ -272,12 +273,10 @@ void main() {
         );
       });
 
-      test('an entry keeps the strategy life it was written in, and its '
-          'refusal, through a write and a read', () {
+      test('an entry keeps the strategy life it was written in through a '
+          'write and a read', () {
         final client = Client();
         client.edit(movePatch('move'));
-        final attempt = client.claim(['move']);
-        client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
         final entry = client.queue.entries.single as PendingOp;
         final read = decodeEntry(
           entry.place,
@@ -290,10 +289,12 @@ void main() {
   );
 
   group('a result row with no life is refused, never stored', () {
-    test('when the strategy is added, naming the row', () async {
+    test('when the strategy is added, naming the row, and nothing of the '
+        'strategy is stored, though a valid page came first', () async {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       expect(
         await store.addCloudStrategy(testAccount, headerReadOf(initialRows()), [
+          pageReadOf(initialRows(), 'page-b') as PageRead,
           PageRead(
             page: initialRows().page('page-a')!,
             elements: [withoutLife('e1')],
@@ -305,6 +306,11 @@ void main() {
           'reason',
           const ResultWithoutLife(ElementKey('e1')),
         ),
+      );
+      expect(await store.readStrategy(strategyId), isA<NotFound<Object>>());
+      expect(
+        await store.readPage(strategyId, 'page-b'),
+        isA<NotFound<Object>>(),
       );
     });
 
@@ -499,7 +505,10 @@ void main() {
         const ResultRefused(page: 'page-a', problem: 'ResultWithoutLife(e1)'),
       );
       final tally = Tally.of(client.queue, now);
-      expect(tally.unreadable, 1);
+      expect(tally.readsRefused, 1);
+      expect(tally.unreadable, 0);
+      expect(tally.readsOwed, 0);
+      expect(tally.total, 1);
       expect(
         syncStateOf(
           OwnedBy(testAccount),
@@ -515,7 +524,7 @@ void main() {
       );
       expect(owedReads(client.queue), {const PageResult('page-a')});
       client.arrive(pageReadOf(initialRows(), 'page-a'));
-      expect(Tally.of(client.queue, now).unreadable, 0);
+      expect(Tally.of(client.queue, now).readsRefused, 0);
       expect(owedReads(client.queue), isEmpty);
     });
 
@@ -535,7 +544,7 @@ void main() {
         queue.shown.pageRead('page-a'),
         const ReadRefused('ResultWithoutLife(e1)'),
       );
-      expect(Tally.of(queue, now).unreadable, 1);
+      expect(Tally.of(queue, now).readsRefused, 1);
     });
 
     test(
@@ -579,10 +588,25 @@ void main() {
   group('one read state per list and per page', () {
     Client discardedTheLastRefusedOp() {
       final client = Client();
-      client.edit(movePatch('move'));
-      final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
-      client.must(const UserDiscarded('move'));
+      client.edit(
+        const StrategyPatchOp(
+          opId: 'rename',
+          expectedStrategyRevision: 1,
+          name: 'Renamed',
+        ),
+      );
+      final attempt = client.claim(['rename']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'rename',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+        ),
+      );
+      client.must(const UserDiscarded('rename'));
       return client;
     }
 
@@ -659,7 +683,10 @@ void main() {
       ]);
       await store.close();
       store = await openCloudStore(MemoryEngine(storage));
-      expect((await syncOf(store)).queue.shown.list, const ReadOwed());
+      expect(
+        (await syncOf(store)).queue.shown.list,
+        ReadOwed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
+      );
     });
   });
 
@@ -750,18 +777,21 @@ void main() {
       );
     });
 
-    test('a retry after a header of a later strategy life was read names the '
-        'strategy life the op was written in', () {
+    test('an unanswered op is never retried once a header of a later '
+        'strategy life is read: it is set aside', () {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.must(TransportFailed(attempt, TransportFailure.network, at: now));
       client.read(withStrategyLife(initialRows(), newerLife));
       client.clock = now.add(const Duration(minutes: 5));
-      client.claim(['move']);
       expect(
-        lastBatch(client).strategyLife,
-        strategyCreatedAt.millisecondsSinceEpoch,
+        client.step(BatchClaimed(clientId: clientId, opIds: ['move'], at: now)),
+        isA<NotApplicable>(),
+      );
+      expect(
+        (client.queue.strategy.setAside as SetAside).entries.single.id,
+        'move',
       );
     });
 

@@ -98,7 +98,7 @@
     ]
   },
   {
-    "name": "a move naming a life that was purged and put back is row_replaced with the current row, and a resend reads it fresh",
+    "name": "a move naming a life that was purged and put back is row_replaced with the current row, and a resend after another write is refused with that write's row",
     "steps": [
       {
         "create": true
@@ -229,6 +229,35 @@
       {
         "send": [
           {
+            "opId": "rotate",
+            "type": "element.patch",
+            "elementPublicId": "e1",
+            "payload": {
+              "kind": "agent",
+              "payloadVersion": 1,
+              "data": {
+                "id": "e1",
+                "type": "jett",
+                "rotation": 200
+              }
+            },
+            "sortIndex": 0,
+            "expectedElementRevision": 1,
+            "expectedLife": "L1"
+          }
+        ],
+        "expect": [
+          {
+            "appliedLife": "L1",
+            "appliedRevision": 2,
+            "opId": "rotate",
+            "status": "applied"
+          }
+        ]
+      },
+      {
+        "send": [
+          {
             "opId": "move",
             "type": "element.patch",
             "elementPublicId": "e1",
@@ -253,12 +282,12 @@
           {
             "current": {
               "type": "element",
-              "revision": 1,
+              "revision": 2,
               "life": "L1",
               "value": {
                 "data": {
                   "id": "e1",
-                  "rotation": 135,
+                  "rotation": 200,
                   "type": "jett"
                 },
                 "kind": "agent",

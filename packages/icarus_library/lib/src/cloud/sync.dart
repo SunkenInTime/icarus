@@ -27,6 +27,8 @@ final class Tally {
     Map<Attention, int> attention = const {},
     this.unreadable = 0,
     this.readsOwed = 0,
+    this.readsRefused = 0,
+    this.setAside = 0,
   }) : waiting = Map.unmodifiable({
          for (final MapEntry(:key, :value) in waiting.entries)
            if (value > 0) key: value,
@@ -44,8 +46,9 @@ final class Tally {
       standing: standingOf(queue),
       waiting: counts.waiting,
       attention: counts.attention,
-      readsOwed: owedReads(queue).length,
-      unreadable: refusedReads(queue),
+      readsOwed: owedReads(queue).length - refusedReads(queue),
+      readsRefused: refusedReads(queue),
+      setAside: queue.strategy.setAside.count,
     );
   }
 
@@ -77,12 +80,24 @@ final class Tally {
             ? fields.whole('readsOwed')
             : 0;
         if (readsOwed < 0) fields.reject('expected a count of reads owed');
+        final readsRefused = fields.has('readsRefused')
+            ? fields.whole('readsRefused')
+            : 0;
+        if (readsRefused < 0) {
+          fields.reject('expected a count of reads refused');
+        }
+        final setAside = fields.has('setAside')
+            ? fields.whole('setAside')
+            : 0;
+        if (setAside < 0) fields.reject('expected a count of edits set aside');
         return () => Tally(
           standing: standing!,
           waiting: waiting,
           attention: attention,
           unreadable: unreadable,
           readsOwed: readsOwed,
+          readsRefused: readsRefused,
+          setAside: setAside,
         );
       });
 
@@ -91,12 +106,22 @@ final class Tally {
   final Map<Attention, int> attention;
   final int unreadable;
   final int readsOwed;
+  final int readsRefused;
+  final int setAside;
 
   int get needingYou => attention.values.fold(0, (sum, count) => sum + count);
 
   int get stillGoing => waiting.values.fold(0, (sum, count) => sum + count);
 
-  int get total => stillGoing + needingYou + unreadable + readsOwed;
+  int get total =>
+      stillGoing +
+      needingYou +
+      unreadable +
+      readsOwed +
+      readsRefused +
+      setAside;
+
+  int get readsNeeded => readsOwed + readsRefused;
 
   Tally plus(Tally other) => Tally(
     standing: _worse(standing, other.standing),
@@ -110,6 +135,8 @@ final class Tally {
     },
     unreadable: unreadable + other.unreadable,
     readsOwed: readsOwed + other.readsOwed,
+    readsRefused: readsRefused + other.readsRefused,
+    setAside: setAside + other.setAside,
   );
 
   static Standing _worse(Standing a, Standing b) => a.index >= b.index ? a : b;
@@ -126,6 +153,8 @@ final class Tally {
       },
     if (unreadable > 0) 'unreadable': unreadable,
     if (readsOwed > 0) 'readsOwed': readsOwed,
+    if (readsRefused > 0) 'readsRefused': readsRefused,
+    if (setAside > 0) 'setAside': setAside,
   };
 
   @override
@@ -135,7 +164,9 @@ final class Tally {
       sameMap(other.waiting, waiting) &&
       sameMap(other.attention, attention) &&
       other.unreadable == unreadable &&
-      other.readsOwed == readsOwed;
+      other.readsOwed == readsOwed &&
+      other.readsRefused == readsRefused &&
+      other.setAside == setAside;
 
   @override
   int get hashCode =>
@@ -176,6 +207,7 @@ enum Face {
   deletedOnServer,
   editAccessLost,
   unreadableWork,
+  strategyReplaced,
   needsYou,
   upgradeRequired,
   offline,
@@ -240,7 +272,8 @@ Face? _ownFace(Tally tally, Network network) => switch (tally) {
   Tally(standing: Standing.deletedOnServer) => Face.deletedOnServer,
   Tally(standing: Standing.editAccessLost) => Face.editAccessLost,
   Tally(standing: Standing.held) => Face.unreadableWork,
-  Tally(unreadable: > 0) => Face.unreadableWork,
+  Tally(unreadable: > 0) || Tally(readsRefused: > 0) => Face.unreadableWork,
+  Tally(setAside: > 0) => Face.strategyReplaced,
   Tally(needingYou: > 0) => Face.needsYou,
   Tally(total: 0) => null,
   Tally(standing: Standing.upgradeRequired) => Face.upgradeRequired,
@@ -252,6 +285,14 @@ Face? _ownFace(Tally tally, Network network) => switch (tally) {
           waiting.containsKey(Underway.sending) =>
     Face.sending,
   _ => Face.awaitingResult,
+};
+
+String placeholderWordsFor(SyncState state) => switch (state) {
+  Outstanding(face: Face.strategyReplaced, :final tally) =>
+    'PLACEHOLDER, wording to come: the strategy was replaced, '
+        '${tally.setAside} edits were not applied',
+  Outstanding(:final face) => 'PLACEHOLDER, wording to come: ${face.name}',
+  AllSaved() => 'PLACEHOLDER, wording to come: all saved',
 };
 
 typedef OwnedTally = ({CloudOwner owner, Tally tally});

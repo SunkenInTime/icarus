@@ -352,9 +352,7 @@ Row _withoutLife(Row row) {
 
 StrategyRowSet withOp(StrategyRowSet rows, StrategyOp op) =>
     switch (applyOp(rows, op)) {
-      final OpApplied done => rows.withRows([
-        for (final row in done.rows) bornIn(row, addedLife),
-      ]),
+      final OpApplied done => bornWhereNew(rows, done.rows, addedLife),
       final other => fail('expected $op to apply, got $other'),
     };
 

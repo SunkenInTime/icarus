@@ -163,32 +163,42 @@ final class ReadThisSession extends ReadState {
 }
 
 final class ReadOwed extends ReadState {
-  const ReadOwed();
+  const ReadOwed({this.unlessLife});
 
-  @override
-  bool operator ==(Object other) => other is ReadOwed;
-
-  @override
-  int get hashCode => (ReadOwed).hashCode;
-
-  @override
-  String toString() => 'owed';
-}
-
-final class ReadRefused extends ReadState {
-  const ReadRefused(this.problem);
-
-  final String problem;
+  final int? unlessLife;
 
   @override
   bool operator ==(Object other) =>
-      other is ReadRefused && other.problem == problem;
+      other is ReadOwed && other.unlessLife == unlessLife;
 
   @override
-  int get hashCode => Object.hash(ReadRefused, problem);
+  int get hashCode => Object.hash(ReadOwed, unlessLife);
 
   @override
-  String toString() => 'refused: $problem';
+  String toString() => unlessLife == null
+      ? 'owed'
+      : 'owed by a list of a life after $unlessLife';
+}
+
+final class ReadRefused extends ReadState {
+  const ReadRefused(this.problem, {this.unlessLife});
+
+  final String problem;
+  final int? unlessLife;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReadRefused &&
+      other.problem == problem &&
+      other.unlessLife == unlessLife;
+
+  @override
+  int get hashCode => Object.hash(ReadRefused, problem, unlessLife);
+
+  @override
+  String toString() => unlessLife == null
+      ? 'refused: $problem'
+      : 'refused: $problem, owed by a list of a life after $unlessLife';
 }
 
 bool isDebt(ReadState state) => state is ReadOwed || state is ReadRefused;
@@ -352,7 +362,15 @@ final class Shown {
         for (final page in pages)
           if (page is! TrashedPage) page.publicId,
       ]),
-      list: const ReadThisSession(),
+      list: switch ((list, createdAtOf(strategy))) {
+        (
+          ReadOwed(:final unlessLife?) || ReadRefused(:final unlessLife?),
+          final listed,
+        )
+            when listed == null || listed <= unlessLife =>
+          list,
+        _ => const ReadThisSession(),
+      },
       pageReads: pageReads,
       goneThisSession: {
         for (final page in goneThisSession)
@@ -431,10 +449,21 @@ final class Shown {
 
   Shown owingList() => _with(list: const ReadOwed());
 
+  Shown owingListPast(int? life) => _with(list: ReadOwed(unlessLife: life));
+
   Shown owingPage(String page) =>
       _with(pageReads: {...pageReads, page: const ReadOwed()});
 
-  Shown listRefused(String problem) => _with(list: ReadRefused(problem));
+  Shown listRefused(String problem) => _with(
+    list: ReadRefused(
+      problem,
+      unlessLife: switch (list) {
+        ReadOwed(:final unlessLife) ||
+        ReadRefused(:final unlessLife) => unlessLife,
+        NotReadThisSession() || ReadThisSession() => null,
+      },
+    ),
+  );
 
   Shown pageRefused(String page, String problem) =>
       _with(pageReads: {...pageReads, page: ReadRefused(problem)});
