@@ -331,6 +331,21 @@ impl ConvexClient {
         name: &str,
         args: BTreeMap<String, Value>,
     ) -> anyhow::Result<FunctionResult> {
+        Ok(self.mutation_timed(name, args).await?.value)
+    }
+
+    /// [`ConvexClient::mutation`], with the stamp of the results the client
+    /// held when it completed the mutation (see [`QueryResults::snapshot`]).
+    ///
+    /// A successful mutation completes on the first transition at or after
+    /// the timestamp it committed at, so its snapshot is that transition's.
+    /// A failed one completes when its response arrives, and its snapshot is
+    /// the last transition applied before the response.
+    pub async fn mutation_timed(
+        &mut self,
+        name: &str,
+        args: BTreeMap<String, Value>,
+    ) -> anyhow::Result<TimedResult> {
         let (tx, rx) = oneshot::channel();
 
         let udf_path: UdfPath = name.parse()?;
@@ -373,7 +388,7 @@ impl ConvexClient {
             .send(ClientRequest::Action(request, tx))?;
 
         let res = rx.await?;
-        Ok(res.await?)
+        Ok(res.await?.value)
     }
 
     /// Get a consistent view of the results of multiple queries (query set).

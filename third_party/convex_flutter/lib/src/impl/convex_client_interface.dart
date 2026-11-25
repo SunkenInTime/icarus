@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer;
+import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer, TimedGroupUpdate;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -54,6 +54,17 @@ abstract class IConvexClient {
   /// - [TimeoutException] if operation exceeds configured timeout
   /// - [ClientError] for Convex-specific errors
   Future<String> mutation({
+    required String name,
+    required Map<String, dynamic> args,
+  });
+
+  /// [mutation], with the snapshot the client held when it completed it:
+  /// for a success, the first transition at or after its commit timestamp,
+  /// so a live result with that snapshot or a later one includes the write;
+  /// for a failure, the last transition applied before its response. A
+  /// failed mutation is an answer here, with its snapshot, not a thrown
+  /// error.
+  Future<TimedAnswer> mutationTimed({
     required String name,
     required Map<String, dynamic> args,
   });
@@ -112,6 +123,13 @@ abstract class IConvexClient {
     required List<({String name, Map<String, dynamic> args})> queries,
     required void Function(List<String?>) onUpdate,
     required void Function(String, String?) onError,
+  });
+
+  /// [subscribeGroup], with each update's snapshot, as [queryTimed] gives
+  /// it. A failure comes to [onUpdate] too, as an update with `error` set.
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(TimedGroupUpdate) onUpdate,
   });
 
   // ============================================================================
