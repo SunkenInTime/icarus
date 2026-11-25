@@ -90,7 +90,7 @@ Each number gets a `READBACK <strategy> within budget: …` or `READBACK <strate
 - the longest step between breaks;
 - how many of the check's frames were timed, and the longest any of them waited after its vsync, matched by frame number.
 
-It fails if a break had no frame, if any frame of the check was not timed, if a step is over `longestStepMs`, or if the -0.0 item reads back equal. A frame that is asked for waits behind at most the one step running when it was asked for. When nothing asks for a frame, the break does not wait for one.
+It fails if no frame ran, if a break had no frame, if any frame of the check was not timed, if a step of the first two runs is over `longestStepMs`, or if the -0.0 item does not read back as its page reading back differently. The third run's longest step is logged beside the target but not judged: when a part differs, the verdict's words come from main's whole-page diagnostic, one step over the whole page, which only a page that reads back differently pays. A frame that is asked for waits behind at most the one step running when it was asked for. When nothing asks for a frame, the break does not wait for one.
 
 `scripts/read-back-budget.json` runs both in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
 

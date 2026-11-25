@@ -582,16 +582,14 @@ Future<List<String>> readBackFrames(
   final runs = [
     ('cold', await _framesAcrossSteps(images, held)),
     ('after $change', await _framesAcrossSteps(images, edited)),
-    (
-      'with one item that reads back differently',
-      await _framesAcrossSteps(images, differing),
-    ),
   ];
+  const differingLabel = 'with one item that reads back differently';
+  final differingRun = await _framesAcrossSteps(images, differing);
   final lines = [
     'READBACK $pick frames, with a frame asked for every frame and '
         'betweenAnimations between steps (an idle-priority task, then the '
         'frame asked for), one checker for all three runs:',
-    for (final (label, run) in runs)
+    for (final (label, run) in [...runs, (differingLabel, differingRun)])
       'READBACK $pick frames, $label: ${run.steps} steps, ${run.frames} '
           'frames ran during the check, ${run.timedFrames} of them timed, '
           '${run.breaksWithoutFrame} breaks with no frame in them, the longest '
@@ -602,21 +600,29 @@ Future<List<String>> readBackFrames(
         ReadsBackEqual() => 'reads back equal',
         ReadsBackDifferently(:final words) => 'reads back differently: $words',
       }}',
+    if (longestStepMs != null)
+      'READBACK $pick frames, $differingLabel: the longest step '
+          '${_ms(differingRun.longestStepMicros)} ms is not judged against '
+          '$longestStepMs ms, by design: when a part differs, the words come '
+          'from main\'s whole-page diagnostic, one step over the whole page, '
+          'paid only by a page that reads back differently',
   ];
   final problems = [
-    for (final (label, run) in runs) ...[
+    for (final (label, run) in [...runs, (differingLabel, differingRun)]) ...[
       if (run.frames == 0) '$label: no frame ran during the check',
       if (run.timedFrames < run.frames)
         '$label: ${run.frames - run.timedFrames} of the check\'s '
             '${run.frames} frames were not timed',
       if (run.breaksWithoutFrame > 0)
         '$label: ${run.breaksWithoutFrame} breaks had no frame in them',
-      if (longestStepMs != null && run.longestStepMicros / 1000 > longestStepMs)
+      if (longestStepMs != null &&
+          label != differingLabel &&
+          run.longestStepMicros / 1000 > longestStepMs)
         '$label: the longest step ${_ms(run.longestStepMicros)} ms is over '
             '$longestStepMs ms by '
             '${_ms(run.longestStepMicros - (longestStepMs * 1000).round())} ms',
     ],
-    if (runs.last.$2.readBack case final readBack
+    if (differingRun.readBack case final readBack
         when readBack is! ReadsBackDifferently || readBack.words != planted)
       'the item at -0.0 should read back as "$planted"',
   ];
