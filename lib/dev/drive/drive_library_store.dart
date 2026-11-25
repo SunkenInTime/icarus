@@ -546,10 +546,14 @@ Future<
   }
 
   var worstVsyncWait = 0;
+  Completer<void>? nextReport;
   void timings(List<FrameTiming> timings) {
     for (final timing in timings) {
       final wait = timing.vsyncOverhead.inMicroseconds;
       if (wait > worstVsyncWait) worstVsyncWait = wait;
+    }
+    if (nextReport case final report? when !report.isCompleted) {
+      report.complete();
     }
   }
 
@@ -558,7 +562,10 @@ Future<
     ..addTimingsCallback(timings)
     ..addPostFrameCallback(askAgain)
     ..scheduleFrame();
-  await scheduler.endOfFrame;
+  await Future<void>.delayed(const Duration(milliseconds: 1500));
+  final report = nextReport = Completer<void>();
+  await report.future.timeout(const Duration(seconds: 3), onTimeout: () {});
+  worstVsyncWait = 0;
   var steps = 1;
   var breaksWithoutFrame = 0;
   final framesBefore = frames;
