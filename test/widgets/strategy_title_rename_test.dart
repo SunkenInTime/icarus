@@ -128,6 +128,73 @@ void main() {
     expect(find.text('Renamed'), findsOneWidget);
     expect(find.byType(EditableText), findsNothing);
   });
+
+  group('a rename begun on one strategy', () {
+    Future<_OpenCloudStrategy> beginRename(WidgetTester tester) async {
+      final strategy = await pumpTitle(tester, role: 'editor');
+      await tester.tap(find.text('Original'));
+      await tester.pump();
+      await tester.enterText(find.byType(EditableText), 'Renamed');
+      await tester.pump();
+      return strategy;
+    }
+
+    Future<void> submitIfStillEditing(WidgetTester tester) async {
+      if (find.byType(EditableText).evaluate().isEmpty) return;
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+    }
+
+    testWidgets('and submitted after another strategy opened renames neither', (
+      tester,
+    ) async {
+      final strategy = await beginRename(tester);
+
+      strategy.show('strategy-2', 'Other');
+      await tester.pump();
+      await submitIfStillEditing(tester);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(strategy.renamed, isEmpty);
+      expect(find.text('Other'), findsOneWidget);
+      expect(find.text('Renamed'), findsNothing);
+    });
+
+    testWidgets(
+      'leaves edit mode the moment another strategy opens, showing its '
+      'real name',
+      (tester) async {
+        final strategy = await beginRename(tester);
+
+        strategy.show('strategy-2', 'Other');
+        await tester.pump();
+
+        expect(find.byType(EditableText), findsNothing);
+        expect(find.text('Other'), findsOneWidget);
+        await tester.tapAt(const Offset(5, 300));
+        await tester.pump();
+        expect(
+          strategy.renamed,
+          isEmpty,
+          reason: 'focus leaving submits nothing',
+        );
+      },
+    );
+
+    testWidgets('and submitted before the switch renames that strategy', (
+      tester,
+    ) async {
+      final strategy = await beginRename(tester);
+
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      strategy.show('strategy-2', 'Other');
+      await tester.pump();
+
+      expect(strategy.renamed, ['strategy-1 Renamed']);
+      expect(find.text('Other'), findsOneWidget);
+    });
+  });
 }
 
 class _OpenCloudStrategy extends StrategyProvider {
@@ -135,6 +202,12 @@ class _OpenCloudStrategy extends StrategyProvider {
 
   final Object? renameError;
   int renameCalls = 0;
+  final renamed = <String>[];
+
+  void show(String id, String name) => state = state.copyWith(
+        strategyId: id,
+        strategyName: name,
+      );
 
   @override
   StrategyState build() => const StrategyState(
@@ -151,6 +224,7 @@ class _OpenCloudStrategy extends StrategyProvider {
     StrategySource? source,
   }) async {
     renameCalls += 1;
+    renamed.add('$strategyID $newName');
     final error = renameError;
     if (error != null) throw error;
     state = state.copyWith(strategyName: newName);
