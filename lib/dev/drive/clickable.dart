@@ -34,7 +34,7 @@ List<RenderObject> _hitAt(Offset at) {
   ];
 }
 
-bool _onScreen(Offset at) {
+bool insideTheWindow(Offset at) {
   final view = WidgetsBinding.instance.platformDispatcher.implicitView!;
   return (Offset.zero & view.physicalSize / view.devicePixelRatio).contains(at);
 }
@@ -46,32 +46,74 @@ bool _within(RenderObject node, RenderObject outer) {
   return false;
 }
 
-bool _takesTaps(RenderObject node) =>
-    node is RenderPointerListener && node.onPointerDown != null;
+RenderObject? _rootOverlay() {
+  RenderObject? found;
+  void visit(Element element) {
+    if (found != null) return;
+    if (element.widget is Overlay) {
+      found = element.findRenderObject();
+      return;
+    }
+    element.visitChildElements(visit);
+  }
 
-RenderObject? _handlerOf(RenderObject node) {
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  return found;
+}
+
+bool Function(RenderObject) _takesTapsBelow(RenderObject? overlay) => (node) =>
+    node is RenderPointerListener &&
+    node.onPointerDown != null &&
+    (overlay == null || _within(node, overlay));
+
+RenderObject? _handlerFrom(
+  RenderObject? node,
+  bool Function(RenderObject) takesTaps,
+) {
   for (RenderObject? at = node; at != null; at = at.parent) {
-    if (_takesTaps(at)) return at;
+    if (takesTaps(at)) return at;
   }
   return null;
+}
+
+bool _drawnAt(RenderObject match, RenderObject wrapper, Offset at) {
+  for (RenderObject node = match; !identical(node, wrapper);) {
+    final parent = node.parent;
+    if (parent == null) return false;
+    if (parent is RenderOffstage && parent.offstage) return false;
+    if (parent is RenderBox && parent.hasSize) {
+      final clip = parent.describeApproximatePaintClip(node);
+      if (clip != null && !clip.contains(parent.globalToLocal(at))) {
+        return false;
+      }
+    }
+    node = parent;
+  }
+  return true;
 }
 
 enum _Press { taken, onItsWrapper, refused }
 
 _Press _pressOn(RenderObject match, Offset at) {
-  if (!_onScreen(at)) return _Press.refused;
+  if (!insideTheWindow(at)) return _Press.refused;
   final path = _hitAt(at);
-  final own = _handlerOf(match);
+  final takesTaps = _takesTapsBelow(_rootOverlay());
+  final own = _handlerFrom(match, takesTaps);
   if (own == null) {
     final first = path.firstOrNull;
     return first != null && first is! RenderView && _within(first, match)
         ? _Press.taken
         : _Press.refused;
   }
-  final first = path.where(_takesTaps).firstOrNull;
+  final first = path.where(takesTaps).firstOrNull;
   if (first == null) return _Press.refused;
   if (identical(first, own) || _within(first, match)) return _Press.taken;
-  return _within(match, first) ? _Press.onItsWrapper : _Press.refused;
+  final wrapper = _handlerFrom(own.parent, takesTaps);
+  return wrapper != null &&
+          identical(first, wrapper) &&
+          _drawnAt(match, wrapper, at)
+      ? _Press.onItsWrapper
+      : _Press.refused;
 }
 
 bool takesTheTap(RenderObject match, Offset at) =>
@@ -124,11 +166,11 @@ String _named(RenderObject target) {
 }
 
 String whyNotTapped(Offset at) {
-  if (!_onScreen(at)) {
+  if (!insideTheWindow(at)) {
     return 'off screen, at (${at.dx.round()}, ${at.dy.round()})';
   }
   final path = _hitAt(at);
-  final handler = path.where(_takesTaps).firstOrNull;
+  final handler = path.where(_takesTapsBelow(_rootOverlay())).firstOrNull;
   if (handler != null) return 'the tap goes to ${_named(handler)}';
   final first = path.firstOrNull;
   return first == null || first is RenderView
@@ -136,7 +178,7 @@ String whyNotTapped(Offset at) {
       : 'the tap reaches ${_named(first)}, which takes no taps';
 }
 
-String _ordinal(int n) => switch (n % 100) {
+String ordinal(int n) => switch (n % 100) {
       11 || 12 || 13 => '${n}th',
       _ => switch (n % 10) {
           1 => '${n}st',
@@ -167,15 +209,17 @@ Offset clickableCenterOf(
   if (tappable.length > nth) {
     final index = tappable[nth];
     if (index != nth) {
-      note?.call('TAP $what: the ${_ordinal(nth + 1)} match that can be '
-          'tapped is the ${_ordinal(index + 1)} of ${found.length} in the '
+      note?.call('TAP $what: the ${ordinal(nth + 1)} match that can be '
+          'tapped is the ${ordinal(index + 1)} of ${found.length} in the '
           'tree; ${untapped.length} cannot be tapped, the first because '
           '${whyNotTapped(found[untapped.first].at)}');
     }
     return found[index].at;
   }
-  if (found.isEmpty) throw StateError('$what: found 0');
-  final asked = nth == 0 ? '' : ', asked for the ${_ordinal(nth + 1)}';
+  if (found.isEmpty) {
+    throw StateError('$what: found 0, asked for the ${ordinal(nth + 1)}');
+  }
+  final asked = ', asked for the ${ordinal(nth + 1)}';
   if (untapped.isEmpty) {
     throw StateError('$what: found ${found.length}, all can be tapped$asked');
   }
@@ -184,7 +228,7 @@ Offset clickableCenterOf(
     final enabled = presses.indexOf(_Press.taken);
     if (enabled >= 0) {
       throw StateError('$what: found ${found.length}, $can disabled$asked; '
-          'the ${_ordinal(enabled + 1)} is not disabled: its own handler '
+          'the ${ordinal(enabled + 1)} is not disabled: its own handler '
           'takes the press');
     }
     throw StateError('$what: found ${found.length}, $can disabled$asked; '

@@ -1091,7 +1091,7 @@ Offset _wordsPoint(String words, {int nth = 0, bool clickable = false}) {
             );
       if (boxes.isNotEmpty) {
         final at = node.localToGlobal(boxes.first.toRect().center);
-        if (!clickable || takesTheTap(node, at)) {
+        if (!clickable || insideTheWindow(at)) {
           found.add(at);
         } else {
           covered = [...covered, at];
@@ -1105,10 +1105,11 @@ Offset _wordsPoint(String words, {int nth = 0, bool clickable = false}) {
   if (found.length <= nth) {
     if (covered.isNotEmpty) {
       throw StateError('"$words" drawn ${found.length + covered.length} times, '
-          '${found.length} can be tapped; the first that cannot: '
-          '${whyNotTapped(covered.first)}');
+          '${found.length} inside the window, asked for the ${ordinal(nth + 1)}; '
+          'the first outside it: ${whyNotTapped(covered.first)}');
     }
-    throw StateError('"$words" drawn ${found.length} times');
+    throw StateError(
+        '"$words" drawn ${found.length} times, asked for the ${ordinal(nth + 1)}');
   }
   return found[nth];
 }

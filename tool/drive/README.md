@@ -6,15 +6,18 @@ A run passes only when every instance finished its script with `SUMMARY ... CLEA
 
 ## Tapping by text, key or icon
 
-`tapText`, `tapKey`, `tapIcon`, `tapWords` and `dragWords` tap a match only if a person pressing its middle would press that match: the press must be inside the window, and the first thing under it that takes a press (a gesture detector, button, text field or modal barrier; a listener that only follows the pointer does not count) must be the match's own or sit inside the match.
+`tapText`, `tapKey` and `tapIcon` tap a match only if a person pressing its middle would press that match: the press must be inside the window, and the first thing under it that takes a press must be the match's own handler or sit inside the match. A handler is something that listens for a pointer going down (a gesture detector, button, text field or modal barrier) and lives inside a route or an overlay entry; a listener that only follows the pointer, or one above the root navigator that watches the whole app, is nobody's control. A match with no handler of its own counts when the first thing hit is the match or inside it.
 
-So a library tile under the editor, a label under the quick switcher's dismissal area, a control that is offstage or under `AbsorbPointer`, a row the list has clipped, anything off screen, and a disabled control (whose own handler never gets the press) are refused. `nth` counts only the matches that can be tapped.
+So a library tile under the editor, a label under the quick switcher's dismissal area, a control that is offstage or under `AbsorbPointer`, a row the list has clipped, anything off screen, and a disabled control (whose own handler never gets the press) are refused. `nth` counts only the matches that can be tapped. A refusal says how many matches were found, how many can be tapped, which one was asked for, and what would take the press instead (or that the match is off screen). When the match tapped is not the one at the same place in the tree, the log says so in a `TAP` line.
 
-To press a disabled control on purpose, as a person can, add `"disabled": true` (`{"tapText": "Delete", "disabled": true}`). The step then presses the match only if the press lands on something around it while its own handler is not reached, which is what a disabled control is. It fails if the control is enabled after all, and fails as covered if something unrelated is over it. A refusal of a disabled control without the option says to add it. A refusal says how many matches were found, how many can be tapped, which one was asked for, and what would take the press instead (or that the match is off screen). When the match tapped is not the one at the same place in the tree, the log says so in a `TAP` line.
+To press a disabled control on purpose, as a person can, add `"disabled": true` (`{"tapText": "Delete", "disabled": true}`). The step then presses the match only if the press reaches the handler right around the match's own handler (its wrapper, such as a press animation), the match's own handler is not reached, and the match is drawn there: nothing between it and that wrapper is offstage, and the point is inside every clip between them. It fails if the control is enabled after all, and fails as covered if something else is over it. A refusal of a disabled control without the option says to add it.
 
-The rule gets two cases wrong:
+`tapWords` and `dragWords` aim at words inside a paragraph, which another layer often handles (the text box link reader is a sibling of the paragraph, not its parent), so the rule cannot judge them: they only check that the point is inside the window ([#770](https://github.com/SunkenInTime/icarus/issues/770)).
+
+The rule gets these cases wrong:
 - **Refused, though a person could click it:** a label drawn on top of a sibling `InkWell` that is not its ancestor. Tap the `InkWell` by its key (`tapKey`).
 - **Tapped, though a person cannot see it:** a control drawn at `Opacity(0)` still takes the press. A tap succeeding does not show that the control was visible; check what is on screen with a `shot` before relying on it.
+- **Not seen as a handler:** a widget that takes presses in its own render object, such as a Material `Slider`, is not a listener, so a label it covers can be accepted. Check with a `shot`, or tap something with a handler of its own.
 
 Steps that send no tap, such as presence checks, hovers and doors, do not use this rule ([#770](https://github.com/SunkenInTime/icarus/issues/770)).
 

@@ -103,7 +103,8 @@ void main() {
 
     await expectLater(
       () => _tapThroughDriver(tester, _name),
-      _refused('tapText "$_name": found 1, none can be tapped; the first '
+      _refused(
+          'tapText "$_name": found 1, none can be tapped, asked for the 1st; the first '
           "that cannot: the tap goes to GestureDetector [<'switcher-barrier'>]"),
     );
     expect(_taps, isEmpty);
@@ -134,7 +135,8 @@ void main() {
 
     await expectLater(
       () => _tapThroughDriver(tester, 'Page 2'),
-      _refused('tapText "Page 2": found 1, none can be tapped; the first '
+      _refused(
+          'tapText "Page 2": found 1, none can be tapped, asked for the 1st; the first '
           "that cannot: the tap goes to GestureDetector "
           "[<'switcher-dismissal'>]"),
     );
@@ -223,7 +225,8 @@ void main() {
 
       await expectLater(
         () => _tapThroughDriver(tester, 'Inner'),
-        _refused('tapText "Inner": found 1, none can be tapped; the first '
+        _refused(
+            'tapText "Inner": found 1, none can be tapped, asked for the 1st; the first '
             'that cannot: the tap goes to GestureDetector'),
       );
       expect(_taps, isEmpty);
@@ -280,17 +283,31 @@ void main() {
     expect(_taps, {'menu item': 1});
   });
 
-  testWidgets('a match moved below the bottom of the window is off screen',
-      (tester) async {
-    await tester.pumpWidget(_app(Transform.translate(
-      offset: const Offset(0, 2000),
-      child: GestureDetector(onTap: _counts('below'), child: const Text(_name)),
+  testWidgets(
+      'a match the hit test reaches but outside the window is refused as off '
+      'screen', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1600, 900)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_app(Stack(
+      children: [
+        Positioned(
+          left: 1300,
+          top: 300,
+          child: GestureDetector(
+            onTap: _counts('outside'),
+            child: const Text(_name),
+          ),
+        ),
+      ],
     )));
+    tester.view.physicalSize = const Size(800, 600);
 
-    await expectLater(
-      () => _tapThroughDriver(tester, _name),
-      _refused('tapText "$_name": found 1, none can be tapped; the first '
-          'that cannot: off screen, at'),
+    expect(
+      () => clickableCenterOf((w) => _isText(w, _name), what: 'tapText'),
+      _refused('tapText: found 1, none can be tapped, asked for the 1st; the '
+          'first that cannot: off screen, at'),
     );
     expect(_taps, isEmpty);
   });
@@ -382,12 +399,14 @@ void main() {
   });
 
   Widget disabledItem({required bool enabled}) => Listener(
-        onPointerDown: (_) {},
-        child: IgnorePointer(
-          ignoring: !enabled,
-          child: GestureDetector(
-            onTap: _counts('delete'),
-            child: const Text('Delete'),
+        onPointerDown: (_) => _counts('press animation')(),
+        child: MouseRegion(
+          child: IgnorePointer(
+            ignoring: !enabled,
+            child: GestureDetector(
+              onTap: _counts('delete'),
+              child: const Text('Delete'),
+            ),
           ),
         ),
       );
@@ -410,8 +429,8 @@ void main() {
   });
 
   testWidgets(
-      'with "disabled", a disabled control is pressed and nothing it holds '
-      'runs', (tester) async {
+      'with "disabled", a disabled control is pressed: only its wrapper hears '
+      'the press, and nothing it holds runs', (tester) async {
     await tester.pumpWidget(_app(Center(child: disabledItem(enabled: false))));
 
     await tester.tapAt(clickableCenterOf(
@@ -421,7 +440,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(_taps, isEmpty);
+    expect(_taps, {'press animation': 1});
   });
 
   testWidgets('with "disabled", an enabled control fails as not disabled',
@@ -434,7 +453,8 @@ void main() {
         what: 'tapText "Delete"',
         disabled: true,
       ),
-      _refused('tapText "Delete": found 1, none disabled; the 1st is not '
+      _refused(
+          'tapText "Delete": found 1, none disabled, asked for the 1st; the 1st is not '
           'disabled: its own handler takes the press'),
     );
   });
@@ -461,8 +481,110 @@ void main() {
         what: 'tapText "Delete"',
         disabled: true,
       ),
-      _refused('tapText "Delete": found 1, none disabled; the first that '
+      _refused(
+          'tapText "Delete": found 1, none disabled, asked for the 1st; the first that '
           "cannot be pressed: the tap goes to GestureDetector [<'cover'>]"),
+    );
+  });
+
+  Widget underAnAppWideListener(Widget body) => Listener(
+        onPointerDown: (_) => _counts('app-wide listener')(),
+        child: _app(body),
+      );
+
+  testWidgets(
+      'text with no handler of its own, under an app-wide listener, is refused '
+      'where a slider covers it, and tapped where nothing does',
+      (tester) async {
+    await tester.pumpWidget(underAnAppWideListener(Stack(
+      children: [
+        const Positioned(left: 100, top: 100, child: Text('Covered')),
+        const Positioned(left: 100, top: 300, child: Text('Uncovered')),
+        Positioned(
+          left: 50,
+          top: 80,
+          width: 300,
+          height: 60,
+          child: Slider(value: 0.5, onChanged: (_) => _counts('slider')()),
+        ),
+      ],
+    )));
+
+    expect(
+      () => clickableCenterOf((w) => _isText(w, 'Covered'), what: 'tapText'),
+      _refused('tapText: found 1, none can be tapped, asked for the 1st'),
+    );
+    await _tapThroughDriver(tester, 'Uncovered');
+    expect(_taps, {'app-wide listener': 1});
+  });
+
+  testWidgets('with "disabled", an offstage control fails', (tester) async {
+    await tester.pumpWidget(_app(Center(
+      child: Listener(
+        onPointerDown: (_) => _counts('press animation')(),
+        child: MouseRegion(
+          child: SizedBox(
+            width: 200,
+            height: 60,
+            child: Offstage(child: disabledItem(enabled: false)),
+          ),
+        ),
+      ),
+    )));
+
+    expect(
+      () => clickableCenterOf((w) => _isText(w, 'Delete'),
+          what: 'tapText "Delete"', disabled: true),
+      _refused('tapText "Delete": found 1, none disabled'),
+    );
+  });
+
+  testWidgets('with "disabled", a row its list clips away fails',
+      (tester) async {
+    await tester.pumpWidget(_app(Align(
+      alignment: Alignment.topLeft,
+      child: SizedBox(
+        height: 100,
+        width: 300,
+        child: ListView(
+          children: [
+            const SizedBox(height: 80),
+            SizedBox(height: 80, child: disabledItem(enabled: false)),
+          ],
+        ),
+      ),
+    )));
+
+    expect(
+      () => clickableCenterOf((w) => _isText(w, 'Delete'),
+          what: 'tapText "Delete"', disabled: true),
+      _refused('tapText "Delete": found 1, none disabled'),
+    );
+    expect(_taps, isEmpty);
+  });
+
+  testWidgets('with "disabled", a control under another route fails',
+      (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navigator,
+      home: Scaffold(body: Center(child: disabledItem(enabled: false))),
+    ));
+    navigator.currentState!.push(MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        body: GestureDetector(
+          key: const ValueKey('editor'),
+          behavior: HitTestBehavior.opaque,
+          onTap: _counts('editor'),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+      () => clickableCenterOf((w) => _isText(w, 'Delete'),
+          what: 'tapText "Delete"', disabled: true),
+      _refused('tapText "Delete": found 1, none disabled'),
     );
   });
 
