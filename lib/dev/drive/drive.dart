@@ -105,7 +105,7 @@
 //   {"logDoors": tag}                  the map doors changed on the page
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
 //   {"logCaptions": tag}  {"logCard": tag}  {"logWeapons": tag}  every caption; the open card; weapons
-//   {"logLineups": tag}                {"logImages": tag}  {"rememberPage": tag}  {"expectPage": tag}  fails unless the page's items are as remembered
+//   {"logLineups": tag}                {"logImages": tag}  {"rememberPage": tag}  {"expectPage": tag, "changed": b?}  fails unless the page's items are as remembered, or with changed, unless they are not
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
 //   {"expectText": t, "count": n}      fails unless t is on screen n times  {"expectTopRoute": name}  unless no route covers name
@@ -2909,7 +2909,11 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectPage':
       final remembered = _rememberedPages[value as String];
       if (remembered == null) throw StateError('no page remembered as "$value"');
-      if (_pageItems(c) != remembered) {
+      final same = _pageItems(c) == remembered;
+      if (step['changed'] == true && same) {
+        throw StateError('the page\'s items are still as they were at "$value"');
+      }
+      if (step['changed'] != true && !same) {
         throw StateError('the page\'s items are not as they were at "$value"');
       }
     case 'logPage':

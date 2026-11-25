@@ -129,7 +129,8 @@ final _edits = <String, Map<String, _Edit>>{
         .updatePosition(const Offset(222, 111), '$p-ability'),
     'duplicateAbilityAt': (c, p) => c
         .read(abilityProvider.notifier)
-        .duplicateAbilityAt(sourceId: '$p-ability', position: const Offset(8, 8)),
+        .duplicateAbilityAt(
+            sourceId: '$p-ability', position: const Offset(8, 8)),
     'updateRotationHistory': (c, p) {
       final index = _abilityIndex(c, '$p-ability');
       c.read(abilityProvider.notifier)
@@ -226,8 +227,7 @@ final _edits = <String, Map<String, _Edit>>{
         ),
     'removeTextAsAction': (c, p) =>
         c.read(textProvider.notifier).removeTextAsAction('$p-text'),
-    'removeText': (c, p) =>
-        c.read(textProvider.notifier).removeText('$p-text'),
+    'removeText': (c, p) => c.read(textProvider.notifier).removeText('$p-text'),
     'updatePosition': (c, p) => c
         .read(textProvider.notifier)
         .updatePosition(const Offset(55, 44), '$p-text'),
@@ -264,7 +264,7 @@ final _edits = <String, Map<String, _Edit>>{
   'lib/providers/drawing_provider.dart': {
     'translateDrawings': (c, p) => c
         .read(drawingProvider.notifier)
-        .translateDrawings({'$p-free', '$p-line'}, const Offset(30, 20)),
+        .translateDrawings({'$p-free'}, const Offset(30, 20)),
     'deleteDrawing': (c, p) =>
         c.read(drawingProvider.notifier).deleteDrawing(0),
     'deleteDrawingsById': (c, p) =>
@@ -308,20 +308,22 @@ final _edits = <String, Map<String, _Edit>>{
   'lib/const/line_provider.dart': {
     'setOriginWeapon': (c, p) => c
         .read(lineUpProvider.notifier)
-        .setOriginWeapon(c.read(lineUpProvider).origins.first.id,
-            WeaponType.operator),
+        .setOriginWeapon(
+            c.read(lineUpProvider).origins.first.id, WeaponType.operator),
     'updateLink': (c, p) {
       final link = c.read(lineUpProvider).links.first;
-      c.read(lineUpProvider.notifier).updateLink(link.copyWith(name: 'changed'));
+      c
+          .read(lineUpProvider.notifier)
+          .updateLink(link.copyWith(name: 'changed'));
     },
     'updateOriginAgentPosition': (c, p) => c
         .read(lineUpProvider.notifier)
-        .updateOriginAgentPosition(c.read(lineUpProvider).origins.first.id,
-            const Offset(33, 22)),
+        .updateOriginAgentPosition(
+            c.read(lineUpProvider).origins.first.id, const Offset(33, 22)),
     'updateLandingPosition': (c, p) => c
         .read(lineUpProvider.notifier)
-        .updateLandingPosition(c.read(lineUpProvider).landings.first.id,
-            const Offset(44, 33)),
+        .updateLandingPosition(
+            c.read(lineUpProvider).landings.first.id, const Offset(44, 33)),
     'updateLandingAbilityVisualState': (c, p) =>
         c.read(lineUpProvider.notifier).updateLandingAbilityVisualState(
               landingId: c.read(lineUpProvider).landings.first.id,
@@ -362,8 +364,25 @@ final _edits = <String, Map<String, _Edit>>{
   },
 };
 
+const _noUndoStep = {
+  'lib/providers/agent_provider.dart': {'removeAgent'},
+  'lib/providers/ability_provider.dart': {'removeAbility'},
+  'lib/providers/utility_provider.dart': {'removeUtility'},
+  'lib/providers/text_provider.dart': {
+    'removeText',
+    'resize',
+    'updateTagColor'
+  },
+  'lib/providers/image_provider.dart': {
+    'removeImage',
+    'resize',
+    'updateTagColor',
+  },
+};
+
 const _notEdits = <String, Map<String, String>>{
   'lib/providers/agent_provider.dart': {
+    'build': 'makes the empty state before a load',
     'undoAction': 'run after every edit here, through the undo stack',
     'redoAction': 'run after every edit here, through the redo stack',
     'toJson': 'reads',
@@ -373,6 +392,7 @@ const _notEdits = <String, Map<String, String>>{
     'clearAll': 'empties the canvas; changes no item',
   },
   'lib/providers/ability_provider.dart': {
+    'build': 'makes the empty state before a load',
     'undoAction': 'run after every edit here, through the undo stack',
     'redoAction': 'run after every edit here, through the redo stack',
     'toJson': 'reads',
@@ -381,6 +401,8 @@ const _notEdits = <String, Map<String, String>>{
     'clearAll': 'empties the canvas; changes no item',
   },
   'lib/providers/utility_provider.dart': {
+    'takeSnapshot': 'reads',
+    'build': 'makes the empty state before a load',
     'undoAction': 'run after every edit here, through the undo stack',
     'redoAction': 'run after every edit here, through the redo stack',
     'toJson': 'reads',
@@ -391,6 +413,8 @@ const _notEdits = <String, Map<String, String>>{
     'restoreSnapshot': 'puts back copies a snapshot took; changes no item',
   },
   'lib/providers/text_provider.dart': {
+    'snapshotForPersistence': 'reads',
+    'build': 'makes the empty state before a load',
     'undoAction': 'run after every edit here, through the undo stack',
     'redoAction': 'run after every edit here, through the redo stack',
     'toJson': 'reads',
@@ -400,6 +424,9 @@ const _notEdits = <String, Map<String, String>>{
     'clearAll': 'empties the canvas; changes no item',
   },
   'lib/providers/image_provider.dart': {
+    'getImageAspectRatio': 'reads the bytes of a picture',
+    'toJson': 'reads',
+    'build': 'makes the empty state before a load',
     'undoAction': 'run after every edit here, through the undo stack',
     'redoAction': 'run after every edit here, through the redo stack',
     'fromHive': 'the load itself',
@@ -412,15 +439,14 @@ const _notEdits = <String, Map<String, String>>{
     'deleteUnusedImages': 'deletes picture files no item uses',
   },
   'lib/providers/drawing_provider.dart': {
+    'build': 'makes the empty state before a load',
     'undoAction': 'run after every edit here, through the undo stack',
     'redoAction': 'run after every edit here, through the redo stack',
     'toJson': 'reads',
-    'toString': 'reads',
     'fromHive': 'the load itself',
     'mergeRemote': 'takes the server\'s items; a cloud strategy is not in Hive',
     'clearAll': 'empties the canvas; changes no item',
     'rebuildAllPaths': 'rebuilds the screen path, which is never saved',
-    'clip': 'trims the drawing under way; changes no saved item',
     'startFreeDrawing': 'draws a new item, as startLine does',
     'updateFreeDrawing': 'draws a new item, as startLine does',
     'finishCurrentDrawing': 'draws a new item, as startLine does',
@@ -435,10 +461,20 @@ const _notEdits = <String, Map<String, String>>{
     'finishCurrentLine': 'part of the startLine edit',
   },
   'lib/const/line_provider.dart': {
+    'commitPlacement': 'saves the lineup being placed, a new one',
+    'originById': 'reads',
+    'landingById': 'reads',
+    'linkById': 'reads',
+    'linksFromOrigin': 'reads',
+    'linksToLanding': 'reads',
+    'replayEdit': 'an undo or redo step, run after every edit here',
+    'replayGraphAction': 'an undo or redo step, run after every edit here',
+    'build': 'makes the empty state before a load',
     'undoAction': 'run after every edit here, through the undo stack',
     'redoAction': 'run after every edit here, through the redo stack',
     'fromHive': 'the load itself',
-    'mergeRemote': 'takes the server\'s lineups; a cloud strategy is not in Hive',
+    'mergeRemote':
+        'takes the server\'s lineups; a cloud strategy is not in Hive',
     'addRecovered': 'puts back lineups a failed cloud write held',
     'takeOrder': 'orders lineups the server sent',
     'clearAll': 'empties the canvas; changes no lineup',
@@ -460,15 +496,24 @@ const _notEdits = <String, Map<String, String>>{
   },
 };
 
+const _notifiers = {
+  'lib/providers/agent_provider.dart': 'AgentProvider',
+  'lib/providers/ability_provider.dart': 'AbilityProvider',
+  'lib/providers/utility_provider.dart': 'UtilityProvider',
+  'lib/providers/text_provider.dart': 'TextProvider',
+  'lib/providers/image_provider.dart': 'PlacedImageProvider',
+  'lib/providers/drawing_provider.dart': 'DrawingProvider',
+  'lib/const/line_provider.dart': 'LineUpProvider',
+};
+
 Set<String> _publicMethods(String path) {
-  var source = File(path).readAsStringSync();
-  if (path.endsWith('line_provider.dart')) {
-    final start = source.indexOf('class LineUpProvider extends');
-    source = source.substring(start, source.indexOf('\nclass ', start + 1));
-  }
+  final file = File(path).readAsStringSync();
+  final start = file.indexOf('class ${_notifiers[path]} extends');
+  final source = file.substring(start, file.indexOf('\n}\n', start));
   return {
     for (final match in RegExp(
-      r'^  (?:void|Future<void>|Future<bool>|bool|String\??) ([a-z][A-Za-z0-9]*)\(',
+      r'^  (?!static |return |await |final |const |if |for |switch )'
+      r'[A-Za-z][\w<>?, ]*[\w>?] ([a-z][A-Za-z0-9]*)\(',
       multiLine: true,
     ).allMatches(source))
       match.group(1)!,
@@ -481,18 +526,22 @@ Uint8List _hiveBytes(String id) {
   return writer.toBytes();
 }
 
+List<String> _items(List<Object?> json) =>
+    [for (final item in json) jsonEncode(item)]..sort();
+
 String _canvas(ProviderContainer c) => jsonEncode([
-      AgentProvider.objectToJson(c.read(agentProvider)),
-      AbilityProvider.objectToJson(c.read(abilityProvider)),
-      UtilityProvider.objectToJson(c.read(utilityProvider)),
-      TextProvider.objectToJson(c.read(textProvider)),
-      [for (final image in c.read(placedImageProvider).images) image.toJson()],
-      DrawingProvider.objectToJson(c.read(drawingProvider).elements),
-      LineUpGraph(
-        origins: c.read(lineUpProvider).origins,
-        landings: c.read(lineUpProvider).landings,
-        links: c.read(lineUpProvider).links,
-      ).toJson(),
+      _items(jsonDecode(AgentProvider.objectToJson(c.read(agentProvider)))),
+      _items(jsonDecode(AbilityProvider.objectToJson(c.read(abilityProvider)))),
+      _items(jsonDecode(UtilityProvider.objectToJson(c.read(utilityProvider)))),
+      _items(jsonDecode(TextProvider.objectToJson(c.read(textProvider)))),
+      _items([
+        for (final image in c.read(placedImageProvider).images) image.toJson()
+      ]),
+      _items(jsonDecode(
+          DrawingProvider.objectToJson(c.read(drawingProvider).elements))),
+      _items(c.read(lineUpProvider).origins.map((o) => o.toJson()).toList()),
+      _items(c.read(lineUpProvider).landings.map((l) => l.toJson()).toList()),
+      _items(c.read(lineUpProvider).links.map((l) => l.toJson()).toList()),
     ]);
 
 void main() {
@@ -545,18 +594,32 @@ void main() {
         final held = _hiveBytes(id);
         final shown = _canvas(container);
 
+        final stepsBefore = container.read(actionProvider).length;
         edit(container, '$id-p0');
         await h.settle();
-        expect(_canvas(container), isNot(shown), reason: 'the edit did nothing');
+        final steps = container.read(actionProvider).length - stepsBefore;
+        final edited = _canvas(container);
+        expect(edited, isNot(shown), reason: 'the edit did nothing');
         expect(_hiveBytes(id), held, reason: 'after the edit');
+        expect(steps == 0, _noUndoStep[path]?.contains(name) ?? false,
+            reason: '$steps undo steps recorded');
 
-        container.read(actionProvider.notifier).undoAction();
-        await h.settle();
-        expect(_hiveBytes(id), held, reason: 'after undo');
+        for (var step = 0; step < (steps == 0 ? 1 : steps); step++) {
+          container.read(actionProvider.notifier).undoAction();
+          await h.settle();
+          expect(_hiveBytes(id), held, reason: 'after undo');
+        }
+        expect(_canvas(container), steps == 0 ? edited : shown,
+            reason: steps == 0
+                ? 'undo undid an edit that records no undo step'
+                : 'undo did not undo');
 
-        container.read(actionProvider.notifier).redoAction();
-        await h.settle();
-        expect(_hiveBytes(id), held, reason: 'after redo');
+        for (var step = 0; step < (steps == 0 ? 1 : steps); step++) {
+          container.read(actionProvider.notifier).redoAction();
+          await h.settle();
+          expect(_hiveBytes(id), held, reason: 'after redo');
+        }
+        expect(_canvas(container), edited, reason: 'redo did not redo');
       });
     }
   }
