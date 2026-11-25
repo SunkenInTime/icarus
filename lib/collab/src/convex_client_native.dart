@@ -174,11 +174,24 @@ class ConvexClient implements StampedValueSource {
     required String name,
     required Map<String, Object?> args,
     required void Function(StampedOutcome<Object?> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
   }) async {
+    var active = true;
     final handle = await _client.subscribeTimed(
       name: name,
       args: _convexDartToJson(args),
-      onResult: (answer) => onResult(_outcomeOf(answer)),
+      onResult: (answer) {
+        if (!active) return;
+        final StampedOutcome<Object?> outcome;
+        try {
+          outcome = _outcomeOf(answer);
+        } catch (error, stackTrace) {
+          active = false;
+          onBroken(error, stackTrace);
+          return;
+        }
+        onResult(outcome);
+      },
     );
     return _NativeSubscriptionHandle(handle);
   }
@@ -187,14 +200,20 @@ class ConvexClient implements StampedValueSource {
   Future<SubscriptionHandle> subscribeValuesStamped({
     required List<({String name, Map<String, Object?> args})> queries,
     required void Function(StampedOutcome<List<Object?>> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
   }) async {
+    if (queries.isEmpty) {
+      throw ArgumentError.value(queries, 'queries', 'needs at least one query');
+    }
     List<Object?>? latest;
+    var active = true;
     final handle = await _client.subscribeGroupTimed(
       queries: [
         for (final query in queries)
           (name: query.name, args: _convexDartToJson(query.args)),
       ],
       onUpdate: (update) {
+        if (!active) return;
         final stamp = ResultStamp(
           client: update.client,
           connection: update.connection,
@@ -215,12 +234,19 @@ class ConvexClient implements StampedValueSource {
           return;
         }
         final previous = latest;
-        final values = [
-          for (final (index, value) in update.values.indexed)
-            value == null
-                ? previous![index]
-                : _convexJsonToDart(jsonDecode(value)),
-        ];
+        final List<Object?> values;
+        try {
+          values = [
+            for (final (index, value) in update.values.indexed)
+              value == null
+                  ? previous![index]
+                  : _convexJsonToDart(jsonDecode(value)),
+          ];
+        } catch (error, stackTrace) {
+          active = false;
+          onBroken(error, stackTrace);
+          return;
+        }
         latest = values;
         onResult(StampedAnswer(values, stamp));
       },

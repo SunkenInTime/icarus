@@ -343,6 +343,25 @@ async function runStampedTransport(accessToken) {
       if (exitCode !== 0) throw new Error(`The stamped transport check failed on ${platform} (exit ${exitCode})`);
       console.log(`Stamped transport check passed on ${platform} in ${((Date.now() - started) / 1000).toFixed(1)} s`);
     }
+    const started = Date.now();
+    const exitCode = await run(
+      flutter[0],
+      [
+        ...flutter.slice(1),
+        "test",
+        "test/collab/live/stamped_transport_reconnect_web_test.dart",
+        "--platform",
+        "chrome",
+        `--dart-define=CONVEX_URL=${deploymentUrl}`,
+        `--dart-define=GAUNTLET_ACCESS_TOKEN=${accessToken}`,
+        `--dart-define=CONVEX_BUNDLE_URL=${bundleUrl}`,
+        "--reporter",
+        "expanded",
+      ],
+      { cwd: repoDir, stdio: "inherit", shell: process.platform === "win32" },
+    );
+    if (exitCode !== 0) throw new Error(`The web reconnect check failed (exit ${exitCode})`);
+    console.log(`Web reconnect check passed in ${((Date.now() - started) / 1000).toFixed(1)} s`);
   } finally {
     server.close();
   }

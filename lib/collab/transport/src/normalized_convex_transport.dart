@@ -188,10 +188,11 @@ abstract base class StampedNormalizedTransport extends NormalizedConvexTransport
     ConvexObject args,
   ) =>
       _watchStamped<Object?, ConvexValue>(
-        (onResult) => stamped.subscribeStamped(
+        (onResult, onBroken) => stamped.subscribeStamped(
           name: name,
           args: args.toDart(),
           onResult: onResult,
+          onBroken: onBroken,
         ),
         (outcome) => _stampedOf(
           '$name.returns',
@@ -205,12 +206,13 @@ abstract base class StampedNormalizedTransport extends NormalizedConvexTransport
     List<(String name, ConvexObject args)> queries,
   ) =>
       _watchStamped<List<Object?>, List<ConvexValue>>(
-        (onResult) => stamped.subscribeValuesStamped(
+        (onResult, onBroken) => stamped.subscribeValuesStamped(
           queries: [
             for (final (name, args) in queries)
               (name: name, args: args.toDart()),
           ],
           onResult: onResult,
+          onBroken: onBroken,
         ),
         (outcome) => _stampedOf(
           '',
@@ -240,6 +242,7 @@ abstract base class StampedNormalizedTransport extends NormalizedConvexTransport
   Stream<Stamped<T>> _watchStamped<V, T>(
     Future<SubscriptionHandle> Function(
       void Function(StampedOutcome<V> outcome) onResult,
+      void Function(Object error, StackTrace stackTrace) onBroken,
     ) subscribe,
     Stamped<T> Function(StampedOutcome<V> outcome) normalize,
   ) {
@@ -260,14 +263,17 @@ abstract base class StampedNormalizedTransport extends NormalizedConvexTransport
     Future<void> start() async {
       active = true;
       try {
-        final nextHandle = await subscribe((outcome) {
-          if (!active) return;
-          try {
-            controller.add(normalize(outcome));
-          } catch (error, stackTrace) {
-            closeForContractFailure(error, stackTrace);
-          }
-        });
+        final nextHandle = await subscribe(
+          (outcome) {
+            if (!active) return;
+            try {
+              controller.add(normalize(outcome));
+            } catch (error, stackTrace) {
+              closeForContractFailure(error, stackTrace);
+            }
+          },
+          closeForContractFailure,
+        );
         if (!active) {
           nextHandle.cancel();
           return;

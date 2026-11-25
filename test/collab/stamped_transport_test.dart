@@ -25,9 +25,10 @@ final class _Handle implements SubscriptionHandle {
 }
 
 final class _Scripted implements StampedValueSource {
-  _Scripted(this.outcomes);
+  _Scripted(this.outcomes, {this.breaksAfter});
 
   final List<StampedOutcome<Object?>> outcomes;
+  final int? breaksAfter;
   final handle = _Handle();
   final asked = <String>[];
 
@@ -54,11 +55,18 @@ final class _Scripted implements StampedValueSource {
     required String name,
     required Map<String, Object?> args,
     required void Function(StampedOutcome<Object?> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
   }) async {
     asked.add('subscribe $name');
     scheduleMicrotask(() {
-      for (final outcome in outcomes) {
-        if (!handle.cancelled) onResult(outcome);
+      for (final (index, outcome) in outcomes.indexed) {
+        if (handle.cancelled) return;
+        if (index == breaksAfter) {
+          onBroken(
+              const FormatException('a malformed answer'), StackTrace.current);
+          return;
+        }
+        onResult(outcome);
       }
     });
     return handle;
@@ -68,6 +76,7 @@ final class _Scripted implements StampedValueSource {
   Future<SubscriptionHandle> subscribeValuesStamped({
     required List<({String name, Map<String, Object?> args})> queries,
     required void Function(StampedOutcome<List<Object?>> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
   }) async {
     asked.add('together ${[for (final query in queries) query.name]}');
     scheduleMicrotask(() {
@@ -214,6 +223,27 @@ void main() {
 
     expect(seen, hasLength(1));
     expect(failure, isA<ConvexDecodingException>());
+    expect(source.handle.cancelled, isTrue);
+  });
+
+  test('a call that breaks ends the watch with its error', () async {
+    final source = _Scripted(
+      [const StampedAnswer('ok', _first), const StampedAnswer('ok', _second)],
+      breaksAfter: 1,
+    );
+    final (:transport, :ping) = _over(source);
+    final seen = <Stamped<HealthPingResult>>[];
+    Object? failure;
+    final ended = Completer<void>();
+    ping.stampedOn(transport).watch().listen(
+          seen.add,
+          onError: (Object error) => failure = error,
+          onDone: ended.complete,
+        );
+    await ended.future;
+
+    expect(seen, hasLength(1));
+    expect(failure, isA<FormatException>());
     expect(source.handle.cancelled, isTrue);
   });
 

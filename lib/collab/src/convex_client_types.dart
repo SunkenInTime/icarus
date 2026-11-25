@@ -110,11 +110,13 @@ abstract interface class StampedValueSource implements ConvexClientValueSource {
     required String name,
     required Map<String, Object?> args,
     required void Function(StampedOutcome<Object?> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
   });
 
   Future<SubscriptionHandle> subscribeValuesStamped({
     required List<({String name, Map<String, Object?> args})> queries,
     required void Function(StampedOutcome<List<Object?>> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
   });
 
   Future<int> connectionGeneration();

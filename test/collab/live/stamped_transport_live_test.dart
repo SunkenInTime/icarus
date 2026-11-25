@@ -53,11 +53,13 @@ void main() {
       );
       final live = <Stamped<List<FoldersListTreeResultItem>>>[];
       final watching = tree.stampedOn(transport).watch().listen(live.add);
+      addTearDown(watching.cancel);
       final grouped = <Stamped<List<Object?>>>[];
       final groupWatching = StampedConvexQuery.watchTogether(
         transport,
         [tree, api.users.me()],
       ).listen(grouped.add);
+      addTearDown(groupWatching.cancel);
       final reads = [await tree.stampedOn(transport).fetch()];
       final answers = <String, Stamped<ConvexValue>>{};
 
@@ -160,6 +162,27 @@ void main() {
       );
       expect(
           refused.stamp.snapshot, greaterThanOrEqualTo(second.stamp.snapshot));
+
+      final unconvertible = ConvexObject({
+        r'$reserved': const ConvexString('not a field name'),
+      });
+      if (kIsWeb) {
+        await expectLater(
+          transport.mutationStamped('folders:create', unconvertible),
+          throwsA(anything),
+          reason: 'arguments the client refuses are the call failing',
+        );
+        await expectLater(
+          transport.queryStamped('folders:listTree', unconvertible),
+          throwsA(anything),
+        );
+      } else {
+        expect(
+          await transport.mutationStamped('folders:create', unconvertible),
+          isA<StampedError<ConvexValue>>(),
+          reason: 'the native client sends them, and the server refuses them',
+        );
+      }
     },
     timeout: const Timeout(Duration(minutes: 3)),
     skip: _deploymentUrl.isEmpty
