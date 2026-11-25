@@ -3,7 +3,12 @@ import 'dart:async';
 import 'package:convex_flutter/src/impl/convex_client_interface.dart';
 import 'package:convex_flutter/src/impl/convex_client_factory.dart';
 import 'package:convex_flutter/src/rust/lib.dart'
-    show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer;
+    show
+        WebSocketConnectionState,
+        SubscriptionHandle,
+        AuthHandle,
+        TimedAnswer,
+        TimedGroupUpdate;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -189,6 +194,18 @@ class ConvexClient {
     required Map<String, dynamic> args,
   }) => _impl.mutation(name: name, args: args);
 
+  /// [mutation], with the snapshot the client held when it completed it.
+  /// For a success, a snapshot whose time is at or after the commit: the
+  /// first such transition when the response came first, else the snapshot
+  /// current when the response was handled. That live results from it on
+  /// show the write rests on the sync protocol. When the server function
+  /// fails, the last snapshot applied before the response; that failure is
+  /// an answer here, not a thrown error, but a timeout still throws. Native only.
+  Future<TimedAnswer> mutationTimed({
+    required String name,
+    required Map<String, dynamic> args,
+  }) => _impl.mutationTimed(name: name, args: args);
+
   /// Executes a Convex action operation with timeout.
   ///
   /// [name] - Name of the action function to execute
@@ -250,6 +267,13 @@ class ConvexClient {
     onUpdate: onUpdate,
     onError: onError,
   );
+
+  /// [subscribeGroup], with each update's snapshot, as [queryTimed] gives
+  /// it. A failure comes to [onUpdate] too, as an update with `error` set. Native only.
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(TimedGroupUpdate) onUpdate,
+  }) => _impl.subscribeGroupTimed(queries: queries, onUpdate: onUpdate);
 
   // ============================================================================
   // Authentication API

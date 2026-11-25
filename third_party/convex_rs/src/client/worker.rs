@@ -24,6 +24,7 @@ use crate::{
         AuthTokenFetcher,
         BaseConvexClient,
         SubscriberId,
+        TimedResult,
     },
     client::{
         subscription::{
@@ -40,7 +41,6 @@ use crate::{
         SyncProtocol,
     },
     value::Value,
-    FunctionResult,
 };
 
 const INITIAL_BACKOFF: Duration = Duration::from_millis(100);
@@ -98,11 +98,11 @@ impl AuthRecovery {
 pub enum ClientRequest {
     Mutation(
         MutationRequest,
-        oneshot::Sender<oneshot::Receiver<FunctionResult>>,
+        oneshot::Sender<oneshot::Receiver<TimedResult>>,
     ),
     Action(
         ActionRequest,
-        oneshot::Sender<oneshot::Receiver<FunctionResult>>,
+        oneshot::Sender<oneshot::Receiver<TimedResult>>,
     ),
     Subscribe(
         SubscribeRequest,
@@ -578,7 +578,10 @@ mod tests {
         request_sender.send(ClientRequest::Reconnect("convex_flutter:manual".into()))?;
 
         let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
-        assert_eq!(result, FunctionResult::Value(Value::from("upload url")));
+        assert_eq!(
+            result.value,
+            FunctionResult::Value(Value::from("upload url"))
+        );
         // Wait for the state to be resent on the new connection, then check
         // the resend left the action out.
         tokio::time::timeout(Duration::from_secs(2), async {
@@ -669,7 +672,7 @@ mod tests {
             .await?;
         let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
         worker.handle.abort();
-        assert_eq!(result, FunctionResult::Value(Value::from("applied")));
+        assert_eq!(result.value, FunctionResult::Value(Value::from("applied")));
         Ok(())
     }
 
@@ -806,7 +809,10 @@ mod tests {
             .await?;
         let result = tokio::time::timeout(Duration::from_secs(2), result).await??;
         worker.handle.abort();
-        assert_eq!(result, FunctionResult::Value(Value::from("upload url")));
+        assert_eq!(
+            result.value,
+            FunctionResult::Value(Value::from("upload url"))
+        );
         Ok(())
     }
 

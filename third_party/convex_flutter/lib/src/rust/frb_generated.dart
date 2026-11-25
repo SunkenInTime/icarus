@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 1527505985;
+  int get rustContentHash => -1881779666;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -108,6 +108,12 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<String> crateMobileConvexClientMutation({
+    required MobileConvexClient that,
+    required String name,
+    required Map<String, String> args,
+  });
+
+  Future<TimedAnswer> crateMobileConvexClientMutationTimed({
     required MobileConvexClient that,
     required String name,
     required Map<String, String> args,
@@ -164,6 +170,12 @@ abstract class RustLibApi extends BaseApi {
     required List<GroupQuery> queries,
     required FutureOr<void> Function(List<String?>) onUpdate,
     required FutureOr<void> Function(String, String?) onError,
+  });
+
+  Future<SubscriptionHandle> crateMobileConvexClientSubscribeGroupTimed({
+    required MobileConvexClient that,
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(TimedGroupUpdate) onUpdate,
   });
 
   Future<SubscriptionHandle> crateMobileConvexClientSubscribeTimed({
@@ -520,6 +532,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<TimedAnswer> crateMobileConvexClientMutationTimed({
+    required MobileConvexClient that,
+    required String name,
+    required Map<String, String> args,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
+            that,
+            serializer,
+          );
+          sse_encode_String(name, serializer);
+          sse_encode_Map_String_String_None(args, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 9,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_timed_answer,
+          decodeErrorData: sse_decode_client_error,
+        ),
+        constMeta: kCrateMobileConvexClientMutationTimedConstMeta,
+        argValues: [that, name, args],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateMobileConvexClientMutationTimedConstMeta =>
+      const TaskConstMeta(
+        debugName: "MobileConvexClient_mutation_timed",
+        argNames: ["that", "name", "args"],
+      );
+
+  @override
   MobileConvexClient crateMobileConvexClientNew({
     required String deploymentUrl,
     required String clientId,
@@ -530,7 +582,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deploymentUrl, serializer);
           sse_encode_String(clientId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 10)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -569,7 +621,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -609,7 +661,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 12,
             port: port_,
           );
         },
@@ -649,7 +701,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 13,
             port: port_,
           );
         },
@@ -687,7 +739,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 14,
             port: port_,
           );
         },
@@ -725,7 +777,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 15,
             port: port_,
           );
         },
@@ -771,7 +823,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 16,
             port: port_,
           );
         },
@@ -822,7 +874,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 17,
             port: port_,
           );
         },
@@ -871,7 +923,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 18,
             port: port_,
           );
         },
@@ -891,6 +943,50 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "MobileConvexClient_subscribe_group",
         argNames: ["that", "queries", "onUpdate", "onError"],
+      );
+
+  @override
+  Future<SubscriptionHandle> crateMobileConvexClientSubscribeGroupTimed({
+    required MobileConvexClient that,
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(TimedGroupUpdate) onUpdate,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
+            that,
+            serializer,
+          );
+          sse_encode_list_group_query(queries, serializer);
+          sse_encode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(
+            onUpdate,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 19,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData:
+              sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerSubscriptionHandle,
+          decodeErrorData: sse_decode_client_error,
+        ),
+        constMeta: kCrateMobileConvexClientSubscribeGroupTimedConstMeta,
+        argValues: [that, queries, onUpdate],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateMobileConvexClientSubscribeGroupTimedConstMeta =>
+      const TaskConstMeta(
+        debugName: "MobileConvexClient_subscribe_group_timed",
+        argNames: ["that", "queries", "onUpdate"],
       );
 
   @override
@@ -917,7 +1013,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 20,
             port: port_,
           );
         },
@@ -949,7 +1045,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 21)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1148,6 +1244,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     return (callId, rawArg0) async {
       final arg0 = dco_decode_timed_answer(rawArg0);
+
+      Box<void>? rawOutput;
+      Box<AnyhowException>? rawError;
+      try {
+        rawOutput = Box(await raw(arg0));
+      } catch (e, s) {
+        rawError = Box(AnyhowException("$e\n\n$s"));
+      }
+
+      final serializer = SseSerializer(generalizedFrbRustBinding);
+      assert((rawOutput != null) ^ (rawError != null));
+      if (rawOutput != null) {
+        serializer.buffer.putUint8(0);
+        sse_encode_unit(rawOutput.value, serializer);
+      } else {
+        serializer.buffer.putUint8(1);
+        sse_encode_AnyhowException(rawError!.value, serializer);
+      }
+      final output = serializer.intoRaw();
+
+      generalizedFrbRustBinding.dartFnDeliverOutput(
+        callId: callId,
+        ptr: output.ptr,
+        rustVecLen: output.rustVecLen,
+        dataLen: output.dataLen,
+      );
+    };
+  }
+
+  Future<void> Function(int, dynamic)
+  encode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(
+    FutureOr<void> Function(TimedGroupUpdate) raw,
+  ) {
+    return (callId, rawArg0) async {
+      final arg0 = dco_decode_timed_group_update(rawArg0);
 
       Box<void>? rawOutput;
       Box<AnyhowException>? rawError;
@@ -1401,6 +1532,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  FutureOr<void> Function(TimedGroupUpdate)
+  dco_decode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError('');
+  }
+
+  @protected
   FutureOr<void> Function(WebSocketConnectionState)
   dco_decode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     dynamic raw,
@@ -1615,13 +1755,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TimedAnswer dco_decode_timed_answer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 4)
-      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return TimedAnswer(
       value: dco_decode_opt_String(arr[0]),
       error: dco_decode_opt_box_autoadd_query_failure(arr[1]),
       ts: dco_decode_opt_box_autoadd_i_64(arr[2]),
       snapshot: dco_decode_i_64(arr[3]),
+      connection: dco_decode_i_64(arr[4]),
+      client: dco_decode_i_64(arr[5]),
+    );
+  }
+
+  @protected
+  TimedGroupUpdate dco_decode_timed_group_update(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return TimedGroupUpdate(
+      values: dco_decode_list_opt_String(arr[0]),
+      error: dco_decode_opt_box_autoadd_query_failure(arr[1]),
+      ts: dco_decode_opt_box_autoadd_i_64(arr[2]),
+      snapshot: dco_decode_i_64(arr[3]),
+      connection: dco_decode_i_64(arr[4]),
+      client: dco_decode_i_64(arr[5]),
     );
   }
 
@@ -2030,11 +2188,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_error = sse_decode_opt_box_autoadd_query_failure(deserializer);
     var var_ts = sse_decode_opt_box_autoadd_i_64(deserializer);
     var var_snapshot = sse_decode_i_64(deserializer);
+    var var_connection = sse_decode_i_64(deserializer);
+    var var_client = sse_decode_i_64(deserializer);
     return TimedAnswer(
       value: var_value,
       error: var_error,
       ts: var_ts,
       snapshot: var_snapshot,
+      connection: var_connection,
+      client: var_client,
+    );
+  }
+
+  @protected
+  TimedGroupUpdate sse_decode_timed_group_update(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_values = sse_decode_list_opt_String(deserializer);
+    var var_error = sse_decode_opt_box_autoadd_query_failure(deserializer);
+    var var_ts = sse_decode_opt_box_autoadd_i_64(deserializer);
+    var var_snapshot = sse_decode_i_64(deserializer);
+    var var_connection = sse_decode_i_64(deserializer);
+    var var_client = sse_decode_i_64(deserializer);
+    return TimedGroupUpdate(
+      values: var_values,
+      error: var_error,
+      ts: var_ts,
+      snapshot: var_snapshot,
+      connection: var_connection,
+      client: var_client,
     );
   }
 
@@ -2271,6 +2452,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_DartOpaque(
       encode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(self),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(
+    FutureOr<void> Function(TimedGroupUpdate) self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_DartOpaque(
+      encode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(self),
       serializer,
     );
   }
@@ -2559,6 +2752,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_query_failure(self.error, serializer);
     sse_encode_opt_box_autoadd_i_64(self.ts, serializer);
     sse_encode_i_64(self.snapshot, serializer);
+    sse_encode_i_64(self.connection, serializer);
+    sse_encode_i_64(self.client, serializer);
+  }
+
+  @protected
+  void sse_encode_timed_group_update(
+    TimedGroupUpdate self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_opt_String(self.values, serializer);
+    sse_encode_opt_box_autoadd_query_failure(self.error, serializer);
+    sse_encode_opt_box_autoadd_i_64(self.ts, serializer);
+    sse_encode_i_64(self.snapshot, serializer);
+    sse_encode_i_64(self.connection, serializer);
+    sse_encode_i_64(self.client, serializer);
   }
 
   @protected
@@ -2731,6 +2940,18 @@ class MobileConvexClientImpl extends RustOpaque implements MobileConvexClient {
     args: args,
   );
 
+  /// [mutation], with the snapshot the client held when it completed the
+  /// mutation (see [TimedAnswer]). A failed mutation is an answer here,
+  /// with its snapshot, not a thrown error.
+  Future<TimedAnswer> mutationTimed({
+    required String name,
+    required Map<String, String> args,
+  }) => RustLib.instance.api.crateMobileConvexClientMutationTimed(
+    that: this,
+    name: name,
+    args: args,
+  );
+
   /// Sets up WebSocket connection state change listener.
   ///
   /// Must be called BEFORE any queries/mutations to capture all state changes.
@@ -2840,6 +3061,18 @@ class MobileConvexClientImpl extends RustOpaque implements MobileConvexClient {
     queries: queries,
     onUpdate: onUpdate,
     onError: onError,
+  );
+
+  /// [subscribe_group], with each update's snapshot. A failure comes to
+  /// [on_update] too, as an update with `error` set. Updates arrive in
+  /// order, each after the last one's callback returned.
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(TimedGroupUpdate) onUpdate,
+  }) => RustLib.instance.api.crateMobileConvexClientSubscribeGroupTimed(
+    that: this,
+    queries: queries,
+    onUpdate: onUpdate,
   );
 
   /// [subscribe], with each result's snapshot, values and errors alike.

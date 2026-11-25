@@ -152,3 +152,41 @@ later transition at the same time
 a reconnect the client also accepts a first transition whatever its time. The
 snapshot number has neither problem; it is only comparable within one run of
 the client.
+
+Every stamp also names its client and connection. `QueryResults::client` numbers
+the clients built in this process from 1, so snapshots of two clients are never
+compared as if they were one count. `QueryResults::connection` is a
+generation: 0 until the first reconnect, then one more each time the client
+starts again on a new socket, a failed dial included, so the first socket that
+opens can be 1 and numbers can be skipped. A higher number is a later
+connection. Results kept from an old connection keep its number until the new
+connection's first transition replaces them, so a reader can tell a result
+taken before a reconnect from one taken after it, whatever order they reach it
+in (`base_client::tests::test_the_snapshot_count_goes_on_across_a_reconnect`).
+That test also shows a new connection starting at an earlier server time, so a
+higher snapshot on a later connection is a later snapshot of this client, not
+necessarily a later server time.
+
+`ConvexClient::mutation_timed` gives a mutation's answer with the stamp of the
+results the client held when it completed it, and `mutation` and `action`
+return the same answers without it. A success's snapshot has a timestamp at or
+after its commit. When the response arrives first, the mutation completes on
+the first transition that reaches the commit and carries it. When a qualifying
+transition arrived first, it carries the snapshot current when the response is
+handled: that qualifies, but need not be the first that did. What the stamp
+establishes is a snapshot whose time is at or after the commit; that results
+show the write rests on the protocol rule above. Across a reconnect, a reader
+that needs a result to include the write checks both: its snapshot at or after
+the answer's, and its time at or after the answer's. A mutation whose server
+function fails completes when its response arrives, with the last snapshot
+applied before it (snapshot 0 and no time before the first transition). That is
+a fact about when this client handled the answer, not about which server state
+the failed mutation ran against; nothing on the wire says that. A Dart timeout
+or a bridge error still throws. The tests next to
+`base_client::tests::test_a_mutation_answer_carries_the_snapshot_its_write_is_visible_in`
+cover each case.
+
+Unlike upstream, `BaseConvexClient::mutation` and `BaseConvexClient::action`
+hand back a `TimedResult` rather than a `FunctionResult`, which would break a
+Rust program using the base client directly. Icarus has none; `ConvexClient`'s
+methods keep upstream's types.

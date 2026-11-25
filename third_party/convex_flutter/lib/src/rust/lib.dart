@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `of`, `parse_json_args`, `report_auth`
+// These functions are ignored because they are not marked as `pub`: `connected_client`, `group_step`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe_group`, `internal_subscribe`, `new`, `new`, `of`, `of`, `parse_json_args`, `report_auth`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `GroupStep`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
@@ -52,6 +52,14 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
 
   /// Executes a mutation on the Convex backend.
   Future<String> mutation({
+    required String name,
+    required Map<String, String> args,
+  });
+
+  /// [mutation], with the snapshot the client held when it completed the
+  /// mutation (see [TimedAnswer]). A failed mutation is an answer here,
+  /// with its snapshot, not a thrown error.
+  Future<TimedAnswer> mutationTimed({
     required String name,
     required Map<String, String> args,
   });
@@ -148,6 +156,14 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required FutureOr<void> Function(String, String?) onError,
   });
 
+  /// [subscribe_group], with each update's snapshot. A failure comes to
+  /// [on_update] too, as an update with `error` set. Updates arrive in
+  /// order, each after the last one's callback returned.
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<GroupQuery> queries,
+    required FutureOr<void> Function(TimedGroupUpdate) onUpdate,
+  });
+
   /// [subscribe], with each result's snapshot, values and errors alike.
   /// Each call to [on_result] is posted from its own task, as [subscribe]
   /// posts its updates, so results can reach Dart out of order; their
@@ -237,18 +253,39 @@ class QueryFailure {
 /// included, and restarts only with the client. `ts` is the server time of
 /// that snapshot in nanoseconds: an unchanged value carries the time of the
 /// snapshot it was taken from, two snapshots can share a time, and it is never
-/// null for a result the client delivered.
+/// null for a result the client delivered. `connection` is the connection the
+/// snapshot was taken on (0 for the first socket, one more per reconnect), and
+/// `client` the client it comes from: snapshots of different clients do not
+/// compare.
+///
+/// A mutation's answer carries the snapshot the client held when it completed
+/// it: for a success, the first transition at or after its commit timestamp;
+/// for a failure, the last transition applied before its response.
 class TimedAnswer {
   final String? value;
   final QueryFailure? error;
   final PlatformInt64? ts;
   final PlatformInt64 snapshot;
+  final PlatformInt64 connection;
+  final PlatformInt64 client;
 
-  const TimedAnswer({this.value, this.error, this.ts, required this.snapshot});
+  const TimedAnswer({
+    this.value,
+    this.error,
+    this.ts,
+    required this.snapshot,
+    required this.connection,
+    required this.client,
+  });
 
   @override
   int get hashCode =>
-      value.hashCode ^ error.hashCode ^ ts.hashCode ^ snapshot.hashCode;
+      value.hashCode ^
+      error.hashCode ^
+      ts.hashCode ^
+      snapshot.hashCode ^
+      connection.hashCode ^
+      client.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -258,7 +295,53 @@ class TimedAnswer {
           value == other.value &&
           error == other.error &&
           ts == other.ts &&
-          snapshot == other.snapshot;
+          snapshot == other.snapshot &&
+          connection == other.connection &&
+          client == other.client;
+}
+
+/// One update of a group of queries subscribed together (see
+/// `subscribe_group`), with the snapshot all of its values come from, as in
+/// [TimedAnswer]. `values` holds each query's JSON in the order given, or
+/// None where it is the same as in the last update; `error` is set instead
+/// when any query fails.
+class TimedGroupUpdate {
+  final List<String?> values;
+  final QueryFailure? error;
+  final PlatformInt64? ts;
+  final PlatformInt64 snapshot;
+  final PlatformInt64 connection;
+  final PlatformInt64 client;
+
+  const TimedGroupUpdate({
+    required this.values,
+    this.error,
+    this.ts,
+    required this.snapshot,
+    required this.connection,
+    required this.client,
+  });
+
+  @override
+  int get hashCode =>
+      values.hashCode ^
+      error.hashCode ^
+      ts.hashCode ^
+      snapshot.hashCode ^
+      connection.hashCode ^
+      client.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TimedGroupUpdate &&
+          runtimeType == other.runtimeType &&
+          values == other.values &&
+          error == other.error &&
+          ts == other.ts &&
+          snapshot == other.snapshot &&
+          connection == other.connection &&
+          client == other.client;
 }
 
 /// WebSocket connection state exposed to Flutter/Dart.

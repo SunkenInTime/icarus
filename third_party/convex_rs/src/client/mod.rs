@@ -331,6 +331,26 @@ impl ConvexClient {
         name: &str,
         args: BTreeMap<String, Value>,
     ) -> anyhow::Result<FunctionResult> {
+        Ok(self.mutation_timed(name, args).await?.value)
+    }
+
+    /// [`ConvexClient::mutation`], with the stamp of the results the client
+    /// held when it completed the mutation (see [`QueryResults::snapshot`]).
+    ///
+    /// A successful mutation's snapshot has a timestamp at or after the one it
+    /// committed at. If the response arrives first, the mutation completes on
+    /// the first transition that reaches that timestamp, and carries it; if a
+    /// qualifying transition arrived first, it carries the snapshot current
+    /// when the response is handled, which qualifies but need not be the
+    /// first that did. Whether results from that snapshot on show the write
+    /// rests on the sync protocol, as the patch notes say. A mutation whose
+    /// server function fails completes when its response arrives, with the
+    /// last snapshot applied before it.
+    pub async fn mutation_timed(
+        &mut self,
+        name: &str,
+        args: BTreeMap<String, Value>,
+    ) -> anyhow::Result<TimedResult> {
         let (tx, rx) = oneshot::channel();
 
         let udf_path: UdfPath = name.parse()?;
@@ -373,7 +393,7 @@ impl ConvexClient {
             .send(ClientRequest::Action(request, tx))?;
 
         let res = rx.await?;
-        Ok(res.await?)
+        Ok(res.await?.value)
     }
 
     /// Get a consistent view of the results of multiple queries (query set).
@@ -1009,10 +1029,12 @@ pub mod tests {
                 .expect("a one-shot answer in time")?;
 
         let error = next(&mut live).await;
-        assert!(
-            matches!(error.value, FunctionResult::ConvexError(_)),
-            "{error:?}"
-        );
+        let denied = FunctionResult::ConvexError(crate::ConvexError {
+            message: "denied".to_string(),
+            data: Value::from("DENIED"),
+        });
+        assert_eq!(error.value, denied);
+        assert_eq!(one_shot.value, FunctionResult::Value(2.into()));
         assert_eq!((error.ts, error.snapshot), (Some(at_first.ts), 1));
         assert_eq!((one_shot.ts, one_shot.snapshot), (Some(at_second.ts), 2));
 
@@ -1024,10 +1046,7 @@ pub mod tests {
             tokio::time::timeout(PATIENCE, client.query_timed("getCounter", btreemap! {}))
                 .await
                 .expect("a one-shot answer in time")?;
-        assert!(
-            matches!(failed_read.value, FunctionResult::ConvexError(_)),
-            "{failed_read:?}"
-        );
+        assert_eq!(failed_read.value, denied);
         assert_eq!(
             (failed_read.ts, failed_read.snapshot),
             (Some(at_third.ts), 3)
