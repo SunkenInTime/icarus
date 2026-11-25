@@ -50,6 +50,11 @@ class NativeConvexClient implements IConvexClient {
   /// Private constructor
   NativeConvexClient._(this._rustClient, this.config);
 
+  /// A client over [rustClient] that has not connected, for tests.
+  @visibleForTesting
+  NativeConvexClient.over(MobileConvexClient rustClient, ConvexConfig config)
+    : this._(rustClient, config);
+
   /// Factory method to create and initialize a native client.
   ///
   /// This handles:
@@ -149,7 +154,8 @@ class NativeConvexClient implements IConvexClient {
   }
 
   @override
-  Future<int> connectionGeneration() => _rustClient.connectionGeneration();
+  Future<int> connectionGeneration() =>
+      _rustClient.connectionGeneration().timeout(config.operationTimeout);
 
   @override
   Future<TimedAnswer> mutationTimed({

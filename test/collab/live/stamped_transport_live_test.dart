@@ -118,13 +118,17 @@ void main() {
       expect(second.stamp.snapshot,
           greaterThanOrEqualTo(reads.last.stamp.snapshot));
       expect(_names(second).toSet().containsAll(everyName), isTrue);
+      var sameSnapshot = 0;
       for (final a in results) {
         for (final b in results) {
-          if (a.stamp.snapshot == b.stamp.snapshot) {
+          if (!identical(a, b) && a.stamp.snapshot == b.stamp.snapshot) {
+            sameSnapshot++;
             expect(_names(a), _names(b), reason: 'one snapshot, one result');
           }
         }
       }
+      expect(sameSnapshot, greaterThan(0),
+          reason: 'the second watch starts from the snapshot already held');
       for (final MapEntry(key: name, value: answer) in answers.entries) {
         for (final result in results) {
           if (result.stamp.snapshot >= answer.stamp.snapshot &&
@@ -165,7 +169,10 @@ void main() {
       });
       expect(
         await transport.mutationStamped('folders:create', unconvertible),
-        isA<StampedError<ConvexValue>>(),
+        isA<StampedError<ConvexValue>>()
+            .having((it) => it.error.rawCode, 'code', 'CONVEX_ERROR')
+            .having(
+                (it) => it.error.message, 'message', contains(r'$reserved')),
         reason: 'the native client sends them, and the server refuses them',
       );
     },

@@ -25,7 +25,10 @@ final class _Handle implements SubscriptionHandle {
 }
 
 final class _Scripted implements StampedValueSource {
-  _Scripted(this.outcomes, {this.breaksAfter});
+  _Scripted(this.outcomes, {this.breaksAfter, this.generations = const [3]});
+
+  final List<int> generations;
+  var _generationsAsked = 0;
 
   final List<StampedOutcome<Object?>> outcomes;
   final int? breaksAfter;
@@ -94,7 +97,7 @@ final class _Scripted implements StampedValueSource {
   }
 
   @override
-  Future<int> connectionGeneration() async => 3;
+  Future<int> connectionGeneration() async => generations[_generationsAsked++];
 
   @override
   Future<Object?> queryValue(String name, Map<String, Object?> args) =>
@@ -266,9 +269,33 @@ void main() {
     );
   });
 
-  test('the connection generation comes from the client', () async {
-    final transport = StampedPlatformTransport(_Scripted([]));
+  test(
+      'queries watched together are decoded as they were when the watch '
+      'was made', () async {
+    final source = _Scripted([const StampedAnswer('ok', _first)]);
+    final (:transport, :ping) = _over(source);
+    final queries = <ConvexQuery<Object?>>[ping, ping];
 
-    expect(await transport.connectionGeneration(), 3);
+    final watch = StampedConvexQuery.watchTogether(transport, queries);
+    queries[0] = IcarusConvexApi(transport).users.me();
+    final update = await watch.first;
+
+    expect(source.asked, ['together [health:ping, health:ping]']);
+    expect(
+      update,
+      isA<StampedValue<List<Object?>>>().having((it) => it.value, 'values', [
+        HealthPingResult.ok,
+        HealthPingResult.ok,
+      ]),
+    );
+  });
+
+  test('the connection generation is asked of the client each time', () async {
+    final transport = StampedPlatformTransport(
+      _Scripted([], generations: [4, 9]),
+    );
+
+    expect(await transport.connectionGeneration(), 4);
+    expect(await transport.connectionGeneration(), 9);
   });
 }

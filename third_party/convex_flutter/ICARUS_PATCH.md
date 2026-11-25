@@ -56,7 +56,10 @@ mutation whose server function fails is an answer with its snapshot, like a
 query error; a timeout or a bridge error still throws. The crate's patch notes
 say what a mutation answer's snapshot means and what it rests on.
 `connectionGeneration` gives the connection generation the client is on now,
-so the app can tell a stamp from an earlier connection by its number alone.
+so the app can tell a stamp from an earlier connection by its number alone. It
+times out after `operationTimeout`, like the timed calls, since the worker
+answers it only between its steps. `NativeConvexClient.over` builds a client
+over a given Rust client without connecting, for tests.
 `tool/convex_client_gauntlet/runtime/test/timed_results_test.dart` checks the
 snapshots reach Dart, on a local deployment, in the gauntlet lane.
 

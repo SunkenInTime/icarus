@@ -816,16 +816,18 @@ final class StampedConvexQuery<T> {
   static Stream<Stamped<List<Object?>>> watchTogether(
     StampedConvexTransport transport,
     List<ConvexQuery<Object?>> queries,
-  ) =>
-      _decodeEachStamped(
-        transport.subscribeTogetherStamped([
-          for (final query in queries) (query._name, query._args),
-        ]),
-        (values) => [
-          for (final (index, value) in values.indexed)
-            queries[index]._decode(value),
-        ],
-      );
+  ) {
+    final watched = List.of(queries);
+    return _decodeEachStamped(
+      transport.subscribeTogetherStamped([
+        for (final query in watched) (query._name, query._args),
+      ]),
+      (values) => [
+        for (final (index, value) in values.indexed)
+          watched[index]._decode(value),
+      ],
+    );
+  }
 }
 
 Stamped<T> _decodeStamped<V, T>(Stamped<V> stamped, T Function(V) decode) =>
