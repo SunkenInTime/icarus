@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:hive_ce/src/binary/binary_writer_impl.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
@@ -18,8 +20,11 @@ import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/library_store/store_page_reads.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_page_reads.dart';
@@ -306,7 +311,15 @@ void main() {
     (await const LocalLibrary().renameStrategy(stored, 'Renamed')).orThrow();
     await Future<void>.delayed(Duration.zero);
 
-    expect(await h.editor.loadFromHive(s.id), isTrue);
+    expect(
+      await h.editor.loadFromHive(s.id).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => fail(
+                'the open waited for the held mirror write instead of reading '
+                'Hive'),
+          ),
+      isTrue,
+    );
     gate.release();
     await h.settle();
 
@@ -564,6 +577,161 @@ void main() {
       expect(agentsSaved(b, 1),
           [for (final agent in b.pages[1].agentData) agent.id]);
     });
+  });
+
+  List<int> hiveBytes(String strategyId) {
+    final writer = BinaryWriterImpl(Hive)
+      ..write(const LocalLibrary()
+          .storedStrategy(strategyId)!
+          .copyWith(lastEdited: DateTime.utc(2000)));
+    return writer.toBytes();
+  }
+
+  test(
+      'a strategy whose rows read back differently from Hive, lineups saved '
+      'interleaved, opens from Hive with that reason, and a Save with no edits '
+      'writes Hive back byte for byte, its save time aside', () async {
+    final s = strategy();
+    final graph = sharedSpotLineups('${s.id}-lineups');
+    final interleaved = s.copyWith(pages: [
+      s.pages[0].copyWith(
+        lineUpGraph: LineUpGraph(
+          origins: graph.origins,
+          landings: graph.landings,
+          links: [graph.links[3], ...graph.links.take(3)],
+        ),
+        imageData: const [],
+      ),
+      s.pages[1].copyWith(imageData: const []),
+    ]);
+    final h = await reading([interleaved]);
+    final before = hiveBytes(s.id);
+
+    expect(h.mirror.strategiesReadingBackDifferently, contains(s.id));
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+    await h.editor.saveToHive(s.id);
+    await h.settle();
+
+    expect(h.loads.single,
+        startsWith('open from Hive: ${FromHiveBecause.readsBackDifferently.words}'));
+    expect(hiveBytes(s.id), before);
+  });
+
+  test('a strategy whose rows read back equal is not on that list', () async {
+    final s = strategy();
+    final h = await reading([s]);
+
+    expect(h.mirror.strategiesReadingBackDifferently, isEmpty);
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+    expect(h.loads, ['open from the store']);
+  });
+
+  group(
+      'a Hive save that lands as the page is applied, after the store read '
+      'was checked', () {
+    Future<void> landAtApply(
+      StrategyData Function(StrategyData stored) change,
+    ) async {
+      var landed = false;
+      final listening = container.listen(
+        strategyPageSessionProvider.select((state) => state.isApplyingPage),
+        (_, applying) {
+          if (!applying || landed) return;
+          landed = true;
+          final stored = const LocalLibrary().storedStrategy(
+            container.read(strategyProvider).strategyId!,
+          )!;
+          unawaited(const LocalLibrary().savePageOnScreen(change(stored)));
+        },
+      );
+      addTearDown(listening.close);
+    }
+
+    test('is the caption the canvas shows and the Save keeps', () async {
+      final s = strategy();
+      final h = await reading([s]);
+      await h.plantInStoreOnly(s, 'only in the store');
+      await landAtApply((stored) => cloneStrategy(stored)
+        ..pages.firstWhere((page) => page.sortIndex == 0).agentData.first
+            .caption = 'newer');
+
+      expect(await h.editor.loadFromHive(s.id), isTrue);
+      await h.settle();
+
+      expect(h.captionOnCanvas(), 'newer');
+      expect(h.loads, [
+        'open from Hive: ${FromHiveBecause.hiveWriteBeforeApply.words}',
+      ]);
+      await h.editor.saveToHive(s.id);
+      await h.settle();
+      expect(savedCaption(s.id, s.pages[0].id), 'newer');
+    });
+
+    test('is the map, theme and palette the editor shows and the Save keeps',
+        () async {
+      final s = strategy();
+      final h = await reading([s]);
+      final newerMap =
+          MapValue.values.firstWhere((map) => map != s.mapData);
+      final newerPalette = MapThemePalette(
+        baseColorValue: 0xFF102030,
+        detailColorValue: 0xFF405060,
+        highlightColorValue: 0xFF708090,
+      );
+      await landAtApply((stored) => cloneStrategy(stored).copyWith(
+            mapData: newerMap,
+            themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+            themeOverridePalette: newerPalette,
+          ));
+
+      expect(await h.editor.loadFromHive(s.id), isTrue);
+      await h.settle();
+
+      expect(container.read(mapProvider).currentMap, newerMap);
+      expect(container.read(strategyThemeProvider).overridePalette?.baseColorValue,
+          newerPalette.baseColorValue);
+      await h.editor.saveToHive(s.id);
+      await h.settle();
+      final saved = const LocalLibrary().storedStrategy(s.id)!;
+      expect(saved.mapData, newerMap);
+      expect(saved.themeOverridePalette?.baseColorValue,
+          newerPalette.baseColorValue);
+    });
+  });
+
+  test(
+      'the outcome of an open is recorded when its page is applied, not when '
+      'its read returns', () async {
+    final s = strategy();
+    final h = await reading([s]);
+    final atApply = <int>[];
+    final listening = container.listen(canvasShowsProvider, (_, shows) {
+      if (shows is ShowsPage) atApply.add(h.reads.loads.length);
+    });
+    addTearDown(listening.close);
+
+    expect(await h.editor.loadFromHive(s.id), isTrue);
+
+    expect(atApply, [0]);
+    expect(h.loads, ['open from the store']);
+  });
+
+  test('an open closed while its store read is held is recorded as never shown',
+      () async {
+    final s = strategy();
+    final gate = _ReadGate();
+    final h =
+        await reading([s], engine: (memory) => _ReadGatedEngine(memory, gate));
+    await h.store.unload(s.id);
+    final held = gate.hold();
+
+    final opening = h.editor.loadFromHive(s.id);
+    await held;
+    await h.editor.clearCurrentStrategy();
+    gate.release();
+
+    expect(await opening, isFalse);
+    expect(h.loads, ['open ${const GaveWay()}']);
   });
 
   test('only the read mode reads pages from the store', () {

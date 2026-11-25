@@ -7,6 +7,7 @@ import 'package:icarus/library_store/canvas_changes.dart';
 import 'package:icarus/library_store/canvas_units.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
+import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -78,12 +79,12 @@ final class _SaveJob extends _Job {
       : state = _SaveState.writing;
 
   final LibraryTouch touch;
-  final StrategyToRows image;
+  final StrategyImage image;
   _SaveState state;
 }
 
-StrategyToRows rowsOf(StrategyData strategy) =>
-    strategyToRows(strategyAsHiveHoldsIt(strategy));
+StrategyImage rowsOf(StrategyData strategy) =>
+    imageOf(strategyAsHiveHoldsIt(strategy));
 
 enum UnitOutcome {
   noFinding,
@@ -620,7 +621,7 @@ final class ActionJournal {
       return const JournalContinues();
     }
     tally.hiveSaves += 1;
-    final saved = switch (job.image) {
+    final saved = switch (job.image.rows) {
       StrategyRowsMade(:final rows) => switch (strategyFromRows(rows)) {
           StrategyDataMade(:final strategy) => strategy,
           StrategyDataRefused() => null,
@@ -691,7 +692,7 @@ final class JournalPut extends JournalStep {
   });
 
   final String strategyId;
-  final StrategyToRows image;
+  final StrategyImage image;
   final bool removeFirst;
 }
 

@@ -2318,22 +2318,27 @@ class StrategyProvider extends Notifier<StrategyState> {
         isOpen: true,
       ));
       ref.read(strategySaveStateProvider.notifier).reset();
-      ref.read(localPageReadsProvider)?.opening(
-            migratedStrategy.id,
-            migrated: migratedStrategy != newStrat,
-          );
-      await opening.wait(
-        ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
-              strategyId: migratedStrategy.id,
-              source: StrategySource.local,
-              selectFirstPageIfNeeded: true,
-              preferredPageId: pageId,
-              attempt: opening,
-            ),
+      final reads = ref.read(localPageReadsProvider);
+      final open = reads?.opening(
+        migratedStrategy.id,
+        migrated: migratedStrategy != newStrat,
       );
-      if (ref.read(localPageReadsProvider) case final reads?
-          when ref.read(strategyPageSessionProvider).activePageId == null) {
-        reads.openedWithoutPage(migratedStrategy.id);
+      try {
+        await opening.wait(
+          ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
+                strategyId: migratedStrategy.id,
+                source: StrategySource.local,
+                selectFirstPageIfNeeded: true,
+                preferredPageId: pageId,
+                attempt: opening,
+              ),
+        );
+        if (reads != null &&
+            ref.read(strategyPageSessionProvider).activePageId == null) {
+          reads.openedWithoutPage(migratedStrategy.id);
+        }
+      } finally {
+        if (open != null) reads?.openEnded(open);
       }
       ref.read(strategySaveStateProvider.notifier).markPersisted();
       return true;

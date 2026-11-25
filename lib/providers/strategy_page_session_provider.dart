@@ -1369,19 +1369,35 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final retainedTextDrafts = preserveTextDrafts
         ? Map<String, String>.from(ref.read(textDraftProvider))
         : const <String, String>{};
+    final reads = ref.read(localPageReadsProvider);
+    var page = pageData;
+    var pageThemeProfileId = themeProfileId;
+    var pageThemeOverridePalette = themeOverridePalette;
+    List<String>? hivePageIds;
+    if (reads != null && served != null && reads.hiveWrittenSinceRead(page)) {
+      final hive = LocalStrategyPageSource.hiveNow(strategyId, page.pageId);
+      page = reads.redrawnFromHive(page, hive.page);
+      pageThemeProfileId = _resolveThemeProfileId(source, strategyId);
+      pageThemeOverridePalette =
+          _resolveThemeOverridePalette(source, strategyId);
+      hivePageIds = hive.pageIds;
+    }
     try {
       await opening.wait(
         applyStrategyEditorPageData(
           ref,
-          pageData,
+          page,
           strategyId: strategyId,
-          themeProfileId: themeProfileId,
-          themeOverridePalette: themeOverridePalette,
+          themeProfileId: pageThemeProfileId,
+          themeOverridePalette: pageThemeOverridePalette,
           preserveHistory: preserveHistory,
           mapOverride: preservedMetadata?.map,
         ),
       );
-      ref.read(localPageReadsProvider)?.applied(pageData);
+      reads?.applied(page);
+      if (hivePageIds != null) {
+        state = state.copyWith(availablePageIds: hivePageIds);
+      }
       for (final entry in retainedTextDrafts.entries) {
         ref.read(textDraftProvider.notifier).setDraft(entry.key, entry.value);
       }

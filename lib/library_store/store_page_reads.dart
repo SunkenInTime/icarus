@@ -12,11 +12,13 @@ enum FromHiveBecause {
   migrationRan('the open migrated the Hive record'),
   mirrorNotFollowing('the mirror is not following'),
   mayDiffer('the store may differ from Hive for this strategy'),
+  readsBackDifferently('its rows read back differently from its Hive record'),
   notInStore('the store does not keep this strategy here'),
   tiedPositions('two pages share a position'),
   noPages('the strategy has no pages'),
   damagedRows('the store holds rows this build cannot show'),
   hiveWriteDuringRead('a Hive write began during the read'),
+  hiveWriteBeforeApply('a Hive write began after the read, before the apply'),
   pageNotInStore('the store does not hold this page'),
   readFailed('the store read failed');
 
@@ -51,7 +53,8 @@ final class GaveWay extends PageLoadOutcome {
   const GaveWay();
 
   @override
-  String toString() => 'never shown: a newer open or load took its place';
+  String toString() =>
+      'never shown: it was closed or replaced before its page was applied';
 }
 
 final class NoPageToShow extends PageLoadOutcome {
@@ -117,6 +120,7 @@ final class StorePageReads implements LocalPageReads {
   final StoreMirror _mirror;
   final _served = Expando<LocalPageServed>('served from the store');
   final _drawnBy = Expando<_Load>('the load that drew a page');
+  final _writesBegunAtRead = Expando<int>('Hive writes begun at the read');
   final _loads = <PageLoad>[];
   final _unshown = <_Load>[];
   final _fellBack = <(String, String), _Load>{};
@@ -128,10 +132,18 @@ final class StorePageReads implements LocalPageReads {
   var _opens = 0;
 
   @override
-  void opening(String strategyId, {required bool migrated}) {
+  int opening(String strategyId, {required bool migrated}) {
     _opens += 1;
     _gaveWay();
     _opening = (strategyId: strategyId, migrated: migrated);
+    return _opens;
+  }
+
+  @override
+  void openEnded(int open) {
+    if (open != _opens) return;
+    _opening = null;
+    _gaveWay();
   }
 
   @override
@@ -148,6 +160,36 @@ final class StorePageReads implements LocalPageReads {
 
   @override
   LocalPageServed? servedWith(StrategyEditorPageData page) => _served[page];
+
+  @override
+  bool hiveWrittenSinceRead(StrategyEditorPageData page) {
+    final begun = _writesBegunAtRead[page];
+    final load = _drawnBy[page];
+    if (begun == null || load == null) return false;
+    return _mirror.reads.strategyWritesBegun(load.strategyId) != begun ||
+        _notServed(load.strategyId) != null;
+  }
+
+  @override
+  StrategyEditorPageData redrawnFromHive(
+    StrategyEditorPageData served,
+    StrategyEditorPageData hive,
+  ) {
+    final load = _drawnBy[served];
+    _drawnBy[served] = null;
+    _served[served] = null;
+    if (load == null || !_unshown.remove(load)) return hive;
+    final again = _Load(
+      load.kind,
+      load.strategyId,
+      load.pageId,
+      const ServedFromHive(FromHiveBecause.hiveWriteBeforeApply),
+      load.took,
+    );
+    _unshown.add(again);
+    _drawnBy[hive] = again;
+    return hive;
+  }
 
   @override
   StrategyEditorPageData drawnFromHive(
@@ -199,6 +241,7 @@ final class StorePageReads implements LocalPageReads {
     _opening = null;
     final opened = opening?.strategyId == strategyId;
     final opens = _opens;
+    final begun = _mirror.reads.strategyWritesBegun(strategyId);
     final clock = Stopwatch()..start();
     final answer = await _answer(
       strategyId,
@@ -224,6 +267,7 @@ final class StorePageReads implements LocalPageReads {
       case _Page(:final data, :final served):
         _served[data] = served;
         _drawnBy[data] = load;
+        _writesBegunAtRead[data] = begun;
         return data;
       case _Hive():
         _fellBack[(strategyId, pageId)] = load;
@@ -244,9 +288,7 @@ final class StorePageReads implements LocalPageReads {
     if (migrated) return _hive(FromHiveBecause.migrationRan);
     final store = _following();
     if (store == null) return _hive(FromHiveBecause.mirrorNotFollowing);
-    if (_mirror.strategiesNotKnownEqual.contains(strategyId)) {
-      return _hive(FromHiveBecause.mayDiffer);
-    }
+    if (_notServed(strategyId) case final because?) return because;
     final begun = _mirror.reads.strategyWritesBegun(strategyId);
     await _unloadOtherThan(store, strategyId);
     final answer = await _read(store, strategyId, pageId);
@@ -256,10 +298,19 @@ final class StorePageReads implements LocalPageReads {
     if (!identical(_following(), store)) {
       return _hive(FromHiveBecause.mirrorNotFollowing);
     }
+    if (_notServed(strategyId) case final because?) return because;
+    return answer;
+  }
+
+  _Hive? _notServed(String strategyId) {
     if (_mirror.strategiesNotKnownEqual.contains(strategyId)) {
       return _hive(FromHiveBecause.mayDiffer);
     }
-    return answer;
+    if (_mirror.strategiesReadingBackDifferently[strategyId]
+        case final words?) {
+      return _hive(FromHiveBecause.readsBackDifferently, words);
+    }
+    return null;
   }
 
   Future<void> _unloadOtherThan(LibraryStore store, String strategyId) async {

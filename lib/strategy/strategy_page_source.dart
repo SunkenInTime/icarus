@@ -139,6 +139,20 @@ class LocalStrategyPageSource implements StrategyPageSource {
     return _pageOf(migrated, pageId);
   }
 
+  static ({StrategyEditorPageData page, List<String> pageIds}) hiveNow(
+    String strategyId,
+    String pageId,
+  ) {
+    final stored = const LocalLibrary().storedStrategy(strategyId) ??
+        (throw StateError('Strategy $strategyId not found.'));
+    final migrated = StrategyMigrator.migrateToCurrentVersion(stored);
+    final pages = [...migrated.pages]..sortBySortIndex((item) => item.sortIndex);
+    return (
+      page: _pageOf(migrated, pageId),
+      pageIds: [for (final page in pages) page.id],
+    );
+  }
+
   static StrategyEditorPageData _pageOf(StrategyData migrated, String pageId) {
     final orderedPages = [...migrated.pages]
       ..sortBySortIndex((item) => item.sortIndex);

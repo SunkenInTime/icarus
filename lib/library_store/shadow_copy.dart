@@ -4,6 +4,7 @@ import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
+import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 sealed class StrategyCopy {
@@ -13,15 +14,21 @@ sealed class StrategyCopy {
 }
 
 final class StrategyCopied extends StrategyCopy {
-  const StrategyCopied(super.strategyId);
+  const StrategyCopied(super.strategyId, this.readBack);
+
+  final ReadBack readBack;
 }
 
 final class StrategyUnchanged extends StrategyCopy {
-  const StrategyUnchanged(super.strategyId);
+  const StrategyUnchanged(super.strategyId, this.readBack);
+
+  final ReadBack readBack;
 }
 
 final class StrategyTookHiveVersion extends StrategyCopy {
-  const StrategyTookHiveVersion(super.strategyId);
+  const StrategyTookHiveVersion(super.strategyId, this.readBack);
+
+  final ReadBack readBack;
 }
 
 final class StrategyRemovedWithHive extends StrategyCopy {
@@ -242,10 +249,11 @@ Future<CopyStop?> _putImage(
   LibraryStore store,
   StoreHolds holds,
   String id,
-  StrategyToRows image,
+  StrategyImage image,
   List<StrategyCopy> results,
 ) async {
-  switch (image) {
+  final readBack = image.readBack;
+  switch (image.rows) {
     case StrategyRowsRefused(:final problems):
       results.add(StrategyNotMirrored(id, ConverterRefused(problems)));
     case StrategyRowsMade(:final rows):
@@ -253,13 +261,13 @@ Future<CopyStop?> _putImage(
         case _Wrote():
           results.add(
             holds.strategies.contains(id)
-                ? StrategyTookHiveVersion(id)
-                : StrategyCopied(id),
+                ? StrategyTookHiveVersion(id, readBack)
+                : StrategyCopied(id, readBack),
           );
           holds.strategies.add(id);
         case _NothingToWrite():
           holds.strategies.add(id);
-          results.add(StrategyUnchanged(id));
+          results.add(StrategyUnchanged(id, readBack));
         case _NotWritten(:final reason):
           results.add(StrategyNotMirrored(id, reason));
         case _Stop(:final stop):
@@ -273,7 +281,7 @@ Future<ShadowCopy> mirrorImage(
   LibraryStore store,
   StoreHolds holds,
   String strategyId,
-  StrategyToRows image,
+  StrategyImage image,
 ) async {
   final results = <StrategyCopy>[];
   return switch (await _putImage(store, holds, strategyId, image, results)) {
@@ -330,7 +338,7 @@ Future<ShadowCopy> mirrorIds(
     switch (reads.strategy(id)) {
       case InHive(value: final strategy):
         if (await _putImage(
-                store, holds, id, strategyToRows(strategy), strategyResults)
+                store, holds, id, imageOf(strategy), strategyResults)
             case final stop?) {
           return stopped(stop);
         }
@@ -425,7 +433,8 @@ Future<ShadowCopy> _bringUpToDate(
   final chosen = hive.strategies;
   for (final (index, strategy) in chosen.indexed) {
     final id = strategy.id;
-    switch (strategyToRows(strategy)) {
+    final image = imageOf(strategy);
+    switch (image.rows) {
       case StrategyRowsRefused(:final problems):
         strategies.add(StrategyNotMirrored(id, ConverterRefused(problems)));
       case StrategyRowsMade(:final rows):
@@ -433,11 +442,11 @@ Future<ShadowCopy> _bringUpToDate(
           case _Wrote():
             strategies.add(
               stored.contains(id)
-                  ? StrategyTookHiveVersion(id)
-                  : StrategyCopied(id),
+                  ? StrategyTookHiveVersion(id, image.readBack)
+                  : StrategyCopied(id, image.readBack),
             );
           case _NothingToWrite():
-            strategies.add(StrategyUnchanged(id));
+            strategies.add(StrategyUnchanged(id, image.readBack));
           case _NotWritten(:final reason):
             strategies.add(StrategyNotMirrored(id, reason));
           case _Stop(:final stop):

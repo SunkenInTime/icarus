@@ -7,6 +7,7 @@ import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
+import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -86,6 +87,7 @@ final class StoreMirror extends LocalLibraryFollower {
   final _strategies = <String>{};
   final _folders = <String>{};
   final _refusedStrategies = <String, CopyRefusal>{};
+  final _readsBackDifferently = <String, String>{};
   final _refusedFolders = <String, CopyRefusal>{};
   var _working = false;
   var _batches = 0;
@@ -263,6 +265,9 @@ final class StoreMirror extends LocalLibraryFollower {
         ..._refusedStrategies.keys,
         ...reads.names.strategies.keptIds,
       };
+
+  Map<String, String> get strategiesReadingBackDifferently =>
+      Map.unmodifiable(_readsBackDifferently);
 
   Set<String> get foldersNotKnownEqual => {
         ..._folders,
@@ -481,11 +486,20 @@ final class StoreMirror extends LocalLibraryFollower {
           break;
         case StrategyNotMirrored(:final strategyId, :final reason):
           _refusedStrategies[strategyId] = reason;
-        case StrategyCopied(:final strategyId) ||
-              StrategyUnchanged(:final strategyId) ||
-              StrategyTookHiveVersion(:final strategyId) ||
-              StrategyRemovedWithHive(:final strategyId):
+          _readsBackDifferently.remove(strategyId);
+        case StrategyCopied(:final strategyId, :final readBack) ||
+              StrategyUnchanged(:final strategyId, :final readBack) ||
+              StrategyTookHiveVersion(:final strategyId, :final readBack):
           _refusedStrategies.remove(strategyId);
+          switch (readBack) {
+            case ReadsBackEqual():
+              _readsBackDifferently.remove(strategyId);
+            case ReadsBackDifferently(:final words):
+              _readsBackDifferently[strategyId] = words;
+          }
+        case StrategyRemovedWithHive(:final strategyId):
+          _refusedStrategies.remove(strategyId);
+          _readsBackDifferently.remove(strategyId);
       }
     }
     for (final folder in copy.folders) {

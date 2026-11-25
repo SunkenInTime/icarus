@@ -15,7 +15,9 @@ final class LocalPageServed {
 }
 
 abstract interface class LocalPageReads {
-  void opening(String strategyId, {required bool migrated});
+  int opening(String strategyId, {required bool migrated});
+
+  void openEnded(int open);
 
   void openedWithoutPage(String strategyId);
 
@@ -32,6 +34,13 @@ abstract interface class LocalPageReads {
   );
 
   LocalPageServed? servedWith(StrategyEditorPageData page);
+
+  bool hiveWrittenSinceRead(StrategyEditorPageData page);
+
+  StrategyEditorPageData redrawnFromHive(
+    StrategyEditorPageData served,
+    StrategyEditorPageData hive,
+  );
 
   void applied(StrategyEditorPageData page);
 }
