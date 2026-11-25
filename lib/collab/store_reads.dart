@@ -32,9 +32,10 @@ sealed class StoreReadOutcome {
 }
 
 final class StoreReadAnswered extends StoreReadOutcome {
-  const StoreReadAnswered(this.base, {this.role});
+  const StoreReadAnswered(this.base, {required this.point, this.role});
 
   final store.ArrivedBase base;
+  final store.ResultPoint point;
   final StoreReadRole? role;
 }
 
@@ -46,9 +47,10 @@ final class StoreReadRefused extends StoreReadOutcome {
 }
 
 final class StoreReadUnreadable extends StoreReadOutcome {
-  const StoreReadUnreadable(this.problem);
+  const StoreReadUnreadable(this.problem, {required this.point});
 
   final String problem;
+  final store.ResultPoint point;
 }
 
 final class StoreReadLost extends StoreReadOutcome {
@@ -73,6 +75,13 @@ final class StoreReads {
   }) page;
 }
 
+store.ResultPoint pointOf(ResultStamp stamp) => store.ResultPoint(
+      client: stamp.client,
+      connection: stamp.connection,
+      snapshot: stamp.snapshot,
+      serverTime: stamp.serverTime,
+    );
+
 StoreReads storeReadsOver(
   ConvexStrategyRepository repository, {
   required store.CanRead canRead,
@@ -80,21 +89,31 @@ StoreReads storeReadsOver(
     StoreReads(
       pageList: ({required strategyPublicId, required account}) async {
         try {
-          final list = await repository.readPageListAs(
+          return switch (await repository.readPageListStamped(
             strategyPublicId,
             accountSubject: account.subject,
-          );
-          return switch (pageListRead(list)) {
-            RowsRead(:final value) => StoreReadAnswered(
-                value,
-                role: StoreReadRole.of(list.header.role),
+          )) {
+            StampedValue(value: final list, :final stamp) =>
+              switch (pageListRead(list)) {
+                RowsRead(:final value) => StoreReadAnswered(
+                    value,
+                    point: pointOf(stamp),
+                    role: StoreReadRole.of(list.header.role),
+                  ),
+                RowsUnreadable(:final problem) =>
+                  StoreReadUnreadable(problem, point: pointOf(stamp)),
+              },
+            StampedError(:final error, :final stamp) => storeReadOutcomeOfError(
+                ConvexFunctionException.fromTransport(error),
+                gone: const store.StrategyGone(),
+                point: pointOf(stamp),
               ),
-            RowsUnreadable(:final problem) => StoreReadUnreadable(problem),
           };
         } catch (error) {
           return storeReadOutcomeOfError(
             error,
             gone: const store.StrategyGone(),
+            point: null,
           );
         }
       },
@@ -104,19 +123,29 @@ StoreReads storeReadsOver(
         required account,
       }) async {
         try {
-          final page = await repository.readPageAs(
+          return switch (await repository.readPageStamped(
             strategyPublicId: strategyPublicId,
             pagePublicId: pagePublicId,
             accountSubject: account.subject,
-          );
-          return switch (pageRead(page, canRead)) {
-            RowsRead(:final value) => StoreReadAnswered(value),
-            RowsUnreadable(:final problem) => StoreReadUnreadable(problem),
+          )) {
+            StampedValue(value: final page, :final stamp) =>
+              switch (pageRead(page, canRead)) {
+                RowsRead(:final value) =>
+                  StoreReadAnswered(value, point: pointOf(stamp)),
+                RowsUnreadable(:final problem) =>
+                  StoreReadUnreadable(problem, point: pointOf(stamp)),
+              },
+            StampedError(:final error, :final stamp) => storeReadOutcomeOfError(
+                ConvexFunctionException.fromTransport(error),
+                gone: store.PageGone(pagePublicId),
+                point: pointOf(stamp),
+              ),
           };
         } catch (error) {
           return storeReadOutcomeOfError(
             error,
             gone: store.PageGone(pagePublicId),
+            point: null,
           );
         }
       },
@@ -125,6 +154,7 @@ StoreReads storeReadsOver(
 StoreReadOutcome storeReadOutcomeOfError(
   Object error, {
   required store.ArrivedBase gone,
+  required store.ResultPoint? point,
 }) {
   if (isClientUpgradeRequiredError(error)) {
     return StoreReadRefused(StoreReadRefusal.upgradeRequired, '$error');
@@ -138,8 +168,9 @@ StoreReadOutcome storeReadOutcomeOfError(
   if (isTypedConvexForbiddenError(error)) {
     return StoreReadRefused(StoreReadRefusal.forbidden, '$error');
   }
-  if (isTypedConvexNotFoundError(error) || _isPageElsewhere(error)) {
-    return StoreReadAnswered(gone);
+  if (point != null &&
+      (isTypedConvexNotFoundError(error) || _isPageElsewhere(error))) {
+    return StoreReadAnswered(gone, point: point);
   }
   if (error is TimeoutException) {
     return StoreReadLost(store.TransportFailure.timeout, '$error');
