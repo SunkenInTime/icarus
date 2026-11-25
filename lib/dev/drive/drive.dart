@@ -2482,7 +2482,18 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'openFirstFrame':
       await _openFirstFrame(step);
     case 'readBackCost':
-      _log(await readBackCost(value as String, (step['runs'] ?? 21) as int));
+      final budget = step['budget'] as Map<String, dynamic>?;
+      (await _storeLines(readBackCost(
+        value as String,
+        (step['runs'] ?? 21) as int,
+        budget: budget == null
+            ? null
+            : ReadBackBudget(
+                longestStepMs: budget['longestStepMs'] as num,
+                addedPerSaveMs: budget['addedPerSaveMs'] as num,
+              ),
+      )))
+          .forEach(_log);
     case 'openStoredCloudStrategy':
       unawaited(
         Navigator.of(appNavigatorKey.currentContext!).push(

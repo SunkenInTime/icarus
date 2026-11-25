@@ -362,7 +362,21 @@ StrategyData _withFirstPageRenamed(StrategyData strategy) => strategy.copyWith(
       ],
     );
 
-Future<String> readBackCost(String pick, int runs) async {
+final class ReadBackBudget {
+  const ReadBackBudget({
+    required this.longestStepMs,
+    required this.addedPerSaveMs,
+  });
+
+  final num longestStepMs;
+  final num addedPerSaveMs;
+}
+
+Future<List<String>> readBackCost(
+  String pick,
+  int runs, {
+  ReadBackBudget? budget,
+}) async {
   int items(StrategyData strategy) => strategy.pages.fold(
         0,
         (sum, page) =>
@@ -434,7 +448,7 @@ Future<String> readBackCost(String pick, int runs) async {
       await longestTask(warmImages, turn.isEven ? edited : held),
   ]..sort();
   final readBack = StrategyImages().of(held).readBack;
-  return 'READBACK $pick (${target.pages.length} pages, ${items(target)} '
+  final line = 'READBACK $pick (${target.pages.length} pages, ${items(target)} '
       'items, ${readBack is ReadsBackEqual ? 'reads back equal' : 'reads back differently'}), '
       '$runs runs: rows median ${ms(rows[runs ~/ 2])} ms, worst '
       '${ms(rows.last)} ms; rows and read-back median '
@@ -446,6 +460,36 @@ Future<String> readBackCost(String pick, int runs) async {
       'runs it, with a break between frames after the rows and after each '
       'page, the longest single task: cold worst ${ms(coldTasks.last)} ms, '
       'after one page changed worst ${ms(warmTasks.last)} ms';
+  if (budget == null) return [line];
+  final measured = [
+    (
+      'longest step',
+      coldTasks.last > warmTasks.last ? coldTasks.last : warmTasks.last,
+      budget.longestStepMs,
+    ),
+    (
+      'added per save',
+      afterOnePage[runs ~/ 2] - rows[runs ~/ 2],
+      budget.addedPerSaveMs,
+    ),
+  ];
+  final judged = [
+    for (final (name, micros, targetMs) in measured)
+      (
+        over: micros / 1000 > targetMs,
+        line: micros / 1000 > targetMs
+            ? 'READBACK $pick over budget: $name ${ms(micros)} ms, target '
+                '$targetMs ms, over by '
+                '${ms(micros - (targetMs * 1000).round())} ms'
+            : 'READBACK $pick within budget: $name ${ms(micros)} ms, target '
+                '$targetMs ms',
+      ),
+  ];
+  final lines = [line, for (final judgement in judged) judgement.line];
+  if (judged.any((judgement) => judgement.over)) {
+    throw StoreStepFailed(lines);
+  }
+  return lines;
 }
 
 String holdStore(ProviderContainer c) =>

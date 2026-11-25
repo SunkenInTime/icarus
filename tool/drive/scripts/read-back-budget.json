@@ -1,0 +1,7 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"readBackCost": "largest", "runs": 21, "budget": {"longestStepMs": 4, "addedPerSaveMs": 8}},
+  {"readBackCost": "Dense strokes", "runs": 21, "budget": {"longestStepMs": 16, "addedPerSaveMs": 160}},
+  {"exit": 1}
+]
