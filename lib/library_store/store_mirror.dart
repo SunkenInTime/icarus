@@ -5,6 +5,7 @@ import 'package:icarus/library_store/canvas_units.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
+import 'package:icarus/library_store/mirror_gate.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/strategy_image.dart';
@@ -33,6 +34,13 @@ final class MirrorFaulted extends MirrorStop {
 
   @override
   String toString() => 'the mirror met an error: $error';
+}
+
+final class MirrorClosedWithTheApp extends MirrorStop {
+  const MirrorClosedWithTheApp();
+
+  @override
+  String toString() => 'the app closed';
 }
 
 sealed class MirrorPhase {
@@ -97,6 +105,7 @@ final class StoreMirror extends LocalLibraryFollower {
   var _strategiesInFlight = const <String>{};
   var _foldersInFlight = const <String>{};
   final _updates = StreamController<MirrorWrote>.broadcast(sync: true);
+  late final _gate = Gate(() => _phase is MirrorStopped);
 
   MirrorPhase get phase => _phase;
 
@@ -159,7 +168,7 @@ final class StoreMirror extends LocalLibraryFollower {
     final taken = journal.takenUp;
     for (final id in taken) {
       final hive = const LocalLibrary().storedStrategy(id);
-      journal.release(id, hive == null ? null : cloneStrategy(hive));
+      release(id, hive == null ? null : cloneStrategy(hive));
     }
     _kick();
     await drained();
@@ -250,6 +259,7 @@ final class StoreMirror extends LocalLibraryFollower {
       _stop(MirrorFaulted(error, stackTrace));
 
   void _stop(MirrorStop stop) {
+    if (_phase is MirrorStopped) return;
     _working = false;
     actions?.forget();
     _journaled.clear();
@@ -283,18 +293,21 @@ final class StoreMirror extends LocalLibraryFollower {
     required LibraryBoxWrites writes,
     void Function(int done, int total)? progress,
   }) async {
+    if (_phase is MirrorStopped) return ShadowCopyCancelled();
     _working = true;
     _idle = Completer<void>();
     final ShadowCopy copy;
     try {
       copy = await copyHiveIntoStore(
         reads,
-        store,
+        GatedStore(store, _gate),
         images: _images,
         writes: writes,
-        breathe: betweenAnimations,
+        breathe: _betweenSteps,
         progress: progress,
       );
+    } on GateShut {
+      return ShadowCopyCancelled();
     } on Object catch (error, stackTrace) {
       _stop(MirrorFaulted(error, stackTrace));
       return ShadowCopyFaulted(error, stackTrace);
@@ -302,6 +315,8 @@ final class StoreMirror extends LocalLibraryFollower {
     _record(copy, const {}, const {});
     _working = false;
     switch ((copy, store.library)) {
+      case (ShadowCopyCancelled(), _):
+        break;
       case (ShadowCopyStopped(:final stop), _):
         _stop(MirrorStoreStopped(stop));
       case (ShadowCopyFaulted(:final error, :final stackTrace), _):
@@ -322,6 +337,10 @@ final class StoreMirror extends LocalLibraryFollower {
     if (_phase case MirrorFollowing()) _phaseIs(const MirrorHeld());
   }
 
+  void closeWithTheApp() => _stop(const MirrorClosedWithTheApp());
+
+  Future<void> _betweenSteps() => _gate.pass(betweenAnimations);
+
   Future<void> drained() => _idle.future;
 
   Future<StoreCheck> check(
@@ -332,13 +351,16 @@ final class StoreMirror extends LocalLibraryFollower {
       if (_idle.isCompleted) break;
       await _idle.future;
     }
+    if (_phase is MirrorStopped) return const StoreCheckCancelled();
     _working = true;
     if (_idle.isCompleted) _idle = Completer<void>();
     final before = _noticed;
     final snapshot = reads.library();
     final StoreCheck checked;
     try {
-      checked = await compare(snapshot.library);
+      checked = await _gate.pass(() => compare(snapshot.library));
+    } on GateShut {
+      return const StoreCheckCancelled();
     } finally {
       _working = false;
       _kick();
@@ -385,6 +407,8 @@ final class StoreMirror extends LocalLibraryFollower {
   Future<void> _pump() async {
     try {
       await _batchesWhileDue();
+    } on GateShut {
+      return;
     } on Object catch (error, stackTrace) {
       _stop(MirrorFaulted(error, stackTrace));
       return;
@@ -395,12 +419,12 @@ final class StoreMirror extends LocalLibraryFollower {
 
   Future<void> _batchesWhileDue() async {
     while (_hasWork) {
-      await betweenAnimations();
-      final LibraryStore store;
+      await _betweenSteps();
+      final GatedStore store;
       final StoreHolds holds;
       switch (_phase) {
         case MirrorFollowing(store: final following, holds: final held):
-          store = following;
+          store = GatedStore(following, _gate);
           holds = held;
         case MirrorWaitingForStore() || MirrorHeld() || MirrorStopped():
           return;
@@ -418,7 +442,8 @@ final class StoreMirror extends LocalLibraryFollower {
               :final removeFirst,
             ):
             if (removeFirst) {
-              switch (await store.editLibrary([RemoveStrategy(strategyId)])) {
+              switch (await store.use(
+                  (store) => store.editLibrary([RemoveStrategy(strategyId)]))) {
                 case NotSaved(:final failure):
                   _stop(MirrorStoreStopped(StoreDidNotSave(failure)));
                   return;
@@ -433,9 +458,10 @@ final class StoreMirror extends LocalLibraryFollower {
             _batches++;
             if (written case ShadowCopyStopped(:final stop)) {
               _stop(MirrorStoreStopped(stop));
+              return;
             }
+            if (_phase is MirrorStopped) return;
             _record(written, {strategyId}, const {});
-            if (written is ShadowCopyStopped) return;
         }
         continue;
       }
@@ -454,7 +480,7 @@ final class StoreMirror extends LocalLibraryFollower {
           strategies: strategies,
           folders: folders,
           handedOff: _handedOff,
-          breathe: betweenAnimations,
+          breathe: _betweenSteps,
         );
       } finally {
         _strategiesInFlight = const {};
@@ -463,9 +489,10 @@ final class StoreMirror extends LocalLibraryFollower {
       _batches++;
       if (batch case ShadowCopyStopped(:final stop)) {
         _stop(MirrorStoreStopped(stop));
+        return;
       }
+      if (_phase is MirrorStopped) return;
       _record(batch, strategies, folders);
-      if (batch is ShadowCopyStopped) return;
     }
   }
 

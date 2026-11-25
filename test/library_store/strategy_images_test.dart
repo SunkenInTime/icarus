@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -104,9 +105,9 @@ void main() {
   });
 
   test(
-      'as the mirror runs it, the check breaks between frames after the rows '
-      'and after each page, and comes to the same answer as in one go',
-      () async {
+      'as the mirror runs it, the check gives way after each item and each '
+      'page\'s own fields, so a frame asked for waits behind at most one '
+      'step, and comes to the same answer as in one go', () async {
     final strategy = _strategy('between');
     final changed = _withPage(
       strategy,
@@ -123,7 +124,13 @@ void main() {
             ReadsBackEqual() => 'equal',
           };
       expect(words(stepped.readBack), words(whole.readBack));
-      expect(breaths, greaterThanOrEqualTo(1 + checked.pages.length));
+      final items = [
+        for (final page in checked.pages) ...pageItemsOf(page),
+      ];
+      expect(
+        breaths,
+        greaterThanOrEqualTo(items.length + checked.pages.length),
+      );
     }
   });
 }

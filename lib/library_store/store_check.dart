@@ -207,6 +207,10 @@ final class StoreNotChecked extends StoreCheck {
   final StorageFailure failure;
 }
 
+final class StoreCheckCancelled extends StoreCheck {
+  const StoreCheckCancelled();
+}
+
 Future<StoreCheck> checkStoreAgainstHive(
   HiveLibrary hive,
   LibraryStore store, {

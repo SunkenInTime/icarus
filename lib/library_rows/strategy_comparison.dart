@@ -36,6 +36,10 @@ Map<String, Object?> pageFingerprint(StrategyPage page, String strategyId) => {
 List<String> pagePictureFileNames(StrategyPage page) => [
       for (final image in page.imageData)
         '${image.pictureId}${image.fileExtension ?? ''}',
+      ...lineupPictureFileNames(page),
+    ];
+
+List<String> lineupPictureFileNames(StrategyPage page) => [
       for (final link in page.lineUpLinks)
         for (final image in link.images) '${image.id}${image.fileExtension}',
     ];

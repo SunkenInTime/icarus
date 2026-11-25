@@ -2515,6 +2515,12 @@ Future<void> _run(Map<String, dynamic> step) async {
               ),
       )))
           .forEach(_log);
+    case 'readBackFrames':
+      (await _storeLines(readBackFrames(
+        value as String,
+        longestStepMs: step['longestStepMs'] as num?,
+      )))
+          .forEach(_log);
     case 'pageTakeCost':
       final budget = step['budget'] as Map<String, dynamic>?;
       (await _storeLines(pageTakeCost(

@@ -3,14 +3,17 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/canvas_units.dart' show cloneStrategy;
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus_library/icarus_library.dart';
 
 import '../library_rows/generated_strategies.dart';
 import '../library_rows/library_sources.dart';
+import 'read_back_on_main.dart';
 
 const corpusVariable = 'ICARUS_LIBRARY_CORPUS';
 
@@ -124,6 +127,24 @@ StrategyData Function(StrategyData) _atPosition(Offset position) =>
           changed.pages[0].agentData.first.position = position;
         });
 
+StrategyData Function(StrategyData) _sized({
+  double? agentSize,
+  double? abilitySize,
+}) =>
+    (s) {
+      final settings = s.pages[0].settings;
+      return s.copyWith(pages: [
+        s.pages[0].copyWith(
+          settings: StrategySettings(
+            agentSize: agentSize ?? settings.agentSize,
+            abilitySize: abilitySize ?? settings.abilitySize,
+            useNeutralTeamColors: settings.useNeutralTeamColors,
+          ),
+        ),
+        s.pages[1],
+      ]);
+    };
+
 StrategyData Function(StrategyData) _captioned(String? caption) =>
     (s) => _onFirstPage(s, (changed) {
           changed.pages[0].agentData.first.caption = caption;
@@ -192,6 +213,17 @@ final _values = <String, StrategyData Function(StrategyData)>{
         ),
         s.pages[1],
       ]),
+  'settings with agentSize NaN': _sized(agentSize: double.nan),
+  'settings with abilitySize infinity': _sized(abilitySize: double.infinity),
+  'an agent at x = NaN and a stroke through infinity on one page': (s) =>
+      _onFirstPage(s, (changed) {
+        changed.pages[0].agentData.first.position = const Offset(double.nan, 1);
+        changed.pages[0].drawingData
+            .whereType<FreeDrawing>()
+            .first
+            .listOfPoints
+            .add(const Offset(double.infinity, 1));
+      }),
   'a caption of emoji, RTL, combining marks and bidi controls':
       _captioned(_odd),
   'a caption with a lone surrogate': _captioned(_lone),
@@ -204,6 +236,23 @@ final _values = <String, StrategyData Function(StrategyData)>{
         s.pages[1],
       ]),
 };
+
+String _rowsText(StrategyToRows converted) => switch (converted) {
+      StrategyRowsRefused(:final problems) => 'refused: $problems',
+      StrategyRowsMade(:final rows) => [
+          for (final row in <Row>[
+            rows.strategy,
+            ...rows.pages,
+            ...rows.settings,
+            ...rows.elements,
+            ...rows.lineupGroups,
+          ])
+            switch (encodeJson(row.toJsonView())) {
+              Encoded(:final text) => text,
+              NotEncoded(:final problem) => '${row.runtimeType}: $problem',
+            },
+        ].join('\n'),
+    };
 
 String _verdict(ReadBack readBack) => switch (readBack) {
       ReadsBackEqual() => 'equal',
@@ -227,40 +276,69 @@ StrategyData? _firstPageRenamed(StrategyData strategy) {
   }
 }
 
-List<String> _differences(String label, StrategyData strategy) {
-  final fingerprint = StrategyImages(pageKey: fingerprintPageKey);
-  final direct = StrategyImages();
+StrategyData? _firstItemMoved(StrategyData strategy) {
+  if (strategy.pages.isEmpty) return null;
+  final moved = cloneStrategy(strategy);
+  final page = moved.pages.first;
+  if (page.agentData.isNotEmpty) {
+    page.agentData.first.position += const Offset(3, 2);
+  } else if (page.abilityData.isNotEmpty) {
+    page.abilityData.first.position += const Offset(3, 2);
+  } else if (page.utilityData.isNotEmpty) {
+    page.utilityData.first.position += const Offset(3, 2);
+  } else {
+    return null;
+  }
+  return moved;
+}
+
+Future<List<String>> _differences(String label, StrategyData strategy) async {
+  final onMain = MainStrategyImages();
+  final stepped = StrategyImages();
+  final inOneCall = StrategyImages();
   final checks = [
     ('first check', strategy),
     ('the same again, from the cache', strategy),
     if (_firstPageRenamed(strategy) case final renamed?)
-      ('after the first page changed', renamed),
+      ('after the first page was renamed', renamed),
+    if (_firstItemMoved(strategy) case final moved?)
+      ('after an item on the first page moved', moved),
   ];
-  return [
-    for (final (moment, checked) in checks)
-      if ((
-        _verdict(fingerprint.of(checked).readBack),
-        _verdict(direct.of(checked).readBack),
-      )
-          case (final byFingerprint, final byDirect)
-          when byFingerprint != byDirect)
-        '$label, $moment: fingerprint key says "$byFingerprint", direct key '
-            'says "$byDirect"',
-  ];
+  final differences = <String>[];
+  for (final (moment, checked) in checks) {
+    final onMainImage = onMain.of(checked);
+    final steppedImage = await stepped.between(checked, () async {});
+    final inOneCallImage = inOneCall.of(checked);
+    final main = _verdict(onMainImage.readBack);
+    final bySteps = _verdict(steppedImage.readBack);
+    final byStepsInOneCall = _verdict(inOneCallImage.readBack);
+    if (bySteps != main || byStepsInOneCall != main) {
+      differences.add('$label, $moment: main says "$main", in steps '
+          '"$bySteps", in steps in one call "$byStepsInOneCall"');
+    }
+    final mainRows = _rowsText(mainStrategyToRows(checked));
+    if (_rowsText(onMainImage.rows) != mainRows ||
+        _rowsText(steppedImage.rows) != mainRows ||
+        _rowsText(inOneCallImage.rows) != mainRows ||
+        _rowsText(strategyToRows(checked)) != mainRows) {
+      differences.add('$label, $moment: the rows differ from main\'s');
+    }
+  }
+  return differences;
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-      'the direct page key gives the verdicts the fingerprint key gives, on '
-      'shapes the real libraries do not have', () {
+      'the check in steps gives the verdicts main\'s check gives, words '
+      'included, on shapes the real libraries do not have', () async {
     final differences = <String>[];
     final verdicts = <String, String>{};
     for (final MapEntry(key: name, value: shape) in _shapes.entries) {
       final s = strategyAsHiveHoldsIt(shape(_strategy('shape-$name')));
-      verdicts[name] = _verdict(StrategyImages().of(s).readBack);
-      differences.addAll(_differences(name, s));
+      verdicts[name] = _verdict(MainStrategyImages().of(s).readBack);
+      differences.addAll(await _differences(name, s));
     }
     stdout
         .writeln('KEYS ${_shapes.length} shapes, ${differences.length} differ; '
@@ -270,14 +348,14 @@ void main() {
   });
 
   test(
-      'the direct page key gives the verdicts the fingerprint key gives, on '
-      'the values tried on #737', () {
+      'the check in steps gives the verdicts main\'s check gives, words '
+      'included, on the values tried on #737', () async {
     final differences = <String>[];
     final verdicts = <String, String>{};
     for (final MapEntry(key: name, value: change) in _values.entries) {
       final s = strategyAsHiveHoldsIt(change(_strategy('value-$name')));
-      verdicts[name] = _verdict(StrategyImages().of(s).readBack);
-      differences.addAll(_differences(name, s));
+      verdicts[name] = _verdict(MainStrategyImages().of(s).readBack);
+      differences.addAll(await _differences(name, s));
     }
     for (final MapEntry(:key, :value) in verdicts.entries) {
       stdout.writeln('KEYS $key: $value');
@@ -290,8 +368,8 @@ void main() {
   final corpus = Platform.environment[corpusVariable];
 
   test(
-    'the direct page key gives the verdicts the fingerprint key gives, on '
-    'every strategy in the corpus',
+    'the check in steps gives the verdicts main\'s check gives, words '
+    'included, on every strategy in the corpus',
     skip: corpus == null ? 'set $corpusVariable to a corpus folder' : false,
     () async {
       final differences = <String>[];
@@ -301,9 +379,11 @@ void main() {
         for (final strategy in (await loadHiveStore(store)).strategies) {
           final held = strategyAsHiveHoldsIt(strategy);
           strategies += 1;
-          if (StrategyImages().of(held).readBack is ReadsBackEqual) equal += 1;
-          differences
-              .addAll(_differences('${strategy.id} "${strategy.name}"', held));
+          if (MainStrategyImages().of(held).readBack is ReadsBackEqual) {
+            equal += 1;
+          }
+          differences.addAll(
+              await _differences('${strategy.id} "${strategy.name}"', held));
         }
       }
       stdout.writeln(

@@ -152,6 +152,8 @@ Future<UnitHarness> openInEditor(
   StrategyData strategy, {
   bool follow = true,
   StorageEngine Function(StorageEngine memory)? engine,
+  Future<void> Function()? betweenSteps,
+  bool journaled = true,
 }) async {
   final migrated = StrategyMigrator.migrateToCurrentVersion(strategy);
   await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
@@ -159,8 +161,8 @@ Future<UnitHarness> openInEditor(
   final journal = ActionJournal();
   final mirror = StoreMirror(
     reads: HiveReads(),
-    betweenAnimations: () => Future<void>.value(),
-    actions: journal,
+    betweenAnimations: betweenSteps ?? () => Future<void>.value(),
+    actions: journaled ? journal : null,
   );
   LocalLibrary.follower = mirror;
   final store = switch (await LibraryStore.open(
@@ -184,14 +186,14 @@ Future<UnitHarness> openInEditor(
     return container;
   });
   harness = UnitHarness._(container, mirror, journal, follower, store);
-  ActionProvider.editFollower = follower;
+  if (journaled) ActionProvider.editFollower = follower;
   follower.attach();
   expect(
     await container.read(strategyProvider.notifier).loadFromHive(migrated.id),
     isTrue,
   );
   await harness.settle();
-  if (follow) {
+  if (follow && journaled) {
     expect(journal.tally.takenUp, 1, reason: 'the strategy is taken up');
   }
   return harness;

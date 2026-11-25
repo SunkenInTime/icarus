@@ -268,10 +268,46 @@ LineUpGraph? lineupGraphOfGroups(String pageId, List<LiveLineupGroup> groups) =>
       _LineupsRefused() => null,
     };
 
+sealed class RowsStep {
+  const RowsStep();
+}
+
+final class ItemConverted extends RowsStep {
+  const ItemConverted(this.page, this.item, this.row);
+
+  final StrategyPage page;
+  final PageItem item;
+  final LiveElement? row;
+}
+
+final class PageConverted extends RowsStep {
+  const PageConverted(this.page, this.lineupGroups);
+
+  final StrategyPage page;
+  final List<LiveLineupGroup> lineupGroups;
+}
+
+final class RowsFinished extends RowsStep {
+  const RowsFinished(this.rows);
+
+  final StrategyToRows rows;
+}
+
 StrategyToRows strategyToRows(
   StrategyData strategy, {
   Iterable<UnreadableElement> carried = const [],
-}) {
+}) =>
+    switch (strategyToRowsInSteps(strategy, carried: carried).last) {
+      RowsFinished(:final rows) => rows,
+      ItemConverted() ||
+      PageConverted() =>
+        throw StateError('the conversion stopped before its rows'),
+    };
+
+Iterable<RowsStep> strategyToRowsInSteps(
+  StrategyData strategy, {
+  Iterable<UnreadableElement> carried = const [],
+}) sync* {
   final problems = <RowsProblem>[];
   if (strategy.versionNumber < Settings.versionNumber) {
     problems.add(NotMigrated(strategy.versionNumber));
@@ -315,33 +351,32 @@ StrategyToRows strategyToRows(
   var lineupCount = 0;
 
   for (final page in strategy.pages) {
-    pages.add(
-      LivePage(
-        publicId: page.id,
-        strategyPublicId: strategy.id,
-        name: page.name,
-        isAutoNamed: page.isAutoNamed,
-        sortIndex: page.sortIndex,
-        isAttack: page.isAttack,
-        revision: _rowRevision,
-      ),
+    final pageRow = LivePage(
+      publicId: page.id,
+      strategyPublicId: strategy.id,
+      name: page.name,
+      isAutoNamed: page.isAutoNamed,
+      sortIndex: page.sortIndex,
+      isAttack: page.isAttack,
+      revision: _rowRevision,
     );
-    settings.add(
-      ReadablePageSettings(
-        pagePublicId: page.id,
-        settings: PageSettings(
-          agentSize: page.settings.agentSize,
-          abilitySize: page.settings.abilitySize,
-          useNeutralTeamColors: page.settings.useNeutralTeamColors,
-        ),
-        revision: _rowRevision,
+    final settingsRow = ReadablePageSettings(
+      pagePublicId: page.id,
+      settings: PageSettings(
+        agentSize: page.settings.agentSize,
+        abilitySize: page.settings.abilitySize,
+        useNeutralTeamColors: page.settings.useNeutralTeamColors,
       ),
+      revision: _rowRevision,
     );
+    pages.add(pageRow);
+    settings.add(settingsRow);
 
     for (final (sortIndex, item) in pageItemsOf(page).indexed) {
       switch (item.payload) {
         case CouldNotRead(:final problem):
           problems.add(ItemNotJson(page.id, item.kind, item.id, problem));
+          yield ItemConverted(page, item, null);
         case Read(value: final payload):
           final rowId = takenElementIds.contains(item.id)
               ? _derivedId(
@@ -351,40 +386,37 @@ StrategyToRows strategyToRows(
               : item.id;
           takenElementIds.add(rowId);
           itemCounts[item.kind] = itemCounts[item.kind]! + 1;
-          elements.add(
-            LiveElement(
-              publicId: rowId,
-              pagePublicId: page.id,
-              payload: payload,
-              sortIndex: sortIndex,
-              revision: _rowRevision,
-            ),
+          final row = LiveElement(
+            publicId: rowId,
+            pagePublicId: page.id,
+            payload: payload,
+            sortIndex: sortIndex,
+            revision: _rowRevision,
           );
+          elements.add(row);
+          yield ItemConverted(page, item, row);
       }
     }
 
-    final lineupProblems = _lineupProblems(page);
-    problems.addAll(lineupProblems);
-    if (lineupProblems.isNotEmpty) continue;
-    final List<LiveLineupGroup> made;
-    try {
-      made = lineupGroupRowsOf(
-        strategyId: strategy.id,
-        pageId: page.id,
-        graph: page.lineUpGraph,
-        takenGroupIds: takenGroupIds,
-        everyLinkId: everyLinkId,
-      );
-    } on JsonUnsupportedObjectError catch (error) {
-      problems.add(LineupNotJson(page.id, '$error'));
-      continue;
+    final made = _lineupGroupsOf(
+      strategy,
+      page,
+      takenGroupIds: takenGroupIds,
+      everyLinkId: everyLinkId,
+      problems: problems,
+    );
+    if (made != null) {
+      lineupCount += page.lineUpLinks.length;
+      lineupGroups.addAll(made);
     }
-    lineupCount += page.lineUpLinks.length;
-    lineupGroups.addAll(made);
+    yield PageConverted(page, made ?? const []);
   }
 
-  if (problems.isNotEmpty) return StrategyRowsRefused(strategy.id, problems);
-  return StrategyRowsMade(
+  if (problems.isNotEmpty) {
+    yield RowsFinished(StrategyRowsRefused(strategy.id, problems));
+    return;
+  }
+  yield RowsFinished(StrategyRowsMade(
     rows: StrategyRowSet(
       strategy: ReadableStrategy(
         publicId: strategy.id,
@@ -413,7 +445,31 @@ StrategyToRows strategyToRows(
       lineupCount: lineupCount,
     ),
     supersededLegacyItems: strategy.pages.isEmpty ? 0 : legacyItems,
-  );
+  ));
+}
+
+List<LiveLineupGroup>? _lineupGroupsOf(
+  StrategyData strategy,
+  StrategyPage page, {
+  required Set<String> takenGroupIds,
+  required Set<String> everyLinkId,
+  required List<RowsProblem> problems,
+}) {
+  final lineupProblems = _lineupProblems(page);
+  problems.addAll(lineupProblems);
+  if (lineupProblems.isNotEmpty) return null;
+  try {
+    return lineupGroupRowsOf(
+      strategyId: strategy.id,
+      pageId: page.id,
+      graph: page.lineUpGraph,
+      takenGroupIds: takenGroupIds,
+      everyLinkId: everyLinkId,
+    );
+  } on JsonUnsupportedObjectError catch (error) {
+    problems.add(LineupNotJson(page.id, '$error'));
+    return null;
+  }
 }
 
 sealed class StrategyFromRows {

@@ -79,12 +79,28 @@ With `"ahead": "median"` (`scripts/open-first-frame-abandoned.json`) each press 
 
 `{"readBackCost": "largest", "runs": 21}` (`scripts/read-back-cost.json`) times, on the strategy with the most items, what the mirror spends converting it to rows, and converting it then checking that the rows read back equal to its Hive record, and logs both medians, the worst of each and the difference as a `READBACK` line.
 
-`"budget": {"longestStepMs": x, "addedPerSaveMs": y}` on that step judges two of its numbers. The longest step is the worse of the two longest single steps it reports (cold, and after one page changed): it is what a user feels, a frame the mirror holds. Added per save is the median it adds once one page changed: it is the total work each save costs. Each gets a `READBACK <strategy> within budget: …` or `READBACK <strategy> over budget: <value> ms, target <x> ms, over by <d> ms` line, and the step fails if either is over. `scripts/read-back-budget.json` runs it in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
+`"budget": {"longestStepMs": x, "addedPerSaveMs": y}` on that step judges two of its numbers, each measured on the check alone, not on the whole save (the store's own write is not part of it):
+- **Longest step:** the worse of the longest single steps it reports, cold and after one item changed (a freehand stroke moved when there is one). It is what a user feels, a frame the mirror holds.
+- **Added per save:** the median the check adds once one item changed. It is the total work each save costs.
 
-| Strategy | Longest step target | Windows release, 2026-11-25 | Added per save target | Windows release, 2026-11-25 |
+Each number gets a `READBACK <strategy> within budget: …` or `READBACK <strategy> over budget: <value> ms, target <x> ms, over by <d> ms` line, and the step fails if either is over.
+
+`{"readBackFrames": pick, "longestStepMs": x?}` runs the same check with the real scheduler while a frame is asked for every frame, three times on one checker: cold, after one item changed as the editor changes it (a stroke's points, its box and the strategy's `lastEdited`), and with one item at -0.0, which reads back differently. Each run logs:
+- how many breaks had no frame in them;
+- the longest step between breaks;
+- how many of the check's frames were timed, and the longest any of them waited after its vsync, matched by frame number.
+
+It fails if no frame ran, if a break had no frame, if any frame of the check was not timed, if a step of the first two runs is over `longestStepMs`, or if the -0.0 item does not read back as its page reading back differently. The third run's longest step is logged beside the target but not judged: when a part differs, the verdict's words come from main's whole-page diagnostic, one step over the whole page, which only a page that reads back differently pays. A frame that is asked for waits behind at most the one step running when it was asked for. When nothing asks for a frame, the break does not wait for one.
+
+`scripts/read-back-budget.json` runs both in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
+
+| Strategy | Longest step target | Windows release, worst of three rounds | Added per save target | Windows release, worst of three rounds |
 | --- | --- | --- | --- | --- |
-| largest | 4 ms | 9.9 ms | 8 ms | 3.8 ms |
-| Dense strokes | 16 ms | 128 ms | 160 ms | 110 ms |
+| largest | 4 ms | 2.8 ms | 8 ms | 5.0 ms |
+| Dense strokes | 16 ms | 13.6 ms | 160 ms | 30.8 ms |
+| Dense strokes, one item reading back differently (`readBackFrames`, not judged) | 16 ms | 234 ms | | |
+
+Before the check ran in steps, main measured 9.9 ms and 128 ms for the longest step, and 3.8 ms and 110 ms added per save.
 
 `{"pageTakeCost": 300, "changed": 1, "runs": 51}` times the cloud store taking a live page result, on SQLite in a temporary folder: a cloud strategy with one page of that many items (one in ten a 250-point freehand drawing, the shapes `tool/convex_cost/lib/content.mjs` writes), and a result in which `changed` of them changed. It logs a `TAKE` line with the median and worst of the longest main-isolate stretch during `record` and of the whole `record`, the median time the main isolate was busy, how many frames the app drew while it measured, and how busy the whole computer was just before and just after (all processes, from Windows' processor counter or Linux's `/proc/stat`), first as the store runs in a release build, then with every take also checked against one from scratch, as tests and driver builds run it. `"budget": {"longestStepMs": x, "recordMs": y}` judges the medians over all the step's takes (each take's longest stretch, and each take's whole `record`), never one take, with `within budget` and `over budget` lines like `READBACK`'s; an over line repeats how busy the computer was, so a failure on a busy computer can be read as one. The step fails if either median is over. `scripts/page-take-budget.json` judges one changed item on 300, and logs one on 60, ten on 300 and all 300:
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,9 @@ import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/store_differences.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_store/canvas_units.dart';
+import 'package:icarus/const/bounding_box.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/library_listing.dart';
@@ -21,6 +25,7 @@ import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/library_store/store_page_reads.dart';
 import 'package:icarus/library_store/strategy_image.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/startup/launch_clock.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_library_view.dart';
@@ -73,6 +78,7 @@ String _describeState(ShadowState state) => switch (state) {
       ShadowCopying(:final done, :final total) => 'copying $done of $total',
       ShadowChecking() => 'checking',
       ShadowFinished() => 'finished',
+      ShadowMirrorStopped(:final stop) => 'stopped: $stop',
       ShadowNotOpened(:final opened) => _describeOpened(opened),
     };
 
@@ -108,6 +114,9 @@ List<String> describeCheck(StoreCheck check, Duration took) => switch (check) {
       StoreNotChecked(:final failure) => [
           'STORE check could not read: '
               '${storageFailureWords(failure, StoreStep.read)} ($failure)',
+        ],
+      StoreCheckCancelled() => [
+          'STORE check not run: the mirror had stopped',
         ],
       final StoreChecked checked => [
           'STORE check Hive ${checked.hiveStrategies} strategies '
@@ -198,6 +207,7 @@ List<String> _describeCopy(ShadowRun run) {
         'finished while Hive changed ($hiveWrites writes), so it may not reflect Hive',
       ShadowCopyStopped(:final stop) => 'stopped: $stop',
       ShadowCopyFaulted(:final error) => 'met an error: $error',
+      ShadowCopyCancelled() => 'cancelled: the mirror had stopped',
     }}: copied ${_count<StrategyCopied>(strategies)}, unchanged '
         '${_count<StrategyUnchanged>(strategies)}, took the Hive version '
         '${_count<StrategyTookHiveVersion>(strategies)}, removed with Hive '
@@ -249,6 +259,9 @@ Future<List<String>> waitForShadowStore(
     ShadowFinished(:final run) => run,
     ShadowNotOpened(:final opened) =>
       throw StoreStepFailed(['the store ${_describeOpened(opened)}']),
+    ShadowMirrorStopped(:final stop) => throw StoreStepFailed(
+        ['the mirror stopped before its copy and check finished: $stop'],
+      ),
     ShadowIdle() ||
     ShadowCopying() ||
     ShadowChecking() =>
@@ -306,6 +319,7 @@ Future<List<String>> waitForShadowStore(
       StoreChangedDuringCheck() => 'Hive changed during the check',
       StoreNotChecked(:final failure) => 'the check failed: '
           '${storageFailureWords(failure, StoreStep.read)} ($failure)',
+      StoreCheckCancelled() => 'the check did not run: the mirror had stopped',
     },
     if (libraryChanged.isNotEmpty && !mirroring)
       'library boxes changed: ${libraryChanged.join(', ')}',
@@ -355,12 +369,59 @@ String mirrorPhaseNow(ProviderContainer c) =>
       Mirroring(:final mirror) => _describePhase(mirror.phase),
     };
 
-StrategyData _withFirstPageRenamed(StrategyData strategy) => strategy.copyWith(
-      pages: [
-        for (final (index, page) in strategy.pages.indexed)
-          index == 0 ? page.copyWith(name: '${page.name} edited') : page,
-      ],
-    );
+(StrategyData, String) _withOneItemChanged(StrategyData strategy) {
+  final changed = strategyAsHiveHoldsIt(
+    cloneStrategy(strategy).copyWith(lastEdited: DateTime.now()),
+  );
+  for (final page in changed.pages) {
+    for (final drawing in _strokesOn(page)) {
+      _redraw(drawing, [
+        for (final point in drawing.listOfPoints) point + const Offset(0.5, 0),
+      ]);
+      return (changed, 'one freehand stroke moved');
+    }
+  }
+  for (final page in changed.pages) {
+    if (page.agentData.isEmpty) continue;
+    page.agentData.first.position += const Offset(0.5, 0);
+    return (changed, 'one agent moved');
+  }
+  return (
+    changed.copyWith(pages: [
+      for (final (index, page) in changed.pages.indexed)
+        index == 0 ? page.copyWith(name: '${page.name} edited') : page,
+    ]),
+    'the first page renamed',
+  );
+}
+
+(StrategyData, String)? _withOneItemDiffering(StrategyData strategy) {
+  final changed = strategyAsHiveHoldsIt(
+    cloneStrategy(strategy).copyWith(lastEdited: DateTime.now()),
+  );
+  for (final page in changed.pages) {
+    for (final drawing in _strokesOn(page)) {
+      final [first, ...rest] = drawing.listOfPoints;
+      _redraw(drawing, [Offset(-0.0, first.dy), ...rest]);
+      return (changed, page.id);
+    }
+  }
+  for (final page in changed.pages) {
+    if (page.agentData.isEmpty) continue;
+    final agent = page.agentData.first;
+    agent.position = Offset(-0.0, agent.position.dy);
+    return (changed, page.id);
+  }
+  return null;
+}
+
+Iterable<FreeDrawing> _strokesOn(StrategyPage page) => page.drawingData
+    .whereType<FreeDrawing>()
+    .where((drawing) => drawing.listOfPoints.isNotEmpty);
+
+void _redraw(FreeDrawing drawing, List<Offset> points) => drawing
+  ..replacePoints(points)
+  ..boundingBox = BoundingBox.around(points);
 
 final class ReadBackBudget {
   const ReadBackBudget({
@@ -372,31 +433,38 @@ final class ReadBackBudget {
   final num addedPerSaveMs;
 }
 
+int _items(StrategyData strategy) => strategy.pages.fold(
+      0,
+      (sum, page) =>
+          sum +
+          page.agentData.length +
+          page.abilityData.length +
+          page.drawingData.length +
+          page.textData.length +
+          page.imageData.length +
+          page.utilityData.length +
+          page.lineUpLinks.length,
+    );
+
+StrategyData _picked(String pick) {
+  final strategies = [...const LocalLibrary().storedStrategies]
+    ..sort((a, b) => _items(a).compareTo(_items(b)));
+  if (strategies.isEmpty) throw StateError('no strategy to measure');
+  return switch (pick) {
+    'largest' => strategies.last,
+    'median' => strategies[strategies.length ~/ 2],
+    _ => strategies.firstWhere((strategy) => strategy.name == pick),
+  };
+}
+
+String _ms(int micros) => (micros / 1000).toStringAsFixed(2);
+
 Future<List<String>> readBackCost(
   String pick,
   int runs, {
   ReadBackBudget? budget,
 }) async {
-  int items(StrategyData strategy) => strategy.pages.fold(
-        0,
-        (sum, page) =>
-            sum +
-            page.agentData.length +
-            page.abilityData.length +
-            page.drawingData.length +
-            page.textData.length +
-            page.imageData.length +
-            page.utilityData.length +
-            page.lineUpLinks.length,
-      );
-  final strategies = [...const LocalLibrary().storedStrategies]
-    ..sort((a, b) => items(a).compareTo(items(b)));
-  if (strategies.isEmpty) throw StateError('no strategy to measure');
-  final target = switch (pick) {
-    'largest' => strategies.last,
-    'median' => strategies[strategies.length ~/ 2],
-    _ => strategies.firstWhere((strategy) => strategy.name == pick),
-  };
+  final target = _picked(pick);
   final held = strategyAsHiveHoldsIt(target);
   List<int> timed(void Function() run) {
     for (var warm = 0; warm < 5; warm++) {
@@ -412,64 +480,73 @@ Future<List<String>> readBackCost(
     ]..sort();
   }
 
-  String ms(int micros) => (micros / 1000).toStringAsFixed(2);
   final rows = timed(() => strategyToRows(held));
-  final checked = timed(() => StrategyImages().of(held));
-  final edited = _withFirstPageRenamed(held);
-  final images = StrategyImages()..of(held);
-  var turn = 0;
-  final afterOnePage =
-      timed(() => images.of(turn++ % 2 == 0 ? edited : held));
-  Future<int> longestTask(StrategyImages images, StrategyData strategy) async {
+  final (edited, change) = _withOneItemChanged(held);
+  Future<({int longest, int total})> stepped(
+    StrategyImages images,
+    StrategyData strategy,
+  ) async {
     var longest = 0;
+    var total = 0;
     final clock = Stopwatch()..start();
+    void endStep() {
+      final step = clock.elapsedMicroseconds;
+      total += step;
+      if (step > longest) longest = step;
+    }
+
     await images.between(strategy, () async {
-      if (clock.elapsedMicroseconds > longest) {
-        longest = clock.elapsedMicroseconds;
-      }
+      endStep();
       await Future<void>.delayed(Duration.zero);
       clock
         ..reset()
         ..start();
     });
-    return clock.elapsedMicroseconds > longest
-        ? clock.elapsedMicroseconds
-        : longest;
+    endStep();
+    return (longest: longest, total: total);
   }
 
-  final coldTasks = [
+  for (var warm = 0; warm < 5; warm++) {
+    await stepped(StrategyImages(), held);
+  }
+  final cold = [
     for (var turn = 0; turn < runs; turn++)
-      await longestTask(StrategyImages(), held),
-  ]..sort();
+      await stepped(StrategyImages(), held),
+  ];
   final warmImages = StrategyImages();
-  await longestTask(warmImages, held);
-  final warmTasks = [
+  await stepped(warmImages, held);
+  final warm = [
     for (var turn = 0; turn < runs; turn++)
-      await longestTask(warmImages, turn.isEven ? edited : held),
-  ]..sort();
-  final readBack = StrategyImages().of(held).readBack;
-  final line = 'READBACK $pick (${target.pages.length} pages, ${items(target)} '
-      'items, ${readBack is ReadsBackEqual ? 'reads back equal' : 'reads back differently'}), '
-      '$runs runs: rows median ${ms(rows[runs ~/ 2])} ms, worst '
-      '${ms(rows.last)} ms; rows and read-back median '
-      '${ms(checked[runs ~/ 2])} ms, worst ${ms(checked.last)} ms; added '
-      'median ${ms(checked[runs ~/ 2] - rows[runs ~/ 2])} ms; after one page '
-      'changed median ${ms(afterOnePage[runs ~/ 2])} ms, worst '
-      '${ms(afterOnePage.last)} ms, added median '
-      '${ms(afterOnePage[runs ~/ 2] - rows[runs ~/ 2])} ms; as the mirror '
-      'runs it, with a break between frames after the rows and after each '
-      'page, the longest single task: cold worst ${ms(coldTasks.last)} ms, '
-      'after one page changed worst ${ms(warmTasks.last)} ms';
+      await stepped(warmImages, turn.isEven ? edited : held),
+  ];
+  int median(List<int> values) => (values.toList()..sort())[values.length ~/ 2];
+  int worst(List<int> values) => values.reduce((a, b) => a > b ? a : b);
+  final coldTotal = median([for (final run in cold) run.total]);
+  final warmTotal = median([for (final run in warm) run.total]);
+  final coldLongest = worst([for (final run in cold) run.longest]);
+  final warmLongest = worst([for (final run in warm) run.longest]);
+  final readBack = switch (StrategyImages().of(held).readBack) {
+    ReadsBackEqual() => 'reads back equal',
+    ReadsBackDifferently() => 'reads back differently',
+  };
+  final line = 'READBACK $pick (${target.pages.length} pages, '
+      '${_items(target)} items, $readBack), $runs runs: rows in one go median '
+      '${_ms(rows[runs ~/ 2])} ms; as the mirror runs it, in steps: total work '
+      'cold median ${_ms(coldTotal)} ms, added '
+      '${_ms(coldTotal - rows[runs ~/ 2])} ms; after $change, median '
+      '${_ms(warmTotal)} ms, added ${_ms(warmTotal - rows[runs ~/ 2])} ms; the '
+      'longest single step: cold worst ${_ms(coldLongest)} ms, after $change, '
+      'worst ${_ms(warmLongest)} ms';
   if (budget == null) return [line];
   final measured = [
     (
       'longest step',
-      coldTasks.last > warmTasks.last ? coldTasks.last : warmTasks.last,
+      coldLongest > warmLongest ? coldLongest : warmLongest,
       budget.longestStepMs,
     ),
     (
       'added per save',
-      afterOnePage[runs ~/ 2] - rows[runs ~/ 2],
+      warmTotal - rows[runs ~/ 2],
       budget.addedPerSaveMs,
     ),
   ];
@@ -478,10 +555,10 @@ Future<List<String>> readBackCost(
       (
         over: micros / 1000 > targetMs,
         line: micros / 1000 > targetMs
-            ? 'READBACK $pick over budget: $name ${ms(micros)} ms, target '
+            ? 'READBACK $pick over budget: $name ${_ms(micros)} ms, target '
                 '$targetMs ms, over by '
-                '${ms(micros - (targetMs * 1000).round())} ms'
-            : 'READBACK $pick within budget: $name ${ms(micros)} ms, target '
+                '${_ms(micros - (targetMs * 1000).round())} ms'
+            : 'READBACK $pick within budget: $name ${_ms(micros)} ms, target '
                 '$targetMs ms',
       ),
   ];
@@ -490,6 +567,176 @@ Future<List<String>> readBackCost(
     throw StoreStepFailed(lines);
   }
   return lines;
+}
+
+Future<List<String>> readBackFrames(
+  String pick, {
+  num? longestStepMs,
+}) async {
+  final held = strategyAsHiveHoldsIt(_picked(pick));
+  final (edited, change) = _withOneItemChanged(held);
+  final (differing, differingPage) = _withOneItemDiffering(held) ??
+      (throw StoreStepFailed(['READBACK $pick has no stroke or agent']));
+  final planted = 'page $differingPage reads back differently';
+  final images = StrategyImages();
+  final runs = [
+    ('cold', await _framesAcrossSteps(images, held)),
+    ('after $change', await _framesAcrossSteps(images, edited)),
+  ];
+  const differingLabel = 'with one item that reads back differently';
+  final differingRun = await _framesAcrossSteps(images, differing);
+  final lines = [
+    'READBACK $pick frames, with a frame asked for every frame and '
+        'betweenAnimations between steps (an idle-priority task, then the '
+        'frame asked for), one checker for all three runs:',
+    for (final (label, run) in [...runs, (differingLabel, differingRun)])
+      'READBACK $pick frames, $label: ${run.steps} steps, ${run.frames} '
+          'frames ran during the check, ${run.timedFrames} of them timed, '
+          '${run.breaksWithoutFrame} breaks with no frame in them, the longest '
+          'step ${_ms(run.longestStepMicros)} ms, '
+          '${run.timedFrames == 0 ? 'no frame of the check was timed' : 'the longest a frame of the check started after its vsync ${_ms(run.worstVsyncWaitMicros)} ms'}, '
+          'the check took ${_ms(run.tookMicros)} ms, and it '
+          '${switch (run.readBack) {
+        ReadsBackEqual() => 'reads back equal',
+        ReadsBackDifferently(:final words) => 'reads back differently: $words',
+      }}',
+    if (longestStepMs != null)
+      'READBACK $pick frames, $differingLabel: the longest step '
+          '${_ms(differingRun.longestStepMicros)} ms is not judged against '
+          '$longestStepMs ms, by design: when a part differs, the words come '
+          'from main\'s whole-page diagnostic, one step over the whole page, '
+          'paid only by a page that reads back differently',
+  ];
+  final problems = [
+    for (final (label, run) in [...runs, (differingLabel, differingRun)]) ...[
+      if (run.frames == 0) '$label: no frame ran during the check',
+      if (run.timedFrames < run.frames)
+        '$label: ${run.frames - run.timedFrames} of the check\'s '
+            '${run.frames} frames were not timed',
+      if (run.breaksWithoutFrame > 0)
+        '$label: ${run.breaksWithoutFrame} breaks had no frame in them',
+      if (label != differingLabel && run.readBack is! ReadsBackEqual)
+        '$label: the check reads back differently, so its timings are not '
+            'those of a page that reads back equal',
+      if (longestStepMs != null &&
+          label != differingLabel &&
+          run.longestStepMicros / 1000 > longestStepMs)
+        '$label: the longest step ${_ms(run.longestStepMicros)} ms is over '
+            '$longestStepMs ms by '
+            '${_ms(run.longestStepMicros - (longestStepMs * 1000).round())} ms',
+    ],
+    if (differingRun.readBack case final readBack
+        when readBack is! ReadsBackDifferently || readBack.words != planted)
+      'the item at -0.0 should read back as "$planted"',
+  ];
+  if (problems.isNotEmpty) {
+    throw StoreStepFailed([
+      ...lines,
+      for (final problem in problems) 'READBACK $pick frames, $problem',
+    ]);
+  }
+  return lines;
+}
+
+Future<
+    ({
+      int steps,
+      int breaksWithoutFrame,
+      int frames,
+      int timedFrames,
+      int longestStepMicros,
+      int worstVsyncWaitMicros,
+      int tookMicros,
+      ReadBack readBack,
+    })> _framesAcrossSteps(
+  StrategyImages images,
+  StrategyData strategy,
+) async {
+  final scheduler = SchedulerBinding.instance;
+  var frames = 0;
+  var asking = true;
+  var duringCheck = false;
+  final checkFrames = <int>{};
+  void askAgain(Duration _) {
+    frames += 1;
+    if (duringCheck) {
+      checkFrames.add(PlatformDispatcher.instance.frameData.frameNumber);
+    }
+    if (!asking) return;
+    scheduler
+      ..addPostFrameCallback(askAgain)
+      ..scheduleFrame();
+  }
+
+  final vsyncWaits = <int, int>{};
+  void timings(List<FrameTiming> timings) {
+    for (final timing in timings) {
+      vsyncWaits[timing.frameNumber] = timing.vsyncOverhead.inMicroseconds;
+    }
+  }
+
+  scheduler.scheduleFrame();
+  await scheduler.endOfFrame.timeout(const Duration(seconds: 5));
+  scheduler
+    ..addTimingsCallback(timings)
+    ..addPostFrameCallback(askAgain)
+    ..scheduleFrame();
+  await Future<void>.delayed(const Duration(milliseconds: 500));
+  var steps = 1;
+  var breaksWithoutFrame = 0;
+  var longestStep = 0;
+  final step = Stopwatch();
+  void stepEnded() {
+    if (step.elapsedMicroseconds > longestStep) {
+      longestStep = step.elapsedMicroseconds;
+    }
+  }
+
+  duringCheck = true;
+  final clock = Stopwatch()..start();
+  step.start();
+  final StrategyImage image;
+  try {
+    image = await images.between(strategy, () async {
+      stepEnded();
+      final before = frames;
+      await betweenAnimations();
+      steps += 1;
+      if (frames == before) breaksWithoutFrame += 1;
+      step
+        ..reset()
+        ..start();
+    });
+  } catch (_) {
+    duringCheck = false;
+    asking = false;
+    scheduler.removeTimingsCallback(timings);
+    rethrow;
+  }
+  stepEnded();
+  final took = clock.elapsedMicroseconds;
+  duringCheck = false;
+  asking = false;
+  final reported = Stopwatch()..start();
+  while (!checkFrames.every(vsyncWaits.containsKey) &&
+      reported.elapsed < const Duration(seconds: 5)) {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  scheduler.removeTimingsCallback(timings);
+  final timed = [
+    for (final frame in checkFrames)
+      if (vsyncWaits[frame] case final wait?) wait,
+  ];
+  return (
+    steps: steps,
+    breaksWithoutFrame: breaksWithoutFrame,
+    frames: checkFrames.length,
+    timedFrames: timed.length,
+    longestStepMicros: longestStep,
+    worstVsyncWaitMicros: timed.isEmpty ? 0 : timed.reduce(max),
+    tookMicros: took,
+    readBack: image.readBack,
+  );
 }
 
 String holdStore(ProviderContainer c) =>
@@ -545,6 +792,12 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
     ...describeCheck(check, checkClock.elapsed),
   ];
   if (endSave != null) throw StoreStepFailed(lines);
+  if (check is StoreCheckCancelled) {
+    throw StoreStepFailed([
+      ...lines,
+      'the check did not run: the mirror ${_describePhase(mirror.phase)}',
+    ]);
+  }
   if (actionOpsEndProblem(mirror) case final problem?) {
     throw StoreStepFailed([...lines, problem]);
   }
@@ -563,8 +816,7 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
         differing: differing,
         recordedDifferent: recorded,
         readBackNow: (id) => StrategyImages()
-            .of(strategyAsHiveHoldsIt(
-                const LocalLibrary().storedStrategy(id)!))
+            .of(strategyAsHiveHoldsIt(const LocalLibrary().storedStrategy(id)!))
             .readBack,
       );
       final restExact = checked.foreignNames.isEmpty &&

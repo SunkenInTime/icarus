@@ -9,6 +9,7 @@ import 'package:icarus/library_store/hive_files.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
+import 'package:icarus/library_store/mirror_gate.dart';
 import 'package:icarus/library_store/ui_watch.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -110,6 +111,12 @@ final class ShadowFinished extends ShadowState {
   final ShadowRun run;
 }
 
+final class ShadowMirrorStopped extends ShadowState {
+  const ShadowMirrorStopped(this.stop);
+
+  final MirrorStop stop;
+}
+
 final class ShadowNotOpened extends ShadowState {
   const ShadowNotOpened(this.opened);
 
@@ -135,10 +142,19 @@ StoreMirror storeMirror() => StoreMirror(
       betweenAnimations: betweenAnimations,
     );
 
-Future<void> betweenAnimations() => Future.any([
-      SchedulerBinding.instance.scheduleTask<void>(() {}, Priority.idle),
+Future<void> betweenAnimations() async {
+  final scheduler = SchedulerBinding.instance;
+  await Future.any([
+    scheduler.scheduleTask<void>(() {}, Priority.idle),
+    Future<void>.delayed(const Duration(milliseconds: 500)),
+  ]);
+  if (scheduler.hasScheduledFrame) {
+    await Future.any([
+      scheduler.endOfFrame,
       Future<void>.delayed(const Duration(milliseconds: 500)),
     ]);
+  }
+}
 
 final shadowProvider = NotifierProvider<ShadowNotifier, ShadowState>(
   ShadowNotifier.new,
@@ -199,7 +215,7 @@ class ShadowNotifier extends Notifier<ShadowState> {
       final copy = switch (mode) {
         ShadowOnly() => await copyHiveIntoStore(
             _shadowReads,
-            store,
+            GatedStore.open(store),
             images: StrategyImages(),
             writes: writes,
             breathe: _breathe,
@@ -211,15 +227,27 @@ class ShadowNotifier extends Notifier<ShadowState> {
             progress: progress,
           ),
       };
+      if (_mirrorStop case final stop?) {
+        state = ShadowMirrorStopped(stop);
+        return;
+      }
       final copyTook = copyClock.elapsed;
       final uiDuringCopy = copyWatch.stop();
       state = const ShadowChecking();
       checkWatch.start();
       final checkClock = Stopwatch()..start();
       final check = await _check(store, foreignNames);
+      if (_mirrorStop case final stop?) {
+        state = ShadowMirrorStopped(stop);
+        return;
+      }
       final checkTook = checkClock.elapsed;
       final uiDuringCheck = checkWatch.stop();
       final after = await HiveFiles.of(Directory(hiveDirectory));
+      if (_mirrorStop case final stop?) {
+        state = ShadowMirrorStopped(stop);
+        return;
+      }
       final changed = after.changedSince(before);
       state = ShadowFinished(
         ShadowRun(
@@ -247,6 +275,12 @@ class ShadowNotifier extends Notifier<ShadowState> {
       await writes.stop();
     }
   }
+
+  MirrorStop? get _mirrorStop => switch (mode) {
+        Mirroring(mirror: StoreMirror(phase: MirrorStopped(:final stop))) =>
+          stop,
+        Mirroring() || ShadowOnly() => null,
+      };
 
   Future<StoreCheck> checkAgain(LibraryStoreReady ready) =>
       _check(ready.store, ready.foreignNames);
@@ -278,10 +312,10 @@ class ShadowNotifier extends Notifier<ShadowState> {
 }
 
 Future<void>? storeCatchUpBeforeClose() => switch (LocalLibrary.follower) {
-      final StoreMirror mirror when shadowReachable => mirror.drained().timeout(
-            const Duration(seconds: 2),
-            onTimeout: () {},
-          ),
+      final StoreMirror mirror when shadowReachable => mirror
+          .drained()
+          .timeout(const Duration(seconds: 2), onTimeout: () {})
+          .whenComplete(mirror.closeWithTheApp),
       _ => null,
     };
 

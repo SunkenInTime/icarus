@@ -1,17 +1,12 @@
 import 'dart:convert';
 
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/library_rows/page_items.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/library_store_open.dart';
-import 'package:icarus/providers/ability_provider.dart';
-import 'package:icarus/providers/agent_provider.dart';
-import 'package:icarus/providers/drawing_provider.dart';
-import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -30,111 +25,222 @@ final class ReadsBackDifferently extends ReadBack {
 }
 
 final class StrategyImage {
-  const StrategyImage(this.rows, this.readBack);
+  const StrategyImage(this.rows, this.readBack, {this.partsReadBack = 0});
 
   final StrategyToRows rows;
   final ReadBack readBack;
+  final int partsReadBack;
 }
 
-typedef PageKey = String Function(StrategyData strategy, StrategyPage page);
-
 final class StrategyImages {
-  StrategyImages({this.pageKey = directPageKey});
+  final _partsReadingBackEqual = <String, Set<String>>{};
 
-  final PageKey pageKey;
-  final _pagesReadingBackEqual = <String, Map<String, String>>{};
-
-  StrategyImage of(StrategyData strategy) => switch (_made(strategy)) {
-        (final made?, null) => StrategyImage(
-            made,
-            _settled(() => _steps(strategy, made.rows).last!),
-          ),
-        (_, final refused?) => refused,
-        _ => throw StateError('unreachable'),
-      };
+  StrategyImage of(StrategyData strategy) {
+    try {
+      return _steps(strategy).whereType<StrategyImage>().single;
+    } on Object {
+      forget(strategy.id);
+      rethrow;
+    }
+  }
 
   Future<StrategyImage> between(
     StrategyData strategy,
     Future<void> Function() breathe,
   ) async {
-    final StrategyRowsMade made;
-    switch (_made(strategy)) {
-      case (final madeRows?, null):
-        made = madeRows;
-      case (_, final refused?):
-        return refused;
-      default:
-        throw StateError('unreachable');
-    }
-    await breathe();
-    ReadBack? readBack;
     try {
-      for (final step in _steps(strategy, made.rows)) {
-        if (step != null) {
-          readBack = step;
-        } else {
-          await breathe();
-        }
+      for (final step in _steps(strategy)) {
+        if (step != null) return step;
+        await breathe();
       }
-    } on Object catch (error) {
-      readBack = ReadsBackDifferently('it cannot be compared: $error');
+    } on Object {
+      forget(strategy.id);
+      rethrow;
     }
-    return StrategyImage(made, readBack!);
+    throw StateError('the image ended without an outcome');
   }
 
-  void forget(String strategyId) => _pagesReadingBackEqual.remove(strategyId);
+  void forget(String strategyId) => _partsReadingBackEqual.remove(strategyId);
 
-  (StrategyRowsMade?, StrategyImage?) _made(StrategyData strategy) {
-    final rows = strategyToRows(strategy);
-    return switch (rows) {
-      StrategyRowsRefused() => (
-          null,
-          StrategyImage(
-            rows,
-            const ReadsBackDifferently('the converter refuses it'),
-          ),
-        ),
-      final StrategyRowsMade made => (made, null),
-    };
-  }
-
-  static ReadBack _settled(ReadBack Function() check) {
-    try {
-      return check();
-    } on Object catch (error) {
-      return ReadsBackDifferently('it cannot be compared: $error');
+  Iterable<StrategyImage?> _steps(StrategyData strategy) sync* {
+    final map = strategy.mapData;
+    final parts = <_Part>[];
+    Object? unkeyable;
+    void keyed(_Part Function() part) {
+      try {
+        parts.add(part());
+      } on Object catch (error) {
+        unkeyable ??= error;
+      }
     }
-  }
 
-  Iterable<ReadBack?> _steps(StrategyData strategy, StrategyRowSet rows) sync* {
-    final known = _pagesReadingBackEqual[strategy.id] ?? const {};
-    final equal = <String, String>{};
-    final outlineEqual = _outlineReadsBackEqual(strategy, rows);
-    String? differing;
-    for (final page in strategy.pages) {
+    late final StrategyToRows converted;
+    late final String Function() outline;
+    for (final step in strategyToRowsInSteps(strategy)) {
+      switch (step) {
+        case ItemConverted(:final page, :final item, row: final row?):
+          keyed(() => _ItemPart(map, page, item, row));
+        case ItemConverted(row: null):
+          break;
+        case PageConverted(:final page, :final lineupGroups):
+          keyed(() => _PagePart(map, page, lineupGroups));
+        case RowsFinished(:final rows):
+          converted = rows;
+          try {
+            final text = strategyOutline(strategy);
+            outline = () => text;
+          } on Object catch (error) {
+            outline = () => throw error;
+          }
+      }
       yield null;
-      final text = pageKey(strategy, page);
-      if (known[page.id] == text ||
-          _pageReadBack(rows, page.id, pageKey) == text) {
-        equal[page.id] = text;
-      } else {
-        differing ??= page.id;
-      }
     }
-    _pagesReadingBackEqual[strategy.id] = equal;
-    if (!outlineEqual) {
-      yield const ReadsBackDifferently(
-        'its fields, page order or positions read back differently',
+
+    final StrategyRowSet rows;
+    switch (converted) {
+      case StrategyRowsRefused():
+        forget(strategy.id);
+        yield StrategyImage(
+          converted,
+          const ReadsBackDifferently('the converter refuses it'),
+        );
+        return;
+      case StrategyRowsMade(rows: final made):
+        rows = made;
+    }
+    var partsReadBack = 0;
+    StrategyImage cannotCompare(Object error) {
+      forget(strategy.id);
+      return StrategyImage(
+        converted,
+        ReadsBackDifferently('it cannot be compared: $error'),
+        partsReadBack: partsReadBack,
       );
+    }
+
+    final bool outlineEqual;
+    try {
+      outlineEqual = outlineReadsBack(outline, rows);
+    } on Object catch (error) {
+      yield cannotCompare(error);
       return;
     }
-    if (differing == null) {
-      yield const ReadsBackEqual();
+    if (unkeyable case final error?) {
+      yield cannotCompare(error);
       return;
     }
     yield null;
-    yield _pageDifferences(strategy, rows, differing);
+
+    final known = _partsReadingBackEqual[strategy.id] ?? const <String>{};
+    final equal = <String>{};
+    String? differingPage;
+    for (final part in parts) {
+      if (known.contains(part.key)) {
+        equal.add(part.key);
+        continue;
+      }
+      try {
+        partsReadBack += 1;
+        if (part.readBack(rows) == part.key) {
+          equal.add(part.key);
+        } else {
+          differingPage ??= part.pageId;
+        }
+      } on Object catch (error) {
+        yield cannotCompare(error);
+        return;
+      }
+      yield null;
+    }
+
+    _partsReadingBackEqual[strategy.id] = equal;
+
+    if (!outlineEqual) {
+      yield StrategyImage(
+        converted,
+        const ReadsBackDifferently(
+          'its fields, page order or positions read back differently',
+        ),
+        partsReadBack: partsReadBack,
+      );
+      return;
+    }
+    if (differingPage == null) {
+      yield StrategyImage(
+        converted,
+        const ReadsBackEqual(),
+        partsReadBack: partsReadBack,
+      );
+      return;
+    }
+    yield null;
+    try {
+      yield StrategyImage(
+        converted,
+        _pageDifferences(strategy, rows, differingPage),
+        partsReadBack: partsReadBack,
+      );
+    } on Object catch (error) {
+      yield cannotCompare(error);
+    }
   }
+}
+
+sealed class _Part {
+  _Part(this.pageId, this.key);
+
+  final String pageId;
+  final String key;
+
+  String? readBack(StrategyRowSet rows);
+}
+
+final class _ItemPart extends _Part {
+  _ItemPart(this.map, StrategyPage page, PageItem item, this.row)
+      : super(page.id, itemKey(map, item));
+
+  final MapValue map;
+  final LiveElement row;
+
+  @override
+  String? readBack(StrategyRowSet rows) => switch (_stored(
+        row,
+        (json) => ElementRow.decode(json, canRead: appCanRead.element),
+      )) {
+        LiveElement(:final payload) => switch (PageItem.decode(payload, map)) {
+            Read(value: final back) => itemKey(map, back),
+            CouldNotRead() => null,
+          },
+        UnreadableElement() || DeletedElement() => null,
+      };
+}
+
+final class _PagePart extends _Part {
+  _PagePart(this.map, StrategyPage page, this.lineupGroups)
+      : super(page.id, pagePartKey(map, page));
+
+  final MapValue map;
+  final List<LiveLineupGroup> lineupGroups;
+
+  @override
+  String? readBack(StrategyRowSet rows) =>
+      switch (strategyFromRows(rowsAsStored(StrategyRowSet(
+        strategy: rows.strategy,
+        pages: [if (rows.page(pageId) case final page?) page],
+        settings: [if (rows.settingsOf(pageId) case final settings?) settings],
+        lineupGroups: lineupGroups,
+      )))) {
+        StrategyDataMade(
+          strategy: final back,
+          :final unreadable,
+          :final notInStrategy,
+        )
+            when unreadable.isEmpty &&
+                notInStrategy.isEmpty &&
+                back.pages.length == 1 =>
+          pagePartKey(map, back.pages.single),
+        StrategyDataMade() || StrategyDataRefused() => null,
+      };
 }
 
 ReadBack _pageDifferences(
@@ -143,7 +249,7 @@ ReadBack _pageDifferences(
   String pageId,
 ) {
   final page = strategy.pages.firstWhere((page) => page.id == pageId);
-  final back = strategyFromRows(_asStored(StrategyRowSet(
+  final back = strategyFromRows(rowsAsStored(StrategyRowSet(
     strategy: rows.strategy,
     pages: [if (rows.page(pageId) case final row?) row],
     settings: [if (rows.settingsOf(pageId) case final settings?) settings],
@@ -164,46 +270,34 @@ ReadBack _pageDifferences(
   ].join(', '));
 }
 
-String _outline(StrategyData strategy) => jsonEncode([
+String itemKey(MapValue map, PageItem item) => [
+      jsonEncode(Maps.mapNames[map]),
+      item.kind.name,
+      jsonEncode(item.data),
+    ].join('\n');
+
+String pagePartKey(MapValue map, StrategyPage page) => [
+      jsonEncode(Maps.mapNames[map]),
+      jsonEncode(page.id),
+      jsonEncode(page.sortIndex),
+      jsonEncode(page.name),
+      jsonEncode(page.isAutoNamed),
+      jsonEncode(page.isAttack),
+      StrategySettingsProvider.objectToJson(page.settings),
+      jsonEncode(page.lineUpGraph.toJson()),
+      jsonEncode(lineupPictureFileNames(page)..sort()),
+    ].join('\n');
+
+String strategyOutline(StrategyData strategy) => jsonEncode([
       strategyFieldsFingerprint(strategy),
       [
         for (final page in strategy.pages) [page.id, page.sortIndex],
       ],
     ]);
 
-String fingerprintPageKey(StrategyData strategy, StrategyPage page) =>
-    jsonEncode([
-      Maps.mapNames[strategy.mapData],
-      pageFingerprint(page, strategy.id),
-      pagePictureFileNames(page)..sort(),
-    ]);
-
-String directPageKey(StrategyData strategy, StrategyPage page) => [
-      jsonEncode(Maps.mapNames[strategy.mapData]),
-      jsonEncode(page.id),
-      jsonEncode(page.sortIndex),
-      jsonEncode(page.name),
-      jsonEncode(page.isAutoNamed),
-      DrawingProvider.objectToJson(page.drawingData),
-      AgentProvider.objectToJson(page.agentData),
-      AbilityProvider.objectToJson(page.abilityData),
-      TextProvider.objectToJson(page.textData),
-      PlacedImageProvider.objectToJson(page.imageData, strategy.id),
-      UtilityProvider.objectToJson(page.utilityData),
-      jsonEncode(page.isAttack),
-      StrategySettingsProvider.objectToJson(page.settings),
-      jsonEncode(page.lineUpGraph.toJson()),
-      jsonEncode(pagePictureFileNames(page)..sort()),
-    ].join('\n');
-
-bool _everyRowOnAPage(StrategyRowSet rows) => [
-      for (final row in rows.elements) row.pagePublicId,
-      for (final row in rows.lineupGroups) row.pagePublicId,
-    ].every((pageId) => rows.page(pageId) != null);
-
-bool _outlineReadsBackEqual(StrategyData strategy, StrategyRowSet rows) =>
+bool outlineReadsBack(String Function() outline, StrategyRowSet rows) =>
     _everyRowOnAPage(rows) &&
-    switch (strategyFromRows(_asStored(StrategyRowSet(
+    switch (strategyFromRows(rowsAsStored(StrategyRowSet(
       strategy: rows.strategy,
       pages: rows.pages,
       settings: rows.settings,
@@ -214,31 +308,16 @@ bool _outlineReadsBackEqual(StrategyData strategy, StrategyRowSet rows) =>
         :final notInStrategy,
       )
           when unreadable.isEmpty && notInStrategy.isEmpty =>
-        _outline(strategy) == _outline(back),
+        outline() == strategyOutline(back),
       StrategyDataMade() || StrategyDataRefused() => false,
     };
 
-String? _pageReadBack(StrategyRowSet rows, String pageId, PageKey pageKey) =>
-    switch (strategyFromRows(_asStored(StrategyRowSet(
-      strategy: rows.strategy,
-      pages: [if (rows.page(pageId) case final page?) page],
-      settings: [if (rows.settingsOf(pageId) case final settings?) settings],
-      elements: rows.elementsOn(pageId),
-      lineupGroups: rows.lineupGroupsOn(pageId),
-    )))) {
-      StrategyDataMade(
-        strategy: final back,
-        :final unreadable,
-        :final notInStrategy,
-      )
-          when unreadable.isEmpty &&
-              notInStrategy.isEmpty &&
-              back.pages.length == 1 =>
-        pageKey(back, back.pages.single),
-      StrategyDataMade() || StrategyDataRefused() => null,
-    };
+bool _everyRowOnAPage(StrategyRowSet rows) => [
+      for (final row in rows.elements) row.pagePublicId,
+      for (final row in rows.lineupGroups) row.pagePublicId,
+    ].every((pageId) => rows.page(pageId) != null);
 
-StrategyRowSet _asStored(StrategyRowSet rows) => StrategyRowSet(
+StrategyRowSet rowsAsStored(StrategyRowSet rows) => StrategyRowSet(
       strategy: _stored(rows.strategy, StrategyRow.decode),
       pages: [for (final row in rows.pages) _stored(row, PageRow.decode)],
       settings: [
