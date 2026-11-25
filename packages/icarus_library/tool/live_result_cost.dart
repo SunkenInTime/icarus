@@ -270,15 +270,35 @@ final class ServerPage {
 
   (String, double) lastMove = ('', 0);
 
-  PageRead moved() {
+  PageRead moved() => landed(nextMove());
+
+  Move nextMove() {
     final index = _movable[_moves % _movable.length];
     _moves++;
     final x = 200.0 + (_moves * 7.31) % 1400;
-    _data[index] = {
+    final data = {
       ..._data[index],
       'position': {'dx': x, 'dy': 450.25},
     };
-    _revisions[index]++;
+    return Move(
+      index: index,
+      id: _ids[index],
+      revision: _revisions[index],
+      x: x,
+      payload: ElementPayload(
+        kind: ElementKind.values.byName(_kindOf[index]),
+        payloadVersion: 1,
+        data: data,
+      ),
+      data: data,
+    );
+  }
+
+  PageRead landed(Move move) {
+    final index = move.index;
+    final x = move.x;
+    _data[index] = move.data;
+    _revisions[index] = move.revision + 1;
     _rows = [..._rows];
     _rows[index] = _element(
       _ids[index],
@@ -290,6 +310,24 @@ final class ServerPage {
     lastMove = (_ids[index], x);
     return read();
   }
+}
+
+final class Move {
+  Move({
+    required this.index,
+    required this.id,
+    required this.revision,
+    required this.x,
+    required this.payload,
+    required this.data,
+  });
+
+  final int index;
+  final String id;
+  final int revision;
+  final double x;
+  final ElementPayload payload;
+  final Map<String, Object?> data;
 }
 
 final class Ticker {
@@ -691,16 +729,197 @@ Future<Map<String, Object?>> burst(
   return summary;
 }
 
-Future<void> measureLiveResults() async {
+final class StepTimes {
+  final wall = <int>[];
+  final longest = <int>[];
+  final waited = <int>[];
+
+  Map<String, int> summary() => {
+    'wallMedian': _median(wall),
+    'wallWorst': _worst(wall),
+    'longestMedian': _median(longest),
+    'longestWorst': _worst(longest),
+    'engineWaitMedian': _median(waited),
+    'longestFirstTenMedian': _median(longest.take(10).toList()),
+    'longestLastTenMedian': _median(longest.skip(longest.length - 10).toList()),
+  };
+
+  String line(String what) =>
+      '$what wall median ${_ms(_median(wall))} ms, worst '
+      '${_ms(_worst(wall))} ms; longest main-isolate stretch median '
+      '${_ms(_median(longest))} ms, worst ${_ms(_worst(longest))} ms; '
+      'waiting on SQLite median ${_ms(_median(waited))} ms; longest stretch '
+      'median of the first ten ${_ms(_median(longest.take(10).toList()))} ms, '
+      'of the last ten '
+      '${_ms(_median(longest.skip(longest.length - 10).toList()))} ms';
+}
+
+Future<T> _timed<T>(
+  Bench bench,
+  Ticker ticker,
+  StepTimes? times,
+  Future<T> Function() step,
+) async {
+  bench.clock.reset();
+  ticker.start();
+  final watch = Stopwatch()..start();
+  final value = await step();
+  final took = watch.elapsedMicroseconds;
+  ticker.stop();
+  times?.wall.add(took);
+  times?.longest.add(ticker.longest);
+  times?.waited.add(bench.clock.waited);
+  return value;
+}
+
+Future<Map<String, Object?>> ownMoves(
+  Directory folder,
+  int elements, {
+  required bool takeResults,
+}) async {
+  final bench = await Bench.open(
+    folder,
+    elements,
+    takeResults ? 'own-$elements' : 'own-quiet-$elements',
+  );
+  final ticker = Ticker();
+  final commit = StepTimes();
+  final claim = StepTimes();
+  final answer = StepTimes();
+  final result = StepTimes();
+  for (var run = 0; run < _warmups + _runs; run++) {
+    final measured = run >= _warmups;
+    final move = bench.server.nextMove();
+    final opId = 'own-move-$run';
+    final seen = switch (await bench.store.readStrategy(_strategyId)) {
+      Found(:final value) => value,
+      final other => _fail('the strategy could not be read: $other'),
+    };
+    _saved(
+      await _timed(
+        bench,
+        ticker,
+        measured ? commit : null,
+        () => bench.store.commitAs(
+          _account,
+          _strategyId,
+          ElementPatchOp(
+            opId: opId,
+            elementPublicId: move.id,
+            pagePublicId: _pageId,
+            expectedElementRevision: move.revision,
+            payload: move.payload,
+          ),
+          seen: seen,
+        ),
+      ),
+      'an own move',
+    );
+    final claimed = _saved(
+      await _timed(
+        bench,
+        ticker,
+        measured ? claim : null,
+        () => bench.store.record(_account, _strategyId, [
+          BatchClaimed(
+            clientId: 'live-result-client',
+            opIds: [opId],
+            at: DateTime.now().toUtc(),
+          ),
+        ]),
+      ),
+      'claiming the move',
+    );
+    _applied(claimed, 'claiming the move');
+    final attempt = switch ([
+      for (final outcome in claimed.outcomes)
+        if (outcome case ReportApplied(:final effects))
+          ...effects.whereType<SendBatch>(),
+    ]) {
+      [final sent] when sent.ops.single.opId == opId => sent.attempt,
+      final other => _fail('claiming the move sent $other'),
+    };
+    _applied(
+      _saved(
+        await _timed(
+          bench,
+          ticker,
+          measured ? answer : null,
+          () => bench.store.record(_account, _strategyId, [
+            OpAnswered(
+              attempt,
+              AppliedAnswer(opId, revision: move.revision + 1, life: _life),
+            ),
+          ]),
+        ),
+        'the applied answer',
+      ),
+      'the applied answer',
+    );
+    final page = bench.server.landed(move);
+    if (takeResults) {
+      await _timed(
+        bench,
+        ticker,
+        measured ? result : null,
+        () => bench.take(page),
+      );
+    }
+  }
+  await bench.checkStored();
+  final queue = switch (await bench.store.readStrategy(_strategyId)) {
+    Found(value: StrategyContent(sync: final CloudStrategy cloud)) =>
+      cloud.queue,
+    final other => _fail('no cloud strategy to read the queue from: $other'),
+  };
+  await bench.close();
+  final label = takeResults
+      ? 'each followed by its live page result'
+      : 'with no live page results taken';
+  stdout.writeln(
+    'C $elements elements, $_runs own moves after $_warmups warm-ups, '
+    '$label (queue at the end: ${queue.entries.length} entries, '
+    '${queue.landed.length} landed):',
+  );
+  stdout.writeln('  ${commit.line('commit to stored:')}');
+  stdout.writeln('  ${claim.line('claim:')}');
+  stdout.writeln('  ${answer.line('applied answer:')}');
+  if (takeResults) stdout.writeln('  ${result.line('page result:')}');
+  return {
+    'elements': elements,
+    'takeResults': takeResults,
+    'entriesAtEnd': queue.entries.length,
+    'landedAtEnd': queue.landed.length,
+    'commit': commit.summary(),
+    'claim': claim.summary(),
+    'answer': answer.summary(),
+    if (takeResults) 'result': result.summary(),
+  };
+}
+
+Future<void> measureLiveResults(List<String> args) async {
   final folder = await Directory.systemTemp.createTemp('live_result_cost');
   try {
     final results = <String, Object?>{
       'platform': Platform.operatingSystem,
       'dart': Platform.version,
-      'A300': await oneAtATime(folder, 300),
-      'A60': await oneAtATime(folder, 60),
-      'B300': await burst(folder, 300, newestOnly: false),
-      'B300newest': await burst(folder, 300, newestOnly: true),
+      if (args.contains('own'))
+        for (final (elements, takeResults) in const [
+          (300, true),
+          (60, true),
+          (300, false),
+        ])
+          'C$elements${takeResults ? '' : 'quiet'}': await ownMoves(
+            folder,
+            elements,
+            takeResults: takeResults,
+          )
+      else ...{
+        'A300': await oneAtATime(folder, 300),
+        'A60': await oneAtATime(folder, 60),
+        'B300': await burst(folder, 300, newestOnly: false),
+        'B300newest': await burst(folder, 300, newestOnly: true),
+      },
     };
     stdout.writeln('JSON ${jsonEncode(results)}');
   } finally {
