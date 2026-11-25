@@ -1,0 +1,19 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1280, 760]},
+  {"newLocal": "ascent", "name": "Back over dialog"},
+  {"wait": 4},
+  {"tapText": "Back over dialog"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"tapAt": [166, 142]},
+  {"wait": 2},
+  {"shot": "{out}/1-settings-open.png"},
+  {"backButton": [640, 380]},
+  {"wait": 2},
+  {"shot": "{out}/2-after-back-button.png"},
+  {"probe": "after the back button over the settings dialog"},
+  {"expectTopRoute": "/strategy_view"},
+  {"exit": 1}
+]

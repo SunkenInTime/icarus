@@ -216,6 +216,9 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/community_provider.dart';
+import 'package:icarus/share/current_share_origin.dart';
+import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/strategy_provider.dart';
@@ -2068,6 +2071,9 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'backButton':
       _pressMouse(_point(step, name), buttons: kBackMouseButton);
       await _frames();
+    case 'closeWindow':
+      await windowManager.close();
+      await _frames();
     case 'hoverAt':
       await _hover(_point(step, name));
     case 'tapWords':
@@ -2412,11 +2418,11 @@ Future<void> _run(Map<String, dynamic> step) async {
         stepsPerLeg: ((step['steps'] ?? 30) as num).toInt(),
         shotWhileHeld: step['held'] as String?,
       );
-    case 'hoverAgent':
+    case 'hoverAgent' || 'tapAgent':
       final id = value as String;
-      await _hover(
-        _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id)),
-      );
+      final at =
+          _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id));
+      await (name == 'hoverAgent' ? _hover(at) : _tap(at));
     case 'signOut':
       final signingOut = c.read(guardedSignOutRequestProvider)(
         appNavigatorKey.currentContext!,
@@ -2676,6 +2682,36 @@ Future<void> _run(Map<String, dynamic> step) async {
           (step['version'] as num).toInt(),
         ),
       );
+    case 'openLink':
+      final uri = Uri.parse(switch (step['post']) {
+        final String title => buildCommunityPostLink(c
+            .read(communityFeedProvider)
+            .posts
+            .firstWhere((post) => post.title == title)
+            .publicId),
+        _ => value as String,
+      });
+      Future<void> deliver() async {
+        final postPublicId =
+            communityPostIdFromUri(uri, currentOrigin: currentShareOrigin());
+        if (postPublicId != null) {
+          c.read(communityPostToOpenProvider.notifier).state = postPublicId;
+        } else {
+          await c
+              .read(shareLinkControllerProvider.notifier)
+              .handleIncomingUri(uri, source: 'drive');
+        }
+      }
+
+      switch (step['afterMs']) {
+        case final num after:
+          unawaited(Future<void>.delayed(
+            Duration(milliseconds: after.toInt()),
+            deliver,
+          ));
+        case _:
+          await deliver();
+      }
     case 'openShareLink':
       final code = (await File(value as String).readAsString()).trim();
       await c.read(shareLinkControllerProvider.notifier).handleIncomingUri(
@@ -2973,6 +3009,11 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectOpened':
       if (!listEquals(_openedLinks, (value as List).cast<String>())) {
         throw StateError('opened $_openedLinks, expected $value');
+      }
+    case 'expectStrategy':
+      final open = c.read(strategyProvider).strategyName;
+      if (open != value) {
+        throw StateError('the open strategy is $open, expected $value');
       }
     case 'expectEditing':
       if (_editing() != value) {
