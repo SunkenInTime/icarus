@@ -317,7 +317,7 @@ async function runStampedTransport(accessToken) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const bundleUrl = `http://127.0.0.1:${server.address().port}/convex.browser.bundle.js`;
   try {
-    for (const platform of ["vm", "chrome"]) {
+    for (const platform of ["tester", "chrome"]) {
       const started = Date.now();
       const exitCode = await run(
         flutter[0],

@@ -838,10 +838,45 @@ Stamped<T> _decodeStamped<V, T>(Stamped<V> stamped, T Function(V) decode) =>
 Stream<Stamped<T>> _decodeEachStamped<V, T>(
   Stream<Stamped<V>> stamped,
   T Function(V) decode,
-) async* {
-  await for (final each in stamped) {
-    yield _decodeStamped(each, decode);
+) {
+  late final StreamController<Stamped<T>> controller;
+  StreamSubscription<Stamped<V>>? subscription;
+  var active = false;
+
+  void end(Object error, StackTrace stackTrace) {
+    if (!active) return;
+    active = false;
+    controller.addError(error, stackTrace);
+    subscription?.cancel();
+    controller.close();
   }
+
+  controller = StreamController<Stamped<T>>(
+    onListen: () {
+      active = true;
+      subscription = stamped.listen(
+        (each) {
+          if (!active) return;
+          try {
+            controller.add(_decodeStamped(each, decode));
+          } catch (error, stackTrace) {
+            end(error, stackTrace);
+          }
+        },
+        onError: end,
+        onDone: () {
+          if (!active) return;
+          active = false;
+          controller.close();
+        },
+      );
+    },
+    onCancel: () {
+      active = false;
+      return subscription?.cancel();
+    },
+  );
+  return controller.stream;
 }
 
 /// What [subscribe] delivers, each value through [decode]. A function error
