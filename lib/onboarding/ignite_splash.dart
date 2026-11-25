@@ -22,6 +22,7 @@ abstract final class IgniteTimeline {
   static const double total = 1620;
   static const Duration stillHold = Duration(milliseconds: 500);
   static const Duration loaderLights = Duration(milliseconds: 160);
+  static const Duration glyphsWithin = Duration(seconds: 3);
 }
 
 class IgniteSplash extends StatefulWidget {
@@ -63,6 +64,7 @@ class _IgniteSplashState extends State<IgniteSplash>
   WordmarkGlyphs? _glyphs;
   List<_LatticeDot> _lattice = const [];
   Rect? _home;
+  bool _loading = false;
   bool _lookedForHome = false;
   bool _leaving = false;
   bool _still = false;
@@ -88,9 +90,12 @@ class _IgniteSplashState extends State<IgniteSplash>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_glyphs != null) return;
+    if (_loading) return;
+    _loading = true;
     final still = MediaQuery.disableAnimationsOf(context);
-    WordmarkGlyphs.load(DefaultAssetBundle.of(context)).then((glyphs) {
+    WordmarkGlyphs.load(DefaultAssetBundle.of(context))
+        .timeout(IgniteTimeline.glyphsWithin)
+        .then((glyphs) {
       if (!mounted || _glyphs != null) return;
       setState(() {
         _glyphs = glyphs;
@@ -114,7 +119,15 @@ class _IgniteSplashState extends State<IgniteSplash>
           }
         });
       }
+    }, onError: (Object _) {
+      if (mounted) _giveUp();
     });
+  }
+
+  void _giveUp() {
+    _takeOver();
+    widget.onLeaving?.call();
+    widget.onDone();
   }
 
   void _leave() {
@@ -158,44 +171,48 @@ class _IgniteSplashState extends State<IgniteSplash>
     final glyphs = _glyphs;
     return KeyCapture(
       onKey: (event) {
+        if (_leaving) return false;
         if (event is KeyDownEvent) _skip();
+        return true;
       },
-      child: Listener(
-        behavior:
-            _leaving ? HitTestBehavior.translucent : HitTestBehavior.opaque,
-        onPointerDown: (_) => _skip(),
-        child: Semantics(
-          label: 'Icarus',
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (glyphs == null)
-                ColoredBox(color: Settings.tacticalVioletTheme.background)
-              else
-                AnimatedBuilder(
-                  animation: _clock,
-                  builder: (context, _) => CustomPaint(
-                    painter: _IgnitePainter(
-                      ms: _ms,
-                      glyphs: glyphs,
-                      lattice: _lattice,
-                      home: _home,
+      child: IgnorePointer(
+        ignoring: _leaving,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (_) => _skip(),
+          child: Semantics(
+            label: 'Icarus',
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (glyphs == null)
+                  ColoredBox(color: Settings.tacticalVioletTheme.background)
+                else
+                  AnimatedBuilder(
+                    animation: _clock,
+                    builder: (context, _) => CustomPaint(
+                      painter: _IgnitePainter(
+                        ms: _ms,
+                        glyphs: glyphs,
+                        lattice: _lattice,
+                        home: _home,
+                      ),
                     ),
                   ),
+                const Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: kWindowStripHeight,
+                  child: Row(
+                    children: [
+                      Expanded(child: WindowDragArea(child: SizedBox.expand())),
+                      WindowCaptionButtons(),
+                    ],
+                  ),
                 ),
-              const Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: kWindowStripHeight,
-                child: Row(
-                  children: [
-                    Expanded(child: WindowDragArea(child: SizedBox.expand())),
-                    WindowCaptionButtons(),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

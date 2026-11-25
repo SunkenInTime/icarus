@@ -24,8 +24,9 @@ enum LaunchIntro {
     required bool opensFileOrLink,
     required bool firstLaunch,
   }) {
+    if (opensFileOrLink) return none;
     if (asked != null) return asked;
-    if (driveBuild || opensFileOrLink) return none;
+    if (driveBuild) return none;
     return firstLaunch ? onboarding : splash;
   }
 }

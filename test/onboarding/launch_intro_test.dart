@@ -30,7 +30,7 @@ void main() {
     }
   });
 
-  test('a driver build shows no intro unless a launch asks for one', () {
+  test('a driver build shows no intro unless the launch asks for one', () {
     expect(
       LaunchIntro.choose(
         asked: null,
@@ -44,10 +44,22 @@ void main() {
       LaunchIntro.choose(
         asked: LaunchIntro.onboarding,
         driveBuild: true,
-        opensFileOrLink: true,
+        opensFileOrLink: false,
         firstLaunch: false,
       ),
       LaunchIntro.onboarding,
+    );
+  });
+
+  test('a file or a link is not covered even when the switch asks', () {
+    expect(
+      LaunchIntro.choose(
+        asked: LaunchIntro.onboarding,
+        driveBuild: false,
+        opensFileOrLink: true,
+        firstLaunch: true,
+      ),
+      LaunchIntro.none,
     );
   });
 

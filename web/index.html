@@ -92,7 +92,7 @@
       var ratio = window.devicePixelRatio || 1;
       canvas.width = canvas.height = Math.round(96 * ratio);
       var ctx = canvas.getContext('2d');
-      ctx.scale(ratio, ratio);
+      if (ctx) ctx.scale(ratio, ratio);
 
       var size = 96, columns = 18, spacing = size / columns;
       var maxRadius = spacing * 0.46;
@@ -152,6 +152,7 @@
       }
 
       function draw(t, lit) {
+        if (!ctx) return;
         ctx.clearRect(0, 0, size, size);
         for (var row = 0; row < columns; row++) {
           for (var col = 0; col < columns; col++) {

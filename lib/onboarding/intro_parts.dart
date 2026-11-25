@@ -64,7 +64,7 @@ class BareStrip extends StatelessWidget {
 class KeyCapture extends StatefulWidget {
   const KeyCapture({super.key, required this.onKey, required this.child});
 
-  final ValueChanged<KeyEvent> onKey;
+  final bool Function(KeyEvent event) onKey;
   final Widget child;
 
   @override
@@ -84,10 +84,8 @@ class _KeyCaptureState extends State<KeyCapture> {
     super.dispose();
   }
 
-  KeyEventResult _capture(KeyEvent event) {
-    widget.onKey(event);
-    return KeyEventResult.handled;
-  }
+  KeyEventResult _capture(KeyEvent event) =>
+      widget.onKey(event) ? KeyEventResult.handled : KeyEventResult.ignored;
 
   @override
   Widget build(BuildContext context) => widget.child;

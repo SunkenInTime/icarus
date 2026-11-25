@@ -2791,7 +2791,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       final run = c.read(launchIntroProvider.notifier);
       final asked = LaunchIntro.named(value as String) ??
           (throw StateError('no launch intro called "$value"'));
-      run.state = LaunchIntroRun(asked, take: (run.state?.take ?? 0) + 1);
+      run.state = asked == LaunchIntro.none
+          ? null
+          : LaunchIntroRun(asked, take: (run.state?.take ?? 0) + 1);
       await _frames();
     case 'logLineups' when step['frames'] is int:
       final frames = step['frames'] as int;

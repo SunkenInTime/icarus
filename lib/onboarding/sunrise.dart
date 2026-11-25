@@ -387,9 +387,15 @@ class _SunriseState extends State<Sunrise> with TickerProviderStateMixin {
     final start = widget.onLogIn ?? widget.onStart;
     return KeyCapture(
       onKey: (event) {
-        if (event is! KeyDownEvent || widget.held) return;
-        if (event.logicalKey == LogicalKeyboardKey.escape) widget.onSkip();
-        if (event.logicalKey == LogicalKeyboardKey.enter) _go(start);
+        final key = event.logicalKey;
+        if (key != LogicalKeyboardKey.escape &&
+            key != LogicalKeyboardKey.enter) {
+          return false;
+        }
+        if (event is KeyDownEvent && !widget.held) {
+          key == LogicalKeyboardKey.escape ? widget.onSkip() : _go(start);
+        }
+        return true;
       },
       child: MouseRegion(
         opaque: true,

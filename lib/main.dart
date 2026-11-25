@@ -695,12 +695,17 @@ class _MyAppState extends ConsumerState<MyApp> {
     await _loadFromFilePathWithWarning(argument);
   }
 
+  void _dropLaunchIntro() {
+    ref.read(launchIntroProvider.notifier).state = null;
+  }
+
   /// Replays in one launch open together, so several land on the Replays
   /// tab instead of each opening the viewer in turn.
   void _handleIncomingArguments(
     List<String> arguments, {
     required String source,
   }) {
+    if (arguments.isNotEmpty) _dropLaunchIntro();
     final replays = arguments.where(isReplayPath).toList();
     if (replays.isNotEmpty) unawaited(openReplays(ref, replays));
     for (final argument in arguments) {
@@ -719,6 +724,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       return;
     }
 
+    _dropLaunchIntro();
     final redactedUri = redactDeepLinkUri(uri);
     developer.log('Handling deep link [$source]: $redactedUri',
         name: 'deep_link');
