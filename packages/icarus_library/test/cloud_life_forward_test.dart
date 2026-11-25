@@ -69,7 +69,9 @@ void main() {
       client.edit(movePatch('move'));
       final beforeRefusal = askRead(client.queue);
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       client.must(client.readRefused(null, 'lifeless'));
       final late = client.step(
         BaseArrived(
@@ -112,7 +114,8 @@ void main() {
           BatchRefused(
             attempt,
             BatchRefusal.strategyReplaced,
-            currentLife: thirdLife, point: tick(),
+            currentLife: thirdLife,
+            point: tick(),
           ),
         );
         expect(
@@ -147,7 +150,8 @@ void main() {
         BatchRefused(
           attempt,
           BatchRefusal.strategyReplaced,
-          currentLife: strategyLife, point: tick(),
+          currentLife: strategyLife,
+          point: tick(),
         ),
       );
       final other = client.step(
@@ -173,7 +177,8 @@ void main() {
         BatchRefused(
           attempt,
           BatchRefusal.strategyReplaced,
-          currentLife: laterLife, point: tick(),
+          currentLife: laterLife,
+          point: tick(),
         ),
       );
       client.must(client.readRefused(null, 'lifeless'));
@@ -197,7 +202,9 @@ void main() {
       expect(client.queue.shown.strategy?.life, yearAhead);
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       client.arrive(headerReadOf(initialRows()));
       expect(client.queue.shown.strategy?.life, strategyLife);
       expect(client.queue.entries, isEmpty);
@@ -266,7 +273,9 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       final step = client.step(
         BaseArrived(
           headerReadOf(replaced(initialRows(), life: strategyLife)),
@@ -314,7 +323,8 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
@@ -325,7 +335,7 @@ void main() {
               pageReadOf(initialRows(), 'page-a'),
               session: client.queue.session.number,
               point: started.point,
-          requestedAt: started.requestedAt,
+              requestedAt: started.requestedAt,
             ),
           ),
         ),
@@ -349,7 +359,8 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
@@ -369,7 +380,8 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       final step = client.step(
@@ -391,7 +403,9 @@ void main() {
       final before = askRead(client.queue);
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       final step = client.step(
         BaseArrived(
           const StrategyGone(),
@@ -416,7 +430,7 @@ void main() {
             const PageGone('page-a'),
             session: client.queue.session.number,
             point: before.point,
-          requestedAt: before.requestedAt,
+            requestedAt: before.requestedAt,
           ),
         );
         expect(notApplicable(step), isNot(isNull));
@@ -439,7 +453,8 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       final shown = client.queue.shown;
@@ -524,11 +539,7 @@ void main() {
           (rows.page('page-b')! as LivePage).trashed(),
         ]);
         await recordAll(store, [
-          BaseArrived(
-            headerReadOf(trashed),
-            session: session,
-            point: tick(),
-          ),
+          BaseArrived(headerReadOf(trashed), session: session, point: tick()),
           BaseArrived(
             pageReadOf(trashed, 'page-b'),
             session: session,
@@ -552,11 +563,7 @@ void main() {
         lineupGroups: const [],
       );
       await recordAll(store, [
-        BaseArrived(
-          headerReadOf(withoutB),
-          session: session,
-          point: tick(),
-        ),
+        BaseArrived(headerReadOf(withoutB), session: session, point: tick()),
         BaseArrived(
           pageReadOf(initialRows(), 'page-b'),
           session: session,
@@ -568,11 +575,7 @@ void main() {
         isA<NotFound<Object>>(),
       );
       await recordAll(store, [
-        BaseArrived(
-          headerReadOf(withoutB),
-          session: session,
-          point: tick(),
-        ),
+        BaseArrived(headerReadOf(withoutB), session: session, point: tick()),
       ]);
       expect(
         await store.readPage(strategyId, 'page-b'),
@@ -607,11 +610,7 @@ void main() {
       final session = await sessionOf(store);
       final newer = replacedWithNewPage(initialRows(), laterLife);
       await recordAll(store, [
-        BaseArrived(
-          headerReadOf(newer),
-          session: session,
-          point: tick(),
-        ),
+        BaseArrived(headerReadOf(newer), session: session, point: tick()),
       ]);
       await store.record(testAccount, strategyId, [
         BaseArrived(
@@ -625,11 +624,7 @@ void main() {
       final page = await store.readPage(strategyId, 'page-a');
       expect((page as Found<PageContent>).value.elements, isEmpty);
       await recordAll(store, [
-        BaseArrived(
-          headerReadOf(newer),
-          session: session,
-          point: tick(),
-        ),
+        BaseArrived(headerReadOf(newer), session: session, point: tick()),
       ]);
       expect((await syncOf(store)).queue.shown.pagesToRead, contains('page-a'));
     });

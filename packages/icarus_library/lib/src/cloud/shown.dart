@@ -160,9 +160,7 @@ final class Freshness {
     listSinceTouch: listSinceTouch && !list,
     listed: listed,
     touchedSinceList: {...touchedSinceList, ...pages},
-    pagesSinceTouch: list
-        ? const {}
-        : ({...pagesSinceTouch}..removeAll(pages)),
+    pagesSinceTouch: list ? const {} : ({...pagesSinceTouch}..removeAll(pages)),
     goneByResult: goneByResult,
     listMark: mark.and(listMark),
     allPagesMark: list ? mark.and(allPagesMark) : allPagesMark,
@@ -218,7 +216,11 @@ final class ResultOrder {
     required this.snapshot,
   });
 
-  static const beforeAnyResult = ResultOrder(session: 0, client: 0, snapshot: 0);
+  static const beforeAnyResult = ResultOrder(
+    session: 0,
+    client: 0,
+    snapshot: 0,
+  );
 
   final int session;
   final int client;
@@ -430,8 +432,7 @@ final class AfterAnswer extends PaidBy {
 
 bool paidBy(ReadState state, Arrival? arrival, ArrivedBase base) =>
     switch (state) {
-      ReadOwed(:final since) ||
-      ReadRefused(:final since) =>
+      ReadOwed(:final since) || ReadRefused(:final since) =>
         arrival != null && since.paidBy(arrival, base),
       NotReadThisSession() || ReadThisSession() => true,
     };
@@ -1107,7 +1108,9 @@ final class Shown {
     Iterable<String> pages, {
     required bool list,
     required AfterAnswer mark,
-  }) => _with(fresh: fresh.touched(pages, list: list, mark: mark));
+  }) => _with(
+    fresh: fresh.touched(pages, list: list, mark: mark),
+  );
 
   Shown owingList(PaidBy since) => _with(list: ReadOwed(since: since));
 

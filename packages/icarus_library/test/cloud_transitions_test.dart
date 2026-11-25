@@ -114,7 +114,8 @@ final rows = <Row>[
     client.must(
       OpAnswered(
         attempt,
-        const AppliedAnswer('first', revision: 3, life: fixtureLife), point: tick(),
+        const AppliedAnswer('first', revision: 3, life: fixtureLife),
+        point: tick(),
       ),
     );
     return client..edit(onVisible(client.visible, movePatch('x', x: 70)));
@@ -127,7 +128,8 @@ final rows = <Row>[
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('first', revision: 3, life: fixtureLife), point: tick(),
+          const AppliedAnswer('first', revision: 3, life: fixtureLife),
+          point: tick(),
         ),
       );
       return client..edit(pageDelete('x', 'page-a'));
@@ -151,7 +153,8 @@ final rows = <Row>[
             'x',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       )
       ..must(const UserDiscarded('x'));
@@ -160,7 +163,9 @@ final rows = <Row>[
       'later strategy life', () {
     final client = Client()..edit(movePatch('x'));
     final attempt = client.claim(['x']);
-    return client..must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+    return client..must(
+      BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+    );
   }),
   Row('set aside after the strategy was replaced', () {
     final client = Client()..edit(movePatch('x'));
@@ -256,7 +261,8 @@ final rows = <Row>[
           revision: 2,
           replay: NoopReplay.notApplied,
           life: fixtureLife,
-        ), point: tick(),
+        ),
+        point: tick(),
       ),
     );
   }),
@@ -267,7 +273,8 @@ final rows = <Row>[
     client.must(
       OpAnswered(
         attempt,
-        const AppliedAnswer('first', revision: 3, life: fixtureLife), point: tick(),
+        const AppliedAnswer('first', revision: 3, life: fixtureLife),
+        point: tick(),
       ),
     );
     client.edit(onVisible(client.visible, movePatch('x', x: 70)));
@@ -305,14 +312,18 @@ final rows = <Row>[
       ..edit(movePatch('x'))
       ..edit(movePatch('y', elementId: 'e2'));
     final attempt = client.claim(['y']);
-    return client..must(BatchRefused(attempt, BatchRefusal.editAccessRemoved, point: tick()));
+    return client..must(
+      BatchRefused(attempt, BatchRefusal.editAccessRemoved, point: tick()),
+    );
   }),
   Row('waiting, upgrade required', () {
     final client = Client()
       ..edit(movePatch('x'))
       ..edit(movePatch('y', elementId: 'e2'));
     final attempt = client.claim(['y']);
-    return client..must(BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()));
+    return client..must(
+      BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()),
+    );
   }),
 ];
 
@@ -327,8 +338,11 @@ final events = <String, QueueEvent Function(Client)>{
   'attempt 1 released': (c) => const ClaimReleased(1),
   'attempt 1 transport failed': (c) =>
       TransportFailed(1, TransportFailure.network, at: c.at),
-  'applied at 2': (c) =>
-      OpAnswered(1, AppliedAnswer('x', revision: 2, life: fixtureLife), point: tick()),
+  'applied at 2': (c) => OpAnswered(
+    1,
+    AppliedAnswer('x', revision: 2, life: fixtureLife),
+    point: tick(),
+  ),
   'noop at 2, applied when first received': (c) => OpAnswered(
     1,
     NoopAnswer(
@@ -336,7 +350,8 @@ final events = <String, QueueEvent Function(Client)>{
       revision: 2,
       replay: NoopReplay.appliedWhenFirstReceived,
       life: fixtureLife,
-    ), point: tick(),
+    ),
+    point: tick(),
   ),
   'noop at 2, not applied': (c) => OpAnswered(
     1,
@@ -345,23 +360,32 @@ final events = <String, QueueEvent Function(Client)>{
       revision: 2,
       replay: NoopReplay.notApplied,
       life: fixtureLife,
-    ), point: tick(),
+    ),
+    point: tick(),
   ),
   'noop without a revision': (c) =>
       OpAnswered(1, NoopWithoutRevision('x'), point: tick()),
   'answered at 2 with no life': (c) =>
       OpAnswered(1, AnswerWithoutLife('x', revision: 2), point: tick()),
   for (final reason in RejectionReason.values)
-    'rejected: ${reason.wireName}': (c) =>
-        OpAnswered(1, RejectedAnswer('x', reason, const NoServerCopy()), point: tick()),
+    'rejected: ${reason.wireName}': (c) => OpAnswered(
+      1,
+      RejectedAnswer('x', reason, const NoServerCopy()),
+      point: tick(),
+    ),
   'failed: INTERNAL_ERROR': (c) => OpAnswered(
     1,
-    FailedAnswer('x', OtherFailure('INTERNAL_ERROR'), 'unexpected'), point: tick(),
+    FailedAnswer('x', OtherFailure('INTERNAL_ERROR'), 'unexpected'),
+    point: tick(),
   ),
-  'answer from an attempt that did not hold it': (c) =>
-      OpAnswered(99, AppliedAnswer('x', revision: 2, life: fixtureLife), point: tick()),
+  'answer from an attempt that did not hold it': (c) => OpAnswered(
+    99,
+    AppliedAnswer('x', revision: 2, life: fixtureLife),
+    point: tick(),
+  ),
   for (final refusal in BatchRefusal.values)
-    'attempt 1 refused whole: ${refusal.name}': (c) => BatchRefused(1, refusal, point: tick()),
+    'attempt 1 refused whole: ${refusal.name}': (c) =>
+        BatchRefused(1, refusal, point: tick()),
   'app restarted, same build': (c) => const AppRestarted(build: build),
   'app restarted, new build': (c) => const AppRestarted(build: 'build-2'),
   'connection lost': (c) => const ConnectionLost(),

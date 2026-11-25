@@ -622,6 +622,45 @@ Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
   }
 }
 
+List<String> storeSessionOpenings(
+  ProviderContainer c, {
+  required bool stampExpected,
+}) {
+  final openings = [
+    for (final report in _sender(c).store.reports)
+      if (report
+          case EventsWritten(:final strategyId, :final events, :final effects))
+        for (final opened in effects.whereType<SessionOpened>())
+          (strategyId, opened.session, _openedBy(events)),
+  ];
+  final byStamp = openings.where((opening) => opening.$3 == null).length;
+  if (stampExpected && byStamp == 0) {
+    throw StateError(
+      'no session was opened by a result\'s stamp; openings: '
+      '${[for (final (id, session, by) in openings) '$id $session by $by']}',
+    );
+  }
+  return [
+    for (final (id, session, by) in openings)
+      'CLOUDSTORE session $session of $id opened by '
+          '${by ?? 'a result\'s stamp'}',
+  ];
+}
+
+String? _openedBy(List<QueueEvent> events) => switch (events
+        .where(
+          (event) =>
+              event is ConnectionReturned ||
+              event is AppRestarted ||
+              event is AccountChanged,
+        )
+        .firstOrNull) {
+      ConnectionReturned() => 'the reconnect event',
+      AppRestarted() => 'the app start',
+      AccountChanged() => 'an account change',
+      _ => null,
+    };
+
 Future<List<String>> storeSyncStates(ProviderContainer c) async {
   final signedIn = switch (c.read(authProvider).user?.id) {
     final String id when id.isNotEmpty => SignedInAs(Account(id)),

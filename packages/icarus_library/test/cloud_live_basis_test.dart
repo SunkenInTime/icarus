@@ -151,7 +151,9 @@ void main() {
     client.edit(elementDelete('drop', elementId: 'e2'));
     final first = claimAt(client, ['drop'], heldAt);
     expect((first.ops.single as ElementDeleteOp).lastWriterWins, isTrue);
-    client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate, point: tick()));
+    client.must(
+      BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate, point: tick()),
+    );
     expect(client.view('drop').state, const Waiting());
     expect(client.view('drop').sendable, isTrue);
     final again = claimAt(client, ['drop'], heldAt);
@@ -184,14 +186,21 @@ void main() {
         (client.queue.entries.last as PendingOp).basis,
         const ServerTimeBasis(1000, heldAt: heldAt),
       );
-      client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate, point: tick()));
+      client.must(
+        BatchRefused(
+          first.attempt,
+          BatchRefusal.uncheckedTooLate,
+          point: tick(),
+        ),
+      );
       expect((client.queue.entries.last as PendingOp).basis, isNull);
       final again = claimAt(client, ['a'], heldAt);
       expect(isUncheckedSend(again.ops.single), isFalse);
       client.must(
         OpAnswered(
           again.attempt,
-          const AppliedAnswer('a', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('a', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       final second = claimAt(client, ['b'], heldAt);
@@ -267,7 +276,9 @@ void main() {
     );
     final first = claimAt(client, ['a'], heldAt);
     expect(isUncheckedSend(first.ops.single), isTrue);
-    client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate, point: tick()));
+    client.must(
+      BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate, point: tick()),
+    );
     client.edit(
       movePatch('b', x: 30, merge: FieldMerge(fields: const ['position'])),
     );

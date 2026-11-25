@@ -2693,6 +2693,11 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':
       (await storeSyncStates(c)).forEach(_log);
+    case 'storeSessionOpenings':
+      storeSessionOpenings(
+        c,
+        stampExpected: step['byStamp'] == 'expected',
+      ).forEach(_log);
     case 'storeQueueRecord':
       (await storeQueueRecords(c)).forEach(_log);
     case 'waitStoreHeld':

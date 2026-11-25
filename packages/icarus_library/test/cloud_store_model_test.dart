@@ -713,7 +713,8 @@ final class StoreModel {
     while (inFlight.isNotEmpty) {
       final (attempt, owner, ops) = inFlight.removeAt(0);
       await record([
-        for (final op in ops) OpAnswered(attempt, server.apply(owner, op), point: tick()),
+        for (final op in ops)
+          OpAnswered(attempt, server.apply(owner, op), point: tick()),
       ], 'answers for $attempt');
     }
   }
@@ -851,7 +852,8 @@ final class StoreModel {
     final answers = [for (final op in ops) server.apply(owner, op)];
     if (random.nextInt(4) == 0) {
       await record([
-        for (final answer in answers) OpAnswered(attempt, answer, point: tick()),
+        for (final answer in answers)
+          OpAnswered(attempt, answer, point: tick()),
         await arrivedIn(headerReadOf(server.rows), live),
         reconnected(),
       ], 'answers for $attempt with a header read in one call');
@@ -878,9 +880,7 @@ final class StoreModel {
   }
 
   Future<void> readOne(ArrivedBase base, String label) async {
-    await record([
-      await arrivedIn(base, live),
-    ], label);
+    await record([await arrivedIn(base, live)], label);
   }
 
   Future<void> lane() async {
@@ -976,15 +976,19 @@ final class StoreModel {
       _ => (headerReadOf(server.rows), 'header'),
     };
     if (teammates) teammate();
-    if (await record([
-          const ConnectionLost(),
-          reconnected(),
-        ], 'reconnect') ==
+    if (await record([const ConnectionLost(), reconnected()], 'reconnect') ==
         null) {
       return;
     }
     final before = storage.contents;
-    final stale = [BaseArrived(base, session: ended, point: endedFrom.point, requestedAt: endedFrom.requestedAt)];
+    final stale = [
+      BaseArrived(
+        base,
+        session: ended,
+        point: endedFrom.point,
+        requestedAt: endedFrom.requestedAt,
+      ),
+    ];
     final result = await store.record(testAccount, strategyId, stale);
     log.add(
       'a $kind from the ended session arrives -> ${describeSaving(result)}',
@@ -1019,7 +1023,8 @@ final class StoreModel {
       BaseArrived(
         pageReadOf(server.rows, openPage),
         session: session,
-        point: sessionFrom.point, requestedAt: sessionFrom.requestedAt,
+        point: sessionFrom.point,
+        requestedAt: sessionFrom.requestedAt,
       ),
     ];
     final result = await store.record(testAccount, strategyId, stale);
@@ -1069,16 +1074,25 @@ final class StoreModel {
     final later = reads.skip(now.length).toList();
     if (later.isNotEmpty) {
       await record([
-        for (final read in later)
-          await arrivedIn(read, live),
+        for (final read in later) await arrivedIn(read, live),
       ], 'the rest of the import in a later call');
       count('imports in several calls');
     }
     final before = storage.contents;
     final stale = [
-      BaseArrived(oldBase, session: old, point: oldFrom.point, requestedAt: oldFrom.requestedAt),
+      BaseArrived(
+        oldBase,
+        session: old,
+        point: oldFrom.point,
+        requestedAt: oldFrom.requestedAt,
+      ),
       if (oldPage is PageRead)
-        BaseArrived(oldPage, session: old, point: oldFrom.point, requestedAt: oldFrom.requestedAt),
+        BaseArrived(
+          oldPage,
+          session: old,
+          point: oldFrom.point,
+          requestedAt: oldFrom.requestedAt,
+        ),
     ];
     final result = await store.record(testAccount, strategyId, stale);
     log.add(
@@ -1314,7 +1328,8 @@ final class StoreModel {
               someEntry,
               revision: target?.revision ?? 1,
               life: fixtureLife,
-            ), point: tick(),
+            ),
+            point: tick(),
           ),
         ]),
       ),
@@ -1338,9 +1353,7 @@ final class StoreModel {
       ),
       (
         'another account records a connection',
-        () => store.record(otherAccount, strategyId, [
-          reconnected(),
-        ]),
+        () => store.record(otherAccount, strategyId, [reconnected()]),
       ),
       (
         'another account records a result of the current session',

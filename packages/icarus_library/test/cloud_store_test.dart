@@ -44,7 +44,8 @@ void main() {
     await recordAll(store, [
       OpAnswered(
         sent.attempt,
-        const AppliedAnswer('move', revision: 2, life: fixtureLife), point: tick(),
+        const AppliedAnswer('move', revision: 2, life: fixtureLife),
+        point: tick(),
       ),
     ]);
     final before = await syncOf(store);
@@ -88,7 +89,8 @@ void main() {
       await recordAll(store, [
         OpAnswered(
           sent.attempt,
-          const AppliedAnswer('move', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       ]);
       await readServer(store, server, pages: ['page-a']);
@@ -209,7 +211,8 @@ void main() {
       await recordAll(store, [
         OpAnswered(
           1,
-          AppliedAnswer('add7', revision: 1, life: fixtureLife), point: tick(),
+          AppliedAnswer('add7', revision: 1, life: fixtureLife),
+          point: tick(),
         ),
       ]);
       expect(
@@ -397,7 +400,8 @@ void main() {
                 op.opId,
                 revision: visibleRevision(server, op)!,
                 life: fixtureLife,
-              ), point: tick(),
+              ),
+              point: tick(),
             ),
           );
         }
@@ -874,11 +878,15 @@ void main() {
       final moved = rows.withRows([e1At('page-b', revision: 2)]);
       final withoutE2 = withOp(rows, elementDelete('gone', elementId: 'e2'));
       savedValue(
-        await store.addCloudStrategy(testAccount, stamped(headerReadOf(rows)), stampedPages([
-          pageReadOf(moved, 'page-b') as PageRead,
-          pageReadOf(rows, 'page-a') as PageRead,
-          pageReadOf(withoutE2, 'page-a') as PageRead,
-        ])),
+        await store.addCloudStrategy(
+          testAccount,
+          stamped(headerReadOf(rows)),
+          stampedPages([
+            pageReadOf(moved, 'page-b') as PageRead,
+            pageReadOf(rows, 'page-a') as PageRead,
+            pageReadOf(withoutE2, 'page-a') as PageRead,
+          ]),
+        ),
       );
       final a = pageOf(await store.readPage(strategyId, 'page-a'));
       final b = pageOf(await store.readPage(strategyId, 'page-b'));
@@ -1142,7 +1150,8 @@ void main() {
             life: checkTargetOf(op) is StrategyTarget
                 ? strategyCreatedAt.millisecondsSinceEpoch
                 : fixtureLife,
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       ]);
     }
@@ -1295,9 +1304,11 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       savedValue(
-        await store.addCloudStrategy(testAccount, stamped(headerReadOf(initialRows())), stampedPages([
-          pageReadOf(initialRows(), 'page-a') as PageRead,
-        ])),
+        await store.addCloudStrategy(
+          testAccount,
+          stamped(headerReadOf(initialRows())),
+          stampedPages([pageReadOf(initialRows(), 'page-a') as PageRead]),
+        ),
       );
       savedValue(
         await store.commitAs(
@@ -1362,11 +1373,13 @@ void main() {
       expect(
         await store.addCloudStrategy(
           testAccount,
-          stamped(HeaderRead(
-            strategy: strategyRow(publicId: 'other'),
-            pages: other.pages.toList(),
-            settings: other.settings.toList(),
-          )),
+          stamped(
+            HeaderRead(
+              strategy: strategyRow(publicId: 'other'),
+              pages: other.pages.toList(),
+              settings: other.settings.toList(),
+            ),
+          ),
           stampedPages(const []),
         ),
         isA<Refused<StrategySummary, LibraryRefusal>>().having(
@@ -1715,7 +1728,8 @@ void main() {
             await recordAll(store, [
               OpAnswered(
                 sent.attempt,
-                const AppliedAnswer('move', revision: 2, life: fixtureLife), point: tick(),
+                const AppliedAnswer('move', revision: 2, life: fixtureLife),
+                point: tick(),
               ),
             ]);
           }
@@ -1829,11 +1843,7 @@ void main() {
           session: session,
           point: tick(),
         ),
-        BaseArrived(
-          const StrategyGone(),
-          session: session,
-          point: tick(),
-        ),
+        BaseArrived(const StrategyGone(), session: session, point: tick()),
       ]);
       expect(applied.outcomes, everyElement(isA<ReportApplied>()));
       expect(
@@ -2131,11 +2141,13 @@ void main() {
           expect(
             await store.addCloudStrategy(
               testAccount,
-              stamped(HeaderRead(
-                strategy: strategyRow(publicId: 'other'),
-                pages: other.pages.toList(),
-                settings: other.settings.toList(),
-              )),
+              stamped(
+                HeaderRead(
+                  strategy: strategyRow(publicId: 'other'),
+                  pages: other.pages.toList(),
+                  settings: other.settings.toList(),
+                ),
+              ),
               stampedPages(const []),
             ),
             isA<Refused<StrategySummary, LibraryRefusal>>().having(
@@ -2301,10 +2313,14 @@ void main() {
         ],
       );
       expect(
-        await store.addCloudStrategy(testAccount, stamped(headerReadOf(rows)), stampedPages([
-          ...pageReadsOf(rows),
-          pageReadOf(more, 'page-z') as PageRead,
-        ])),
+        await store.addCloudStrategy(
+          testAccount,
+          stamped(headerReadOf(rows)),
+          stampedPages([
+            ...pageReadsOf(rows),
+            pageReadOf(more, 'page-z') as PageRead,
+          ]),
+        ),
         isA<Saved<StrategySummary, LibraryRefusal>>(),
       );
     });

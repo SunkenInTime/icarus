@@ -118,7 +118,8 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             asTheServerHoldsIt(move, life: newerLife),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(
@@ -173,7 +174,9 @@ void main() {
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.edit(movePatch('later', elementId: 'e2'));
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       return client;
     }
 
@@ -235,7 +238,11 @@ void main() {
     client.edit(movePatch('move'));
     final attempt = client.claim(['move']);
     client.must(
-      OpAnswered(attempt, const AnswerWithoutLife('move', revision: 2), point: tick()),
+      OpAnswered(
+        attempt,
+        const AnswerWithoutLife('move', revision: 2),
+        point: tick(),
+      ),
     );
     expect(
       stateOf(client, 'move'),
@@ -306,14 +313,18 @@ void main() {
         'strategy is stored, though a valid page came first', () async {
       final store = await openCloudStore(MemoryEngine(MemoryStorage()));
       expect(
-        await store.addCloudStrategy(testAccount, stamped(headerReadOf(initialRows())), stampedPages([
-          pageReadOf(initialRows(), 'page-b') as PageRead,
-          PageRead(
-            page: initialRows().page('page-a')!,
-            elements: [withoutLife('e1')],
-            lineupGroups: const [],
-          ),
-        ])),
+        await store.addCloudStrategy(
+          testAccount,
+          stamped(headerReadOf(initialRows())),
+          stampedPages([
+            pageReadOf(initialRows(), 'page-b') as PageRead,
+            PageRead(
+              page: initialRows().page('page-a')!,
+              elements: [withoutLife('e1')],
+              lineupGroups: const [],
+            ),
+          ]),
+        ),
         isA<Refused<StrategySummary, LibraryRefusal>>().having(
           (refused) => refused.reason,
           'reason',
@@ -444,7 +455,11 @@ void main() {
       test('$kind with no life is refused, naming it', () async {
         final store = await openCloudStore(MemoryEngine(MemoryStorage()));
         expect(
-          await store.addCloudStrategy(testAccount, stamped(header), stampedPages(pages)),
+          await store.addCloudStrategy(
+            testAccount,
+            stamped(header),
+            stampedPages(pages),
+          ),
           isA<Refused<StrategySummary, LibraryRefusal>>().having(
             (refused) => refused.reason,
             'reason',
@@ -500,13 +515,17 @@ void main() {
       );
       expect(createdAtOf(undrawable), fixtureLife);
       savedValue(
-        await store.addCloudStrategy(testAccount, stamped(headerReadOf(initialRows())), stampedPages([
-          PageRead(
-            page: initialRows().page('page-a')!,
-            elements: [undrawable],
-            lineupGroups: const [],
-          ),
-        ])),
+        await store.addCloudStrategy(
+          testAccount,
+          stamped(headerReadOf(initialRows())),
+          stampedPages([
+            PageRead(
+              page: initialRows().page('page-a')!,
+              elements: [undrawable],
+              lineupGroups: const [],
+            ),
+          ]),
+        ),
       );
     });
   });
@@ -621,7 +640,8 @@ void main() {
             'rename',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       client.must(const UserDiscarded('rename'));
@@ -705,7 +725,8 @@ void main() {
             'move',
             RejectionReason.rowReplaced,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(client.queue.shown.pageRead('page-a'), owed());
@@ -769,7 +790,12 @@ void main() {
     final attempt = effectsOf(claimed).whereType<SendBatch>().single.attempt;
     final clockTime = DateTime(2026, 11, 25, 8, 23, 8, 839, 877);
     await recordAll(store, [
-      BatchRefused(attempt, BatchRefusal.uncheckedTooLate, at: clockTime, point: tick()),
+      BatchRefused(
+        attempt,
+        BatchRefusal.uncheckedTooLate,
+        at: clockTime,
+        point: tick(),
+      ),
     ]);
     expect(
       (await syncOf(store)).queue.attempts[attempt]!.outcome,
@@ -808,7 +834,8 @@ void main() {
         attempt,
         BatchRefusal.strategyReplaced,
         at: DateTime(2026, 11, 25, 8, 23, 8, 839, 877),
-        currentLife: named, point: tick(),
+        currentLife: named,
+        point: tick(),
       ),
       await readRefusedIn(store, null, 'the test refused it'),
     ]);
@@ -863,7 +890,8 @@ void main() {
             'delete',
             revision: 2,
             life: strategyCreatedAt.millisecondsSinceEpoch,
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(client.queue.landed, isNotEmpty);
@@ -881,7 +909,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('first', revision: 5, life: fixtureLife), point: tick(),
+          const AppliedAnswer('first', revision: 5, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.queue.landed, isEmpty);
@@ -949,7 +978,8 @@ void main() {
             'rename',
             RejectionReason.rowReplaced,
             asTheServerHoldsIt(rename, life: newerLife),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(client.queue.entries.single.id, 'rename');

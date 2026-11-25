@@ -314,7 +314,8 @@ final class Client {
   List<StrategyOp> lastSent() =>
       effects.whereType<SendBatch>().last.ops.toList();
 
-  void arrive(ArrivedBase base, {ResultPoint? at}) => must(arrival(base, at: at));
+  void arrive(ArrivedBase base, {ResultPoint? at}) =>
+      must(arrival(base, at: at));
 
   BaseArrived arrival(ArrivedBase base, {ResultPoint? at, int? requestedAt}) =>
       BaseArrived(

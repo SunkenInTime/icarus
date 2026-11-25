@@ -64,7 +64,8 @@ void main() {
             'move',
             RejectionReason.revisionMismatch,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(
@@ -153,7 +154,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          RejectedAnswer('first', RejectionReason.revisionMismatch, current), point: tick(),
+          RejectedAnswer('first', RejectionReason.revisionMismatch, current),
+          point: tick(),
         ),
       );
       expect(
@@ -193,7 +195,8 @@ void main() {
               revision: 4,
               value: const {'name': 'Retake A', 'mapData': 'ascent'},
             ),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(client.queue.entry('rename'), isNull);
@@ -222,7 +225,8 @@ void main() {
               revision: 3,
               value: sent.payload!.toJson(),
             ),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(stateOf(client, 'move'), isA<NeedsUser>());
@@ -240,7 +244,8 @@ void main() {
             'move',
             KnownFailure(FailureCode.pageDeleted),
             'gone',
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(
@@ -347,7 +352,11 @@ void main() {
         const WindowPassed(),
       );
       client.must(
-        OpAnswered(attempt, server.apply(clientId, client.lastSent().single), point: tick()),
+        OpAnswered(
+          attempt,
+          server.apply(clientId, client.lastSent().single),
+          point: tick(),
+        ),
       );
       expect(client.queue.entry('move'), isNull);
     });
@@ -456,7 +465,9 @@ void main() {
         final attempt = client.claim(['back']);
         final sent = client.lastSent().single as ElementAddOp;
         expect(sent.expectedElementRevision, 2);
-        client.must(OpAnswered(attempt, server.apply(clientId, sent), point: tick()));
+        client.must(
+          OpAnswered(attempt, server.apply(clientId, sent), point: tick()),
+        );
         expect(client.queue.entries, isEmpty);
         expect(server.rows.element('e1'), isA<LiveElement>());
       }
@@ -491,7 +502,8 @@ void main() {
             'del',
             RejectionReason.revisionMismatch,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(client.view('back').sendable, isFalse);
@@ -505,7 +517,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('del', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('del', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       client.claim(['back']);
@@ -518,7 +531,8 @@ void main() {
       other.must(
         OpAnswered(
           sent,
-          const AppliedAnswer('del', revision: 5, life: fixtureLife), point: tick(),
+          const AppliedAnswer('del', revision: 5, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(stateOf(other, 'back'), const NeedsUser(ChangedUnseen()));
@@ -536,7 +550,8 @@ void main() {
             revision: 2,
             replay: NoopReplay.notApplied,
             life: fixtureLife,
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
@@ -574,7 +589,8 @@ void main() {
       other.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('drag', revision: 3, life: fixtureLife), point: tick(),
+          const AppliedAnswer('drag', revision: 3, life: fixtureLife),
+          point: tick(),
         ),
       );
       other.edit(onVisible(other.visible, movePatch('drop', x: 70)));
@@ -718,7 +734,8 @@ void main() {
           client.step(
             OpAnswered(
               attempt,
-              const AppliedAnswer('b', revision: 2, life: fixtureLife), point: tick(),
+              const AppliedAnswer('b', revision: 2, life: fixtureLife),
+              point: tick(),
             ),
           ),
         ),
@@ -753,13 +770,20 @@ void main() {
       final client = online()..clock = asStored(now);
       client.edit(movePatch('move'));
       final untimed = client.claim(['move']);
-      client.must(BatchRefused(untimed, BatchRefusal.uncheckedTooLate, point: tick()));
+      client.must(
+        BatchRefused(untimed, BatchRefusal.uncheckedTooLate, point: tick()),
+      );
       expect(stateOf(client, 'move'), isA<Waiting>());
       for (var n = 1; n < retriesBeforePause; n++) {
         final attempt = client.claim(['move']);
         final at = asStored(now).add(Duration(minutes: n));
         client.must(
-          BatchRefused(attempt, BatchRefusal.editAccessRemoved, at: at, point: tick()),
+          BatchRefused(
+            attempt,
+            BatchRefusal.editAccessRemoved,
+            at: at,
+            point: tick(),
+          ),
         );
         client.must(EditAccessConfirmed(afterAttempt: attempt));
         expect(
@@ -782,7 +806,8 @@ void main() {
         BatchRefused(
           last,
           BatchRefusal.uncheckedTooLate,
-          at: asStored(now).add(const Duration(hours: 1)), point: tick(),
+          at: asStored(now).add(const Duration(hours: 1)),
+          point: tick(),
         ),
       );
       expect(
@@ -812,9 +837,13 @@ void main() {
       client.must(TransportFailed(first, TransportFailure.network, at: now));
       final second = client.claim(['b']);
       client.must(EditAccessConfirmed(afterAttempt: second));
-      client.must(BatchRefused(first, BatchRefusal.editAccessRemoved, point: tick()));
+      client.must(
+        BatchRefused(first, BatchRefusal.editAccessRemoved, point: tick()),
+      );
       expect(standingOf(client.queue), Standing.good);
-      client.must(BatchRefused(second, BatchRefusal.strategyDeleted, point: tick()));
+      client.must(
+        BatchRefused(second, BatchRefusal.strategyDeleted, point: tick()),
+      );
       client.must(EditAccessConfirmed(afterAttempt: second));
       expect(standingOf(client.queue), Standing.deletedOnServer);
     });
@@ -900,7 +929,8 @@ void main() {
             'refused',
             RejectionReason.mergeInvalid,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       client.must(const ReadRefusedForUpgrade(build: build));
@@ -957,7 +987,8 @@ void main() {
             'refused',
             RejectionReason.revisionMismatch,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       client.must(const UserUsedCloud('refused'));
@@ -976,7 +1007,8 @@ void main() {
             'refused',
             RejectionReason.revisionMismatch,
             NoServerCopy(),
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       expect(
@@ -1022,7 +1054,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('move', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.queue.entry('move'), isNull);
@@ -1043,7 +1076,9 @@ void main() {
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.must(const AppRestarted(build: 'a newer build'));
-      client.must(BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()),
+      );
       expect(client.effects, isNot(contains(isA<HoldSendingForUpgrade>())));
       expect(standingOf(client.queue), Standing.good);
     });
@@ -1064,12 +1099,15 @@ void main() {
       client.edit(movePatch('second', elementId: 'e2'));
       final early = client.claim(['first']);
       final late = client.claim(['second']);
-      client.must(BatchRefused(early, BatchRefusal.editAccessRemoved, point: tick()));
+      client.must(
+        BatchRefused(early, BatchRefusal.editAccessRemoved, point: tick()),
+      );
       expect(standingOf(client.queue), Standing.editAccessLost);
       client.must(
         OpAnswered(
           late,
-          const AppliedAnswer('second', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('second', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(standingOf(client.queue), Standing.good);
@@ -1092,7 +1130,8 @@ void main() {
         client.must(
           OpAnswered(
             attempt,
-            const AppliedAnswer('drag', revision: 3, life: fixtureLife), point: tick(),
+            const AppliedAnswer('drag', revision: 3, life: fixtureLife),
+            point: tick(),
           ),
         );
         client.edit(onVisible(client.visible, movePatch('drop', x: 70)));
@@ -1397,7 +1436,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('move', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.queue.landed, hasLength(1));
@@ -1427,7 +1467,8 @@ void main() {
     client.must(
       OpAnswered(
         attempt,
-        const AppliedAnswer('add', revision: 2, life: fixtureLife), point: tick(),
+        const AppliedAnswer('add', revision: 2, life: fixtureLife),
+        point: tick(),
       ),
     );
     client.read(withOp(initialRows(), pageAdd('add', 'page-c', expected: 1)));
@@ -1528,7 +1569,9 @@ void main() {
       final client = online();
       client.edit(elementAdd('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()),
+      );
       client.must(const AppRestarted(build: 'build-2'));
       client.clock = now.add(const Duration(days: 31));
       client.queue = look(client.queue, client.at).queue;
@@ -1608,7 +1651,9 @@ void main() {
       final drawn = client.visible;
       client.edit(elementDelete('del'));
       final attempt = client.claim(['del']);
-      client.must(OpAnswered(attempt, const NoopWithoutRevision('del'), point: tick()));
+      client.must(
+        OpAnswered(attempt, const NoopWithoutRevision('del'), point: tick()),
+      );
       client.edit(putBackOf('back', drawn, 'e1'));
       expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
     });
@@ -1626,7 +1671,9 @@ void main() {
       final attempt = client.claim(['back']);
       final sent = client.lastSent().single;
       expect(expectedOf(sent), 2);
-      client.must(OpAnswered(attempt, server.apply(clientId, sent), point: tick()));
+      client.must(
+        OpAnswered(attempt, server.apply(clientId, sent), point: tick()),
+      );
       expect(server.rows.element('e1'), isA<LiveElement>());
     });
 
@@ -1688,7 +1735,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('add', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('add', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       client.edit(pageDelete('drop', 'page-b'));
@@ -1849,7 +1897,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('del', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('del', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.view('back').sendable, isTrue);
@@ -1863,7 +1912,9 @@ void main() {
       client.edit(elementAdd('move'));
       final attempt = client.claim(['move']);
       client.must(TransportFailed(attempt, TransportFailure.network, at: now));
-      client.must(BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()),
+      );
       client.must(const AppRestarted(build: 'build-2'));
       client.clock = now.add(const Duration(days: 31));
       client.queue = look(client.queue, client.at).queue;
@@ -1966,7 +2017,11 @@ void main() {
       final attempt = client.claim(['drag']);
       server.rows = withOp(server.rows, rotated('t', 1));
       client.must(
-        OpAnswered(attempt, server.apply(clientId, client.lastSent().single), point: tick()),
+        OpAnswered(
+          attempt,
+          server.apply(clientId, client.lastSent().single),
+          point: tick(),
+        ),
       );
       client.edit(
         onVisible(
@@ -2081,7 +2136,11 @@ void main() {
       final attempt = client.claim(['del']);
       server.rows = withOp(server.rows, rotated('t', 1));
       client.must(
-        OpAnswered(attempt, server.apply(clientId, client.lastSent().single), point: tick()),
+        OpAnswered(
+          attempt,
+          server.apply(clientId, client.lastSent().single),
+          point: tick(),
+        ),
       );
       final drawn = client.visible;
       final tombstone = drawn.element('e1')! as DeletedElement;
@@ -2115,7 +2174,8 @@ void main() {
             revision: 2,
             replay: NoopReplay.appliedWhenFirstReceived,
             life: fixtureLife,
-          ), point: tick(),
+          ),
+          point: tick(),
         ),
       );
       client.edit(putBackOf('back', drawn, 'e1'));
@@ -2162,7 +2222,11 @@ void main() {
       final attempt = client.claim(['drag']);
       server.rows = withOp(server.rows, rotated('t', 1));
       client.must(
-        OpAnswered(attempt, server.apply(clientId, client.lastSent().single), point: tick()),
+        OpAnswered(
+          attempt,
+          server.apply(clientId, client.lastSent().single),
+          point: tick(),
+        ),
       );
       client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
       expect(client.view('whole').sendable, isFalse);
@@ -2544,7 +2608,11 @@ void main() {
       client.edit(onVisible(client.visible, movePatch('w1', x: 70)));
       client.edit(onVisible(client.visible, movePatch('w2', x: 90)));
       client.must(
-        OpAnswered(attempt, server.apply(clientId, client.lastSent().single), point: tick()),
+        OpAnswered(
+          attempt,
+          server.apply(clientId, client.lastSent().single),
+          point: tick(),
+        ),
       );
       sendAndAnswer(client, server, ['w1']);
       expect(client.view('w2').sendable, isTrue);
@@ -2845,7 +2913,9 @@ void main() {
       client.edit(pageDelete('del', 'page-a'));
       final attempt = client.claim(['gone']);
       client.read(initialRows());
-      client.must(OpAnswered(attempt, const NoopWithoutRevision('gone'), point: tick()));
+      client.must(
+        OpAnswered(attempt, const NoopWithoutRevision('gone'), point: tick()),
+      );
       expect(client.view('del').sendable, isFalse);
       expect(resultsNeeded(client.queue, client.at), {
         const PageListResult(),

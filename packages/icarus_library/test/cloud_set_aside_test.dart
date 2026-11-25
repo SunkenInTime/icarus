@@ -136,7 +136,9 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       expect(
         client.step(
           BaseArrived(
@@ -164,7 +166,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('move', revision: 2, life: fixtureLife), point: tick(),
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.queue.landed, isNotEmpty);
@@ -277,7 +280,9 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       expect(client.view('move').state, isNot(isA<NeedsUser>()));
       expect(Tally.of(client.queue, now).needingYou, 0);
       expect(client.step(keepMine(client)), isA<NotApplicable>());

@@ -18,11 +18,7 @@ void main() {
     );
     final session = await sessionOf(store);
     await recordAll(store, [
-      BaseArrived(
-        pageReadOf(moved, 'page-b'),
-        session: session,
-        point: tick(),
-      ),
+      BaseArrived(pageReadOf(moved, 'page-b'), session: session, point: tick()),
     ]);
     await recordAll(store, [
       BaseArrived(

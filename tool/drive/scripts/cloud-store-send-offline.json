@@ -14,11 +14,13 @@
   {"waitSettled": 60},
   {"storeExpect": true},
   {"storeAdd": "f1-{run}", "kind": "agent", "at": [600, 400]},
+  {"storeAddPage": true},
   {"waitStoreSent": 60, "landed": "may wait"},
   {"holdSender": true},
   {"storeMove": "f1-{run}", "by": [50, 20]},
   {"signal": "ready"},
   {"waitSignal": "cut", "seconds": 120},
+  {"storeDeletePage": 1},
   {"releaseSender": true},
   {"wait": 50},
   {"storeSyncState": true},
@@ -28,6 +30,7 @@
   {"waitStoreSent": 180},
   {"storeSyncState": true},
   {"wait": 3},
+  {"storeSessionOpenings": true, "byStamp": "expected"},
   {"shot": "{out}/back-online.png"},
   {"exit": 1}
 ]

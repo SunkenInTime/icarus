@@ -111,14 +111,16 @@ final class Server {
           BatchRefused(
             batch.attempt,
             BatchRefusal.strategyReplaced,
-            currentLife: createdAtOf(rows.strategy), point: tick(),
+            currentLife: createdAtOf(rows.strategy),
+            point: tick(),
           ),
         ]
       : [
           for (final op in batch.ops)
             OpAnswered(
               batch.attempt,
-              apply(client, op, expectedLife: batch.lives[op.opId]), point: tick(),
+              apply(client, op, expectedLife: batch.lives[op.opId]),
+              point: tick(),
             ),
         ];
 
