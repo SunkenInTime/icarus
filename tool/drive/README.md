@@ -54,6 +54,10 @@ At the end of every run `CANVAS` counts, besides the lines above, each time an e
 
 It then watches every frame until the editor is on top, showing that strategy's first page with all of its agents and abilities. From the pointer-up it logs when that frame was built and when it was rasterised. Raster times come from the engine's frame timings, matched by frame number. The summary gives the median and worst of each, with the strategy's size and the library store's mode. Start the run with `-HiveStore` on the library to measure and, if wanted, `-LibraryStore`.
 
+With `"ahead": "median"` (`scripts/open-first-frame-abandoned.json`) each press also starts an open of the median strategy, so a store read the editor abandons is ahead of the timed one in the store's queue. Every `OPENFRAME run` line says what the mirror was doing when the run began; `scripts/open-first-frame-while-copying.json` starts timing at once, so on a large library started without a store the first runs happen while the mirror is still copying.
+
+`{"readBackCost": "largest", "runs": 21}` (`scripts/read-back-cost.json`) times, on the strategy with the most items, what the mirror spends converting it to rows, and converting it then checking that the rows read back equal to its Hive record, and logs both medians, the worst of each and the difference as a `READBACK` line.
+
 ## A change in one cloud strategy, then another opened
 
 `{"mapThenOpen": B, "from": A, "runs": 50, "by": "back", "maps": [...], "restAt": [x, y]}` measures whether a map change made in cloud strategy A can be stored under B when B is opened at once (`scripts/map-then-open-cloud.json`). Each run:

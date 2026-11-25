@@ -7,6 +7,8 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
+import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/library_listing.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -17,9 +19,12 @@ import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/library_store/store_page_reads.dart';
+import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/startup/launch_clock.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/strategy/local_page_reads.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:path/path.dart' as path;
 
@@ -342,6 +347,60 @@ String _describePhase(MirrorPhase phase) => switch (phase) {
       MirrorHeld() => 'held',
       MirrorStopped(:final stop) => 'stopped: $stop',
     };
+
+String mirrorPhaseNow(ProviderContainer c) =>
+    switch (c.read(shadowProvider.notifier).mode) {
+      ShadowOnly() => 'not mirroring',
+      Mirroring(:final mirror) => _describePhase(mirror.phase),
+    };
+
+String readBackCost(String pick, int runs) {
+  int items(StrategyData strategy) => strategy.pages.fold(
+        0,
+        (sum, page) =>
+            sum +
+            page.agentData.length +
+            page.abilityData.length +
+            page.drawingData.length +
+            page.textData.length +
+            page.imageData.length +
+            page.utilityData.length +
+            page.lineUpLinks.length,
+      );
+  final strategies = [...const LocalLibrary().storedStrategies]
+    ..sort((a, b) => items(a).compareTo(items(b)));
+  if (strategies.isEmpty) throw StateError('no strategy to measure');
+  final target = switch (pick) {
+    'largest' => strategies.last,
+    'median' => strategies[strategies.length ~/ 2],
+    _ => strategies.firstWhere((strategy) => strategy.name == pick),
+  };
+  final held = strategyAsHiveHoldsIt(target);
+  List<int> timed(void Function() run) {
+    for (var warm = 0; warm < 5; warm++) {
+      run();
+    }
+    return [
+      for (var turn = 0; turn < runs; turn++)
+        () {
+          final clock = Stopwatch()..start();
+          run();
+          return clock.elapsedMicroseconds;
+        }(),
+    ]..sort();
+  }
+
+  String ms(int micros) => (micros / 1000).toStringAsFixed(2);
+  final rows = timed(() => strategyToRows(held));
+  final checked = timed(() => imageOf(held));
+  final readBack = imageOf(held).readBack;
+  return 'READBACK $pick (${target.pages.length} pages, ${items(target)} '
+      'items, ${readBack is ReadsBackEqual ? 'reads back equal' : 'reads back differently'}), '
+      '$runs runs: rows median ${ms(rows[runs ~/ 2])} ms, worst '
+      '${ms(rows.last)} ms; rows and read-back median '
+      '${ms(checked[runs ~/ 2])} ms, worst ${ms(checked.last)} ms; added '
+      'median ${ms(checked[runs ~/ 2] - rows[runs ~/ 2])} ms';
+}
 
 String holdStore(ProviderContainer c) =>
     switch (c.read(shadowProvider.notifier).mode) {
