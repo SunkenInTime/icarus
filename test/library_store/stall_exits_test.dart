@@ -885,7 +885,7 @@ void main() {
   });
 
   test('the table in the README is the one the code gives', () {
-    final text = File(readme).readAsStringSync();
+    final text = File(readme).readAsStringSync().replaceAll('\r\n', '\n');
     final from = text.indexOf(opening);
     final to = text.indexOf(closing);
     expect(from, isNot(-1));
