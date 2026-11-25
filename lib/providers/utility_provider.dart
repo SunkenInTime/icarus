@@ -413,7 +413,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   void fromHive(List<PlacedUtility> hiveUtilities) {
     poppedUtilities = [];
     _pendingEditBefore.clear();
-    state = hiveUtilities;
+    state = [for (final item in hiveUtilities) item.deepCopy<PlacedUtility>()];
   }
 
   /// Takes the server's copy of every item but those [keep] names; see

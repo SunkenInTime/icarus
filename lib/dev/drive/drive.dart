@@ -53,6 +53,8 @@
 //   {"addHighTide": id, "at": [x, y], "wall": [[dx, dy], ...]?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
 //   {"setCaption": id, "text": t}      what the caption dialog's Done does
+//   {"setWeapon": id, "weapon": name}  what the agent menu's weapon picker does
+//   {"setWallPath": id, "path": [[x, y], ...]}  what dragging a wall's handles does
 //   {"addUtility": id, "type": name, "at": [x, y], "door": id?, "zone": b?}
 //                                      spike, customRectangle, customCircle
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
@@ -153,6 +155,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/weapons.dart';
 import 'package:icarus/const/page_copy_id.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -2830,6 +2833,24 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'setCaption':
       setCaption(c, value as String, step['text'] as String);
+    case 'setWeapon':
+      c.read(agentProvider.notifier).setWeapon(
+            value as String,
+            WeaponType.values.byName(step['weapon'] as String),
+          );
+    case 'setWallPath':
+      c.read(abilityProvider.notifier).setWallPath(value as String, [
+        for (final point in step['path'] as List)
+          Offset(
+            ((point as List)[0] as num).toDouble(),
+            (point[1] as num).toDouble(),
+          ),
+      ]);
+    case 'logWeapons':
+      _log('WEAPONS $value ${jsonEncode({
+            for (final agent in c.read(agentProvider))
+              agent.id: agent.weapon.name,
+          })}');
     case 'logCard':
       final root = RendererBinding.instance.renderViews.first.child;
       _log('CARD $value ${c.read(captionCardProvider)} '
