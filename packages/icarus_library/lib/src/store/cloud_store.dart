@@ -1106,7 +1106,9 @@ extension _CloudStore on LibraryStore {
       for (final name in gone) _DeleteName(area, name),
       for (final (name, was) in before.values)
         ...switch ((was, held(name))) {
-          (HeldRow(:final row), final now?) when now == row => const <_Write>[],
+          (HeldRow(:final row), final now?)
+              when sameJsonTree(now.toJsonView(), row.toJsonView()) =>
+            const <_Write>[],
           (_, final now?) => [_PutRow(area, now)],
           (HeldRow() || HeldUnplaced(), null) => [_DeleteName(area, name.name)],
           (HeldNothing(), null) => const <_Write>[],
@@ -1800,8 +1802,9 @@ extension _CloudStore on LibraryStore {
           session: queue.session.number,
           from: switch (results) {
             CloudResults.liveQueries => const LiveResult(),
-            CloudResults.thisDevicesReads =>
-              ReadOfThisDevice(queue.session.readStart),
+            CloudResults.thisDevicesReads => ReadOfThisDevice(
+              queue.session.readStart,
+            ),
           },
         ),
     ];

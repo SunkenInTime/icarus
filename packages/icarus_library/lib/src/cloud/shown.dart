@@ -7,18 +7,49 @@ import 'op_facts.dart';
 import 'pending.dart';
 import 'version.dart';
 
+bool shownTakesChecked =
+    const bool.fromEnvironment('ICARUS_DRIVE') ||
+    !const bool.fromEnvironment('dart.vm.product');
+
+final class ShownWork {
+  int contentRowsDigested = 0;
+
+  void reset() {
+    contentRowsDigested = 0;
+  }
+}
+
+final shownWork = ShownWork();
+
+final class TakesDiffer extends StateError {
+  TakesDiffer(String page)
+    : super(
+        'page $page taken with digests of this run differs from the same '
+        'result taken from scratch',
+      );
+}
+
 final class ShownRow {
   const ShownRow({
     required this.page,
     required this.revision,
     required this.digest,
     this.life,
+    this.digestedThisRun = false,
   });
 
   final String page;
   final int? revision;
   final int? life;
   final String digest;
+  final bool digestedThisRun;
+
+  bool holdsDigestOf(Row row, String page) =>
+      digestedThisRun &&
+      revision != null &&
+      this.page == page &&
+      revision == revisionOfRow(row) &&
+      life == createdAtOf(row);
 
   Version? get version => switch (revision) {
     final revision? => Version(revision, life: life),
@@ -428,7 +459,13 @@ final class Shown {
     revision: revisionOfRow(row),
     life: createdAtOf(row),
     digest: rowDigest(row),
+    digestedThisRun: true,
   );
+
+  static ShownRow _digested(Row row, String page) {
+    shownWork.contentRowsDigested++;
+    return _rowOf(row, page);
+  }
 
   Shown _with({
     Freshness? fresh,
@@ -527,11 +564,15 @@ final class Shown {
             key: value,
       },
     ),
-    PageRead(:final page, :final elements, :final lineupGroups) => _withPage(
-      page,
-      [...elements, ...lineupGroups],
-      paid: paidBy(pageRead(page.publicId), started),
-      started: started,
+    PageRead(:final page, :final elements, :final lineupGroups) => _checkedTake(
+      page.publicId,
+      (reuse) => _withPage(
+        page,
+        [...elements, ...lineupGroups],
+        paid: paidBy(pageRead(page.publicId), started),
+        started: started,
+        reuse: reuse,
+      ),
     ),
     PageGone(:final pagePublicId) => _with(
       pagesTaken: {...pagesTaken, pagePublicId: ?started},
@@ -618,11 +659,18 @@ final class Shown {
     rows: rows,
   );
 
+  static Shown _checkedTake(String page, Shown Function(bool reuse) take) {
+    final taken = take(true);
+    if (shownTakesChecked && take(false) != taken) throw TakesDiffer(page);
+    return taken;
+  }
+
   Shown _withPage(
     PageRow pageRow,
     List<Row> found, {
     required bool paid,
     required ReadStart? started,
+    required bool reuse,
   }) {
     final page = pageRow.publicId;
     final next = {
@@ -630,13 +678,24 @@ final class Shown {
         if (value.page != page) key: value,
     };
     final raised = {...highest};
+    final live = <SeenPart, String>{};
     for (final row in found) {
-      final target = switch (row) {
-        ElementRow(:final publicId) => ElementTarget(publicId) as Target,
-        LineupGroupRow(:final publicId) => LineupTarget(publicId),
+      final (target, part) = switch (row) {
+        ElementRow(:final publicId) => (
+          ElementTarget(publicId) as Target,
+          SeenElement(publicId) as SeenPart,
+        ),
+        LineupGroupRow(:final publicId) => (
+          LineupTarget(publicId),
+          SeenLineupGroup(publicId),
+        ),
         _ => throw StateError('only page content is read with a page'),
       };
-      final shown = _rowOf(row, page);
+      final shown = switch (rows[target]) {
+        final held? when reuse && held.holdsDigestOf(row, page) => held,
+        _ => _digested(row, page),
+      };
+      if (lifeOfRow(row) == Life.live) live[part] = shown.digest;
       if (shown.version case final version?
           when raised[target] == null || version > raised[target]!) {
         raised[target] = version;
@@ -663,7 +722,7 @@ final class Shown {
       },
       content: pageRow is TrashedPage
           ? ({...content}..remove(page))
-          : {...content, page: liveContentOn(found, page)},
+          : {...content, page: live},
       rows: next,
     );
   }

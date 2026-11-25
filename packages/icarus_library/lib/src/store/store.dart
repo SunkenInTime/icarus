@@ -33,11 +33,13 @@ part 'cloud_store.dart';
 final class StoreWork {
   int rowsDrawn = 0;
   int resultGroupsEncoded = 0;
+  int rowsEncoded = 0;
   int Function() sessionRecords = () => 0;
 
   void reset() {
     rowsDrawn = 0;
     resultGroupsEncoded = 0;
+    rowsEncoded = 0;
   }
 }
 
@@ -499,6 +501,7 @@ final class LibraryStore {
     switch (write) {
       case _PutRow(:final area, :final row):
         final name = nameOf(row);
+        storeWork.rowsEncoded++;
         switch (encodeJson(row.toJsonView())) {
           case NotEncoded(:final problem):
             return wouldNot(name.name, problem);
