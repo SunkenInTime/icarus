@@ -72,7 +72,10 @@ const _canvasLeft = 100.0;
 const _jett = ValueKey('jett-in-the-side-bar');
 const _field = ValueKey('a-text-field-on-the-canvas');
 
-Future<ProviderContainer> _editor(WidgetTester tester) async {
+Future<ProviderContainer> _editor(
+  WidgetTester tester, {
+  bool opening = false,
+}) async {
   tester.view
     ..physicalSize = _viewport
     ..devicePixelRatio = 1;
@@ -84,6 +87,7 @@ Future<ProviderContainer> _editor(WidgetTester tester) async {
   ]);
   addTearDown(container.dispose);
   addTearDown(() => tester.pumpWidget(const SizedBox()));
+  if (opening) _beginOpen(container);
   container.read(placedImageProvider.notifier).fromHive([
     PlacedImage(
       id: 'picture',
@@ -353,6 +357,26 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     expect(_skeletonOpacity(tester), 1);
     container.read(strategyOpeningProvider.notifier).settle(slow);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_skeletonOpacity(tester), isNull);
+  });
+
+  testWidgets(
+      'a loading view mounted while an open runs shows after 0.5 s from its '
+      'mount and is gone once the open ends', (tester) async {
+    final container = await _editor(tester, opening: true);
+
+    await tester.pump(const Duration(milliseconds: 490));
+    expect(_skeletonOpacity(tester), isNull);
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_skeletonOpacity(tester), 1);
+
+    container
+        .read(strategyOpeningProvider.notifier)
+        .settle(container.read(strategyOpeningProvider)!.attempt);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     expect(_skeletonOpacity(tester), isNull);

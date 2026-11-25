@@ -130,6 +130,12 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
   StrategyLook _look = unknownStrategyLook;
 
   @override
+  void initState() {
+    super.initState();
+    if (ref.read(strategyOpeningProvider) != null) _revealLater();
+  }
+
+  @override
   void dispose() {
     _wait?.cancel();
     super.dispose();
@@ -152,6 +158,10 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
       if (_drawn) setState(() => _look = _lookOf(now));
       return;
     }
+    _revealLater();
+  }
+
+  void _revealLater() {
     _wait?.cancel();
     _wait = Timer(editorBusyAfter, () {
       final opening = ref.read(strategyOpeningProvider);
