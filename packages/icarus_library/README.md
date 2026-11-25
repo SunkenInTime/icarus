@@ -2158,6 +2158,18 @@ of the last commit's record after that 300-item save, and how long taking
 the lease takes when the last commit was that save and when it was one
 row.
 
+`dart build cli -t bin/live_result_cost.dart -o build/live_result_cost` builds
+the live result benchmark ahead of time, and
+`build/live_result_cost/bundle/bin/live_result_cost` times, on SQLite, the
+store taking one live page result in which one item moved, on a cloud
+strategy with one page of 300 items (one in ten a 250-point freehand
+drawing) and of 60: how long `record` takes, the longest stretch it holds
+the main isolate, and how long it waits on the SQLite isolate. It then
+feeds 200 such results at 20 a second, taking every one and then only the
+newest while a `record` runs, and reports the longest stall, the backlog and
+how long each result took to be stored. `dart compile exe` leaves out
+SQLite's native library, so the store cannot open in that build.
+
 `dart run tool/store_benchmark.dart` times opening the store and a
 700-strategy library list, opening a 300-item page where half the items are
 1000-point drawings (in a strategy not yet read, and in one already read),
