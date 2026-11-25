@@ -22,7 +22,10 @@ const _patience = Duration(seconds: 30);
 const _controlledSocket = r'''
 (() => {
   const Real = globalThis.WebSocket;
-  const control = { sockets: [], hold: false, held: [], dropOwned: false, owned: new Set() };
+  const control = {
+    Real, sockets: [], opened: 0, hold: false, held: [], dropOwned: false,
+    owned: new Set(), added: {}, removed: new Set(), sawChunk: false,
+  };
   globalThis.icarusSocketControl = control;
   control.release = () => {
     control.hold = false;
@@ -38,12 +41,16 @@ const _controlledSocket = r'''
       this.onclose = null;
       this.onerror = null;
       this.onmessage = null;
-      this.inner.onopen = (event) => this.onopen && this.onopen(event);
+      this.inner.onopen = (event) => {
+        control.opened += 1;
+        if (this.onopen) this.onopen(event);
+      };
       this.inner.onclose = (event) => this.onclose && this.onclose(event);
       this.inner.onerror = (event) => this.onerror && this.onerror(event);
       this.inner.onmessage = (event) => {
         let data = event.data;
         const message = JSON.parse(data);
+        if (message.type === 'TransitionChunk') control.sawChunk = true;
         if (control.dropOwned && message.type === 'Transition') {
           message.modifications = message.modifications.filter(
             (change) => !control.owned.has(change.queryId),
@@ -61,9 +68,13 @@ const _controlledSocket = r'''
       const message = JSON.parse(data);
       if (message.type === 'ModifyQuerySet') {
         for (const change of message.modifications) {
-          if (change.type === 'Add' && JSON.stringify(change.args).includes('"owned"')) {
-            control.owned.add(change.queryId);
+          if (change.type === 'Add') {
+            control.added[change.queryId] = change.udfPath;
+            if (JSON.stringify(change.args).includes('"owned"')) {
+              control.owned.add(change.queryId);
+            }
           }
+          if (change.type === 'Remove') control.removed.add(change.queryId);
         }
       }
       this.inner.send(data);
@@ -111,25 +122,65 @@ void main() {
     'waits for every member on the new one',
     () async {
       final subscriptions = <StreamSubscription<Object?>>[];
+      final ordinary = <SubscriptionHandle>[];
+      _installControlledSocket();
       addTearDown(() async {
         for (final subscription in subscriptions) {
           await subscription.cancel();
         }
+        for (final handle in ordinary) {
+          handle.cancel();
+        }
+        _control.callMethod<JSAny?>('release'.toJS);
+        globalContext['WebSocket'] = _control['Real'];
       });
-      _installControlledSocket();
       await loadConvexBundle(_bundleUrl);
       await ConvexClient.initialize(
         const ConvexConfig(
           deploymentUrl: _deploymentUrl,
           clientId: 'icarus-stamped-transport-reconnect',
           operationTimeout: _patience,
+          countsTransitions: true,
         ),
       );
-      await ConvexClient.instance
-          .setAuthWithRefresh(fetchToken: () async => _accessToken);
-      final transport = StampedPlatformTransport(ConvexClient.instance);
+      final client = ConvexClient.instance;
+      addTearDown(client.dispose);
+      await client.setAuthWithRefresh(fetchToken: () async => _accessToken);
+      final transport = StampedPlatformTransport(client);
       final api = IcarusConvexApi(transport);
       await api.users.ensureCurrentUser(clientProtocolVersion: _protocol);
+      int opened() => (_control['opened']! as JSNumber).toDartInt;
+
+      final heldByOrdinary = Completer<void>();
+      ordinary.add(
+        await client.subscribeValue(
+          name: 'folders:listTree',
+          args: const {'scope': 'shared'},
+          onUpdate: (_) {
+            if (!heldByOrdinary.isCompleted) heldByOrdinary.complete();
+          },
+          onError: (_) {},
+        ),
+      );
+      await _within(heldByOrdinary.future, 'no ordinary answer');
+      final firstSocket = opened();
+      _control['hold'] = true.toJS;
+      _control.callMethod<JSAny?>('closeAll'.toJS);
+      await _until(() => opened() > firstSocket, 'no new socket');
+      final shared = api.folders.listTree(
+        scope: const ConvexOptional.present(FoldersListTreeArgsScope.shared),
+      );
+      final firstStamped = await _within(
+        shared.stampedOn(transport).fetch(),
+        'no answer to the first stamped read',
+      );
+      expect(
+        firstStamped.stamp.connection,
+        firstSocket,
+        reason: 'the first stamped read after a reopen, of a value an '
+            'ordinary watch held, keeps the old connection',
+      );
+      _control.callMethod<JSAny?>('release'.toJS);
       final all = api.folders.listTree(
         scope: const ConvexOptional.present(FoldersListTreeArgsScope.all),
       );
@@ -202,6 +253,33 @@ void main() {
       final values = (after as StampedValue<List<Object?>>).value;
       expect(_names(values[0]), contains(name));
       expect(_names(values[1]), contains(name));
+
+      final added = _control['added']! as JSObject;
+      String? queryOf(int id) => (added[id.toString()] as JSString?)?.toDart;
+      final failing = StampedConvexQuery.watchTogether(transport, [
+        api.users.me(),
+        ConvexQuery<Object?>(
+          transport: transport,
+          name: 'folders:listTree',
+          args: ConvexObject({r'$reserved': const ConvexString('x')}),
+          decode: (value) => value,
+        ),
+      ]);
+      await expectLater(failing, emitsError(anything));
+      final removed = [
+        for (final id in (globalContext['Array']! as JSObject)
+            .callMethod<JSArray<JSNumber>>('from'.toJS, _control['removed'])
+            .toDart)
+          id.toDartInt,
+      ];
+      expect(
+        [for (final id in removed) queryOf(id)],
+        contains('users:me'),
+        reason: 'a group whose setup failed unsubscribed the member it had '
+            'already added',
+      );
+      expect((_control['sawChunk']! as JSBoolean).toDart, isFalse,
+          reason: 'no transition came in chunks, which the filter cannot read');
     },
     timeout: const Timeout(Duration(minutes: 3)),
     skip: _deploymentUrl.isEmpty

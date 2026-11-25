@@ -40,9 +40,11 @@ void main() {
           deploymentUrl: _deploymentUrl,
           clientId: 'icarus-stamped-transport-live',
           operationTimeout: _patience,
+          countsTransitions: true,
         ),
       );
       final client = ConvexClient.instance;
+      addTearDown(client.dispose);
       await client.setAuthWithRefresh(fetchToken: () async => _accessToken);
       final transport = StampedPlatformTransport(client);
       final api = IcarusConvexApi(transport);
@@ -162,19 +164,25 @@ void main() {
       );
       expect(
           refused.stamp.snapshot, greaterThanOrEqualTo(second.stamp.snapshot));
+      expect(refused.stamp.connection, generation);
+      expect(refused.stamp.serverTime, isNotNull);
 
       final unconvertible = ConvexObject({
         r'$reserved': const ConvexString('not a field name'),
       });
       if (kIsWeb) {
+        final refusesTheFieldName = predicate<Object>(
+          (error) => error.toString().contains(r'$reserved'),
+          'the client refusing the field name',
+        );
         await expectLater(
           transport.mutationStamped('folders:create', unconvertible),
-          throwsA(anything),
+          throwsA(refusesTheFieldName),
           reason: 'arguments the client refuses are the call failing',
         );
         await expectLater(
           transport.queryStamped('folders:listTree', unconvertible),
-          throwsA(anything),
+          throwsA(refusesTheFieldName),
         );
       } else {
         expect(

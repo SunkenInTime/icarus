@@ -116,7 +116,7 @@ impl SubscriptionHandle {
     #[frb(sync)]
     pub fn cancel(&self) {
         if let Some(sender) = self.cancel_sender.lock().take() {
-            sender.send(()).unwrap();
+            let _ = sender.send(());
         }
     }
 }
@@ -956,6 +956,15 @@ mod tests {
 
     fn step(results: &HashMap<u32, FunctionResult>, sent: Option<&[FunctionResult]>) -> GroupStep {
         group_step(&[1, 2], |id| results.get(id), sent)
+    }
+
+    #[test]
+    fn cancelling_after_the_subscription_task_ended_does_not_panic() {
+        let (sender, receiver) = futures::channel::oneshot::channel::<()>();
+        drop(receiver);
+        let handle = super::SubscriptionHandle::new(sender);
+        handle.cancel();
+        handle.cancel();
     }
 
     #[test]
