@@ -8,7 +8,9 @@ import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/ops_follower.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/store_mirror.dart';
+import 'package:icarus/library_store/store_page_reads.dart';
 import 'package:icarus/strategy/local_library_view.dart';
+import 'package:icarus/strategy/local_page_reads.dart';
 
 final class LibraryStoreStart {
   const LibraryStoreStart._(
@@ -16,6 +18,7 @@ final class LibraryStoreStart {
     this.mode,
     this.listing, {
     this.editFollower,
+    this.pageReads,
   });
 
   factory LibraryStoreStart.of(
@@ -34,7 +37,12 @@ final class LibraryStoreStart {
         final mirroring = Mirroring(mirror());
         final listing = StoreLibraryListing(HiveLibraryListing(), clock: clock)
           ..follow(mirroring.mirror);
-        return LibraryStoreStart._(choice, mirroring, listing);
+        return LibraryStoreStart._(
+          choice,
+          mirroring,
+          listing,
+          pageReads: StorePageReads(mirroring.mirror),
+        );
       case StoreSwitchOps():
         final journal = ActionJournal();
         final journaling = StoreMirror(
@@ -56,10 +64,13 @@ final class LibraryStoreStart {
   final ShadowMode? mode;
   final StoreLibraryListing? listing;
   final EditFollower? editFollower;
+  final StorePageReads? pageReads;
 
   List<Override> get overrides => [
         if (mode != null) libraryStoreSwitchProvider.overrideWithValue(choice),
         if (listing case final listing?)
           localLibraryListingProvider.overrideWithValue(listing),
+        if (pageReads case final reads?)
+          localPageReadsProvider.overrideWithValue(reads),
       ];
 }

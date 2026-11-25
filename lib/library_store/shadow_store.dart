@@ -16,6 +16,7 @@ import 'package:icarus/library_store/library_store_sqlite.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
+import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -199,6 +200,7 @@ class ShadowNotifier extends Notifier<ShadowState> {
         ShadowOnly() => await copyHiveIntoStore(
             _shadowReads,
             store,
+            images: StrategyImages(),
             writes: writes,
             breathe: _breathe,
             progress: progress,

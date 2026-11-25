@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -2266,68 +2267,89 @@ class StrategyProvider extends Notifier<StrategyState> {
     cancelPendingSave();
 
     return _open(id, StrategySource.local, (opening) async {
-      final newStrat = const LocalLibrary().firstStoredWithId(id);
+      final reads = ref.read(localPageReadsProvider);
+      final open = reads?.opening(id);
+      try {
+        final newStrat = const LocalLibrary().firstStoredWithId(id);
 
-      if (newStrat == null) {
-        return false;
-      }
-      List<PlacedImage> pageImageData = [];
-      for (final page in newStrat.pages) {
-        pageImageData.addAll(page.imageData);
-      }
-      if (!kIsWeb) {
-        List<String> allImageIds = [];
-        for (final page in newStrat.pages) {
-          allImageIds.addAll(page.imageData.map((image) => image.pictureId));
-          for (final link in page.lineUpLinks) {
-            allImageIds.addAll(link.images.map((image) => image.id));
+        if (newStrat == null) {
+          if (open != null) {
+            reads?.openFailed(open, StateError('Strategy $id not found.'));
           }
+          return false;
+        }
+        List<PlacedImage> pageImageData = [];
+        for (final page in newStrat.pages) {
+          pageImageData.addAll(page.imageData);
+        }
+        if (!kIsWeb) {
+          List<String> allImageIds = [];
+          for (final page in newStrat.pages) {
+            allImageIds.addAll(page.imageData.map((image) => image.pictureId));
+            for (final link in page.lineUpLinks) {
+              allImageIds.addAll(link.images.map((image) => image.id));
+            }
+          }
+          await opening.wait(
+            ref
+                .read(placedImageProvider.notifier)
+                .deleteUnusedImages(newStrat.id, allImageIds),
+          );
+        }
+
+        final migratedStrategy =
+            StrategyMigrator.migrateToCurrentVersion(newStrat);
+
+        if (migratedStrategy != newStrat) {
+          await opening.wait(
+            const LocalLibrary()
+                .replaceAfterMigration(migratedStrategy)
+                .then((written) => written.orThrow()),
+          );
+        }
+
+        final newDir = kIsWeb
+            ? null
+            : await opening.wait(setStorageDirectory(migratedStrategy.id));
+        // A cloud strategy still being read, or the one this replaces in
+        // place, has no say in a local one: its late answer, or a link its
+        // owner disables, must not reach this editor.
+        final remote = ref.read(remoteEditorSnapshotProvider.notifier);
+        if (remote.activeStrategyPublicId != null) remote.clear();
+        _becomeOpen(StrategyState(
+          strategyId: migratedStrategy.id,
+          strategyName: migratedStrategy.name,
+          source: StrategySource.local,
+          storageDirectory: newDir?.path,
+          isOpen: true,
+        ));
+        ref.read(strategySaveStateProvider.notifier).reset();
+        if (open != null) {
+          reads?.reading(open, migrated: migratedStrategy != newStrat);
         }
         await opening.wait(
-          ref
-              .read(placedImageProvider.notifier)
-              .deleteUnusedImages(newStrat.id, allImageIds),
+          ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
+                strategyId: migratedStrategy.id,
+                source: StrategySource.local,
+                selectFirstPageIfNeeded: true,
+                preferredPageId: pageId,
+                attempt: opening,
+              ),
         );
+        if (open != null &&
+            ref.read(strategyPageSessionProvider).activePageId == null) {
+          reads?.openedWithoutPage(open);
+        }
+        ref.read(strategySaveStateProvider.notifier).markPersisted();
+        return true;
+      } on OpenGaveWay {
+        rethrow;
+      } on Object catch (error) {
+        if (open != null) reads?.openFailed(open, error);
+        rethrow;
+      } finally {
+        if (open != null) reads?.openEnded(open);
       }
-
-      final migratedStrategy =
-          StrategyMigrator.migrateToCurrentVersion(newStrat);
-
-      if (migratedStrategy != newStrat) {
-        await opening.wait(
-          const LocalLibrary()
-              .replaceAfterMigration(migratedStrategy)
-              .then((written) => written.orThrow()),
-        );
-      }
-
-      final newDir = kIsWeb
-          ? null
-          : await opening.wait(setStorageDirectory(migratedStrategy.id));
-      // A cloud strategy still being read, or the one this replaces in
-      // place, has no say in a local one: its late answer, or a link its
-      // owner disables, must not reach this editor.
-      final remote = ref.read(remoteEditorSnapshotProvider.notifier);
-      if (remote.activeStrategyPublicId != null) remote.clear();
-      _becomeOpen(StrategyState(
-        strategyId: migratedStrategy.id,
-        strategyName: migratedStrategy.name,
-        source: StrategySource.local,
-        storageDirectory: newDir?.path,
-        isOpen: true,
-      ));
-      ref.read(strategySaveStateProvider.notifier).reset();
-      await opening.wait(
-        ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
-              strategyId: migratedStrategy.id,
-              source: StrategySource.local,
-              selectFirstPageIfNeeded: true,
-              preferredPageId: pageId,
-              attempt: opening,
-            ),
-      );
-      ref.read(strategySaveStateProvider.notifier).markPersisted();
-      return true;
     });
   }
 

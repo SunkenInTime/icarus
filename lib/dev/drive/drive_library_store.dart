@@ -7,6 +7,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
+import 'package:icarus/dev/drive/store_differences.dart';
+import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/library_listing.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -16,8 +19,13 @@ import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
+import 'package:icarus/library_store/store_page_reads.dart';
+import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/startup/launch_clock.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_library_view.dart';
+import 'package:icarus/strategy/local_page_reads.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:path/path.dart' as path;
 
@@ -341,6 +349,105 @@ String _describePhase(MirrorPhase phase) => switch (phase) {
       MirrorStopped(:final stop) => 'stopped: $stop',
     };
 
+String mirrorPhaseNow(ProviderContainer c) =>
+    switch (c.read(shadowProvider.notifier).mode) {
+      ShadowOnly() => 'not mirroring',
+      Mirroring(:final mirror) => _describePhase(mirror.phase),
+    };
+
+StrategyData _withFirstPageRenamed(StrategyData strategy) => strategy.copyWith(
+      pages: [
+        for (final (index, page) in strategy.pages.indexed)
+          index == 0 ? page.copyWith(name: '${page.name} edited') : page,
+      ],
+    );
+
+Future<String> readBackCost(String pick, int runs) async {
+  int items(StrategyData strategy) => strategy.pages.fold(
+        0,
+        (sum, page) =>
+            sum +
+            page.agentData.length +
+            page.abilityData.length +
+            page.drawingData.length +
+            page.textData.length +
+            page.imageData.length +
+            page.utilityData.length +
+            page.lineUpLinks.length,
+      );
+  final strategies = [...const LocalLibrary().storedStrategies]
+    ..sort((a, b) => items(a).compareTo(items(b)));
+  if (strategies.isEmpty) throw StateError('no strategy to measure');
+  final target = switch (pick) {
+    'largest' => strategies.last,
+    'median' => strategies[strategies.length ~/ 2],
+    _ => strategies.firstWhere((strategy) => strategy.name == pick),
+  };
+  final held = strategyAsHiveHoldsIt(target);
+  List<int> timed(void Function() run) {
+    for (var warm = 0; warm < 5; warm++) {
+      run();
+    }
+    return [
+      for (var turn = 0; turn < runs; turn++)
+        () {
+          final clock = Stopwatch()..start();
+          run();
+          return clock.elapsedMicroseconds;
+        }(),
+    ]..sort();
+  }
+
+  String ms(int micros) => (micros / 1000).toStringAsFixed(2);
+  final rows = timed(() => strategyToRows(held));
+  final checked = timed(() => StrategyImages().of(held));
+  final edited = _withFirstPageRenamed(held);
+  final images = StrategyImages()..of(held);
+  var turn = 0;
+  final afterOnePage =
+      timed(() => images.of(turn++ % 2 == 0 ? edited : held));
+  Future<int> longestTask(StrategyImages images, StrategyData strategy) async {
+    var longest = 0;
+    final clock = Stopwatch()..start();
+    await images.between(strategy, () async {
+      if (clock.elapsedMicroseconds > longest) {
+        longest = clock.elapsedMicroseconds;
+      }
+      await Future<void>.delayed(Duration.zero);
+      clock
+        ..reset()
+        ..start();
+    });
+    return clock.elapsedMicroseconds > longest
+        ? clock.elapsedMicroseconds
+        : longest;
+  }
+
+  final coldTasks = [
+    for (var turn = 0; turn < runs; turn++)
+      await longestTask(StrategyImages(), held),
+  ]..sort();
+  final warmImages = StrategyImages();
+  await longestTask(warmImages, held);
+  final warmTasks = [
+    for (var turn = 0; turn < runs; turn++)
+      await longestTask(warmImages, turn.isEven ? edited : held),
+  ]..sort();
+  final readBack = StrategyImages().of(held).readBack;
+  return 'READBACK $pick (${target.pages.length} pages, ${items(target)} '
+      'items, ${readBack is ReadsBackEqual ? 'reads back equal' : 'reads back differently'}), '
+      '$runs runs: rows median ${ms(rows[runs ~/ 2])} ms, worst '
+      '${ms(rows.last)} ms; rows and read-back median '
+      '${ms(checked[runs ~/ 2])} ms, worst ${ms(checked.last)} ms; added '
+      'median ${ms(checked[runs ~/ 2] - rows[runs ~/ 2])} ms; after one page '
+      'changed median ${ms(afterOnePage[runs ~/ 2])} ms, worst '
+      '${ms(afterOnePage.last)} ms, added median '
+      '${ms(afterOnePage[runs ~/ 2] - rows[runs ~/ 2])} ms; as the mirror '
+      'runs it, with a break between frames after the rows and after each '
+      'page, the longest single task: cold worst ${ms(coldTasks.last)} ms, '
+      'after one page changed worst ${ms(warmTasks.last)} ms';
+}
+
 String holdStore(ProviderContainer c) =>
     switch (c.read(shadowProvider.notifier).mode) {
       ShadowOnly() => throw StoreStepFailed(['the store is not mirroring']),
@@ -396,6 +503,43 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
   if (endSave != null) throw StoreStepFailed(lines);
   if (actionOpsEndProblem(mirror) case final problem?) {
     throw StoreStepFailed([...lines, problem]);
+  }
+  if (check case final StoreChecked checked) {
+    final recorded = {
+      for (final MapEntry(:key, :value)
+          in mirror.strategiesReadingBackDifferently.entries)
+        if (const LocalLibrary().storedStrategy(key) != null) key: value,
+    };
+    if (recorded.isNotEmpty) {
+      final differing = {
+        for (final c in checked.notMirrored) c.strategyId,
+        for (final c in checked.strategyProblems) c.strategyId,
+      };
+      final judged = judgeStoreDifferences(
+        differing: differing,
+        recordedDifferent: recorded,
+        readBackNow: (id) => StrategyImages()
+            .of(strategyAsHiveHoldsIt(
+                const LocalLibrary().storedStrategy(id)!))
+            .readBack,
+      );
+      final restExact = checked.foreignNames.isEmpty &&
+          checked.unplaced.isEmpty &&
+          checked.folderProblems.isEmpty &&
+          checked.sameFolders == checked.hiveFolders &&
+          checked.sameStrategies == checked.hiveStrategies - differing.length;
+      if (judged.problems.isEmpty && restExact) {
+        return [
+          ...lines,
+          for (final expected in judged.expected) 'STORE expected: $expected',
+        ];
+      }
+      throw StoreStepFailed([
+        ...lines,
+        for (final problem in judged.problems) 'STORE problem: $problem',
+        'the store differs from Hive',
+      ]);
+    }
   }
   if (check case StoreChecked(isExact: true)) return lines;
   if (check case final StoreChecked checked
@@ -663,4 +807,80 @@ List<String> listEndLines(ProviderContainer c) {
         'the run reads the list from the store, yet it ended drawn from Hive',
       ]),
   };
+}
+
+StorePageReads? _pageReads(ProviderContainer c) =>
+    switch (c.read(localPageReadsProvider)) {
+      final StorePageReads reads => reads,
+      _ => null,
+    };
+
+var _pageLoadsLogged = 0;
+
+Map<String, int> pageLoadCounts(List<PageLoad> loads) {
+  final counts = <String, int>{};
+  void count(String key) => counts[key] = (counts[key] ?? 0) + 1;
+  for (final load in loads) {
+    final kind = switch (load.kind) {
+      PageLoadKind.open => 'open',
+      PageLoadKind.pageSwitch => 'switch',
+    };
+    switch (load.outcome) {
+      case ServedFromStore():
+        count('${kind}FromStore');
+      case ServedFromHive(:final reason):
+        count('${kind}FromHive');
+        count(reason.name);
+      case GaveWay():
+        count('${kind}GaveWay');
+      case NoPageToShow():
+        count('${kind}NoPage');
+      case LoadFailed():
+        count('${kind}Failed');
+    }
+  }
+  return counts;
+}
+
+String _countsLine(Map<String, int> counts) => counts.isEmpty
+    ? 'none'
+    : [
+        for (final key in counts.keys.toList()..sort()) '$key ${counts[key]}',
+      ].join(', ');
+
+List<String> pageReadLines(
+  ProviderContainer c, {
+  required String tag,
+  required Map<String, Object?> expected,
+}) {
+  final reads = _pageReads(c);
+  if (reads == null) {
+    const line = 'STORE page loads: this run reads pages from Hive only';
+    if (expected.isEmpty) return const [line];
+    throw StoreStepFailed(const [line]);
+  }
+  final loads = reads.loads;
+  final counts = pageLoadCounts(loads);
+  final lines = [
+    for (final load in loads.skip(_pageLoadsLogged)) 'STORE page $load',
+    'STORE page loads at $tag: ${_countsLine(counts)}',
+  ];
+  _pageLoadsLogged = loads.length;
+  final problems = [
+    for (final MapEntry(:key, :value) in expected.entries)
+      if ((counts[key] ?? 0) != value)
+        '$key is ${counts[key] ?? 0}, expected $value',
+  ];
+  if (problems.isNotEmpty) throw StoreStepFailed([...lines, ...problems]);
+  return lines;
+}
+
+List<String> pageReadEndLines(ProviderContainer c) {
+  final reads = _pageReads(c);
+  if (reads == null) return const [];
+  final loads = reads.loads;
+  return [
+    for (final load in loads.skip(_pageLoadsLogged)) 'STORE page $load',
+    'STORE page loads in the run: ${_countsLine(pageLoadCounts(loads))}',
+  ];
 }

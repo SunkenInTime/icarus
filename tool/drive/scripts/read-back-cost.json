@@ -1,0 +1,6 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"readBackCost": "largest", "runs": 21},
+  {"exit": 1}
+]

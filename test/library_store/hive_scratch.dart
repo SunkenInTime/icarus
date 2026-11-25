@@ -12,6 +12,7 @@ import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
+import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
@@ -100,6 +101,7 @@ Future<ShadowCopy> copyFromHive(
     return await copyHiveIntoStore(
       HiveReads(),
       store,
+      images: StrategyImages(),
       writes: writes,
       breathe: breathe,
     );

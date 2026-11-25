@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library_view.dart';
+import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -1247,17 +1248,35 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       await remote.setActivePage(pageId, fetched: target);
     }
 
-    final pageData = await pageSource.loadPage(pageId);
-    onTargetRead?.call(pageData);
-    await _applyLoadedPageData(
-      pageData,
-      strategyId: strategyId,
-      source: source,
-      loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
-    );
+    final readsPages = source == StrategySource.local &&
+        ref.read(localPageReadsProvider) != null;
+    bool givesWay() => readsPages && superseded();
+    final String? shownPageId;
+    try {
+      final pageData = await pageSource.loadPage(pageId);
+      if (givesWay()) {
+        ref.read(localPageReadsProvider)?.neverShown(pageData);
+        return _PageSwitch.superseded;
+      }
+      onTargetRead?.call(pageData);
+      shownPageId = await _applyLoadedPageData(
+        pageData,
+        strategyId: strategyId,
+        source: source,
+        loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+        canApply: readsPages ? () => !givesWay() : null,
+      );
+    } on Object catch (error) {
+      ref
+          .read(localPageReadsProvider)
+          ?.switchFailed(strategyId, pageId, error);
+      if (givesWay()) return _PageSwitch.superseded;
+      rethrow;
+    }
+    if (shownPageId == null) return _PageSwitch.superseded;
 
     if (animated && direction != null) {
-      _updateHydrationBookkeeping(pageData.pageId);
+      _updateHydrationBookkeeping(shownPageId);
     }
     return _PageSwitch.switched;
   }
@@ -1323,7 +1342,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
   }
 
-  Future<void> _applyLoadedPageData(
+  Future<String?> _applyLoadedPageData(
     StrategyEditorPageData pageData, {
     required String strategyId,
     required StrategySource source,
@@ -1337,42 +1356,74 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // The open this page is read for, if it is one: a page read for an open
     // that gave way must not replace the canvas of what took its place.
     final opening = attempt ?? OpenAttempt.unchallenged;
-    final availablePageIds = await opening.wait(
-      _resolvePageSource(strategyId, source).listPageIds(),
-    );
-    if (canApply != null && !canApply()) return;
+    final served = ref.read(localPageReadsProvider)?.servedWith(pageData);
+    final availablePageIds = served != null
+        ? served.pageIds
+        : await opening.wait(
+            _resolvePageSource(strategyId, source).listPageIds(),
+          );
+    if (canApply != null && !canApply()) {
+      ref.read(localPageReadsProvider)?.neverShown(pageData);
+      return null;
+    }
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
         _lastHydratedRemotePageKey?.pageId == pageData.pageId;
     final preservedTheme = preservedMetadata?.theme;
     final themeProfileId = preservedTheme != null
         ? preservedTheme.profileId
-        : _resolveThemeProfileId(source, strategyId);
+        : served != null
+            ? served.themeProfileId
+            : _resolveThemeProfileId(source, strategyId);
     final themeOverridePalette = preservedTheme != null
         ? preservedTheme.overridePalette
-        : _resolveThemeOverridePalette(source, strategyId);
+        : served != null
+            ? served.themeOverridePalette
+            : _resolveThemeOverridePalette(source, strategyId);
 
-    state = state.copyWith(
-      isApplyingPage: true,
-      activePageId: pageData.pageId,
-      availablePageIds: availablePageIds,
-    );
-
-    final retainedTextDrafts = preserveTextDrafts
-        ? Map<String, String>.from(ref.read(textDraftProvider))
-        : const <String, String>{};
+    final reads = ref.read(localPageReadsProvider);
+    var shownPageId = pageData.pageId;
     try {
+      state = state.copyWith(
+        isApplyingPage: true,
+        activePageId: pageData.pageId,
+        availablePageIds: availablePageIds,
+      );
+
+      final retainedTextDrafts = preserveTextDrafts
+          ? Map<String, String>.from(ref.read(textDraftProvider))
+          : const <String, String>{};
+      var page = pageData;
+      var pageThemeProfileId = themeProfileId;
+      var pageThemeOverridePalette = themeOverridePalette;
+      List<String>? hivePageIds;
+      if (reads != null && reads.hiveWrittenSinceRead(page)) {
+        final hive = LocalStrategyPageSource.hiveNow(strategyId, page.pageId);
+        page = reads.redrawnFromHive(page, hive.page);
+        pageThemeProfileId = _resolveThemeProfileId(source, strategyId);
+        pageThemeOverridePalette =
+            _resolveThemeOverridePalette(source, strategyId);
+        hivePageIds = hive.pageIds;
+      }
+      shownPageId = page.pageId;
       await opening.wait(
         applyStrategyEditorPageData(
           ref,
-          pageData,
+          page,
           strategyId: strategyId,
-          themeProfileId: themeProfileId,
-          themeOverridePalette: themeOverridePalette,
+          themeProfileId: pageThemeProfileId,
+          themeOverridePalette: pageThemeOverridePalette,
           preserveHistory: preserveHistory,
           mapOverride: preservedMetadata?.map,
         ),
       );
+      reads?.applied(page);
+      if (hivePageIds != null) {
+        state = state.copyWith(
+          activePageId: shownPageId,
+          availablePageIds: hivePageIds,
+        );
+      }
       for (final entry in retainedTextDrafts.entries) {
         ref.read(textDraftProvider.notifier).setDraft(entry.key, entry.value);
       }
@@ -1384,17 +1435,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         }
         ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
               strategyPublicId: strategyId,
-              pageId: pageData.pageId,
+              pageId: shownPageId,
               snapshot: loadedRemoteSnapshot,
             );
         _lastAppliedRemoteSnapshot = loadedRemoteSnapshot;
       }
       _updateHydrationBookkeeping(
-        pageData.pageId,
+        shownPageId,
         hydrationKey: source == StrategySource.cloud
             ? _buildRemotePageHydrationKey(
                 loadedRemoteSnapshot!,
-                pageData.pageId,
+                shownPageId,
               )
             : hydrationKey,
       );
@@ -1402,12 +1453,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       // After an open gave way the session belongs to what replaced it.
       if (opening.isCurrent) {
         state = state.copyWith(
-          activePageId: pageData.pageId,
+          activePageId: shownPageId,
           isApplyingPage: false,
         );
         _resumePendingRemoteReapplyIfPossible();
       }
     }
+    return shownPageId;
   }
 
   StrategyPageSource _resolvePageSource(

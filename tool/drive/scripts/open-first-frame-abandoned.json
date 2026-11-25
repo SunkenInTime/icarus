@@ -1,0 +1,8 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"wait": 3},
+  {"openFirstFrame": "largest", "runs": 12, "ahead": "median"},
+  {"exit": 1}
+]

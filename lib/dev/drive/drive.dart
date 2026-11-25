@@ -413,6 +413,7 @@ Future<void> _play(String script) async {
   for (final refusal in refusals) {
     _log('CANVAS $refusal');
   }
+  pageReadEndLines(appProviderContainer).forEach(_log);
   try {
     if (await closeStoreLine(appProviderContainer) case final line?) {
       if (line.startsWith('FAIL')) _failedSteps++;
@@ -849,6 +850,18 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     'median' => unique[unique.length ~/ 2],
     _ => unique.firstWhere((strategy) => strategy.name == pick),
   };
+  final others = [
+    for (final strategy in const LocalLibrary().storedStrategies)
+      if (strategy.pages.isNotEmpty && strategy.id != target.id) strategy,
+  ]..sort((a, b) => _itemsIn(a).compareTo(_itemsIn(b)));
+  final ahead = switch (step['ahead']) {
+    null => null,
+    _ when others.isEmpty =>
+      throw StateError('no other strategy to open ahead of ${target.name}'),
+    'median' => others[others.length ~/ 2],
+    final String name => others.firstWhere((strategy) => strategy.name == name),
+    _ => throw StateError('ahead names a strategy or median'),
+  };
   final firstPage = _firstPageOf(target);
   final markers = _markersOn(firstPage);
   final label = '$pick (${target.pages.length} pages, '
@@ -898,12 +911,17 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     }
     _typeInto(target.name);
     await _waitFor(() => _countOf((w) => _isText(w, target.name)) > 0, 10);
-    await _seconds(1);
+    await Future<void>.delayed(
+      step['soon'] == true
+          ? const Duration(milliseconds: 250)
+          : const Duration(seconds: 1),
+    );
     final tile = clickableCenterOf(
       note: _log,
       (w) => _isText(w, target.name),
       what: 'the tile of ${target.name}',
     );
+    final mirrorAtStart = mirrorPhaseNow(c);
     final pointer = _pointer++;
     final binding = GestureBinding.instance;
     _addMouse(pointer, tile);
@@ -923,6 +941,9 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
         position: tile,
       ),
     );
+    if (ahead != null) {
+      unawaited(c.read(strategyProvider.notifier).loadFromHive(ahead.id));
+    }
     await Future<void>.delayed(const Duration(milliseconds: 60));
     frameNumber = null;
     submittedAt = null;
@@ -951,7 +972,8 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     _log(
       'OPENFRAME run $run, $label: built ${ms(submittedAt!)} ms, painted '
       '${ms(submittedAt! + raster)} ms after the pointer-up '
-      '(that frame rasterised in ${ms(raster)} ms)',
+      '(that frame rasterised in ${ms(raster)} ms), mirror $mirrorAtStart'
+      '${ahead == null ? '' : ', an open of ${ahead.pages.length} pages and ${_itemsIn(ahead)} items started at the press'}',
     );
     await _seconds(1);
   }
@@ -1558,6 +1580,7 @@ const _keys = {
   'digit3': (LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3, '3'),
   'keyA': (LogicalKeyboardKey.keyA, PhysicalKeyboardKey.keyA, 'a'),
   'keyC': (LogicalKeyboardKey.keyC, PhysicalKeyboardKey.keyC, 'c'),
+  'keyD': (LogicalKeyboardKey.keyD, PhysicalKeyboardKey.keyD, 'd'),
   'keyE': (LogicalKeyboardKey.keyE, PhysicalKeyboardKey.keyE, 'e'),
   'keyF': (LogicalKeyboardKey.keyF, PhysicalKeyboardKey.keyF, 'f'),
   'keyQ': (LogicalKeyboardKey.keyQ, PhysicalKeyboardKey.keyQ, 'q'),
@@ -2458,6 +2481,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _cloudOpenTime(step);
     case 'openFirstFrame':
       await _openFirstFrame(step);
+    case 'readBackCost':
+      _log(await readBackCost(value as String, (step['runs'] ?? 21) as int));
     case 'openStoredCloudStrategy':
       unawaited(
         Navigator.of(appNavigatorKey.currentContext!).push(
@@ -2666,6 +2691,13 @@ Future<void> _run(Map<String, dynamic> step) async {
       _marks[value as String] = Stopwatch()..start();
     case 'raceLeave':
       await _raceLeave(step);
+    case 'logPageReads':
+      (await _storeLines(Future.sync(() => pageReadLines(
+                c,
+                tag: '$value',
+                expected: {...?(step['expect'] as Map<String, dynamic>?)},
+              ))))
+          .forEach(_log);
     case 'watchPicture':
       _pictureWatches.add(
         _watchPicture(value as String, step['gone'] as String?),
