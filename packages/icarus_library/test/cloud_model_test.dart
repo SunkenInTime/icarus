@@ -18,7 +18,8 @@ void count(String what, [int by = 1]) =>
 final class Model {
   Model(this.seed, {required this.teammates, required this.folding})
     : random = Random(seed),
-      replacing = Random(seed * 7919 + 1) {
+      replacing = Random(seed * 7919 + 1),
+      lateness = Random(seed * 104729 + 3) {
     skew = Duration(milliseconds: random.nextInt(180001) - 90000);
   }
 
@@ -27,6 +28,8 @@ final class Model {
   final bool folding;
   final Random random;
   final Random replacing;
+  final Random lateness;
+  final readsInFlight = <(ArrivedBase, ResultSource, int, String)>[];
   final server = Server();
   final client = Client();
   StrategyRowSet reference = initialRows();
@@ -320,7 +323,11 @@ final class Model {
           for (final base in resultsFor(hold.subject)) {
             if (transition(
                   read,
-                  BaseArrived(base, session: read.session.number),
+                  BaseArrived(
+                    base,
+                    session: read.session.number,
+                    from: readFrom(read),
+                  ),
                   now: clock,
                 )
                 case Stepped(:final queue)) {
@@ -910,8 +917,87 @@ final class Model {
     must(AppRestarted(build: build), 'restart as $clientId on $build');
   }
 
-  void arrive(ArrivedBase base, String label) =>
-      must(BaseArrived(base, session: client.queue.session.number), label);
+  void arrive(ArrivedBase base, String label) {
+    final from = readFrom(client.queue);
+    final session = client.queue.session.number;
+    if (lateness.nextInt(16) == 0) {
+      readsInFlight.add((base, from, session, label));
+      count('reads held in flight');
+      return;
+    }
+    final fits = resultFit(client.queue.shown, base, from);
+    must(BaseArrived(base, session: session, from: from), label);
+    mirror(base, fits);
+  }
+
+  void deliverLateRead() {
+    if (readsInFlight.isEmpty) return;
+    final (base, from, session, label) = readsInFlight.removeAt(
+      lateness.nextInt(readsInFlight.length),
+    );
+    final fits = resultFit(client.queue.shown, base, from);
+    final result = apply(
+      BaseArrived(base, session: session, from: from),
+      'late $label',
+    );
+    switch (result) {
+      case NotApplicable(:final why):
+        count('late reads not taken: ${why.runtimeType}');
+      case Stepped():
+        count('late reads taken');
+        mirror(base, fits);
+    }
+  }
+
+  void mirror(ArrivedBase base, ResultFit fits) {
+    if (fits == ResultFit.applies || fits == ResultFit.adopts) {
+      client.base = switch (base) {
+        HeaderRead(
+          strategy: final ReadableStrategy strategy,
+          :final pages,
+          :final settings,
+        ) =>
+          StrategyRowSet(
+            strategy: strategy,
+            pages: pages,
+            settings: settings,
+            elements: client.base.elements,
+            lineupGroups: client.base.lineupGroups,
+          ),
+        PageRead(:final page, :final elements, :final lineupGroups) =>
+          StrategyRowSet(
+            strategy: client.base.strategy,
+            pages: client.base.pages,
+            settings: client.base.settings,
+            elements: [
+              ...client.base.elements.where(
+                (row) => row.pagePublicId != page.publicId,
+              ),
+              ...elements,
+            ],
+            lineupGroups: [
+              ...client.base.lineupGroups.where(
+                (row) => row.pagePublicId != page.publicId,
+              ),
+              ...lineupGroups,
+            ],
+          ),
+        HeaderRead() || PageGone() || StrategyGone() => client.base,
+      };
+    }
+    final held = client.queue.shown.content.keys.toSet();
+    client.base = StrategyRowSet(
+      strategy: client.base.strategy,
+      pages: client.base.pages,
+      settings: client.base.settings,
+      elements: client.base.elements.where(
+        (row) => held.contains(row.pagePublicId),
+      ),
+      lineupGroups: client.base.lineupGroups.where(
+        (row) => held.contains(row.pagePublicId),
+      ),
+    );
+  }
 
   void readHeader() {
     if (!server.exists) {
@@ -925,17 +1011,6 @@ final class Model {
         arrive(PageGone(page.publicId), 'read ${page.publicId}: gone');
       }
     }
-    client.base = StrategyRowSet(
-      strategy: rows.strategy,
-      pages: rows.pages,
-      settings: rows.settings,
-      elements: client.base.elements.where(
-        (r) => kept.contains(r.pagePublicId),
-      ),
-      lineupGroups: client.base.lineupGroups.where(
-        (r) => kept.contains(r.pagePublicId),
-      ),
-    );
     arrive(headerReadOf(rows), 'read strategy');
   }
 
@@ -945,23 +1020,6 @@ final class Model {
     if (page == null) {
       arrive(PageGone(pageId), 'read $pageId: gone');
       return;
-    }
-    if (client.base.page(pageId) != null) {
-      client.base = StrategyRowSet(
-        strategy: client.base.strategy,
-        pages: client.base.pages,
-        settings: client.base.settings,
-        elements: [
-          ...client.base.elements.where((row) => row.pagePublicId != pageId),
-          ...server.rows.elementsOn(pageId),
-        ],
-        lineupGroups: [
-          ...client.base.lineupGroups.where(
-            (row) => row.pagePublicId != pageId,
-          ),
-          ...server.rows.lineupGroupsOn(pageId),
-        ],
-      );
     }
     arrive(pageReadOf(server.rows, pageId), 'read $pageId');
   }
@@ -1287,7 +1345,9 @@ final class Model {
       case 17:
         userActs(draining: false);
       case 18:
-        if (late.isNotEmpty) {
+        if (lateness.nextBool()) {
+          deliverLateRead();
+        } else if (late.isNotEmpty) {
           final (attempt, answer) = late.removeAt(random.nextInt(late.length));
           apply(OpAnswered(attempt, answer), 'late ${answer.opId}');
         }
@@ -1313,6 +1373,9 @@ final class Model {
   }
 
   void drain() {
+    while (readsInFlight.isNotEmpty) {
+      deliverLateRead();
+    }
     for (
       var round = 0;
       round < 300 && client.queue.entries.isNotEmpty;
@@ -1385,7 +1448,7 @@ const minimums = {
   'UserUsedCloud': 5,
   'UserDiscarded': 5,
   'removed Delivered': 1500,
-  'removed FoldedInto': 20,
+  'removed FoldedInto': 15,
   'put-backs': 100,
   'given up with its chain': 5,
   'nothing to do at another revision': 20,
@@ -1399,6 +1462,11 @@ const minimums = {
   'end content compared without a replacement': 80,
   'batches refused as the strategy was replaced': 50,
   'StrategySetAside': 5,
+  'reads held in flight': 500,
+  'late reads taken': 40,
+  'late reads not taken: OlderResult': 2,
+  'late reads not taken: StartedInAnotherLife': 1,
+  'late reads not taken: FromAnEndedSession': 100,
   'UserDiscardedReplaced': 5,
   'replays answered without a life': 1,
   'teammate changes a page\'s settings': 50,

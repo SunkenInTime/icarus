@@ -51,16 +51,29 @@ List<QueueEffect> effectsOf(Recorded recorded) => [
 Future<int> sessionOf(LibraryStore store) async =>
     (await syncOf(store)).queue.session.number;
 
+Future<ResultSource> readStartOf(LibraryStore store) async =>
+    readFrom((await syncOf(store)).queue);
+
 Future<void> readServer(
   LibraryStore store,
   StrategyRowSet server, {
   Iterable<String>? pages,
 }) async {
   final session = await sessionOf(store);
-  await recordAll(store, [BaseArrived(headerReadOf(server), session: session)]);
+  await recordAll(store, [
+    BaseArrived(
+      headerReadOf(server),
+      session: session,
+      from: await readStartOf(store),
+    ),
+  ]);
   for (final page in pages ?? server.pages.map((page) => page.publicId)) {
     await recordAll(store, [
-      BaseArrived(pageReadOf(server, page), session: session),
+      BaseArrived(
+        pageReadOf(server, page),
+        session: session,
+        from: await readStartOf(store),
+      ),
     ]);
   }
 }

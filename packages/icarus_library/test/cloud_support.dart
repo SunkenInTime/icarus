@@ -282,8 +282,9 @@ final class Client {
   List<StrategyOp> lastSent() =>
       effects.whereType<SendBatch>().last.ops.toList();
 
-  void arrive(ArrivedBase base) =>
-      must(BaseArrived(base, session: queue.session.number));
+  void arrive(ArrivedBase base) => must(
+    BaseArrived(base, session: queue.session.number, from: readFrom(queue)),
+  );
 
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
@@ -374,3 +375,15 @@ ArrivedBase pageReadOf(StrategyRows rows, String page) =>
 
 Matcher awaitingResult(ResultSubject subject) =>
     isA<AwaitingResult>().having((hold) => hold.subject, 'subject', subject);
+
+ResultSource readFrom(CloudQueue queue) =>
+    ReadOfThisDevice(queue.session.readStart, life: queue.shown.strategy?.life);
+
+Matcher owed({int? unlessLife}) => isA<ReadOwed>().having(
+  (state) => state.unlessLife,
+  'unlessLife',
+  unlessLife,
+);
+
+Matcher refusedRead(String problem) =>
+    isA<ReadRefused>().having((state) => state.problem, 'problem', problem);

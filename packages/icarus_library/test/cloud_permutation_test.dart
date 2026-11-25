@@ -28,6 +28,7 @@ final class ReadFact extends Fact {
 
   final ArrivedBase base;
   late final int session;
+  late final ResultSource from;
 }
 
 final class ClockFact extends Fact {
@@ -295,6 +296,7 @@ final class Scenario {
             BaseArrived(
               const StrategyGone(),
               session: client.queue.session.number,
+              from: readFrom(client.queue),
             ),
             'strategy gone',
           ),
@@ -330,6 +332,12 @@ final class Scenario {
         fact.session = fact.phase == 2
             ? client.queue.nextSession
             : client.queue.session.number;
+        fact.from = ReadOfThisDevice(
+          fact.phase == 2
+              ? ReadStart(session: fact.session, sequence: 0)
+              : client.queue.session.readStart,
+          life: client.queue.shown.strategy?.life,
+        );
       }
     }
   }
@@ -422,9 +430,9 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
     switch (fact) {
       case EventFact(:final event):
         step(event);
-      case ReadFact(:final base, :final session):
+      case ReadFact(:final base, :final session, :final from):
         if (base is! StrategyGone) lastDelivered[subjectOf(base)] = base;
-        step(BaseArrived(base, session: session));
+        step(BaseArrived(base, session: session, from: from));
       case ClockFact(:final by):
         at = at.add(by);
       case ClaimFact():
@@ -458,7 +466,13 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
       describeBase(current),
       describeBase(entry.value),
     )) {
-      step(BaseArrived(current, session: queue.session.number));
+      step(
+        BaseArrived(
+          current,
+          session: queue.session.number,
+          from: readFrom(queue),
+        ),
+      );
     }
   }
   for (var round = 0; ; round++) {
@@ -490,6 +504,7 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
               ? headerReadOf(server.rows)
               : pageReadOf(server.rows, page),
           session: queue.session.number,
+          from: readFrom(queue),
         ),
       );
     }
@@ -539,12 +554,34 @@ bool sameApartFromResults(CloudQueue a, CloudQueue b) {
   CloudQueue plain(CloudQueue queue) => CloudQueue(
     entries: queue.entries,
     attempts: queue.attempts,
-    landed: queue.landed,
+    landed: [
+      for (final work in queue.landed)
+        LandedWork(
+          attempt: work.attempt,
+          position: work.position,
+          op: work.op,
+          revision: work.revision,
+          life: work.life,
+          shape: work.shape,
+          own: work.own,
+          firstSentAt: work.firstSentAt,
+          produced: work.produced,
+          movedRow: work.movedRow,
+          shownWithout: work.shownWithout,
+          answeredAt: ReadStart.beforeAnyRead,
+        ),
+    ],
     nextAttempt: queue.nextAttempt,
     nextSession: queue.nextSession,
     shown: Shown.nothing,
     strategy: queue.strategy,
-    session: queue.session,
+    session: QueueSession(
+      connected: queue.session.connected,
+      build: queue.session.build,
+      number: queue.session.number,
+      sequence: 0,
+      basis: queue.session.basis,
+    ),
   );
   return plain(a) == plain(b);
 }

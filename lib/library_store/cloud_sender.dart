@@ -854,11 +854,10 @@ final class CloudSender {
             .compareTo(_readOf(b) is _ReadList ? 0 : 1),
       );
     for (final need in needed) {
-      if (_readOf(need) case _ReadPage(:final page)) {
-        if (_deferredUntil(id, page) case final at? when at.isAfter(now)) {
-          later(at);
-          continue;
-        }
+      if (_deferredUntil(id, _readOf(need)) case final at?
+          when at.isAfter(now)) {
+        later(at);
+        continue;
       }
       final at = switch (memory.rounds[need]) {
         null => now,
@@ -872,7 +871,8 @@ final class CloudSender {
       later(at);
     }
     for (final page in _unreadPages(cloud)) {
-      if (_deferredUntil(id, page) case final at? when at.isAfter(now)) {
+      if (_deferredUntil(id, _ReadPage(page)) case final at?
+          when at.isAfter(now)) {
         later(at);
         continue;
       }
@@ -1003,7 +1003,14 @@ final class CloudSender {
       case StoreReadAnswered(:final base, :final role):
         final confirms = why == _Why.access && (role?.edits ?? false);
         final written = await _store.write(owner, id, [
-          BaseArrived(base, session: session),
+          BaseArrived(
+            base,
+            session: session,
+            from: ReadOfThisDevice(
+              cloud.queue.session.readStart,
+              life: cloud.queue.shown.strategy?.life,
+            ),
+          ),
           if (confirms) EditAccessConfirmed(afterAttempt: _accessLostAt(cloud)),
         ]);
         if (disposed) return const _Ended();
@@ -1027,23 +1034,30 @@ final class CloudSender {
           case WriteTroubled(:final trouble):
             return _troubled(id, trouble);
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
-            return _readFailed(
+            return _putOff(
               id,
+              owner,
+              read,
               'the queue did not take $read: ${notApplied.join('; ')}',
-              snap,
             );
           case WrittenWith(:final effects):
-            if (read case _ReadPage(:final page)) {
-              final deferred = effects.any(
-                (effect) => effect is PageResultDeferred && effect.page == page,
+            if (read case _ReadPage(:final page)
+                when effects.any(
+                  (effect) =>
+                      effect is PageResultDeferred && effect.page == page,
+                )) {
+              return _putOff(
+                id,
+                owner,
+                read,
+                'the page list and page $page keep disagreeing about which '
+                'life the page is in',
               );
-              if (deferred) {
-                return _pageDeferred(id, owner, page, snap);
-              }
-              _deferred[id]?.remove(page);
             }
+            _deferred[id]?.remove('$read');
         }
         if (_inputs != snap) return const _Restart();
+        if (read is _ReadList) _unread.add(id);
         _recorded(id, read, why, role, cloud, started, snap);
         _note(
             id,
@@ -1102,22 +1116,24 @@ final class CloudSender {
     _store.report(ReadRecorded(id, '$read', why.words, at: started));
   }
 
-  Future<_Step> _pageDeferred(
+  Future<_Step> _putOff(
     String id,
     Account owner,
-    String page,
-    Snapshot snap,
+    _Read read,
+    String why,
   ) async {
     final now = _clock();
-    final pages = _deferred[id] ??= {};
-    final count = (pages[page]?.count ?? 0) + 1;
-    pages[page] = (count: count, at: now);
+    final reads = _deferred[id] ??= {};
+    final count = (reads['$read']?.count ?? 0) + 1;
+    reads['$read'] = (count: count, at: now);
     if (count == _timing.unresolvedRounds) {
       final noted = await _store.write(owner, id, [
         ResultRefused(
-          page: page,
-          problem: 'the page list and page $page keep disagreeing about '
-              'which life the page is in',
+          page: switch (read) {
+            _ReadPage(:final page) => page,
+            _ReadList() => null,
+          },
+          problem: why,
         ),
       ]);
       if (disposed) return const _Ended();
@@ -1125,15 +1141,12 @@ final class CloudSender {
         return _troubled(id, trouble);
       }
     }
-    _note(
-        id,
-        'page $page came back in another life than the page list shows '
-        '($count in a row); the list is read first');
+    _note(id, '$why ($count in a row); $read is read again later');
     return const _Acted();
   }
 
-  DateTime? _deferredUntil(String id, String page) =>
-      switch (_deferred[id]?[page]) {
+  DateTime? _deferredUntil(String id, _Read read) =>
+      switch (_deferred[id]?['$read']) {
         null => null,
         (:final count, :final at) => at.add(
             count >= _timing.unresolvedRounds

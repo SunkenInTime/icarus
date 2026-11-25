@@ -162,6 +162,18 @@ final class ResultOutOfPlace implements CommitRefusal, LibraryRefusal {
   String toString() => 'ResultOutOfPlace($key)';
 }
 
+final class EditOfAReplacedStrategy implements CommitRefusal {
+  EditOfAReplacedStrategy(this.strategyPublicId, List<String> opIds)
+    : opIds = List.unmodifiable(opIds);
+
+  final String strategyPublicId;
+  final List<String> opIds;
+
+  @override
+  String toString() =>
+      'EditOfAReplacedStrategy($strategyPublicId, ${opIds.join(', ')})';
+}
+
 final class ResultWithoutLife implements CommitRefusal, LibraryRefusal {
   const ResultWithoutLife(this.key);
 

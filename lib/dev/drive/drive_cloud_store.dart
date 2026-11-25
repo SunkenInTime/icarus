@@ -108,7 +108,8 @@ Future<String> storeAdd(
     payload: payload,
     sortIndex: 1000 + Random().nextInt(1000),
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op],
+      madeOn: await _viewedLife(store, strategyId));
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: add $kind $itemId to page $page of '
       '$strategyId at (${at.$1}, ${at.$2})';
@@ -128,7 +129,8 @@ Future<String> storeAddPage(ProviderContainer c) async {
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op],
+      madeOn: await _viewedLife(store, strategyId));
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: add page ${op.pagePublicId} to '
       '$strategyId with no editor open';
@@ -232,9 +234,13 @@ Future<String> storeMove(
             ),
             merge: merge ? FieldMerge(fields: const ['position']) : null,
           );
-          final saved = await store.commitAllAs(_signedIn(c), strategyId, [
-            op,
-          ]);
+          final saved = await store.commitAllAs(
+              _signedIn(c),
+              strategyId,
+              [
+                op,
+              ],
+              madeOn: await _viewedLife(store, strategyId));
           if (saved case Saved()) {
             return 'CLOUDSTORE committed ${op.opId}: $itemId of $strategyId '
                 'to (${position['dx']}, ${position['dy']}) over revision '
@@ -277,7 +283,8 @@ Future<String> storeDelete(ProviderContainer c, String itemId) async {
     pagePublicId: element.pagePublicId,
     expectedElementRevision: element.revision,
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op],
+      madeOn: await _viewedLife(store, strategyId));
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: delete $itemId of $strategyId over '
       'revision ${element.revision}';
@@ -304,7 +311,8 @@ Future<String> storeSetField(
     ),
     merge: FieldMerge(fields: [field]),
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op],
+      madeOn: await _viewedLife(store, strategyId));
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: $field of $itemId of $strategyId '
       'set to $value as a field merge over revision ${element.revision}';
@@ -353,7 +361,8 @@ Future<String> storeDeletePage(ProviderContainer c, int index) async {
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
-  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op]);
+  final saved = await store.commitAllAs(_signedIn(c), strategyId, [op],
+      madeOn: await _viewedLife(store, strategyId));
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: delete page $page of $strategyId '
       'with no editor open';
@@ -476,6 +485,13 @@ Future<String> storeUseCloud(ProviderContainer c, String itemId) async {
   return 'CLOUDSTORE used the cloud\'s version for ${chosen.join(', ')} of '
       '$strategyId';
 }
+
+Future<int> _viewedLife(LibraryStore store, String strategyId) async =>
+    switch (await store.readStrategy(strategyId)) {
+      Found(value: StrategyContent(strategy: final ReadableStrategy header)) =>
+        header.createdAt.millisecondsSinceEpoch,
+      final other => throw StateError('$strategyId is not readable: $other'),
+    };
 
 Future<String> _strategyHolding(LibraryStore store, String itemId) async {
   for (final strategyId in _storedCloudStrategies(store)) {

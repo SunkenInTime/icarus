@@ -2,15 +2,17 @@ import '../ops.dart';
 import '../outcome.dart';
 import '../rows.dart';
 import 'pending.dart';
+import 'shown.dart';
 
 sealed class QueueEvent {
   const QueueEvent();
 }
 
 final class UserEdited extends QueueEvent {
-  const UserEdited(this.edit);
+  const UserEdited(this.edit, {this.madeOn});
 
   final Edit edit;
+  final int? madeOn;
 }
 
 sealed class Edit {
@@ -126,6 +128,25 @@ EditMaking editOf(
     ),
   (ElementPatchOp() || LineupGroupPatchOp(), null) => NeedsRowPage(op),
 };
+
+Edit editOfAnotherLife(StrategyOp op) => PlainEdit._(op, switch (op) {
+  StrategyPatchOp() => const StrategyWide(),
+  PageAddOp(:final pagePublicId) ||
+  PagePatchOp(:final pagePublicId) ||
+  PageReorderOp(:final pagePublicId) ||
+  PageSettingsPatchOp(:final pagePublicId) ||
+  PageDeleteOp(:final pagePublicId) ||
+  ElementAddOp(:final pagePublicId) ||
+  ElementDeleteOp(:final pagePublicId) ||
+  ElementReorderOp(:final pagePublicId) ||
+  LineupGroupAddOp(:final pagePublicId) ||
+  LineupGroupDeleteOp(:final pagePublicId) ||
+  LineupGroupReorderOp(:final pagePublicId) => OnPage(pagePublicId),
+  ElementPatchOp(pagePublicId: final page?) ||
+  LineupGroupPatchOp(pagePublicId: final page?) => OnPage(page),
+  ElementPatchOp(pagePublicId: null) ||
+  LineupGroupPatchOp(pagePublicId: null) => const StrategyWide(),
+}, const AuthoredNoRow());
 
 final class BatchClaimed extends QueueEvent {
   BatchClaimed({
@@ -246,10 +267,26 @@ final class ResultRefused extends QueueEvent {
 }
 
 final class BaseArrived extends QueueEvent {
-  const BaseArrived(this.base, {required this.session});
+  const BaseArrived(this.base, {required this.session, required this.from});
 
   final ArrivedBase base;
   final int session;
+  final ResultSource from;
+}
+
+sealed class ResultSource {
+  const ResultSource();
+}
+
+final class ReadOfThisDevice extends ResultSource {
+  const ReadOfThisDevice(this.started, {required this.life});
+
+  final ReadStart started;
+  final int? life;
+}
+
+final class LiveResult extends ResultSource {
+  const LiveResult();
 }
 
 sealed class OpAnswer {

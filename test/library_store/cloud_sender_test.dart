@@ -247,6 +247,10 @@ void main() {
           BaseArrived(
             world.server.headerOf(strategyId),
             session: world.cloud().queue.session.number,
+            from: ReadOfThisDevice(
+              world.cloud().queue.session.readStart,
+              life: world.cloud().queue.shown.strategy?.life,
+            ),
           ),
         ]).then((value) => recorded = value);
         world.async.flushMicrotasks();
@@ -531,6 +535,89 @@ void main() {
           );
         };
         world.commitMove(1);
+        world.settle(const Duration(minutes: 10));
+        for (var at = 1; at < reads.length; at++) {
+          expect(
+            reads[at] - reads[at - 1],
+            greaterThanOrEqualTo(const Duration(seconds: 2)),
+          );
+        }
+        expect(reads.length, inInclusiveRange(3, 4));
+        expect(world.face(), Face.unreadableWork);
+      });
+    });
+
+    test(
+        'a record holding a strategy life a year after the server\'s recovers '
+        'after one refused batch: the calls are the send, the list and the '
+        'page, the move is set aside, and the next edit is sent and '
+        'confirmed', () {
+      inWorld((world) {
+        final truth = world.server.rows[strategyId]!;
+        world.replaceStrategyOnServer(later: const Duration(days: 365));
+        world.aheadOfTheServer();
+        final ahead = world.viewedLife();
+        expect(ahead,
+            truth.strategy.createdAt.millisecondsSinceEpoch + 365 * 86400000);
+        world.server.rows[strategyId] = truth;
+        world.server.log.clear();
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 10));
+        expect(world.server.log, ['send move-1', 'list', 'page p1']);
+        expect(world.viewedLife(),
+            truth.strategy.createdAt.millisecondsSinceEpoch);
+        final generation = (world.cloud().queue.strategy.setAside as SetAside)
+            .generations
+            .single;
+        expect(generation.writtenIn, ahead);
+        expect(generation.entries.map((entry) => entry.id), ['move-1']);
+        world.commitMove(2);
+        world.settle(const Duration(minutes: 1));
+        expect(world.server.log, [
+          'send move-1',
+          'list',
+          'page p1',
+          'send move-2',
+          'page p1',
+        ]);
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
+        'with nothing to send, a record holding a later life than the '
+        'server\'s reads the list at the read backoff, never twice in one '
+        'tick, and shows unreadable work at the bound', () {
+      inWorld((world) {
+        final truth = world.server.rows[strategyId]!;
+        world.replaceStrategyOnServer(later: const Duration(days: 365));
+        world.aheadOfTheServer();
+        world.server.rows[strategyId] = truth;
+        final reads = <Duration>[];
+        world.server.overrideRead = (call) {
+          if (call.page == null) reads.add(world.async.elapsed);
+          return null;
+        };
+        final page = truth.pages.first as LivePage;
+        world.recordAsRead(live: true, [
+          PageRead(
+            page: bornIn(
+              LivePage(
+                publicId: 'p-new',
+                strategyPublicId: page.strategyPublicId,
+                name: 'New',
+                isAutoNamed: false,
+                sortIndex: page.sortIndex + 1,
+                isAttack: page.isAttack,
+                revision: 1,
+              ),
+              truth.strategy.createdAt.millisecondsSinceEpoch + 5000,
+            ) as PageRow,
+            elements: const [],
+            lineupGroups: const [],
+          ),
+        ]);
+        expect(world.queueLength(), 0);
         world.settle(const Duration(minutes: 10));
         for (var at = 1; at < reads.length; at++) {
           expect(
@@ -1347,13 +1434,18 @@ void main() {
       final other => throw StateError('$other'),
     };
     expect(
-      await store.commitAllAs(servedAccount, strategyId, [
-        StrategyPatchOp(
-          opId: 'rename',
-          expectedStrategyRevision: (row.toJson()! as Map)['revision']! as int,
-          name: 'Renamed',
-        ),
-      ]),
+      await store.commitAllAs(
+          servedAccount,
+          strategyId,
+          [
+            StrategyPatchOp(
+              opId: 'rename',
+              expectedStrategyRevision:
+                  (row.toJson()! as Map)['revision']! as int,
+              name: 'Renamed',
+            ),
+          ],
+          madeOn: (row as ReadableStrategy).createdAt.millisecondsSinceEpoch),
       isA<Saved<List<Committed>, CommitRefusal>>(),
     );
 

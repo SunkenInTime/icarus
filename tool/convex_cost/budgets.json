@@ -609,44 +609,6 @@
         }
       }
     },
-    "twoPeopleStore": {
-      "title": "Two people on one page, sent by the cloud store's sender",
-      "about": "twoPeople's 20 moves by the owner, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH, one applyBatch per move in the op's live form, while the teammate watches the page. It measures the server's side of that call pattern, not the Dart sender, whose own call count test/library_store/cloud_sender_test.dart checks.",
-      "metrics": {
-        "functionCalls": {
-          "today": 45,
-          "budget": 54
-        },
-        "readBytes": {
-          "today": 445701,
-          "budget": 557127
-        },
-        "writeBytes": {
-          "today": 46275,
-          "budget": 57844
-        },
-        "sentBytes": {
-          "today": 21401,
-          "budget": 26752
-        },
-        "returnBytes": {
-          "today": 294826,
-          "budget": 368533
-        },
-        "queryReruns": {
-          "today": 20,
-          "budget": 24
-        },
-        "applyBatchCalls": {
-          "today": 20,
-          "budget": 20
-        },
-        "conflictRetries": {
-          "today": 0,
-          "budget": 0
-        }
-      }
-    },
     "storeReadPage": {
       "title": "The store's sender reads a page for itself",
       "about": "One page:getSnapshot of the typical strategy's first page (60 items), named for the coach's account as the store's sender reads a page the queue asks for: a whole-row write after an answer at a revision it did not predict, or a page whose landed work it retires. Read after the strategy changed, so the server reads it.",
@@ -796,6 +758,44 @@
           "budget": 100
         },
         "extraDocumentsRead": {
+          "today": 0,
+          "budget": 0
+        }
+      }
+    },
+    "twoPeopleStoreLives": {
+      "title": "Two people on one page, sent by the cloud store's sender naming lives",
+      "about": "twoPeople's 20 moves by the owner, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH, one applyBatch per move in the op's live form, while the teammate watches the page. Each op names its row's life and the batch the strategy's (sendsLives, strategyLife, expectedLife), so the server checks both before it applies. It measures the server's side of that call pattern, not the Dart sender, whose own call count test/library_store/cloud_sender_test.dart checks.",
+      "metrics": {
+        "functionCalls": {
+          "today": 45,
+          "budget": 54
+        },
+        "readBytes": {
+          "today": 444222,
+          "budget": 555278
+        },
+        "writeBytes": {
+          "today": 46695,
+          "budget": 58369
+        },
+        "sentBytes": {
+          "today": 22915,
+          "budget": 28644
+        },
+        "returnBytes": {
+          "today": 295461,
+          "budget": 369327
+        },
+        "queryReruns": {
+          "today": 20,
+          "budget": 24
+        },
+        "applyBatchCalls": {
+          "today": 20,
+          "budget": 20
+        },
+        "conflictRetries": {
           "today": 0,
           "budget": 0
         }

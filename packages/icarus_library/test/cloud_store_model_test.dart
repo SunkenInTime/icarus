@@ -208,6 +208,8 @@ final class StoreModel {
     return value;
   }
 
+  Future<ResultSource> started() async => readFrom((await sync()).queue);
+
   Future<CloudStrategy> sync() async => cloudOf(
     switch (await reading(() => store.readStrategy(strategyId))) {
       Found(:final value) => value,
@@ -640,7 +642,12 @@ final class StoreModel {
     final opId = op.opId;
     final before = {for (final entry in (await sync()).queue.entries) entry.id};
     final unchanged = await snapshot();
-    final result = await store.commitAs(testAccount, strategyId, op);
+    final result = await store.commitAs(
+      testAccount,
+      strategyId,
+      op,
+      madeOn: viewedLife,
+    );
     log.add(
       'edit $opId ${op.type.wireName} ${targetOf(op)} -> ${describeSaving(result)}',
     );
@@ -814,7 +821,11 @@ final class StoreModel {
     if (random.nextInt(4) == 0) {
       await record([
         for (final answer in answers) OpAnswered(attempt, answer),
-        BaseArrived(headerReadOf(server.rows), session: live),
+        BaseArrived(
+          headerReadOf(server.rows),
+          session: live,
+          from: await started(),
+        ),
         const ConnectionReturned(),
       ], 'answers for $attempt with a header read in one call');
       count('mixed event lists');
@@ -840,7 +851,9 @@ final class StoreModel {
   }
 
   Future<void> readOne(ArrivedBase base, String label) async {
-    await record([BaseArrived(base, session: live)], label);
+    await record([
+      BaseArrived(base, session: live, from: await started()),
+    ], label);
   }
 
   Future<void> lane() async {
@@ -886,7 +899,11 @@ final class StoreModel {
     if (random.nextInt(3) == 0 && pages.isNotEmpty) {
       await record([
         for (final page in pages)
-          BaseArrived(pageReadOf(server.rows, page), session: live),
+          BaseArrived(
+            pageReadOf(server.rows, page),
+            session: live,
+            from: await started(),
+          ),
       ], 'read ${pages.length} pages in one call');
       count('page reads in one call');
     } else {
@@ -924,6 +941,7 @@ final class StoreModel {
 
   Future<void> endedSessionRead() async {
     final ended = (await sync()).queue.session.number;
+    final endedFrom = await started();
     final livePages = [
       for (final page in server.rows.pages)
         if (page is LivePage) page.publicId,
@@ -943,7 +961,7 @@ final class StoreModel {
       return;
     }
     final before = storage.contents;
-    final stale = [BaseArrived(base, session: ended)];
+    final stale = [BaseArrived(base, session: ended, from: endedFrom)];
     final result = await store.record(testAccount, strategyId, stale);
     log.add(
       'a $kind from the ended session arrives -> ${describeSaving(result)}',
@@ -968,13 +986,18 @@ final class StoreModel {
     ], 'a session opened and never used');
     if (opened == null) return;
     final session = (await sync()).queue.session.number;
+    final sessionFrom = await started();
     await reopen('before the session was used');
     if ((await sync()).queue.session.number == session) {
       throw StateError('a reopen handed out session $session again');
     }
     final before = storage.contents;
     final stale = [
-      BaseArrived(pageReadOf(server.rows, openPage), session: session),
+      BaseArrived(
+        pageReadOf(server.rows, openPage),
+        session: session,
+        from: sessionFrom,
+      ),
     ];
     final result = await store.record(testAccount, strategyId, stale);
     log.add('a result from the unused session -> ${describeSaving(result)}');
@@ -997,6 +1020,7 @@ final class StoreModel {
     if (Tally.of(cloud.queue, clock).total > 0 || inFlight.isNotEmpty) return;
     faults = false;
     final old = cloud.queue.session.number;
+    final oldFrom = readFrom(cloud.queue);
     final oldBase = headerReadOf(server.rows);
     final oldPage = pageReadOf(server.rows, openPage);
     final removed = await store.editLibrary([const RemoveStrategy(strategyId)]);
@@ -1022,14 +1046,16 @@ final class StoreModel {
     final later = reads.skip(now.length).toList();
     if (later.isNotEmpty) {
       await record([
-        for (final read in later) BaseArrived(read, session: live),
+        for (final read in later)
+          BaseArrived(read, session: live, from: await started()),
       ], 'the rest of the import in a later call');
       count('imports in several calls');
     }
     final before = storage.contents;
     final stale = [
-      BaseArrived(oldBase, session: old),
-      if (oldPage is PageRead) BaseArrived(oldPage, session: old),
+      BaseArrived(oldBase, session: old, from: oldFrom),
+      if (oldPage is PageRead)
+        BaseArrived(oldPage, session: old, from: oldFrom),
     ];
     final result = await store.record(testAccount, strategyId, stale);
     log.add(
@@ -1074,6 +1100,7 @@ final class StoreModel {
       testAccount,
       strategyId,
       pageAdd(fresh('op'), fresh('page-')),
+      madeOn: viewedLife,
     );
     if (refused case Refused(reason: QueueHeld())) {
     } else {
@@ -1235,11 +1262,13 @@ final class StoreModel {
     final calls = <(String, Future<Saving<Object?, CommitRefusal>> Function())>[
       (
         'another account edits',
-        () => store.commitAs(otherAccount, strategyId, op),
+        () => store.commitAs(otherAccount, strategyId, op, madeOn: viewedLife),
       ),
       (
         'another account edits in a batch',
-        () => store.commitAllAs(otherAccount, strategyId, [op]),
+        () => store.commitAllAs(otherAccount, strategyId, [
+          op,
+        ], madeOn: viewedLife),
       ),
       ('an edit naming no account', () => store.commit(strategyId, op)),
       (
@@ -1288,7 +1317,14 @@ final class StoreModel {
       (
         'another account records a result of the current session',
         () => store.record(otherAccount, strategyId, [
-          BaseArrived(headerReadOf(server.rows), session: this.live),
+          BaseArrived(
+            headerReadOf(server.rows),
+            session: this.live,
+            from: ReadOfThisDevice(
+              ReadStart(session: this.live, sequence: 0),
+              life: null,
+            ),
+          ),
         ]),
       ),
     ];

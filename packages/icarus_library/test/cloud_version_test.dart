@@ -34,9 +34,12 @@ PageRead pageAWith(List<ElementRow> elements) => PageRead(
 );
 
 Shown shownAfter(List<List<ElementRow>> reads) {
-  var shown = Shown.nothing.take(headerReadOf(initialRows()));
+  var shown = Shown.nothing.take(
+    headerReadOf(initialRows()),
+    started: ReadStart.beforeAnyRead,
+  );
   for (final elements in reads) {
-    shown = shown.take(pageAWith(elements));
+    shown = shown.take(pageAWith(elements), started: ReadStart.beforeAnyRead);
   }
   return shown;
 }
@@ -115,7 +118,7 @@ void main() {
           },
         },
       };
-      final entry = switch (decodeEntry(1, written)) {
+      final entry = switch (decodeEntry(1, written, sendable: true)) {
         Read(value: final PendingOp entry) => entry,
         final other => fail('expected an entry, got $other'),
       };

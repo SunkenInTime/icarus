@@ -211,100 +211,100 @@ Map<String, Object?> _refusalToJson(ServerRefusal refusal) => switch (refusal) {
   },
 };
 
-Decoded<QueueEntry> decodeEntry(int place, Object? json) => JsonFields.read(
-  json,
-  'pending entry',
-  (fields) {
-    _versioned(fields, 'entry');
-    switch (fields.json['kind']) {
-      case 'retired':
-        final opId = fields.string('opId');
-        final clientId = fields.string('clientId');
-        final landing = _named(fields, 'landing', Landing.values);
-        final stored = fields.json['stored'];
-        return () => RetiredOp(
-          place: place,
-          opId: opId,
-          clientId: clientId,
-          landing: landing!,
-          stored: plainJson(stored),
-        );
-      case 'op':
-        final op = fields.decoded('op', StrategyOp.decode);
-        final scope = fields.decoded('scope', _scope);
-        final authored = fields.decoded('authored', _authored);
-        final authoredIn = fields.whole('authoredIn');
-        final authoredAt = _timeAt(fields, 'authoredAt');
-        if (authoredIn < 0) fields.reject('a negative session number');
-        final retriedAfter = fields.whole('retriedAfter');
-        if (retriedAfter < 0) fields.reject('a negative attempt number');
-        final refused = fields.json['refusal'] == null
-            ? null
-            : fields.decoded('refusal', _refusal);
-        final windowPassed = switch (fields.json['windowPassed']) {
-          null => false,
-          true => true,
-          _ => () {
-            fields.reject('an unreadable window');
-            return false;
-          }(),
-        };
-        final Work? work = switch ((fields.json['work'], op)) {
-          ('op', final op?) => OpWork(op),
-          ({'checkedDelete': final Object? check}, final PageDeleteOp delete) =>
-            switch (_seen(adoptJson(check))) {
-              Read(:final value) => CheckedDelete(delete, value),
-              CouldNotRead() => null,
-            },
-          _ => null,
-        };
-        if (work == null) fields.reject('work that does not fit its op');
-        if (op != null && scope != null && !_scopeFits(op, scope)) {
-          fields.reject('a scope or field base that does not fit its op');
-        }
-        final strategyLife = fields.has('strategyLife')
-            ? fields.whole('strategyLife')
-            : null;
-        final behindOwn = switch (fields.json['behindOwn']) {
-          null => false,
-          true => true,
-          _ => () {
-            fields.reject('an unreadable flag');
-            return false;
-          }(),
-        };
-        final basis = switch (fields.json['basis']) {
-          null => null,
-          {
-            'serverTime': final int serverTime,
-            'heldAtMicros': final int heldAt,
-          } =>
-            ServerTimeBasis(serverTime, heldAt: Duration(microseconds: heldAt)),
-          _ => () {
-            fields.reject('an unreadable basis');
-            return null;
-          }(),
-        };
-        return () => PendingOp(
-          basis: basis,
-          behindOwn: behindOwn,
-          place: place,
-          work: work!,
-          scope: scope!,
-          authored: authored!,
-          authoredIn: authoredIn,
-          authoredAt: authoredAt,
-          refusal: refused == null ? const NotRefused() : RefusedWith(refused),
-          retriedAfter: retriedAfter,
-          window: windowPassed ? const WindowPassed() : const WindowOpen(),
-          strategyLife: strategyLife,
-        );
-      default:
-        fields.reject('an entry kind this build does not read');
-        return () => throw StateError('rejected');
-    }
-  },
-);
+Decoded<QueueEntry> decodeEntry(
+  int place,
+  Object? json, {
+  required bool sendable,
+}) => JsonFields.read(json, 'pending entry', (fields) {
+  _versioned(fields, 'entry');
+  switch (fields.json['kind']) {
+    case 'retired':
+      final opId = fields.string('opId');
+      final clientId = fields.string('clientId');
+      final landing = _named(fields, 'landing', Landing.values);
+      final stored = fields.json['stored'];
+      return () => RetiredOp(
+        place: place,
+        opId: opId,
+        clientId: clientId,
+        landing: landing!,
+        stored: plainJson(stored),
+      );
+    case 'op':
+      final op = fields.decoded('op', StrategyOp.decode);
+      final scope = fields.decoded('scope', _scope);
+      final authored = fields.decoded('authored', _authored);
+      final authoredIn = fields.whole('authoredIn');
+      final authoredAt = _timeAt(fields, 'authoredAt');
+      if (authoredIn < 0) fields.reject('a negative session number');
+      final retriedAfter = fields.whole('retriedAfter');
+      if (retriedAfter < 0) fields.reject('a negative attempt number');
+      final refused = fields.json['refusal'] == null
+          ? null
+          : fields.decoded('refusal', _refusal);
+      final windowPassed = switch (fields.json['windowPassed']) {
+        null => false,
+        true => true,
+        _ => () {
+          fields.reject('an unreadable window');
+          return false;
+        }(),
+      };
+      final Work? work = switch ((fields.json['work'], op)) {
+        ('op', final op?) => OpWork(op),
+        ({'checkedDelete': final Object? check}, final PageDeleteOp delete) =>
+          switch (_seen(adoptJson(check))) {
+            Read(:final value) => CheckedDelete(delete, value),
+            CouldNotRead() => null,
+          },
+        _ => null,
+      };
+      if (work == null) fields.reject('work that does not fit its op');
+      if (sendable && op != null && scope != null && !_scopeFits(op, scope)) {
+        fields.reject('a scope or field base that does not fit its op');
+      }
+      final strategyLife = fields.has('strategyLife')
+          ? fields.whole('strategyLife')
+          : null;
+      final behindOwn = switch (fields.json['behindOwn']) {
+        null => false,
+        true => true,
+        _ => () {
+          fields.reject('an unreadable flag');
+          return false;
+        }(),
+      };
+      final basis = switch (fields.json['basis']) {
+        null => null,
+        {
+          'serverTime': final int serverTime,
+          'heldAtMicros': final int heldAt,
+        } =>
+          ServerTimeBasis(serverTime, heldAt: Duration(microseconds: heldAt)),
+        _ => () {
+          fields.reject('an unreadable basis');
+          return null;
+        }(),
+      };
+      return () => PendingOp(
+        basis: basis,
+        behindOwn: behindOwn,
+        place: place,
+        work: work!,
+        scope: scope!,
+        authored: authored!,
+        authoredIn: authoredIn,
+        authoredAt: authoredAt,
+        refusal: refused == null ? const NotRefused() : RefusedWith(refused),
+        retriedAfter: retriedAfter,
+        window: windowPassed ? const WindowPassed() : const WindowOpen(),
+        strategyLife: strategyLife,
+      );
+    default:
+      fields.reject('an entry kind this build does not read');
+      return () => throw StateError('rejected');
+  }
+});
 
 bool _scopeFits(StrategyOp op, Scope scope) => switch (editOf(
   op,
@@ -485,7 +485,10 @@ EntriesReading entriesFrom(Iterable<(int, String)> stored) {
   for (final (place, text) in [
     ...stored,
   ]..sort((a, b) => a.$1.compareTo(b.$1))) {
-    final reading = _fromText(text, (json) => decodeEntry(place, json));
+    final reading = _fromText(
+      text,
+      (json) => decodeEntry(place, json, sendable: true),
+    );
     switch (reading) {
       case CloudRowRead(value: final entry) when seen.add(entry.id):
         entries.add(entry);
@@ -719,7 +722,7 @@ SetAsideGeneration? _generation(Object raw) {
         'place': final num place,
         'entry': final Object? json,
       } when isSafeWhole(place)) {
-        switch (decodeEntry(place.toInt(), json)) {
+        switch (decodeEntry(place.toInt(), json, sendable: false)) {
           case Read(:final value):
             entries.add(value);
           case CouldNotRead():
@@ -784,6 +787,8 @@ Map<String, Object?> landedToJson(LandedWork work) => {
   if (work.produced case final produced?) 'produced': _producedToJson(produced),
   if (work.movedRow case final moved?) 'movedRow': moved.toJson(),
   if (work.shownWithout) 'shownWithout': true,
+  if (work.answeredAt != ReadStart.beforeAnyRead)
+    'answeredAt': _startToJson(work.answeredAt),
 };
 
 CloudRowReading<LandedWork> landedFromText(
@@ -818,7 +823,12 @@ CloudRowReading<LandedWork> landedFromText(
         return false;
       }(),
     };
+    final answeredAt = fields.has('answeredAt')
+        ? _startFrom(fields.json['answeredAt'])
+        : ReadStart.beforeAnyRead;
+    if (answeredAt == null) fields.reject('an unreadable answer point');
     return () => LandedWork(
+      answeredAt: answeredAt!,
       own: own,
       firstSentAt: firstSentAt,
       movedRow: movedRow(),
@@ -975,26 +985,66 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
 }
 
 Object? _readToJson(ReadState state) => switch (state) {
-  ReadOwed(unlessLife: null) => 'owed',
-  ReadOwed(:final unlessLife?) => {'owedUnless': unlessLife},
-  ReadRefused(:final problem, :final unlessLife) => {
+  ReadOwed(:final unlessLife, :final since) => {
+    'owedSince': _startToJson(since),
+    'unless': ?unlessLife,
+  },
+  ReadRefused(:final problem, :final unlessLife, :final since) => {
     'refused': problem,
     'unless': ?unlessLife,
+    'since': _startToJson(since),
   },
   NotReadThisSession() || ReadThisSession() => null,
 };
 
+Map<String, Object?> _startToJson(ReadStart start) => {
+  'session': start.session,
+  'step': start.sequence,
+};
+
+ReadStart? _startFrom(Object? raw) => switch (raw) {
+  {'session': final num session, 'step': final num step}
+      when raw.length == 2 &&
+          isSafeWhole(session) &&
+          isSafeWhole(step) &&
+          session >= 0 &&
+          step >= 0 =>
+    ReadStart(session: session.toInt(), sequence: step.toInt()),
+  _ => null,
+};
+
 ReadState? _readFrom(Object? raw) => switch (raw) {
   null => const NotReadThisSession(),
-  'owed' => const ReadOwed(),
-  {'owedUnless': final num life} when isSafeWhole(life) => ReadOwed(
-    unlessLife: life.toInt(),
-  ),
-  {'refused': final String problem, 'unless': final num life}
-      when isSafeWhole(life) =>
-    ReadRefused(problem, unlessLife: life.toInt()),
-  {'refused': final String problem} when !raw.containsKey('unless') =>
-    ReadRefused(problem),
+  'owed' => const ReadOwed(since: ReadStart.beforeAnyRead),
+  {'owedUnless': final num life} when isSafeWhole(life) && raw.length == 1 =>
+    ReadOwed(unlessLife: life.toInt(), since: ReadStart.beforeAnyRead),
+  {'owedSince': final Object? since} => switch ((
+    _startFrom(since),
+    raw['unless'],
+    raw.length,
+  )) {
+    (final since?, null, 1) => ReadOwed(since: since),
+    (final since?, final num life, 2) when isSafeWhole(life) => ReadOwed(
+      unlessLife: life.toInt(),
+      since: since,
+    ),
+    _ => null,
+  },
+  {'refused': final String problem} => switch ((
+    raw.containsKey('since')
+        ? _startFrom(raw['since'])
+        : ReadStart.beforeAnyRead,
+    raw['unless'],
+    raw.containsKey('unless'),
+  )) {
+    (final since?, null, false) => ReadRefused(problem, since: since),
+    (final since?, final num life, true) when isSafeWhole(life) => ReadRefused(
+      problem,
+      unlessLife: life.toInt(),
+      since: since,
+    ),
+    _ => null,
+  },
   _ => null,
 };
 

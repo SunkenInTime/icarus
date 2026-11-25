@@ -378,8 +378,11 @@ final events = <String, QueueEvent Function(Client)>{
   'user: use cloud': (c) => const UserUsedCloud('x'),
   'user: delete anyway': (c) => const UserDeletedAnyway('x'),
   'user: discard': (c) => const UserDiscarded('x'),
-  'result: header as it is': (c) =>
-      BaseArrived(headerReadOf(c.base), session: c.queue.session.number),
+  'result: header as it is': (c) => BaseArrived(
+    headerReadOf(c.base),
+    session: c.queue.session.number,
+    from: readFrom(c.queue),
+  ),
   'result: page-a with the item at revision 2': (c) => BaseArrived(
     PageRead(
       page: page('page-a', sortIndex: 0),
@@ -387,20 +390,29 @@ final events = <String, QueueEvent Function(Client)>{
       lineupGroups: const [],
     ),
     session: c.queue.session.number,
+    from: readFrom(c.queue),
   ),
   'result: page-a with the item as this device wrote it at 2': (c) =>
       BaseArrived(
         pageReadOf(withOp(initialRows(), movePatch('m')), 'page-a'),
         session: c.queue.session.number,
+        from: readFrom(c.queue),
       ),
   'result: page-a from a session that ended': (c) => BaseArrived(
     pageReadOf(initialRows(), 'page-a'),
     session: c.queue.session.number - 1,
+    from: readFrom(c.queue),
   ),
-  'result: page-b gone': (c) =>
-      BaseArrived(const PageGone('page-b'), session: c.queue.session.number),
-  'result: strategy gone': (c) =>
-      BaseArrived(const StrategyGone(), session: c.queue.session.number),
+  'result: page-b gone': (c) => BaseArrived(
+    const PageGone('page-b'),
+    session: c.queue.session.number,
+    from: readFrom(c.queue),
+  ),
+  'result: strategy gone': (c) => BaseArrived(
+    const StrategyGone(),
+    session: c.queue.session.number,
+    from: readFrom(c.queue),
+  ),
   'result: page list the store would not keep': (c) =>
       const ResultRefused(page: null, problem: 'ResultWithoutLife(page-a)'),
   'user: discard what was set aside': (c) => const UserDiscardedReplaced(),
@@ -419,6 +431,7 @@ final events = <String, QueueEvent Function(Client)>{
       lineupGroups: const [],
     ),
     session: c.queue.session.number,
+    from: readFrom(c.queue),
   ),
   'result: page list of a later strategy life': (c) => BaseArrived(
     headerReadOf(
@@ -433,6 +446,7 @@ final events = <String, QueueEvent Function(Client)>{
       ),
     ),
     session: c.queue.session.number,
+    from: readFrom(c.queue),
   ),
 };
 

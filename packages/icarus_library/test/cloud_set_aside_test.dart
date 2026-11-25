@@ -68,6 +68,7 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: before.session.number,
+          from: readFrom(before),
         ),
         now: client.at,
       );
@@ -119,6 +120,7 @@ void main() {
               ),
             ),
             session: client.queue.session.number,
+            from: readFrom(client.queue),
           ),
         ),
         isA<NotApplicable>(),
@@ -312,13 +314,19 @@ void main() {
       await addCloud(store, initialRows());
       await recordAll(store, [const AppRestarted(build: build)]);
       savedValue(
-        await store.commitAs(testAccount, strategyId, movePatch('move')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('move'),
+          madeOn: viewedLife,
+        ),
       );
       savedValue(
         await store.commitAs(
           testAccount,
           strategyId,
           movePatch('later', elementId: 'e2'),
+          madeOn: viewedLife,
         ),
       );
       await store.close();
@@ -333,6 +341,7 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: await sessionOf(store),
+          from: await readStartOf(store),
         ),
       ]);
     }

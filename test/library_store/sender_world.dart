@@ -821,7 +821,7 @@ final class World {
 
   void commit(List<StrategyOp> ops) => _commit(strategyId, servedAccount, ops);
 
-  void replaceStrategyOnServer() {
+  void replaceStrategyOnServer({Duration later = const Duration(days: 1)}) {
     final held = server.rows[strategyId]!;
     final old = held.strategy;
     server.rows[strategyId] = StrategyRowSet(
@@ -830,14 +830,53 @@ final class World {
         name: old.name,
         mapData: old.mapData,
         revision: old.revision,
-        createdAt: old.createdAt.add(const Duration(days: 1)),
-        updatedAt: old.updatedAt.add(const Duration(days: 1)),
+        createdAt: old.createdAt.add(later),
+        updatedAt: old.updatedAt.add(later),
       ),
       pages: held.pages,
       settings: held.settings,
       elements: held.elements,
       lineupGroups: held.lineupGroups,
     );
+  }
+
+  void aheadOfTheServer() {
+    commitMove(0);
+    settle(const Duration(minutes: 10));
+    _record([const UserDiscardedReplaced()]);
+    server.log.clear();
+    if (cloud().queue.entries.isNotEmpty ||
+        cloud().queue.strategy.setAside.count != 0) {
+      throw StateError('the record did not take the later life cleanly');
+    }
+  }
+
+  void _record(List<QueueEvent> events) {
+    Saving<Recorded, CommitRefusal>? recorded;
+    store
+        .record(servedAccount, strategyId, events)
+        .then((value) => recorded = value);
+    async.flushMicrotasks();
+    if (recorded is! Saved<Recorded, CommitRefusal>) {
+      throw StateError('the store did not record $events: $recorded');
+    }
+  }
+
+  void recordAsRead(List<ArrivedBase> results, {bool live = false}) {
+    final queue = cloud().queue;
+    _record([
+      for (final result in results)
+        BaseArrived(
+          result,
+          session: queue.session.number,
+          from: live
+              ? const LiveResult()
+              : ReadOfThisDevice(
+                  queue.session.readStart,
+                  life: queue.shown.strategy?.life,
+                ),
+        ),
+    ]);
   }
 
   T rowOf<T extends Row>(T? Function(StrategyContent content) find) {
@@ -916,9 +955,14 @@ final class World {
     ]);
   }
 
+  int viewedLife([String strategy = strategyId]) =>
+      cloud(strategy).queue.shown.strategy!.life!;
+
   void _commit(String strategy, Account owner, List<StrategyOp> ops) {
     Saving<List<Committed>, CommitRefusal>? saved;
-    store.commitAllAs(owner, strategy, ops).then((value) => saved = value);
+    store
+        .commitAllAs(owner, strategy, ops, madeOn: viewedLife(strategy))
+        .then((value) => saved = value);
     async.flushMicrotasks();
     expect(saved, isA<Saved<List<Committed>, CommitRefusal>>());
   }

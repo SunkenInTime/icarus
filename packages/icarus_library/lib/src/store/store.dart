@@ -1267,8 +1267,9 @@ final class LibraryStore {
   Future<CommitResult> commitAs(
     Account account,
     String strategyPublicId,
-    StrategyOp op,
-  ) => _single(commitAllAs(account, strategyPublicId, [op]));
+    StrategyOp op, {
+    required int madeOn,
+  }) => _single(commitAllAs(account, strategyPublicId, [op], madeOn: madeOn));
 
   static Future<CommitResult> _single(Future<BatchResult> batch) async =>
       switch (await batch) {
@@ -1317,14 +1318,16 @@ final class LibraryStore {
   Future<BatchResult> commitAllAs(
     Account account,
     String strategyPublicId,
-    List<StrategyOp> ops,
-  ) => _commitAll(account, strategyPublicId, ops);
+    List<StrategyOp> ops, {
+    required int madeOn,
+  }) => _commitAll(account, strategyPublicId, ops, madeOn: madeOn);
 
   Future<BatchResult> _commitAll(
     Account? account,
     String strategyPublicId,
-    List<StrategyOp> ops,
-  ) {
+    List<StrategyOp> ops, {
+    int? madeOn,
+  }) {
     final asked = List<StrategyOp>.of(ops);
     return _inTurn(() async {
       if (_settle() case StorageFailed(:final failure)) {
@@ -1359,7 +1362,11 @@ final class LibraryStore {
           return Refused(refusal);
         }
         return switch (open) {
-          final _CloudReady cloud => await _commitCloud(cloud, asked),
+          final _CloudReady cloud => await _commitCloud(
+            cloud,
+            asked,
+            madeOn: madeOn!,
+          ),
           _CloudHeld(:final rows) => Refused(QueueHeld(rows)),
           _CloudUnread(:final failure) => NotSaved(failure),
           _CloudRefused(:final refusal) => Refused(refusal),

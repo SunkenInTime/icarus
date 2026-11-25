@@ -33,7 +33,7 @@ Future<({int rows, int groups})> oneFieldEdit(int pages) async {
         elementId: 'e0-0',
         x: 40,
         merge: FieldMerge(fields: ['position']),
-      ),
+      ), madeOn: viewedLife,
     ),
   );
   final work = (
