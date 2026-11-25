@@ -49,6 +49,9 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/library_store/library_store_start.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/onboarding/launch_intro.dart';
+import 'package:icarus/onboarding/launch_intro_host.dart';
+import 'package:icarus/onboarding/page_loader.dart';
 import 'package:icarus/providers/welcome_tour_provider.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_format.dart';
@@ -187,8 +190,9 @@ Future<void> main(List<String> args) async {
       Animate.defaultCurve = Settings.easeOut;
       Animate.defaultDuration = const Duration(milliseconds: 200);
 
+      final introSwitch = LaunchIntroSwitch.parse(args, page: Uri.base);
       final storeLaunch = LibraryStoreLaunch.parse(
-        args,
+        introSwitch.otherArgs,
         mayShadow: shadowReachable,
       );
       final storeStart = LibraryStoreStart.of(
@@ -267,6 +271,10 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
       await Hive.openBox<dynamic>(AnalyticsService.storageBoxName);
 
+      final firstLaunch = Hive.box<AppPreferences>(
+            HiveBoxNames.appPreferencesBox,
+          ).get(MapThemeProfilesProvider.appPreferencesSingletonKey) ==
+          null;
       await MapThemeProfilesProvider.bootstrap();
 
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
@@ -347,8 +355,26 @@ Future<void> main(List<String> args) async {
           "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
         );
       }
-      appProviderContainer.read(launchOpensFileOrLinkProvider.notifier).state =
+      final opensFileOrLink =
           launch.fileOpenArgs.isNotEmpty || _bufferedDeepLinks.isNotEmpty;
+      appProviderContainer.read(launchOpensFileOrLinkProvider.notifier).state =
+          opensFileOrLink;
+      final intro = LaunchIntro.choose(
+        asked: introSwitch.asked,
+        driveBuild: driveBuild,
+        opensFileOrLink: opensFileOrLink,
+        firstLaunch: firstLaunch,
+      );
+      if (intro != LaunchIntro.none) {
+        holdPageLoaderForSplash();
+        appProviderContainer.read(launchIntroProvider.notifier).state =
+            LaunchIntroRun(intro);
+      }
+      if (intro == LaunchIntro.onboarding) {
+        appProviderContainer
+            .read(welcomeTourLaunchCheckedProvider.notifier)
+            .state = true;
+      }
       runApp(
         UncontrolledProviderScope(
           container: appProviderContainer,
@@ -669,12 +695,17 @@ class _MyAppState extends ConsumerState<MyApp> {
     await _loadFromFilePathWithWarning(argument);
   }
 
+  void _dropLaunchIntro() {
+    ref.read(launchIntroProvider.notifier).state = null;
+  }
+
   /// Replays in one launch open together, so several land on the Replays
   /// tab instead of each opening the viewer in turn.
   void _handleIncomingArguments(
     List<String> arguments, {
     required String source,
   }) {
+    if (arguments.isNotEmpty) _dropLaunchIntro();
     final replays = arguments.where(isReplayPath).toList();
     if (replays.isNotEmpty) unawaited(openReplays(ref, replays));
     for (final argument in arguments) {
@@ -693,6 +724,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       return;
     }
 
+    _dropLaunchIntro();
     final redactedUri = redactDeepLinkUri(uri);
     developer.log('Handling deep link [$source]: $redactedUri',
         name: 'deep_link');
@@ -1061,7 +1093,9 @@ class _MyAppState extends ConsumerState<MyApp> {
                   // Every Shad button presses (DESIGN.md, Motion).
                   child: ShadButtonWrapper(
                     wrap: _pressScaleButton,
-                    child: child ?? const SizedBox.shrink(),
+                    child: LaunchIntroHost(
+                      child: child ?? const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),
