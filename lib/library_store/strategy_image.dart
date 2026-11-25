@@ -4,7 +4,14 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -29,7 +36,12 @@ final class StrategyImage {
   final ReadBack readBack;
 }
 
+typedef PageKey = String Function(StrategyData strategy, StrategyPage page);
+
 final class StrategyImages {
+  StrategyImages({this.pageKey = directPageKey});
+
+  final PageKey pageKey;
   final _pagesReadingBackEqual = <String, Map<String, String>>{};
 
   StrategyImage of(StrategyData strategy) => switch (_made(strategy)) {
@@ -101,8 +113,9 @@ final class StrategyImages {
     String? differing;
     for (final page in strategy.pages) {
       yield null;
-      final text = _pageText(strategy, page);
-      if (known[page.id] == text || _pageReadBack(rows, page.id) == text) {
+      final text = pageKey(strategy, page);
+      if (known[page.id] == text ||
+          _pageReadBack(rows, page.id, pageKey) == text) {
         equal[page.id] = text;
       } else {
         differing ??= page.id;
@@ -158,11 +171,30 @@ String _outline(StrategyData strategy) => jsonEncode([
       ],
     ]);
 
-String _pageText(StrategyData strategy, StrategyPage page) => jsonEncode([
+String fingerprintPageKey(StrategyData strategy, StrategyPage page) =>
+    jsonEncode([
       Maps.mapNames[strategy.mapData],
       pageFingerprint(page, strategy.id),
       pagePictureFileNames(page)..sort(),
     ]);
+
+String directPageKey(StrategyData strategy, StrategyPage page) => [
+      jsonEncode(Maps.mapNames[strategy.mapData]),
+      jsonEncode(page.id),
+      jsonEncode(page.sortIndex),
+      jsonEncode(page.name),
+      jsonEncode(page.isAutoNamed),
+      DrawingProvider.objectToJson(page.drawingData),
+      AgentProvider.objectToJson(page.agentData),
+      AbilityProvider.objectToJson(page.abilityData),
+      TextProvider.objectToJson(page.textData),
+      PlacedImageProvider.objectToJson(page.imageData, strategy.id),
+      UtilityProvider.objectToJson(page.utilityData),
+      jsonEncode(page.isAttack),
+      StrategySettingsProvider.objectToJson(page.settings),
+      jsonEncode(page.lineUpGraph.toJson()),
+      jsonEncode(pagePictureFileNames(page)..sort()),
+    ].join('\n');
 
 bool _everyRowOnAPage(StrategyRowSet rows) => [
       for (final row in rows.elements) row.pagePublicId,
@@ -186,7 +218,7 @@ bool _outlineReadsBackEqual(StrategyData strategy, StrategyRowSet rows) =>
       StrategyDataMade() || StrategyDataRefused() => false,
     };
 
-String? _pageReadBack(StrategyRowSet rows, String pageId) =>
+String? _pageReadBack(StrategyRowSet rows, String pageId, PageKey pageKey) =>
     switch (strategyFromRows(_asStored(StrategyRowSet(
       strategy: rows.strategy,
       pages: [if (rows.page(pageId) case final page?) page],
@@ -202,7 +234,7 @@ String? _pageReadBack(StrategyRowSet rows, String pageId) =>
           when unreadable.isEmpty &&
               notInStrategy.isEmpty &&
               back.pages.length == 1 =>
-        _pageText(back, back.pages.single),
+        pageKey(back, back.pages.single),
       StrategyDataMade() || StrategyDataRefused() => null,
     };
 

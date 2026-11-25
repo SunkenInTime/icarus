@@ -75,6 +75,13 @@ With `"ahead": "median"` (`scripts/open-first-frame-abandoned.json`) each press 
 
 `{"readBackCost": "largest", "runs": 21}` (`scripts/read-back-cost.json`) times, on the strategy with the most items, what the mirror spends converting it to rows, and converting it then checking that the rows read back equal to its Hive record, and logs both medians, the worst of each and the difference as a `READBACK` line.
 
+`"budget": {"longestStepMs": x, "addedPerSaveMs": y}` on that step judges two of its numbers. The longest step is the worse of the two longest single steps it reports (cold, and after one page changed): it is what a user feels, a frame the mirror holds. Added per save is the median it adds once one page changed: it is the total work each save costs. Each gets a `READBACK <strategy> within budget: …` or `READBACK <strategy> over budget: <value> ms, target <x> ms, over by <d> ms` line, and the step fails if either is over. `scripts/read-back-budget.json` runs it in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
+
+| Strategy | Longest step target | Windows release, 2026-11-25 | Added per save target | Windows release, 2026-11-25 |
+| --- | --- | --- | --- | --- |
+| largest | 4 ms | 9.9 ms | 8 ms | 3.8 ms |
+| Dense strokes | 16 ms | 128 ms | 160 ms | 110 ms |
+
 `scripts/read-mode-round.json` is a round to rerun before read mode is turned on. Make its library with `ICARUS_READ_ROUND_FIXTURE=<new folder> ICARUS_READ_ROUND_SOURCES=<Hive stores separated by ;> flutter test test/library_store/read_mode_round_test.dart`. That copies the stores, makes duplicate names unique against every name in them (a second `A` beside an existing `A (2)` becomes `A (3)`), and adds a strategy with an agent at x = -0.0, one with lineups saved interleaved and one page of dense strokes. Run the script on that library in read mode and in mirror mode. Then `ICARUS_READ_ROUND_BEFORE=<library> ICARUS_READ_ROUND_AFTER=<run>/store-main` with the same test compares Hive before and after, strategy by strategy, save time aside: only the strategy the script edits may differ. At the end of every mirror or read run, the store check lists a strategy the mirror recorded as reading back differently as `STORE expected`. It fails on a difference the mirror did not record, or on a strategy recorded as different that reads back equal.
 
 ## A change in one cloud strategy, then another opened
