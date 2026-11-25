@@ -99,7 +99,7 @@
 // Recording
 //   {"shot": png}                      {"burst": prefix, "count": n?, "every": ms?,
 //                                       "during": step?}  shots while step runs, each logged with the page transition's progress
-//   {"slowMotion": k}                  animations run k times slower; 1 is real speed
+//   {"slowMotion": k}  {"intro": name}  k times slower, 1 is real speed; shows onboarding or splash
 //   {"logWalls": tag}                  every ability's position and wall path
 //   {"logUtilities": tag}              every utility's type, position and door
 //   {"logDoors": tag}                  the map doors changed on the page
@@ -178,6 +178,7 @@ import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/clickable.dart';
 import 'package:icarus/interactive_map.dart';
+import 'package:icarus/onboarding/launch_intro.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -2786,6 +2787,12 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (await during case final Object failure) throw failure;
     case 'slowMotion':
       timeDilation = (value as num).toDouble();
+    case 'intro':
+      final run = c.read(launchIntroProvider.notifier);
+      final asked = LaunchIntro.named(value as String) ??
+          (throw StateError('no launch intro called "$value"'));
+      run.state = LaunchIntroRun(asked, take: (run.state?.take ?? 0) + 1);
+      await _frames();
     case 'logLineups' when step['frames'] is int:
       final frames = step['frames'] as int;
       var frame = 0;

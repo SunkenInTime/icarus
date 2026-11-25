@@ -478,7 +478,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           body: touch
               ? Stack(
                   children: [
-                    const Center(child: WingDotLoader()),
+                    const Center(child: IcarusMarkLoader(columns: 18)),
                     SafeArea(
                       child: Padding(
                         padding: const EdgeInsets.all(6),
@@ -651,7 +651,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     final canvas = KeyedSubtree(
       key: _communityCanvasKey,
       child: loading
-          ? const Center(child: WingDotLoader())
+          ? const Center(child: IcarusMarkLoader(columns: 18))
           : Stack(
               clipBehavior: Clip.none,
               children: [

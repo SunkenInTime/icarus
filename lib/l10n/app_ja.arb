@@ -1412,5 +1412,10 @@
   "communityPausedSubtitle": "コミュニティの一部だけを確認しました。",
   "communityKeepLooking": "さらに探す",
   "strategyMsgPageHasUnshownItems": "このページには、このバージョンのIcarusでは表示できないアイテムが{count}件あります。アイテムはそのまま保持されます。",
-  "strategyMsgPageHasUnshownSettings": "このバージョンのIcarusではこのページの設定を読み込めないため、既定のサイズで表示しています。保存されている設定は、変更しない限りそのまま保持されます。"
+  "strategyMsgPageHasUnshownSettings": "このバージョンのIcarusではこのページの設定を読み込めないため、既定のサイズで表示しています。保存されている設定は、変更しない限りそのまま保持されます。",
+  "onboardingSkip": "スキップ",
+  "onboardingSunTitle": "太陽に触れる準備はできた？",
+  "onboardingSunBody": "マップを選べばすぐにボードへ。すべてのエージェントとアビリティを配置できます。",
+  "onboardingSunBodyLogIn": "ログインしてマップを選ぶと、すべてのエージェントが揃ったボードが開き、ライブラリも同期されます。",
+  "onboardingSunStart": "マップを選ぶ"
 }

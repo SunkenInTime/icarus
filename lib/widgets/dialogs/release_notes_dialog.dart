@@ -56,7 +56,7 @@ class ReleaseNotesDialog extends ConsumerWidget {
       child: SizedBox(
         height: _bodyHeight,
         child: notes.when(
-          loading: () => const Center(child: WingDotLoader()),
+          loading: () => const Center(child: IcarusMarkLoader(columns: 18)),
           error: (_, __) => _Unavailable(
             onRetry: () => ref.invalidate(releaseNotesProvider),
           ),

@@ -1,0 +1,17 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"wait": 0.5},
+  {"intro": "onboarding"},
+  {"wait": 1},
+  {"shot": "{out}/onboarding-1-splash.png"},
+  {"wait": 5},
+  {"expectText": "sun?", "count": 1},
+  {"shot": "{out}/onboarding-2-risen.png"},
+  {"tapKey": "onboarding-start"},
+  {"waitText": "HAVEN", "seconds": 10},
+  {"waitText": "sun?", "gone": true, "seconds": 5},
+  {"wait": 0.5},
+  {"shot": "{out}/onboarding-3-pick-a-map.png"},
+  {"exit": 1}
+]

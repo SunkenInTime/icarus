@@ -1,0 +1,13 @@
+[
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"wait": 0.5},
+  {"intro": "splash"},
+  {"wait": 0.9},
+  {"shot": "{out}/splash-1-lockup.png"},
+  {"wait": 2.5},
+  {"shot": "{out}/splash-2-library.png"},
+  {"tapText": "Create Strategy"},
+  {"waitText": "HAVEN", "seconds": 5},
+  {"exit": 1}
+]
