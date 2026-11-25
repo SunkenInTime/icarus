@@ -186,6 +186,16 @@ describe("the stand-in server in packages/icarus_library/test/cloud_server.dart 
             );
             const data = JSON.parse(refused);
             expect(data.code).toBe(step.refused);
+            const held = await t.run(
+              async (ctx) =>
+                (await ctx.db
+                  .query("strategies")
+                  .withIndex("by_publicId", (q) =>
+                    q.eq("publicId", strategyPublicId),
+                  )
+                  .first())!.createdAt,
+            );
+            expect(data.currentLife).toBe(held);
             expect(lives.name(data.currentLife)).toBe(step.currentLife);
           } else {
             const answer = (await sent) as { results: Json[] };

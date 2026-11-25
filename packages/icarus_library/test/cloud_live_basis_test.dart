@@ -3,6 +3,7 @@ import 'package:icarus_library/src/cloud/codec.dart';
 import 'package:test/test.dart';
 
 import 'cloud_support.dart';
+import 'store_support.dart' show asStored;
 
 const heldAt = Duration(seconds: 100);
 
@@ -295,7 +296,7 @@ void main() {
   });
 
   test('a stored op without a basis reads as one with no basis', () {
-    final client = quietClient();
+    final client = quietClient()..clock = asStored(now);
     client.read(initialRows());
     hold(client, 1000, heldAt);
     client.edit(elementDelete('drop', elementId: 'e2'));

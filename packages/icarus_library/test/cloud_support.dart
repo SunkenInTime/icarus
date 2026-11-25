@@ -16,7 +16,7 @@ final testAccount = Account('account-a');
 
 final otherAccount = Account('account-b');
 
-final now = DateTime.utc(2026, 11, 20, 12);
+final now = DateTime.utc(2026, 11, 20, 12, 0, 0, 0, 371);
 
 ElementPatchOp movePatch(
   String opId, {

@@ -16,7 +16,9 @@ import 'package:icarus_library/icarus_library.dart';
 import 'cloud_shadow_test.dart'
     show at, pageList, secondPage, serverRows, servedAccount, strategyId;
 
-final start = DateTime.utc(2026, 11, 23, 12);
+final start = DateTime.utc(2026, 11, 23, 12, 0, 0, 0, 371);
+
+const storedPrecision = Duration(milliseconds: 1);
 const otherStrategy = 'hand-2';
 final otherAccount = Account('account-b');
 const timing = SenderTiming();

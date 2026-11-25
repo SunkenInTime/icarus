@@ -13,6 +13,7 @@ import 'package:test/test.dart';
 
 import 'cloud_server.dart';
 import 'cloud_support.dart';
+import 'store_support.dart' show asStored;
 import 'support.dart';
 
 Client online({StrategyRowSet? base}) {
@@ -749,14 +750,14 @@ void main() {
     test('a batch refused in a way the queue sends again climbs the lost-send '
         'ladder: it waits its backoff, shows as unsent, and needs the user at '
         'the bound; one refused before refusals had times does not count', () {
-      final client = online();
+      final client = online()..clock = asStored(now);
       client.edit(movePatch('move'));
       final untimed = client.claim(['move']);
       client.must(BatchRefused(untimed, BatchRefusal.uncheckedTooLate));
       expect(stateOf(client, 'move'), isA<Waiting>());
       for (var n = 1; n < retriesBeforePause; n++) {
         final attempt = client.claim(['move']);
-        final at = now.add(Duration(minutes: n));
+        final at = asStored(now).add(Duration(minutes: n));
         client.must(
           BatchRefused(attempt, BatchRefusal.editAccessRemoved, at: at),
         );
@@ -781,7 +782,7 @@ void main() {
         BatchRefused(
           last,
           BatchRefusal.uncheckedTooLate,
-          at: now.add(const Duration(hours: 1)),
+          at: asStored(now).add(const Duration(hours: 1)),
         ),
       );
       expect(

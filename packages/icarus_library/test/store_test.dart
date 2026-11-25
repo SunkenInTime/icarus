@@ -330,9 +330,12 @@ void main() {
             edited.writes.firstWhere((write) => write.after is ReadableStrategy)
                 as RowChanged;
         expect(header.fields, {RowField.updatedAt});
-        expect((header.after as ReadableStrategy).updatedAt, editedAt);
+        expect(
+          (header.after as ReadableStrategy).updatedAt,
+          asStored(editedAt),
+        );
         expect(committed.undo, isA<RestoreElementFields>());
-        expect(edited.summary.updatedAt, editedAt);
+        expect(edited.summary.updatedAt, asStored(editedAt));
         expect(edited.summary.createdAt, strategyCreatedAt);
         await pumpEventQueue();
         expect(changes.single, same(edited));
@@ -346,7 +349,7 @@ void main() {
         final row = headerOf(
           strategyOf(await reopened.readStrategy(strategyId)),
         );
-        expect(row.updatedAt, editedAt);
+        expect(row.updatedAt, asStored(editedAt));
       },
     );
 
@@ -1191,7 +1194,7 @@ void main() {
       );
       expect(edited.folders.map((f) => f.publicId), ['defaults', 'ascent']);
       expect(edited.summaries.single.folderPublicId, 'ascent');
-      expect(edited.summaries.single.updatedAt, editedAt);
+      expect(edited.summaries.single.updatedAt, asStored(editedAt));
       await store.close();
       final reopened = await openOn(disk.contents);
       expect(listOf(reopened).folders, hasLength(2));
