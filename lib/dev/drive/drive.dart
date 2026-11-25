@@ -33,6 +33,7 @@
 //   {"tapText": t, "nth": n?, "button": "secondary"?}
 //   {"tapKey": valueKey, "nth": n?}    {"tapIcon": name, "nth": n?}
 //   {"tapAt": [x, y], "hold": s?}      {"hoverAt": [x, y]}
+//   {"backButton": [x, y]}             the mouse's back button, pressed there
 //   {"tapDoor": id}  {"hoverDoor": id}  the middle of a map door's bar
 //                                      hold: seconds down, for a long press
 //   {"tapWords": t, "nth": n?, "times": k?, "touch": b?, "button": "secondary"?}
@@ -2050,6 +2051,9 @@ Future<void> _run(Map<String, dynamic> step) async {
           milliseconds: (((step['hold'] ?? 0.06) as num) * 1000).round(),
         ),
       );
+    case 'backButton':
+      _pressMouse(_point(step, name), buttons: kBackMouseButton);
+      await _frames();
     case 'hoverAt':
       await _hover(_point(step, name));
     case 'tapWords':
