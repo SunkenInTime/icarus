@@ -244,6 +244,10 @@ class ShadowNotifier extends Notifier<ShadowState> {
       final checkTook = checkClock.elapsed;
       final uiDuringCheck = checkWatch.stop();
       final after = await HiveFiles.of(Directory(hiveDirectory));
+      if (_mirrorStop case final stop?) {
+        state = ShadowMirrorStopped(stop);
+        return;
+      }
       final changed = after.changedSince(before);
       state = ShadowFinished(
         ShadowRun(

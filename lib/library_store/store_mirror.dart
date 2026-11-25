@@ -460,6 +460,7 @@ final class StoreMirror extends LocalLibraryFollower {
               _stop(MirrorStoreStopped(stop));
               return;
             }
+            if (_phase is MirrorStopped) return;
             _record(written, {strategyId}, const {});
         }
         continue;
@@ -490,6 +491,7 @@ final class StoreMirror extends LocalLibraryFollower {
         _stop(MirrorStoreStopped(stop));
         return;
       }
+      if (_phase is MirrorStopped) return;
       _record(batch, strategies, folders);
     }
   }

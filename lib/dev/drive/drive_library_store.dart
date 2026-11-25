@@ -615,6 +615,9 @@ Future<List<String>> readBackFrames(
             '${run.frames} frames were not timed',
       if (run.breaksWithoutFrame > 0)
         '$label: ${run.breaksWithoutFrame} breaks had no frame in them',
+      if (label != differingLabel && run.readBack is! ReadsBackEqual)
+        '$label: the check reads back differently, so its timings are not '
+            'those of a page that reads back equal',
       if (longestStepMs != null &&
           label != differingLabel &&
           run.longestStepMicros / 1000 > longestStepMs)
@@ -692,16 +695,24 @@ Future<
   duringCheck = true;
   final clock = Stopwatch()..start();
   step.start();
-  final image = await images.between(strategy, () async {
-    stepEnded();
-    final before = frames;
-    await betweenAnimations();
-    steps += 1;
-    if (frames == before) breaksWithoutFrame += 1;
-    step
-      ..reset()
-      ..start();
-  });
+  final StrategyImage image;
+  try {
+    image = await images.between(strategy, () async {
+      stepEnded();
+      final before = frames;
+      await betweenAnimations();
+      steps += 1;
+      if (frames == before) breaksWithoutFrame += 1;
+      step
+        ..reset()
+        ..start();
+    });
+  } catch (_) {
+    duringCheck = false;
+    asking = false;
+    scheduler.removeTimingsCallback(timings);
+    rethrow;
+  }
   stepEnded();
   final took = clock.elapsedMicroseconds;
   duringCheck = false;
