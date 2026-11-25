@@ -4,6 +4,10 @@ A driver build is the desktop app with `lib/dev/drive/drive.dart` compiled in. I
 
 A run passes only when every instance finished its script with `SUMMARY ... CLEAN` and quit before the timeout. The Linux runner also needs the app's exit code to be 0. `run.ps1` doesn't check it, because Windows builds don't report a trustworthy one. Flutter errors, items drawn away from their saved positions, failed steps and cloud work that never settles all fail it.
 
+## Tapping by text, key or icon
+
+`tapText`, `tapKey`, `tapIcon`, `tapWords` and `dragWords` find their target the way a person does: by what a click would reach. A match counts only when a hit test at its centre reaches it, or first reaches something around it (a menu item that ignores the pointer while disabled still takes the click). A match drawn under another screen, such as a library tile under the editor, does not count, and neither does one outside the window. `nth` counts the matches that count. When none is left, the step fails saying how many it found and what covers them (`found 2, all covered by ...`) or that they are off screen. When the match the tree holds first is covered and another is used, the log says so in a `TAP` line.
+
 ## Windows
 
 `build.ps1` and `run.ps1`; each one's header says how. Final checks happen here: Icarus ships to Windows, macOS and the web.

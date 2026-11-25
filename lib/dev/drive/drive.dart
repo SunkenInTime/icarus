@@ -176,6 +176,7 @@ import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
+import 'package:icarus/dev/drive/clickable.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -622,7 +623,8 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
     final targetName = Maps.mapNames[target]!;
     Future<Offset> shown(String text, String shot) async {
       try {
-        return _centerOf((w) => _isText(w, text));
+        return clickableCenterOf(
+            note: _log, (w) => _isText(w, text), what: '"$text"');
       } on StateError {
         if (shots != null) await _shot('$shots/maprace-$run-$shot.png');
         rethrow;
@@ -897,7 +899,11 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     _typeInto(target.name);
     await _waitFor(() => _countOf((w) => _isText(w, target.name)) > 0, 10);
     await _seconds(1);
-    final tile = _centerOf((w) => _isText(w, target.name));
+    final tile = clickableCenterOf(
+      note: _log,
+      (w) => _isText(w, target.name),
+      what: 'the tile of ${target.name}',
+    );
     final pointer = _pointer++;
     final binding = GestureBinding.instance;
     _addMouse(pointer, tile);
@@ -1046,24 +1052,6 @@ int _countOf(bool Function(Widget) test) {
   return count;
 }
 
-/// The middle of the [nth] widget passing [test] that is laid out, in the
-/// order the tree holds them: a screen under another comes first.
-List<Offset> _centersOf(bool Function(Widget) test) {
-  final found = <Offset>[];
-  void visit(Element element) {
-    if (test(element.widget)) {
-      final box = element.findRenderObject();
-      if (box is RenderBox && box.hasSize && box.attached) {
-        found.add(box.localToGlobal(box.size.center(Offset.zero)));
-      }
-    }
-    element.visitChildElements(visit);
-  }
-
-  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
-  return found;
-}
-
 Offset _nearest(List<Offset> points, Offset to) {
   if (points.isEmpty) throw StateError('found 0');
   return points.reduce(
@@ -1090,8 +1078,9 @@ Offset _centerOf(bool Function(Widget) test, {int nth = 0}) {
 
 /// Where a longer text draws [words]: the middle of their first line, in
 /// the [nth] text that holds them.
-Offset _wordsPoint(String words, {int nth = 0}) {
+Offset _wordsPoint(String words, {int nth = 0, bool clickable = false}) {
   final found = <Offset>[];
+  var covered = <Offset>[];
   void visit(RenderObject node) {
     if (node is RenderParagraph && node.attached && node.hasSize) {
       final at = node.text.toPlainText().indexOf(words);
@@ -1101,7 +1090,12 @@ Offset _wordsPoint(String words, {int nth = 0}) {
               TextSelection(baseOffset: at, extentOffset: at + words.length),
             );
       if (boxes.isNotEmpty) {
-        found.add(node.localToGlobal(boxes.first.toRect().center));
+        final at = node.localToGlobal(boxes.first.toRect().center);
+        if (!clickable || clickReaches(node, at)) {
+          found.add(at);
+        } else {
+          covered = [...covered, at];
+        }
       }
     }
     node.visitChildren(visit);
@@ -1109,6 +1103,10 @@ Offset _wordsPoint(String words, {int nth = 0}) {
 
   RendererBinding.instance.renderViews.forEach(visit);
   if (found.length <= nth) {
+    if (covered.isNotEmpty) {
+      throw StateError('"$words" drawn ${found.length + covered.length} times, '
+          '${covered.length} covered by ${coverAt(covered.first)}');
+    }
     throw StateError('"$words" drawn ${found.length} times');
   }
   return found[nth];
@@ -1384,8 +1382,15 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     }
     final switcher = _point(step, 'switcherAt');
     await _tap(switcher);
-    final item = _nearest(_centersOf((w) => _isText(w, openedName)), switcher);
-    final page = _centerOf((w) => _isText(w, pageName));
+    final item = _nearest(
+      clickableCentersOf((w) => _isText(w, openedName)),
+      switcher,
+    );
+    final page = clickableCenterOf(
+      note: _log,
+      (w) => _isText(w, pageName),
+      what: 'the page "$pageName"',
+    );
     final clock = Stopwatch();
     int? cleared;
     int? openedAt;
@@ -1981,19 +1986,34 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'tapText':
       await _tap(
-        _centerOf((w) => _isText(w, value as String), nth: nth),
+        clickableCenterOf(
+          note: _log,
+          (w) => _isText(w, value as String),
+          what: 'tapText "$value"',
+          nth: nth,
+        ),
         secondary: step['button'] == 'secondary',
         markAtRelease: step['mark'] as String?,
       );
     case 'tapKey':
       await _tap(
-        _centerOf((w) => _hasKey(w, value as String), nth: nth),
+        clickableCenterOf(
+          note: _log,
+          (w) => _hasKey(w, value as String),
+          what: 'tapKey "$value"',
+          nth: nth,
+        ),
         secondary: step['button'] == 'secondary',
         markAtRelease: step['mark'] as String?,
       );
     case 'tapIcon':
       final icon = _icons[value as String]!;
-      await _tap(_centerOf((w) => w is Icon && w.icon == icon, nth: nth));
+      await _tap(clickableCenterOf(
+        note: _log,
+        (w) => w is Icon && w.icon == icon,
+        what: 'tapIcon "$value"',
+        nth: nth,
+      ));
     case 'tapAt':
       await _tap(
         _point(step, name),
@@ -2006,7 +2026,7 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _hover(_point(step, name));
     case 'tapWords':
       await _tap(
-        _wordsPoint(value as String, nth: nth),
+        _wordsPoint(value as String, nth: nth, clickable: true),
         secondary: step['button'] == 'secondary',
         times: (step['times'] ?? 1) as int,
         touch: step['touch'] == true,
@@ -2014,7 +2034,7 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'hoverWords':
       await _hover(_wordsPoint(value as String, nth: nth));
     case 'dragWords':
-      final from = _wordsPoint(value as String, nth: nth);
+      final from = _wordsPoint(value as String, nth: nth, clickable: true);
       await _drag([from, from + _point(step, 'by')]);
     case 'tapDoor':
       await _tap(_doorPoint(value as String));
@@ -2357,7 +2377,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
       bool confirm(Widget w) => _hasKey(w, 'sign-out-confirm');
       await _waitFor(() => _countOf(confirm) > 0, 30);
-      await _tap(_centerOf(confirm));
+      await _tap(
+          clickableCenterOf(note: _log, confirm, what: 'sign-out confirm'));
       if (!await signingOut) throw StateError('the sign-out was not done');
       await _waitFor(() => c.read(authProvider).user == null, 60);
     case 'signIn':
