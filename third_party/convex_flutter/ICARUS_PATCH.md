@@ -30,8 +30,10 @@ in `../convex_rs`. It waits for a real connecting-to-connected transition; the
 published package method only ran its configured health query.
 
 `subscribe_group` subscribes to several queries together through the
-patched crate's `subscribe_set` and calls Dart once per server transition with
-every value, all from one server state. Separate `subscribe` calls each run
+patched crate's `subscribe_set` and calls Dart with every value, all from one
+server state: at most once per transition, and fewer times when the client
+applies transitions faster than the group's task reads them, since it then
+reads only the latest. Separate `subscribe` calls each run
 their own task and post each update from a spawned task, so two queries changed
 by one write can reach Dart apart. A group sends a value only when it changed
 since the last update, awaits each callback before the next, and sends every
@@ -53,6 +55,8 @@ snapshot), and every stamp carries its client and connection numbers too. A
 mutation whose server function fails is an answer with its snapshot, like a
 query error; a timeout or a bridge error still throws. The crate's patch notes
 say what a mutation answer's snapshot means and what it rests on.
+`connectionGeneration` gives the connection generation the client is on now,
+so the app can tell a stamp from an earlier connection by its number alone.
 `tool/convex_client_gauntlet/runtime/test/timed_results_test.dart` checks the
 snapshots reach Dart, on a local deployment, in the gauntlet lane.
 

@@ -223,7 +223,7 @@ jobs:
           # op path on the server (convex/ops.ts, what it imports from
           # convex/lib/, and the functions the gauntlet calls), the native
           # client, and the gauntlet itself.
-          lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_(provider|page_session_provider|save_state_provider)\.dart$|lib/strategy/(strategy_page_(source|apply|models)|cloud_element_decoding|remote_page_merge|lineup_group_changes)\.dart$|lib/const/hive_boxes\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|package-lock\.json$|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$|tool/convex_client_gauntlet/runtime/test/timed_results_test\.dart$)' guarded
+          lane gauntlet '^(lib/collab/|lib/providers/collab/|lib/providers/strategy_(provider|page_session_provider|save_state_provider)\.dart$|lib/strategy/(strategy_page_(source|apply|models)|cloud_element_decoding|remote_page_merge|lineup_group_changes)\.dart$|lib/const/hive_boxes\.dart$|lib/startup/cloud_bootstrap\.dart$|third_party/convex_(flutter|rs)/|convex/(ops|schema|strategy|strategies|folders|users)\.ts$|convex/lib/|package-lock\.json$|tool/sync_gauntlet/|tool/convex_client_gauntlet/runtime/tool/run_with_local_deployment\.mjs$|tool/convex_client_gauntlet/runtime/test/timed_results_test\.dart$|test/collab/live/|web/convex\.browser\.bundle\.js$)' guarded
           # View cones: the C++ cutter desktop builds use, the Dart one the
           # web build uses, the wall height data both cut, the door, map and
           # coordinate code that turns a map into their input, and the tests

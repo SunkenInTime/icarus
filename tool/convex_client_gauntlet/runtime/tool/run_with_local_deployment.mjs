@@ -40,6 +40,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,7 +78,10 @@ try {
     fs.copyFileSync(reportPath, process.env.GAUNTLET_REPORT);
   }
   printSummary(report);
-  if (adapter === "") await runTimedResults(tokens[0]);
+  if (adapter === "") {
+    await runTimedResults(tokens[0]);
+    await runStampedTransport(tokens[0]);
+  }
 } catch (error) {
   console.error("--- local deployment log (last part) ---");
   console.error(backendLog);
@@ -302,6 +306,46 @@ async function runTimedResults(accessToken) {
   );
   if (exitCode !== 0) throw new Error(`The timed results check failed (exit ${exitCode})`);
   console.log(`Timed results check passed in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+}
+
+async function runStampedTransport(accessToken) {
+  const bundle = fs.readFileSync(path.join(repoDir, "web", "convex.browser.bundle.js"));
+  const server = http.createServer((request, response) => {
+    response.writeHead(200, { "content-type": "text/javascript", "access-control-allow-origin": "*" });
+    response.end(bundle);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const bundleUrl = `http://127.0.0.1:${server.address().port}/convex.browser.bundle.js`;
+  try {
+    for (const platform of ["vm", "chrome"]) {
+      const started = Date.now();
+      const exitCode = await run(
+        flutter[0],
+        [
+          ...flutter.slice(1),
+          "test",
+          "test/collab/live/stamped_transport_live_test.dart",
+          "--platform",
+          platform,
+          `--dart-define=CONVEX_URL=${deploymentUrl}`,
+          `--dart-define=GAUNTLET_ACCESS_TOKEN=${accessToken}`,
+          `--dart-define=CONVEX_BUNDLE_URL=${bundleUrl}`,
+          "--reporter",
+          "expanded",
+        ],
+        {
+          cwd: repoDir,
+          stdio: "inherit",
+          shell: process.platform === "win32",
+          env: { ...process.env, FRB_DART_LOAD_EXTERNAL_LIBRARY_NATIVE_LIB_DIR: nativeLibDir },
+        },
+      );
+      if (exitCode !== 0) throw new Error(`The stamped transport check failed on ${platform} (exit ${exitCode})`);
+      console.log(`Stamped transport check passed on ${platform} in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+    }
+  } finally {
+    server.close();
+  }
 }
 
 function printSummary(report) {
