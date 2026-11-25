@@ -401,6 +401,16 @@ describe("the counting database", () => {
   });
 });
 
+// The generated builders by name, the whole generated module, or Convex's own
+// builders underneath them.
+const uncountedBuilders = [
+  /(import|export)\s*\{[^}]*\b(mutation|internalMutation)\b[^}]*\}\s*from\s*["'][./]*_generated\/server["']/,
+  /(import|export)\s*\*\s*(as\s+\w+\s+)?from\s*["'][./]*_generated\/server["']/,
+  /\b(mutationGeneric|internalMutationGeneric)\b/,
+];
+const usesUncountedBuilder = (source: string) =>
+  uncountedBuilders.some((pattern) => pattern.test(source));
+
 describe("every mutation counts content writes", () => {
   test("no module defines one with the generated builders", () => {
     // A mutation defined with the generated `mutation`/`internalMutation`
@@ -422,19 +432,35 @@ describe("every mutation counts content writes", () => {
         }
         if (path.endsWith(join("lib", "functions.ts"))) continue;
         const source = readFileSync(path, "utf8");
-        // The generated builders by name, the whole generated module, or
-        // Convex's own builders underneath them.
-        const bypasses = [
-          /import\s*\{[^}]*(mutation|internalMutation)[^}]*\}\s*from\s*"[./]*_generated\/server"/,
-          /import\s*\*\s*as\s+\w+\s+from\s*"[./]*_generated\/server"/,
-          /(mutationGeneric|internalMutationGeneric)/,
-        ];
-        if (bypasses.some((pattern) => pattern.test(source))) {
+        if (usesUncountedBuilder(source)) {
           offenders.push(path);
         }
       }
     };
     visit(root);
     expect(offenders).toEqual([]);
+  });
+
+  test.each([
+    'import { mutation } from "./_generated/server";',
+    'import { query, internalMutation } from "../_generated/server";',
+    'import {\n  query,\n  mutation as write,\n} from "./_generated/server";',
+    "import { mutation } from './_generated/server';",
+    'import * as server from "./_generated/server";',
+    'export { mutation } from "./_generated/server";',
+    'export * from "./_generated/server";',
+    'import { mutationGeneric } from "convex/server";',
+    'export const write = internalMutationGeneric({ handler });',
+  ])("the search finds %j", (source) => {
+    expect(usesUncountedBuilder(source)).toBe(true);
+  });
+
+  test.each([
+    'import { query, type MutationCtx } from "./_generated/server";',
+    'import { internalQuery, action } from "./_generated/server";',
+    'import { mutation, internalMutation } from "./lib/functions";',
+    'import type { GenericMutationCtx } from "convex/server";',
+  ])("the search leaves %j alone", (source) => {
+    expect(usesUncountedBuilder(source)).toBe(false);
   });
 });
