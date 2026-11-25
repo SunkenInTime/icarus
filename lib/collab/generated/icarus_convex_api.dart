@@ -39,17 +39,18 @@ final class ConvexQuery<T> {
   static Stream<List<Object?>> watchTogether(
     List<ConvexQuery<Object?>> queries,
   ) {
-    final transport = queries.first._transport;
-    if (queries.any((query) => !identical(query._transport, transport))) {
+    final watched = List.of(queries);
+    final transport = watched.first._transport;
+    if (watched.any((query) => !identical(query._transport, transport))) {
       throw ArgumentError('Queries watched together share one transport.');
     }
     return _watchDecoded(
       () => transport.subscribeTogether([
-        for (final query in queries) (query._name, query._args),
+        for (final query in watched) (query._name, query._args),
       ]),
       (values) => [
         for (final (index, value) in values.indexed)
-          queries[index]._decode(value),
+          watched[index]._decode(value),
       ],
     );
   }

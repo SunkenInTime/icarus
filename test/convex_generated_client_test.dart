@@ -280,6 +280,40 @@ void main() {
     expect(source.handle.cancelled, isTrue);
   });
 
+  test(
+      'queries watched together are watched and decoded as they were when '
+      'the watch was made', () async {
+    final source = _ScriptedValueSource(
+      result: null,
+      subscriptionEvents: [
+        [
+          _folderTreeValue(name: 'First').toDart(),
+          _folderTreeValue(name: 'Second').toDart(),
+        ],
+      ],
+    );
+    final api = IcarusConvexApi(PlatformConvexTransport(source));
+    final queries = <ConvexQuery<Object?>>[
+      api.folders.listTree(),
+      api.folders.listTree(),
+    ];
+
+    final watch = ConvexQuery.watchTogether(queries);
+    queries[0] = api.users.me();
+    final values = await watch.first.timeout(const Duration(seconds: 2));
+
+    expect(source.watchedTogether, [
+      ['folders:listTree', 'folders:listTree'],
+    ]);
+    expect(
+      [
+        for (final value in values)
+          (value! as List<FoldersListTreeResultItem>).single.name,
+      ],
+      ['First', 'Second'],
+    );
+  });
+
   test('queries on different transports are not watched together', () {
     final first = IcarusConvexApi(_FakeTransport(result: _folderTreeValue()));
     final second = IcarusConvexApi(_FakeTransport(result: _folderTreeValue()));
@@ -432,6 +466,7 @@ final class _ScriptedValueSource implements ConvexClientValueSource {
 
   final Object? result;
   final List<Object?> subscriptionEvents;
+  final List<List<String>> watchedTogether = [];
   final _TestSubscriptionHandle handle = _TestSubscriptionHandle();
 
   @override
@@ -480,6 +515,7 @@ final class _ScriptedValueSource implements ConvexClientValueSource {
     required void Function(List<Object?> values) onUpdate,
     required void Function(ConvexClientFunctionError error) onError,
   }) async {
+    watchedTogether.add([for (final query in queries) query.name]);
     scheduleMicrotask(() {
       for (final event in subscriptionEvents) {
         if (handle.cancelled) return;
