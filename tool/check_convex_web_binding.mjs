@@ -94,16 +94,10 @@ const context = loadBundle();
 // the binding must be added here, so it cannot go unchecked.
 const client = new context.convex.ConvexClient('https://binding-check.convex.cloud');
 const browserBuiltins = new Set(['_JsUint8ArrayView', '_JsReadableUint8Array']);
-const transitions = [];
-const stopWatching = client.client.addOnTransitionHandler((transition) => transitions.push(transition));
-client.client.mutation('binding:check', {}, { optimisticUpdate: () => {} }).catch(() => {});
-stopWatching();
 const instances = {
   _JsConvexClient: client,
   _JsBaseConvexClient: client.client,
   _JsConnectionState: client.connectionState(),
-  _JsTransition: transitions[0],
-  _JsLong: transitions[0]?.timestamp,
 };
 
 const constructorPath = types.get('_JsConvexClient')?.jsName;

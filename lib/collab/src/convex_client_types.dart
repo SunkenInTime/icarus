@@ -1,5 +1,4 @@
-import 'package:icarus/collab/transport/convex_transport.dart'
-    show ResultStamp;
+import 'package:icarus/collab/transport/convex_transport.dart' show ResultStamp;
 
 const defaultConvexHealthCheckQuery = 'health:ping';
 
@@ -9,14 +8,12 @@ class ConvexConfig {
     required this.clientId,
     this.operationTimeout = const Duration(seconds: 30),
     this.healthCheckQuery,
-    this.countsTransitions = false,
   });
 
   final String deploymentUrl;
   final String clientId;
   final Duration operationTimeout;
   final String? healthCheckQuery;
-  final bool countsTransitions;
 }
 
 enum WebSocketConnectionState {

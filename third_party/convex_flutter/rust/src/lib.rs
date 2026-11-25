@@ -968,6 +968,14 @@ mod tests {
     }
 
     #[test]
+    fn cancelling_a_running_subscription_signals_its_task() {
+        let (sender, mut receiver) = futures::channel::oneshot::channel::<()>();
+        let handle = super::SubscriptionHandle::new(sender);
+        handle.cancel();
+        assert_eq!(receiver.try_recv(), Ok(Some(())));
+    }
+
+    #[test]
     fn waits_until_every_query_has_a_value() {
         let results = HashMap::from([(1, value("a"))]);
         assert_eq!(step(&results, None), GroupStep::Waiting);

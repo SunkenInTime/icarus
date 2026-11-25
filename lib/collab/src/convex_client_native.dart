@@ -158,7 +158,6 @@ class ConvexClient implements StampedValueSource {
     String name,
     Map<String, Object?> args,
   ) async {
-    _mustCount();
     return _outcomeOf(await _client.queryTimed(name, _convexDartToJson(args)));
   }
 
@@ -167,7 +166,6 @@ class ConvexClient implements StampedValueSource {
     required String name,
     required Map<String, Object?> args,
   }) async {
-    _mustCount();
     return _outcomeOf(
       await _client.mutationTimed(name: name, args: _convexDartToJson(args)),
     );
@@ -180,7 +178,6 @@ class ConvexClient implements StampedValueSource {
     required void Function(StampedOutcome<Object?> outcome) onResult,
     required void Function(Object error, StackTrace stackTrace) onBroken,
   }) async {
-    _mustCount();
     var active = true;
     final handle = await _client.subscribeTimed(
       name: name,
@@ -207,7 +204,6 @@ class ConvexClient implements StampedValueSource {
     required void Function(StampedOutcome<List<Object?>> outcome) onResult,
     required void Function(Object error, StackTrace stackTrace) onBroken,
   }) async {
-    _mustCount();
     if (queries.isEmpty) {
       throw ArgumentError.value(queries, 'queries', 'needs at least one query');
     }
@@ -261,18 +257,7 @@ class ConvexClient implements StampedValueSource {
   }
 
   @override
-  Future<int> connectionGeneration() async {
-    _mustCount();
-    return _client.connectionGeneration();
-  }
-
-  void _mustCount() {
-    if (!config.countsTransitions) {
-      throw StateError(
-        'Stamped calls need a client built with countsTransitions.',
-      );
-    }
-  }
+  Future<int> connectionGeneration() => _client.connectionGeneration();
 
   int _authChanges = 0;
 

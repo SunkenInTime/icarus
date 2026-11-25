@@ -5,7 +5,6 @@ import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
 import 'package:icarus/collab/src/convex_client_types.dart';
-import 'package:icarus/collab/transport/convex_transport.dart' show ResultStamp;
 
 @JS('convex.ConvexClient')
 extension type _JsConvexClient._(JSObject _) implements JSObject {
@@ -33,24 +32,11 @@ extension type _JsConvexClient._(JSObject _) implements JSObject {
 @JS()
 extension type _JsBaseConvexClient._(JSObject _) implements JSObject {
   external void clearAuth();
-  external JSFunction addOnTransitionHandler(JSFunction handler);
 }
 
 @JS()
 extension type _JsConnectionState._(JSObject _) implements JSObject {
   external bool get isWebSocketConnected;
-  external int get connectionCount;
-}
-
-@JS()
-extension type _JsTransition._(JSObject _) implements JSObject {
-  external _JsLong get timestamp;
-}
-
-@JS()
-extension type _JsLong._(JSObject _) implements JSObject {
-  external int get high;
-  external int get low;
 }
 
 @JS('BigInt')
@@ -76,8 +62,7 @@ extension type _JsReadableUint8Array._(JSObject _) implements JSObject {
 }
 
 class ConvexClient implements StampedValueSource {
-  ConvexClient._(this._client, this.config) : _number = ++_built {
-    if (config.countsTransitions) _countTransitions();
+  ConvexClient._(this._client, this.config) {
     _setConnectionState(
       _client.connectionState().isWebSocketConnected
           ? WebSocketConnectionState.connected
@@ -97,12 +82,6 @@ class ConvexClient implements StampedValueSource {
 
   final _JsConvexClient _client;
   final ConvexConfig config;
-
-  static int _built = 0;
-  final int _number;
-  late ResultStamp _applied;
-  final List<_Pending> _inThisDispatch = [];
-  JSFunction? _transitionHandler;
   final StreamController<WebSocketConnectionState> _connectionStateController =
       StreamController<WebSocketConnectionState>.broadcast();
   final StreamController<bool> _authStateController =
@@ -311,298 +290,6 @@ class ConvexClient implements StampedValueSource {
     );
   }
 
-  void _countTransitions() {
-    _applied = ResultStamp(
-      client: _number,
-      connection: _client.connectionState().connectionCount,
-      snapshot: 0,
-    );
-    _transitionHandler = ((JSAny? transition) {
-      final time = _JsTransition._(transition as JSObject).timestamp;
-      final nanos = time.high * 0x100000000 + time.low.toUnsigned(32);
-      _applied = ResultStamp(
-        client: _number,
-        connection: _client.connectionState().connectionCount,
-        snapshot: _applied.snapshot + 1,
-        serverTime: nanos == 0 ? null : nanos,
-      );
-      for (final pending in _inThisDispatch) {
-        pending.stamp = _applied;
-      }
-      _inThisDispatch.clear();
-    }).toJS;
-    _client.client.addOnTransitionHandler(_transitionHandler!);
-  }
-
-  void _mustCount() {
-    if (_transitionHandler == null) {
-      throw StateError(
-        'Stamped calls need a client built with countsTransitions.',
-      );
-    }
-  }
-
-  void _handOnStamped(
-    _Listener listener,
-    void Function(ResultStamp stamp) deliver,
-  ) {
-    final pending = _Pending();
-    _inThisDispatch.add(pending);
-    scheduleMicrotask(() {
-      _inThisDispatch.remove(pending);
-      final claimed = pending.stamp;
-      final first = !listener.answered;
-      listener.answered = true;
-      if (claimed == null && !first) {
-        listener.broken(
-          StateError(
-            'An answer arrived outside a transition after the first one, so '
-            'its state is unknown.',
-          ),
-          StackTrace.current,
-        );
-        return;
-      }
-      deliver(claimed ?? _applied);
-    });
-  }
-
-  bool _isServerFailure(String name, Object? error) {
-    try {
-      return _jsErrorMessage(error as JSAny?).startsWith('[CONVEX M($name)] ');
-    } catch (_) {
-      return false;
-    }
-  }
-
-  @override
-  Future<StampedOutcome<Object?>> queryStamped(
-    String name,
-    Map<String, Object?> args,
-  ) {
-    _mustCount();
-    final answered = Completer<StampedOutcome<Object?>>();
-    var state = _OneShot.waiting;
-    SubscriptionHandle? handle;
-    Timer? deadline;
-    void finish(_OneShot next, void Function() complete) {
-      if (state != _OneShot.waiting) return;
-      state = next;
-      deadline?.cancel();
-      handle?.cancel();
-      complete();
-    }
-
-    deadline = Timer(
-      config.operationTimeout,
-      () => finish(
-        _OneShot.timedOut,
-        () => answered.completeError(
-          TimeoutException('Query $name timed out', config.operationTimeout),
-        ),
-      ),
-    );
-    subscribeStamped(
-      name: name,
-      args: args,
-      onResult: (outcome) =>
-          finish(_OneShot.answered, () => answered.complete(outcome)),
-      onBroken: (error, stackTrace) => finish(
-        _OneShot.failed,
-        () => answered.completeError(error, stackTrace),
-      ),
-    ).then(
-      (next) {
-        handle = next;
-        if (state != _OneShot.waiting) next.cancel();
-      },
-      onError: (Object error, StackTrace stackTrace) => finish(
-        _OneShot.failed,
-        () => answered.completeError(error, stackTrace),
-      ),
-    );
-    return answered.future;
-  }
-
-  @override
-  Future<StampedOutcome<Object?>> mutationStamped({
-    required String name,
-    required Map<String, Object?> args,
-  }) async {
-    _mustCount();
-    final promise = _client.mutation(name, _toJsConvex(args));
-    final JSAny? result;
-    try {
-      result = await promise.toDart.timeout(config.operationTimeout);
-    } on TimeoutException {
-      throw TimeoutException('Mutation $name timed out', config.operationTimeout);
-    } catch (error) {
-      if (!_isServerFailure(name, error)) rethrow;
-      return StampedFunctionError(_jsFunctionError(error), _applied);
-    }
-    return StampedAnswer(_fromJsConvex(result), _applied);
-  }
-
-  @override
-  Future<SubscriptionHandle> subscribeStamped({
-    required String name,
-    required Map<String, Object?> args,
-    required void Function(StampedOutcome<Object?> outcome) onResult,
-    required void Function(Object error, StackTrace stackTrace) onBroken,
-  }) async {
-    _mustCount();
-    final listener = _Listener(onBroken);
-    final member = _subscribeRawMember(
-      (name: name, args: args),
-      listener,
-      onUpdate: (value) => _handOnStamped(listener, (stamp) {
-        if (!listener.active) return;
-        final Object? converted;
-        try {
-          converted = _fromJsConvex(value);
-        } catch (error, stackTrace) {
-          listener.broken(error, stackTrace);
-          return;
-        }
-        onResult(StampedAnswer(converted, stamp));
-      }),
-      onError: (error) => _handOnStamped(listener, (stamp) {
-        if (!listener.active) return;
-        final ConvexClientFunctionError converted;
-        try {
-          converted = _jsFunctionError(error);
-        } catch (error, stackTrace) {
-          listener.broken(error, stackTrace);
-          return;
-        }
-        onResult(StampedFunctionError(converted, stamp));
-      }),
-    );
-    return _WebGroupSubscriptionHandle([member], onCancel: () {
-      listener.active = false;
-    });
-  }
-
-  @override
-  Future<SubscriptionHandle> subscribeValuesStamped({
-    required List<({String name, Map<String, Object?> args})> queries,
-    required void Function(StampedOutcome<List<Object?>> outcome) onResult,
-    required void Function(Object error, StackTrace stackTrace) onBroken,
-  }) async {
-    _mustCount();
-    if (queries.isEmpty) {
-      throw ArgumentError.value(queries, 'queries', 'needs at least one query');
-    }
-    final values = List<Object?>.filled(queries.length, null);
-    final answeredOn = List<ResultStamp?>.filled(queries.length, null);
-    final group = _Listener(onBroken);
-    ResultStamp? latest;
-    var handOnScheduled = false;
-
-    void handOnSoon() {
-      if (handOnScheduled) return;
-      handOnScheduled = true;
-      scheduleMicrotask(() {
-        handOnScheduled = false;
-        final stamp = latest;
-        if (!group.active || stamp == null) return;
-        final complete = answeredOn.every(
-          (answered) =>
-              answered != null &&
-              answered.client == stamp.client &&
-              answered.connection == stamp.connection,
-        );
-        if (complete) onResult(StampedAnswer(List.unmodifiable(values), stamp));
-      });
-    }
-
-    final handles = <_WebSubscriptionHandle>[];
-    try {
-      for (final (index, query) in queries.indexed) {
-        final member = _Listener(group.broken);
-        handles.add(
-          _subscribeRawMember(
-            query,
-            member,
-            onUpdate: (value) => _handOnStamped(member, (stamp) {
-              if (!group.active) return;
-              try {
-                values[index] = _fromJsConvex(value);
-              } catch (error, stackTrace) {
-                group.broken(error, stackTrace);
-                return;
-              }
-              answeredOn[index] = stamp;
-              latest = stamp;
-              handOnSoon();
-            }),
-            onError: (error) => _handOnStamped(member, (stamp) {
-              if (!group.active) return;
-              final ConvexClientFunctionError converted;
-              try {
-                converted = _jsFunctionError(error);
-              } catch (error, stackTrace) {
-                group.broken(error, stackTrace);
-                return;
-              }
-              answeredOn[index] = null;
-              latest = stamp;
-              onResult(StampedFunctionError(converted, stamp));
-            }),
-          ),
-        );
-      }
-    } catch (_) {
-      group.active = false;
-      for (final handle in handles) {
-        handle.cancel();
-      }
-      rethrow;
-    }
-    return _WebGroupSubscriptionHandle(handles, onCancel: () {
-      group.active = false;
-    });
-  }
-
-  @override
-  Future<int> connectionGeneration() async {
-    _mustCount();
-    return _client.connectionState().connectionCount;
-  }
-
-  _WebSubscriptionHandle _subscribeRawMember(
-    ({String name, Map<String, Object?> args}) query,
-    _Listener listener, {
-    required void Function(JSAny? value) onUpdate,
-    required void Function(JSAny? error) onError,
-  }) {
-    final updateCallback = ((JSAny? value, JSAny? _) {
-      try {
-        onUpdate(value);
-      } catch (error, stackTrace) {
-        listener.broken(error, stackTrace);
-      }
-    }).toJS;
-    final errorCallback = ((JSAny? error, JSAny? _) {
-      try {
-        onError(error);
-      } catch (failure, stackTrace) {
-        listener.broken(failure, stackTrace);
-      }
-    }).toJS;
-    final unsubscribe = _client.onUpdate(
-      query.name,
-      _toJsConvex(query.args),
-      updateCallback,
-      errorCallback,
-    );
-    return _WebSubscriptionHandle(
-      unsubscribe: unsubscribe,
-      updateCallback: updateCallback,
-      errorCallback: errorCallback,
-    );
-  }
-
   Future<AuthHandleWrapper> setAuthWithRefresh({
     required Future<String?> Function() fetchToken,
     void Function(bool isAuthenticated)? onAuthChange,
@@ -762,6 +449,43 @@ class ConvexClient implements StampedValueSource {
       data: data,
     );
   }
+
+  static Never _notOnWeb(String call) =>
+      throw UnsupportedError('$call is not available on web yet.');
+
+  @override
+  Future<StampedOutcome<Object?>> queryStamped(
+    String name,
+    Map<String, Object?> args,
+  ) =>
+      _notOnWeb('queryStamped');
+
+  @override
+  Future<StampedOutcome<Object?>> mutationStamped({
+    required String name,
+    required Map<String, Object?> args,
+  }) =>
+      _notOnWeb('mutationStamped');
+
+  @override
+  Future<SubscriptionHandle> subscribeStamped({
+    required String name,
+    required Map<String, Object?> args,
+    required void Function(StampedOutcome<Object?> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
+  }) =>
+      _notOnWeb('subscribeStamped');
+
+  @override
+  Future<SubscriptionHandle> subscribeValuesStamped({
+    required List<({String name, Map<String, Object?> args})> queries,
+    required void Function(StampedOutcome<List<Object?>> outcome) onResult,
+    required void Function(Object error, StackTrace stackTrace) onBroken,
+  }) =>
+      _notOnWeb('subscribeValuesStamped');
+
+  @override
+  Future<int> connectionGeneration() => _notOnWeb('connectionGeneration');
 }
 
 JSAny? _toJsConvex(Object? value) {
@@ -863,23 +587,3 @@ class _WebAuthHandleWrapper implements AuthHandleWrapper {
     _callbacks.clear();
   }
 }
-
-final class _Pending {
-  ResultStamp? stamp;
-}
-
-final class _Listener {
-  _Listener(this._onBroken);
-
-  final void Function(Object error, StackTrace stackTrace) _onBroken;
-  bool active = true;
-  bool answered = false;
-
-  void broken(Object error, StackTrace stackTrace) {
-    if (!active) return;
-    active = false;
-    _onBroken(error, stackTrace);
-  }
-}
-
-enum _OneShot { waiting, answered, failed, timedOut }

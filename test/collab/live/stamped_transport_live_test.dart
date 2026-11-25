@@ -1,15 +1,11 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
 
-import 'load_convex_bundle.dart';
-
 const _deploymentUrl = String.fromEnvironment('CONVEX_URL');
 const _accessToken = String.fromEnvironment('GAUNTLET_ACCESS_TOKEN');
-const _bundleUrl = String.fromEnvironment('CONVEX_BUNDLE_URL');
 const _protocol = 6.0;
 const _writes = 3;
 const _patience = Duration(seconds: 30);
@@ -30,17 +26,14 @@ Future<void> _until(bool Function() done, String what) async {
 
 void main() {
   test(
-    'the stamped transport stamps reads, watches, groups and answers on '
-    '${kIsWeb ? 'web' : 'native'}',
+    'the stamped transport stamps reads, watches, groups and answers',
     () async {
       TestWidgetsFlutterBinding.ensureInitialized();
-      await loadConvexBundle(_bundleUrl);
       await ConvexClient.initialize(
         const ConvexConfig(
           deploymentUrl: _deploymentUrl,
           clientId: 'icarus-stamped-transport-live',
           operationTimeout: _patience,
-          countsTransitions: true,
         ),
       );
       final client = ConvexClient.instance;
@@ -170,27 +163,11 @@ void main() {
       final unconvertible = ConvexObject({
         r'$reserved': const ConvexString('not a field name'),
       });
-      if (kIsWeb) {
-        final refusesTheFieldName = predicate<Object>(
-          (error) => error.toString().contains(r'$reserved'),
-          'the client refusing the field name',
-        );
-        await expectLater(
-          transport.mutationStamped('folders:create', unconvertible),
-          throwsA(refusesTheFieldName),
-          reason: 'arguments the client refuses are the call failing',
-        );
-        await expectLater(
-          transport.queryStamped('folders:listTree', unconvertible),
-          throwsA(refusesTheFieldName),
-        );
-      } else {
-        expect(
-          await transport.mutationStamped('folders:create', unconvertible),
-          isA<StampedError<ConvexValue>>(),
-          reason: 'the native client sends them, and the server refuses them',
-        );
-      }
+      expect(
+        await transport.mutationStamped('folders:create', unconvertible),
+        isA<StampedError<ConvexValue>>(),
+        reason: 'the native client sends them, and the server refuses them',
+      );
     },
     timeout: const Timeout(Duration(minutes: 3)),
     skip: _deploymentUrl.isEmpty
