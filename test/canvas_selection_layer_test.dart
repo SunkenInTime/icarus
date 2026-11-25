@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -16,10 +17,12 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/canvas_selection_layer.dart';
+import 'package:icarus/widgets/editor_input_gate.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class _NoopStrategyProvider extends StrategyProvider {
@@ -84,6 +87,47 @@ Widget _item(
       ),
     );
 
+var _insidePresses = 0;
+
+Widget _gatedIf(bool gated, Widget layer) => gated
+    ? Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            child: TextButton(
+              key: const ValueKey('strip-button'),
+              onPressed: () {},
+              child: const Text('Library'),
+            ),
+          ),
+          EditorInputGate(
+            child: Stack(
+              children: [
+                layer,
+                const Positioned(
+                  left: 600,
+                  top: 400,
+                  width: 150,
+                  child: Material(child: TextField(key: ValueKey('field'))),
+                ),
+                Positioned(
+                  left: 600,
+                  top: 20,
+                  child: Material(
+                    child: TextButton(
+                      onPressed: () => _insidePresses++,
+                      child: const Text('Inside'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      )
+    : layer;
+
 const _a = (kind: SelectableKind.agent, id: 'a');
 const _b = (kind: SelectableKind.agent, id: 'b');
 const _c = (kind: SelectableKind.agent, id: 'c');
@@ -118,11 +162,21 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  Future<void> pumpCanvas(WidgetTester tester, {bool lineUp = false}) async {
+  Future<void> pumpCanvas(
+    WidgetTester tester, {
+    bool lineUp = false,
+    bool gated = false,
+    bool opening = false,
+  }) async {
     container = ProviderContainer(
       overrides: [strategyProvider.overrideWith(_NoopStrategyProvider.new)],
     );
     addTearDown(container.dispose);
+    if (opening) {
+      container
+          .read(strategyOpeningProvider.notifier)
+          .begin('opened', source: StrategySource.local);
+    }
     container.read(agentProvider.notifier).fromHive([
       for (final id in ['a', 'b', 'c'])
         PlacedAgent(id: id, type: AgentType.jett, position: Offset.zero),
@@ -133,39 +187,42 @@ void main() {
         child: MaterialApp(
           home: Align(
             alignment: Alignment.topLeft,
-            child: CanvasSelectionLayer(
-              enabled: true,
-              child: SizedBox(
-                width: 800,
-                height: 450,
-                child: Stack(
-                  children: [
-                    // As a lineup mode puts the page out of reach.
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        ignoring: lineUp,
-                        child: Stack(
-                          children: [
-                            _item('a', const Offset(100, 100), handle: true),
-                            _item('b', const Offset(200, 100)),
-                            _item('c', const Offset(400, 300)),
-                          ],
+            child: _gatedIf(
+              gated,
+              CanvasSelectionLayer(
+                enabled: true,
+                child: SizedBox(
+                  width: 800,
+                  height: 450,
+                  child: Stack(
+                    children: [
+                      // As a lineup mode puts the page out of reach.
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          ignoring: lineUp,
+                          child: Stack(
+                            children: [
+                              _item('a', const Offset(100, 100), handle: true),
+                              _item('b', const Offset(200, 100)),
+                              _item('c', const Offset(400, 300)),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    if (lineUp) ...[
-                      _item(
-                        'draft-agent',
-                        const Offset(150, 100),
-                        kind: SelectableKind.lineupEnd,
-                      ),
-                      _item(
-                        'draft-ability',
-                        const Offset(150, 150),
-                        kind: SelectableKind.lineupEnd,
-                      ),
+                      if (lineUp) ...[
+                        _item(
+                          'draft-agent',
+                          const Offset(150, 100),
+                          kind: SelectableKind.lineupEnd,
+                        ),
+                        _item(
+                          'draft-ability',
+                          const Offset(150, 150),
+                          kind: SelectableKind.lineupEnd,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -410,6 +467,221 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(container.read(canvasSelectionProvider), {_a, _b, _c});
+  });
+
+  group('while a strategy opens', () {
+    int beginOpen() => container
+        .read(strategyOpeningProvider.notifier)
+        .begin('opened', source: StrategySource.local);
+
+    Future<void> selectAllThenDelete(WidgetTester tester) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pump();
+    }
+
+    Offset canvasPoint(WidgetTester tester) =>
+        tester.getTopLeft(find.byType(CanvasSelectionLayer)) +
+        const Offset(300, 300);
+
+    void backButtonDown(WidgetTester tester) {
+      tester.binding.handlePointerEvent(PointerDownEvent(
+        kind: PointerDeviceKind.mouse,
+        buttons: kBackMouseButton,
+        position: canvasPoint(tester),
+      ));
+    }
+
+    testWidgets(
+        'Ctrl+A then Delete on a focused canvas, in the frame the open '
+        'starts, change nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      await tester.tapAt(canvasPoint(tester));
+      await tester.pump();
+
+      beginOpen();
+      await selectAllThenDelete(tester);
+
+      expect(container.read(agentProvider), hasLength(3));
+    });
+
+    testWidgets(
+        'mouse back on the canvas asking for focus before the open starts, '
+        'then Ctrl+A and Delete in that frame, change nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      backButtonDown(tester);
+      await Future<void>.microtask(() {});
+
+      beginOpen();
+      await selectAllThenDelete(tester);
+
+      expect(container.read(agentProvider), hasLength(3));
+    });
+
+    testWidgets(
+        'mouse back on the canvas asking for focus after the open starts, '
+        'then Ctrl+A and Delete in that frame, change nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      backButtonDown(tester);
+      beginOpen();
+      await Future<void>.microtask(() {});
+
+      await selectAllThenDelete(tester);
+
+      expect(container.read(agentProvider), hasLength(3));
+    });
+
+    testWidgets(
+        'with focus on a top-strip button, a canvas focus request queued '
+        'before the open starts never lands: Ctrl+A and Delete change '
+        'nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      final button = Focus.of(tester.element(find.text('Library')));
+      button.requestFocus();
+      await tester.pump();
+
+      backButtonDown(tester);
+      await Future<void>.microtask(() {});
+      beginOpen();
+      await tester.pump();
+      await selectAllThenDelete(tester);
+
+      expect(container.read(agentProvider), hasLength(3));
+    });
+
+    testWidgets(
+        'an open ending under a dialog with nothing focused leaves the canvas '
+        'without the keyboard; once the dialog closes, a click gives it back',
+        (tester) async {
+      await pumpCanvas(tester, gated: true);
+      final attempt = beginOpen();
+      await tester.pump();
+      unawaited(showDialog<void>(
+        context: tester.element(find.byType(CanvasSelectionLayer)),
+        builder: (_) => const Dialog(child: SizedBox.square(dimension: 80)),
+      ));
+      await tester.pumpAndSettle();
+
+      container.read(strategyOpeningProvider.notifier).settle(attempt);
+      await tester.pump();
+      await tester.pump();
+      await selectAllThenDelete(tester);
+      expect(container.read(agentProvider), hasLength(3));
+
+      Navigator.of(tester.element(find.byType(Dialog))).pop();
+      await tester.pumpAndSettle();
+      await tester.tapAt(canvasPoint(tester));
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(container.read(canvasSelectionProvider), {_a, _b, _c});
+    });
+
+    testWidgets(
+        "a screen reader's tap on a button inside the editor does nothing "
+        'once the open has started', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpCanvas(tester, gated: true);
+      _insidePresses = 0;
+      tester.semantics.tap(find.semantics.byLabel('Inside'));
+      await tester.pump();
+      expect(_insidePresses, 1);
+
+      beginOpen();
+      await tester.pump();
+      expect(
+        () => tester.semantics.tap(find.semantics.byLabel('Inside')),
+        throwsA(anything),
+        reason: 'the button offers no tap while the open runs',
+      );
+      await tester.pump();
+      expect(_insidePresses, 1);
+      semantics.dispose();
+    });
+
+    testWidgets(
+        'a gate mounted while an open runs refuses clicks and focus from the '
+        'start, and takes both once the open ends', (tester) async {
+      await pumpCanvas(tester, gated: true, opening: true);
+      final field = tester
+          .widget<EditableText>(find.descendant(
+            of: find.byKey(const ValueKey('field')),
+            matching: find.byType(EditableText),
+          ))
+          .focusNode;
+      _insidePresses = 0;
+
+      await tester.tap(find.text('Inside'), warnIfMissed: false);
+      field.requestFocus();
+      await tester.pump();
+      expect(_insidePresses, 0);
+      expect(field.hasFocus, isFalse);
+
+      container
+          .read(strategyOpeningProvider.notifier)
+          .settle(container.read(strategyOpeningProvider)!.attempt);
+      await tester.pump();
+      await tester.tap(find.text('Inside'));
+      field.requestFocus();
+      await tester.pump();
+      expect(_insidePresses, 1);
+      expect(field.hasFocus, isTrue);
+    });
+
+    testWidgets('Tab reaches nothing in the editor', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      beginOpen();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      final field = tester
+          .widget<EditableText>(find.descendant(
+            of: find.byKey(const ValueKey('field')),
+            matching: find.byType(EditableText),
+          ))
+          .focusNode;
+      expect(field.hasFocus, isFalse);
+    });
+
+    testWidgets('focus on a top-strip button stays there when it ends',
+        (tester) async {
+      await pumpCanvas(tester, gated: true);
+      final attempt = beginOpen();
+      await tester.pump();
+      final button = Focus.of(tester.element(find.text('Library')));
+      button.requestFocus();
+      await tester.pump();
+      expect(button.hasFocus, isTrue);
+
+      container.read(strategyOpeningProvider.notifier).settle(attempt);
+      await tester.pump();
+      await tester.pump();
+
+      expect(button.hasFocus, isTrue);
+    });
+
+    testWidgets('once it has opened, Ctrl+A works with no click',
+        (tester) async {
+      await pumpCanvas(tester, gated: true);
+      final attempt = beginOpen();
+      await tester.pump();
+      container.read(strategyOpeningProvider.notifier).settle(attempt);
+      await tester.pump();
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(container.read(canvasSelectionProvider), {_a, _b, _c});
+    });
   });
 
   testWidgets('a copy replaces what the system clipboard held', (tester) async {

@@ -61,6 +61,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/collab/cloud_strategy_copy_box.dart';
 import 'package:icarus/collab/page_changes.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
@@ -105,9 +106,6 @@ typedef NewPageGaps = ({
 });
 
 class StrategyProvider extends Notifier<StrategyState> {
-  /// Bumped when a strategy starts to open and when the open one is closed.
-  int _openAttempt = 0;
-
   /// Runs one attempt to open a strategy. Every wait in [steps] goes through
   /// the attempt it is given (see [OpenAttempt]), so an open the reader left,
   /// or replaced by opening another strategy, stops at that wait and changes
@@ -115,21 +113,24 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// the answer is whether the strategy opened. False means something else
   /// is open now (or nothing), and a caller that goes on to act on "its"
   /// strategy must look first.
-  Future<bool> _open(Future<bool> Function(OpenAttempt opening) steps) async {
-    final attempt = ++_openAttempt;
+  Future<bool> _open(
+    String strategyId,
+    StrategySource source,
+    Future<bool> Function(OpenAttempt opening) steps,
+  ) async {
+    final opens = ref.read(strategyOpeningProvider.notifier);
+    final attempt = opens.begin(strategyId, source: source);
     try {
-      return await steps(OpenAttempt(() => attempt == _openAttempt));
+      return await steps(OpenAttempt(() => opens.isLatest(attempt)));
     } on OpenGaveWay {
       // The newer open, or the close, owns the outcome.
       return false;
     } finally {
-      if (attempt > _settledAttempt) _settledAttempt = attempt;
+      opens.settle(attempt);
     }
   }
 
-  int _settledAttempt = 0;
-
-  bool get isOpening => _settledAttempt < _openAttempt;
+  bool get isOpening => ref.read(strategyOpeningProvider) != null;
 
   @override
   StrategyState build() {
@@ -350,7 +351,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     return state.source == StrategySource.cloud;
   }
 
-  bool _currentStrategyCanEditPages() => ref.canEditPages;
+  bool _currentStrategyCanEditPages() =>
+      ref.container.read(currentStrategyCapabilitiesProvider).canEditPages;
 
   /// Fails loudly instead of reading or writing the on-device library where
   /// the platform policy keeps it hidden. Its records stay untouched until
@@ -417,7 +419,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     cancelPendingSave();
     ref.read(strategySaveStateProvider.notifier).reset();
 
-    return _open((opening) async {
+    return _open(strategyID, StrategySource.cloud, (opening) async {
       await opening.wait(
         ref
             .read(remoteEditorSnapshotProvider.notifier)
@@ -923,8 +925,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> clearCurrentStrategy() async {
-    _openAttempt += 1;
-    _settledAttempt = _openAttempt;
+    ref.read(strategyOpeningProvider.notifier).endAll();
     cancelPendingSave();
     ref.read(canvasShowsProvider.notifier).emptied();
     ref.read(strategyThemeProvider.notifier).fromStrategy();
@@ -2264,7 +2265,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     cancelPendingSave();
 
-    return _open((opening) async {
+    return _open(id, StrategySource.local, (opening) async {
       final newStrat = const LocalLibrary().firstStoredWithId(id);
 
       if (newStrat == null) {

@@ -135,7 +135,8 @@ String _callerOf(StackTrace trace) {
     if (!line.contains('icarus')) continue;
     if (line.contains('canvas_shows') ||
         line.contains('readCanvas') ||
-        line.contains('ignoresClick')) {
+        line.contains('ignoresClick') ||
+        line.contains('PageEditAccess')) {
       continue;
     }
     return line.replaceFirst(RegExp(r'^#\d+\s+'), '').trim();
@@ -172,6 +173,9 @@ final class CanvasShowsNotifier extends Notifier<CanvasShows> {
 
   void clickIgnored(String? strategyId, String pageId) =>
       _note('click ignored during an open', strategyId, pageId);
+
+  void editDuringOpen(String? strategyId) =>
+      _note('edit during an open', strategyId, null);
 
   void _note(String what, String? strategyId, String? pageId) {
     if (!driveBuild) return;

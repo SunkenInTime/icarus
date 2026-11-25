@@ -53,6 +53,7 @@ import 'package:icarus/widgets/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/eased_route_transition.dart';
+import 'package:icarus/widgets/editor_input_gate.dart';
 
 class StrategyView extends ConsumerStatefulWidget {
   const StrategyView({
@@ -547,54 +548,56 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           // The canvas runs right up to the strip; each floating panel keeps
           // its own 8px of air so no bare band shows between the two.
           Expanded(
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Positioned.fill(
-                  child: StrategyEditBoundary(child: DeleteCapture()),
-                ),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: RepaintBoundary(child: InteractiveMap()),
-                ),
-                const Align(
-                  alignment: Alignment.topLeft,
-                  child: Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CanvasChrome(
-                          child: StrategyEditBoundary(
-                            disabledOpacity: 0.55,
-                            child: MapSelector(),
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        EditorToolbar(),
-                      ],
-                    ),
+            child: EditorInputGate(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Positioned.fill(
+                    child: StrategyEditBoundary(child: DeleteCapture()),
                   ),
-                ),
-                const Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: CanvasChrome(child: PagesBar()),
-                  ),
-                ),
-                // Tools and agents only place things; a view-only reader
-                // gets the map in their place.
-                if (!viewOnly)
                   const Align(
-                    alignment: Alignment.centerRight,
-                    child: StrategyEditBoundary(
-                      disabledOpacity: 0.55,
-                      child: SideBarUI(),
+                    alignment: Alignment.centerLeft,
+                    child: RepaintBoundary(child: InteractiveMap()),
+                  ),
+                  const Align(
+                    alignment: Alignment.topLeft,
+                    child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CanvasChrome(
+                            child: StrategyEditBoundary(
+                              disabledOpacity: 0.55,
+                              child: MapSelector(),
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          EditorToolbar(),
+                        ],
+                      ),
                     ),
                   ),
-              ],
+                  const Align(
+                    alignment: Alignment.bottomLeft,
+                    child: Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: CanvasChrome(child: PagesBar()),
+                    ),
+                  ),
+                  // Tools and agents only place things; a view-only reader
+                  // gets the map in their place.
+                  if (!viewOnly)
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: StrategyEditBoundary(
+                        disabledOpacity: 0.55,
+                        child: SideBarUI(),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -612,6 +615,14 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             child: ExcludeSemantics(
               excluding: covered,
               child: CanvasPaste(child: editor),
+            ),
+          ),
+          Positioned.fill(
+            child: EditorOpeningSkeleton(
+              leading: _LeaveButton(
+                onPressed: _leaveToLibrary,
+                backTooltip: widget.backTooltip,
+              ),
             ),
           ),
           if (covered)

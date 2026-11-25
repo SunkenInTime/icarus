@@ -11,6 +11,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
@@ -208,6 +209,39 @@ void main() {
         expect(strategies.opened, ['${recorded.name}:shared-id']);
       });
     }
+
+    testWidgets(
+        'a share link opens its cloud strategy in place of the open one',
+        (tester) async {
+      final strategies = _RecordingStrategies();
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+            isCloudWorkspaceAvailableProvider.overrideWithValue(true),
+            strategyProvider.overrideWith(() => strategies),
+          ],
+          child: ShadApp(
+            navigatorKey: appNavigatorKey,
+            navigatorObservers: [mouseNavigationRouteObserver],
+            builder: (context, child) {
+              container = ProviderScope.containerOf(context);
+              return MouseNavigation(child: child!);
+            },
+            home: const Scaffold(body: Text('library')),
+          ),
+        ),
+      );
+      strategies.show('other-id', StrategySource.local);
+      await tester.pump();
+
+      container.read(sharedStrategyToOpenProvider.notifier).state = 'shared-id';
+      await tester.pumpAndSettle();
+
+      expect(strategies.opened, ['cloud:shared-id']);
+      expect(container.read(strategyProvider).strategyId, 'shared-id');
+    });
 
     testWidgets('a back whose open gave way does not count as having moved',
         (tester) async {

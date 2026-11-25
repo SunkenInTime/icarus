@@ -29,6 +29,7 @@ import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/widgets/new_page_copy_toast.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 
 class GlobalShortcuts extends ConsumerStatefulWidget {
   const GlobalShortcuts({super.key, required this.child});
@@ -66,8 +67,13 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     HardwareKeyboard.instance.addHandler(_handleModifierKeyEvent);
   }
 
+  late final _shortcuts = _ClosedWhileOpening(
+    () => ref.read(strategyOpeningProvider) != null,
+  );
+
   @override
   void dispose() {
+    _shortcuts.dispose();
     HardwareKeyboard.instance.removeHandler(_handleModifierKeyEvent);
     WidgetsBinding.instance.removeObserver(this);
     _focusNode.dispose();
@@ -104,12 +110,13 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
     // the node itself holds focus. With the web semantics tree on, a click
     // on an empty part of the page focuses it.
     final writingCaption = ref.watch(writingCaptionProvider);
-    return Shortcuts(
-      shortcuts: editorCovered || writingCaption
-          ? const {}
-          : ShortcutInfo.globalShortcutsFor(
-              ref.watch(appPreferencesProvider).customShortcutBindings,
-            ),
+    _shortcuts.shortcuts = editorCovered || writingCaption
+        ? const {}
+        : ShortcutInfo.globalShortcutsFor(
+            ref.watch(appPreferencesProvider).customShortcutBindings,
+          );
+    return Shortcuts.manager(
+      manager: _shortcuts,
       child: Actions(
         actions: {
           NavigationActionIntent: CallbackAction<NavigationActionIntent>(
@@ -357,4 +364,16 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
       ),
     );
   }
+}
+
+final class _ClosedWhileOpening extends ShortcutManager {
+  _ClosedWhileOpening(this._opening);
+
+  final bool Function() _opening;
+
+  @override
+  KeyEventResult handleKeypress(BuildContext context, KeyEvent event) =>
+      _opening()
+          ? KeyEventResult.ignored
+          : super.handleKeypress(context, event);
 }

@@ -31,10 +31,16 @@ class ContextMenuRegion extends StatefulWidget {
 
   @override
   State<ContextMenuRegion> createState() => _ContextMenuRegionState();
+
+  static void closeOpen() {
+    _ContextMenuRegionState._closes += 1;
+    _ContextMenuRegionState._open?.hide();
+  }
 }
 
 class _ContextMenuRegionState extends State<ContextMenuRegion> {
   static ShadContextMenuController? _open;
+  static var _closes = 0;
 
   final _ownController = ShadContextMenuController();
 
@@ -114,8 +120,15 @@ class _ContextMenuRegionState extends State<ContextMenuRegion> {
     _controller.hide();
     setState(() => _pointer = pointer);
     _pointerLayer.show();
+    final closes = _closes;
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _pointer == pointer) _controller.show();
+      if (!mounted || _pointer != pointer) return;
+      if (closes == _closes) {
+        _controller.show();
+      } else {
+        _pointerLayer.hide();
+        setState(() => _pointer = null);
+      }
     });
   }
 

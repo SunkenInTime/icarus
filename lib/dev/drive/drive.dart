@@ -404,10 +404,11 @@ Future<void> _play(String script) async {
   }
   final refusals =
       appProviderContainer.read(canvasShowsProvider.notifier).refusals;
-  _log('CANVAS nothing shown '
-      '${refusals.where((r) => r.what == 'nothing shown').length} times, a '
-      'click ignored during an open '
-      '${refusals.where((r) => r.what != 'nothing shown').length} times');
+  int counted(String what) => refusals.where((r) => r.what == what).length;
+  _log('CANVAS nothing shown ${counted('nothing shown')} times, a click '
+      'ignored during an open ${counted('click ignored during an open')} '
+      'times, an edit reaching the canvas during an open '
+      '${counted('edit during an open')} times');
   for (final refusal in refusals) {
     _log('CANVAS $refusal');
   }
@@ -710,6 +711,99 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
         '${outcomes['the opened strategy took the change'] ?? 0} times, '
         'expected $expected');
   }
+}
+
+Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
+  final c = appProviderContainer;
+  final strategies = c.read(strategyProvider.notifier);
+  final listing = c.listen(cloudStrategiesProvider, (_, __) {});
+  String? idOf(String name) =>
+      (c.read(cloudStrategiesProvider).valueOrNull ?? const [])
+          .where((entry) => entry.strategy.name == name)
+          .firstOrNull
+          ?.strategy
+          .id;
+  final openedName = step['cloudOpenTime'] as String;
+  final leftName = step['from'] as String;
+  await _waitFor(() => idOf(openedName) != null && idOf(leftName) != null, 30);
+  final opened = idOf(openedName)!;
+  final left = idOf(leftName)!;
+  listing.close();
+  Future<void> openAndSettle(String id) async {
+    if (!await strategies.openCloudStrategy(id)) {
+      throw StateError('$id did not open');
+    }
+    await _waitFor(
+      () => !c.read(strategyPageSessionProvider).isApplyingPage,
+      60,
+    );
+    await _frames();
+  }
+
+  final pages = (step['pages'] ?? 1) as int;
+  final items = (step['items'] ?? 0) as int;
+  if (items > 0) {
+    await openAndSettle(opened);
+    for (var page = 0; page < pages; page++) {
+      if (page > 0) await _run({'addPage': true});
+      await _run({'fillPage': items});
+    }
+    await _waitFor(_settled, 180);
+  }
+  final runs = (step['runs'] ?? 20) as int;
+  final restAt = _point(step, 'restAt');
+  String ms(int micros) => (micros / 1000).toStringAsFixed(1);
+  final shownAfter = <int>[];
+  final reads = <int>[];
+  for (var run = 1; run <= runs; run++) {
+    await openAndSettle(opened);
+    await openAndSettle(left);
+    final clock = Stopwatch();
+    int? swapped;
+    int? shownAt;
+    final subscriptions = [
+      c.listen(
+        strategyProvider.select((state) => state.strategyId),
+        (_, id) {
+          if (id == opened) swapped ??= clock.elapsedMicroseconds;
+        },
+      ),
+      c.listen(canvasShowsProvider, (_, now) {
+        if (now case ShowsPage(:final strategyId) when strategyId == opened) {
+          shownAt ??= clock.elapsedMicroseconds;
+        }
+      }),
+    ];
+    clock.start();
+    _pressMouse(restAt, buttons: kBackMouseButton);
+    await _waitFor(() => swapped != null && shownAt != null, 60);
+    final shown = shownAt!;
+    for (final subscription in subscriptions) {
+      subscription.close();
+    }
+    shownAfter.add(shown);
+    reads.add(swapped!);
+    _log('CLOUDOPEN run $run: $openedName read ${ms(swapped!)} ms after the '
+        'back button, its page shown after ${ms(shown)} ms');
+    await _frames();
+    await Future<void>.delayed(const Duration(seconds: 1));
+  }
+  shownAfter.sort();
+  reads.sort();
+  String spread(List<int> values) =>
+      'median ${ms(values[values.length ~/ 2])} ms, worst ${ms(values.last)} ms';
+  final measuredPages =
+      c.read(strategyPageSessionProvider).availablePageIds.length;
+  final onShownPage = c.read(agentProvider).length +
+      c.read(abilityProvider).length +
+      c.read(drawingProvider).elements.length +
+      c.read(textProvider).length +
+      c.read(placedImageProvider).images.length +
+      c.read(utilityProvider).length;
+  _log('CLOUDOPEN summary $openedName ($measuredPages pages, $onShownPage '
+      'items on the page shown): '
+      '$runs runs; back button to the read done ${spread(reads)}; to its '
+      'page shown ${spread(shownAfter)}');
 }
 
 int _markersOn(StrategyPage page) =>
@@ -1225,6 +1319,7 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
   final pageName = step['page'] as String;
   final runs = (step['runs'] ?? 50) as int;
   final pictures = (step['unusedPictures'] ?? 20) as int;
+  final undoes = step['second'] == 'undo';
   StrategyData named(String name) => const LocalLibrary()
       .storedStrategies
       .firstWhere((strategy) => strategy.name == name);
@@ -1244,6 +1339,9 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       ];
   String ms(int micros) => (micros / 1000).toStringAsFixed(1);
   var emptied = 0;
+  var editsTaken = 0;
+  var openedUnsaved = 0;
+  var pressedDuring = 0;
   final windows = <int>[];
   final leftAgents = <String>{};
   var mixedFrames = 0;
@@ -1264,6 +1362,14 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       throw StateError('$leftName did not open');
     }
     await _frames();
+    if (undoes) {
+      final moved = c.read(agentProvider).first;
+      c
+          .read(agentProvider.notifier)
+          .updatePosition(moved.position + const Offset(30, 0), moved.id);
+      await c.read(strategyProvider.notifier).forceSaveNow(left.id);
+      await _frames();
+    }
     final before = agentsOnFirstPage();
     leftAgents
       ..clear()
@@ -1284,10 +1390,14 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     int? cleared;
     int? openedAt;
     int? secondClick;
+    var taken = false;
     final subscriptions = [
       c.listen(agentProvider, (_, next) {
         if (next.isEmpty && cleared == null)
           cleared = clock.elapsedMicroseconds;
+        if (next.isNotEmpty && c.read(strategyProvider).strategyId == left.id) {
+          taken = true;
+        }
       }),
       c.listen(strategyProvider.select((state) => state.strategyId), (_, next) {
         if (next == opened.id) openedAt ??= clock.elapsedMicroseconds;
@@ -1299,7 +1409,11 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     SchedulerBinding.instance.scheduleFrame();
     await SchedulerBinding.instance.endOfFrame;
     secondClick = clock.elapsedMicroseconds;
-    _click(page);
+    if (undoes) {
+      _press(['controlLeft', 'keyZ']);
+    } else {
+      _click(page);
+    }
     final settleBy = DateTime.now().add(const Duration(seconds: 10));
     while (DateTime.now().isBefore(settleBy) &&
         !(c.read(strategyProvider).strategyId == opened.id &&
@@ -1312,6 +1426,11 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
         ? openedName
         : c.read(strategyProvider).strategyName;
     final session = c.read(strategyPageSessionProvider);
+    final unsaved = !c.read(strategyProvider).isSaved;
+    if (taken) editsTaken++;
+    if (unsaved) openedUnsaved++;
+    final during = openedAt != null && secondClick < openedAt!;
+    if (undoes && during) pressedDuring++;
     await _frames();
     for (final subscription in subscriptions) {
       subscription.close();
@@ -1319,7 +1438,7 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     final after = agentsOnFirstPage();
     final lost = before.isNotEmpty && after.isEmpty;
     if (lost) emptied++;
-    if (!listEquals(before, after)) {
+    if (undoes || !listEquals(before, after)) {
       (await const LocalLibrary().savePageOnScreen(original)).orThrow();
     }
     final window = switch ((cleared, openedAt)) {
@@ -1334,14 +1453,26 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
         '$openedName published ${openedAt == null ? 'never' : '${ms(openedAt!)} ms'} after it; '
         'window ${window == null ? 'not measured' : '${ms(window)} ms'}; '
         'ended on $endedOn page ${session.activePageId}'
-        '${session.isApplyingPage ? ' still applying' : ''}');
+        '${session.isApplyingPage ? ' still applying' : ''}'
+        '${undoes ? '; the undo, pressed ${during ? 'before' : 'after'} $openedName opened, was ${taken ? 'taken' : 'not taken'}, $endedOn ${unsaved ? 'marked unsaved' : 'saved'}' : ''}');
   }
   windows.sort();
   _log('RACE summary: $runs runs, the left page saved empty $emptied times; '
       'window median ${windows.isEmpty ? '-' : ms(windows[windows.length ~/ 2])} ms, '
       'worst ${windows.isEmpty ? '-' : ms(windows.last)} ms; '
       '$mixedFrames of $framesWatched frames drawn showed the left '
-      'strategy\'s agents with the other strategy open');
+      'strategy\'s agents with the other strategy open'
+      '${undoes ? '; the undo pressed during the open $pressedDuring of $runs runs, taken during the open $editsTaken times, the strategy opened marked unsaved $openedUnsaved times' : ''}');
+  if (undoes && step.containsKey('expectTaken') && pressedDuring == 0) {
+    _failedSteps++;
+    _log('FAIL raceLeave: no run pressed Ctrl+Z while the open ran, so '
+        'nothing was tested');
+  }
+  if (step['expectTaken'] case final int expected when expected != editsTaken) {
+    _failedSteps++;
+    _log('FAIL raceLeave: the undo was taken during the open $editsTaken '
+        'times, expected $expected');
+  }
   if (step['expectEmptied'] case final int expected when expected != emptied) {
     _failedSteps++;
     _log('FAIL raceLeave: the left page was saved empty $emptied times, '
@@ -2030,13 +2161,13 @@ Future<void> _run(Map<String, dynamic> step) async {
             final at = Offset(60.0 + (n % 40) * 22, 60.0 + (n ~/ 40) * 22);
             if (n.isEven) {
               agents.addAgent(PlacedAgent(
-                id: 'fill-$n',
+                id: 'fill-$n-${const Uuid().v4()}',
                 type: types[(n ~/ 2) % types.length],
                 position: at,
               ));
             } else {
               texts.addText(PlacedText(
-                id: 'fill-$n',
+                id: 'fill-$n-${const Uuid().v4()}',
                 position: at,
                 sizeVersion: worldSizedMediaVersion,
               )..text = 'Fill $n');
@@ -2297,6 +2428,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       await File(step['file'] as String).writeAsString(code);
     case 'mapThenOpen':
       await _mapThenOpen(step);
+    case 'cloudOpenTime':
+      await _cloudOpenTime(step);
     case 'openFirstFrame':
       await _openFirstFrame(step);
     case 'openStoredCloudStrategy':

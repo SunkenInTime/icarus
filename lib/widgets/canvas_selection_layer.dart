@@ -21,6 +21,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/snap_to_map_key_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
@@ -765,6 +766,14 @@ class _CanvasSelectionLayerState extends ConsumerState<CanvasSelectionLayer>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(strategyOpeningProvider, (before, now) {
+      if (before == null || now != null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+        final held = FocusManager.instance.primaryFocus;
+        if (held == null || held is FocusScopeNode) _focus.requestFocus();
+      });
+    });
     // Read as soon as the map shows, so the first drag has them.
     ref.watch(
       mapLinesProvider(ref.watch(mapProvider.select((map) => map.currentMap))),

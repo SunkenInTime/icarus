@@ -33,6 +33,14 @@ What doesn't run on Linux:
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
+## How long a cloud open takes, by the back button
+
+`{"cloudOpenTime": b, "from": a, "pages": p?, "items": n?, "runs": r?, "restAt": [x, y]}` (`scripts/cloud-open-time.json`) times opening cloud strategy b in place of a with the mouse back button, as a player does. With `items` it first gives b `p` pages of `n` items each (agents and text boxes) and waits for them to reach the server. Each of the r runs (20 by default) opens b, then a, then presses the back button at `restAt`, and logs `CLOUDOPEN run`: when the server read of b was done (b became the open strategy) and when its page was shown, both from the press. `CLOUDOPEN summary` gives the median and the worst of each.
+
+`scripts/text-draft-switch-local.json` types into a text box and switches strategy with the quick switcher while it is still in the box, then comes back and logs the box's text.
+
+At the end of every run `CANVAS` counts, besides the lines above, each time an edit reached the canvas while a strategy was opening (`an edit reaching the canvas during an open`), and names its caller. It should be zero in every script: while an open runs the editor takes no input.
+
 ## A rename while another strategy opens
 
 `scripts/rename-while-another-opens.json` starts renaming cloud strategy A from the title, then opens strategy B in place through B's share link (`openShareLink`), which leaves the name field holding focus as a link does, then submits the field and checks both names in the library. `{"typeInFocused": text}` and `{"submitFocused": true}` type into and submit whichever text field holds focus, the way the keyboard does.
@@ -159,6 +167,8 @@ At the end of a run the driver closes the store and logs `STORE closed`.
 2. Leaves k unused picture files (20 by default) in b's folder, so the open has cleanup to do.
 3. Opens the quick switcher at `switcherAt` and clicks b.
 4. One frame later, once the switcher has closed, clicks a's page p in the pages bar.
+
+With `"second": "undo"` the second action is Ctrl+Z instead of the page click: before each run it moves one of a's agents and saves, so there is an edit to undo. `RACE run` then also says whether the undo was taken while the open ran (a's agents changed on screen before b became the open strategy) and whether b ended marked unsaved; `RACE summary` counts both, and how many runs pressed Ctrl+Z while the open ran (before b became the open strategy). `expectTaken` fails the step unless the count of undos taken matches, and also when no run pressed during an open, since then nothing was tested. `scripts/open-race-undo-local.json` runs it.
 
 It times the open from inside the app, with provider listeners rather than polling. For each run it logs `RACE run`: whether a's first page was saved without its agents, when the canvas was cleared, when the second click landed, and when b became the open strategy. The window is the time between the clear and that moment. Then it puts a back as it was. `RACE summary` gives the count and the window's median and worst. With `expectEmptied` the step fails unless the count matches.
 

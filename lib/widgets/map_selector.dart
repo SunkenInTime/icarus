@@ -10,6 +10,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/map_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 
 class MapSelector extends ConsumerStatefulWidget {
   const MapSelector({super.key});
@@ -79,6 +80,9 @@ class _MapSelectorState extends ConsumerState<MapSelector>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(strategyOpeningProvider, (_, opening) {
+      if (opening != null && _isOpen) _closePortal();
+    });
     final MapValue currentMap = ref.watch(mapProvider).currentMap;
     final List<MapValue> availableMaps = Maps.mapNames.keys
         .where((mapValue) => Maps.availableMaps.contains(mapValue))

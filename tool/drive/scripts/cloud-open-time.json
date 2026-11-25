@@ -1,0 +1,19 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"signIn": true},
+  {"wait": 4},
+  {"newCloudFolder": "Open time {run}"},
+  {"openCloudFolder": "Open time {run}"},
+  {"wait": 3},
+  {"newCloud": "Open time start {run}", "map": "haven"},
+  {"newCloud": "Open time typical {run}", "map": "lotus"},
+  {"wait": 4},
+  {"tapText": "Open time start {run}"},
+  {"wait": 8},
+  {"tapIcon": "x", "optional": true},
+  {"signal": "ready"},
+  {"cloudOpenTime": "Open time typical {run}", "from": "Open time start {run}", "pages": 1, "items": 12, "runs": 20, "restAt": [600, 450]},
+  {"exit": 1}
+]

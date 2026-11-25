@@ -8,6 +8,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/widgets/platform_feature_toast.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 
 class ImageDropTarget extends ConsumerStatefulWidget {
   const ImageDropTarget({super.key, required this.child});
@@ -29,27 +30,28 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
     );
     final canDrop = canEditPages &&
         ref.watch(platformPolicyProvider).supports(PlatformFeature.fileDrop);
+    final showsDrop =
+        isDragging && canDrop && ref.watch(strategyOpeningProvider) == null;
 
     return DropTarget(
       onDragEntered: (details) {
-        if (!canDrop) return;
         setState(() {
           isDragging = true;
         });
       },
       onDragExited: (details) {
-        if (!canDrop) return;
         setState(() {
           isDragging = false;
         });
       },
       onDragDone: (details) async {
-        if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+        setState(() => isDragging = false);
+        if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages ||
+            ref.read(strategyOpeningProvider) != null) {
           return;
         }
         if (!ensureFeatureAvailable(ref, PlatformFeature.fileDrop)) return;
         if (!ensureFeatureAvailable(ref, PlatformFeature.addImages)) return;
-        isDragging = false;
         final files = details.files;
 
         for (final file in files) {
@@ -72,13 +74,13 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
       child: Stack(
         children: [
           Positioned.fill(child: widget.child),
-          if (isDragging)
+          if (showsDrop)
             const Positioned.fill(
               child: ColoredBox(
                 color: Color.fromARGB(118, 2, 2, 2),
               ),
             ),
-          if (isDragging)
+          if (showsDrop)
             Positioned.fill(
               child: Center(
                 child: Column(

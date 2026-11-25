@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
 export 'package:icarus/collab/strategy_capabilities.dart';
@@ -44,8 +46,14 @@ extension PageEditAccess on Ref {
   // Asked of the container, as a one-off question rather than a dependency:
   // the capabilities follow strategyProvider, which listens to the providers
   // that ask, and Riverpod refuses a ref.read back along that path.
-  bool get canEditPages =>
-      container.read(currentStrategyCapabilitiesProvider).canEditPages;
+  bool get canEditPages {
+    if (container.read(strategyOpeningProvider) != null) {
+      container
+          .read(canvasShowsProvider.notifier)
+          .editDuringOpen(container.read(strategyProvider).strategyId);
+    }
+    return container.read(currentStrategyCapabilitiesProvider).canEditPages;
+  }
 }
 
 /// Whether the open strategy is view-only for this reader, by the last role
