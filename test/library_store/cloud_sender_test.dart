@@ -158,7 +158,15 @@ void main() {
         test(code, () {
           inWorld((world) {
             world.server.log.clear();
-            world.server.answerWith(strategyId, refusal);
+            world.server.answerNext(strategyId, (call) {
+              if (refusal
+                  case StoreBatchRefusedWhole(
+                    refusal: BatchRefusal.strategyReplaced,
+                  )) {
+                world.replaceStrategyOnServer();
+              }
+              return Future.value(refusal);
+            });
             world.commitMove(1);
             world.settle(const Duration(minutes: 1));
             expect(world.server.log, log);
@@ -211,8 +219,8 @@ void main() {
     });
 
     test(
-        'ops written in two lives of the strategy go out in separate '
-        'batches, so the newer one is sent though the older is refused', () {
+        'a move held while a page list of a later strategy life arrives is '
+        'set aside, never sent, and the rename made after it goes alone', () {
       inWorld((world) {
         world.server.log.clear();
         world.sender.hold('the test writes both edits first');
@@ -252,12 +260,10 @@ void main() {
         world.server.log.clear();
         world.sender.release();
         world.settle(const Duration(minutes: 1));
-        expect(world.server.log.first, 'send move-1');
-        expect(world.server.log, contains('send rename'));
         expect(world.server.calls.map((call) => call.opIds), [
-          ['move-1'],
           ['rename'],
         ]);
+        expect(world.cloud().queue.strategy.setAside.count, 1);
       });
     });
 
@@ -355,6 +361,32 @@ void main() {
         expect(world.cloud().queue.shown.list, const ReadThisSession());
         expect(world.face(), isNot(Face.unreadableWork));
         expect(world.server.log.where((call) => call == 'list'), hasLength(2));
+      });
+    });
+
+    test(
+        'after STRATEGY_REPLACED no op written in that life is sent again: a '
+        'second move queued while the first was in flight is set aside with '
+        'it, and the calls are the send and the list', () {
+      inWorld((world) {
+        world.server.log.clear();
+        world.server.answerNext(strategyId, (call) {
+          world.commitMove(2);
+          world.replaceStrategyOnServer();
+          return Future.value(
+            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+          );
+        });
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 10));
+        expect(world.server.log.take(2), ['send move-1', 'list']);
+        expect(
+          world.server.log.where((call) => call.startsWith('send')),
+          ['send move-1'],
+        );
+        expect(world.queueLength(), 0);
+        expect(world.cloud().queue.strategy.setAside.count, 2);
+        expect(world.face(), Face.strategyReplaced);
       });
     });
 

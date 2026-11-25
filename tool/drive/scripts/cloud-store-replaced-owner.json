@@ -1,0 +1,20 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 4},
+  {"newCloud": "Replaced {run}", "map": "bind"},
+  {"wait": 4},
+  {"tapText": "Replaced {run}"},
+  {"wait": 12},
+  {"tapIcon": "x", "optional": true},
+  {"waitSettled": 60},
+  {"storeExpect": true},
+  {"storeAdd": "o1-{run}", "kind": "agent", "at": [600, 400]},
+  {"storeAdd": "o2-{run}", "kind": "agent", "at": [700, 400]},
+  {"waitStoreSent": 60, "landed": "may wait"},
+  {"shareLink": "editor", "file": "{out}/edit-code.txt"},
+  {"signal": "owner-ready"},
+  {"waitSignal": "teammate-done", "seconds": 900},
+  {"exit": 1}
+]

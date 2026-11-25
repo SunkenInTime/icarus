@@ -1878,6 +1878,24 @@ Two edits of a row fold only when they name the same row life and the same
 strategy life, and `fitsBatch` is the one rule for which ops may share a batch:
 the queue's claim and the app's picker both use it.
 
+**One strategy life per record.** A queue record holds the edits of one life
+of its strategy. When a page list shows a later life than the record's, one
+step sets every entry aside: the entries move into the record's set-aside
+list (`StrategyFacts.setAside`, stored in the same row as the record's other
+facts, so the move and the removal of every queued row are one commit), and
+attempts, landed work and everything shown from the old life are dropped, the
+store's page content with them, so every page is read again before anything is
+drawn. Set-aside edits are kept so the user can be shown what was not applied;
+queue logic never reads them again, nothing sends, draws or counts them as
+waiting, and only `UserDiscardedReplaced` removes them. The sync status counts
+them (`Tally.setAside`) under its own face, `Face.strategyReplaced`; its words
+are a placeholder. `STRATEGY_REPLACED` only owes the page list, and a list of
+the life the batch named does not pay that debt, so nothing written in that
+life is sent again. A page result whose page row has another life than the one
+shown owes the page list too: a page made again is evidence the list is stale.
+Ops share a batch only when they were written in the same strategy life, an
+unknown life included.
+
 **What has been read.** The page list and each page have one read state:
 not read this session, read this session, owed, or refused. A read is owed
 when an answer says what was shown may be stale (`row_replaced` owes the row's

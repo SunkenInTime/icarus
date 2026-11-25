@@ -163,16 +163,21 @@ final class ReadThisSession extends ReadState {
 }
 
 final class ReadOwed extends ReadState {
-  const ReadOwed();
+  const ReadOwed({this.unlessLife});
+
+  final int? unlessLife;
 
   @override
-  bool operator ==(Object other) => other is ReadOwed;
+  bool operator ==(Object other) =>
+      other is ReadOwed && other.unlessLife == unlessLife;
 
   @override
-  int get hashCode => (ReadOwed).hashCode;
+  int get hashCode => Object.hash(ReadOwed, unlessLife);
 
   @override
-  String toString() => 'owed';
+  String toString() => unlessLife == null
+      ? 'owed'
+      : 'owed by a list of a life after $unlessLife';
 }
 
 final class ReadRefused extends ReadState {
@@ -352,7 +357,11 @@ final class Shown {
         for (final page in pages)
           if (page is! TrashedPage) page.publicId,
       ]),
-      list: const ReadThisSession(),
+      list: switch (list) {
+        ReadOwed(:final unlessLife?) when createdAtOf(strategy) == unlessLife =>
+          list,
+        _ => const ReadThisSession(),
+      },
       pageReads: pageReads,
       goneThisSession: {
         for (final page in goneThisSession)
@@ -430,6 +439,8 @@ final class Shown {
       _with(fresh: fresh.touched(pages, list: list));
 
   Shown owingList() => _with(list: const ReadOwed());
+
+  Shown owingListPast(int? life) => _with(list: ReadOwed(unlessLife: life));
 
   Shown owingPage(String page) =>
       _with(pageReads: {...pageReads, page: const ReadOwed()});

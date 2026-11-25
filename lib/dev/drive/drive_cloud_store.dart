@@ -433,6 +433,24 @@ Future<String> waitStoreSent(
   }
 }
 
+Future<List<String>> storeQueueRecords(ProviderContainer c) async => [
+      for (final (strategyId, cloud) in await _cloudQueues(_storeOf(c)))
+        'CLOUDSTORE record of $strategyId: written in strategy life '
+            '${cloud.queue.shown.strategy?.life}; queued '
+            '[${[
+          for (final entry in cloud.queue.entries)
+            if (entry is PendingOp)
+              '${entry.id} ${entry.op.type.wireName} life '
+                  '${expectedLifeOf(entry)} strategy life ${entry.strategyLife} '
+                  '${cloud.views[entry.id]?.state}',
+        ].join('; ')}]; set aside ${switch (cloud.queue.strategy.setAside) {
+          SetAside(:final writtenIn, :final replacedBy, :final entries) =>
+            '${entries.length} written in $writtenIn, replaced by $replacedBy: '
+                '${entries.map((entry) => entry.id).join(', ')}',
+          NothingSetAside() => 'nothing',
+        }}; tally ${Tally.of(cloud.queue, DateTime.now()).toJson()}',
+    ];
+
 Future<List<String>> storeNeedsYou(ProviderContainer c) async {
   final lines = <String>[];
   for (final (strategyId, cloud) in await _cloudQueues(_storeOf(c))) {

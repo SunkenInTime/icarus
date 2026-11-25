@@ -36,7 +36,6 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
     NeedsUser(:final reason) => switch (reason) {
       RefusedByServer(refusal: RejectedByServer()) => Kind.rejected,
       RefusedByServer(refusal: FailedOnServer()) => Kind.failed,
-      RefusedByServer(refusal: StrategyReplacedOnServer()) => Kind.rejected,
       RefusedByServer(refusal: AnsweredWithoutLife()) => Kind.windowClosed,
       WindowClosed() => Kind.windowClosed,
       WrittenLongAgo() => Kind.writtenLongAgo,
@@ -135,10 +134,26 @@ final rows = <Row>[
     },
   ),
   Row('nothing queued, the page list owed', () {
-    final client = Client()..edit(movePatch('x'));
+    final client = Client()
+      ..edit(
+        const StrategyPatchOp(
+          opId: 'x',
+          expectedStrategyRevision: 1,
+          name: 'Renamed',
+        ),
+      );
     final attempt = client.claim(['x']);
     return client
-      ..must(BatchRefused(attempt, BatchRefusal.strategyReplaced))
+      ..must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'x',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+        ),
+      )
       ..must(const UserDiscarded('x'));
   }),
   Row('sending in attempt 1', () {
@@ -364,11 +379,47 @@ final events = <String, QueueEvent Function(Client)>{
       BaseArrived(const PageGone('page-b'), session: c.queue.session.number),
   'result: strategy gone': (c) =>
       BaseArrived(const StrategyGone(), session: c.queue.session.number),
+  'result: page-a of another life': (c) => BaseArrived(
+    PageRead(
+      page: LivePage(
+        publicId: 'page-a',
+        strategyPublicId: strategyId,
+        name: 'Page 1',
+        sortIndex: 0,
+        isAttack: true,
+        revision: 1,
+        unknownFields: jsonObject({'createdAt': fixtureLife + 86400000}),
+      ),
+      elements: c.base.elementsOn('page-a').toList(),
+      lineupGroups: const [],
+    ),
+    session: c.queue.session.number,
+  ),
+  'result: page list of a later strategy life': (c) => BaseArrived(
+    headerReadOf(
+      StrategyRowSet(
+        strategy: strategyRow(
+          createdAt: strategyCreatedAt.add(const Duration(days: 1)),
+        ),
+        pages: c.base.pages,
+        settings: c.base.settings,
+        elements: const [],
+        lineupGroups: const [],
+      ),
+    ),
+    session: c.queue.session.number,
+  ),
 };
 
 String describe(Client client, String id) {
   final entry = client.queue.entry(id);
-  if (entry == null) return 'gone';
+  if (entry == null) {
+    return switch (client.queue.strategy.setAside) {
+      SetAside(:final entries) when entries.any((kept) => kept.id == id) =>
+        'set aside',
+      _ => 'gone',
+    };
+  }
   final view = entryViews(client.queue, client.at)[id];
   return switch (entry) {
     PendingOp() =>
@@ -419,6 +470,8 @@ String outcome(Client before, Step result) {
             SessionOpened(:final session) => 'opens session $session',
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
+            StrategySetAside(:final count) => 'sets $count aside',
+            SetAsideDiscarded(:final count) => 'discards $count set aside',
           },
         ),
       ];

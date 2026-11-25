@@ -730,8 +730,6 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         RefusedByServer(refusal: RejectedByServer()) =>
           Attention.rejectedByServer,
         RefusedByServer(refusal: FailedOnServer()) => Attention.failedOnServer,
-        RefusedByServer(refusal: StrategyReplacedOnServer()) =>
-          Attention.rejectedByServer,
         RefusedByServer(refusal: AnsweredWithoutLife()) =>
           Attention.serverForgotAnswer,
         WindowClosed() => Attention.serverForgotAnswer,
@@ -936,8 +934,12 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
       case PageAsTheUserSawIt() || PageAlreadyGone():
         break;
       case PageResultAwaited(list: final needsList, page: final needsPage):
-        if (needsList) holds.add(const AwaitingResult(PageListResult()));
-        if (needsPage) holds.add(AwaitingResult(PageResult(page)));
+        for (final hold in [
+          if (needsList) const AwaitingResult(PageListResult()),
+          if (needsPage) AwaitingResult(PageResult(page)),
+        ]) {
+          if (!holds.contains(hold)) holds.add(hold);
+        }
       case PageHeld(:final cause):
         if (holds.isEmpty) {
           return (EntryView(NeedsUser(DeleteHeld(cause)), const []), null);

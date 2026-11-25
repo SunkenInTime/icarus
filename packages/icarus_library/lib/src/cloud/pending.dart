@@ -587,19 +587,6 @@ final class AnsweredWithoutLife extends ServerRefusal {
   String toString() => 'AnsweredWithoutLife($revision)';
 }
 
-final class StrategyReplacedOnServer extends ServerRefusal {
-  const StrategyReplacedOnServer();
-
-  @override
-  bool operator ==(Object other) => other is StrategyReplacedOnServer;
-
-  @override
-  int get hashCode => (StrategyReplacedOnServer).hashCode;
-
-  @override
-  String toString() => 'StrategyReplacedOnServer()';
-}
-
 final class FailedOnServer extends ServerRefusal {
   const FailedOnServer(this.code, this.message);
 
@@ -950,6 +937,7 @@ final class StrategyFacts {
     required this.accessLostAt,
     required this.accessConfirmedAt,
     required this.upgradeTold,
+    this.setAside = const NothingSetAside(),
   });
 
   static const fresh = StrategyFacts(
@@ -963,17 +951,20 @@ final class StrategyFacts {
   final int accessLostAt;
   final int accessConfirmedAt;
   final UpgradeTold upgradeTold;
+  final SetAsideRecord setAside;
 
   StrategyFacts copyWith({
     Presence? presence,
     int? accessLostAt,
     int? accessConfirmedAt,
     UpgradeTold? upgradeTold,
+    SetAsideRecord? setAside,
   }) => StrategyFacts(
     presence: presence ?? this.presence,
     accessLostAt: accessLostAt ?? this.accessLostAt,
     accessConfirmedAt: accessConfirmedAt ?? this.accessConfirmedAt,
     upgradeTold: upgradeTold ?? this.upgradeTold,
+    setAside: setAside ?? this.setAside,
   );
 
   @override
@@ -982,11 +973,67 @@ final class StrategyFacts {
       other.presence == presence &&
       other.accessLostAt == accessLostAt &&
       other.accessConfirmedAt == accessConfirmedAt &&
-      other.upgradeTold == upgradeTold;
+      other.upgradeTold == upgradeTold &&
+      other.setAside == setAside;
+
+  @override
+  int get hashCode => Object.hash(
+    presence,
+    accessLostAt,
+    accessConfirmedAt,
+    upgradeTold,
+    setAside,
+  );
+}
+
+sealed class SetAsideRecord {
+  const SetAsideRecord();
+
+  int get count;
+}
+
+final class NothingSetAside extends SetAsideRecord {
+  const NothingSetAside();
+
+  @override
+  int get count => 0;
+
+  @override
+  bool operator ==(Object other) => other is NothingSetAside;
+
+  @override
+  int get hashCode => (NothingSetAside).hashCode;
+}
+
+final class SetAside extends SetAsideRecord {
+  SetAside({
+    required this.writtenIn,
+    required this.replacedBy,
+    required List<QueueEntry> entries,
+  }) : entries = List.unmodifiable(entries);
+
+  final int? writtenIn;
+  final int replacedBy;
+  final List<QueueEntry> entries;
+
+  @override
+  int get count => entries.length;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SetAside &&
+      other.writtenIn == writtenIn &&
+      other.replacedBy == replacedBy &&
+      const ListEquality<QueueEntry>().equals(other.entries, entries);
 
   @override
   int get hashCode =>
-      Object.hash(presence, accessLostAt, accessConfirmedAt, upgradeTold);
+      Object.hash(writtenIn, replacedBy, Object.hashAll(entries));
+
+  @override
+  String toString() =>
+      'SetAside(${entries.length} written in $writtenIn, replaced by '
+      '$replacedBy)';
 }
 
 enum Presence { present, gone }

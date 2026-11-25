@@ -603,6 +603,38 @@ sealed class QueueEffect {
   const QueueEffect();
 }
 
+final class StrategySetAside extends QueueEffect {
+  const StrategySetAside(this.count);
+
+  final int count;
+
+  @override
+  bool operator ==(Object other) =>
+      other is StrategySetAside && other.count == count;
+
+  @override
+  int get hashCode => Object.hash(StrategySetAside, count);
+
+  @override
+  String toString() => 'StrategySetAside($count)';
+}
+
+final class SetAsideDiscarded extends QueueEffect {
+  const SetAsideDiscarded(this.count);
+
+  final int count;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SetAsideDiscarded && other.count == count;
+
+  @override
+  int get hashCode => Object.hash(SetAsideDiscarded, count);
+
+  @override
+  String toString() => 'SetAsideDiscarded($count)';
+}
+
 final class OpRemoved extends QueueEffect {
   const OpRemoved(this.opId, this.cause);
 
@@ -857,6 +889,13 @@ final class OtherEntity extends Inapplicable {
   String toString() => 'OtherEntity($opId)';
 }
 
+final class NothingSetAsideToDiscard extends Inapplicable {
+  const NothingSetAsideToDiscard();
+
+  @override
+  String toString() => 'nothing is set aside';
+}
+
 final class NothingClaimed extends Inapplicable {
   const NothingClaimed();
 
@@ -962,6 +1001,36 @@ final class _Edit {
     change.removed.add(old);
     change.touched.remove(id);
     effects.add(OpRemoved(id, cause));
+  }
+
+  void setAsideAll(int? writtenIn, int replacedBy) {
+    final kept = switch (strategy.setAside) {
+      SetAside(:final entries) => entries,
+      NothingSetAside() => const <QueueEntry>[],
+    };
+    final setAside = [...kept, ...entries];
+    for (final old in [...entries]) {
+      index.remove(old);
+      change.removed.add(old);
+      change.touched.remove(old.id);
+    }
+    entries.clear();
+    for (final attempt in [...attempts.values]) {
+      dropAttempt(attempt);
+    }
+    landed.clear();
+    strategy = strategy.copyWith(
+      setAside: SetAside(
+        writtenIn: switch (strategy.setAside) {
+          SetAside(:final writtenIn) => writtenIn,
+          NothingSetAside() => writtenIn,
+        },
+        replacedBy: replacedBy,
+        entries: setAside,
+      ),
+    );
+    change.everything = true;
+    effects.add(StrategySetAside(setAside.length));
   }
 
   void setAttempt(AttemptFact attempt) {
@@ -1163,6 +1232,14 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       return _userRemoves(edit, opId, UserRemoval.usedCloud, now);
     case UserDiscarded(:final opId):
       return _userRemoves(edit, opId, UserRemoval.discarded, now);
+    case UserDiscardedReplaced():
+      final count = edit.strategy.setAside.count;
+      if (count == 0) {
+        return NotApplicable(queue, const NothingSetAsideToDiscard());
+      }
+      edit.strategy = edit.strategy.copyWith(setAside: const NothingSetAside());
+      edit.effects.add(SetAsideDiscarded(count));
+      return edit.done();
     case UserDeletedAnyway(:final opId):
       final entry = queue.entry(opId);
       if (entry == null) return NotApplicable(queue, NoSuchOp(opId));
@@ -1237,17 +1314,7 @@ Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
     case BatchRefusal.strategyDeleted:
       edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
     case BatchRefusal.strategyReplaced:
-      edit.shown = edit.shown.owingList();
-      for (final op in fact.ops) {
-        if (edit.index.byId[op.opId] case final PendingOp entry
-            when entry.refusal is NotRefused) {
-          edit.put(
-            entry.copyWith(
-              refusal: const RefusedWith(StrategyReplacedOnServer()),
-            ),
-          );
-        }
-      }
+      edit.shown = edit.shown.owingListPast(edit.shown.strategy?.life);
     case BatchRefusal.uncheckedTooLate:
       edit.session = QueueSession(
         connected: edit.session.connected,
@@ -1273,8 +1340,27 @@ Step _arrived(_Edit edit, ArrivedBase base) {
     edit.shown = edit.shown.take(base);
     return edit.done();
   }
+  if (base case HeaderRead(:final strategy)) {
+    final writtenIn = edit.shown.strategy?.life;
+    if ((writtenIn, createdAtOf(strategy)) case (
+      final written?,
+      final listed?,
+    ) when listed > written) {
+      edit.setAsideAll(written, listed);
+      edit.shown = Shown.nothing.take(base);
+      return edit.done();
+    }
+  }
   final before = edit.shown;
   edit.shown = edit.shown.take(base);
+  if (base case PageRead(:final page)) {
+    if ((before.pages[page.publicId]?.life, createdAtOf(page)) case (
+      final shown?,
+      final read?,
+    ) when shown != read && !isDebt(edit.shown.list)) {
+      edit.shown = edit.shown.owingList();
+    }
+  }
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -1868,7 +1954,7 @@ Step _claim(
   final ops = <StrategyOp>[];
   final lives = <String, int>{};
   int? basis;
-  int? strategyLife;
+  PendingOp? first;
   for (final opId in opIds) {
     final index = edit.indexOf(opId);
     if (index == -1) return NotApplicable(queue, NoSuchOp(opId));
@@ -1890,13 +1976,13 @@ Step _claim(
     ) when owner != clientId) {
       return NotApplicable(queue, OtherClient(opId, owner));
     }
-    if (!fitsBatch(entry, strategyLife)) {
+    if (!fitsBatch(entry, first)) {
       return NotApplicable(
         queue,
         NotInThatState(opId, 'written in another life of the strategy'),
       );
     }
-    strategyLife = entry.strategyLife ?? strategyLife;
+    first ??= entry;
     final named = switch ((view.state, _judge(queue, entry, now))) {
       (Waiting(), _NameAt(:final revision?)) => _named(edit, entry, revision),
       _ => entry,
@@ -1926,17 +2012,15 @@ Step _claim(
       clientId,
       ops,
       basis: basis,
-      strategyLife: strategyLife,
+      strategyLife: first?.strategyLife,
       lives: lives,
     ),
   );
   return edit.done();
 }
 
-bool fitsBatch(PendingOp entry, int? batchStrategyLife) =>
-    entry.strategyLife == null ||
-    batchStrategyLife == null ||
-    entry.strategyLife == batchStrategyLife;
+bool fitsBatch(PendingOp entry, PendingOp? first) =>
+    first == null || entry.strategyLife == first.strategyLife;
 
 int? expectedLifeOf(PendingOp entry) => _lifeAuthored(entry.authored);
 

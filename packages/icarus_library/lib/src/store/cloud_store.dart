@@ -149,6 +149,13 @@ final class _CloudUnread extends _CloudOpen {
   final StorageFailure failure;
 }
 
+bool _ofALaterLife(LoadedStrategy strategy, StrategyRow listed) =>
+    switch ((strategy.header, createdAtOf(listed))) {
+      (HeaderPlaced(row: final ReadableStrategy held), final life?) =>
+        life > held.createdAt.millisecondsSinceEpoch,
+      _ => false,
+    };
+
 RowKey? _outOfPlace(String strategyPublicId, ArrivedBase base) =>
     switch (base) {
       HeaderRead(:final strategy, :final pages, :final settings) => [
@@ -864,10 +871,12 @@ extension _CloudStore on LibraryStore {
     final digests = <String>{};
     for (final arrival in arrivals) {
       switch (arrival) {
-        case HeaderRead(:final pages):
+        case HeaderRead(strategy: final header, :final pages):
           final listed = {for (final page in pages) digestOf(page.publicId)};
           digests.addAll(
-            strategy.pageDigests.where((d) => !listed.contains(d)),
+            _ofALaterLife(strategy, header)
+                ? strategy.pageDigests
+                : strategy.pageDigests.where((d) => !listed.contains(d)),
           );
         case PageRead(:final page, :final elements, :final lineupGroups):
           digests.add(digestOf(page.publicId));
@@ -1023,10 +1032,13 @@ extension _CloudStore on LibraryStore {
     for (final arrival in arrivals) {
       switch (arrival) {
         case HeaderRead(strategy: final header, :final pages, :final settings):
+          final replaced = _ofALaterLife(strategy, header);
           put(header);
           final listed = {for (final page in pages) page.publicId};
           for (final page in [...strategy.pages]) {
-            if (!listed.contains(page.publicId)) dropPage(page.publicId);
+            if (replaced || !listed.contains(page.publicId)) {
+              dropPage(page.publicId);
+            }
           }
           for (final page in pages) {
             put(page);
