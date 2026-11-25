@@ -132,7 +132,8 @@ enum RejectionReason {
   pageStrategyMismatch('page_strategy_mismatch'),
   revisionMismatch('revision_mismatch'),
   fieldConflict('field_conflict'),
-  mergeInvalid('merge_invalid');
+  mergeInvalid('merge_invalid'),
+  rowReplaced('row_replaced');
 
   const RejectionReason(this.wireName);
 

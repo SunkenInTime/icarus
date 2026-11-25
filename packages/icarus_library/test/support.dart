@@ -5,6 +5,10 @@ const strategyId = 'strategy-1';
 
 final strategyCreatedAt = DateTime.utc(2026, 1, 2, 3);
 
+const fixtureLife = 1767326400000;
+
+const _bornAtFixture = {'createdAt': fixtureLife};
+
 ReadableStrategy strategyRow({
   String publicId = strategyId,
   String name = 'Retake B',
@@ -40,6 +44,7 @@ PageRow page(
         sortIndex: sortIndex,
         isAttack: true,
         revision: revision,
+        unknownFields: jsonObject(_bornAtFixture),
       )
     : LivePage(
         publicId: id,
@@ -49,6 +54,7 @@ PageRow page(
         sortIndex: sortIndex,
         isAttack: true,
         revision: revision,
+        unknownFields: jsonObject(_bornAtFixture),
       );
 
 const defaultSettings = PageSettings(
@@ -62,6 +68,7 @@ ReadablePageSettings settings(String pageId, {PageSettings? value}) =>
       pagePublicId: pageId,
       settings: value ?? defaultSettings,
       revision: 1,
+      unknownFields: jsonObject(_bornAtFixture),
     );
 
 ElementPayload agentPayload(String id, Map<String, Object?> fields) =>
@@ -83,6 +90,7 @@ LiveElement element(
   payload: agentPayload(id, fields),
   sortIndex: sortIndex,
   revision: revision,
+  unknownFields: jsonObject(_bornAtFixture),
 );
 
 DeletedElement deletedElement(
@@ -95,6 +103,7 @@ DeletedElement deletedElement(
   payload: agentPayload(id, const {}),
   sortIndex: 0,
   revision: revision,
+  unknownFields: jsonObject(_bornAtFixture),
 );
 
 StrategyRowSet strategyRows({

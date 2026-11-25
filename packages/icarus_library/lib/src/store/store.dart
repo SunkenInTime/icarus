@@ -25,6 +25,7 @@ import '../cloud/op_facts.dart';
 import '../cloud/pending.dart';
 import '../cloud/queue.dart';
 import '../cloud/sync.dart';
+import '../cloud/version.dart';
 import '../cloud/visible.dart';
 
 part 'cloud_store.dart';

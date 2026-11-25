@@ -30,7 +30,10 @@ void main() {
       );
       final attempt = client.claim(['merge']);
       client.must(
-        OpAnswered(attempt, const AppliedAnswer('merge', revision: 4)),
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('merge', revision: 4, life: fixtureLife),
+        ),
       );
       expect(client.queue.landed.single.produced, isNull);
       client

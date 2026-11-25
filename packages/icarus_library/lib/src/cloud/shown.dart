@@ -127,6 +127,72 @@ final class Freshness {
   int get hashCode => Object.hash(listSinceTouch, listed.length);
 }
 
+sealed class ReadState {
+  const ReadState();
+
+  ReadState get inNewSession => this;
+}
+
+final class NotReadThisSession extends ReadState {
+  const NotReadThisSession();
+
+  @override
+  bool operator ==(Object other) => other is NotReadThisSession;
+
+  @override
+  int get hashCode => (NotReadThisSession).hashCode;
+
+  @override
+  String toString() => 'not read this session';
+}
+
+final class ReadThisSession extends ReadState {
+  const ReadThisSession();
+
+  @override
+  ReadState get inNewSession => const NotReadThisSession();
+
+  @override
+  bool operator ==(Object other) => other is ReadThisSession;
+
+  @override
+  int get hashCode => (ReadThisSession).hashCode;
+
+  @override
+  String toString() => 'read this session';
+}
+
+final class ReadOwed extends ReadState {
+  const ReadOwed();
+
+  @override
+  bool operator ==(Object other) => other is ReadOwed;
+
+  @override
+  int get hashCode => (ReadOwed).hashCode;
+
+  @override
+  String toString() => 'owed';
+}
+
+final class ReadRefused extends ReadState {
+  const ReadRefused(this.problem);
+
+  final String problem;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReadRefused && other.problem == problem;
+
+  @override
+  int get hashCode => Object.hash(ReadRefused, problem);
+
+  @override
+  String toString() => 'refused: $problem';
+}
+
+bool isDebt(ReadState state) => state is ReadOwed || state is ReadRefused;
+
 final class Shown {
   Shown({
     required this.strategy,
@@ -134,13 +200,16 @@ final class Shown {
     required Map<String, ShownRow> settings,
     required Map<String, Map<SeenPart, String>> content,
     required Map<Target, ShownRow> rows,
-    this.headerThisSession = false,
-    Set<String> pagesThisSession = const {},
+    this.list = const NotReadThisSession(),
+    Map<String, ReadState> pageReads = const {},
     Set<String> goneThisSession = const {},
     Map<Target, Version> highest = const {},
     Freshness? fresh,
   }) : fresh = fresh ?? Freshness.none,
-       pagesThisSession = Set.unmodifiable(pagesThisSession),
+       pageReads = Map.unmodifiable({
+         for (final MapEntry(:key, :value) in pageReads.entries)
+           if (value is! NotReadThisSession) key: value,
+       }),
        goneThisSession = Set.unmodifiable(goneThisSession),
        highest = Map.unmodifiable(highest),
        pages = Map.unmodifiable(pages),
@@ -167,8 +236,8 @@ final class Shown {
     }
     return Shown(
       fresh: fresh,
-      headerThisSession: true,
-      pagesThisSession: read,
+      list: const ReadThisSession(),
+      pageReads: {for (final page in read) page: const ReadThisSession()},
       strategy: _strategyRow(rows.strategy, rows.pages),
       pages: {
         for (final page in rows.pages)
@@ -212,6 +281,8 @@ final class Shown {
 
   final ShownRow? strategy;
   final Freshness fresh;
+  final ReadState list;
+  final Map<String, ReadState> pageReads;
 
   int? get strategyRevision => strategy?.revision;
 
@@ -222,14 +293,24 @@ final class Shown {
         life: createdAtOf(row),
         digest: strategyDigest(row, pages),
       );
-  final bool headerThisSession;
-  final Set<String> pagesThisSession;
   final Set<String> goneThisSession;
   final Map<Target, Version> highest;
   final Map<String, ShownRow> pages;
   final Map<String, ShownRow> settings;
   final Map<String, Map<SeenPart, String>> content;
   final Map<Target, ShownRow> rows;
+
+  bool get headerThisSession => list is ReadThisSession;
+
+  bool pageReadThisSession(String page) => pageReads[page] is ReadThisSession;
+
+  ReadState pageRead(String page) =>
+      pageReads[page] ?? const NotReadThisSession();
+
+  Set<String> get pagesToRead => {
+    for (final page in pages.keys)
+      if (!content.containsKey(page) || pageRead(page) is ReadOwed) page,
+  };
 
   static ShownRow _rowOf(Row row, Object page) => ShownRow(
     page: switch (page) {
@@ -242,14 +323,37 @@ final class Shown {
     digest: rowDigest(row),
   );
 
+  Shown _with({
+    Freshness? fresh,
+    ReadState? list,
+    Map<String, ReadState>? pageReads,
+    Set<String>? goneThisSession,
+    Map<Target, Version>? highest,
+    Map<String, ShownRow>? pages,
+    Map<String, ShownRow>? settings,
+    Map<String, Map<SeenPart, String>>? content,
+    Map<Target, ShownRow>? rows,
+  }) => Shown(
+    fresh: fresh ?? this.fresh,
+    list: list ?? this.list,
+    pageReads: pageReads ?? this.pageReads,
+    goneThisSession: goneThisSession ?? this.goneThisSession,
+    highest: highest ?? this.highest,
+    strategy: strategy,
+    pages: pages ?? this.pages,
+    settings: settings ?? this.settings,
+    content: content ?? this.content,
+    rows: rows ?? this.rows,
+  );
+
   Shown take(ArrivedBase result) => switch (result) {
     HeaderRead(:final strategy, :final pages, :final settings) => Shown(
       fresh: fresh.afterList([
         for (final page in pages)
           if (page is! TrashedPage) page.publicId,
       ]),
-      headerThisSession: true,
-      pagesThisSession: pagesThisSession,
+      list: const ReadThisSession(),
+      pageReads: pageReads,
       goneThisSession: {
         for (final page in goneThisSession)
           if (!pages.any((row) => row.publicId == page && row is! TrashedPage))
@@ -289,13 +393,10 @@ final class Shown {
       page,
       [...elements, ...lineupGroups],
     ),
-    PageGone(:final pagePublicId) => Shown(
+    PageGone(:final pagePublicId) => _with(
       fresh: fresh.afterPage(pagePublicId, gone: true),
-      headerThisSession: headerThisSession,
-      pagesThisSession: {...pagesThisSession}..remove(pagePublicId),
+      pageReads: {...pageReads}..remove(pagePublicId),
       goneThisSession: {...goneThisSession, pagePublicId},
-      highest: highest,
-      strategy: strategy,
       pages: {...pages}..remove(pagePublicId),
       settings: {...settings}..remove(pagePublicId),
       content: {...content}..remove(pagePublicId),
@@ -304,7 +405,13 @@ final class Shown {
           if (value.page != pagePublicId) key: value,
       },
     ),
-    StrategyGone() => this,
+    StrategyGone() => _with(
+      list: const ReadThisSession(),
+      pageReads: {
+        for (final MapEntry(:key, :value) in pageReads.entries)
+          if (!isDebt(value)) key: value,
+      },
+    ),
   };
 
   static Map<Target, Version> _raised(
@@ -316,33 +423,28 @@ final class Shown {
       if (highest[key] == null || value > highest[key]!) key: value,
   };
 
-  Shown withGone(String page) => Shown(
-    fresh: fresh,
-    headerThisSession: headerThisSession,
-    pagesThisSession: pagesThisSession,
-    goneThisSession: {...goneThisSession, page},
-    highest: highest,
-    strategy: strategy,
-    pages: pages,
-    settings: settings,
-    content: content,
-    rows: rows,
-  );
+  Shown withGone(String page) =>
+      _with(goneThisSession: {...goneThisSession, page});
 
-  Shown touched(Iterable<String> pages, {required bool list}) => Shown(
-    fresh: fresh.touched(pages, list: list),
-    headerThisSession: headerThisSession,
-    pagesThisSession: pagesThisSession,
-    goneThisSession: goneThisSession,
-    highest: highest,
-    strategy: strategy,
-    pages: this.pages,
-    settings: settings,
-    content: content,
-    rows: rows,
-  );
+  Shown touched(Iterable<String> pages, {required bool list}) =>
+      _with(fresh: fresh.touched(pages, list: list));
+
+  Shown owingList() => _with(list: const ReadOwed());
+
+  Shown owingPage(String page) =>
+      _with(pageReads: {...pageReads, page: const ReadOwed()});
+
+  Shown listRefused(String problem) => _with(list: ReadRefused(problem));
+
+  Shown pageRefused(String page, String problem) =>
+      _with(pageReads: {...pageReads, page: ReadRefused(problem)});
 
   Shown inNewSession() => Shown(
+    list: list.inNewSession,
+    pageReads: {
+      for (final MapEntry(:key, :value) in pageReads.entries)
+        key: value.inNewSession,
+    },
     highest: highest,
     strategy: strategy,
     pages: pages,
@@ -375,19 +477,16 @@ final class Shown {
       }
       next[target] = shown;
     }
-    return Shown(
+    return _with(
       fresh: fresh.afterPage(page, gone: pageRow is TrashedPage),
-      headerThisSession: headerThisSession,
-      pagesThisSession: {...pagesThisSession, page},
+      pageReads: {...pageReads, page: const ReadThisSession()},
       goneThisSession: {...goneThisSession}..remove(page),
       highest: raised,
-      strategy: strategy,
       pages: switch ((pageRow, pages[page]?.version)) {
         (TrashedPage(), _) => {...pages}..remove(page),
         (_, final known?) when _outranks(known, versionOfRow(pageRow)) => pages,
         _ => {...pages, page: _rowOf(pageRow, pageRow)},
       },
-      settings: settings,
       content: pageRow is TrashedPage
           ? ({...content}..remove(page))
           : {...content, page: liveContentOn(found, page)},
@@ -400,14 +499,14 @@ final class Shown {
       other is Shown &&
       other.strategy == strategy &&
       other.fresh == fresh &&
-      other.headerThisSession == headerThisSession &&
+      other.list == list &&
+      const MapEquality<String, ReadState>().equals(
+        other.pageReads,
+        pageReads,
+      ) &&
       const SetEquality<String>().equals(
         other.goneThisSession,
         goneThisSession,
-      ) &&
-      const SetEquality<String>().equals(
-        other.pagesThisSession,
-        pagesThisSession,
       ) &&
       sameMap(other.pages, pages) &&
       sameMap(other.settings, settings) &&

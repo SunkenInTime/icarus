@@ -306,7 +306,8 @@ Outcome expected(String kind, Object? json, List<Object> at, Object? value) {
         : const Rebuilt();
   }
   if (at.isEmpty) return _noId(kind);
-  final field = _fields[kind]![at.first]!;
+  final field = _fields[kind]![at.first];
+  if (field == null) return Readable(replaced);
   if (at.length == 1) {
     return switch (field) {
       Field.id => _noId(kind),

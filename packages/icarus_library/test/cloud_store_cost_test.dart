@@ -71,6 +71,7 @@ void main() {
                 sortIndex: 0,
                 isAttack: true,
                 revision: 1,
+                unknownFields: jsonObject({'createdAt': fixtureLife}),
               ),
             ],
             settings: [settings('page-a')],

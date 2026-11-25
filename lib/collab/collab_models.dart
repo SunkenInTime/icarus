@@ -1205,7 +1205,8 @@ enum OpRejectionReason {
   fieldConflict('field_conflict'),
   // The lineup group merging this work would leave can't be stored, say a
   // lineup whose spot a teammate removed.
-  mergeInvalid('merge_invalid');
+  mergeInvalid('merge_invalid'),
+  rowReplaced('row_replaced');
 
   const OpRejectionReason(this.wireName);
   final String wireName;
@@ -1215,20 +1216,33 @@ enum OpRejectionReason {
 }
 
 sealed class CurrentOpSnapshot {
-  const CurrentOpSnapshot({required this.revision, required this.value});
+  const CurrentOpSnapshot({
+    required this.revision,
+    required this.value,
+    this.life,
+  });
   final int revision;
+  final int? life;
   final CloudPayload value;
 
   factory CurrentOpSnapshot.fromJson(Map<String, dynamic> json) {
     final revision = _requiredInt(json['revision']);
     final value = _requiredMap(json['value'], 'current.value');
+    final life = (json['life'] as num?)?.toInt();
     return switch (json['type']) {
-      'strategy' => StrategyCurrentSnapshot(revision: revision, value: value),
-      'page' => PageCurrentSnapshot(revision: revision, value: value),
-      'pageContent' =>
-        PageContentCurrentSnapshot(revision: revision, value: value),
-      'element' => ElementCurrentSnapshot(revision: revision, value: value),
-      'lineup' => LineupCurrentSnapshot(revision: revision, value: value),
+      'strategy' =>
+        StrategyCurrentSnapshot(revision: revision, life: life, value: value),
+      'page' =>
+        PageCurrentSnapshot(revision: revision, life: life, value: value),
+      'pageContent' => PageContentCurrentSnapshot(
+          revision: revision,
+          life: life,
+          value: value,
+        ),
+      'element' =>
+        ElementCurrentSnapshot(revision: revision, life: life, value: value),
+      'lineup' =>
+        LineupCurrentSnapshot(revision: revision, life: life, value: value),
       final Object? type => throw FormatException(
           'Unknown current op snapshot type: $type',
         ),
@@ -1237,27 +1251,43 @@ sealed class CurrentOpSnapshot {
 }
 
 final class StrategyCurrentSnapshot extends CurrentOpSnapshot {
-  const StrategyCurrentSnapshot(
-      {required super.revision, required super.value});
+  const StrategyCurrentSnapshot({
+    required super.revision,
+    required super.value,
+    super.life,
+  });
 }
 
 final class PageCurrentSnapshot extends CurrentOpSnapshot {
-  const PageCurrentSnapshot({required super.revision, required super.value});
+  const PageCurrentSnapshot({
+    required super.revision,
+    required super.value,
+    super.life,
+  });
 }
 
 final class PageContentCurrentSnapshot extends CurrentOpSnapshot {
   const PageContentCurrentSnapshot({
     required super.revision,
     required super.value,
+    super.life,
   });
 }
 
 final class ElementCurrentSnapshot extends CurrentOpSnapshot {
-  const ElementCurrentSnapshot({required super.revision, required super.value});
+  const ElementCurrentSnapshot({
+    required super.revision,
+    required super.value,
+    super.life,
+  });
 }
 
 final class LineupCurrentSnapshot extends CurrentOpSnapshot {
-  const LineupCurrentSnapshot({required super.revision, required super.value});
+  const LineupCurrentSnapshot({
+    required super.revision,
+    required super.value,
+    super.life,
+  });
 }
 
 sealed class OpAck {
@@ -1296,10 +1326,12 @@ sealed class OpAck {
       'applied' => AppliedOpAck(
           opId: opId,
           revision: _requiredInt(json['appliedRevision']),
+          life: (json['appliedLife'] as num?)?.toInt(),
         ),
       'noop' => NoopOpAck(
           opId: opId,
           currentRevision: (json['currentRevision'] as num?)?.toInt(),
+          currentLife: (json['currentLife'] as num?)?.toInt(),
           wasApplied: json['wasApplied'] == true,
         ),
       'rejected' => RejectedOpAck(
@@ -1325,21 +1357,24 @@ sealed class OpAck {
 }
 
 final class AppliedOpAck extends OpAck {
-  const AppliedOpAck({required this.opId, required this.revision});
+  const AppliedOpAck({required this.opId, required this.revision, this.life});
   @override
   final String opId;
   final int revision;
+  final int? life;
 }
 
 final class NoopOpAck extends OpAck {
   const NoopOpAck({
     required this.opId,
     this.currentRevision,
+    this.currentLife,
     this.wasApplied = false,
   });
   @override
   final String opId;
   final int? currentRevision;
+  final int? currentLife;
 
   /// The op was sent before and applied when the server first got it:
   /// [currentRevision] is the revision that write made.
@@ -1501,6 +1536,7 @@ class RemoteElement {
     required this.sortIndex,
     required this.revision,
     required this.deleted,
+    this.createdAt,
   });
 
   final String publicId;
@@ -1511,6 +1547,7 @@ class RemoteElement {
   final int sortIndex;
   final int revision;
   final bool deleted;
+  final DateTime? createdAt;
 
   Map<String, dynamic> decodedPayload() => cloudPayloadData(payload);
 }
@@ -1524,6 +1561,7 @@ class RemoteLineup {
     required this.sortIndex,
     required this.revision,
     required this.deleted,
+    this.createdAt,
   });
 
   final String publicId;
@@ -1533,6 +1571,7 @@ class RemoteLineup {
   final int sortIndex;
   final int revision;
   final bool deleted;
+  final DateTime? createdAt;
 }
 
 class RemoteImageAsset {

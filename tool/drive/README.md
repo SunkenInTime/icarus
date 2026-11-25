@@ -41,6 +41,10 @@ What doesn't run on Linux:
 
 At the end of every run `CANVAS` counts, besides the lines above, each time an edit reached the canvas while a strategy was opening (`an edit reaching the canvas during an open`), and names its caller. It should be zero in every script: while an open runs the editor takes no input.
 
+## A rename while another strategy opens
+
+`scripts/rename-while-another-opens.json` starts renaming cloud strategy A from the title, then opens strategy B in place through B's share link (`openShareLink`), which leaves the name field holding focus as a link does, then submits the field and checks both names in the library. `{"typeInFocused": text}` and `{"submitFocused": true}` type into and submit whichever text field holds focus, the way the keyboard does.
+
 ## How long an open takes to show
 
 `{"openFirstFrame": "largest", "runs": 12}` (`scripts/open-first-frame-local.json`) times opening a local strategy the way a player does, from its tile in the library. It picks the strategy with the most items in the library it was started on (`"median"` picks the middle one, and a name picks that strategy), among those with a unique name and agents or abilities on their first page. Each run:

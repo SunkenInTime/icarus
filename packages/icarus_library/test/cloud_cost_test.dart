@@ -23,7 +23,12 @@ Client queueOf(int length) {
   }
   final accepted = client.claim([for (var i = 0; i < length; i += 4) 'add$i']);
   for (var i = 0; i < length; i += 4) {
-    client.must(OpAnswered(accepted, AppliedAnswer('add$i', revision: 1)));
+    client.must(
+      OpAnswered(
+        accepted,
+        AppliedAnswer('add$i', revision: 1, life: fixtureLife),
+      ),
+    );
   }
   final lost = client.claim([for (var i = 1; i < length; i += 4) 'add$i']);
   client.must(TransportFailed(lost, TransportFailure.network, at: now));
@@ -66,7 +71,10 @@ List<Measured> oneEntryEvents(Client client, {int rounds = 30}) {
     measure('claim', BatchClaimed(clientId: clientId, opIds: [id], at: now));
     final attempt = client.queue.nextAttempt - 1;
     if (round.isEven) {
-      measure('answer', OpAnswered(attempt, AppliedAnswer(id, revision: 1)));
+      measure(
+        'answer',
+        OpAnswered(attempt, AppliedAnswer(id, revision: 1, life: fixtureLife)),
+      );
     } else {
       measure(
         'transport failure',

@@ -498,7 +498,12 @@ void main() {
         'revision it needs the user', () {
       final client = deletedAndPutBack();
       final attempt = client.claim(['del']);
-      client.must(OpAnswered(attempt, const AppliedAnswer('del', revision: 2)));
+      client.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('del', revision: 2, life: fixtureLife),
+        ),
+      );
       client.claim(['back']);
       expect(
         (client.lastSent().single as ElementAddOp).expectedElementRevision,
@@ -506,7 +511,12 @@ void main() {
       );
       final other = deletedAndPutBack();
       final sent = other.claim(['del']);
-      other.must(OpAnswered(sent, const AppliedAnswer('del', revision: 5)));
+      other.must(
+        OpAnswered(
+          sent,
+          const AppliedAnswer('del', revision: 5, life: fixtureLife),
+        ),
+      );
       expect(stateOf(other, 'back'), const NeedsUser(ChangedUnseen()));
     });
 
@@ -517,7 +527,12 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const NoopAnswer('del', revision: 2, replay: NoopReplay.notApplied),
+          const NoopAnswer(
+            'del',
+            revision: 2,
+            replay: NoopReplay.notApplied,
+            life: fixtureLife,
+          ),
         ),
       );
       expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
@@ -552,7 +567,12 @@ void main() {
         movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
       );
       final attempt = other.claim(['drag']);
-      other.must(OpAnswered(attempt, const AppliedAnswer('drag', revision: 3)));
+      other.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('drag', revision: 3, life: fixtureLife),
+        ),
+      );
       other.edit(onVisible(other.visible, movePatch('drop', x: 70)));
       expect(other.view('drop').holds, [
         awaitingResult(const RowResult(ElementTarget('e1'), 'page-a')),
@@ -686,7 +706,10 @@ void main() {
       expect(
         notApplicable(
           client.step(
-            OpAnswered(attempt, const AppliedAnswer('b', revision: 2)),
+            OpAnswered(
+              attempt,
+              const AppliedAnswer('b', revision: 2, life: fixtureLife),
+            ),
           ),
         ),
         isA<NotInAttempt>(),
@@ -857,7 +880,10 @@ void main() {
       final attempt = client.claim(['move']);
       client.arrive(const StrategyGone());
       client.must(
-        OpAnswered(attempt, const AppliedAnswer('move', revision: 2)),
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+        ),
       );
       expect(client.queue.entry('move'), isNull);
       expect(standingOf(client.queue), Standing.deletedOnServer);
@@ -900,7 +926,12 @@ void main() {
       final late = client.claim(['second']);
       client.must(BatchRefused(early, BatchRefusal.editAccessRemoved));
       expect(standingOf(client.queue), Standing.editAccessLost);
-      client.must(OpAnswered(late, const AppliedAnswer('second', revision: 2)));
+      client.must(
+        OpAnswered(
+          late,
+          const AppliedAnswer('second', revision: 2, life: fixtureLife),
+        ),
+      );
       expect(standingOf(client.queue), Standing.good);
     });
 
@@ -919,7 +950,10 @@ void main() {
         );
         final attempt = client.claim(['drag']);
         client.must(
-          OpAnswered(attempt, const AppliedAnswer('drag', revision: 3)),
+          OpAnswered(
+            attempt,
+            const AppliedAnswer('drag', revision: 3, life: fixtureLife),
+          ),
         );
         client.edit(onVisible(client.visible, movePatch('drop', x: 70)));
         final tally = Tally.of(client.queue, now);
@@ -1221,7 +1255,10 @@ void main() {
       );
       final attempt = client.claim(['move']);
       client.must(
-        OpAnswered(attempt, const AppliedAnswer('move', revision: 2)),
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+        ),
       );
       expect(client.queue.landed, hasLength(1));
       final movedBack = withOp(
@@ -1247,7 +1284,12 @@ void main() {
     client.edit(pageAdd('add', 'page-c', expected: 1));
     client.edit(onVisible(client.visible, pageDelete('drop', 'page-b')));
     final attempt = client.claim(['add']);
-    client.must(OpAnswered(attempt, const AppliedAnswer('add', revision: 2)));
+    client.must(
+      OpAnswered(
+        attempt,
+        const AppliedAnswer('add', revision: 2, life: fixtureLife),
+      ),
+    );
     client.read(withOp(initialRows(), pageAdd('add', 'page-c', expected: 1)));
     client.claim(['drop']);
     expect(expectedOf(client.lastSent().single), 2);
@@ -1503,7 +1545,12 @@ void main() {
       final client = online();
       client.edit(elementAdd('add', elementId: 'n', pageId: 'page-b'));
       final attempt = client.claim(['add']);
-      client.must(OpAnswered(attempt, const AppliedAnswer('add', revision: 2)));
+      client.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('add', revision: 2, life: fixtureLife),
+        ),
+      );
       client.edit(pageDelete('drop', 'page-b'));
       expect(client.view('drop').holds, [
         awaitingResult(const PageListResult()),
@@ -1659,7 +1706,12 @@ void main() {
       client.edit(elementDelete('del'));
       client.edit(putBackOf('back', drawn, 'e1'));
       final attempt = client.claim(['del']);
-      client.must(OpAnswered(attempt, const AppliedAnswer('del', revision: 2)));
+      client.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('del', revision: 2, life: fixtureLife),
+        ),
+      );
       expect(client.view('back').sendable, isTrue);
       client.clock = now.add(const Duration(days: 30));
       expect(stateOf(client, 'back'), const NeedsUser(ChangedUnseen()));
@@ -1922,6 +1974,7 @@ void main() {
             'del',
             revision: 2,
             replay: NoopReplay.appliedWhenFirstReceived,
+            life: fixtureLife,
           ),
         ),
       );

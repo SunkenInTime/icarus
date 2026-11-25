@@ -65,6 +65,7 @@ PageRow _page(RemotePage page) => _read(PageRow.decode({
       'sortIndex': page.sortIndex,
       'isAttack': page.isAttack,
       'revision': page.revision,
+      'createdAt': _millis(page.createdAt),
       'deleted': false,
     }));
 
@@ -73,6 +74,7 @@ PageSettingsRow _settings(String pagePublicId, RemotePageContent content) =>
       'pagePublicId': pagePublicId,
       if (content.settings case final settings?) 'settings': settings,
       'revision': content.revision,
+      'createdAt': _millis(content.createdAt),
     }));
 
 ElementRow _element(RemoteElement element, CanRead canRead) =>
@@ -82,6 +84,8 @@ ElementRow _element(RemoteElement element, CanRead canRead) =>
       'payload': element.payload,
       'sortIndex': element.sortIndex,
       'revision': element.revision,
+      if (element.createdAt case final createdAt?)
+        'createdAt': _millis(createdAt),
       'deleted': element.deleted,
     }, canRead: canRead.element));
 
@@ -93,6 +97,8 @@ LineupGroupRow _lineupGroup(RemoteLineup lineup, CanRead canRead) =>
       'payload': lineup.payload,
       'sortIndex': lineup.sortIndex,
       'revision': lineup.revision,
+      if (lineup.createdAt case final createdAt?)
+        'createdAt': _millis(createdAt),
       'deleted': lineup.deleted,
     }, canRead: canRead.lineupGroup));
 

@@ -884,10 +884,8 @@ final class CloudSender {
     return (planned: null, due: due);
   }
 
-  static List<String> _unreadPages(CloudStrategy cloud) => [
-        for (final page in cloud.queue.shown.pages.keys)
-          if (!cloud.queue.shown.content.containsKey(page)) page,
-      ];
+  static List<String> _unreadPages(CloudStrategy cloud) =>
+      cloud.queue.shown.pagesToRead.toList();
 
   static _Read _readOf(ResultSubject subject) => switch (subject) {
         PageListResult() => const _ReadList(),
@@ -926,6 +924,7 @@ final class CloudSender {
         for (final view in cloud.views.values)
           for (final hold in view.holds)
             if (hold case AwaitingResult(:final subject)) subject,
+        ...owedReads(cloud.queue),
       };
 
   static DateTime? _earliest(DateTime? a, DateTime? b) => switch ((a, b)) {
@@ -998,6 +997,22 @@ final class CloudSender {
         ]);
         if (disposed) return const _Ended();
         switch (written) {
+          case WriteTroubled(trouble: ResultNotStored(:final why)):
+            final noted = await _store.write(owner, id, [
+              ResultRefused(
+                page: switch (read) {
+                  _ReadPage(:final page) => page,
+                  _ReadList() => null,
+                },
+                problem: why,
+              ),
+            ]);
+            if (disposed) return const _Ended();
+            if (noted case WriteTroubled(:final trouble)) {
+              return _troubled(id, trouble);
+            }
+            return _readFailed(
+                id, 'the store would not keep $read: $why', snap);
           case WriteTroubled(:final trouble):
             return _troubled(id, trouble);
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
@@ -1288,6 +1303,8 @@ final class CloudSender {
           strategyPublicId: batch.strategyId,
           clientId: batch.clientId,
           ops: batch.ops,
+          lives: batch.lives,
+          strategyLife: batch.strategyLife,
           account: batch.account,
           serverTime: ServerTimeAsked(basis: batch.basis),
         ),
@@ -1326,7 +1343,7 @@ final class CloudSender {
             notBefore[id] = _clock().add(_timing.writeRetryAfter(failures));
         _note(id, 'could not be written ($why); trying again at $at');
         return _Skipped(at);
-      case StrategyHeld(:final why):
+      case StrategyHeld(:final why) || ResultNotStored(:final why):
         final at = notBefore[id] = _clock().add(_timing.heldRetry);
         _note(id, 'held: $why; looking again at $at');
         return _Skipped(at);
