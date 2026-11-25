@@ -824,7 +824,7 @@
   "tool/sync_gauntlet/app.dart": 31,
   "tool/sync_gauntlet/editor.dart": 23,
   "tool/sync_gauntlet/faults.dart": 26,
-  "tool/sync_gauntlet/gauntlet.dart": 107,
+  "tool/sync_gauntlet/gauntlet.dart": 106,
   "tool/sync_gauntlet/save_path_gauntlet_test.dart": 9,
   "tool/sync_gauntlet/server.dart": 3,
   "windows/runner/flutter_window.cpp": 10,

@@ -4,6 +4,7 @@
 // native client connects through, which the gauntlet can cut to take the app
 // offline.
 import 'dart:async';
+
 import 'dart:io';
 
 import 'package:icarus/collab/transport/convex_transport.dart';
@@ -30,6 +31,15 @@ enum BatchFault {
   holdUntilReleased,
 }
 
+final class AppliedFault {
+  AppliedFault(this.fault, this.opIds, this.opTypes, {this.sentAt = -1});
+
+  final BatchFault fault;
+  final List<String> opIds;
+  final List<String> opTypes;
+  final int sentAt;
+}
+
 /// One ops:applyBatch the server answered, as the transport saw it, whether
 /// or not the app got the answer.
 final class SeenBatch {
@@ -45,8 +55,21 @@ final class FaultyTransport implements ConvexTransport {
   FaultyTransport(this._inner);
 
   final ConvexTransport _inner;
-  final List<BatchFault> _pending = [];
+  final List<(BatchFault, bool)> _pending = [];
+  Completer<void>? _editsMade;
+
+  final List<AppliedFault> appliedFaults = [];
+
+  AppliedFault? heldForEdits;
   Completer<void>? _held;
+  final _clock = Stopwatch()..start();
+
+  final List<String> calls = [];
+  final List<List<String>> sentOpIds = [];
+
+  List<BatchFault> get faultsToApply => [for (final (f, _) in _pending) f];
+
+  int get elapsedMs => _clock.elapsedMilliseconds;
 
   /// Every ops:applyBatch the server answered, in order.
   final List<SeenBatch> seen = [];
@@ -61,7 +84,14 @@ final class FaultyTransport implements ConvexTransport {
   Stream<void> get batchAnswered => _answered.stream;
 
   /// Applies [fault] to the next ops:applyBatch the app sends.
-  void inject(BatchFault fault) => _pending.add(fault);
+  void inject(BatchFault fault, {bool holdForEdits = false}) =>
+      _pending.add((fault, holdForEdits));
+
+  void faultedBatchEdited() {
+    heldForEdits = null;
+    _editsMade?.complete();
+    _editsMade = null;
+  }
 
   bool get isClear => _pending.isEmpty && _held == null;
 
@@ -72,29 +102,76 @@ final class FaultyTransport implements ConvexTransport {
   Future<ConvexValue> mutation(String name, ConvexObject args) async {
     if (name != 'ops:applyBatch') return _inner.mutation(name, args);
     _sent.add(null);
-    final fault = _pending.isEmpty ? null : _pending.removeAt(0);
+    final (fault, holdForEdits) =
+        _pending.isEmpty ? (null, false) : _pending.removeAt(0);
+    final sent = [
+      for (final op in (args.toDart() as Map)['ops'] as List? ?? const [])
+        op as Map,
+    ];
+    final ops = [for (final op in sent) '${op['opId']}'];
+    final types = [for (final op in sent) '${op['type']}'];
+    if (holdForEdits &&
+        (fault == BatchFault.loseAnswer || fault == BatchFault.loseRequest)) {
+      final edited = _editsMade = Completer<void>();
+      heldForEdits = AppliedFault(fault!, ops, types);
+      await edited.future;
+    }
+    final sentAt = sentOpIds.length;
+    sentOpIds.add(ops);
+    final call = calls.length;
+    calls.add(
+      '${_clock.elapsedMilliseconds} ms: ${fault?.name ?? 'clean'} '
+      '${ops.join(' ')}',
+    );
+    void struck() => appliedFaults.add(
+          AppliedFault(fault!, ops, types, sentAt: sentAt),
+        );
+    try {
+      final result = await _apply(fault, args, struck);
+      calls[call] += ', answered at ${_clock.elapsedMilliseconds} ms';
+      return result;
+    } catch (error) {
+      calls[call] += ', threw at ${_clock.elapsedMilliseconds} ms';
+      rethrow;
+    }
+  }
+
+  Future<ConvexValue> _apply(
+    BatchFault? fault,
+    ConvexObject args,
+    void Function() struck,
+  ) async {
     switch (fault) {
       case null:
         return _send(args);
       case BatchFault.delay:
         await Future<void>.delayed(const Duration(milliseconds: 400));
-        return _send(args);
+        final result = await _send(args);
+        struck();
+        return result;
       case BatchFault.loseRequest:
+        struck();
         throw TimeoutException('gauntlet: the request was lost');
       case BatchFault.loseAnswer:
         await _send(args, delivered: false);
+        struck();
         throw TimeoutException('gauntlet: the answer was lost');
       case BatchFault.deliverTwice:
         await _send(args, delivered: false);
-        return _send(args);
+        final result = await _send(args);
+        struck();
+        return result;
       case BatchFault.holdAnswerForever:
         await _send(args, delivered: false);
+        struck();
         return Completer<ConvexValue>().future;
       case BatchFault.holdUntilReleased:
         final held = _held = Completer<void>();
         await held.future;
         _held = null;
-        return _send(args);
+        final result = await _send(args);
+        struck();
+        return result;
     }
   }
 
