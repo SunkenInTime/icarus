@@ -1824,6 +1824,8 @@ String _pageItems(ProviderContainer c) => jsonEncode([
       UtilityProvider.objectToJson(c.read(utilityProvider)),
       TextProvider.objectToJson(c.read(textProvider)),
       DrawingProvider.objectToJson(c.read(drawingProvider).elements),
+      [for (final image in c.read(placedImageProvider).images) image.toJson()],
+      LineUpProvider.objectToJson(c.read(lineUpProvider).graph),
     ]);
 
 String _probe() {

@@ -507,7 +507,7 @@ const _notifiers = {
 };
 
 Set<String> _publicMethods(String path) {
-  final file = File(path).readAsStringSync();
+  final file = File(path).readAsStringSync().replaceAll('\r\n', '\n');
   final start = file.indexOf('class ${_notifiers[path]} extends');
   final source = file.substring(start, file.indexOf('\n}\n', start));
   return {
