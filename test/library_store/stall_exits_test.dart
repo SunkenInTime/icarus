@@ -22,7 +22,6 @@ final class Stall {
     this.held = true,
     this.look = const Duration(hours: 1),
     this.named = true,
-    this.sendsAgainAtOnce = false,
   });
 
   final void Function(World world)? prepare;
@@ -30,7 +29,6 @@ final class Stall {
   final bool held;
   final Duration look;
   final bool named;
-  final bool sendsAgainAtOnce;
   final void Function(World world) start;
   final void Function(World world) goAgain;
   final bool Function(World world, List<Call> after) wentAgain;
@@ -350,7 +348,6 @@ final stalls = <StallExit, Stall>{
   ),
   StallExit.uncheckedTooLate: Stall(
     named: false,
-    sendsAgainAtOnce: true,
     start: (world) {
       world.server.answerNext(
         strategyId,
@@ -372,9 +369,21 @@ final stalls = <StallExit, Stall>{
     },
     goAgain: (world) => world.slowStore.refusesBaseWrites = 0,
     wentAgain: (world, after) =>
-        after.isEmpty &&
+        after.length == 1 &&
+        after.single.what == 'page p1' &&
         world.sender.waitingOn(strategyId) != StallExit.localTrouble &&
-        world.readsRecorded().where((read) => read == 'page p1').length == 2,
+        world.readsRecorded().where((read) => read == 'page p1').length == 3,
+  ),
+  StallExit.sendSpacing: Stall(
+    look: const Duration(milliseconds: 300),
+    start: (world) {
+      for (var n = 1; n <= 3; n++) {
+        world.commitMove(n);
+        world.async.elapse(const Duration(milliseconds: 20));
+      }
+    },
+    goAgain: (world) => world.commitMove(4),
+    wentAgain: (world, after) => sent(after),
   ),
   StallExit.editsSettling: Stall(
     look: const Duration(milliseconds: 100),
@@ -593,6 +602,12 @@ const logs = <StallExit, List<String>>{
     '0 s send move-1',
     '0 s page p1',
   ],
+  StallExit.sendSpacing: [
+    '0 s send move-1',
+    '0 s send move-2',
+    '0 s send move-3',
+    '30 s page p1',
+  ],
   StallExit.editsSettling: [
     '0 s send move-1',
     '30 s page p1',
@@ -664,11 +679,7 @@ void main() {
           world.settle(const Duration(hours: 1));
           final laterHour = calls.length - firstHour;
           final ticks = [for (final call in calls) (call.at, call.what)];
-          expect(
-            ticks.toSet().length,
-            ticks.length - (stall.sendsAgainAtOnce ? 1 : 0),
-            reason: '$calls',
-          );
+          expect(ticks.toSet().length, ticks.length, reason: '$calls');
           measured[row] = (firstHour: firstHour, laterHour: laterHour);
           final log = [
             for (final call in calls)

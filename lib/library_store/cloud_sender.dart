@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/landed_retiring.dart';
-import 'package:icarus/library_store/read_governor.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/store_sessions.dart';
@@ -51,6 +51,8 @@ final class SenderTiming {
       unconfirmed < accessReads ? readAgainAfter : null;
 
   Duration get readFloor => firstWriteRetry;
+
+  Duration get sendFloor => wait;
 
   Duration readRetryAfter(int failures) {
     final doubled = firstWriteRetry * pow(2, min(failures - 1, 10)).toInt();
@@ -224,12 +226,14 @@ final class CloudSender {
     DateTime Function()? clock,
     Duration Function()? elapsed,
     bool Function()? recordsConnectionLost,
+    String? Function()? editorShows,
   })  : _store = store,
-        _send = send,
-        _governor = ReadGovernor(
+        _governor = CallGovernor(
           reads: reads,
+          send: send,
           timing: timing,
           clock: clock ?? DateTime.now,
+          editorShows: editorShows ?? (() => null),
         ),
         _inputs = inputs,
         _timing = timing,
@@ -240,8 +244,7 @@ final class CloudSender {
   }
 
   final SenderStore _store;
-  final StoreBatchSend _send;
-  final ReadGovernor _governor;
+  final CallGovernor _governor;
   final SenderTiming _timing;
   final DateTime Function() _clock;
   final Duration Function() _elapsed;
@@ -444,8 +447,8 @@ final class CloudSender {
     wake();
   }
 
-  void openInEditor(String? strategyId) {
-    _governor.opened(strategyId);
+  void editorOpened(String? strategyId) {
+    _governor.userOpened(strategyId);
     wake();
   }
 
@@ -610,9 +613,10 @@ final class CloudSender {
     final under = readsUnder(snap);
     final StoreReadOutcome outcome;
     final DateTime started;
-    switch (_governor.heldFor(id, read, under)) {
-      case (outcome: final kept, started: final at, under: _, read: _):
-        outcome = kept;
+    final kept = _governor.heldFor(id, read, under);
+    switch (kept) {
+      case (outcome: final held, started: final at, under: _, read: _):
+        outcome = held;
         started = at;
       case null:
         switch (await _issue(id, account, read, snap, _Why.adopt)) {
@@ -649,7 +653,7 @@ final class CloudSender {
             );
             return _troubled(id, trouble);
           case WrittenWith(:final session):
-            _governor.written(id, read);
+            _governor.written(id, read, late: kept != null);
             restarted.add(id);
             if (_inputs != snap || session == null) return const _Restart();
             _wanted.remove(id);
@@ -672,7 +676,7 @@ final class CloudSender {
         _note(id, 'not adopted: the server no longer has it');
         return const _Skipped(StallExit.goneOnTakeUp);
       case final other:
-        return _readRefused(id, account, read, other, snap, null);
+        return _readRefused(id, account, read, other, snap, held: false);
     }
   }
 
@@ -698,6 +702,29 @@ final class CloudSender {
         return _troubled(id, trouble);
     }
     if (disposed) return const _Ended();
+    for (final MapEntry(key: read, value: problem)
+        in _governor.markersOwed(id).entries) {
+      if (_shownRefused(cloud, read)) {
+        _governor.markerWritten(id, read);
+        continue;
+      }
+      final noted = await _store.write(owner, id, [
+        ResultRefused(
+          page: switch (read) {
+            ReadOfPage(:final page) => page,
+            ReadOfList() => null,
+          },
+          problem: problem,
+        ),
+      ]);
+      if (disposed) return const _Ended();
+      if (noted case WriteTroubled(:final trouble)) {
+        return _troubled(id, trouble);
+      }
+      _governor.markerWritten(id, read);
+      _note(id, 'wrote the refused mark for $read it had kept');
+      return const _Acted();
+    }
     retiring.looked(id, cloud, now);
     _forgetResolved(id, cloud, snap);
     _lastSeen[id] = cloud;
@@ -851,6 +878,7 @@ final class CloudSender {
     DateTime now,
     ReadMemory memory,
   ) sync* {
+    if (standingOf(cloud.queue) == Standing.deletedOnServer) return;
     if (standingOf(cloud.queue) == Standing.editAccessLost) {
       yield (
         planned: (read: const ReadOfList(), why: _Why.access),
@@ -865,6 +893,9 @@ final class CloudSender {
       );
     for (final need in needed) {
       yield (planned: (read: _readOf(need), why: _Why.need), wantedAt: now);
+    }
+    for (final read in _governor.owedFresh(id)) {
+      yield (planned: (read: read, why: _Why.need), wantedAt: now);
     }
     for (final page in _unreadPages(cloud)) {
       yield (planned: (read: ReadOfPage(page), why: _Why.adopt), wantedAt: now);
@@ -974,7 +1005,8 @@ final class CloudSender {
     final ResultSource from;
     final StoreReadOutcome outcome;
     final DateTime started;
-    switch (_governor.heldFor(id, read, under)) {
+    final kept = _governor.heldFor(id, read, under);
+    switch (kept) {
       case (
             outcome: final kept,
             started: final at,
@@ -1028,7 +1060,7 @@ final class CloudSender {
         if (disposed) return const _Ended();
         switch (written) {
           case WriteTroubled(trouble: ResultNotStored(:final why)):
-            _governor.written(id, read);
+            _governor.written(id, read, late: kept != null);
             final noted = await _store.write(owner, id, [
               ResultRefused(
                 page: switch (read) {
@@ -1059,7 +1091,7 @@ final class CloudSender {
             ));
             return _troubled(id, trouble);
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
-            _governor.written(id, read);
+            _governor.written(id, read, late: kept != null);
             return _unsettled(
               id,
               owner,
@@ -1070,7 +1102,7 @@ final class CloudSender {
               marking: cloud,
             );
           case WrittenWith(:final effects):
-            _governor.written(id, read);
+            _governor.written(id, read, late: kept != null);
             if (read case ReadOfPage(:final page)
                 when effects.any(
                   (effect) =>
@@ -1102,7 +1134,15 @@ final class CloudSender {
         notBefore.remove(id);
         return const _Acted();
       case final other:
-        return _readRefused(id, owner, read, other, snap, marking);
+        return _readRefused(
+          id,
+          owner,
+          read,
+          other,
+          snap,
+          held: true,
+          marking: marking,
+        );
     }
   }
 
@@ -1148,6 +1188,7 @@ final class CloudSender {
   }) async {
     final climbed = _boundMemory(id, snap).climbed('$read', _clock(), row);
     final count = climbed.settle['$read']!.count;
+    _governor.remember(id, climbed);
     if (marking != null &&
         count >= _timing.unresolvedRounds &&
         !_shownRefused(marking, read)) {
@@ -1162,10 +1203,10 @@ final class CloudSender {
       ]);
       if (disposed) return const _Ended();
       if (noted case WriteTroubled(:final trouble)) {
+        _governor.owesMarker(id, read, why);
         return _troubled(id, trouble);
       }
     }
-    _governor.remember(id, climbed);
     final at = _readAgainAt(id, read, snap);
     _note(id, '$why ($count in a row); reading $read again at $at');
     return _Skipped(row, at);
@@ -1176,9 +1217,10 @@ final class CloudSender {
     Account owner,
     ReadOf read,
     StoreReadOutcome outcome,
-    Snapshot snap,
+    Snapshot snap, {
+    required bool held,
     CloudStrategy? marking,
-  ) async {
+  }) async {
     switch (outcome) {
       case StoreReadRefused(
           refusal: StoreReadRefusal.accountMismatch ||
@@ -1190,7 +1232,7 @@ final class CloudSender {
         return const _Acted();
       case StoreReadRefused(refusal: StoreReadRefusal.upgradeRequired):
         upgradeAsked = true;
-        if (marking != null) {
+        if (held) {
           final told = await _store.write(owner, id, [
             ReadRefusedForUpgrade(build: build),
           ]);
@@ -1246,6 +1288,9 @@ final class CloudSender {
   ) async {
     if (_settledAt(id) case final at? when at.isAfter(_clock())) {
       return _Skipped(StallExit.editsSettling, at);
+    }
+    if (_governor.sendAt(id) case final at?) {
+      return _Skipped(StallExit.sendSpacing, at);
     }
     final ClaimedBatch batch;
     switch (await _store.claim(
@@ -1324,10 +1369,15 @@ final class CloudSender {
         }
         switch (outcome) {
           case StoreBatchRefusedWhole() || StoreBatchOutsideWindow():
-            _governor.newEvidence(id);
+            _governor.newEvidence(id, {const ReadOfList()});
           case StoreBatchAnswered(:final answers)
               when answers.any(_refusesAnEdit):
-            _governor.newEvidence(id);
+            _governor.newEvidence(id, {
+              for (final answer in answers)
+                if (_refusesAnEdit(answer))
+                  for (final op in batch.ops)
+                    if (op.opId == answer.opId) _subjectOf(op),
+            });
           case StoreBatchAnswered() ||
                 StoreBatchLost() ||
                 StoreBatchAccountMismatch():
@@ -1347,6 +1397,17 @@ final class CloudSender {
     }
     return const _Acted();
   }
+
+  static ReadOf _subjectOf(StrategyOp op) => switch (targetOf(op)) {
+        StrategyTarget() ||
+        PageTarget() ||
+        SettingsTarget() =>
+          const ReadOfList(),
+        _ => switch (pagesNeeded(op).firstOrNull) {
+            final page? => ReadOfPage(page),
+            null => const ReadOfList(),
+          },
+      };
 
   static bool _refusesAnEdit(OpAnswer answer) => switch (answer) {
         RejectedAnswer() || FailedAnswer() => true,
@@ -1434,15 +1495,9 @@ final class CloudSender {
   Future<StoreBatchOutcome> _call(ClaimedBatch batch) async {
     try {
       return await Future<StoreBatchOutcome>.sync(
-        () => _send(
-          strategyPublicId: batch.strategyId,
-          clientId: batch.clientId,
-          ops: batch.ops,
-          lives: batch.lives,
-          strategyLife: batch.strategyLife,
-          account: batch.account,
-          serverTime: ServerTimeAsked(basis: batch.basis),
-        ),
+        () =>
+            _governor.send(batch) ??
+            (throw StateError('a batch reached the governor inside the floor')),
       ).then((outcome) => outcome).timeout(
             _timing.giveUpAfter,
             onTimeout: () => StoreBatchLost(
@@ -1537,13 +1592,13 @@ List<QueueEvent> answersOf(
             ),
         ],
       StoreBatchRefusedWhole(:final refusal) => [
-          BatchRefused(batch.attempt, refusal),
+          BatchRefused(batch.attempt, refusal, at: at),
         ],
       StoreBatchLost(:final failure) => [
           TransportFailed(batch.attempt, failure, at: at),
         ],
       StoreBatchAccountMismatch() => [ClaimReleased(batch.attempt)],
       StoreBatchOutsideWindow() => [
-          BatchRefused(batch.attempt, BatchRefusal.uncheckedTooLate),
+          BatchRefused(batch.attempt, BatchRefusal.uncheckedTooLate, at: at),
         ],
     };

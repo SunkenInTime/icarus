@@ -8,7 +8,7 @@ import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart' show useCloudAs;
 import 'package:icarus/library_store/cloud_sender.dart';
-import 'package:icarus/library_store/read_governor.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
@@ -1813,7 +1813,8 @@ void main() {
 
     test(
         'a result the disk refuses to write is kept and written again, not '
-        'read again: the page is read once and recorded', () {
+        'read again for the write; once written late, the page is read once '
+        'more so nothing newer is missed', () {
       inWorld(
         (world) {
           var refused = false;
@@ -1825,8 +1826,11 @@ void main() {
           };
           world.sender.adopt(strategyId);
           world.settle(const Duration(seconds: 10));
-          expect(readsAfter(world, 0), ['list', 'page p1']);
-          expect(world.readsRecorded(), ['the page list', 'page p1']);
+          expect(readsAfter(world, 0), ['list', 'page p1', 'page p1']);
+          expect(
+            world.readsRecorded(),
+            ['the page list', 'page p1', 'page p1'],
+          );
           expect(world.sender.adopting(strategyId), isFalse);
         },
         addStrategy: false,
@@ -2041,8 +2045,8 @@ void main() {
 
     test(
         'a first adoption whose write the disk refuses keeps the page list it '
-        'read and writes it again on the write retry delay, never reading it '
-        'again', () {
+        'read and writes it again on the write retry delay; once written late, '
+        'the list is read once more', () {
       inWorld(
         (world) {
           world.lease.refuseNext = 3;
@@ -2053,7 +2057,7 @@ void main() {
           }
           expect(readsAfter(world, 0), ['list']);
           world.settle(const Duration(seconds: 30));
-          expect(readsAfter(world, 0), ['list', 'page p1']);
+          expect(readsAfter(world, 0), ['list', 'list', 'page p1']);
           expect(world.sender.adopting(strategyId), isFalse);
         },
         addStrategy: false,
@@ -2420,9 +2424,9 @@ void main() {
     });
 
     test(
-        'a page delete whose page result the disk refuses to write is '
-        'written again from the result it holds, and the refusals are not '
-        'counted toward could not resolve', () {
+        'a page delete whose page results the disk refuses once each is '
+        'written from the result in hand, read once more after each late '
+        'write, and the refusals are not counted toward could not resolve', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       withSecondPage(storage, server);
@@ -2440,11 +2444,11 @@ void main() {
           world.settle(const Duration(minutes: 1));
           expect(
             readsAfter(world, before).where((read) => read == 'page p2'),
-            hasLength(1),
+            hasLength(3),
           );
           expect(
             world.readsRecorded().where((read) => read == 'page p2'),
-            hasLength(1),
+            hasLength(3),
           );
           expect(world.sender.couldNotResolve(strategyId), isNull);
           expect(

@@ -7,7 +7,7 @@ import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
-import 'package:icarus/library_store/read_governor.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
@@ -39,6 +39,7 @@ final class ServerCall {
   final ServerTimeAsk serverTime;
   final Map<String, int> lives;
   final int? strategyLife;
+  DateTime? at;
 
   int? get basis => switch (serverTime) {
         ServerTimeAsked(:final basis) => basis,
@@ -303,7 +304,7 @@ final class FakeServer {
       serverTime,
       lives,
       strategyLife,
-    );
+    )..at = clock?.call();
     calls.add(call);
     log.add('send ${call.opIds.join(' ')}');
     onCall?.call(call);
@@ -507,6 +508,10 @@ final class _Slept {
   var value = Duration.zero;
 }
 
+final class _Shows {
+  String? value;
+}
+
 final class SlowSenderStore extends SenderStore {
   SlowSenderStore(super.store) : super(keepsAllReports: true);
 
@@ -609,6 +614,16 @@ final class World {
   final CloudSender sender;
   late _Flag dropsConnectionLost;
   late _Slept _slept;
+  late _Shows _shows;
+
+  String? get editorShows => _shows.value;
+
+  set editorShows(String? strategy) => _shows.value = strategy;
+
+  void openInEditor(String? strategy) {
+    _shows.value = strategy;
+    sender.editorOpened(strategy);
+  }
 
   void sleep(Duration time) {
     _slept.value += time;
@@ -679,6 +694,7 @@ final class World {
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
     final dropsConnectionLost = _Flag();
     final slept = _Slept();
+    final shows = _Shows();
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
     LibraryStore? store;
     LibraryStore.open(
@@ -709,11 +725,13 @@ final class World {
       clock: () => start.add(async.elapsed),
       elapsed: () => async.elapsed - slept.value,
       recordsConnectionLost: () => !dropsConnectionLost.value,
+      editorShows: () => shows.value,
     );
     fake.whyNow = () => sender.reading;
     final world = World._(async, engine, store!, fake, sender)
       ..dropsConnectionLost = dropsConnectionLost
       .._slept = slept
+      .._shows = shows
       .._account = inputs.account
       .._connection = inputs.connection
       .._authChanges = inputs.signIns

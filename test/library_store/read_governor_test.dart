@@ -292,7 +292,7 @@ void main() {
       expect(world.sender.accessCheckStopped(strategyId), isTrue);
       world.sender.retryNow(strategyId);
       expect(world.sender.accessCheckStopped(strategyId), isFalse);
-      world.sender.openInEditor(strategyId);
+      world.openInEditor(strategyId);
       world.settle(const Duration(hours: 2));
       expect(world.sender.accessCheckStopped(strategyId), isFalse);
     });
@@ -338,10 +338,10 @@ void main() {
       world.settle(const Duration(hours: 2));
       expect(world.sender.accessCheckStopped(strategyId), isTrue);
       final stopped = listReads(world).length;
-      world.sender.openInEditor(strategyId);
+      world.openInEditor(strategyId);
       world.settle(const Duration(minutes: 1));
       expect(listReads(world), hasLength(stopped + 1));
-      world.sender.openInEditor(null);
+      world.openInEditor(null);
       world.settle(const Duration(hours: 2));
       expect(listReads(world), hasLength(stopped + timing.accessReads));
       expect(world.sender.accessCheckStopped(strategyId), isTrue);

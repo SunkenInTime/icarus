@@ -2055,7 +2055,7 @@ final class _LibraryEdit {
             switch (await _store._queueOf(strategy)) {
               case _QueueLoaded(:final queue):
                 final tally = Tally.of(queue.current, _store._cloudNow());
-                if (tally.total > 0) {
+                if (tally.unsentWork > 0) {
                   return _Stop(
                     Refused(CloudWorkOutstanding(strategyPublicId, tally)),
                   );

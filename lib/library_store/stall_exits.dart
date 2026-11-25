@@ -1,12 +1,14 @@
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-const newEvidence = 'a server answer about the strategy that is not only '
-    'applied edits, the user pressing retry, or a new connection, each no '
-    'sooner than the floor after the last read of the same subject';
+const newEvidence = 'news about that subject: an edit on it rejected or '
+    'failed (its page, or the page list for an edit of the strategy, a page '
+    'or settings), a batch refused whole (the page list), the user pressing '
+    'retry, or a new connection or sign-in; each no sooner than the floor '
+    'after the last read of the same subject';
 
 const _accessAgain = 'the user pressing retry or opening the strategy in the '
-    'editor (six more reads), a sign-in, or the app starting again. Being '
+    'editor (six more refusals), a sign-in, or the app starting again. Being '
     'shared the strategy again shows only on a read, so it needs one of '
     'these. While the strategy is open in the editor the check never stops';
 
@@ -38,7 +40,7 @@ enum StallExit {
   pageAheadOfList(
     title: 'A page is newer than its page list',
     waitsFor: 'a page list showing the page in that life',
-    calls: 'the page, then the page list, together each round',
+    calls: 'the page and the page list, each on its own ladder',
     onScreen: Face.unreadableWork,
     goesAgain: 'a list that shows the page, $newEvidence',
   ),
@@ -115,9 +117,11 @@ enum StallExit {
     goesAgain: 'the app starting again on a newer build',
   ),
   lostSend(
-    title: 'A batch gets no answer',
-    waitsFor: 'an answer to the same batch',
-    calls: 'the same batch',
+    title: 'A batch gets no answer, or keeps being refused in a way the queue '
+        'sends again (edit access the page list then confirms, or outside its '
+        'window)',
+    waitsFor: 'an answer that lands it',
+    calls: 'the same edits',
     onScreen: Face.needsYou,
     goesAgain: 'the user asking to retry',
   ),
@@ -127,6 +131,13 @@ enum StallExit {
     calls: 'the same edits, checked',
     onScreen: null,
     goesAgain: 'at once',
+  ),
+  sendSpacing(
+    title: 'A batch for this strategy went out moments ago',
+    waitsFor: 'the send floor',
+    calls: 'nothing until the floor passes',
+    onScreen: Face.sending,
+    goesAgain: 'the floor passing',
   ),
   replaced(
     title: 'The strategy was replaced',
@@ -235,8 +246,10 @@ enum StallExit {
       viewerOnly ||
       forbidden =>
         'at once, then every ${span(timing.readAgainAfter)}',
-      lostSend => 'the queue\'s backoff, doubling from 0.6 s',
+      lostSend => 'the queue\'s backoff, doubling from 0.6 s; never twice '
+          'within ${span(timing.sendFloor)}',
       uncheckedTooLate => 'at once',
+      sendSpacing => 'one batch per ${span(timing.sendFloor)} per strategy',
       localTrouble => 'the write again after ${span(timing.firstWriteRetry)}, '
           'doubling to ${span(timing.longestWriteRetry)}; '
           '${span(timing.heldRetry)} while the store holds the strategy',
@@ -271,11 +284,13 @@ enum StallExit {
             '${timing.readAgainAfter.inMinutes} min',
         viewerOnly ||
         forbidden =>
-          '${timing.accessReads} reads while the strategy is not open in the '
-              'editor, then none',
-        lostSend => '$retriesBeforePause failures, then the user is asked',
-        uncheckedTooLate => 'one send again in checked form. A server that '
-            'refuses that too gets it again at once, without end (#779)',
+          '${timing.accessReads} refusals while the strategy is not open in '
+              'the editor, then none',
+        lostSend => '$retriesBeforePause failures or refusals in a row, then '
+            'the user is asked',
+        uncheckedTooLate => 'one send again in checked form; a refusal after '
+            'that climbs the lost-send ladder',
+        sendSpacing => 'the floor',
         localTrouble => 'none while the app runs',
         editsSettling => '${timing.longestWait.inSeconds} s',
         viewerOnTakeUp || goneOnTakeUp => 'one read',

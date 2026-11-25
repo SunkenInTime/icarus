@@ -741,17 +741,17 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
         RowPageGone() => Attention.pageGone,
         RetiredFormat() => Attention.retiredFormat,
       }),
-      Waiting() || Unanswered()
+      Waiting() || Unanswered() || RefusedAgain()
           when view.holds.any(
             (hold) =>
                 hold is BehindEntry && viewOf(hold.opId)?.state is NeedsUser,
           ) =>
         const _Needs(Attention.waitingOnRefused),
-      Waiting() || Unanswered()
+      Waiting() || Unanswered() || RefusedAgain()
           when view.holds.any((hold) => hold is AwaitingResult) =>
         const _Waits(Underway.awaitingResult),
       Unanswered() => const _Waits(Underway.answerUnknown),
-      Waiting() => const _Waits(Underway.unsent),
+      Waiting() || RefusedAgain() => const _Waits(Underway.unsent),
     };
 
 PendingState stateOf(CloudQueue queue, PendingOp entry) {
@@ -777,10 +777,27 @@ PendingState stateOf(CloudQueue queue, PendingOp entry) {
     for (final attempt in attempts)
       if (attempt.outcome case AttemptFailed(:final at)) (attempt, at),
   ];
-  if (failed.isEmpty) return const Waiting();
+  final refused = [
+    for (final attempt in attempts)
+      if (attempt.outcome case AttemptRefusedWhole(
+        :final refusal,
+        :final at?,
+      ) when refusal.sendsAgain && attempt.number > entry.retriedAfter)
+        (attempt, at),
+  ];
   final failures = failed.where((f) => f.$1.number > entry.retriedAfter).length;
-  if (failures >= retriesBeforePause) {
+  if (failures + refused.length >= retriesBeforePause) {
     return const NeedsUser(RetriesExhausted());
+  }
+  if (failed.isEmpty) {
+    if (refused.isEmpty) return const Waiting();
+    return RefusedAgain(
+      refusals: refused.length,
+      backoff: RetryAfter(
+        retryTimeAfter(refused.last.$2, refused.length),
+        failedAt: refused.last.$2,
+      ),
+    );
   }
   return Unanswered(
     clientId: failed.first.$1.clientId,
@@ -902,9 +919,10 @@ Set<ResultSubject> resultsNeeded(CloudQueue queue, DateTime now) => {
       behind(id, Dependency.pageWork);
     }
   }
-  if (state case Unanswered(
-    backoff: RetryAfter(:final at, :final failedAt),
-  ) when at.isAfter(now)) {
+  if (state
+      case Unanswered(backoff: RetryAfter(:final at, :final failedAt)) ||
+          RefusedAgain(backoff: RetryAfter(:final at, :final failedAt))
+      when at.isAfter(now)) {
     if (failedAt.isAfter(now)) {
       until = failedAt;
     } else {

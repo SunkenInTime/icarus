@@ -196,10 +196,11 @@ final class TransportFailed extends QueueEvent {
 }
 
 final class BatchRefused extends QueueEvent {
-  const BatchRefused(this.attempt, this.refusal);
+  const BatchRefused(this.attempt, this.refusal, {this.at});
 
   final int attempt;
   final BatchRefusal refusal;
+  final DateTime? at;
 }
 
 final class AppRestarted extends QueueEvent {

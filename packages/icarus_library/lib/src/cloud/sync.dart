@@ -133,6 +133,8 @@ final class Tally {
 
   int get readsNeeded => readsOwed + readsRefused;
 
+  int get unsentWork => stillGoing + needingYou + unreadable + setAside;
+
   Tally plus(Tally other) => Tally(
     standing: _worse(standing, other.standing),
     waiting: {
@@ -285,11 +287,11 @@ Face? _ownFace(Tally tally, Network network) => switch (tally) {
   Tally(standing: Standing.deletedOnServer) => Face.deletedOnServer,
   Tally(standing: Standing.editAccessLost) => Face.editAccessLost,
   Tally(standing: Standing.held) => Face.unreadableWork,
+  Tally(standing: Standing.upgradeRequired) => Face.upgradeRequired,
   Tally(unreadable: > 0) || Tally(readsRefused: > 0) => Face.unreadableWork,
   Tally(setAside: > 0) => Face.strategyReplaced,
   Tally(needingYou: > 0) => Face.needsYou,
   Tally(total: 0, notYetRead: 0) => null,
-  Tally(standing: Standing.upgradeRequired) => Face.upgradeRequired,
   _ when network == Network.offline => Face.offline,
   Tally(:final waiting) when waiting.containsKey(Underway.answerUnknown) =>
     Face.answerUnknown,

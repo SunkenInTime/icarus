@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/landed_retiring.dart';
+import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -143,16 +145,22 @@ final class Answered extends Issued {
   final DateTime started;
 }
 
-final class ReadGovernor {
-  ReadGovernor({
+final class CallGovernor {
+  CallGovernor({
     required StoreReads reads,
     required SenderTiming timing,
+    required StoreBatchSend send,
     required DateTime Function() clock,
+    required String? Function() editorShows,
   })  : _reads = reads,
+        _send = send,
         _timing = timing,
-        _clock = clock;
+        _clock = clock,
+        _editorShows = editorShows;
 
   final StoreReads _reads;
+  final StoreBatchSend _send;
+  final String? Function() _editorShows;
   final SenderTiming _timing;
   final DateTime Function() _clock;
 
@@ -160,10 +168,12 @@ final class ReadGovernor {
   final _memory = <String, ReadMemory>{};
   final _access = <String, AccessRung>{};
   final _held = <(String, ReadOf), HeldResult>{};
-  String? _open;
+  final _fresh = <(String, ReadOf)>{};
+  final _markers = <(String, ReadOf), String>{};
+  final _sentAt = <String, DateTime>{};
+  String? _opened;
   var issued = 0;
-
-  String? get openInEditor => _open;
+  var batches = 0;
 
   ReadMemory memory(String id, ReadsUnder under) => switch (_memory[id]) {
         final kept? when kept.under == under => kept,
@@ -190,6 +200,8 @@ final class ReadGovernor {
   void keepOnly(bool Function(String id) keep) {
     _memory.removeWhere((id, _) => !keep(id));
     _held.removeWhere((key, _) => !keep(key.$1));
+    _fresh.removeWhere((key) => !keep(key.$1));
+    _markers.removeWhere((key, _) => !keep(key.$1));
     final now = _clock();
     _issuedAt.removeWhere((_, at) => !at.add(_timing.readFloor).isAfter(now));
   }
@@ -203,7 +215,7 @@ final class ReadGovernor {
 
   bool accessStopped(String id, Snapshot snap) => switch (access(id, snap)) {
         (:final count, at: _, cannot: _, account: _, signIns: _) =>
-          _open != id && _timing.accessAfter(count) == null,
+          _editorShows() != id && _timing.accessAfter(count) == null,
         null => false,
       };
 
@@ -220,18 +232,38 @@ final class ReadGovernor {
 
   void accessConfirmed(String id) => _access.remove(id);
 
-  void newEvidence(String id) {
-    _access.remove(id);
+  void newEvidence(String id, [Set<ReadOf>? about]) {
+    if (about == null || about.contains(const ReadOfList())) {
+      _access.remove(id);
+    }
     if (_memory[id] case final kept? when kept.settle.isNotEmpty) {
-      _memory[id] = kept.keeping((read, rung) => false);
+      _memory[id] = kept.keeping(
+        (read, rung) =>
+            about != null && !about.any((subject) => '$subject' == read),
+      );
     }
   }
 
-  void opened(String? id) {
-    if (id == _open) return;
-    _open = id;
+  void userOpened(String? id) {
+    if (id == _opened) return;
+    _opened = id;
     if (id != null) _access.remove(id);
   }
+
+  Set<ReadOf> owedFresh(String id) => {
+        for (final (owner, read) in _fresh)
+          if (owner == id) read,
+      };
+
+  void owesMarker(String id, ReadOf read, String problem) =>
+      _markers[(id, read)] = problem;
+
+  Map<ReadOf, String> markersOwed(String id) => {
+        for (final MapEntry(key: (owner, read), :value) in _markers.entries)
+          if (owner == id) read: value,
+      };
+
+  void markerWritten(String id, ReadOf read) => _markers.remove((id, read));
 
   ReadWhen readAt(String id, ReadOf read, Snapshot snap) {
     final access = this.access(id, snap);
@@ -273,7 +305,35 @@ final class ReadGovernor {
   void hold(String id, ReadOf read, HeldResult held) =>
       _held[(id, read)] = held;
 
-  void written(String id, ReadOf read) => _held.remove((id, read));
+  void written(String id, ReadOf read, {bool late = false}) {
+    _held.remove((id, read));
+    if (late) {
+      _fresh.add((id, read));
+    } else {
+      _fresh.remove((id, read));
+    }
+  }
+
+  DateTime? sendAt(String id) => switch (_sentAt[id]) {
+        final last? when last.add(_timing.sendFloor).isAfter(_clock()) =>
+          last.add(_timing.sendFloor),
+        _ => null,
+      };
+
+  Future<StoreBatchOutcome>? send(ClaimedBatch batch) {
+    if (sendAt(batch.strategyId) != null) return null;
+    _sentAt[batch.strategyId] = _clock();
+    batches++;
+    return _send(
+      strategyPublicId: batch.strategyId,
+      clientId: batch.clientId,
+      ops: batch.ops,
+      lives: batch.lives,
+      strategyLife: batch.strategyLife,
+      account: batch.account,
+      serverTime: ServerTimeAsked(basis: batch.basis),
+    );
+  }
 
   Future<Issued> issue(
     String id,

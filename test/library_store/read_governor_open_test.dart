@@ -11,7 +11,7 @@ void main() {
       'Sol 3: while the strategy is open in the editor, access that comes '
       'back is noticed, and the waiting edit is sent', () {
     inWorld((world) {
-      world.sender.openInEditor(strategyId);
+      world.openInEditor(strategyId);
       world.server.answerWith(
         strategyId,
         const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),

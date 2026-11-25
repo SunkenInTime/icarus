@@ -13,8 +13,10 @@ import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
-import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus_library/icarus_library.dart' show Account, LibraryStore;
 import 'package:uuid/uuid.dart';
 
@@ -41,10 +43,26 @@ final storeReadsProvider = Provider<StoreReads>(
   ),
 );
 
-final senderEditorProvider = Provider<ProviderListenable<String?>>(
-  (ref) => remoteEditorSnapshotProvider.select(
-    (snapshot) => snapshot.valueOrNull?.shell.header.publicId,
+final senderEditorShowsProvider = Provider<String?>(
+  (ref) => ref.watch(
+    strategyProvider.select(
+      (state) => state.isOpen && state.source == StrategySource.cloud
+          ? state.strategyId
+          : null,
+    ),
   ),
+);
+
+final _senderOpenInEditorProvider = Provider<String?>(
+  (ref) => switch (ref.watch(strategyOpeningProvider)) {
+    StrategyOpening(:final strategyId, source: StrategySource.cloud) =>
+      strategyId,
+    _ => ref.watch(senderEditorShowsProvider),
+  },
+);
+
+final senderEditorProvider = Provider<ProviderListenable<String?>>(
+  (ref) => _senderOpenInEditorProvider,
 );
 
 final senderSignInWatchProvider = Provider<ProviderListenable<Object?>>(
@@ -98,6 +116,7 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
       inputs: _inputs(),
       timing: ref.read(cloudSenderTimingProvider),
       clock: ref.read(cloudSenderClockProvider),
+      editorShows: () => ref.read(ref.read(senderEditorProvider)),
     );
     state = sender;
     final editor = ref.read(senderEditorProvider);
@@ -116,7 +135,7 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
     ref.listen<String?>(
       editor,
       (_, open) {
-        sender.openInEditor(open);
+        sender.editorOpened(open);
         adoptOpen();
       },
       fireImmediately: true,

@@ -773,16 +773,19 @@ final class AttemptFailed extends AttemptOutcome {
 }
 
 final class AttemptRefusedWhole extends AttemptOutcome {
-  const AttemptRefusedWhole(this.refusal);
+  const AttemptRefusedWhole(this.refusal, {this.at});
 
   final BatchRefusal refusal;
+  final DateTime? at;
 
   @override
   bool operator ==(Object other) =>
-      other is AttemptRefusedWhole && other.refusal == refusal;
+      other is AttemptRefusedWhole &&
+      other.refusal == refusal &&
+      other.at == at;
 
   @override
-  int get hashCode => Object.hash(AttemptRefusedWhole, refusal);
+  int get hashCode => Object.hash(AttemptRefusedWhole, refusal, at);
 
   @override
   String toString() => 'refused(${refusal.name})';
@@ -794,7 +797,15 @@ enum BatchRefusal {
   editAccessRemoved,
   strategyDeleted,
   uncheckedTooLate,
-  strategyReplaced,
+  strategyReplaced;
+
+  bool get sendsAgain => switch (this) {
+    editAccessRemoved || uncheckedTooLate => true,
+    upgradeRequired ||
+    unauthenticated ||
+    strategyDeleted ||
+    strategyReplaced => false,
+  };
 }
 
 sealed class SendCut {
