@@ -283,11 +283,8 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
 
   void _closeEditor(NavigatorState navigator, Route<dynamic>? editor) {
     if (editor == null || !editor.isActive || !navigator.mounted) return;
-    if (editor.isCurrent) {
-      navigator.pop();
-    } else {
-      navigator.removeRoute(editor);
-    }
+    navigator.popUntil((route) => route == editor);
+    navigator.pop();
   }
 
   @override

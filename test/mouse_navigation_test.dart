@@ -386,11 +386,10 @@ void main() {
       await tempDir.delete(recursive: true);
     });
 
-    testWidgets(
-        'a link to a removed post, answered with Don\'t save while the save '
-        'dialog of a Home click waits over the editor, ends on the library',
-        (tester) async {
-      final strategies = _UnsavedStrategies();
+    Future<ProviderContainer> pumpLibrary(
+      WidgetTester tester,
+      _UnsavedStrategies strategies,
+    ) async {
       late ProviderContainer container;
       await tester.pumpWidget(
         ProviderScope(
@@ -403,17 +402,24 @@ void main() {
           ],
           child: ToastificationWrapper(
             child: ShadApp(
-            navigatorKey: appNavigatorKey,
-            navigatorObservers: [mouseNavigationRouteObserver],
-            builder: (context, child) {
-              container = ProviderScope.containerOf(context);
-              return MouseNavigation(child: child!);
-            },
-            home: const Scaffold(body: Text('library')),
-          ),
+              navigatorKey: appNavigatorKey,
+              navigatorObservers: [mouseNavigationRouteObserver],
+              builder: (context, child) {
+                container = ProviderScope.containerOf(context);
+                return MouseNavigation(child: child!);
+              },
+              home: const Scaffold(body: Text('library')),
+            ),
           ),
         ),
       );
+      return container;
+    }
+
+    Future<(BuildContext, WidgetRef)> openEditor(
+      WidgetTester tester,
+      _UnsavedStrategies strategies,
+    ) async {
       late BuildContext editor;
       late WidgetRef editorRef;
       unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
@@ -428,6 +434,17 @@ void main() {
       )));
       await tester.pumpAndSettle();
       strategies.show('editor-id', StrategySource.local);
+      await tester.pump();
+      return (editor, editorRef);
+    }
+
+    testWidgets(
+        'a link to a removed post, answered with Don\'t save while the save '
+        'dialog of a Home click waits over the editor, ends on the library',
+        (tester) async {
+      final strategies = _UnsavedStrategies();
+      final container = await pumpLibrary(tester, strategies);
+      final (editor, editorRef) = await openEditor(tester, strategies);
       container.read(strategySaveStateProvider.notifier).markDirty();
       await tester.pump();
 
@@ -454,6 +471,33 @@ void main() {
       expect(find.text('editor', skipOffstage: false), findsNothing);
       expect(find.text('library'), findsOneWidget);
       await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets(
+        'a link to a removed post that arrives while a dialog is open over '
+        'the editor closes that dialog with the editor', (tester) async {
+      final strategies = _UnsavedStrategies();
+      await pumpLibrary(tester, strategies);
+      final (editor, _) = await openEditor(tester, strategies);
+      var closed = false;
+      unawaited(showDialog<void>(
+        context: editor,
+        builder: (_) => const Dialog(child: Text('screenshot')),
+      ).whenComplete(() => closed = true));
+      await tester.pumpAndSettle();
+      expect(find.text('screenshot'), findsOneWidget);
+
+      ProviderScope.containerOf(editor)
+          .read(communityPostToOpenProvider.notifier)
+          .state = 'gone';
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 10));
+
+      expect(closed, isTrue);
+      expect(find.text('screenshot', skipOffstage: false), findsNothing);
+      expect(find.text('editor', skipOffstage: false), findsNothing);
+      expect(find.text('library'), findsOneWidget);
+      expect(mouseNavigationRouteObserver.topRoute?.settings.name, '/');
     });
   });
 }
