@@ -1313,6 +1313,7 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
   var emptied = 0;
   var editsTaken = 0;
   var openedUnsaved = 0;
+  var pressedDuring = 0;
   final windows = <int>[];
   final leftAgents = <String>{};
   var mixedFrames = 0;
@@ -1400,6 +1401,8 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     final unsaved = !c.read(strategyProvider).isSaved;
     if (taken) editsTaken++;
     if (unsaved) openedUnsaved++;
+    final during = openedAt != null && secondClick < openedAt!;
+    if (undoes && during) pressedDuring++;
     await _frames();
     for (final subscription in subscriptions) {
       subscription.close();
@@ -1423,7 +1426,7 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
         'window ${window == null ? 'not measured' : '${ms(window)} ms'}; '
         'ended on $endedOn page ${session.activePageId}'
         '${session.isApplyingPage ? ' still applying' : ''}'
-        '${undoes ? '; the undo was ${taken ? 'taken' : 'refused'} during the open, $endedOn ${unsaved ? 'marked unsaved' : 'saved'}' : ''}');
+        '${undoes ? '; the undo, pressed ${during ? 'before' : 'after'} $openedName opened, was ${taken ? 'taken' : 'not taken'}, $endedOn ${unsaved ? 'marked unsaved' : 'saved'}' : ''}');
   }
   windows.sort();
   _log('RACE summary: $runs runs, the left page saved empty $emptied times; '
@@ -1431,7 +1434,12 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       'worst ${windows.isEmpty ? '-' : ms(windows.last)} ms; '
       '$mixedFrames of $framesWatched frames drawn showed the left '
       'strategy\'s agents with the other strategy open'
-      '${undoes ? '; the undo taken during the open $editsTaken times, the strategy opened marked unsaved $openedUnsaved times' : ''}');
+      '${undoes ? '; the undo pressed during the open $pressedDuring of $runs runs, taken during the open $editsTaken times, the strategy opened marked unsaved $openedUnsaved times' : ''}');
+  if (undoes && step.containsKey('expectTaken') && pressedDuring == 0) {
+    _failedSteps++;
+    _log('FAIL raceLeave: no run pressed Ctrl+Z while the open ran, so '
+        'nothing was tested');
+  }
   if (step['expectTaken'] case final int expected when expected != editsTaken) {
     _failedSteps++;
     _log('FAIL raceLeave: the undo was taken during the open $editsTaken '
