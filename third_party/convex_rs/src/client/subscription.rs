@@ -3,7 +3,6 @@ use std::{
     pin::Pin,
 };
 
-use convex_sync_types::Timestamp;
 use futures::{
     task,
     Stream,
@@ -20,6 +19,7 @@ use crate::{
         FunctionResult,
         QueryResults,
         SubscriberId,
+        TimedResult,
     },
     client::worker::{
         ClientRequest,
@@ -45,22 +45,18 @@ pub struct QuerySubscription {
     pub(super) subscriber_id: SubscriberId,
     pub(super) request_sender: mpsc::UnboundedSender<ClientRequest>,
     pub(super) watch: BroadcastStream<QueryResults>,
-    pub(super) initial: Option<FunctionResult>,
-    pub(super) initial_ts: Option<Timestamp>,
+    pub(super) initial: Option<TimedResult>,
 }
 impl QuerySubscription {
-    /// The same results, each with the timestamp of the server state it
-    /// comes from (see [`QueryResults::ts`]).
+    /// The same results, each with the snapshot it comes from (see
+    /// [`QueryResults::snapshot`] and [`QueryResults::ts`]).
     pub fn timed(self) -> TimedQuerySubscription {
         TimedQuerySubscription { inner: self }
     }
 
-    fn poll_result(
-        &mut self,
-        cx: &mut task::Context<'_>,
-    ) -> task::Poll<Option<(FunctionResult, Option<Timestamp>)>> {
+    fn poll_result(&mut self, cx: &mut task::Context<'_>) -> task::Poll<Option<TimedResult>> {
         if let Some(initial) = self.initial.take() {
-            return task::Poll::Ready(Some((initial, self.initial_ts.take())));
+            return task::Poll::Ready(Some(initial));
         }
         loop {
             return match self.watch.poll_next_unpin(cx) {
@@ -68,11 +64,11 @@ impl QuerySubscription {
                 // only guarantees a newer value than the previous value.
                 task::Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(_amt)))) => continue,
                 task::Poll::Ready(Some(Ok(map))) => {
-                    let Some(value) = map.get(self.id()) else {
+                    let Some(result) = map.timed(self.id()) else {
                         // No result yet in the query result set. Keep polling.
                         continue;
                     };
-                    task::Poll::Ready(Some((value.clone(), map.ts())))
+                    task::Poll::Ready(Some(result))
                 },
                 task::Poll::Ready(None) => task::Poll::Ready(None),
                 task::Poll::Pending => task::Poll::Pending,
@@ -118,21 +114,11 @@ impl Stream for QuerySubscription {
         cx: &mut task::Context<'_>,
     ) -> task::Poll<Option<Self::Item>> {
         self.poll_result(cx)
-            .map(|result| result.map(|(value, _ts)| value))
+            .map(|result| result.map(|result| result.value))
     }
 }
 
-/// A query result with the timestamp of the server state it comes from.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TimedResult {
-    /// The query's result.
-    pub value: FunctionResult,
-    /// The end of the transition that carried it, as [`QueryResults::ts`].
-    /// Results of later server states have later timestamps.
-    pub ts: Option<Timestamp>,
-}
-
-/// A [`QuerySubscription`] whose results carry their timestamps, as returned
+/// A [`QuerySubscription`] whose results carry their snapshots, as returned
 /// by [`QuerySubscription::timed`]. Dropping it unsubscribes the query.
 pub struct TimedQuerySubscription {
     inner: QuerySubscription,
@@ -150,9 +136,7 @@ impl Stream for TimedQuerySubscription {
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
     ) -> task::Poll<Option<Self::Item>> {
-        self.inner
-            .poll_result(cx)
-            .map(|result| result.map(|(value, ts)| TimedResult { value, ts }))
+        self.inner.poll_result(cx)
     }
 }
 

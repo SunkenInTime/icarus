@@ -66,6 +66,19 @@ impl std::fmt::Debug for FunctionResult {
     }
 }
 
+/// A query result with the snapshot it comes from, as
+/// [`QueryResults::timed`] gives it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TimedResult {
+    /// The query's result: a value or an error.
+    pub value: FunctionResult,
+    /// The server time of the snapshot, as [`QueryResults::ts`].
+    pub ts: Option<Timestamp>,
+    /// The snapshot's number in this client, as [`QueryResults::snapshot`]:
+    /// the higher of two is the newer, and equal numbers mean the same result.
+    pub snapshot: u64,
+}
+
 /// A mapping from [`SubscriberId`] to its current result [`FunctionResult`]
 /// for each actively subscribed query.
 #[derive(Clone, Default, Debug)]
@@ -73,15 +86,39 @@ pub struct QueryResults {
     pub(super) results: OrdMap<QueryId, FunctionResult>,
     pub(super) subscribers: OrdSet<SubscriberId>,
     pub(super) ts: Option<Timestamp>,
+    pub(super) snapshot: u64,
 }
 
 impl QueryResults {
-    /// The timestamp of the server state these results come from: the end of
-    /// the last transition the client applied. A later transition carries a
-    /// later timestamp, so two results compare in the server's order however
-    /// late either reaches its reader. `None` before the first transition.
+    /// The server time of the snapshot these results come from: the end
+    /// timestamp of the last transition the client applied. Every result in
+    /// it carries this timestamp, a value that last changed earlier included.
+    /// `None` before the first transition.
+    ///
+    /// Two snapshots can share a timestamp (a transition can end at the time
+    /// the one before it ended), so the timestamp alone does not order two
+    /// results of one query. [`QueryResults::snapshot`] does.
     pub fn ts(&self) -> Option<Timestamp> {
         self.ts
+    }
+
+    /// How many transitions this client had applied when these results were
+    /// taken: 0 before the first. It counts up by one with every transition,
+    /// across reconnects, and restarts only with the client. Results with the
+    /// same number come from one snapshot, which holds one result per query,
+    /// so two results of one query with the same number are the same result,
+    /// and the one with the higher number is the newer.
+    pub fn snapshot(&self) -> u64 {
+        self.snapshot
+    }
+
+    /// The result for [`SubscriberId`], with the snapshot it comes from.
+    pub fn timed(&self, subscriber_id: &SubscriberId) -> Option<TimedResult> {
+        self.get(subscriber_id).map(|value| TimedResult {
+            value: value.clone(),
+            ts: self.ts,
+            snapshot: self.snapshot,
+        })
     }
 
     /// Get the [`FunctionResult`] for the given [`SubscriberId`]
@@ -140,6 +177,7 @@ mod tests {
                 s(q(2), 0)
             },
             ts: None,
+            snapshot: 0,
         };
         assert_eq!(
             qr.get(&s(q(0), 0)),

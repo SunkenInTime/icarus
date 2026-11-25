@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -1902810052;
+  int get rustContentHash => 1527505985;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -90,29 +90,6 @@ abstract class RustLibApi extends BaseApi {
     required String value,
   });
 
-  Future<void> crateCallbackSubscriberDartFnOnUpdateAt({
-    required CallbackSubscriberDartFn that,
-    required String value,
-    PlatformInt64? ts,
-  });
-
-  Future<void> crateCallbackSubscriberTimedDartFnOnError({
-    required CallbackSubscriberTimedDartFn that,
-    required String message,
-    String? value,
-  });
-
-  Future<void> crateCallbackSubscriberTimedDartFnOnUpdate({
-    required CallbackSubscriberTimedDartFn that,
-    required String value,
-  });
-
-  Future<void> crateCallbackSubscriberTimedDartFnOnUpdateAt({
-    required CallbackSubscriberTimedDartFn that,
-    required String value,
-    PlatformInt64? ts,
-  });
-
   Future<void> crateCallbackSubscriberOnError({
     required CallbackSubscriber that,
     required String message,
@@ -122,12 +99,6 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateCallbackSubscriberOnUpdate({
     required CallbackSubscriber that,
     required String value,
-  });
-
-  Future<void> crateCallbackSubscriberOnUpdateAt({
-    required CallbackSubscriber that,
-    required String value,
-    PlatformInt64? ts,
   });
 
   Future<String> crateMobileConvexClientAction({
@@ -158,7 +129,7 @@ abstract class RustLibApi extends BaseApi {
     required Map<String, String> args,
   });
 
-  Future<TimedValue> crateMobileConvexClientQueryTimed({
+  Future<TimedAnswer> crateMobileConvexClientQueryTimed({
     required MobileConvexClient that,
     required String name,
     required Map<String, String> args,
@@ -199,8 +170,7 @@ abstract class RustLibApi extends BaseApi {
     required MobileConvexClient that,
     required String name,
     required Map<String, String> args,
-    required FutureOr<void> Function(String, PlatformInt64?) onUpdate,
-    required FutureOr<void> Function(String, String?) onError,
+    required FutureOr<void> Function(TimedAnswer) onResult,
   });
 
   void crateSubscriptionHandleCancel({required SubscriptionHandle that});
@@ -230,15 +200,6 @@ abstract class RustLibApi extends BaseApi {
 
   CrossPlatformFinalizerArg
   get rust_arc_decrement_strong_count_CallbackSubscriberDartFnPtr;
-
-  RustArcIncrementStrongCountFnType
-  get rust_arc_increment_strong_count_CallbackSubscriberTimedDartFn;
-
-  RustArcDecrementStrongCountFnType
-  get rust_arc_decrement_strong_count_CallbackSubscriberTimedDartFn;
-
-  CrossPlatformFinalizerArg
-  get rust_arc_decrement_strong_count_CallbackSubscriberTimedDartFnPtr;
 
   RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_MobileConvexClient;
@@ -401,164 +362,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateCallbackSubscriberDartFnOnUpdateAt({
-    required CallbackSubscriberDartFn that,
-    required String value,
-    PlatformInt64? ts,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberDartFn(
-            that,
-            serializer,
-          );
-          sse_encode_String(value, serializer);
-          sse_encode_opt_box_autoadd_i_64(ts, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 5,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateCallbackSubscriberDartFnOnUpdateAtConstMeta,
-        argValues: [that, value, ts],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateCallbackSubscriberDartFnOnUpdateAtConstMeta =>
-      const TaskConstMeta(
-        debugName: "CallbackSubscriberDartFn_on_update_at",
-        argNames: ["that", "value", "ts"],
-      );
-
-  @override
-  Future<void> crateCallbackSubscriberTimedDartFnOnError({
-    required CallbackSubscriberTimedDartFn that,
-    required String message,
-    String? value,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-            that,
-            serializer,
-          );
-          sse_encode_String(message, serializer);
-          sse_encode_opt_String(value, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 6,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateCallbackSubscriberTimedDartFnOnErrorConstMeta,
-        argValues: [that, message, value],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateCallbackSubscriberTimedDartFnOnErrorConstMeta =>
-      const TaskConstMeta(
-        debugName: "CallbackSubscriberTimedDartFn_on_error",
-        argNames: ["that", "message", "value"],
-      );
-
-  @override
-  Future<void> crateCallbackSubscriberTimedDartFnOnUpdate({
-    required CallbackSubscriberTimedDartFn that,
-    required String value,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-            that,
-            serializer,
-          );
-          sse_encode_String(value, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 7,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateCallbackSubscriberTimedDartFnOnUpdateConstMeta,
-        argValues: [that, value],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateCallbackSubscriberTimedDartFnOnUpdateConstMeta =>
-      const TaskConstMeta(
-        debugName: "CallbackSubscriberTimedDartFn_on_update",
-        argNames: ["that", "value"],
-      );
-
-  @override
-  Future<void> crateCallbackSubscriberTimedDartFnOnUpdateAt({
-    required CallbackSubscriberTimedDartFn that,
-    required String value,
-    PlatformInt64? ts,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-            that,
-            serializer,
-          );
-          sse_encode_String(value, serializer);
-          sse_encode_opt_box_autoadd_i_64(ts, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 8,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateCallbackSubscriberTimedDartFnOnUpdateAtConstMeta,
-        argValues: [that, value, ts],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateCallbackSubscriberTimedDartFnOnUpdateAtConstMeta =>
-      const TaskConstMeta(
-        debugName: "CallbackSubscriberTimedDartFn_on_update_at",
-        argNames: ["that", "value", "ts"],
-      );
-
-  @override
   Future<void> crateCallbackSubscriberOnError({
     required CallbackSubscriber that,
     required String message,
@@ -577,7 +380,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 5,
             port: port_,
           );
         },
@@ -615,7 +418,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 6,
             port: port_,
           );
         },
@@ -637,46 +440,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateCallbackSubscriberOnUpdateAt({
-    required CallbackSubscriber that,
-    required String value,
-    PlatformInt64? ts,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriber(
-            that,
-            serializer,
-          );
-          sse_encode_String(value, serializer);
-          sse_encode_opt_box_autoadd_i_64(ts, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 11,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: null,
-        ),
-        constMeta: kCrateCallbackSubscriberOnUpdateAtConstMeta,
-        argValues: [that, value, ts],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateCallbackSubscriberOnUpdateAtConstMeta =>
-      const TaskConstMeta(
-        debugName: "CallbackSubscriber_on_update_at",
-        argNames: ["that", "value", "ts"],
-      );
-
-  @override
   Future<String> crateMobileConvexClientAction({
     required MobileConvexClient that,
     required String name,
@@ -695,7 +458,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 7,
             port: port_,
           );
         },
@@ -735,7 +498,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 8,
             port: port_,
           );
         },
@@ -767,7 +530,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deploymentUrl, serializer);
           sse_encode_String(clientId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 14)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 9)!;
         },
         codec: SseCodec(
           decodeSuccessData:
@@ -806,7 +569,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 10,
             port: port_,
           );
         },
@@ -846,7 +609,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 16,
+            funcId: 11,
             port: port_,
           );
         },
@@ -868,7 +631,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<TimedValue> crateMobileConvexClientQueryTimed({
+  Future<TimedAnswer> crateMobileConvexClientQueryTimed({
     required MobileConvexClient that,
     required String name,
     required Map<String, String> args,
@@ -886,12 +649,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 12,
             port: port_,
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_timed_value,
+          decodeSuccessData: sse_decode_timed_answer,
           decodeErrorData: sse_decode_client_error,
         ),
         constMeta: kCrateMobileConvexClientQueryTimedConstMeta,
@@ -924,7 +687,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 13,
             port: port_,
           );
         },
@@ -962,7 +725,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 14,
             port: port_,
           );
         },
@@ -1008,7 +771,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 15,
             port: port_,
           );
         },
@@ -1059,7 +822,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 16,
             port: port_,
           );
         },
@@ -1108,7 +871,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 17,
             port: port_,
           );
         },
@@ -1135,8 +898,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required MobileConvexClient that,
     required String name,
     required Map<String, String> args,
-    required FutureOr<void> Function(String, PlatformInt64?) onUpdate,
-    required FutureOr<void> Function(String, String?) onError,
+    required FutureOr<void> Function(TimedAnswer) onResult,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -1148,18 +910,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_String(name, serializer);
           sse_encode_Map_String_String_None(args, serializer);
-          sse_encode_DartFn_Inputs_String_opt_box_autoadd_i_64_Output_unit_AnyhowException(
-            onUpdate,
-            serializer,
-          );
-          sse_encode_DartFn_Inputs_String_opt_String_Output_unit_AnyhowException(
-            onError,
+          sse_encode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(
+            onResult,
             serializer,
           );
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 18,
             port: port_,
           );
         },
@@ -1169,7 +927,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_client_error,
         ),
         constMeta: kCrateMobileConvexClientSubscribeTimedConstMeta,
-        argValues: [that, name, args, onUpdate, onError],
+        argValues: [that, name, args, onResult],
         apiImpl: this,
       ),
     );
@@ -1178,7 +936,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateMobileConvexClientSubscribeTimedConstMeta =>
       const TaskConstMeta(
         debugName: "MobileConvexClient_subscribe_timed",
-        argNames: ["that", "name", "args", "onUpdate", "onError"],
+        argNames: ["that", "name", "args", "onResult"],
       );
 
   @override
@@ -1191,7 +949,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 19)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1252,42 +1010,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return (callId, rawArg0, rawArg1) async {
       final arg0 = dco_decode_String(rawArg0);
       final arg1 = dco_decode_opt_String(rawArg1);
-
-      Box<void>? rawOutput;
-      Box<AnyhowException>? rawError;
-      try {
-        rawOutput = Box(await raw(arg0, arg1));
-      } catch (e, s) {
-        rawError = Box(AnyhowException("$e\n\n$s"));
-      }
-
-      final serializer = SseSerializer(generalizedFrbRustBinding);
-      assert((rawOutput != null) ^ (rawError != null));
-      if (rawOutput != null) {
-        serializer.buffer.putUint8(0);
-        sse_encode_unit(rawOutput.value, serializer);
-      } else {
-        serializer.buffer.putUint8(1);
-        sse_encode_AnyhowException(rawError!.value, serializer);
-      }
-      final output = serializer.intoRaw();
-
-      generalizedFrbRustBinding.dartFnDeliverOutput(
-        callId: callId,
-        ptr: output.ptr,
-        rustVecLen: output.rustVecLen,
-        dataLen: output.dataLen,
-      );
-    };
-  }
-
-  Future<void> Function(int, dynamic, dynamic)
-  encode_DartFn_Inputs_String_opt_box_autoadd_i_64_Output_unit_AnyhowException(
-    FutureOr<void> Function(String, PlatformInt64?) raw,
-  ) {
-    return (callId, rawArg0, rawArg1) async {
-      final arg0 = dco_decode_String(rawArg0);
-      final arg1 = dco_decode_opt_box_autoadd_i_64(rawArg1);
 
       Box<void>? rawOutput;
       Box<AnyhowException>? rawError;
@@ -1421,6 +1143,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   Future<void> Function(int, dynamic)
+  encode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(
+    FutureOr<void> Function(TimedAnswer) raw,
+  ) {
+    return (callId, rawArg0) async {
+      final arg0 = dco_decode_timed_answer(rawArg0);
+
+      Box<void>? rawOutput;
+      Box<AnyhowException>? rawError;
+      try {
+        rawOutput = Box(await raw(arg0));
+      } catch (e, s) {
+        rawError = Box(AnyhowException("$e\n\n$s"));
+      }
+
+      final serializer = SseSerializer(generalizedFrbRustBinding);
+      assert((rawOutput != null) ^ (rawError != null));
+      if (rawOutput != null) {
+        serializer.buffer.putUint8(0);
+        sse_encode_unit(rawOutput.value, serializer);
+      } else {
+        serializer.buffer.putUint8(1);
+        sse_encode_AnyhowException(rawError!.value, serializer);
+      }
+      final output = serializer.intoRaw();
+
+      generalizedFrbRustBinding.dartFnDeliverOutput(
+        callId: callId,
+        ptr: output.ptr,
+        rustVecLen: output.rustVecLen,
+        dataLen: output.dataLen,
+      );
+    };
+  }
+
+  Future<void> Function(int, dynamic)
   encode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     FutureOr<void> Function(WebSocketConnectionState) raw,
   ) {
@@ -1480,14 +1237,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberDartFn;
 
   RustArcIncrementStrongCountFnType
-  get rust_arc_increment_strong_count_CallbackSubscriberTimedDartFn => wire
-      .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn;
-
-  RustArcDecrementStrongCountFnType
-  get rust_arc_decrement_strong_count_CallbackSubscriberTimedDartFn => wire
-      .rust_arc_decrement_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn;
-
-  RustArcIncrementStrongCountFnType
   get rust_arc_increment_strong_count_MobileConvexClient => wire
       .rust_arc_increment_strong_count_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient;
 
@@ -1534,17 +1283,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return CallbackSubscriberDartFnImpl.frbInternalDcoDecode(
-      raw as List<dynamic>,
-    );
-  }
-
-  @protected
-  CallbackSubscriberTimedDartFn
-  dco_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return CallbackSubscriberTimedDartFnImpl.frbInternalDcoDecode(
       raw as List<dynamic>,
     );
   }
@@ -1597,17 +1335,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  CallbackSubscriberTimedDartFn
-  dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return CallbackSubscriberTimedDartFnImpl.frbInternalDcoDecode(
-      raw as List<dynamic>,
-    );
-  }
-
-  @protected
   MobileConvexClient
   dco_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
     dynamic raw,
@@ -1642,15 +1369,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  FutureOr<void> Function(String, PlatformInt64?)
-  dco_decode_DartFn_Inputs_String_opt_box_autoadd_i_64_Output_unit_AnyhowException(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    throw UnimplementedError('');
-  }
-
-  @protected
   FutureOr<String?> Function()
   dco_decode_DartFn_Inputs__Output_opt_String_AnyhowException(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -1667,6 +1385,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   FutureOr<void> Function(List<String?>)
   dco_decode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError('');
+  }
+
+  @protected
+  FutureOr<void> Function(TimedAnswer)
+  dco_decode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(
     dynamic raw,
   ) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -1728,17 +1455,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  CallbackSubscriberTimedDartFn
-  dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    dynamic raw,
-  ) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return CallbackSubscriberTimedDartFnImpl.frbInternalDcoDecode(
-      raw as List<dynamic>,
-    );
-  }
-
-  @protected
   MobileConvexClient
   dco_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
     dynamic raw,
@@ -1778,6 +1494,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_i_64(raw);
+  }
+
+  @protected
+  QueryFailure dco_decode_box_autoadd_query_failure(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_query_failure(raw);
   }
 
   @protected
@@ -1862,6 +1584,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  QueryFailure? dco_decode_opt_box_autoadd_query_failure(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_query_failure(raw);
+  }
+
+  @protected
+  QueryFailure dco_decode_query_failure(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return QueryFailure(
+      message: dco_decode_String(arr[0]),
+      data: dco_decode_opt_String(arr[1]),
+    );
+  }
+
+  @protected
   (String, String) dco_decode_record_string_string(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -1872,14 +1612,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  TimedValue dco_decode_timed_value(dynamic raw) {
+  TimedAnswer dco_decode_timed_answer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return TimedValue(
-      value: dco_decode_String(arr[0]),
-      ts: dco_decode_opt_box_autoadd_i_64(arr[1]),
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return TimedAnswer(
+      value: dco_decode_opt_String(arr[0]),
+      error: dco_decode_opt_box_autoadd_query_failure(arr[1]),
+      ts: dco_decode_opt_box_autoadd_i_64(arr[2]),
+      snapshot: dco_decode_i_64(arr[3]),
     );
   }
 
@@ -1951,18 +1693,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  CallbackSubscriberTimedDartFn
-  sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return CallbackSubscriberTimedDartFnImpl.frbInternalSseDecode(
-      sse_decode_usize(deserializer),
-      sse_decode_i_32(deserializer),
-    );
-  }
-
-  @protected
   MobileConvexClient
   sse_decode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
     SseDeserializer deserializer,
@@ -2017,18 +1747,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return CallbackSubscriberDartFnImpl.frbInternalSseDecode(
-      sse_decode_usize(deserializer),
-      sse_decode_i_32(deserializer),
-    );
-  }
-
-  @protected
-  CallbackSubscriberTimedDartFn
-  sse_decode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return CallbackSubscriberTimedDartFnImpl.frbInternalSseDecode(
       sse_decode_usize(deserializer),
       sse_decode_i_32(deserializer),
     );
@@ -2111,18 +1829,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  CallbackSubscriberTimedDartFn
-  sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return CallbackSubscriberTimedDartFnImpl.frbInternalSseDecode(
-      sse_decode_usize(deserializer),
-      sse_decode_i_32(deserializer),
-    );
-  }
-
-  @protected
   MobileConvexClient
   sse_decode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
     SseDeserializer deserializer,
@@ -2163,6 +1869,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_i_64(deserializer));
+  }
+
+  @protected
+  QueryFailure sse_decode_box_autoadd_query_failure(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_query_failure(deserializer));
   }
 
   @protected
@@ -2279,6 +1993,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  QueryFailure? sse_decode_opt_box_autoadd_query_failure(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_query_failure(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  QueryFailure sse_decode_query_failure(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_message = sse_decode_String(deserializer);
+    var var_data = sse_decode_opt_String(deserializer);
+    return QueryFailure(message: var_message, data: var_data);
+  }
+
+  @protected
   (String, String) sse_decode_record_string_string(
     SseDeserializer deserializer,
   ) {
@@ -2289,11 +2024,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  TimedValue sse_decode_timed_value(SseDeserializer deserializer) {
+  TimedAnswer sse_decode_timed_answer(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_value = sse_decode_String(deserializer);
+    var var_value = sse_decode_opt_String(deserializer);
+    var var_error = sse_decode_opt_box_autoadd_query_failure(deserializer);
     var var_ts = sse_decode_opt_box_autoadd_i_64(deserializer);
-    return TimedValue(value: var_value, ts: var_ts);
+    var var_snapshot = sse_decode_i_64(deserializer);
+    return TimedAnswer(
+      value: var_value,
+      error: var_error,
+      ts: var_ts,
+      snapshot: var_snapshot,
+    );
   }
 
   @protected
@@ -2372,21 +2114,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    CallbackSubscriberTimedDartFn self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-      (self as CallbackSubscriberTimedDartFnImpl).frbInternalSseEncode(
-        move: true,
-      ),
-      serializer,
-    );
-  }
-
-  @protected
-  void
   sse_encode_Auto_Owned_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
     MobileConvexClient self,
     SseSerializer serializer,
@@ -2452,21 +2179,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    CallbackSubscriberTimedDartFn self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-      (self as CallbackSubscriberTimedDartFnImpl).frbInternalSseEncode(
-        move: false,
-      ),
-      serializer,
-    );
-  }
-
-  @protected
-  void
   sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
     MobileConvexClient self,
     SseSerializer serializer,
@@ -2516,21 +2228,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void
-  sse_encode_DartFn_Inputs_String_opt_box_autoadd_i_64_Output_unit_AnyhowException(
-    FutureOr<void> Function(String, PlatformInt64?) self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_DartOpaque(
-      encode_DartFn_Inputs_String_opt_box_autoadd_i_64_Output_unit_AnyhowException(
-        self,
-      ),
-      serializer,
-    );
-  }
-
-  @protected
   void sse_encode_DartFn_Inputs__Output_opt_String_AnyhowException(
     FutureOr<String?> Function() self,
     SseSerializer serializer,
@@ -2562,6 +2259,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_DartOpaque(
       encode_DartFn_Inputs_list_opt_String_Output_unit_AnyhowException(self),
+      serializer,
+    );
+  }
+
+  @protected
+  void sse_encode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(
+    FutureOr<void> Function(TimedAnswer) self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_DartOpaque(
+      encode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(self),
       serializer,
     );
   }
@@ -2649,21 +2358,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void
-  sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCallbackSubscriberTimedDartFn(
-    CallbackSubscriberTimedDartFn self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_usize(
-      (self as CallbackSubscriberTimedDartFnImpl).frbInternalSseEncode(
-        move: null,
-      ),
-      serializer,
-    );
-  }
-
-  @protected
-  void
   sse_encode_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
     MobileConvexClient self,
     SseSerializer serializer,
@@ -2707,6 +2401,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_64(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_query_failure(
+    QueryFailure self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_query_failure(self, serializer);
   }
 
   @protected
@@ -2820,6 +2523,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_query_failure(
+    QueryFailure? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_query_failure(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_query_failure(QueryFailure self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.message, serializer);
+    sse_encode_opt_String(self.data, serializer);
+  }
+
+  @protected
   void sse_encode_record_string_string(
     (String, String) self,
     SseSerializer serializer,
@@ -2830,10 +2553,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_timed_value(TimedValue self, SseSerializer serializer) {
+  void sse_encode_timed_answer(TimedAnswer self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.value, serializer);
+    sse_encode_opt_String(self.value, serializer);
+    sse_encode_opt_box_autoadd_query_failure(self.error, serializer);
     sse_encode_opt_box_autoadd_i_64(self.ts, serializer);
+    sse_encode_i_64(self.snapshot, serializer);
   }
 
   @protected
@@ -2927,16 +2652,6 @@ class CallbackSubscriberDartFnImpl extends RustOpaque
 
   Future<void> onUpdate({required String value}) => RustLib.instance.api
       .crateCallbackSubscriberDartFnOnUpdate(that: this, value: value);
-
-  /// An update with the timestamp of the server state it comes from (see
-  /// `convex::QueryResults::ts`). Subscribers that don't need it get
-  /// `on_update`.
-  Future<void> onUpdateAt({required String value, PlatformInt64? ts}) =>
-      RustLib.instance.api.crateCallbackSubscriberDartFnOnUpdateAt(
-        that: this,
-        value: value,
-        ts: ts,
-      );
 }
 
 @sealed
@@ -2971,60 +2686,6 @@ class CallbackSubscriberImpl extends RustOpaque implements CallbackSubscriber {
 
   Future<void> onUpdate({required String value}) => RustLib.instance.api
       .crateCallbackSubscriberOnUpdate(that: this, value: value);
-
-  /// An update with the timestamp of the server state it comes from (see
-  /// `convex::QueryResults::ts`). Subscribers that don't need it get
-  /// `on_update`.
-  Future<void> onUpdateAt({required String value, PlatformInt64? ts}) => RustLib
-      .instance
-      .api
-      .crateCallbackSubscriberOnUpdateAt(that: this, value: value, ts: ts);
-}
-
-@sealed
-class CallbackSubscriberTimedDartFnImpl extends RustOpaque
-    implements CallbackSubscriberTimedDartFn {
-  // Not to be used by end users
-  CallbackSubscriberTimedDartFnImpl.frbInternalDcoDecode(List<dynamic> wire)
-    : super.frbInternalDcoDecode(wire, _kStaticData);
-
-  // Not to be used by end users
-  CallbackSubscriberTimedDartFnImpl.frbInternalSseDecode(
-    BigInt ptr,
-    int externalSizeOnNative,
-  ) : super.frbInternalSseDecode(ptr, externalSizeOnNative, _kStaticData);
-
-  static final _kStaticData = RustArcStaticData(
-    rustArcIncrementStrongCount: RustLib
-        .instance
-        .api
-        .rust_arc_increment_strong_count_CallbackSubscriberTimedDartFn,
-    rustArcDecrementStrongCount: RustLib
-        .instance
-        .api
-        .rust_arc_decrement_strong_count_CallbackSubscriberTimedDartFn,
-    rustArcDecrementStrongCountPtr: RustLib
-        .instance
-        .api
-        .rust_arc_decrement_strong_count_CallbackSubscriberTimedDartFnPtr,
-  );
-
-  Future<void> onError({required String message, String? value}) =>
-      RustLib.instance.api.crateCallbackSubscriberTimedDartFnOnError(
-        that: this,
-        message: message,
-        value: value,
-      );
-
-  Future<void> onUpdate({required String value}) => RustLib.instance.api
-      .crateCallbackSubscriberTimedDartFnOnUpdate(that: this, value: value);
-
-  Future<void> onUpdateAt({required String value, PlatformInt64? ts}) =>
-      RustLib.instance.api.crateCallbackSubscriberTimedDartFnOnUpdateAt(
-        that: this,
-        value: value,
-        ts: ts,
-      );
 }
 
 @sealed
@@ -3106,8 +2767,9 @@ class MobileConvexClientImpl extends RustOpaque implements MobileConvexClient {
     args: args,
   );
 
-  /// [query], with the timestamp of the server state the value comes from.
-  Future<TimedValue> queryTimed({
+  /// [query], with the snapshot the result comes from. A query error is an
+  /// answer here, with its snapshot, not a thrown error.
+  Future<TimedAnswer> queryTimed({
     required String name,
     required Map<String, String> args,
   }) => RustLib.instance.api.crateMobileConvexClientQueryTimed(
@@ -3180,20 +2842,19 @@ class MobileConvexClientImpl extends RustOpaque implements MobileConvexClient {
     onError: onError,
   );
 
-  /// [subscribe], with each update's timestamp: the server state it comes
-  /// from. Updates can reach Dart out of order; the timestamps say the
-  /// server's order.
+  /// [subscribe], with each result's snapshot, values and errors alike.
+  /// Each call to [on_result] is posted from its own task, as [subscribe]
+  /// posts its updates, so results can reach Dart out of order; their
+  /// snapshots say which is newer.
   Future<SubscriptionHandle> subscribeTimed({
     required String name,
     required Map<String, String> args,
-    required FutureOr<void> Function(String, PlatformInt64?) onUpdate,
-    required FutureOr<void> Function(String, String?) onError,
+    required FutureOr<void> Function(TimedAnswer) onResult,
   }) => RustLib.instance.api.crateMobileConvexClientSubscribeTimed(
     that: this,
     name: name,
     args: args,
-    onUpdate: onUpdate,
-    onError: onError,
+    onResult: onResult,
   );
 }
 

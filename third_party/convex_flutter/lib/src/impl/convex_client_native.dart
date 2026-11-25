@@ -131,14 +131,10 @@ class NativeConvexClient implements IConvexClient {
   }
 
   @override
-  Future<({String value, int? ts})> queryTimed(
-    String name,
-    Map<String, dynamic> args,
-  ) async {
-    final result = await _rustClient
+  Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args) async {
+    return await _rustClient
         .queryTimed(name: name, args: buildArgs(args))
         .timeout(config.operationTimeout);
-    return (value: result.value, ts: result.ts);
   }
 
   @override
@@ -183,14 +179,12 @@ class NativeConvexClient implements IConvexClient {
   Future<SubscriptionHandle> subscribeTimed({
     required String name,
     required Map<String, dynamic> args,
-    required void Function(String value, int? ts) onUpdate,
-    required void Function(String, String?) onError,
+    required void Function(TimedAnswer) onResult,
   }) async {
     return await _rustClient.subscribeTimed(
       name: name,
       args: buildArgs(args),
-      onUpdate: (value, ts) => onUpdate(value, ts),
-      onError: (message, value) => onError(message, value),
+      onResult: (answer) => onResult(answer),
     );
   }
 

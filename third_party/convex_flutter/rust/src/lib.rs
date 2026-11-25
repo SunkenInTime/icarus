@@ -18,6 +18,7 @@ use convex::{
     FunctionResult,
     SubscribedSet,
     SubscriberId,
+    TimedResult,
     Value, // Convex client and result types
     WebSocketState as ConvexWebSocketState,
 };
@@ -79,12 +80,6 @@ impl From<ConvexWebSocketState> for WebSocketConnectionState {
 // Not directly exposed to Dart, used internally by subscribers.
 pub trait QuerySubscriber: Send + Sync {
     fn on_update(&self, value: String); // Called when a new update is received
-    /// An update with the timestamp of the server state it comes from (see
-    /// `convex::QueryResults::ts`). Subscribers that don't need it get
-    /// `on_update`.
-    fn on_update_at(&self, value: String, _ts: Option<i64>) {
-        self.on_update(value);
-    }
     fn on_error(&self, message: String, value: Option<String>); // Called on error with optional value
 }
 
@@ -246,40 +241,61 @@ impl QuerySubscriber for CallbackSubscriberDartFn {
     }
 }
 
-/// Adapter for Dart functions that take each update with its timestamp.
-pub struct CallbackSubscriberTimedDartFn {
-    on_update: Box<dyn Fn(String, Option<i64>) -> DartFnFuture<()> + Send + Sync>,
-    on_error: Box<dyn Fn(String, Option<String>) -> DartFnFuture<()> + Send + Sync>,
-}
-
-impl QuerySubscriber for CallbackSubscriberTimedDartFn {
-    fn on_update(&self, value: String) {
-        self.on_update_at(value, None);
-    }
-
-    fn on_update_at(&self, value: String, ts: Option<i64>) {
-        let future = (self.on_update)(value, ts);
-        tokio::spawn(async move {
-            let _ = future.await;
-        });
-    }
-
-    fn on_error(&self, message: String, value: Option<String>) {
-        let future = (self.on_error)(message, value);
-        tokio::spawn(async move {
-            let _ = future.await;
-        });
-    }
-}
-
-/// A query's value as JSON, with the timestamp of the server state it comes
-/// from: the end of the transition that carried it, in nanoseconds. Results
-/// of later server states have later timestamps, however late either reaches
-/// Dart, so a one-shot read and a live update of the same query can be put
-/// in the server's order.
-pub struct TimedValue {
-    pub value: String,
+/// A query's result with the snapshot it comes from: a value as JSON, or an
+/// error, as `query` and `subscribe` would give it.
+///
+/// `snapshot` orders results of one query from this client: the higher is the
+/// newer, and equal numbers mean the same result. It is the number of
+/// transitions the client had applied when the result was taken (see
+/// `convex::QueryResults::snapshot`), so it never goes backwards, a reconnect
+/// included, and restarts only with the client. `ts` is the server time of
+/// that snapshot in nanoseconds: an unchanged value carries the time of the
+/// snapshot it was taken from, two snapshots can share a time, and it is never
+/// null for a result the client delivered.
+pub struct TimedAnswer {
+    pub value: Option<String>,
+    pub error: Option<QueryFailure>,
     pub ts: Option<i64>,
+    pub snapshot: i64,
+}
+
+/// A query's error: the message, and a `ConvexError`'s data as JSON.
+pub struct QueryFailure {
+    pub message: String,
+    pub data: Option<String>,
+}
+
+impl TimedAnswer {
+    fn of(result: TimedResult) -> Self {
+        let (value, error) = match result.value {
+            FunctionResult::Value(value) => (
+                Some(serde_json::to_string(&serde_json::Value::from(value)).unwrap()),
+                None,
+            ),
+            FunctionResult::ErrorMessage(message) => (
+                None,
+                Some(QueryFailure {
+                    message,
+                    data: None,
+                }),
+            ),
+            FunctionResult::ConvexError(error) => (
+                None,
+                Some(QueryFailure {
+                    message: error.message,
+                    data: Some(
+                        serde_json::ser::to_string(&serde_json::Value::from(error.data)).unwrap(),
+                    ),
+                }),
+            ),
+        };
+        TimedAnswer {
+            value,
+            error,
+            ts: result.ts.map(i64::from),
+            snapshot: result.snapshot as i64,
+        }
+    }
 }
 
 /// Main Convex client struct, opaque to Dart, managing connections and operations.
@@ -428,41 +444,40 @@ impl MobileConvexClient {
         handle_direct_function_result(result)
     }
 
-    /// [query], with the timestamp of the server state the value comes from.
+    /// [query], with the snapshot the result comes from. A query error is an
+    /// answer here, with its snapshot, not a thrown error.
     #[frb]
     pub async fn query_timed(
         &self,
         name: String,
         args: HashMap<String, String>,
-    ) -> Result<TimedValue, ClientError> {
+    ) -> Result<TimedAnswer, ClientError> {
         let mut client = self.connected_client().await?;
         let result = client
             .query_timed(name.as_str(), parse_json_args(args))
             .await?;
-        Ok(TimedValue {
-            value: handle_direct_function_result(result.value)?,
-            ts: result.ts.map(i64::from),
-        })
+        Ok(TimedAnswer::of(result))
     }
 
-    /// [subscribe], with each update's timestamp: the server state it comes
-    /// from. Updates can reach Dart out of order; the timestamps say the
-    /// server's order.
+    /// [subscribe], with each result's snapshot, values and errors alike.
+    /// Each call to [on_result] is posted from its own task, as [subscribe]
+    /// posts its updates, so results can reach Dart out of order; their
+    /// snapshots say which is newer.
     #[frb]
     pub async fn subscribe_timed(
         &self,
         name: String,
         args: HashMap<String, String>,
-        on_update: impl Fn(String, Option<i64>) -> DartFnFuture<()> + Send + Sync + 'static,
-        on_error: impl Fn(String, Option<String>) -> DartFnFuture<()> + Send + Sync + 'static,
+        on_result: impl Fn(TimedAnswer) -> DartFnFuture<()> + Send + Sync + 'static,
     ) -> Result<SubscriptionHandle, ClientError> {
-        let subscriber = Arc::new(CallbackSubscriberTimedDartFn {
-            on_update: Box::new(on_update),
-            on_error: Box::new(on_error),
-        });
-        self.internal_subscribe(name, args, subscriber)
-            .await
-            .map_err(Into::into)
+        self.internal_subscribe(name, args, move |result| {
+            let future = on_result(TimedAnswer::of(result));
+            tokio::spawn(async move {
+                let _ = future.await;
+            });
+        })
+        .await
+        .map_err(Into::into)
     }
 
     /// Subscribes to real-time updates from a Convex query.
@@ -478,9 +493,22 @@ impl MobileConvexClient {
             on_update: Box::new(on_update),
             on_error: Box::new(on_error),
         });
-        self.internal_subscribe(name, args, subscriber)
-            .await
-            .map_err(Into::into)
+        self.internal_subscribe(name, args, move |result| match result.value {
+            FunctionResult::Value(value) => {
+                debug!("Updating with {value:?}");
+                subscriber
+                    .on_update(serde_json::to_string(&serde_json::Value::from(value)).unwrap());
+            }
+            FunctionResult::ErrorMessage(message) => {
+                subscriber.on_error(message, None);
+            }
+            FunctionResult::ConvexError(error) => subscriber.on_error(
+                error.message,
+                Some(serde_json::ser::to_string(&serde_json::Value::from(error.data)).unwrap()),
+            ),
+        })
+        .await
+        .map_err(Into::into)
     }
 
     /// Subscribes to [queries] together, so their values always come from one
@@ -558,7 +586,7 @@ impl MobileConvexClient {
         &self,
         name: String,
         args: HashMap<String, String>,
-        subscriber: Arc<dyn QuerySubscriber>,
+        deliver: impl Fn(TimedResult) + Send + 'static,
     ) -> anyhow::Result<SubscriptionHandle> {
         let mut client = self.connected_client().await?;
         debug!("New subscription");
@@ -573,29 +601,12 @@ impl MobileConvexClient {
             loop {
                 select_biased! {
                     new_val = subscription.next().fuse() => {
-                        let (new_val, ts) = match new_val {
-                            Some(val) => (val.value, val.ts.map(i64::from)),
+                        match new_val {
+                            Some(result) => deliver(result),
                             None => {
                                 log::warn!("Subscription stream ended for {}", &name);
                                 break;
                             }
-                        };
-                        match new_val {
-                            FunctionResult::Value(value) => {
-                                debug!("Updating with {value:?}");
-                                subscriber.on_update_at(serde_json::to_string(
-                                    &serde_json::Value::from(value),
-                                ).unwrap(), ts);
-                            }
-                            FunctionResult::ErrorMessage(message) => {
-                                subscriber.on_error(message, None);
-                            }
-                            FunctionResult::ConvexError(error) => subscriber.on_error(
-                                error.message,
-                                Some(serde_json::ser::to_string(
-                                    &serde_json::Value::from(error.data),
-                                ).unwrap()),
-                            ),
                         }
                     }
                     _ = cancel_fut => {

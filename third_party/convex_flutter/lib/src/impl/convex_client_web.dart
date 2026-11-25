@@ -6,7 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 import 'package:convex_flutter/src/impl/convex_client_interface.dart';
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle;
+import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -631,10 +631,7 @@ class WebConvexClient implements IConvexClient {
   // Icarus's web build reads through lib/collab/src/convex_client_web.dart,
   // on Convex's own JavaScript client, and never through this one.
   @override
-  Future<({String value, int? ts})> queryTimed(
-    String name,
-    Map<String, dynamic> args,
-  ) {
+  Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args) {
     throw UnsupportedError('queryTimed is native only.');
   }
 
@@ -642,8 +639,7 @@ class WebConvexClient implements IConvexClient {
   Future<SubscriptionHandle> subscribeTimed({
     required String name,
     required Map<String, dynamic> args,
-    required void Function(String value, int? ts) onUpdate,
-    required void Function(String, String?) onError,
+    required void Function(TimedAnswer) onResult,
   }) {
     throw UnsupportedError('subscribeTimed is native only.');
   }

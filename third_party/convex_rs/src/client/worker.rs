@@ -1048,8 +1048,7 @@ async fn _worker_once<T: SyncProtocol>(
                         subscriber_id,
                         request_sender,
                         watch,
-                        initial: base_client.latest_results().get(&subscriber_id).cloned(),
-                        initial_ts: base_client.latest_results().ts(),
+                        initial: base_client.latest_results().timed(&subscriber_id),
                     };
                     let _ = tx.send(subscription);
                     send_result?;
@@ -1064,7 +1063,6 @@ async fn _worker_once<T: SyncProtocol>(
                             request_sender: request_sender.clone(),
                             watch: BroadcastStream::new(watch_sender.subscribe()),
                             initial: None,
-                            initial_ts: None,
                         })
                         .collect();
                     communicate(

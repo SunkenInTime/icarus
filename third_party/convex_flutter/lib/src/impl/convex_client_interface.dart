@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle;
+import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -33,15 +33,15 @@ abstract class IConvexClient {
   /// - [ClientError] for Convex-specific errors
   Future<String> query(String name, Map<String, dynamic> args);
 
-  /// [query], with [ts]: the timestamp of the server state the value comes
-  /// from, in nanoseconds, or null before the client has applied any. A
-  /// later server state has a later timestamp, so a one-shot read and a
-  /// live update of the same query compare in the server's order, however
-  /// late either reaches Dart.
-  Future<({String value, int? ts})> queryTimed(
-    String name,
-    Map<String, dynamic> args,
-  );
+  /// [query], with the snapshot the result comes from. A query error is an
+  /// answer here, with its snapshot, not a thrown error: [TimedAnswer.value]
+  /// or [TimedAnswer.error] is set.
+  ///
+  /// [TimedAnswer.snapshot] orders results of one query from this client:
+  /// the higher is the newer, and equal numbers mean the same result, however
+  /// late either reaches Dart. [TimedAnswer.ts] is that snapshot's server
+  /// time in nanoseconds; two snapshots can share it.
+  Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args);
 
   /// Executes a Convex mutation operation.
   ///
@@ -88,14 +88,13 @@ abstract class IConvexClient {
     required void Function(String, String?) onError,
   });
 
-  /// [subscribe], with each update's timestamp, as [queryTimed] gives it.
-  /// Updates can reach [onUpdate] out of the server's order; their
-  /// timestamps say which is later.
+  /// [subscribe], with each result's snapshot, as [queryTimed] gives it.
+  /// Values and errors both come to [onResult]. Results can reach it out of
+  /// order; their snapshots say which is newer.
   Future<SubscriptionHandle> subscribeTimed({
     required String name,
     required Map<String, dynamic> args,
-    required void Function(String value, int? ts) onUpdate,
-    required void Function(String, String?) onError,
+    required void Function(TimedAnswer) onResult,
   });
 
   /// Subscribes to [queries] together, so their values always come from one

@@ -38,15 +38,25 @@ since the last update, awaits each callback before the next, and sends every
 value again after a failure.
 
 `queryTimed` and `subscribeTimed` are `query` and `subscribe` with the
-timestamp of the server state each value comes from, in nanoseconds, from the
-patched crate's `QueryResults::ts` (its patch notes say what the timestamp
-promises). A timed subscription posts each update from a spawned task, as
-`subscribe` does, so updates can reach Dart out of order, and a one-shot read
-can arrive before a live update from an older state; comparing timestamps puts
-them back in the server's order. A mutation's future resolving does not mean
-Dart has received the live update that includes it, only that the Rust client
-has; the timestamp is how Dart can tell. Both are native only, like
-`subscribeGroup`: Icarus's web build uses Convex's JavaScript client.
+snapshot each result comes from (`TimedAnswer`): the patched crate's
+`QueryResults::snapshot`, which orders two results of one query (higher is
+newer, equal is the same result), and its `ts`, the snapshot's server time in
+nanoseconds, which can tie (the crate's patch notes say why). A query error is
+an answer with its snapshot too, not a thrown error. A timed subscription posts
+each result from a spawned task, as `subscribe` does, so results can reach Dart
+out of order, and a one-shot read can arrive before a live result from an older
+snapshot; the snapshot numbers put them back in order. Both are native only,
+like `subscribeGroup`: Icarus's web build uses Convex's JavaScript client.
+`tool/convex_client_gauntlet/runtime/test/timed_results_test.dart` checks the
+snapshots reach Dart, on a local deployment, in the gauntlet lane.
+
+A mutation's future resolving means the Rust client's results include the
+write, not that Dart has received the live result that does; the snapshot is
+how Dart can tell. Since the crate waits for the transition that reaches a
+mutation's commit (its patch notes), a call whose transition comes after this
+bridge's 30-second deadline now times out where it used to succeed on an older
+transition. If the outbox retries, the server answers the same op ids as
+replays; it can instead pause at its attempt limit.
 
 Generated Dart and Rust bridge files are never hand-edited. They are regenerated
 from `rust/src/lib.rs` with `flutter_rust_bridge_codegen` 2.11.1. Hand-written

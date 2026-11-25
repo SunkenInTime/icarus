@@ -114,24 +114,37 @@ not that Dart has seen them. The worker can wake the mutation's caller before a
 `convex_flutter` subscription callback carrying the same transition has run, so
 "the mutation resolved, so the live result I hold includes my write" is true of
 the Rust client's state and not yet of what Dart was handed. Code that needs
-the updated state in Dart has to observe it there, by the result timestamps
+the updated state in Dart has to observe it there, by the result snapshots
 described below.
 
 One behavior changed for slow transitions. If a transition older than the
 write arrives before the `convex_flutter` bridge's 30-second deadline on the
 call, and the one that reaches the commit timestamp arrives after it, 0.10.4
-reported success where this now times out. Icarus's outbox then sends the same
-op ids again, and the server answers them as replays of the write it already
-applied.
+reported success where this now times out. If Icarus's outbox retries, it
+sends the same op ids again, and the server answers them as replays of the
+write it already applied; it can instead pause at its attempt limit.
 
-Every query result now carries the timestamp of the server state it comes
-from: `QueryResults::ts`, the end of the last transition the client applied
-(`None` before the first). `QuerySubscription::timed` yields each result with
-that timestamp (`TimedResult`), and `ConvexClient::query_timed` does the same
-for a one-shot read. A later server state has a later timestamp, so two results
-of one query can be put in the server's order however late either reaches its
-reader: a subscription's first result is the state when it subscribed, and it
-can be read after a one-shot answered from a newer state. Upstream exposes no
-timestamp, so a reader had no way to tell which of two results is newer.
-`client::tests::test_a_live_result_from_an_earlier_state_read_after_a_one_shot_sorts_before_it`
-covers that case.
+Every query result, a value or an error, now carries the snapshot it was taken
+from. `QueryResults::snapshot` is the number of transitions the client has
+applied: it counts up by one with every transition, across reconnects, and
+restarts only with the client. Results with the same number come from one
+snapshot, which holds one result per query, so for two results of one query
+the higher number is the newer and equal numbers mean the same result.
+`QueryResults::ts` is that snapshot's server time, the end timestamp of the
+last transition applied (`None` before the first); a value that last changed
+earlier carries it too. `QuerySubscription::timed` yields each result with both
+(`TimedResult`), and `ConvexClient::query_timed` does the same for a one-shot
+read. Upstream exposes neither, so a reader had no way to tell which of two
+results is newer: a subscription's first result is the snapshot when it
+subscribed, and it can be read after a one-shot answered from a newer one
+(`client::tests::test_a_live_result_from_an_earlier_snapshot_read_after_a_one_shot_sorts_before_it`).
+
+The timestamp alone does not order two results. Two snapshots can share one:
+a transition may end at the time the one before it ended, and if the server
+moves to a new time while leaving out a query it has not run again, the client
+keeps that query's old result under the new time, then gets its new value in a
+later transition at the same time
+(`client::tests::test_two_snapshots_at_one_timestamp_order_by_snapshot`). After
+a reconnect the client also accepts a first transition whatever its time. The
+snapshot number has neither problem; it is only comparable within one run of
+the client.
