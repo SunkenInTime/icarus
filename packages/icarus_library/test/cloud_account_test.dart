@@ -179,7 +179,8 @@ void main() {
             (store, _) => store.record(otherAccount, strategyId, [
               OpAnswered(
                 1,
-                AppliedAnswer('mine', revision: 2, life: fixtureLife), point: tick(),
+                AppliedAnswer('mine', revision: 2, life: fixtureLife),
+                point: tick(),
               ),
             ]),
           ),
@@ -197,9 +198,8 @@ void main() {
           ),
           (
             'a connection',
-            (store, _) => store.record(otherAccount, strategyId, [
-              reconnected(),
-            ]),
+            (store, _) =>
+                store.record(otherAccount, strategyId, [reconnected()]),
           ),
           (
             'a result of the current session',
@@ -282,9 +282,7 @@ void main() {
         anotherAccountsWork(),
       );
       expect(
-        await store.record(otherAccount, strategyId, [
-          reconnected(),
-        ]),
+        await store.record(otherAccount, strategyId, [reconnected()]),
         anotherAccountsWork(),
       );
       expect(
@@ -410,9 +408,7 @@ void main() {
         () => store.commitAllAs(otherAccount, strategyId, [
           movePatch('theirs'),
         ], seen: seen),
-        () => store.record(otherAccount, strategyId, [
-          reconnected(),
-        ]),
+        () => store.record(otherAccount, strategyId, [reconnected()]),
         () => store.discardUnreadableQueue(
           otherAccount,
           strategyId,

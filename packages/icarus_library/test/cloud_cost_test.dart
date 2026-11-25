@@ -26,7 +26,8 @@ Client queueOf(int length) {
     client.must(
       OpAnswered(
         accepted,
-        AppliedAnswer('add$i', revision: 1, life: fixtureLife), point: tick(),
+        AppliedAnswer('add$i', revision: 1, life: fixtureLife),
+        point: tick(),
       ),
     );
   }
@@ -73,7 +74,11 @@ List<Measured> oneEntryEvents(Client client, {int rounds = 30}) {
     if (round.isEven) {
       measure(
         'answer',
-        OpAnswered(attempt, AppliedAnswer(id, revision: 1, life: fixtureLife), point: tick()),
+        OpAnswered(
+          attempt,
+          AppliedAnswer(id, revision: 1, life: fixtureLife),
+          point: tick(),
+        ),
       );
     } else {
       measure(

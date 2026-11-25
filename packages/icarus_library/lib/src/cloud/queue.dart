@@ -1356,7 +1356,9 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final currentLife,
       :final point,
     ):
-      if (!_admitted(edit, point)) return _lostToAnEndedConnection(edit, attempt);
+      if (!_admitted(edit, point)) {
+        return _lostToAnEndedConnection(edit, attempt);
+      }
       return _batchRefused(edit, attempt, refusal, at, currentLife, point);
     case ReadRefusedForUpgrade(:final build):
       edit.strategy = edit.strategy.copyWith(
@@ -1367,7 +1369,9 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       }
       return edit.done();
     case OpAnswered(:final attempt, :final answer, :final point):
-      if (!_admitted(edit, point)) return _lostToAnEndedConnection(edit, attempt);
+      if (!_admitted(edit, point)) {
+        return _lostToAnEndedConnection(edit, attempt);
+      }
       return _answered(edit, attempt, answer, point);
     case AppRestarted(:final build):
       for (final attempt in [...edit.attempts.values]) {
@@ -1469,9 +1473,8 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         final page? => edit.shown.pageRead(page),
         null => edit.shown.list,
       }) {
-        ReadOwed(since: final owed) || ReadRefused(since: final owed)
-            when !owed.paidBy(refused, null) =>
-          owed,
+        ReadOwed(since: final owed) ||
+        ReadRefused(since: final owed) when !owed.paidBy(refused, null) => owed,
         _ => ResultAtOrAfter(refused.order),
       };
       edit.shown = switch (page) {
@@ -2492,12 +2495,7 @@ bool isUncheckedSend(StrategyOp sent) => switch (sent) {
   _ => false,
 };
 
-Step _answered(
-  _Edit edit,
-  int attempt,
-  OpAnswer answer,
-  ResultPoint point,
-) {
+Step _answered(_Edit edit, int attempt, OpAnswer answer, ResultPoint point) {
   final queue = edit.original;
   final fact = edit.attempts[attempt];
   if (fact == null) return NotApplicable(queue, NoSuchAttempt(attempt));
@@ -2624,26 +2622,29 @@ void _oweTheRowsRead(
     step: edit.recordStep(),
     evidence: switch ((current, checked)) {
       (
-            ServerSnapshot(target: SnapshotTarget.strategy) &&
-                final ServerSnapshot snapshot,
-            StrategyTarget(),
-          ) ||
-          (
-            ServerSnapshot(target: SnapshotTarget.page) &&
-                final ServerSnapshot snapshot,
-            PageTarget(),
-          ) ||
-          (
-            ServerSnapshot(target: SnapshotTarget.element) &&
-                final ServerSnapshot snapshot,
-            ElementTarget(),
-          ) ||
-          (
-            ServerSnapshot(target: SnapshotTarget.lineup) &&
-                final ServerSnapshot snapshot,
-            LineupTarget(),
-          ) =>
-        RowAtLeast(checked, life: snapshot.life, revision: snapshot.revision),
+        ServerSnapshot(target: SnapshotTarget.strategy) &&
+            final ServerSnapshot snapshot,
+        StrategyTarget(),
+      ) ||
+      (
+        ServerSnapshot(target: SnapshotTarget.page) &&
+            final ServerSnapshot snapshot,
+        PageTarget(),
+      ) ||
+      (
+        ServerSnapshot(target: SnapshotTarget.element) &&
+            final ServerSnapshot snapshot,
+        ElementTarget(),
+      ) ||
+      (
+        ServerSnapshot(target: SnapshotTarget.lineup) &&
+            final ServerSnapshot snapshot,
+        LineupTarget(),
+      ) => RowAtLeast(
+        checked,
+        life: snapshot.life,
+        revision: snapshot.revision,
+      ),
       _ => null,
     },
   );

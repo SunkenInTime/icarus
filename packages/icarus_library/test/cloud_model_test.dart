@@ -831,7 +831,10 @@ final class Model {
         BatchRefusal.unauthenticated,
         BatchRefusal.editAccessRemoved,
       ]);
-      apply(BatchRefused(attempt, refusal, point: tick()), 'refused whole ${refusal.name}');
+      apply(
+        BatchRefused(attempt, refusal, point: tick()),
+        'refused whole ${refusal.name}',
+      );
       return;
     }
     if (roll == 6) {
@@ -876,8 +879,16 @@ final class Model {
     ];
     if (roll == 8) order.shuffle(random);
     for (final answer in order) {
-      apply(OpAnswered(attempt, answer, point: tick()), 'answer ${answer.opId}');
-      if (roll == 7) apply(OpAnswered(attempt, answer, point: tick()), 'again ${answer.opId}');
+      apply(
+        OpAnswered(attempt, answer, point: tick()),
+        'answer ${answer.opId}',
+      );
+      if (roll == 7) {
+        apply(
+          OpAnswered(attempt, answer, point: tick()),
+          'again ${answer.opId}',
+        );
+      }
     }
     apply(
       ServerTimeHeld(serverNow, at: elapsed, session: session),
@@ -1363,16 +1374,17 @@ final class Model {
           deliverLateRead();
         } else if (late.isNotEmpty) {
           final (attempt, answer) = late.removeAt(random.nextInt(late.length));
-          apply(OpAnswered(attempt, answer, point: tick()), 'late ${answer.opId}');
+          apply(
+            OpAnswered(attempt, answer, point: tick()),
+            'late ${answer.opId}',
+          );
         }
       case 19:
         final pages = [for (final page in client.base.pages) page.publicId];
         if (pages.isNotEmpty) openPage = pick(pages);
       case _:
         must(
-          random.nextBool()
-              ? const ConnectionLost()
-              : reconnected(),
+          random.nextBool() ? const ConnectionLost() : reconnected(),
           'connection',
         );
     }

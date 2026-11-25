@@ -258,7 +258,11 @@ final class Scenario {
         case 0:
           facts.add(
             EventFact(
-              BatchRefused(sent.$1, BatchRefusal.editAccessRemoved, point: tick()),
+              BatchRefused(
+                sent.$1,
+                BatchRefusal.editAccessRemoved,
+                point: tick(),
+              ),
               'access refused ${sent.$1}',
             ),
           );
@@ -271,7 +275,11 @@ final class Scenario {
         case 1:
           facts.add(
             EventFact(
-              BatchRefused(sent.$1, BatchRefusal.upgradeRequired, point: tick()),
+              BatchRefused(
+                sent.$1,
+                BatchRefusal.upgradeRequired,
+                point: tick(),
+              ),
               'upgrade ${sent.$1}',
             ),
           );
@@ -311,9 +319,7 @@ final class Scenario {
     if (random.nextInt(3) == 0) facts.add(ClaimFact());
     if (facts.length > most) facts.removeRange(most, facts.length);
     if (random.nextBool()) {
-      facts.add(
-        EventFact(AppRestarted(build: build), 'restart', phase: 1),
-      );
+      facts.add(EventFact(AppRestarted(build: build), 'restart', phase: 1));
       if (server.pages.isNotEmpty) {
         facts.add(pageRead(server.pages.first.publicId, phase: 2));
         facts.add(headerRead(phase: 2));
@@ -451,7 +457,13 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
                 '${op.opId} was sent again after the server forgot it',
               );
             }
-            step(OpAnswered(sent.attempt, server.apply(sent.clientId, op), point: tick()));
+            step(
+              OpAnswered(
+                sent.attempt,
+                server.apply(sent.clientId, op),
+                point: tick(),
+              ),
+            );
           }
         }
     }

@@ -16,8 +16,7 @@ void main() {
           element('e3', pageId: 'page-b'),
         ],
       );
-      final client = Client(base: initialRows())
-        ..must(reconnected());
+      final client = Client(base: initialRows())..must(reconnected());
       client.read(initialRows());
       client.read(moved);
       client.base = initialRows();
@@ -32,7 +31,8 @@ void main() {
       client.must(
         OpAnswered(
           attempt,
-          const AppliedAnswer('merge', revision: 4, life: fixtureLife), point: tick(),
+          const AppliedAnswer('merge', revision: 4, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.queue.landed.single.produced, isNull);
