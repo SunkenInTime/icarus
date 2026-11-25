@@ -4,6 +4,7 @@ import '../strategy_rows.dart';
 import '../cloud/account.dart';
 import '../cloud/queue.dart';
 import '../cloud/sync.dart';
+import '../cloud/version.dart';
 import '../undo.dart';
 import 'engine.dart';
 import 'layout.dart';
@@ -80,6 +81,15 @@ final class NoSuchStrategy implements CommitRefusal, LibraryRefusal {
 
   @override
   String toString() => 'NoSuchStrategy($strategyPublicId)';
+}
+
+final class CloudResultsNotChosen implements CommitRefusal, LibraryRefusal {
+  const CloudResultsNotChosen();
+
+  @override
+  String toString() =>
+      'CloudResultsNotChosen: this run has not said where its results come '
+      'from, so it cannot keep a cloud strategy';
 }
 
 final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
@@ -160,6 +170,18 @@ final class ResultOutOfPlace implements CommitRefusal, LibraryRefusal {
 
   @override
   String toString() => 'ResultOutOfPlace($key)';
+}
+
+final class EditOfAReplacedStrategy implements CommitRefusal {
+  EditOfAReplacedStrategy(this.strategyPublicId, List<String> opIds)
+    : opIds = List.unmodifiable(opIds);
+
+  final String strategyPublicId;
+  final List<String> opIds;
+
+  @override
+  String toString() =>
+      'EditOfAReplacedStrategy($strategyPublicId, ${opIds.join(', ')})';
 }
 
 final class ResultWithoutLife implements CommitRefusal, LibraryRefusal {
@@ -531,7 +553,11 @@ final class UnknownKindRow {
   final String text;
 }
 
-final class StrategyContent {
+sealed class StrategyRead {
+  int? get strategyLife;
+}
+
+final class StrategyContent implements StrategyRead {
   StrategyContent({
     required this.strategy,
     required Iterable<PageRow> pages,
@@ -550,6 +576,9 @@ final class StrategyContent {
   final List<UnplacedRow> unplaced;
   final List<ForeignName> foreignNames;
   final StrategySync sync;
+
+  @override
+  int? get strategyLife => createdAtOf(strategy);
 }
 
 sealed class StrategySync {
@@ -608,8 +637,9 @@ final class ContentNotRead extends PageContentState {
   const ContentNotRead();
 }
 
-final class PageContent {
+final class PageContent implements StrategyRead {
   PageContent({
+    required this.strategyLife,
     required this.page,
     required this.settings,
     required Iterable<ElementRow> elements,
@@ -634,6 +664,8 @@ final class PageContent {
   final List<ForeignName> foreignNames;
   final StrategySync sync;
   final PageContentState content;
+  @override
+  final int? strategyLife;
 }
 
 sealed class LibraryState {

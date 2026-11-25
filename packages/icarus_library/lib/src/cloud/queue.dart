@@ -20,13 +20,36 @@ final class QueueSession {
     required this.connected,
     required this.build,
     required this.number,
+    required this.sequence,
     this.basis,
   });
 
   final bool connected;
   final String build;
   final int number;
+  final int sequence;
   final ServerTimeBasis? basis;
+
+  ReadStart get readStart => ReadStart(session: number, sequence: sequence);
+
+  QueueSession withConnection({
+    required bool connected,
+    required ServerTimeBasis? basis,
+  }) => QueueSession(
+    connected: connected,
+    build: build,
+    number: number,
+    sequence: sequence,
+    basis: basis,
+  );
+
+  QueueSession get stepped => QueueSession(
+    connected: connected,
+    build: build,
+    number: number,
+    sequence: sequence + 1,
+    basis: basis,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -34,10 +57,11 @@ final class QueueSession {
       other.connected == connected &&
       other.build == build &&
       other.number == number &&
+      other.sequence == sequence &&
       other.basis == basis;
 
   @override
-  int get hashCode => Object.hash(connected, build, number, basis);
+  int get hashCode => Object.hash(connected, build, number, sequence, basis);
 }
 
 final class CloudQueue {
@@ -94,7 +118,12 @@ final class CloudQueue {
     nextSession: 2,
     shown: Shown.nothing,
     strategy: StrategyFacts.fresh,
-    session: QueueSession(connected: false, build: build, number: 1),
+    session: QueueSession(
+      connected: false,
+      build: build,
+      number: 1,
+      sequence: 0,
+    ),
     index: _Index.empty,
     lineage: null,
   );
@@ -603,6 +632,24 @@ sealed class QueueEffect {
   const QueueEffect();
 }
 
+final class ReadStartIssued extends QueueEffect {
+  const ReadStartIssued(this.started);
+
+  final ReadStart started;
+
+  ResultSource get source => ReadOfThisDevice(started);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReadStartIssued && other.started == started;
+
+  @override
+  int get hashCode => Object.hash(ReadStartIssued, started);
+
+  @override
+  String toString() => 'ReadStartIssued($started)';
+}
+
 final class PageResultDeferred extends QueueEffect {
   const PageResultDeferred(this.page);
 
@@ -850,6 +897,14 @@ final class NotInAttempt extends Inapplicable {
   String toString() => 'NotInAttempt($opId, $attempt)';
 }
 
+final class NotOfAnotherLife extends Inapplicable {
+  const NotOfAnotherLife();
+
+  @override
+  String toString() =>
+      'an edit said to be of another life names the record\'s own life';
+}
+
 final class OpIdTaken extends Inapplicable {
   const OpIdTaken(this.opId);
 
@@ -905,11 +960,20 @@ final class OtherEntity extends Inapplicable {
   String toString() => 'OtherEntity($opId)';
 }
 
+final class StartedInAnotherLife extends Inapplicable {
+  const StartedInAnotherLife();
+
+  @override
+  String toString() =>
+      'a result read while this device held another life of the strategy';
+}
+
 final class OlderResult extends Inapplicable {
   const OlderResult();
 
   @override
-  String toString() => 'a result of an earlier life than the one shown';
+  String toString() =>
+      'a result read before one already taken, or of an earlier life';
 }
 
 final class NothingSetAsideToDiscard extends Inapplicable {
@@ -924,6 +988,18 @@ final class NothingClaimed extends Inapplicable {
 
   @override
   String toString() => 'NothingClaimed';
+}
+
+final class NotThisModesResults extends Inapplicable {
+  const NotThisModesResults(this.mode);
+
+  final CloudResults? mode;
+
+  @override
+  String toString() => switch (mode) {
+    null => 'no source of results was chosen for this run',
+    final CloudResults mode => 'this run takes results only from ${mode.name}',
+  };
 }
 
 final class FromAnEndedSession extends Inapplicable {
@@ -1088,11 +1164,17 @@ final class _Edit {
 
   int get lastAttempt => nextAttempt - 1;
 
+  ReadStart readsAfterThis() {
+    session = session.stepped;
+    return session.readStart;
+  }
+
   void openSession({required bool connected, required String build}) {
     session = QueueSession(
       connected: connected,
       build: build,
       number: nextSession++,
+      sequence: 0,
     );
     shown = shown.inNewSession();
     for (final (at, work) in [...landed.indexed]) {
@@ -1188,7 +1270,14 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
 
 Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
   switch (event) {
-    case UserEdited(edit: final change):
+    case UserEdited(edit: final change, :final madeOn):
+      final recordLife = edit.shown.strategy?.life;
+      if ((madeOn, recordLife) case (
+        final made?,
+        final record?,
+      ) when made != record) {
+        return _setAsideEdit(edit, change, made, record, now);
+      }
       return _userEdited(edit, change, now);
     case BatchClaimed(:final clientId, :final opIds, :final at, :final elapsed):
       return _claim(edit, clientId, opIds, at, elapsed?.call(), now);
@@ -1197,10 +1286,8 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       if (edit.session.connected &&
           session == edit.session.number &&
           (held == null || serverTime > held.serverTime)) {
-        edit.session = QueueSession(
+        edit.session = edit.session.withConnection(
           connected: true,
-          build: edit.session.build,
-          number: edit.session.number,
           basis: ServerTimeBasis(serverTime, heldAt: at),
         );
       }
@@ -1230,11 +1317,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       edit.openSession(connected: false, build: build);
       return edit.done();
     case ConnectionLost():
-      edit.session = QueueSession(
-        connected: false,
-        build: edit.session.build,
-        number: edit.session.number,
-      );
+      edit.session = edit.session.withConnection(connected: false, basis: null);
       return edit.done();
     case ConnectionReturned():
       edit.openSession(connected: true, build: edit.session.build);
@@ -1289,16 +1372,26 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       }
       return NotApplicable(queue, NotInThatState(opId, '${view?.state}'));
     case ResultRefused(:final page, :final problem):
+      final since = edit.readsAfterThis();
       edit.shown = switch (page) {
-        final page? => edit.shown.pageRefused(page, problem),
-        null => edit.shown.listRefused(problem),
+        final page? => edit.shown.pageRefused(page, problem, since),
+        null => edit.shown.listRefused(problem, since),
       };
       return edit.done();
-    case BaseArrived(:final base, :final session):
+    case EditOfAnotherLife(edit: final change, :final madeOn):
+      final recordLife = edit.shown.strategy?.life;
+      if (recordLife == null || madeOn == recordLife) {
+        return NotApplicable(queue, const NotOfAnotherLife());
+      }
+      return _setAsideEdit(edit, change, madeOn, recordLife, now);
+    case ReadBegun():
+      edit.effects.add(ReadStartIssued(edit.readsAfterThis()));
+      return edit.done();
+    case BaseArrived(:final base, :final session, :final from):
       if (session == 0 || session != edit.session.number) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
-      return _arrived(edit, base);
+      return _arrived(edit, base, from);
   }
 }
 
@@ -1350,12 +1443,14 @@ Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
     case BatchRefusal.strategyDeleted:
       edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
     case BatchRefusal.strategyReplaced:
-      edit.shown = edit.shown.owingListPast(edit.shown.strategy?.life);
+      edit.shown = edit.shown.owingListPast(
+        edit.shown.strategy?.life,
+        edit.readsAfterThis(),
+      );
     case BatchRefusal.uncheckedTooLate:
-      edit.session = QueueSession(
+      edit.session = edit.session.withConnection(
         connected: edit.session.connected,
-        build: edit.session.build,
-        number: edit.session.number,
+        basis: null,
       );
   }
   return edit.done();
@@ -1370,63 +1465,94 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
   return edit.done();
 }
 
-enum ResultFit { applies, listFirst, older }
+enum ResultFit { applies, adopts, listFirst, older, startedInAnotherLife }
 
-ResultFit resultFit(Shown shown, ArrivedBase base) => switch (base) {
-  HeaderRead(:final strategy) => switch ((
-    shown.strategy?.life,
-    createdAtOf(strategy),
-  )) {
-    (final held?, final listed?) when listed < held => ResultFit.older,
-    _ => ResultFit.applies,
-  },
-  PageRead(:final page) => switch (shown.pages[page.publicId]) {
-    null when page is TrashedPage => ResultFit.applies,
-    null => ResultFit.listFirst,
-    final listed => switch ((listed.life, createdAtOf(page))) {
-      (final listed?, final read?) when read > listed => ResultFit.listFirst,
-      (final listed?, final read?) when read < listed => ResultFit.older,
-      _ => ResultFit.applies,
-    },
-  },
-  PageGone() || StrategyGone() => ResultFit.applies,
+ReadStart startOf(QueueSession session, ResultSource from) => switch (from) {
+  ReadOfThisDevice(:final started) => started,
+  LiveResult() => session.stepped.readStart,
 };
 
-Step _arrived(_Edit edit, ArrivedBase base) {
-  switch (resultFit(edit.shown, base)) {
+ResultFit resultFit(
+  Shown shown,
+  QueueSession session,
+  ArrivedBase base,
+  ResultSource from,
+) {
+  final held = shown.strategy?.life;
+  final started = startOf(session, from);
+  if (shown.fence case final fence? when started.isBefore(fence)) {
+    return ResultFit.startedInAnotherLife;
+  }
+  for (final mark in [shown.takenFor(base), shown.owedSince(base)]) {
+    if (mark != null && started.isBefore(mark)) return ResultFit.older;
+  }
+  return switch (base) {
+    HeaderRead(:final strategy) => switch ((held, createdAtOf(strategy))) {
+      (_, final listed?) when listed == _refusedLife(shown.list) =>
+        ResultFit.older,
+      (final held?, final listed?) when listed > held => ResultFit.adopts,
+      (final held?, final listed?)
+          when listed < held && _refusedLife(shown.list) == held =>
+        ResultFit.adopts,
+      (final held?, final listed?) when listed < held => ResultFit.older,
+      _ => ResultFit.applies,
+    },
+    PageRead(:final page) => switch (shown.pages[page.publicId]) {
+      null when page is TrashedPage => ResultFit.applies,
+      null => ResultFit.listFirst,
+      final listed => switch ((listed.life, createdAtOf(page))) {
+        (final listed?, final read?) when read > listed => ResultFit.listFirst,
+        (final listed?, final read?) when read < listed => ResultFit.older,
+        _ => ResultFit.applies,
+      },
+    },
+    PageGone() || StrategyGone() => ResultFit.applies,
+  };
+}
+
+int? _refusedLife(ReadState list) => switch (list) {
+  ReadOwed(:final unlessLife) || ReadRefused(:final unlessLife) => unlessLife,
+  NotReadThisSession() || ReadThisSession() => null,
+};
+
+Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
+  final fit = resultFit(edit.shown, edit.session, base, from);
+  final started = switch (from) {
+    ReadOfThisDevice(:final started) => started,
+    LiveResult() => edit.readsAfterThis(),
+  };
+  switch (fit) {
     case ResultFit.older:
       return NotApplicable(edit.original, const OlderResult());
+    case ResultFit.startedInAnotherLife:
+      return NotApplicable(edit.original, const StartedInAnotherLife());
     case ResultFit.listFirst:
-      if (!isDebt(edit.shown.list)) edit.shown = edit.shown.owingList();
+      if (!isDebt(edit.shown.list)) {
+        edit.shown = edit.shown.owingList(edit.readsAfterThis());
+      }
       if (base case PageRead(:final page)) {
         edit.effects.add(PageResultDeferred(page.publicId));
       }
+      return edit.done();
+    case ResultFit.adopts:
+      final written = edit.shown.strategy!.life!;
+      final listed = createdAtOf((base as HeaderRead).strategy)!;
+      edit.setAsideAll(written, listed);
+      final taken = edit.shown;
+      edit.shown = Shown.nothing
+          .take(base, started: started)
+          .fencedAt(edit.readsAfterThis(), after: taken);
       return edit.done();
     case ResultFit.applies:
       break;
   }
   if (base is StrategyGone) {
     edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
-    edit.shown = edit.shown.take(base);
+    edit.shown = edit.shown.take(base, started: started);
     return edit.done();
   }
-  if (base case HeaderRead(:final strategy)) {
-    final writtenIn = edit.shown.strategy?.life;
-    if ((writtenIn, createdAtOf(strategy)) case (
-      final written?,
-      final listed?,
-    ) when listed > written) {
-      edit.setAsideAll(written, listed);
-      var adopted = Shown.nothing.take(base);
-      for (final page in adopted.pages.keys) {
-        adopted = adopted.owingPage(page);
-      }
-      edit.shown = adopted;
-      return edit.done();
-    }
-  }
   final before = edit.shown;
-  edit.shown = edit.shown.take(base);
+  edit.shown = edit.shown.take(base, started: started);
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -1451,7 +1577,8 @@ Step _arrived(_Edit edit, ArrivedBase base) {
       if (work.own &&
           !work.shownWithout &&
           added == page.publicId &&
-          !held.contains(targetOf(work.op))) {
+          !held.contains(targetOf(work.op)) &&
+          !started.isBefore(work.answeredAt)) {
         edit.landed[at] = work.seenWithout();
         edit.change.targets.add(targetOf(work.op));
       }
@@ -1565,11 +1692,75 @@ bool _alreadyShown(Shown shown, LandedWork work) {
 bool _ownDelete(LandedWork work) =>
     work.own && (work.op is ElementDeleteOp || work.op is LineupGroupDeleteOp);
 
+Step _setAsideEdit(
+  _Edit edit,
+  Edit change,
+  int? madeOn,
+  int recordLife,
+  DateTime now,
+) {
+  final queue = edit.original;
+  final op = change.op;
+  if (!isJson(op.toJson())) return NotApplicable(queue, NotJson(op.opId));
+  if (_opIdTaken(edit, op.opId)) {
+    return NotApplicable(queue, OpIdTaken(op.opId));
+  }
+  final entry = PendingOp(
+    place: edit.nextPlace,
+    work: switch (change) {
+      PlainEdit() => OpWork(op),
+      PageDeleteEdit(:final seen) => CheckedDelete(op as PageDeleteOp, seen),
+    },
+    scope: change.scope,
+    authored: change.authored,
+    authoredIn: edit.session.number,
+    authoredAt: now,
+    refusal: const NotRefused(),
+    retriedAfter: edit.lastAttempt,
+    strategyLife: madeOn,
+  );
+  final kept = switch (edit.strategy.setAside) {
+    SetAside(:final generations) => generations,
+    NothingSetAside() => const <SetAsideGeneration>[],
+  };
+  final joins = kept.indexWhere(
+    (generation) =>
+        generation.writtenIn == madeOn && generation.replacedBy == recordLife,
+  );
+  edit.strategy = edit.strategy.copyWith(
+    setAside: SetAside([
+      for (final (at, generation) in kept.indexed)
+        at == joins
+            ? SetAsideGeneration(
+                writtenIn: madeOn,
+                replacedBy: recordLife,
+                entries: [...generation.entries, entry],
+              )
+            : generation,
+      if (joins == -1)
+        SetAsideGeneration(
+          writtenIn: madeOn,
+          replacedBy: recordLife,
+          entries: [entry],
+        ),
+    ]),
+  );
+  edit.effects.add(const StrategySetAside(1));
+  return edit.done();
+}
+
+bool _opIdTaken(_Edit edit, String opId) =>
+    edit.indexOf(opId) != -1 ||
+    switch (edit.strategy.setAside) {
+      SetAside(:final entries) => entries.any((entry) => entry.id == opId),
+      NothingSetAside() => false,
+    };
+
 Step _userEdited(_Edit edit, Edit change, DateTime now) {
   final queue = edit.original;
   final op = change.op;
   if (!isJson(op.toJson())) return NotApplicable(queue, NotJson(op.opId));
-  if (edit.indexOf(op.opId) != -1) {
+  if (_opIdTaken(edit, op.opId)) {
     return NotApplicable(queue, OpIdTaken(op.opId));
   }
   final target = targetOf(op);
@@ -1937,6 +2128,7 @@ _Verdict _wholeBehindOwn(
   final known = _knownRow(queue, row);
   final lastShownOn = _shownRow(shown, row)?.page;
   final page = switch ((row, known, entry.scope)) {
+    (StrategyTarget(), _, _) => null,
     (PageTarget(:final pagePublicId), _, _) => pagePublicId,
     (SettingsTarget(:final pagePublicId), _, _) => pagePublicId,
     (_, _KnownRow(:final page?), _) => page,
@@ -2241,10 +2433,10 @@ void _oweTheRowsRead(_Edit edit, PendingOp entry) {
     final row => edit.shown.rows[row]?.page ?? _pagesOf(entry).firstOrNull,
   };
   if (page == null) {
-    edit.shown = edit.shown.owingList();
+    edit.shown = edit.shown.owingList(edit.readsAfterThis());
   } else {
     edit.change.pages.add(page);
-    edit.shown = edit.shown.owingPage(page);
+    edit.shown = edit.shown.owingPage(page, edit.readsAfterThis());
   }
 }
 
@@ -2289,6 +2481,7 @@ void _landed(
       AuthoredRow(:final movedRow) => movedRow,
       _ => null,
     },
+    answeredAt: edit.readsAfterThis(),
   );
   if (!_alreadyShown(edit.shown, work)) {
     edit.landed

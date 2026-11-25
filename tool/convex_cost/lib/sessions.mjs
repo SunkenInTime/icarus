@@ -268,6 +268,30 @@ async function sendFromStore(device, strategyPublicId, clientId, op, row) {
   return results[0].appliedRevision;
 }
 
+const strategyLives = new Map();
+
+async function sendFromStoreWithLives(device, strategyPublicId, clientId, op, row) {
+  await new Promise((resolve) => setTimeout(resolve, STORE_SENDER_WAIT_MS));
+  const { op: sent, liveBasis } = storeForm(clientId, op, row);
+  const results = await device.applyBatch(
+    strategyPublicId,
+    clientId,
+    [{ ...sent, expectedLife: row.createdAt }],
+    {
+      includeWasApplied: true,
+      readsAccountMismatch: true,
+      sendsLiveBasis: true,
+      liveBasis,
+      sendsLives: true,
+      strategyLife: strategyLives.get(strategyPublicId),
+    },
+  );
+  if (results.serverTime !== undefined) {
+    heldTimes.set(clientId, { serverTime: results.serverTime, at: performance.now() });
+  }
+  return results[0].appliedRevision;
+}
+
 const namedPage = (device, strategyPublicId, pagePublicId) =>
   device.query("page:getSnapshot", { ...wholePageArgs(strategyPublicId, pagePublicId), accountSubject: COACH.subject });
 
@@ -1058,14 +1082,21 @@ export const SESSIONS = {
     },
   },
 
-  twoPeopleStore: {
-    title: "Two people on one page, sent by the cloud store's sender",
+  twoPeopleStoreLives: {
+    title: "Two people on one page, sent by the cloud store's sender naming lives",
     about:
-      "twoPeople's 20 moves by the owner, each sent 180 ms after it is made as the store sender sends it, opted in to ACCOUNT_MISMATCH, one " +
-      "applyBatch per move in the op's live form, while the teammate watches the page. It measures the server's side " +
-      "of that call pattern, not the Dart sender, whose own call count test/library_store/cloud_sender_test.dart checks.",
+      "twoPeople's 20 moves by the owner, each sent 180 ms after it is made as the store sender sends it, opted in to " +
+      "ACCOUNT_MISMATCH, one applyBatch per move in the op's live form, while the teammate watches the page. Each op " +
+      "names its row's life and the batch the strategy's (sendsLives, strategyLife, expectedLife), so the server checks " +
+      "both before it applies. It measures the server's side of that call pattern, not the Dart sender, whose own call " +
+      "count test/library_store/cloud_sender_test.dart checks.",
     world: "team",
-    run: async (context) => withSenderCounts(await twoPeople(context, sendFromStore)),
+    run: async (context) => {
+      const { coach, session } = context.world;
+      const list = await coach.query("strategy:getPageList", { strategyPublicId: session.publicId });
+      strategyLives.set(session.publicId, list.header.createdAt);
+      return withSenderCounts(await twoPeople(context, sendFromStoreWithLives));
+    },
   },
 
   editorIdleHour: {

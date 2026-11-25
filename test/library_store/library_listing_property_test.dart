@@ -214,7 +214,8 @@ void main() {
         GatedEngine(MemoryEngine(MemoryStorage()), gate),
         canRead: appCanRead,
       )) {
-        StoreOpened(:final store) => store,
+        StoreOpened(:final store) => store
+          ..takeCloudResultsFrom(CloudResults.thisDevicesReads),
         StoreNotOpened(:final problem) => fail('$problem'),
       };
       for (final id in ['s$seed-shared', 's$seed-cloud-only']) {

@@ -149,10 +149,10 @@ final class _CloudUnread extends _CloudOpen {
   final StorageFailure failure;
 }
 
-bool _ofALaterLife(LoadedStrategy strategy, StrategyRow listed) =>
+bool _ofAnotherLife(LoadedStrategy strategy, StrategyRow listed) =>
     switch ((strategy.header, createdAtOf(listed))) {
       (HeaderPlaced(row: final ReadableStrategy held), final life?) =>
-        life > held.createdAt.millisecondsSinceEpoch,
+        life != held.createdAt.millisecondsSinceEpoch,
       _ => false,
     };
 
@@ -555,7 +555,7 @@ extension _CloudStore on LibraryStore {
       strategy: facts,
       session:
           kept?.session ??
-          QueueSession(connected: false, build: _build, number: 0),
+          QueueSession(connected: false, build: _build, number: 0, sequence: 0),
     );
     final current = onDisk;
     final loaded = _LoadedQueue(
@@ -874,7 +874,7 @@ extension _CloudStore on LibraryStore {
         case HeaderRead(strategy: final header, :final pages):
           final listed = {for (final page in pages) digestOf(page.publicId)};
           digests.addAll(
-            _ofALaterLife(strategy, header)
+            _ofAnotherLife(strategy, header)
                 ? strategy.pageDigests
                 : strategy.pageDigests.where((d) => !listed.contains(d)),
           );
@@ -1032,7 +1032,7 @@ extension _CloudStore on LibraryStore {
     for (final arrival in arrivals) {
       switch (arrival) {
         case HeaderRead(strategy: final header, :final pages, :final settings):
-          final replaced = _ofALaterLife(strategy, header);
+          final replaced = _ofAnotherLife(strategy, header);
           put(header);
           final listed = {for (final page in pages) page.publicId};
           for (final page in [...strategy.pages]) {
@@ -1269,16 +1269,60 @@ extension _CloudStore on LibraryStore {
         ...pagesOf(entry),
   };
 
+  Future<BatchResult> _commitOfAnotherLife(
+    _CloudReady cloud,
+    CloudQueue start,
+    List<StrategyOp> asked,
+    int? madeOn,
+    DateTime now,
+  ) async {
+    var queue = start;
+    for (final op in asked) {
+      switch (transition(
+        queue,
+        EditOfAnotherLife(editOfAnotherLife(op), madeOn: madeOn),
+        now: now,
+      )) {
+        case NotApplicable(:final why):
+          return Refused(QueueRefusal(why));
+        case Stepped(queue: final stepped):
+          queue = stepped;
+      }
+    }
+    return switch (await _finishCloud(
+      cloud,
+      queue,
+      const [],
+      const {},
+      (summary) => const <Committed>[],
+    )) {
+      Saved() => Refused(
+        EditOfAReplacedStrategy(cloud.header.publicId, [
+          for (final op in asked) op.opId,
+        ]),
+      ),
+      NothingToSave() => const NothingToSave(),
+      Refused(:final reason) => Refused(reason),
+      NotSaved(:final failure) => NotSaved(failure),
+      SaveInDoubt(:final failure) => SaveInDoubt(failure),
+    };
+  }
+
   Future<BatchResult> _commitCloud(
     _CloudReady cloud,
-    List<StrategyOp> asked,
-  ) async {
+    List<StrategyOp> asked, {
+    required int? madeOn,
+  }) async {
     final strategy = cloud.strategy;
     final now = _cloudNow();
     var queue = cloud.queue.current.raisedTo(
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
     );
+    if (queue.shown.strategy?.life case final recordLife?
+        when recordLife != madeOn) {
+      return _commitOfAnotherLife(cloud, queue, asked, madeOn, now);
+    }
     final pages = {for (final op in asked) ..._ownPages(strategy, queue, op)};
     StrategyRowSet rows;
     switch (await _visibleFor(
@@ -1355,7 +1399,7 @@ extension _CloudStore on LibraryStore {
           case (_, _):
             return Refused(OpRefusal(const Rejected(RejectionReason.notFound)));
         }
-        switch (transition(queue, UserEdited(edit), now: now)) {
+        switch (transition(queue, UserEdited(edit, madeOn: madeOn), now: now)) {
           case NotApplicable(:final why):
             return Refused(QueueRefusal(why));
           case Stepped(queue: final stepped):
@@ -1479,8 +1523,19 @@ extension _CloudStore on LibraryStore {
         outcomes.add(const EditsGoThroughCommit());
         continue;
       }
+      if (event case BaseArrived(
+        :final from,
+      ) when !(_cloudResults?.takes(from) ?? false)) {
+        outcomes.add(ReportNotApplicable(NotThisModesResults(_cloudResults)));
+        continue;
+      }
       final fits = switch (event) {
-        BaseArrived(:final base) => resultFit(queue.shown, base),
+        BaseArrived(:final base, :final from) => resultFit(
+          queue.shown,
+          queue.session,
+          base,
+          from,
+        ),
         _ => null,
       };
       final step = transition(queue, event, now: now);
@@ -1491,7 +1546,7 @@ extension _CloudStore on LibraryStore {
         case Stepped(:final effects):
           if (event case BaseArrived(
             :final base,
-          ) when fits == ResultFit.applies) {
+          ) when fits == ResultFit.applies || fits == ResultFit.adopts) {
             arrivals.add(base);
           }
           outcomes.add(ReportApplied(effects));
@@ -1614,6 +1669,7 @@ extension _CloudStore on LibraryStore {
     final loaded = strategy.loadedPage(digestOf(pagePublicId));
     return Found(
       PageContent(
+        strategyLife: header.createdAt.millisecondsSinceEpoch,
         page: page,
         settings: switch (rows.settingsOf(pagePublicId)) {
           final row? => SettingsStored(row),
@@ -1679,6 +1735,8 @@ extension _CloudStore on LibraryStore {
     HeaderRead header,
     List<PageRead> pages,
   ) async {
+    final results = _cloudResults;
+    if (results == null) return const Refused(CloudResultsNotChosen());
     final ReadableStrategy strategyRow;
     switch (header.strategy) {
       case final ReadableStrategy row:
@@ -1725,7 +1783,15 @@ extension _CloudStore on LibraryStore {
     queue = transition(queue, const ConnectionReturned(), now: now).queue;
     final events = [
       for (final base in <ArrivedBase>[header, ...pages])
-        BaseArrived(base, session: queue.session.number),
+        BaseArrived(
+          base,
+          session: queue.session.number,
+          from: switch (results) {
+            CloudResults.liveQueries => const LiveResult(),
+            CloudResults.thisDevicesReads =>
+              ReadOfThisDevice(queue.session.readStart),
+          },
+        ),
     ];
     _forgetCloud(digest);
     _strategies[digest] = strategy;

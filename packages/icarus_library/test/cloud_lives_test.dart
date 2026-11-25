@@ -135,7 +135,7 @@ void main() {
         ),
       );
       expect(client.queue.landed, isEmpty);
-      expect(client.queue.shown.pageRead('page-a'), const ReadOwed());
+      expect(client.queue.shown.pageRead('page-a'), owed());
       expect(
         client.step(BatchClaimed(clientId: clientId, opIds: ['move'], at: now)),
         isA<NotApplicable>(),
@@ -195,10 +195,21 @@ void main() {
     test('a page list of the life the batch named does not pay the debt: it '
         'is from before the strategy was replaced', () {
       final client = refused();
-      client.arrive(headerReadOf(initialRows()));
+      expect(
+        notApplicable(
+          client.step(
+            BaseArrived(
+              headerReadOf(initialRows()),
+              session: client.queue.session.number,
+              from: client.beginRead(),
+            ),
+          ),
+        ),
+        isA<OlderResult>(),
+      );
       expect(
         client.queue.shown.list,
-        ReadOwed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
+        owed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
       );
       expect(client.view('later').sendable, isFalse);
     });
@@ -212,7 +223,7 @@ void main() {
       });
       expect(
         (read as ShownRead).shown.list,
-        ReadOwed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
+        owed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
       );
     });
   });
@@ -281,6 +292,7 @@ void main() {
         final read = decodeEntry(
           entry.place,
           jsonDecode(jsonEncode(entryToJson(entry))),
+          sendable: true,
         );
         expect((read as Read<QueueEntry>).value, entry);
         expect(entry.strategyLife, strategyCreatedAt.millisecondsSinceEpoch);
@@ -328,6 +340,7 @@ void main() {
               lineupGroups: const [],
             ),
             session: session,
+            from: await readStartOf(store),
           ),
         ]),
         isA<Refused<Recorded, CommitRefusal>>().having(
@@ -456,6 +469,7 @@ void main() {
               lineupGroups: const [],
             ),
             session: session,
+            from: await readStartOf(store),
           ),
         ]),
         isA<Refused<Recorded, CommitRefusal>>().having(
@@ -542,7 +556,7 @@ void main() {
       final queue = (await syncOf(store)).queue;
       expect(
         queue.shown.pageRead('page-a'),
-        const ReadRefused('ResultWithoutLife(e1)'),
+        refusedRead('ResultWithoutLife(e1)'),
       );
       expect(Tally.of(queue, now).readsRefused, 1);
     });
@@ -558,7 +572,12 @@ void main() {
         store = await openCloudStore(MemoryEngine(storage));
         await recordAll(store, [const AppRestarted(build: build)]);
         savedValue(
-          await store.commitAs(testAccount, strategyId, movePatch('move')),
+          await store.commitAs(
+            testAccount,
+            strategyId,
+            movePatch('move'),
+            seen: await seenIn(store),
+          ),
         );
         final claimed = await recordAll(store, [
           BatchClaimed(clientId: clientId, opIds: const ['move'], at: now),
@@ -580,7 +599,7 @@ void main() {
       store = await openCloudStore(MemoryEngine(storage));
       expect(
         (await syncOf(store)).queue.shown.list,
-        const ReadRefused('ResultOutOfPlace(x)'),
+        refusedRead('ResultOutOfPlace(x)'),
       );
     });
   });
@@ -653,7 +672,7 @@ void main() {
           ),
         ),
       );
-      expect(client.queue.shown.pageRead('page-a'), const ReadOwed());
+      expect(client.queue.shown.pageRead('page-a'), owed());
       expect(client.queue.shown.content.containsKey('page-a'), isTrue);
       expect(
         client.view('later').holds,
@@ -672,7 +691,12 @@ void main() {
       await addCloud(store, initialRows());
       await recordAll(store, [const AppRestarted(build: build)]);
       savedValue(
-        await store.commitAs(testAccount, strategyId, movePatch('move')),
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('move'),
+          seen: await seenIn(store),
+        ),
       );
       final claimed = await recordAll(store, [
         BatchClaimed(clientId: clientId, opIds: const ['move'], at: now),
@@ -685,7 +709,7 @@ void main() {
       store = await openCloudStore(MemoryEngine(storage));
       expect(
         (await syncOf(store)).queue.shown.list,
-        ReadOwed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
+        owed(unlessLife: strategyCreatedAt.millisecondsSinceEpoch),
       );
     });
   });
@@ -864,6 +888,7 @@ void main() {
             lineupGroups: const [],
           ),
           session: session,
+          from: await readStartOf(store),
         ),
       ]);
       final pageA = await store.readPage(strategyId, 'page-a');
