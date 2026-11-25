@@ -1,3 +1,11 @@
+import 'dart:async';
+import 'package:icarus/collab/community_models.dart';
+import 'package:icarus/collab/community_repository.dart';
+import 'package:icarus/const/routes.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/services/unsaved_strategy_guard.dart';
+import 'package:icarus/widgets/community/community_link.dart';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -361,6 +369,93 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
     });
   });
+
+  group('leaving an editor its own save dialog covers', () {
+    late Directory tempDir;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('icarus-mouse-nav-');
+      Hive.init(tempDir.path);
+      await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+      await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
+      await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
+    });
+
+    tearDown(() async {
+      await Hive.close();
+      await tempDir.delete(recursive: true);
+    });
+
+    testWidgets(
+        'a link to a removed post, answered with Don\'t save while the save '
+        'dialog of a Home click waits over the editor, ends on the library',
+        (tester) async {
+      final strategies = _UnsavedStrategies();
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+            isCloudWorkspaceAvailableProvider.overrideWithValue(true),
+            strategyProvider.overrideWith(() => strategies),
+            authProvider.overrideWith(_SignedOut.new),
+            communityRepositoryProvider.overrideWithValue(_RemovedPosts()),
+          ],
+          child: ToastificationWrapper(
+            child: ShadApp(
+            navigatorKey: appNavigatorKey,
+            navigatorObservers: [mouseNavigationRouteObserver],
+            builder: (context, child) {
+              container = ProviderScope.containerOf(context);
+              return MouseNavigation(child: child!);
+            },
+            home: const Scaffold(body: Text('library')),
+          ),
+          ),
+        ),
+      );
+      late BuildContext editor;
+      late WidgetRef editorRef;
+      unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+        settings: const RouteSettings(name: Routes.strategyView),
+        builder: (_) => Scaffold(
+          body: Consumer(builder: (context, ref, _) {
+            editor = context;
+            editorRef = ref;
+            return const Text('editor');
+          }),
+        ),
+      )));
+      await tester.pumpAndSettle();
+      strategies.show('editor-id', StrategySource.local);
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      await tester.pump();
+
+      final home = guardUnsavedStrategyExit(
+        context: editor,
+        ref: editorRef,
+        source: 'mouse-navigation-test-home',
+        onContinue: () async {
+          Navigator.pop(editor);
+          await strategies.clearCurrentStrategy();
+        },
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+
+      container.read(communityPostToOpenProvider.notifier).state = 'gone';
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsNWidgets(2));
+      await tester.tap(find.text("Don't save").last);
+      await tester.pumpAndSettle();
+
+      expect(await home, isFalse);
+      expect(find.text('Save changes?'), findsNothing);
+      expect(find.text('editor', skipOffstage: false), findsNothing);
+      expect(find.text('library'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 10));
+    });
+  });
 }
 
 /// Records which store each open goes through, without touching either.
@@ -410,4 +505,28 @@ class _RecordingStrategies extends StrategyProvider {
     show(id, StrategySource.cloud);
     return true;
   }
+}
+
+class _UnsavedStrategies extends _RecordingStrategies {
+  @override
+  Future<bool> flushPendingAutosaveBeforeExit() async => false;
+
+  @override
+  void cancelPendingSave() {}
+}
+
+final class _SignedOut extends AuthProvider {
+  @override
+  AppAuthState build() => AppAuthState.fromSession(null);
+}
+
+final class _RemovedPosts implements CommunityRepository {
+  @override
+  Future<({CommunityPost post, CommunityPostStatus status})?> fetchPost(
+    String postPublicId,
+  ) async =>
+      null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

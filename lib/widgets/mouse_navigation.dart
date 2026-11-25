@@ -44,6 +44,10 @@ class MouseNavigationRouteObserver extends NavigatorObserver {
 
   Route<dynamic>? get topRoute => _stack.isEmpty ? null : _stack.last;
 
+  Route<dynamic>? get editorRoute => _stack
+      .where((route) => route.settings.name == Routes.strategyView)
+      .lastOrNull;
+
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _stack.add(route);
@@ -260,11 +264,9 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     NavigatorState navigator,
     String source,
   ) async {
-    final bool inStrategyRoute =
-        mouseNavigationRouteObserver.topRoute?.settings.name ==
-            Routes.strategyView;
+    final editor = mouseNavigationRouteObserver.editorRoute;
     final bool strategyOpen = ref.read(strategyProvider).stratName != null;
-    if (!strategyOpen && !inStrategyRoute) return mounted;
+    if (!strategyOpen && editor == null) return mounted;
     final bool left = await guardUnsavedStrategyExit(
       context: navigator.context,
       ref: ref,
@@ -272,11 +274,20 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       onContinue: () async {
         _resetStrategyUiState();
         await ref.read(strategyProvider.notifier).clearCurrentStrategy();
-        if (inStrategyRoute && navigator.mounted) navigator.pop();
+        _closeEditor(navigator, editor);
         forgetCommunityPost(ref, null);
       },
     );
     return left && mounted;
+  }
+
+  void _closeEditor(NavigatorState navigator, Route<dynamic>? editor) {
+    if (editor == null || !editor.isActive || !navigator.mounted) return;
+    if (editor.isCurrent) {
+      navigator.pop();
+    } else {
+      navigator.removeRoute(editor);
+    }
   }
 
   @override
@@ -437,14 +448,12 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     final navigator = appNavigatorKey.currentState;
     if (navigator == null || !mounted) return false;
 
-    final bool inStrategyRoute =
-        mouseNavigationRouteObserver.topRoute?.settings.name ==
-            Routes.strategyView;
+    final editor = mouseNavigationRouteObserver.editorRoute;
     final bool strategyOpen = ref.read(strategyProvider).stratName != null;
 
     switch (target) {
       case _FolderLocation(:final folderId):
-        if (strategyOpen || inStrategyRoute) {
+        if (strategyOpen || editor != null) {
           final bool left = await guardUnsavedStrategyExit(
             context: navigator.context,
             ref: ref,
@@ -452,9 +461,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             onContinue: () async {
               _resetStrategyUiState();
               await ref.read(strategyProvider.notifier).clearCurrentStrategy();
-              if (inStrategyRoute && navigator.mounted) {
-                navigator.pop();
-              }
+              _closeEditor(navigator, editor);
             },
           );
           if (!left || !mounted) return false;

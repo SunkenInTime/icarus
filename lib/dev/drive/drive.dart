@@ -108,7 +108,7 @@
 //   {"logLineups": tag}                {"logImages": tag}
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
-//   {"expectText": t, "count": n}      fails unless t is on screen n times
+//   {"expectText": t, "count": n}      fails unless t is on screen n times  {"expectTopRoute": name}  unless no route covers name
 //   {"expectSelected": n}              fails unless n items are selected
 //   {"expectOpened": [urls]}           fails unless these are the links opened so
 //                                      far, in order; a run opens no browser
@@ -2918,6 +2918,11 @@ Future<void> _run(Map<String, dynamic> step) async {
       final selected = c.read(canvasSelectionProvider).length;
       if (selected != value) {
         throw StateError('$selected selected, expected $value');
+      }
+    case 'expectTopRoute':
+      final top = mouseNavigationRouteObserver.topRoute?.settings.name;
+      if (top != value) {
+        throw StateError('the top route is $top, expected $value');
       }
     case 'expectText':
       final count = _countOf(
