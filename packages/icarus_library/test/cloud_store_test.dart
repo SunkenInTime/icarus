@@ -836,6 +836,21 @@ void main() {
     );
   });
 
+  test('reads owed, refused or never made do not stop a strategy with no '
+      'unsent work being removed', () async {
+    final store = await openCloudStore(MemoryEngine(MemoryStorage()));
+    await addCloud(store, initialRows());
+    await recordAll(store, [
+      const AppRestarted(build: build),
+      const ResultRefused(page: 'page-a', problem: 'the test refused it'),
+      const ResultRefused(page: null, problem: 'the test refused it'),
+    ]);
+    expect(
+      await store.editLibrary([const RemoveStrategy(strategyId)]),
+      isA<Saved<LibraryEdited, LibraryRefusal>>(),
+    );
+  });
+
   group('storage review', () {
     LiveElement e1At(String page, {required int revision, double x = 0}) {
       final row = initialRows().element('e1')! as LiveElement;

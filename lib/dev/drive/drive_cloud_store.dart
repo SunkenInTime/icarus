@@ -555,10 +555,11 @@ Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
       Found(value: StrategyContent(sync: final CloudStrategy cloud)) => cloud,
       final other => throw StateError('$strategyId could not be read: $other'),
     };
-    final viewer = _sender(c).readMemory(strategyId).viewer;
+    final viewer = _sender(c).accessRung(strategyId);
     if (standingOf(cloud.queue) == Standing.editAccessLost &&
         cloud.queue.entries.isNotEmpty &&
-        viewer?.lossAttempt == cloud.queue.strategy.accessLostAt) {
+        viewer != null &&
+        viewer.cannot == null) {
       return 'CLOUDSTORE $strategyId is held for lost edit access with '
           '${cloud.queue.entries.length} entries unsent, and its page list '
           'said this account can only view it';

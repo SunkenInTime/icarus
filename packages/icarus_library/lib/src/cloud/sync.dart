@@ -29,6 +29,7 @@ final class Tally {
     this.readsOwed = 0,
     this.readsRefused = 0,
     this.setAside = 0,
+    this.notYetRead = 0,
   }) : waiting = Map.unmodifiable({
          for (final MapEntry(:key, :value) in waiting.entries)
            if (value > 0) key: value,
@@ -49,6 +50,7 @@ final class Tally {
       readsOwed: owedReads(queue).length - refusedReads(queue),
       readsRefused: refusedReads(queue),
       setAside: queue.strategy.setAside.count,
+      notYetRead: pagesNeverRead(queue).length,
     );
   }
 
@@ -90,6 +92,12 @@ final class Tally {
             ? fields.whole('setAside')
             : 0;
         if (setAside < 0) fields.reject('expected a count of edits set aside');
+        final notYetRead = fields.has('notYetRead')
+            ? fields.whole('notYetRead')
+            : 0;
+        if (notYetRead < 0) {
+          fields.reject('expected a count of pages not yet read');
+        }
         return () => Tally(
           standing: standing!,
           waiting: waiting,
@@ -98,6 +106,7 @@ final class Tally {
           readsOwed: readsOwed,
           readsRefused: readsRefused,
           setAside: setAside,
+          notYetRead: notYetRead,
         );
       });
 
@@ -108,6 +117,7 @@ final class Tally {
   final int readsOwed;
   final int readsRefused;
   final int setAside;
+  final int notYetRead;
 
   int get needingYou => attention.values.fold(0, (sum, count) => sum + count);
 
@@ -123,6 +133,8 @@ final class Tally {
 
   int get readsNeeded => readsOwed + readsRefused;
 
+  int get unsentWork => stillGoing + needingYou + unreadable + setAside;
+
   Tally plus(Tally other) => Tally(
     standing: _worse(standing, other.standing),
     waiting: {
@@ -137,6 +149,7 @@ final class Tally {
     readsOwed: readsOwed + other.readsOwed,
     readsRefused: readsRefused + other.readsRefused,
     setAside: setAside + other.setAside,
+    notYetRead: notYetRead + other.notYetRead,
   );
 
   static Standing _worse(Standing a, Standing b) => a.index >= b.index ? a : b;
@@ -155,6 +168,7 @@ final class Tally {
     if (readsOwed > 0) 'readsOwed': readsOwed,
     if (readsRefused > 0) 'readsRefused': readsRefused,
     if (setAside > 0) 'setAside': setAside,
+    if (notYetRead > 0) 'notYetRead': notYetRead,
   };
 
   @override
@@ -166,7 +180,8 @@ final class Tally {
       other.unreadable == unreadable &&
       other.readsOwed == readsOwed &&
       other.readsRefused == readsRefused &&
-      other.setAside == setAside;
+      other.setAside == setAside &&
+      other.notYetRead == notYetRead;
 
   @override
   int get hashCode =>
@@ -272,11 +287,11 @@ Face? _ownFace(Tally tally, Network network) => switch (tally) {
   Tally(standing: Standing.deletedOnServer) => Face.deletedOnServer,
   Tally(standing: Standing.editAccessLost) => Face.editAccessLost,
   Tally(standing: Standing.held) => Face.unreadableWork,
+  Tally(standing: Standing.upgradeRequired) => Face.upgradeRequired,
   Tally(unreadable: > 0) || Tally(readsRefused: > 0) => Face.unreadableWork,
   Tally(setAside: > 0) => Face.strategyReplaced,
   Tally(needingYou: > 0) => Face.needsYou,
-  Tally(total: 0) => null,
-  Tally(standing: Standing.upgradeRequired) => Face.upgradeRequired,
+  Tally(total: 0, notYetRead: 0) => null,
   _ when network == Network.offline => Face.offline,
   Tally(:final waiting) when waiting.containsKey(Underway.answerUnknown) =>
     Face.answerUnknown,

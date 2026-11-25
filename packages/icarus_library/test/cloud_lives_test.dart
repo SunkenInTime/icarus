@@ -649,6 +649,43 @@ void main() {
       );
     });
 
+    test('each page the list shows that has not had its first read is '
+        'counted, so the strategy is not shown as saved, and its read '
+        'clears it', () {
+      final client = Client()
+        ..queue = CloudQueue.start(build: build)
+        ..read(initialRows(), pages: const []);
+      final pages = [for (final page in initialRows().pages) page.publicId];
+      expect(pages, hasLength(greaterThan(1)));
+      expect(client.queue.entries, isEmpty);
+      final unread = Tally.of(client.queue, now);
+      expect(unread.notYetRead, pages.length);
+      expect(unread.total, 0);
+      expect(
+        Tally.decode(jsonDecode(jsonEncode(unread.toJson()))),
+        isA<Read<Tally>>().having((read) => read.value, 'value', unread),
+      );
+      expect(
+        syncStateOf(
+          OwnedBy(testAccount),
+          Tally.of(client.queue, now),
+          network: Network.online,
+          signedIn: SignedInAs(testAccount),
+        ),
+        isA<Outstanding>().having(
+          (state) => state.face,
+          'face',
+          Face.awaitingResult,
+        ),
+      );
+      client.arrive(pageReadOf(initialRows(), pages.first));
+      expect(Tally.of(client.queue, now).notYetRead, pages.length - 1);
+      for (final page in pages.skip(1)) {
+        client.arrive(pageReadOf(initialRows(), page));
+      }
+      expect(Tally.of(client.queue, now).notYetRead, 0);
+    });
+
     test('an answer that the strategy is gone pays the debt', () {
       final client = discardedTheLastRefusedOp();
       client.arrive(const StrategyGone());

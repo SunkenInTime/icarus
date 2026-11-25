@@ -46,15 +46,15 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
       RowPageGone() => Kind.rowPageGone,
       RetiredFormat() => Kind.retired,
     },
-    Waiting() || Unanswered()
+    Waiting() || Unanswered() || RefusedAgain()
         when view.holds.any((hold) => hold is BehindEntry) =>
       Kind.heldBehindEntry,
-    Waiting() || Unanswered()
+    Waiting() || Unanswered() || RefusedAgain()
         when view.holds.any(
           (hold) => hold is AwaitingResult && hold.subject is RowResult,
         ) =>
       Kind.awaitingRowResult,
-    Waiting() || Unanswered()
+    Waiting() || Unanswered() || RefusedAgain()
         when view.holds.any(
           (hold) => hold is AwaitingResult && hold.subject is PageResult,
         ) =>
@@ -62,7 +62,7 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
     Unanswered() when view.holds.any((hold) => hold is UntilRetryTime) =>
       Kind.unansweredUntilRetry,
     Unanswered() => Kind.unansweredReady,
-    Waiting() => Kind.waiting,
+    Waiting() || RefusedAgain() => Kind.waiting,
   },
 };
 

@@ -517,7 +517,13 @@ Map<String, Object?> attemptToJson(AttemptFact attempt) => {
       },
       'at': _millis(at),
     },
-    AttemptRefusedWhole(:final refusal) => {'refused': refusal.name},
+    AttemptRefusedWhole(:final refusal, :final at) => {
+      'refused': refusal.name,
+      'at': ?switch (at) {
+        final at? => _millis(at),
+        null => null,
+      },
+    },
   },
 };
 
@@ -562,6 +568,9 @@ AttemptOutcome? _outcome(Object? raw) => switch (raw) {
       TransportCut(TransportFailure.values.asNameMap()[name]!),
       _time(at),
     ),
+  {'refused': final String name, 'at': final num at}
+      when BatchRefusal.values.asNameMap().containsKey(name) && _isTime(at) =>
+    AttemptRefusedWhole(BatchRefusal.values.asNameMap()[name]!, at: _time(at)),
   {'refused': final String name}
       when BatchRefusal.values.asNameMap().containsKey(name) =>
     AttemptRefusedWhole(BatchRefusal.values.asNameMap()[name]!),
@@ -673,7 +682,7 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
     final UpgradeTold upgrade = switch (fields.json['upgradeTold']) {
       null => const NoUpgradeTold(),
       {'build': final String build, 'attempt': final num attempt}
-          when isSafeWhole(attempt) && attempt >= 1 =>
+          when isSafeWhole(attempt) && attempt >= 0 =>
         UpgradeToldTo(build, attempt: attempt.toInt()),
       _ => () {
         fields.reject('an unreadable upgrade request');

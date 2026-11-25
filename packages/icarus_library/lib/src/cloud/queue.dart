@@ -281,6 +281,25 @@ final class Sending extends PendingState {
   String toString() => 'sending in $attempt';
 }
 
+final class RefusedAgain extends PendingState {
+  const RefusedAgain({required this.refusals, required this.backoff});
+
+  final int refusals;
+  final Backoff backoff;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RefusedAgain &&
+      other.refusals == refusals &&
+      other.backoff == backoff;
+
+  @override
+  int get hashCode => Object.hash(RefusedAgain, refusals, backoff);
+
+  @override
+  String toString() => 'refused and sent again ($refusals refusals, $backoff)';
+}
+
 final class Unanswered extends PendingState {
   const Unanswered({
     required this.clientId,
@@ -623,7 +642,7 @@ final class EntryView {
   bool get sendable =>
       holds.isEmpty &&
       switch (state) {
-        Waiting() || Unanswered() => true,
+        Waiting() || Unanswered() || RefusedAgain() => true,
         Sending() || NeedsUser() => false,
       };
 }
@@ -1300,8 +1319,16 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         attempt,
         AttemptFailed(TransportCut(failure), at),
       );
-    case BatchRefused(:final attempt, :final refusal):
-      return _batchRefused(edit, attempt, refusal);
+    case BatchRefused(:final attempt, :final refusal, :final at):
+      return _batchRefused(edit, attempt, refusal, at);
+    case ReadRefusedForUpgrade(:final build):
+      edit.strategy = edit.strategy.copyWith(
+        upgradeTold: UpgradeToldTo(build, attempt: edit.nextAttempt - 1),
+      );
+      if (build == edit.session.build) {
+        edit.effects.add(const HoldSendingForUpgrade());
+      }
+      return edit.done();
     case OpAnswered(:final attempt, :final answer):
       return _answered(edit, attempt, answer);
     case AppRestarted(:final build):
@@ -1413,11 +1440,16 @@ void _dropRefusedBases(_Edit edit, AttemptFact refused) {
   }
 }
 
-Step _batchRefused(_Edit edit, int attempt, BatchRefusal refusal) {
+Step _batchRefused(
+  _Edit edit,
+  int attempt,
+  BatchRefusal refusal,
+  DateTime? at,
+) {
   final fact = edit.attempts[attempt];
   if (fact == null) return NotApplicable(edit.original, NoSuchAttempt(attempt));
   if (fact.outcome is! AttemptRefusedWhole) {
-    edit.setAttempt(fact.withOutcome(AttemptRefusedWhole(refusal)));
+    edit.setAttempt(fact.withOutcome(AttemptRefusedWhole(refusal, at: at)));
   }
   if (refusal == BatchRefusal.uncheckedTooLate) _dropRefusedBases(edit, fact);
   switch (refusal) {
@@ -2242,7 +2274,11 @@ Step _claim(
     }
     first ??= entry;
     final named = switch ((view.state, _judge(queue, entry, now))) {
-      (Waiting(), _NameAt(:final revision?)) => _named(edit, entry, revision),
+      (Waiting() || RefusedAgain(), _NameAt(:final revision?)) => _named(
+        edit,
+        entry,
+        revision,
+      ),
       _ => entry,
     };
     final sent = sendable(queue, named, elapsed);

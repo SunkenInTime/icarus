@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/codec.dart';
 import 'package:icarus_library/src/cloud/fold.dart';
 import 'package:icarus_library/src/cloud/op_facts.dart'
     show CopyExpanded, CopyNotExpanded, expandCopy;
@@ -743,6 +746,62 @@ void main() {
       );
     });
 
+    test('a batch refused in a way the queue sends again climbs the lost-send '
+        'ladder: it waits its backoff, shows as unsent, and needs the user at '
+        'the bound; one refused before refusals had times does not count', () {
+      final client = online();
+      client.edit(movePatch('move'));
+      final untimed = client.claim(['move']);
+      client.must(BatchRefused(untimed, BatchRefusal.uncheckedTooLate));
+      expect(stateOf(client, 'move'), isA<Waiting>());
+      for (var n = 1; n < retriesBeforePause; n++) {
+        final attempt = client.claim(['move']);
+        final at = now.add(Duration(minutes: n));
+        client.must(
+          BatchRefused(attempt, BatchRefusal.editAccessRemoved, at: at),
+        );
+        client.must(EditAccessConfirmed(afterAttempt: attempt));
+        expect(
+          stateOf(client, 'move'),
+          isA<RefusedAgain>()
+              .having((state) => state.refusals, 'refusals', n)
+              .having(
+                (state) => state.backoff,
+                'backoff',
+                RetryAfter(retryTimeAfter(at, n), failedAt: at),
+              ),
+        );
+        expect(
+          Tally.of(client.queue, at).waiting,
+          {Underway.unsent: 1},
+        );
+      }
+      final last = client.claim(['move']);
+      client.must(
+        BatchRefused(
+          last,
+          BatchRefusal.uncheckedTooLate,
+          at: now.add(const Duration(hours: 1)),
+        ),
+      );
+      expect(
+        stateOf(client, 'move'),
+        const NeedsUser(RetriesExhausted()),
+      );
+      final stored = attemptFromText(
+        last,
+        jsonEncode(attemptToJson(client.queue.attempts[last]!)),
+      );
+      expect(
+        stored,
+        isA<CloudRowRead<AttemptFact>>().having(
+          (read) => read.value,
+          'value',
+          client.queue.attempts[last],
+        ),
+      );
+    });
+
     test('a late access refusal does not undo a newer confirmation, and '
         'nothing undoes a deletion', () {
       final client = online();
@@ -783,6 +842,80 @@ void main() {
         client.must(const AppRestarted(build: 'build-3'));
         expect(standingOf(client.queue), Standing.good);
       }
+    });
+
+    test('a read refused for an upgrade shows the upgrade before any batch '
+        'was sent, holds sending, keeps across a write, and a newer build '
+        'clears it', () {
+      final client = online();
+      client.edit(movePatch('waiting'));
+      final told = client.step(const ReadRefusedForUpgrade(build: build));
+      expect(
+        told,
+        isA<Stepped>().having(
+          (step) => step.effects,
+          'effects',
+          contains(isA<HoldSendingForUpgrade>()),
+        ),
+      );
+      expect(standingOf(client.queue), Standing.upgradeRequired);
+      expect(
+        syncStateOf(
+          OwnedBy(testAccount),
+          Tally.of(client.queue, now),
+          network: Network.online,
+          signedIn: SignedInAs(testAccount),
+        ),
+        isA<Outstanding>().having(
+          (state) => state.face,
+          'face',
+          Face.upgradeRequired,
+        ),
+      );
+      final stored = factsFromText(
+        jsonEncode(factsToJson(testAccount, client.queue.strategy)),
+      );
+      expect(
+        stored,
+        isA<CloudRowRead<CloudFacts>>().having(
+          (read) => read.value.facts,
+          'facts',
+          client.queue.strategy,
+        ),
+      );
+      client.must(const AppRestarted(build: 'build-newer'));
+      expect(standingOf(client.queue), Standing.good);
+    });
+
+    test('while the run is held for an upgrade, that is the face, though an '
+        'edit the server refused needs the user', () {
+      final client = online();
+      client.edit(movePatch('refused'));
+      final attempt = client.claim(['refused']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'refused',
+            RejectionReason.mergeInvalid,
+            NoServerCopy(),
+          ),
+        ),
+      );
+      client.must(const ReadRefusedForUpgrade(build: build));
+      expect(
+        syncStateOf(
+          OwnedBy(testAccount),
+          Tally.of(client.queue, now),
+          network: Network.online,
+          signedIn: SignedInAs(testAccount),
+        ),
+        isA<Outstanding>().having(
+          (state) => state.face,
+          'face',
+          Face.upgradeRequired,
+        ),
+      );
     });
 
     test('an empty queue on a deleted strategy is not plain all saved', () {

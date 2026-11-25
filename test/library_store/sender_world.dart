@@ -7,6 +7,7 @@ import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
@@ -38,6 +39,7 @@ final class ServerCall {
   final ServerTimeAsk serverTime;
   final Map<String, int> lives;
   final int? strategyLife;
+  DateTime? at;
 
   int? get basis => switch (serverTime) {
         ServerTimeAsked(:final basis) => basis,
@@ -302,7 +304,7 @@ final class FakeServer {
       serverTime,
       lives,
       strategyLife,
-    );
+    )..at = clock?.call();
     calls.add(call);
     log.add('send ${call.opIds.join(' ')}');
     onCall?.call(call);
@@ -356,11 +358,28 @@ final class FakeServer {
     );
   }
 
+  final floorBroken = <String>[];
+  final _lastRead = <(String, String?), DateTime>{};
+
+  void appStarted() => _lastRead.clear();
+
   Future<StoreReadOutcome> _read(ReadCall call) {
     call
       ..at = clock?.call()
       ..why = whyNow?.call()
       ..role = roles[call.strategyId] ?? StoreReadRole.owner;
+    if (call.at case final at?) {
+      final key = (call.strategyId, call.page);
+      if (_lastRead[key] case final last?
+          when at.difference(last) < timing.readFloor) {
+        floorBroken.add(
+          '$call of ${call.strategyId} read at ${at.toIso8601String()}, '
+          'only ${at.difference(last).inMilliseconds} ms after the read at '
+          '${last.toIso8601String()}',
+        );
+      }
+      _lastRead[key] = at;
+    }
     readCalls.add(call);
     log.add('$call');
     onRead?.call(call);
@@ -489,6 +508,10 @@ final class _Slept {
   var value = Duration.zero;
 }
 
+final class _Shows {
+  String? value;
+}
+
 final class SlowSenderStore extends SenderStore {
   SlowSenderStore(super.store) : super(keepsAllReports: true);
 
@@ -499,6 +522,9 @@ final class SlowSenderStore extends SenderStore {
   var readsThrow = false;
   var claimWaits = Duration.zero;
   var refusesRefusedResult = 0;
+  var refusesBaseWrites = 0;
+  var rejectsBasesOutOfPlace = 0;
+  var refusesUpgradeWrites = 0;
 
   @override
   Future<ClaimResult> claim(
@@ -539,6 +565,21 @@ final class SlowSenderStore extends SenderStore {
     if (throwsOnBase && events.any((event) => event is BaseArrived)) {
       throwsOnBase = false;
       throw StateError('the store broke');
+    }
+    if (refusesBaseWrites > 0 && events.any((event) => event is BaseArrived)) {
+      refusesBaseWrites--;
+      return const WriteTroubled(NotWrittenNow('the test refused the write'));
+    }
+    if (rejectsBasesOutOfPlace > 0 &&
+        events.any((event) => event is BaseArrived)) {
+      rejectsBasesOutOfPlace--;
+      return const WriteTroubled(
+          ResultNotStored('the test put it out of place'));
+    }
+    if (refusesUpgradeWrites > 0 &&
+        events.any((event) => event is ReadRefusedForUpgrade)) {
+      refusesUpgradeWrites--;
+      return const WriteTroubled(NotWrittenNow('the test refused the write'));
     }
     if (refusesRefusedResult > 0 &&
         events.any((event) => event is ResultRefused)) {
@@ -586,6 +627,16 @@ final class World {
   final CloudSender sender;
   late _Flag dropsConnectionLost;
   late _Slept _slept;
+  late _Shows _shows;
+
+  String? get editorShows => _shows.value;
+
+  set editorShows(String? strategy) => _shows.value = strategy;
+
+  void openInEditor(String? strategy) {
+    _shows.value = strategy;
+    sender.editorOpened(strategy);
+  }
 
   void sleep(Duration time) {
     _slept.value += time;
@@ -650,17 +701,19 @@ final class World {
     FakeServer? server,
     String clientId = 'client-1',
     Snapshot? startingWith,
+    String build = 'test-build',
   }) {
     final inputs = startingWith ??
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
     final dropsConnectionLost = _Flag();
     final slept = _Slept();
+    final shows = _Shows();
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
     LibraryStore? store;
     LibraryStore.open(
       engine,
       canRead: appCanRead,
-      build: 'test-build',
+      build: build,
       clock: () => start.add(async.elapsed),
     ).then(
       (opened) => store = switch (opened) {
@@ -678,18 +731,20 @@ final class World {
       store: SlowSenderStore(store!),
       send: fake.send,
       reads: fake.reads,
-      build: 'test-build',
+      build: build,
       clientId: clientId,
       inputs: inputs,
       timing: timing,
       clock: () => start.add(async.elapsed),
       elapsed: () => async.elapsed - slept.value,
       recordsConnectionLost: () => !dropsConnectionLost.value,
+      editorShows: () => shows.value,
     );
     fake.whyNow = () => sender.reading;
     final world = World._(async, engine, store!, fake, sender)
       ..dropsConnectionLost = dropsConnectionLost
       .._slept = slept
+      .._shows = shows
       .._account = inputs.account
       .._connection = inputs.connection
       .._authChanges = inputs.signIns
@@ -1037,6 +1092,11 @@ final class World {
   List<EntryView> views([String strategy = strategyId]) =>
       cloud(strategy).views.values.toList();
 
+  bool holds([String strategy = strategyId]) => (store.library as LibraryOpen)
+      .list
+      .strategies
+      .any((summary) => summary.publicId == strategy);
+
   Face? face([String strategy = strategyId]) {
     final summary = (store.library as LibraryOpen)
         .list
@@ -1075,6 +1135,20 @@ final class World {
       '${sender.view.strategies[strategy]}';
 }
 
+void expectTheLadder(List<Duration> reads, {Object? reason}) {
+  for (var n = 1; n < reads.length; n++) {
+    final rung = timing.settleAfter(n);
+    expect(
+      reads[n] - reads[n - 1],
+      allOf(
+        greaterThanOrEqualTo(rung),
+        lessThan(rung + const Duration(seconds: 1)),
+      ),
+      reason: 'read ${n + 1} of $reads${reason == null ? '' : ', $reason'}',
+    );
+  }
+}
+
 void inWorld(
   void Function(World world) body, {
   MemoryStorage? storage,
@@ -1082,16 +1156,24 @@ void inWorld(
   bool addStrategy = true,
   String clientId = 'client-1',
   bool keepOpen = false,
+  String build = 'test-build',
 }) {
   fakeAsync((async) {
+    server?.appStarted();
     final world = World.open(
       async,
       storage: storage,
       server: server,
       clientId: clientId,
+      build: build,
     );
     if (addStrategy) world.addServedStrategy();
     body(world);
+    expect(
+      world.server.floorBroken,
+      isEmpty,
+      reason: 'a subject was read twice inside the floor',
+    );
     if (!keepOpen) {
       world.sender.dispose();
       world.store.close();
