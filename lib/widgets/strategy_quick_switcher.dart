@@ -51,6 +51,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   bool _isEditingName = false;
   bool _isRenaming = false;
   String? _originalName;
+  String? _renaming;
 
   @override
   void initState() {
@@ -126,6 +127,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
 
     _closePortal();
     _originalName = currentName;
+    _renaming = currentStrategy.strategyId;
     _nameController.value = TextEditingValue(
       text: currentName,
       selection: TextSelection(baseOffset: 0, extentOffset: currentName.length),
@@ -149,6 +151,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     }
 
     _originalName = null;
+    _renaming = null;
     setState(() {
       _isEditingName = false;
       _isRenaming = false;
@@ -158,11 +161,14 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
 
   Future<void> _commitEditingName() async {
     if (!_isEditingName || _isRenaming) return;
+    final renaming = _renaming;
+    if (renaming == null) return;
 
     final nextName = _nameController.text.trim();
     final originalName = _originalName ?? '';
     if (nextName == originalName) {
       _originalName = null;
+      _renaming = null;
       setState(() => _isEditingName = false);
       _nameFocusNode.unfocus();
       return;
@@ -188,9 +194,10 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     try {
       await ref
           .read(strategyProvider.notifier)
-          .renameStrategy(ref.read(strategyProvider).strategyId!, nextName);
+          .renameStrategy(renaming, nextName);
       if (!mounted) return;
       _originalName = null;
+      _renaming = null;
       setState(() {
         _isEditingName = false;
         _isRenaming = false;
@@ -281,6 +288,9 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(strategyProvider.select((state) => state.strategyId), (_, now) {
+      if (_isEditingName && now != _renaming) _cancelEditingName();
+    });
     final currentStrategy = ref.watch(strategyProvider);
     final currentStrategyId = currentStrategy.strategyId;
     if (currentStrategyId == null) {

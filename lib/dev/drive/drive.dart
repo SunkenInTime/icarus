@@ -887,6 +887,20 @@ void _typeInto(String text) {
   );
 }
 
+EditableTextState _focusedField() {
+  EditableTextState? focused;
+  void visit(Element element) {
+    if (element case StatefulElement(:final EditableTextState state)
+        when state.widget.focusNode.hasFocus) {
+      focused = state;
+    }
+    element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  return focused ?? (throw StateError('no text field has focus'));
+}
+
 Future<void> _frames([int count = 3]) async {
   for (var i = 0; i < count; i++) {
     SchedulerBinding.instance.scheduleFrame();
@@ -1944,6 +1958,19 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _frames();
     case 'letGoKey':
       _sendKeys([_keyUp(value as String)]);
+      await _frames();
+    case 'typeInFocused':
+      final text = value as String;
+      _focusedField().userUpdateTextEditingValue(
+        TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        ),
+        SelectionChangedCause.keyboard,
+      );
+      await _frames();
+    case 'submitFocused':
+      _focusedField().performAction(TextInputAction.done);
       await _frames();
     case 'typeText':
       _typeInto(value as String);
