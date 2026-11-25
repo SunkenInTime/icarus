@@ -6,9 +6,15 @@ A run passes only when every instance finished its script with `SUMMARY ... CLEA
 
 ## Tapping by text, key or icon
 
-`tapText`, `tapKey`, `tapIcon`, `tapWords` and `dragWords` take a match only when a tap on its middle would go where a person's tap would: the first gesture handler the hit test reaches at that point must be the match's own (the nearest one around it) or sit inside the match. A match nobody listens to counts when the first thing hit is the match or inside it. Its middle must also be inside the window. So a library tile under the editor, a label under the quick switcher's dismissal area, a control that is offstage or under `AbsorbPointer`, and a row the list has clipped are all refused, while the text of a disabled menu item counts, because the item takes the tap and does nothing, as it does for a person. `nth` counts the matches that can be tapped. A refusal says how many were found, how many can be tapped, which was asked for, and where the tap would go instead (or that the match is off screen). When the match taken is not the one at the same place in the tree, the log says so in a `TAP` line.
+`tapText`, `tapKey`, `tapIcon`, `tapWords` and `dragWords` tap a match only if a person pressing its middle would press that match: the press must be inside the window, and the first thing under it that takes a press (a gesture detector, button, text field or modal barrier; a listener that only follows the pointer does not count) must be the match's own or sit inside the match.
 
-Two cases the rule gets wrong on purpose: a control drawn at `Opacity(0)` still counts, as a person can click it too; and a label drawn on top of a sibling `InkWell` is refused even though a person could click it, so tap the `InkWell` by its key. Steps that send no tap, such as presence checks, hovers and doors, do not use this rule ([#770](https://github.com/SunkenInTime/icarus/issues/770)).
+So a library tile under the editor, a label under the quick switcher's dismissal area, a control that is offstage or under `AbsorbPointer`, a row the list has clipped, and anything off screen are refused. The text of a disabled menu item is tapped, because the item takes the press and does nothing, as it does for a person. `nth` counts only the matches that can be tapped. A refusal says how many matches were found, how many can be tapped, which one was asked for, and what would take the press instead (or that the match is off screen). When the match tapped is not the one at the same place in the tree, the log says so in a `TAP` line.
+
+The rule gets two cases wrong:
+- **Refused, though a person could click it:** a label drawn on top of a sibling `InkWell` that is not its ancestor. Tap the `InkWell` by its key (`tapKey`).
+- **Tapped, though a person cannot see it:** a control drawn at `Opacity(0)` still takes the press. A tap succeeding does not show that the control was visible; check what is on screen with a `shot` before relying on it.
+
+Steps that send no tap, such as presence checks, hovers and doors, do not use this rule ([#770](https://github.com/SunkenInTime/icarus/issues/770)).
 
 ## Windows
 
