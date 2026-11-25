@@ -327,6 +327,37 @@ void main() {
       );
     });
 
+    test('on page B survive a local move saved before any read, and are '
+        'encoded again by the first take on page A', () async {
+      shownTakesChecked = true;
+      final storage = MemoryStorage();
+      final first = await openCloudStore(MemoryEngine(storage));
+      await addCloud(first, initialRows());
+      await first.close();
+      final old = MemoryStorage(withOwedReads(storage.contents, {pageB}));
+      final store = await openCloudStore(MemoryEngine(old));
+      savedValue(
+        await store.commitAs(
+          testAccount,
+          strategyId,
+          movePatch('local', x: 40),
+          seen: await seenIn(store),
+        ),
+      );
+      expect(storedGroup(old.contents, pageB), contains('"owed"'));
+      final opened = await recordAll(store, const [
+        AppRestarted(build: build),
+        ConnectionReturned(),
+      ]);
+      expect(opened.outcomes, everyElement(isA<ReportApplied>()));
+      await takePage(store, initialRows());
+      expect(storedGroup(old.contents, pageB), isNot(contains('"owed"')));
+      expect(
+        await storedRows(store, 'page-a'),
+        await rowsOnDisk(old, 'page-a'),
+      );
+    });
+
     test('on page B leave an update of page A taken, and are encoded only '
         'the first time', () async {
       final storage = MemoryStorage();

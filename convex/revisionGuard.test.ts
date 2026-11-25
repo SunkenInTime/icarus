@@ -159,6 +159,25 @@ describe("the revision guard every convex test runs under", () => {
     ).toEqual(["revision"]);
   });
 
+  test("refuses a replace that moves an element without raising its revision", async () => {
+    const { t, element } = await seeded();
+    const replacing = mutation({
+      args: {},
+      handler: async (ctx, args: { id: string; row: Row }) => {
+        const { _id, _creationTime, ...fields } = args.row;
+        await ctx.db.replace(
+          args.id as never,
+          { ...fields, sortIndex: 9 } as never,
+        );
+      },
+    }) as unknown as Invoked;
+    await expect(
+      t.run((ctx) =>
+        replacing._handler(ctx, { id: element._id, row: element }),
+      ),
+    ).rejects.toThrow(ContentChangedWithoutRevision);
+  });
+
   test("refuses a real write that lowers the revision and nothing else", async () => {
     const { t, element } = await seeded();
     const lowering = writing((row) => ({

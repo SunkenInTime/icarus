@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/op_facts.dart'
+    show liveContentOn, rowDigest;
 import 'package:test/test.dart';
 
 import 'random_page_server.dart';
@@ -41,6 +43,50 @@ Shown fromScratch(Shown shown) => Shown(
   fence: shown.fence,
 );
 
+void expectWhatTheServerSent(Shown shown, ArrivedBase base, String where) {
+  switch (base) {
+    case PageRead(:final page, :final elements, :final lineupGroups):
+      final pageId = page.publicId;
+      final sent = <Row>[...elements, ...lineupGroups];
+      expect(
+        shown.content[pageId],
+        liveContentOn(sent, pageId),
+        reason: '$where: content of $pageId',
+      );
+      for (final row in sent) {
+        final target = switch (row) {
+          ElementRow(:final publicId) => ElementTarget(publicId) as Target,
+          LineupGroupRow(:final publicId) => LineupTarget(publicId),
+          _ => throw StateError('not page content'),
+        };
+        expect(shown.rows[target]?.page, pageId, reason: '$where: $target');
+        expect(
+          shown.rows[target]?.digest,
+          rowDigest(row),
+          reason: '$where: $target',
+        );
+      }
+      final targets = {for (final row in sent) row.key};
+      expect(
+        [
+          for (final MapEntry(:key, :value) in shown.rows.entries)
+            if (value.page == pageId) key,
+        ].length,
+        targets.length,
+        reason: '$where: rows shown on $pageId',
+      );
+    case PageGone(:final pagePublicId):
+      expect(shown.content.containsKey(pagePublicId), isFalse, reason: where);
+      expect(
+        shown.rows.values.where((row) => row.page == pagePublicId),
+        isEmpty,
+        reason: where,
+      );
+    case HeaderRead() || StrategyGone():
+      break;
+  }
+}
+
 Map<String, int> runSeed(int seed, int steps) {
   final server = RandomServer(Random(seed));
   final delivered = <String, int>{};
@@ -59,6 +105,9 @@ Map<String, int> runSeed(int seed, int steps) {
     }
     for (final what in result.cases) {
       delivered[what] = (delivered[what] ?? 0) + 1;
+    }
+    if (!result.cases.contains('stale read')) {
+      expectWhatTheServerSent(cached, result.base, 'seed $seed step $step');
     }
     for (final MapEntry(key: target, value: row) in cached.rows.entries) {
       expect(row.digestedThisRun, isTrue, reason: 'seed $seed $target');

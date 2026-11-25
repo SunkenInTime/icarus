@@ -35,6 +35,57 @@ Future<String> takeInto(
   }
 }
 
+List<Object?> liveRows(
+  Iterable<ElementRow> elements,
+  Iterable<LineupGroupRow> lineupGroups,
+) => [
+  for (final row in <Row>[
+    ...elements,
+    ...lineupGroups,
+  ]..sort((a, b) => '${a.key}'.compareTo('${b.key}')))
+    if (row is LiveElement || row is LiveLineupGroup) row.toJson(),
+];
+
+Future<void> expectWhatTheServerSent(
+  LibraryStore store,
+  ArrivedBase base,
+  String where,
+) async {
+  switch (base) {
+    case PageRead(:final page, :final elements, :final lineupGroups):
+      final stored = pageOf(await store.readPage(strategyId, page.publicId));
+      expect(
+        liveRows(stored.elements, stored.lineupGroups),
+        liveRows(elements, lineupGroups),
+        reason: '$where: page ${page.publicId}',
+      );
+    case PageGone(:final pagePublicId):
+      final stored = await store.readPage(strategyId, pagePublicId);
+      if (stored case Found(:final value)) {
+        expect(
+          liveRows(value.elements, value.lineupGroups),
+          isEmpty,
+          reason: '$where: gone page $pagePublicId',
+        );
+      }
+    case HeaderRead(:final pages):
+      final stored = strategyOf(await store.readStrategy(strategyId));
+      expect(
+        [
+          for (final row in stored.pages)
+            if (row is LivePage) (row.publicId, row.sortIndex),
+        ],
+        [
+          for (final row in pages)
+            if (row is LivePage) (row.publicId, row.sortIndex),
+        ],
+        reason: '$where: page list',
+      );
+    case StrategyGone():
+      break;
+  }
+}
+
 String differences(Contents left, Contents right) => [
   for (final area in {...left.keys, ...right.keys})
     for (final key in {...?left[area]?.keys, ...?right[area]?.keys})
@@ -60,12 +111,26 @@ Future<Counts> runSeed(int seed, int steps) async {
     final result = server.random.nextInt(8) == 0
         ? server.pageList()
         : server.read();
+    final queue = (await syncOf(stores.first)).queue;
+    final fits = resultFit(
+      queue.shown,
+      queue.session,
+      result.base,
+      readFrom(queue),
+    );
     final kept = await takeInto(stores.first, result.base, reuse: true);
     final scratch = await takeInto(stores.last, result.base, reuse: false);
     expect(kept, scratch, reason: 'seed $seed step $step');
-    if (kept == 'ReportApplied') {
+    if (fits == ResultFit.applies || fits == ResultFit.adopts) {
       for (final what in result.cases) {
         applied[what] = (applied[what] ?? 0) + 1;
+      }
+      if (!result.cases.contains('stale read')) {
+        await expectWhatTheServerSent(
+          stores.first,
+          result.base,
+          'seed $seed step $step',
+        );
       }
     }
     final apart = differences(reusing.contents, fresh.contents);
@@ -85,7 +150,7 @@ Future<Counts> runSeed(int seed, int steps) async {
 
 void main() {
   final environment = Platform.environment;
-  final seeds = int.tryParse(environment['TAKE_MODEL_SEEDS'] ?? '') ?? 60;
+  final seeds = int.tryParse(environment['TAKE_MODEL_SEEDS'] ?? '') ?? 100;
   final steps = int.tryParse(environment['TAKE_MODEL_STEPS'] ?? '') ?? 80;
 
   test('a store that reuses this run\'s digests and stored rows writes what '

@@ -17,7 +17,7 @@ final class _OnDisk {
   StrategyFacts? facts;
   final Map<(int, int), LandedWork> landed;
   final Map<String?, String> groups;
-  final groupsEncodedThisRun = <String?>{};
+  final encodedThisRun = <String?, String>{};
   Shown shown;
 }
 
@@ -333,19 +333,18 @@ String _groupText(Map<String, Object?> group) {
 
 Map<String?, String> _groupTextsSince(
   Shown before,
-  Map<String?, String> written,
-  Set<String?> encodedThisRun,
+  Map<String?, String> encodedThisRun,
   Shown shown,
 ) {
   final texts = <String?, String>{
     for (final MapEntry(:key, :value) in shownToGroupsSince(
       before,
       shown,
+      kept: encodedThisRun.containsKey,
     ).entries)
-      key: switch ((value, written[key])) {
-        (null, final kept?) when encodedThisRun.contains(key) => kept,
-        (final group?, _) => _groupText(group),
-        (null, _) => _groupText(shownToGroups(shown)[key]!),
+      key: switch (value) {
+        null => encodedThisRun[key]!,
+        final group => _groupText(group),
       },
   };
   if (shownTakesChecked) {
@@ -930,6 +929,7 @@ extension _CloudStore on LibraryStore {
     Account owner,
     CloudQueue next,
     Map<String?, String> groups,
+    Map<String?, String> encoded,
   ) {
     disk.entries
       ..clear()
@@ -947,9 +947,9 @@ extension _CloudStore on LibraryStore {
     disk.groups
       ..clear()
       ..addAll(groups);
-    disk.groupsEncodedThisRun
+    disk.encodedThisRun
       ..clear()
-      ..addAll(groups.keys);
+      ..addAll(encoded);
     disk.shown = next.shown;
   }
 
@@ -1261,14 +1261,15 @@ extension _CloudStore on LibraryStore {
       }
       final owner = cloud.queue.owner;
       final queued = _queueWrites(strategy, disk, owner, next);
-      final groups = identical(next.shown, disk.shown)
+      final unchanged = identical(next.shown, disk.shown);
+      final groups = unchanged
           ? {...disk.groups}
           : _groupTextsSince(
               shownTakesReuse ? disk.shown : Shown.nothing,
-              shownTakesReuse ? disk.groups : const {},
-              disk.groupsEncodedThisRun,
+              shownTakesReuse ? disk.encodedThisRun : const {},
               next.shown,
             );
+      final encoded = unchanged ? {...disk.encodedThisRun} : groups;
       final header = _baseHeader(strategy, cloud.header);
       final previous = _summaries[digest];
       final StrategySummary summary;
@@ -1384,7 +1385,7 @@ extension _CloudStore on LibraryStore {
         return Saved(take(summary));
       }
       final result = await _commit<T, CommitRefusal>(writes, () {
-        _written(disk, owner, next, groups);
+        _written(disk, owner, next, groups, encoded);
         cloud.queue.current = next;
         _sessions[digest] = (session: next.session, shown: next.shown);
         _summaries[digest] = summary;

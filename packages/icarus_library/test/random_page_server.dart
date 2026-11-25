@@ -119,6 +119,8 @@ final class RandomServer {
   final Random random;
   final held = <HeldItem>[];
   final trashed = <String>{};
+  final sortIndexOf = {for (final (i, page) in serverPages.indexed) page: i};
+  final revisionOf = {for (final page in serverPages) page: 1};
   final snapshots = <ServerResult>[];
   final generated = <String, int>{};
   final _itemCases = <String, List<String>>{};
@@ -162,29 +164,46 @@ final class RandomServer {
         _generated('reordered', item: row);
       case 6:
         final page = serverPages[random.nextInt(serverPages.length)];
-        final trashing = trashed.add(page);
-        if (!trashing) trashed.remove(page);
+        final trashing = !trashed.contains(page);
+        final live = [
+          for (final each in serverPages)
+            if (!trashed.contains(each) && each != page) each,
+        ]..sort((a, b) => sortIndexOf[a]!.compareTo(sortIndexOf[b]!));
+        if (trashing) {
+          trashed.add(page);
+        } else {
+          trashed.remove(page);
+          live.insert(sortIndexOf[page]!.clamp(0, live.length), page);
+        }
+        for (final (index, each) in live.indexed) {
+          if (sortIndexOf[each] != index) {
+            sortIndexOf[each] = index;
+            revisionOf[each] = revisionOf[each]! + 1;
+          }
+        }
         _generated(trashing ? 'page trashed' : 'page restored', page: page);
       case _:
         break;
     }
   }
 
+  List<String> get livePages => [
+    for (final page in serverPages)
+      if (!trashed.contains(page)) page,
+  ]..sort((a, b) => sortIndexOf[a]!.compareTo(sortIndexOf[b]!));
+
   LivePage pageRow(String page) => LivePage(
     publicId: page,
     strategyPublicId: strategyId,
     name: page,
-    sortIndex: serverPages.indexOf(page),
+    sortIndex: sortIndexOf[page]!,
     isAttack: true,
-    revision: 1,
+    revision: revisionOf[page]!,
     unknownFields: jsonObject(const {'createdAt': fixtureLife}),
   );
 
   StrategyRowSet rows() => strategyRows(
-    pages: [
-      for (final page in serverPages)
-        if (!trashed.contains(page)) pageRow(page),
-    ],
+    pages: [for (final page in livePages) pageRow(page)],
     elements: [
       for (final item in held)
         if (!trashed.contains(item.page))
@@ -222,12 +241,10 @@ final class RandomServer {
     final page = serverPages[random.nextInt(serverPages.length)];
     if (trashed.contains(page)) {
       _made('trashed page read');
-      final gone = ServerResult(PageGone(page), [
+      return ServerResult(PageGone(page), [
         'trashed page read',
         ..._deliveredPage(page),
       ]);
-      snapshots.add(gone);
-      return gone;
     }
     final leaving = random.nextInt(5) == 0;
     final included = [

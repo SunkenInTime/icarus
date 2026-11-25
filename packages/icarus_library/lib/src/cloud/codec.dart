@@ -945,14 +945,17 @@ Map<String?, Map<String, Object?>> shownToGroups(Shown shown) {
 
 Map<String?, Map<String, Object?>?> shownToGroupsSince(
   Shown before,
-  Shown after,
-) {
+  Shown after, {
+  required bool Function(String? group) kept,
+}) {
   final beforeByPage = _rowsByPage(before);
   final afterByPage = _rowsByPage(after);
   return {
-    null: _sameHeader(before, after) ? null : _headerGroup(after),
+    null: kept(null) && _sameHeader(before, after) ? null : _headerGroup(after),
     for (final page in _groupPages(after, afterByPage))
-      page: _samePage(before, after, page, beforeByPage, afterByPage)
+      page:
+          kept(page) &&
+              _samePage(before, after, page, beforeByPage, afterByPage)
           ? null
           : _pageGroup(after, page, afterByPage[page] ?? const []),
   };
