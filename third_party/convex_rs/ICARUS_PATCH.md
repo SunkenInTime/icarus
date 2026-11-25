@@ -108,3 +108,30 @@ and a response to a mutation that already completed (one resent after a
 reconnect) is ignored instead of causing a reconnect.
 `client::tests::test_mutation_waits_for_its_commit_transition` checks the same
 through the public client and this crate's worker.
+
+What that establishes is that the write reached this client's query results,
+not that Dart has seen them. The worker can wake the mutation's caller before a
+`convex_flutter` subscription callback carrying the same transition has run, so
+"the mutation resolved, so the live result I hold includes my write" is true of
+the Rust client's state and not yet of what Dart was handed. Code that needs
+the updated state in Dart has to observe it there, by the result timestamps
+described below.
+
+One behavior changed for slow transitions. If a transition older than the
+write arrives before the `convex_flutter` bridge's 30-second deadline on the
+call, and the one that reaches the commit timestamp arrives after it, 0.10.4
+reported success where this now times out. Icarus's outbox then sends the same
+op ids again, and the server answers them as replays of the write it already
+applied.
+
+Every query result now carries the timestamp of the server state it comes
+from: `QueryResults::ts`, the end of the last transition the client applied
+(`None` before the first). `QuerySubscription::timed` yields each result with
+that timestamp (`TimedResult`), and `ConvexClient::query_timed` does the same
+for a one-shot read. A later server state has a later timestamp, so two results
+of one query can be put in the server's order however late either reaches its
+reader: a subscription's first result is the state when it subscribed, and it
+can be read after a one-shot answered from a newer state. Upstream exposes no
+timestamp, so a reader had no way to tell which of two results is newer.
+`client::tests::test_a_live_result_from_an_earlier_state_read_after_a_one_shot_sorts_before_it`
+covers that case.

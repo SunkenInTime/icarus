@@ -30,6 +30,12 @@ abstract class CallbackSubscriber
 
   @override
   Future<void> onUpdate({required String value});
+
+  /// An update with the timestamp of the server state it comes from (see
+  /// `convex::QueryResults::ts`). Subscribers that don't need it get
+  /// `on_update`.
+  @override
+  Future<void> onUpdateAt({required String value, PlatformInt64? ts});
 }
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<CallbackSubscriberDartFn>>
@@ -40,6 +46,25 @@ abstract class CallbackSubscriberDartFn
 
   @override
   Future<void> onUpdate({required String value});
+
+  /// An update with the timestamp of the server state it comes from (see
+  /// `convex::QueryResults::ts`). Subscribers that don't need it get
+  /// `on_update`.
+  @override
+  Future<void> onUpdateAt({required String value, PlatformInt64? ts});
+}
+
+// Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<CallbackSubscriberTimedDartFn>>
+abstract class CallbackSubscriberTimedDartFn
+    implements RustOpaqueInterface, QuerySubscriber {
+  @override
+  Future<void> onError({required String message, String? value});
+
+  @override
+  Future<void> onUpdate({required String value});
+
+  @override
+  Future<void> onUpdateAt({required String value, PlatformInt64? ts});
 }
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<MobileConvexClient>>
@@ -94,6 +119,12 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required Map<String, String> args,
   });
 
+  /// [query], with the timestamp of the server state the value comes from.
+  Future<TimedValue> queryTimed({
+    required String name,
+    required Map<String, String> args,
+  });
+
   /// Forces a WebSocket reconnect while retaining current client state.
   Future<void> reconnectNow({required String reason});
 
@@ -140,6 +171,16 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required FutureOr<void> Function(List<String?>) onUpdate,
     required FutureOr<void> Function(String, String?) onError,
   });
+
+  /// [subscribe], with each update's timestamp: the server state it comes
+  /// from. Updates can reach Dart out of order; the timestamps say the
+  /// server's order.
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, String> args,
+    required FutureOr<void> Function(String, PlatformInt64?) onUpdate,
+    required FutureOr<void> Function(String, String?) onError,
+  });
 }
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<SubscriptionHandle>>
@@ -152,6 +193,11 @@ abstract class QuerySubscriber {
   Future<void> onError({required String message, String? value});
 
   Future<void> onUpdate({required String value});
+
+  /// An update with the timestamp of the server state it comes from (see
+  /// `convex::QueryResults::ts`). Subscribers that don't need it get
+  /// `on_update`.
+  Future<void> onUpdateAt({required String value, PlatformInt64? ts});
 }
 
 @freezed
@@ -189,6 +235,29 @@ class GroupQuery {
           runtimeType == other.runtimeType &&
           name == other.name &&
           args == other.args;
+}
+
+/// A query's value as JSON, with the timestamp of the server state it comes
+/// from: the end of the transition that carried it, in nanoseconds. Results
+/// of later server states have later timestamps, however late either reaches
+/// Dart, so a one-shot read and a live update of the same query can be put
+/// in the server's order.
+class TimedValue {
+  final String value;
+  final PlatformInt64? ts;
+
+  const TimedValue({required this.value, this.ts});
+
+  @override
+  int get hashCode => value.hashCode ^ ts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TimedValue &&
+          runtimeType == other.runtimeType &&
+          value == other.value &&
+          ts == other.ts;
 }
 
 /// WebSocket connection state exposed to Flutter/Dart.

@@ -40,6 +40,7 @@ use crate::{
             QuerySetSubscription,
             QuerySubscription,
             SubscribedSet,
+            TimedResult,
         },
         worker::{
             worker,
@@ -286,6 +287,23 @@ impl ConvexClient {
         Ok(self
             .subscribe(name, args)
             .await?
+            .next()
+            .await
+            .expect("INTERNAL BUG: Convex Client dropped prematurely."))
+    }
+
+    /// [`ConvexClient::query`], with the timestamp of the server state the
+    /// result comes from (see [`QueryResults::ts`]), so it can be ordered
+    /// against results of a live subscription.
+    pub async fn query_timed(
+        &mut self,
+        name: &str,
+        args: BTreeMap<String, Value>,
+    ) -> anyhow::Result<TimedResult> {
+        Ok(self
+            .subscribe(name, args)
+            .await?
+            .timed()
             .next()
             .await
             .expect("INTERNAL BUG: Convex Client dropped prematurely."))
@@ -757,6 +775,92 @@ pub mod tests {
             subscription.next().await,
             Some(FunctionResult::Value(2.into()))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_one_shot_and_live_results_carry_the_server_order() -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let mut live = client.subscribe("getCounter", btreemap! {}).await?.timed();
+        let query_id = QueryId::new(0);
+        test_protocol.take_sent().await;
+        let mut applied = client.watch_all();
+        let (first, at_first) =
+            fake_transition(StateVersion::initial(), vec![(query_id, 1.into())]);
+        test_protocol.fake_server_response(first).await?;
+        let earlier = live.next().await.expect("a live result");
+        assert_eq!(earlier.value, FunctionResult::Value(1.into()));
+        assert_eq!(earlier.ts, Some(at_first.ts));
+
+        let (second, at_second) = fake_transition(at_first, vec![(query_id, 2.into())]);
+        test_protocol.fake_server_response(second).await?;
+        while applied.next().await.and_then(|results| results.ts()) != Some(at_second.ts) {}
+        let one_shot = client.query_timed("getCounter", btreemap! {}).await?;
+        assert_eq!(one_shot.value, FunctionResult::Value(2.into()));
+        assert_eq!(one_shot.ts, Some(at_second.ts));
+        assert!(
+            earlier.ts < one_shot.ts,
+            "a live result held from an earlier server state sorts before the one-shot answer"
+        );
+
+        let later = live.next().await.expect("a live result");
+        assert_eq!(later.value, FunctionResult::Value(2.into()));
+        assert_eq!(later.ts, one_shot.ts);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_a_live_result_from_an_earlier_state_read_after_a_one_shot_sorts_before_it(
+    ) -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let _first_reader = client.subscribe("getCounter", btreemap! {}).await?;
+        let query_id = QueryId::new(0);
+        test_protocol.take_sent().await;
+        let mut applied = client.watch_all();
+        let (first, at_first) =
+            fake_transition(StateVersion::initial(), vec![(query_id, 1.into())]);
+        test_protocol.fake_server_response(first).await?;
+        while applied.next().await.and_then(|results| results.ts()) != Some(at_first.ts) {}
+        let mut live = client.subscribe("getCounter", btreemap! {}).await?.timed();
+
+        let (second, at_second) = fake_transition(at_first, vec![(query_id, 2.into())]);
+        test_protocol.fake_server_response(second).await?;
+        while applied.next().await.and_then(|results| results.ts()) != Some(at_second.ts) {}
+        let one_shot = client.query_timed("getCounter", btreemap! {}).await?;
+        assert_eq!(one_shot.value, FunctionResult::Value(2.into()));
+        assert_eq!(one_shot.ts, Some(at_second.ts));
+
+        let arriving_later = live.next().await.expect("a live result");
+        assert_eq!(arriving_later.value, FunctionResult::Value(1.into()));
+        assert_eq!(arriving_later.ts, Some(at_first.ts));
+        assert!(
+            arriving_later.ts < one_shot.ts,
+            "read after the one-shot, but from an earlier server state, so it sorts before it"
+        );
+        let caught_up = live.next().await.expect("a live result");
+        assert_eq!(caught_up.value, FunctionResult::Value(2.into()));
+        assert_eq!(caught_up.ts, one_shot.ts);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_a_lagging_live_subscription_yields_its_latest_state_with_that_states_timestamp(
+    ) -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let mut live = client.subscribe("getCounter", btreemap! {}).await?.timed();
+        let query_id = QueryId::new(0);
+        test_protocol.take_sent().await;
+        let mut applied = client.watch_all();
+        let (first, at_first) =
+            fake_transition(StateVersion::initial(), vec![(query_id, 1.into())]);
+        test_protocol.fake_server_response(first).await?;
+        let (second, at_second) = fake_transition(at_first, vec![(query_id, 2.into())]);
+        test_protocol.fake_server_response(second).await?;
+        while applied.next().await.and_then(|results| results.ts()) != Some(at_second.ts) {}
+
+        let latest = live.next().await.expect("a live result");
+        assert_eq!(latest.value, FunctionResult::Value(2.into()));
+        assert_eq!(latest.ts, Some(at_second.ts));
         Ok(())
     }
 

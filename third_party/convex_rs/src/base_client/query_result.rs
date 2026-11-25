@@ -1,6 +1,7 @@
 use convex_sync_types::{
     types::ErrorPayload,
     QueryId,
+    Timestamp,
 };
 use imbl::{
     OrdMap,
@@ -71,9 +72,18 @@ impl std::fmt::Debug for FunctionResult {
 pub struct QueryResults {
     pub(super) results: OrdMap<QueryId, FunctionResult>,
     pub(super) subscribers: OrdSet<SubscriberId>,
+    pub(super) ts: Option<Timestamp>,
 }
 
 impl QueryResults {
+    /// The timestamp of the server state these results come from: the end of
+    /// the last transition the client applied. A later transition carries a
+    /// later timestamp, so two results compare in the server's order however
+    /// late either reaches its reader. `None` before the first transition.
+    pub fn ts(&self) -> Option<Timestamp> {
+        self.ts
+    }
+
     /// Get the [`FunctionResult`] for the given [`SubscriberId`]
     pub fn get(&self, subscriber_id: &SubscriberId) -> Option<&FunctionResult> {
         if !self.subscribers.contains(subscriber_id) {
@@ -129,6 +139,7 @@ mod tests {
                 s(q(1), 0),
                 s(q(2), 0)
             },
+            ts: None,
         };
         assert_eq!(
             qr.get(&s(q(0), 0)),

@@ -37,6 +37,17 @@ by one write can reach Dart apart. A group sends a value only when it changed
 since the last update, awaits each callback before the next, and sends every
 value again after a failure.
 
+`queryTimed` and `subscribeTimed` are `query` and `subscribe` with the
+timestamp of the server state each value comes from, in nanoseconds, from the
+patched crate's `QueryResults::ts` (its patch notes say what the timestamp
+promises). A timed subscription posts each update from a spawned task, as
+`subscribe` does, so updates can reach Dart out of order, and a one-shot read
+can arrive before a live update from an older state; comparing timestamps puts
+them back in the server's order. A mutation's future resolving does not mean
+Dart has received the live update that includes it, only that the Rust client
+has; the timestamp is how Dart can tell. Both are native only, like
+`subscribeGroup`: Icarus's web build uses Convex's JavaScript client.
+
 Generated Dart and Rust bridge files are never hand-edited. They are regenerated
 from `rust/src/lib.rs` with `flutter_rust_bridge_codegen` 2.11.1. Hand-written
 changes are limited to the Dart client implementation, `rust/src/lib.rs`, and

@@ -631,6 +631,24 @@ class WebConvexClient implements IConvexClient {
   // Icarus's web build reads through lib/collab/src/convex_client_web.dart,
   // on Convex's own JavaScript client, and never through this one.
   @override
+  Future<({String value, int? ts})> queryTimed(
+    String name,
+    Map<String, dynamic> args,
+  ) {
+    throw UnsupportedError('queryTimed is native only.');
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, dynamic> args,
+    required void Function(String value, int? ts) onUpdate,
+    required void Function(String, String?) onError,
+  }) {
+    throw UnsupportedError('subscribeTimed is native only.');
+  }
+
+  @override
   Future<SubscriptionHandle> subscribeGroup({
     required List<({String name, Map<String, dynamic> args})> queries,
     required void Function(List<String?>) onUpdate,

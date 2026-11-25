@@ -33,6 +33,16 @@ abstract class IConvexClient {
   /// - [ClientError] for Convex-specific errors
   Future<String> query(String name, Map<String, dynamic> args);
 
+  /// [query], with [ts]: the timestamp of the server state the value comes
+  /// from, in nanoseconds, or null before the client has applied any. A
+  /// later server state has a later timestamp, so a one-shot read and a
+  /// live update of the same query compare in the server's order, however
+  /// late either reaches Dart.
+  Future<({String value, int? ts})> queryTimed(
+    String name,
+    Map<String, dynamic> args,
+  );
+
   /// Executes a Convex mutation operation.
   ///
   /// [name] - Name of the mutation function to execute
@@ -75,6 +85,16 @@ abstract class IConvexClient {
     required String name,
     required Map<String, dynamic> args,
     required void Function(String) onUpdate,
+    required void Function(String, String?) onError,
+  });
+
+  /// [subscribe], with each update's timestamp, as [queryTimed] gives it.
+  /// Updates can reach [onUpdate] out of the server's order; their
+  /// timestamps say which is later.
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, dynamic> args,
+    required void Function(String value, int? ts) onUpdate,
     required void Function(String, String?) onError,
   });
 

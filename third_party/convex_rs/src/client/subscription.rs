@@ -3,6 +3,7 @@ use std::{
     pin::Pin,
 };
 
+use convex_sync_types::Timestamp;
 use futures::{
     task,
     Stream,
@@ -45,8 +46,40 @@ pub struct QuerySubscription {
     pub(super) request_sender: mpsc::UnboundedSender<ClientRequest>,
     pub(super) watch: BroadcastStream<QueryResults>,
     pub(super) initial: Option<FunctionResult>,
+    pub(super) initial_ts: Option<Timestamp>,
 }
 impl QuerySubscription {
+    /// The same results, each with the timestamp of the server state it
+    /// comes from (see [`QueryResults::ts`]).
+    pub fn timed(self) -> TimedQuerySubscription {
+        TimedQuerySubscription { inner: self }
+    }
+
+    fn poll_result(
+        &mut self,
+        cx: &mut task::Context<'_>,
+    ) -> task::Poll<Option<(FunctionResult, Option<Timestamp>)>> {
+        if let Some(initial) = self.initial.take() {
+            return task::Poll::Ready(Some((initial, self.initial_ts.take())));
+        }
+        loop {
+            return match self.watch.poll_next_unpin(cx) {
+                // Ok to be lagged (skip intermediate values) - since Convex
+                // only guarantees a newer value than the previous value.
+                task::Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(_amt)))) => continue,
+                task::Poll::Ready(Some(Ok(map))) => {
+                    let Some(value) = map.get(self.id()) else {
+                        // No result yet in the query result set. Keep polling.
+                        continue;
+                    };
+                    task::Poll::Ready(Some((value.clone(), map.ts())))
+                },
+                task::Poll::Ready(None) => task::Poll::Ready(None),
+                task::Poll::Pending => task::Poll::Pending,
+            };
+        }
+    }
+
     /// Returns an identifier for this subscription based on its query and args.
     /// This identifier can be used to find the result within a
     /// [`QuerySetSubscription`] as returned by [`ConvexClient::watch_all()`]
@@ -84,25 +117,42 @@ impl Stream for QuerySubscription {
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
     ) -> task::Poll<Option<Self::Item>> {
-        if let Some(initial) = self.initial.take() {
-            return task::Poll::Ready(Some(initial));
-        }
-        loop {
-            return match self.watch.poll_next_unpin(cx) {
-                // Ok to be lagged (skip intermediate values) - since Convex
-                // only guarantees a newer value than the previous value.
-                task::Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(_amt)))) => continue,
-                task::Poll::Ready(Some(Ok(map))) => {
-                    let Some(value) = map.get(self.id()) else {
-                        // No result yet in the query result set. Keep polling.
-                        continue;
-                    };
-                    task::Poll::Ready(Some(value.clone()))
-                },
-                task::Poll::Ready(None) => task::Poll::Ready(None),
-                task::Poll::Pending => task::Poll::Pending,
-            };
-        }
+        self.poll_result(cx)
+            .map(|result| result.map(|(value, _ts)| value))
+    }
+}
+
+/// A query result with the timestamp of the server state it comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TimedResult {
+    /// The query's result.
+    pub value: FunctionResult,
+    /// The end of the transition that carried it, as [`QueryResults::ts`].
+    /// Results of later server states have later timestamps.
+    pub ts: Option<Timestamp>,
+}
+
+/// A [`QuerySubscription`] whose results carry their timestamps, as returned
+/// by [`QuerySubscription::timed`]. Dropping it unsubscribes the query.
+pub struct TimedQuerySubscription {
+    inner: QuerySubscription,
+}
+impl TimedQuerySubscription {
+    /// The subscription's identifier, as [`QuerySubscription::id`].
+    pub fn id(&self) -> &SubscriberId {
+        self.inner.id()
+    }
+}
+impl Stream for TimedQuerySubscription {
+    type Item = TimedResult;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> task::Poll<Option<Self::Item>> {
+        self.inner
+            .poll_result(cx)
+            .map(|result| result.map(|(value, ts)| TimedResult { value, ts }))
     }
 }
 

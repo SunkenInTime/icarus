@@ -165,6 +165,16 @@ class ConvexClient {
   Future<String> query(String name, Map<String, dynamic> args) =>
       _impl.query(name, args);
 
+  /// [query], with [ts]: the timestamp of the server state the value comes
+  /// from, in nanoseconds, or null before the client has applied any. A
+  /// later server state has a later timestamp, so a one-shot read and a
+  /// live update of the same query compare in the server's order, however
+  /// late either reaches Dart. Native only.
+  Future<({String value, int? ts})> queryTimed(
+    String name,
+    Map<String, dynamic> args,
+  ) => _impl.queryTimed(name, args);
+
   /// Executes a Convex mutation operation with timeout.
   ///
   /// [name] - Name of the mutation function to execute
@@ -203,6 +213,21 @@ class ConvexClient {
     required void Function(String) onUpdate,
     required void Function(String, String?) onError,
   }) => _impl.subscribe(
+    name: name,
+    args: args,
+    onUpdate: onUpdate,
+    onError: onError,
+  );
+
+  /// [subscribe], with each update's timestamp, as [queryTimed] gives it.
+  /// Updates can reach [onUpdate] out of the server's order; their
+  /// timestamps say which is later. Native only.
+  Future<SubscriptionHandle> subscribeTimed({
+    required String name,
+    required Map<String, dynamic> args,
+    required void Function(String value, int? ts) onUpdate,
+    required void Function(String, String?) onError,
+  }) => _impl.subscribeTimed(
     name: name,
     args: args,
     onUpdate: onUpdate,
