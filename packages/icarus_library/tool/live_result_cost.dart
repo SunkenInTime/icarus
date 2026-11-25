@@ -314,6 +314,7 @@ Future<Map<String, Object?>> ownMoves(
             OpAnswered(
               attempt,
               AppliedAnswer(opId, revision: move.revision + 1, life: _life),
+              point: nextStamp(),
             ),
           ]),
         ),

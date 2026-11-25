@@ -2,7 +2,6 @@ import '../ops.dart';
 import '../outcome.dart';
 import '../rows.dart';
 import 'pending.dart';
-import 'shown.dart';
 
 sealed class QueueEvent {
   const QueueEvent();
@@ -180,11 +179,68 @@ final class ClaimReleased extends QueueEvent {
   final int attempt;
 }
 
+final class Generation {
+  const Generation({required this.client, required this.connection});
+
+  final int client;
+  final int connection;
+
+  bool isBefore(Generation other) =>
+      client < other.client ||
+      (client == other.client && connection < other.connection);
+
+  @override
+  bool operator ==(Object other) =>
+      other is Generation &&
+      other.client == client &&
+      other.connection == connection;
+
+  @override
+  int get hashCode => Object.hash(client, connection);
+
+  @override
+  String toString() => 'client $client, connection $connection';
+}
+
+final class ResultPoint {
+  const ResultPoint({
+    required this.client,
+    required this.connection,
+    required this.snapshot,
+    this.serverTime,
+  });
+
+  final int client;
+  final int connection;
+  final int snapshot;
+  final int? serverTime;
+
+  Generation get generation =>
+      Generation(client: client, connection: connection);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ResultPoint &&
+      other.client == client &&
+      other.connection == connection &&
+      other.snapshot == snapshot &&
+      other.serverTime == serverTime;
+
+  @override
+  int get hashCode => Object.hash(client, connection, snapshot, serverTime);
+
+  @override
+  String toString() =>
+      'client $client, connection $connection, snapshot $snapshot'
+      '${serverTime == null ? '' : ', time $serverTime'}';
+}
+
 final class OpAnswered extends QueueEvent {
-  const OpAnswered(this.attempt, this.answer);
+  const OpAnswered(this.attempt, this.answer, {required this.point});
 
   final int attempt;
   final OpAnswer answer;
+  final ResultPoint point;
 }
 
 final class TransportFailed extends QueueEvent {
@@ -196,10 +252,17 @@ final class TransportFailed extends QueueEvent {
 }
 
 final class BatchRefused extends QueueEvent {
-  const BatchRefused(this.attempt, this.refusal, {this.at, this.currentLife});
+  const BatchRefused(
+    this.attempt,
+    this.refusal, {
+    required this.point,
+    this.at,
+    this.currentLife,
+  });
 
   final int attempt;
   final BatchRefusal refusal;
+  final ResultPoint point;
   final DateTime? at;
   final int? currentLife;
 }
@@ -215,7 +278,9 @@ final class ConnectionLost extends QueueEvent {
 }
 
 final class ConnectionReturned extends QueueEvent {
-  const ConnectionReturned();
+  const ConnectionReturned(this.generation);
+
+  final Generation generation;
 }
 
 final class AccountChanged extends QueueEvent {
@@ -262,18 +327,40 @@ final class UserDiscardedReplaced extends QueueEvent {
 }
 
 final class ResultRefused extends QueueEvent {
-  const ResultRefused({required this.page, required this.problem});
+  const ResultRefused({
+    required this.page,
+    required this.problem,
+    required this.session,
+    required this.point,
+    this.requestedAt,
+  });
 
   final String? page;
   final String problem;
+  final int session;
+  final ResultPoint point;
+  final int? requestedAt;
+}
+
+final class StampedRead<T extends ArrivedBase> {
+  const StampedRead(this.base, this.point);
+
+  final T base;
+  final ResultPoint point;
 }
 
 final class BaseArrived extends QueueEvent {
-  const BaseArrived(this.base, {required this.session, required this.from});
+  const BaseArrived(
+    this.base, {
+    required this.session,
+    required this.point,
+    this.requestedAt,
+  });
 
   final ArrivedBase base;
   final int session;
-  final ResultSource from;
+  final ResultPoint point;
+  final int? requestedAt;
 }
 
 final class EditOfAnotherLife extends QueueEvent {
@@ -283,39 +370,10 @@ final class EditOfAnotherLife extends QueueEvent {
   final int? madeOn;
 }
 
-final class ReadBegun extends QueueEvent {
-  const ReadBegun();
-}
-
 final class ReadRefusedForUpgrade extends QueueEvent {
   const ReadRefusedForUpgrade({required this.build});
 
   final String build;
-}
-
-sealed class ResultSource {
-  const ResultSource();
-}
-
-final class ReadOfThisDevice extends ResultSource {
-  const ReadOfThisDevice(this.started);
-
-  final ReadStart started;
-}
-
-final class LiveResult extends ResultSource {
-  const LiveResult();
-}
-
-enum CloudResults {
-  thisDevicesReads,
-  liveQueries;
-
-  bool takes(ResultSource from) => switch ((this, from)) {
-    (thisDevicesReads, ReadOfThisDevice()) => true,
-    (liveQueries, LiveResult()) => true,
-    _ => false,
-  };
 }
 
 sealed class OpAnswer {

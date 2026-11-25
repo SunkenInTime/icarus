@@ -13,13 +13,13 @@ import 'support.dart';
 Future<String> takeInto(
   LibraryStore store,
   ArrivedBase base,
-  ResultSource from, {
+  ReadAsked from, {
   required bool reuse,
 }) async {
   shownTakesReuse = reuse;
   try {
     final result = await store.record(testAccount, strategyId, [
-      BaseArrived(base, session: await sessionOf(store), from: from),
+      arrivedAs(base, session: await sessionOf(store), asked: from),
     ]);
     return switch (result) {
       Saved(:final value) => [
@@ -105,8 +105,8 @@ Future<Counts> runSeed(int seed, int steps) async {
     await addCloud(store, server.rows());
   }
   void count(String what) => applied[what] = (applied[what] ?? 0) + 1;
-  final sources = [<int, ResultSource>{}, <int, ResultSource>{}];
-  List<ResultSource>? lastFresh;
+  final sources = [<int, ReadAsked>{}, <int, ReadAsked>{}];
+  List<ReadAsked>? lastFresh;
   var lastPage = 0;
   var lastList = 0;
   for (var step = 0; step < steps; step++) {
@@ -116,14 +116,14 @@ Future<Counts> runSeed(int seed, int steps) async {
         : server.read();
     final tie =
         !result.stale && lastFresh != null && server.random.nextInt(5) == 0;
-    final List<ResultSource> from;
+    final List<ReadAsked> from;
     if (result.stale) {
       from = [for (final each in sources) each[result.read]!];
     } else if (tie) {
       from = lastFresh;
       count('started with the read before it');
     } else {
-      from = [for (final store in stores) await beganIn(store)];
+      from = [for (final store in stores) await askedIn(store)];
     }
     if (!result.stale) {
       lastFresh = from;
@@ -132,7 +132,15 @@ Future<Counts> runSeed(int seed, int steps) async {
       }
     }
     final queue = (await syncOf(stores.first)).queue;
-    final fits = resultFit(queue.shown, queue.session, result.base, from[0]);
+    final fits = resultFit(
+      queue.shown,
+      result.base,
+      Arrival(
+        order: queue.session.orderOf(from[0].point),
+        point: from[0].point,
+        requestedAt: from[0].requestedAt,
+      ),
+    );
     final kept = await takeInto(
       stores.first,
       result.base,

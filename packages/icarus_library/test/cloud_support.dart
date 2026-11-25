@@ -18,6 +18,38 @@ final otherAccount = Account('account-b');
 
 final now = DateTime.utc(2026, 11, 20, 12, 0, 0, 0, 371);
 
+const testClient = 1;
+
+var _connection = 0;
+
+var _snapshot = 0;
+
+Generation get currentGeneration =>
+    Generation(client: testClient, connection: _connection);
+
+ResultPoint tick() => ResultPoint(
+  client: testClient,
+  connection: _connection,
+  snapshot: ++_snapshot,
+  serverTime: _snapshot * 1000,
+);
+
+ResultPoint get lastPoint => ResultPoint(
+  client: testClient,
+  connection: _connection,
+  snapshot: _snapshot,
+  serverTime: _snapshot * 1000,
+);
+
+typedef ReadAsked = ({ResultPoint point, int requestedAt});
+
+ReadAsked askRead(CloudQueue queue) =>
+    (point: tick(), requestedAt: queue.session.sequence);
+
+ConnectionReturned reconnected() => ConnectionReturned(
+  Generation(client: testClient, connection: ++_connection),
+);
+
 ElementPatchOp movePatch(
   String opId, {
   String elementId = 'e1',
@@ -282,14 +314,23 @@ final class Client {
   List<StrategyOp> lastSent() =>
       effects.whereType<SendBatch>().last.ops.toList();
 
-  void arrive(ArrivedBase base) =>
-      must(BaseArrived(base, session: queue.session.number, from: beginRead()));
+  void arrive(ArrivedBase base, {ResultPoint? at}) => must(arrival(base, at: at));
 
-  ResultSource beginRead() => switch (step(const ReadBegun())) {
-    Stepped(:final effects) =>
-      effects.whereType<ReadStartIssued>().single.source,
-    final other => fail('no read start was issued: $other'),
-  };
+  BaseArrived arrival(ArrivedBase base, {ResultPoint? at, int? requestedAt}) =>
+      BaseArrived(
+        base,
+        session: queue.session.number,
+        point: at ?? tick(),
+        requestedAt: requestedAt ?? queue.session.sequence,
+      );
+
+  ResultRefused readRefused(String? page, String problem) => ResultRefused(
+    page: page,
+    problem: problem,
+    session: queue.session.number,
+    point: tick(),
+    requestedAt: queue.session.sequence,
+  );
 
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
@@ -380,9 +421,6 @@ ArrivedBase pageReadOf(StrategyRows rows, String page) =>
 
 Matcher awaitingResult(ResultSubject subject) =>
     isA<AwaitingResult>().having((hold) => hold.subject, 'subject', subject);
-
-ResultSource readFrom(CloudQueue queue) =>
-    ReadOfThisDevice(queue.session.readStart);
 
 Matcher owed({int? unlessLife, int? namedLife}) => isA<ReadOwed>()
     .having((state) => state.unlessLife, 'unlessLife', unlessLife)

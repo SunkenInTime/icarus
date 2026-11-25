@@ -90,7 +90,7 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: await sessionOf(store),
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       final committed = await store.commitAs(
@@ -154,7 +154,7 @@ void main() {
         BaseArrived(
           headerReadOf(replacement),
           session: await sessionOf(store),
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       await paused.future;

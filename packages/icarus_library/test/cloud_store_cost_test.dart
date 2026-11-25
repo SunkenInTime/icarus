@@ -62,7 +62,7 @@ void main() {
       savedValue(
         await store.addCloudStrategy(
           testAccount,
-          HeaderRead(
+          stamped(HeaderRead(
             strategy: strategyRow(publicId: id),
             pages: [
               LivePage(
@@ -76,8 +76,8 @@ void main() {
               ),
             ],
             settings: [settings('page-a')],
-          ),
-          const [],
+          )),
+          stampedPages(const []),
         ),
       );
       expect(await store.unload(id), isA<Unloaded>());

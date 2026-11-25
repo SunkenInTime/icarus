@@ -10,14 +10,13 @@ Future<LibraryStore> openCloudStore(
   StorageEngine engine, {
   String build = build,
   DateTime Function() clock = fixedClock,
-  CloudResults results = CloudResults.thisDevicesReads,
 }) async => switch (await LibraryStore.open(
   engine,
   canRead: readsKnownKinds,
   clock: clock,
   build: build,
 )) {
-  StoreOpened(:final store) => store..takeCloudResultsFrom(results),
+  StoreOpened(:final store) => store,
   StoreNotOpened(:final problem) => fail('store did not open: $problem'),
 };
 
@@ -36,12 +35,19 @@ List<PageRead> pageReadsOf(StrategyRowSet rows) => [
   for (final page in rows.pages) pageReadOf(rows, page.publicId) as PageRead,
 ];
 
+StampedRead<T> stamped<T extends ArrivedBase>(T base) =>
+    StampedRead(base, tick());
+
+List<StampedRead<PageRead>> stampedPages(Iterable<PageRead> pages) => [
+  for (final page in pages) stamped(page),
+];
+
 Future<void> addCloud(LibraryStore store, StrategyRowSet rows) async =>
     savedValue(
       await store.addCloudStrategy(
         testAccount,
-        headerReadOf(rows),
-        pageReadsOf(rows),
+        stamped(headerReadOf(rows)),
+        stampedPages(pageReadsOf(rows)),
       ),
     );
 
@@ -64,31 +70,54 @@ List<QueueEffect> effectsOf(Recorded recorded) => [
 Future<int> sessionOf(LibraryStore store) async =>
     (await syncOf(store)).queue.session.number;
 
-Future<ResultSource> readStartOf(LibraryStore store) async =>
-    readFrom((await syncOf(store)).queue);
-
 Future<void> readServer(
   LibraryStore store,
   StrategyRowSet server, {
   Iterable<String>? pages,
 }) async {
-  final session = await sessionOf(store);
-  await recordAll(store, [
-    BaseArrived(
-      headerReadOf(server),
-      session: session,
-      from: await readStartOf(store),
-    ),
-  ]);
+  await recordAll(store, [await arrivalIn(store, headerReadOf(server))]);
   for (final page in pages ?? server.pages.map((page) => page.publicId)) {
-    await recordAll(store, [
-      BaseArrived(
-        pageReadOf(server, page),
-        session: session,
-        from: await readStartOf(store),
-      ),
-    ]);
+    await recordAll(store, [await arrivalIn(store, pageReadOf(server, page))]);
   }
+}
+
+Future<ReadAsked> askedIn(LibraryStore store) async =>
+    askRead((await syncOf(store)).queue);
+
+BaseArrived arrivedAs(
+  ArrivedBase base, {
+  required int session,
+  required ReadAsked asked,
+}) => BaseArrived(
+  base,
+  session: session,
+  point: asked.point,
+  requestedAt: asked.requestedAt,
+);
+
+Future<BaseArrived> arrivalIn(LibraryStore store, ArrivedBase base) async {
+  final session = (await syncOf(store)).queue.session;
+  return BaseArrived(
+    base,
+    session: session.number,
+    point: tick(),
+    requestedAt: session.sequence,
+  );
+}
+
+Future<ResultRefused> readRefusedIn(
+  LibraryStore store,
+  String? page,
+  String problem,
+) async {
+  final session = (await syncOf(store)).queue.session;
+  return ResultRefused(
+    page: page,
+    problem: problem,
+    session: session.number,
+    point: tick(),
+    requestedAt: session.sequence,
+  );
 }
 
 Future<SendBatch> claimAll(
@@ -276,9 +305,4 @@ Future<void> expectAgree(LibraryStore store) async {
     shown: (await syncOf(store)).queue.shown,
   );
   if (problems.isNotEmpty) fail(problems.join('\n'));
-}
-
-Future<ResultSource> beganIn(LibraryStore store) async {
-  final recorded = await recordAll(store, [const ReadBegun()]);
-  return effectsOf(recorded).whereType<ReadStartIssued>().single.source;
 }

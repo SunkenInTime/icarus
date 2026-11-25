@@ -29,7 +29,7 @@ final class Model {
   final Random random;
   final Random replacing;
   final Random lateness;
-  final readsInFlight = <(ArrivedBase, ResultSource, int, String)>[];
+  final readsInFlight = <(BaseArrived, String)>[];
   final server = Server();
   final client = Client();
   StrategyRowSet reference = initialRows();
@@ -69,7 +69,7 @@ final class Model {
   List<OpAnswer>? receive(String owner, List<StrategyOp> ops, int? basis) {
     if (namesAnotherStrategyLife(ops)) {
       count('batches naming a replaced strategy life applied nothing');
-      return const [];
+      return [];
     }
     final at = serverNow;
     final unchecked = [
@@ -326,21 +326,18 @@ final class Model {
       for (var round = 0; round < 3 && awaited.isNotEmpty; round++) {
         for (final hold in awaited) {
           for (final base in resultsFor(hold.subject)) {
-            final begun = transition(read, const ReadBegun(), now: clock);
-            if (begun case Stepped(queue: final started, :final effects)) {
-              read = started;
-              if (transition(
-                    read,
-                    BaseArrived(
-                      base,
-                      session: read.session.number,
-                      from: effects.whereType<ReadStartIssued>().single.source,
-                    ),
-                    now: clock,
-                  )
-                  case Stepped(:final queue)) {
-                read = queue;
-              }
+            if (transition(
+                  read,
+                  BaseArrived(
+                    base,
+                    session: read.session.number,
+                    point: tick(),
+                    requestedAt: read.session.sequence,
+                  ),
+                  now: clock,
+                )
+                case Stepped(:final queue)) {
+              read = queue;
             }
           }
         }
@@ -804,7 +801,7 @@ final class Model {
     final roll = reliable ? 0 : random.nextInt(12);
     if (!server.exists) {
       apply(
-        BatchRefused(attempt, BatchRefusal.strategyDeleted),
+        BatchRefused(attempt, BatchRefusal.strategyDeleted, point: tick()),
         'refused: gone',
       );
       return;
@@ -815,7 +812,7 @@ final class Model {
         for (final op in ops) ?strategyLifeSent[op.opId],
       ]);
       apply(
-        BatchRefused(attempt, BatchRefusal.strategyReplaced),
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
         'refused: the strategy was replaced',
       );
       return;
@@ -834,7 +831,7 @@ final class Model {
         BatchRefusal.unauthenticated,
         BatchRefusal.editAccessRemoved,
       ]);
-      apply(BatchRefused(attempt, refusal), 'refused whole ${refusal.name}');
+      apply(BatchRefused(attempt, refusal, point: tick()), 'refused whole ${refusal.name}');
       return;
     }
     if (roll == 6) {
@@ -845,7 +842,7 @@ final class Model {
     if (received == null) {
       refusedLate.addAll([for (final op in ops) op.opId]);
       apply(
-        BatchRefused(attempt, BatchRefusal.uncheckedTooLate),
+        BatchRefused(attempt, BatchRefusal.uncheckedTooLate, point: tick()),
         'refused late $attempt',
       );
       return;
@@ -879,8 +876,8 @@ final class Model {
     ];
     if (roll == 8) order.shuffle(random);
     for (final answer in order) {
-      apply(OpAnswered(attempt, answer), 'answer ${answer.opId}');
-      if (roll == 7) apply(OpAnswered(attempt, answer), 'again ${answer.opId}');
+      apply(OpAnswered(attempt, answer, point: tick()), 'answer ${answer.opId}');
+      if (roll == 7) apply(OpAnswered(attempt, answer, point: tick()), 'again ${answer.opId}');
     }
     apply(
       ServerTimeHeld(serverNow, at: elapsed, session: session),
@@ -930,59 +927,43 @@ final class Model {
   }
 
   void arrive(ArrivedBase base, String label) {
-    final from = switch (apply(const ReadBegun(), 'a read begins')) {
-      Stepped(:final effects) =>
-        effects.whereType<ReadStartIssued>().single.source,
-      final other => throw StateError('no read start was issued: $other'),
-    };
-    final session = client.queue.session.number;
+    final read = BaseArrived(
+      base,
+      session: client.queue.session.number,
+      point: tick(),
+      requestedAt: client.queue.session.sequence,
+    );
     if (lateness.nextInt(16) == 0) {
-      readsInFlight.add((base, from, session, label));
+      readsInFlight.add((read, label));
       count('reads held in flight');
       return;
     }
-    final fits = resultFit(
-      client.queue.shown,
-      client.queue.session,
-      base,
-      from,
-    );
-    must(BaseArrived(base, session: session, from: from), label);
-    mirror(base, fits);
+    mirror(base, must(read, label));
   }
 
   void deliverLateRead() {
     if (readsInFlight.isEmpty) return;
-    final (base, from, session, label) = readsInFlight.removeAt(
+    final (read, label) = readsInFlight.removeAt(
       lateness.nextInt(readsInFlight.length),
     );
-    final fits = resultFit(
-      client.queue.shown,
-      client.queue.session,
-      base,
-      from,
-    );
-    final result = apply(
-      BaseArrived(base, session: session, from: from),
-      'late $label',
-    );
+    final result = apply(read, 'late $label');
     switch (result) {
       case NotApplicable(:final why):
         count('late reads not taken: ${why.runtimeType}');
         count(
-          'late ${switch (base) {
+          'late ${switch (read.base) {
             HeaderRead() || StrategyGone() => 'list',
             PageRead() || PageGone() => 'page',
           }} reads not taken: ${why.runtimeType}',
         );
       case Stepped():
         count('late reads taken');
-        mirror(base, fits);
+        mirror(read.base, result);
     }
   }
 
-  void mirror(ArrivedBase base, ResultFit fits) {
-    if (fits == ResultFit.applies || fits == ResultFit.adopts) {
+  void mirror(ArrivedBase base, Step step) {
+    if (step case Stepped(tookResult: true)) {
       client.base = switch (base) {
         HeaderRead(
           strategy: final ReadableStrategy strategy,
@@ -1382,7 +1363,7 @@ final class Model {
           deliverLateRead();
         } else if (late.isNotEmpty) {
           final (attempt, answer) = late.removeAt(random.nextInt(late.length));
-          apply(OpAnswered(attempt, answer), 'late ${answer.opId}');
+          apply(OpAnswered(attempt, answer, point: tick()), 'late ${answer.opId}');
         }
       case 19:
         final pages = [for (final page in client.base.pages) page.publicId];
@@ -1391,7 +1372,7 @@ final class Model {
         must(
           random.nextBool()
               ? const ConnectionLost()
-              : const ConnectionReturned(),
+              : reconnected(),
           'connection',
         );
     }

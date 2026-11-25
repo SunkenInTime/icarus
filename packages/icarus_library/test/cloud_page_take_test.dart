@@ -57,11 +57,7 @@ Future<void> takePage(
   StrategyRowSet server, [
   String page = 'page-a',
 ]) async => recordAll(store, [
-  BaseArrived(
-    pageReadOf(server, page),
-    session: await sessionOf(store),
-    from: await readStartOf(store),
-  ),
+  await arrivalIn(store, pageReadOf(server, page)),
 ]);
 
 Future<Shown> shownIn(LibraryStore store) async =>
@@ -111,9 +107,9 @@ Contents olderBuildDigests(Contents contents) {
 
 Future<LibraryStore> reopened(MemoryStorage storage) async {
   final store = await openCloudStore(MemoryEngine(storage));
-  final opened = await recordAll(store, const [
-    AppRestarted(build: build),
-    ConnectionReturned(),
+  final opened = await recordAll(store, [
+    const AppRestarted(build: build),
+    reconnected(),
   ]);
   expect(opened.outcomes, everyElement(isA<ReportApplied>()));
   return store;
@@ -217,9 +213,9 @@ void main() {
       final older = olderBuildDigests(storage.contents);
       expect(sameContents(older, storage.contents), isFalse);
       final store = await openCloudStore(MemoryEngine(MemoryStorage(older)));
-      final opened = await recordAll(store, const [
-        AppRestarted(build: build),
-        ConnectionReturned(),
+      final opened = await recordAll(store, [
+        const AppRestarted(build: build),
+        reconnected(),
       ]);
       expect(opened.outcomes, everyElement(isA<ReportApplied>()));
       return store;
@@ -292,11 +288,7 @@ void main() {
     ]);
     expect(
       await store.record(testAccount, strategyId, [
-        BaseArrived(
-          pageReadOf(rewritten, 'page-a'),
-          session: await sessionOf(store),
-          from: await readStartOf(store),
-        ),
+        await arrivalIn(store, pageReadOf(rewritten, 'page-a')),
       ]),
       isA<Refused<Recorded, CommitRefusal>>().having(
         (refused) => refused.reason,
@@ -324,11 +316,7 @@ void main() {
       }
       final store = await reopened(old);
       final taken = await recordAll(store, [
-        BaseArrived(
-          pageReadOf(initialRows(), 'page-a'),
-          session: await sessionOf(store),
-          from: await readStartOf(store),
-        ),
+        await arrivalIn(store, pageReadOf(initialRows(), 'page-a')),
       ]);
       expect(taken.outcomes, everyElement(isA<ReportApplied>()));
       for (final group in [pageList, pageB]) {
@@ -358,9 +346,9 @@ void main() {
         ),
       );
       expect(storedGroup(old.contents, pageB), contains('"owed"'));
-      final opened = await recordAll(store, const [
-        AppRestarted(build: build),
-        ConnectionReturned(),
+      final opened = await recordAll(store, [
+        const AppRestarted(build: build),
+        reconnected(),
       ]);
       expect(opened.outcomes, everyElement(isA<ReportApplied>()));
       await takePage(store, initialRows());
@@ -458,11 +446,7 @@ void main() {
       final before = editable(storage.contents);
       expect(
         await store.record(testAccount, strategyId, [
-          BaseArrived(
-            pageReadOf(odd, 'page-a'),
-            session: await sessionOf(store),
-            from: await readStartOf(store),
-          ),
+          await arrivalIn(store, pageReadOf(odd, 'page-a')),
         ]),
         isA<Refused<Recorded, CommitRefusal>>().having(
           (refused) => refused.reason,
@@ -490,11 +474,7 @@ void main() {
       await addCloud(store, initialRows());
       refusing = true;
       final result = await store.record(testAccount, strategyId, [
-        BaseArrived(
-          pageReadOf(moved, 'page-a'),
-          session: await sessionOf(store),
-          from: await readStartOf(store),
-        ),
+        await arrivalIn(store, pageReadOf(moved, 'page-a')),
       ]);
       refusing = false;
       expect(result, isA<NotSaved<Recorded, CommitRefusal>>());

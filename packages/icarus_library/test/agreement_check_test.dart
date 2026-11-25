@@ -10,13 +10,13 @@ final rows = initialRows();
 
 Shown shownOfRows() {
   var shown = Shown.nothing
-      .taken(headerReadOf(rows), started: ReadStart.beforeAnyRead)
+      .taken(headerReadOf(rows), arrival: null)
       .shown;
   for (final page in rows.pages) {
     shown = shown
         .taken(
           pageReadOf(rows, page.publicId),
-          started: ReadStart.beforeAnyRead,
+          arrival: null,
         )
         .shown;
   }
@@ -147,7 +147,7 @@ void main() {
               page('page-b', sortIndex: 1, deleted: true, revision: 2),
             ]),
           ),
-          started: ReadStart.beforeAnyRead,
+          arrival: null,
         )
         .shown;
     final wrong = Shown(

@@ -11,10 +11,10 @@ import 'support.dart';
 Future<void> arriveIn(
   LibraryStore store,
   ArrivedBase base,
-  ResultSource from,
+  ReadAsked from,
 ) async {
   final recorded = await recordAll(store, [
-    BaseArrived(base, session: await sessionOf(store), from: from),
+    arrivedAs(base, session: await sessionOf(store), asked: from),
   ]);
   expect(recorded.outcomes.single, isA<ReportApplied>());
 }
@@ -109,7 +109,7 @@ Taken pageAWith(Shown shown, ElementRow row) => shown.taken(
     elements: [row],
     lineupGroups: const [],
   ),
-  started: ReadStart.beforeAnyRead,
+  arrival: null,
 );
 
 List<RowTaken> itemsTaken(Taken taken) => [
@@ -133,7 +133,7 @@ LiveElement e1OnB(LiveElement held, {required int revision}) => LiveElement(
 );
 
 Shown listed() => Shown.nothing
-    .taken(headerReadOf(initialRows()), started: ReadStart.beforeAnyRead)
+    .taken(headerReadOf(initialRows()), arrival: null)
     .shown;
 
 void main() {
@@ -145,8 +145,8 @@ void main() {
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
       await expectAgree(store);
-      final listStart = await beganIn(store);
-      final pageStart = await beganIn(store);
+      final listStart = await askedIn(store);
+      final pageStart = await askedIn(store);
       final newer = renamed(initialRows());
 
       await arriveIn(store, pageReadOf(newer, 'page-a'), pageStart);
@@ -166,8 +166,8 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      final pageStart = await beganIn(store);
-      final listStart = await beganIn(store);
+      final pageStart = await askedIn(store);
+      final listStart = await askedIn(store);
 
       await arriveIn(store, headerReadOf(renamed(initialRows())), listStart);
       await expectAgree(store);
@@ -185,7 +185,7 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      final start = await beganIn(store);
+      final start = await askedIn(store);
       expect(
         (await store.readStrategy(strategyId) as Found<StrategyRead>).value,
         isA<StrategyContent>().having(
@@ -321,8 +321,8 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      final olderA = await beganIn(store);
-      final newerB = await beganIn(store);
+      final olderA = await askedIn(store);
+      final newerB = await askedIn(store);
       final moved = movedToB(initialRows());
 
       await arriveIn(store, pageReadOf(moved, 'page-b'), newerB);
@@ -345,9 +345,9 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      final olderA = await beganIn(store);
-      final onB = await beganIn(store);
-      final goneFromB = await beganIn(store);
+      final olderA = await askedIn(store);
+      final onB = await askedIn(store);
+      final goneFromB = await askedIn(store);
       final moved = movedToB(initialRows());
 
       await arriveIn(store, pageReadOf(moved, 'page-b'), onB);
@@ -373,8 +373,8 @@ void main() {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
-      final onB = await beganIn(store);
-      final leftA = await beganIn(store);
+      final onB = await askedIn(store);
+      final leftA = await askedIn(store);
       final moved = movedToB(initialRows());
 
       await arriveIn(store, pageReadOf(moved, 'page-a'), leftA);
@@ -406,8 +406,8 @@ void main() {
         final storage = MemoryStorage();
         var store = await openCloudStore(MemoryEngine(storage));
         await addCloud(store, initialRows());
-        final readOfB = await beganIn(store);
-        final removing = await beganIn(store);
+        final readOfB = await askedIn(store);
+        final removing = await askedIn(store);
 
         await arriveIn(
           store,
@@ -444,19 +444,19 @@ void main() {
         final storage = MemoryStorage();
         var store = await openCloudStore(MemoryEngine(storage));
         await addCloud(store, initialRows());
-        final olderA = await beganIn(store);
+        final olderA = await askedIn(store);
         final moved = movedToB(initialRows());
         await arriveIn(
           store,
           pageReadOf(moved, 'page-b'),
-          await beganIn(store),
+          await askedIn(store),
         );
         await arriveIn(
           store,
           removal == 'the page is gone'
               ? const PageGone('page-b')
               : headerReadOf(withoutPage(moved, 'page-b')),
-          await beganIn(store),
+          await askedIn(store),
         );
         await arriveIn(store, pageReadOf(initialRows(), 'page-a'), olderA);
         expect(await itemsOn(store, 'page-a'), isNot(contains('e1')));
@@ -473,7 +473,7 @@ void main() {
     var store = await openCloudStore(MemoryEngine(storage));
     await addCloud(store, initialRows());
     final moved = movedToB(initialRows());
-    await arriveIn(store, pageReadOf(moved, 'page-b'), await beganIn(store));
+    await arriveIn(store, pageReadOf(moved, 'page-b'), await askedIn(store));
     await store.close();
     final contents = editable(storage.contents);
     contents[strategyArea(strategyId)]![elementName('page-a', 'e1')] =
@@ -499,7 +499,7 @@ void main() {
     final trashed = initialRows().withRows([
       page('page-b', sortIndex: 1, deleted: true, revision: 2),
     ]);
-    await arriveIn(store, headerReadOf(trashed), await beganIn(store));
+    await arriveIn(store, headerReadOf(trashed), await askedIn(store));
     expect((await syncOf(store)).queue.shown.trashed.keys, ['page-b']);
     await expectAgree(store);
     await store.close();

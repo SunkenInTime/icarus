@@ -22,7 +22,7 @@ bool expectLive({
 
 Client quietClient() => Client()
   ..holdsServerTime = false
-  ..must(const ConnectionReturned());
+  ..must(reconnected());
 
 void hold(Client client, int serverTime, Duration at, {int? session}) =>
     client.must(
@@ -80,7 +80,7 @@ void main() {
               case Session.another:
                 client
                   ..must(const ConnectionLost())
-                  ..must(const ConnectionReturned());
+                  ..must(reconnected());
             }
             final elapsed = switch (basis) {
               Basis.none || Basis.fresh => heldAt + const Duration(seconds: 5),
@@ -151,7 +151,7 @@ void main() {
     client.edit(elementDelete('drop', elementId: 'e2'));
     final first = claimAt(client, ['drop'], heldAt);
     expect((first.ops.single as ElementDeleteOp).lastWriterWins, isTrue);
-    client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate));
+    client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate, point: tick()));
     expect(client.view('drop').state, const Waiting());
     expect(client.view('drop').sendable, isTrue);
     final again = claimAt(client, ['drop'], heldAt);
@@ -184,14 +184,14 @@ void main() {
         (client.queue.entries.last as PendingOp).basis,
         const ServerTimeBasis(1000, heldAt: heldAt),
       );
-      client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate));
+      client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate, point: tick()));
       expect((client.queue.entries.last as PendingOp).basis, isNull);
       final again = claimAt(client, ['a'], heldAt);
       expect(isUncheckedSend(again.ops.single), isFalse);
       client.must(
         OpAnswered(
           again.attempt,
-          const AppliedAnswer('a', revision: 2, life: fixtureLife),
+          const AppliedAnswer('a', revision: 2, life: fixtureLife), point: tick(),
         ),
       );
       final second = claimAt(client, ['b'], heldAt);
@@ -224,7 +224,7 @@ void main() {
     final client = Client()..holdsServerTime = false;
     hold(client, 1000, heldAt);
     expect(client.queue.session.basis, isNull);
-    client.must(const ConnectionReturned());
+    client.must(reconnected());
     hold(client, 2000, heldAt);
     hold(client, 1500, heldAt + const Duration(seconds: 1));
     expect(
@@ -233,7 +233,7 @@ void main() {
     );
     client.must(const ConnectionLost());
     expect(client.queue.session.basis, isNull);
-    client.must(const ConnectionReturned());
+    client.must(reconnected());
     hold(client, 3000, heldAt);
     client.must(const AccountChanged());
     expect(client.queue.session.basis, isNull);
@@ -267,7 +267,7 @@ void main() {
     );
     final first = claimAt(client, ['a'], heldAt);
     expect(isUncheckedSend(first.ops.single), isTrue);
-    client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate));
+    client.must(BatchRefused(first.attempt, BatchRefusal.uncheckedTooLate, point: tick()));
     client.edit(
       movePatch('b', x: 30, merge: FieldMerge(fields: const ['position'])),
     );
