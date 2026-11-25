@@ -109,6 +109,88 @@ void main() {
       return store;
     }
 
+    test('a page the list does not show is not applied, before the '
+        'replacement\'s list', () async {
+      final store = await withQueuedAdd();
+      final session = await sessionOf(store);
+      final newer = replacedWithNewPage(initialRows(), laterLife).withRows([
+        bornIn(
+          LivePage(
+            publicId: 'page-n',
+            strategyPublicId: strategyId,
+            name: 'New',
+            sortIndex: 2,
+            isAttack: true,
+            revision: 1,
+          ),
+          laterLife + 3,
+        ),
+        LiveElement(
+          publicId: 'n2',
+          pagePublicId: 'page-n',
+          payload: agentPayload('n2', const {}),
+          sortIndex: 0,
+          revision: 1,
+          unknownFields: jsonObject({'createdAt': laterLife + 4}),
+        ),
+      ]);
+      await recordAll(store, [
+        BaseArrived(pageReadOf(newer, 'page-n'), session: session),
+      ]);
+      expect(isDebt((await syncOf(store)).queue.shown.list), isTrue);
+      expect(
+        await store.readPage(strategyId, 'page-n'),
+        isA<NotFound<Object>>(),
+      );
+    });
+
+    test(
+      'a page in the trash, which no list shows, is applied: it does not owe '
+      'the list',
+      () async {
+        final store = await withQueuedAdd();
+        final session = await sessionOf(store);
+        final rows = initialRows();
+        final trashed = rows.withRows([
+          (rows.page('page-b')! as LivePage).trashed(),
+        ]);
+        await recordAll(store, [
+          BaseArrived(headerReadOf(trashed), session: session),
+          BaseArrived(pageReadOf(trashed, 'page-b'), session: session),
+        ]);
+        expect(isDebt((await syncOf(store)).queue.shown.list), isFalse);
+      },
+    );
+
+    test('a page the replacement\'s list removed does not come back from a '
+        'late snapshot', () async {
+      final store = await withQueuedAdd();
+      final session = await sessionOf(store);
+      final newer = replaced(initialRows(), life: laterLife);
+      final withoutB = StrategyRowSet(
+        strategy: newer.strategy,
+        pages: newer.pages.where((page) => page.publicId != 'page-b'),
+        settings: newer.settings.where((row) => row.pagePublicId != 'page-b'),
+        elements: const [],
+        lineupGroups: const [],
+      );
+      await recordAll(store, [
+        BaseArrived(headerReadOf(withoutB), session: session),
+        BaseArrived(pageReadOf(initialRows(), 'page-b'), session: session),
+      ]);
+      expect(
+        await store.readPage(strategyId, 'page-b'),
+        isA<NotFound<Object>>(),
+      );
+      await recordAll(store, [
+        BaseArrived(headerReadOf(withoutB), session: session),
+      ]);
+      expect(
+        await store.readPage(strategyId, 'page-b'),
+        isA<NotFound<Object>>(),
+      );
+    });
+
     test('a page of a later life, before its list, is not applied: the list '
         'is owed and nothing old is drawn on the new page', () async {
       final store = await withQueuedAdd();

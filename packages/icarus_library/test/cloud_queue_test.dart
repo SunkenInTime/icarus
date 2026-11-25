@@ -2615,6 +2615,13 @@ void main() {
         );
         expect(client.view('del').sendable, isFalse);
         bothResults(client, server, 'page-c', listFirst);
+        if (!listFirst) {
+          expect(
+            client.view('del').holds,
+            contains(awaitingResult(const PageResult('page-c'))),
+          );
+          client.arrive(pageReadOf(server.rows, 'page-c'));
+        }
         expect(stateOf(client, 'del'), isA<NeedsUser>());
       });
     }

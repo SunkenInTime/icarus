@@ -1337,9 +1337,11 @@ final class Model {
       throw StateError('the drain helped the user $drainHelps times');
     }
     if (!teammateEdited && !userRemoved && server.exists) {
-      if (adoptedReplacement) {
-        count('end content compared after a replacement');
-      }
+      count(
+        adoptedReplacement
+            ? 'end content compared after a replacement'
+            : 'end content compared without a replacement',
+      );
       final want = liveContent(reference);
       final got = liveContent(server.rows);
       if (!const DeepCollectionEquality().equals(want, got)) {
@@ -1394,6 +1396,8 @@ const minimums = {
   'ops refused as naming a row life that was replaced': 1,
   'the strategy is replaced': 5,
   'end content compared after a replacement': 5,
+  'end content compared without a replacement': 80,
+  'batches refused as the strategy was replaced': 50,
   'StrategySetAside': 5,
   'UserDiscardedReplaced': 5,
   'replays answered without a life': 1,

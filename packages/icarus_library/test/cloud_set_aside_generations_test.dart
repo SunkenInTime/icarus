@@ -38,4 +38,19 @@ void main() {
     ];
     expect(places.toSet(), hasLength(places.length));
   });
+
+  test('the sync status counts every generation, and one discard clears them '
+      'all and leaves a fresh queued edit alone', () {
+    final client = Client();
+    client.edit(movePatch('first'));
+    client.read(replaced(initialRows()));
+    client.edit(movePatch('second', elementId: 'e2'));
+    client.read(replaced(initialRows(), life: thirdLife));
+    expect(Tally.of(client.queue, now).setAside, 2);
+    client.edit(movePatch('fresh', elementId: 'e2'));
+    client.must(const UserDiscardedReplaced());
+    expect(client.queue.strategy.setAside, const NothingSetAside());
+    expect(Tally.of(client.queue, now).setAside, 0);
+    expect([for (final entry in client.queue.entries) entry.id], ['fresh']);
+  });
 }

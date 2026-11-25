@@ -484,6 +484,65 @@ void main() {
       );
     });
 
+    test(
+        'a page that keeps coming back in a later life than its list is read '
+        'again at the read backoff, never twice in one tick, and shows '
+        'unreadable work at the bound', () {
+      inWorld((world) {
+        final drawn = world.firstElement();
+        final page = drawn.pagePublicId;
+        world.server.answerNext(
+          strategyId,
+          (call) => Future.value(
+            StoreBatchAnswered(
+              [
+                RejectedAnswer(
+                  call.opIds.single,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+              ],
+              complete: true,
+            ),
+          ),
+        );
+        final reads = <Duration>[];
+        world.server.overrideRead = (call) {
+          if (call.page != page) return null;
+          reads.add(world.async.elapsed);
+          final held = world.server.rows[strategyId]!.page(page)! as LivePage;
+          return StoreReadAnswered(
+            PageRead(
+              page: bornIn(
+                LivePage(
+                  publicId: held.publicId,
+                  strategyPublicId: held.strategyPublicId,
+                  name: held.name,
+                  isAutoNamed: held.isAutoNamed,
+                  sortIndex: held.sortIndex,
+                  isAttack: held.isAttack,
+                  revision: held.revision,
+                ),
+                lifeOfRow(held.key) + 1000,
+              ) as PageRow,
+              elements: const [],
+              lineupGroups: const [],
+            ),
+          );
+        };
+        world.commitMove(1);
+        world.settle(const Duration(minutes: 10));
+        for (var at = 1; at < reads.length; at++) {
+          expect(
+            reads[at] - reads[at - 1],
+            greaterThanOrEqualTo(const Duration(seconds: 2)),
+          );
+        }
+        expect(reads.length, inInclusiveRange(3, 4));
+        expect(world.face(), Face.unreadableWork);
+      });
+    });
+
     test('a start with saved work sends it with no wake from outside', () {
       final storage = MemoryStorage();
       final server = FakeServer();

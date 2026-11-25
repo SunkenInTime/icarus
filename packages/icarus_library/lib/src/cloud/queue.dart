@@ -603,6 +603,22 @@ sealed class QueueEffect {
   const QueueEffect();
 }
 
+final class PageResultDeferred extends QueueEffect {
+  const PageResultDeferred(this.page);
+
+  final String page;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PageResultDeferred && other.page == page;
+
+  @override
+  int get hashCode => Object.hash(PageResultDeferred, page);
+
+  @override
+  String toString() => 'PageResultDeferred($page)';
+}
+
 final class StrategySetAside extends QueueEffect {
   const StrategySetAside(this.count);
 
@@ -1364,13 +1380,14 @@ ResultFit resultFit(Shown shown, ArrivedBase base) => switch (base) {
     (final held?, final listed?) when listed < held => ResultFit.older,
     _ => ResultFit.applies,
   },
-  PageRead(:final page) => switch ((
-    shown.pages[page.publicId]?.life,
-    createdAtOf(page),
-  )) {
-    (final listed?, final read?) when read > listed => ResultFit.listFirst,
-    (final listed?, final read?) when read < listed => ResultFit.older,
-    _ => ResultFit.applies,
+  PageRead(:final page) => switch (shown.pages[page.publicId]) {
+    null when page is TrashedPage => ResultFit.applies,
+    null => ResultFit.listFirst,
+    final listed => switch ((listed.life, createdAtOf(page))) {
+      (final listed?, final read?) when read > listed => ResultFit.listFirst,
+      (final listed?, final read?) when read < listed => ResultFit.older,
+      _ => ResultFit.applies,
+    },
   },
   PageGone() || StrategyGone() => ResultFit.applies,
 };
@@ -1381,6 +1398,9 @@ Step _arrived(_Edit edit, ArrivedBase base) {
       return NotApplicable(edit.original, const OlderResult());
     case ResultFit.listFirst:
       if (!isDebt(edit.shown.list)) edit.shown = edit.shown.owingList();
+      if (base case PageRead(:final page)) {
+        edit.effects.add(PageResultDeferred(page.publicId));
+      }
       return edit.done();
     case ResultFit.applies:
       break;

@@ -496,6 +496,7 @@ String outcome(Client before, Step result) {
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
             StrategySetAside(:final count) => 'sets $count aside',
+            PageResultDeferred(:final page) => 'defers $page for the page list',
             SetAsideDiscarded(:final count) => 'discards $count set aside',
           },
         ),
