@@ -650,6 +650,7 @@ final class World {
     FakeServer? server,
     String clientId = 'client-1',
     Snapshot? startingWith,
+    String build = 'test-build',
   }) {
     final inputs = startingWith ??
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
@@ -660,7 +661,7 @@ final class World {
     LibraryStore.open(
       engine,
       canRead: appCanRead,
-      build: 'test-build',
+      build: build,
       clock: () => start.add(async.elapsed),
     ).then(
       (opened) => store = switch (opened) {
@@ -678,7 +679,7 @@ final class World {
       store: SlowSenderStore(store!),
       send: fake.send,
       reads: fake.reads,
-      build: 'test-build',
+      build: build,
       clientId: clientId,
       inputs: inputs,
       timing: timing,
@@ -1082,6 +1083,7 @@ void inWorld(
   bool addStrategy = true,
   String clientId = 'client-1',
   bool keepOpen = false,
+  String build = 'test-build',
 }) {
   fakeAsync((async) {
     final world = World.open(
@@ -1089,6 +1091,7 @@ void inWorld(
       storage: storage,
       server: server,
       clientId: clientId,
+      build: build,
     );
     if (addStrategy) world.addServedStrategy();
     body(world);

@@ -41,6 +41,14 @@ final class SenderTiming {
 
   int get unresolvedRounds => 3;
 
+  int get accessReads => 6;
+
+  Duration settleAfter(int unsettled) =>
+      unsettled < unresolvedRounds ? readRetryAfter(unsettled) : readAgainAfter;
+
+  Duration? accessAfter(int unconfirmed) =>
+      unconfirmed < accessReads ? readAgainAfter : null;
+
   Duration readRetryAfter(int failures) {
     final doubled = firstWriteRetry * pow(2, min(failures - 1, 10)).toInt();
     return doubled < readAgainAfter ? doubled : readAgainAfter;
@@ -168,17 +176,19 @@ final class CannotRead {
 
 typedef ReadsUnder = ({Account? account, int? connection, int signOuts});
 
-typedef ViewerWait = ({int lossAttempt, DateTime until});
+typedef Rung = ({int count, DateTime at});
 
-typedef NeedRounds = ({int rounds, DateTime at});
+typedef AccessRung = ({
+  Account account,
+  int signIns,
+  int count,
+  DateTime at,
+  CannotRead? cannot,
+});
 
 typedef ReadMemory = ({
   ReadsUnder under,
-  DateTime? retryAt,
-  int failures,
-  CannotRead? cannotRead,
-  ViewerWait? viewer,
-  Map<ResultSubject, NeedRounds> rounds,
+  Map<String, Rung> settle,
   RetireReads retired,
 });
 
@@ -190,49 +200,31 @@ ReadsUnder readsUnder(Snapshot snap) => (
 
 ReadMemory freshReads(ReadsUnder under) => (
       under: under,
-      retryAt: null,
-      failures: 0,
-      cannotRead: null,
-      viewer: null,
-      rounds: const {},
+      settle: const {},
       retired: const {},
     );
 
 extension on ReadMemory {
-  ReadMemory failed(DateTime at, {CannotRead? cannotRead}) => (
+  ReadMemory climbed(String read, DateTime at) => (
         under: under,
-        retryAt: at,
-        failures: cannotRead == null ? failures + 1 : failures,
-        cannotRead: cannotRead ?? this.cannotRead,
-        viewer: viewer,
-        rounds: rounds,
+        settle: {
+          ...settle,
+          read: (count: (settle[read]?.count ?? 0) + 1, at: at),
+        },
         retired: retired,
       );
 
-  ReadMemory answered({
-    required ViewerWait? viewer,
-    required Map<ResultSubject, NeedRounds> rounds,
-    required RetireReads retired,
-  }) =>
-      (
+  ReadMemory keeping(bool Function(String read, Rung rung) keep) => (
         under: under,
-        retryAt: null,
-        failures: 0,
-        cannotRead: null,
-        viewer: viewer,
-        rounds: rounds,
+        settle: {
+          for (final MapEntry(:key, :value) in settle.entries)
+            if (keep(key, value)) key: value,
+        },
         retired: retired,
       );
 
-  ReadMemory withRounds(Map<ResultSubject, NeedRounds> rounds) => (
-        under: under,
-        retryAt: retryAt,
-        failures: failures,
-        cannotRead: cannotRead,
-        viewer: viewer,
-        rounds: rounds,
-        retired: retired,
-      );
+  ReadMemory withRetired(RetireReads retired) =>
+      (under: under, settle: settle, retired: retired);
 }
 
 typedef _Request = ({Account account, int signOuts});
@@ -353,7 +345,7 @@ final class CloudSender {
   final _wanted = <String, _Request>{};
   final _memory = <String, ReadMemory>{};
   final _unread = <String>{};
-  final _deferred = <String, Map<String, ({int count, DateTime at})>>{};
+  final _access = <String, AccessRung>{};
   final _lastSeen = <String, CloudStrategy>{};
   final retiring = Retiring();
   var looks = 0;
@@ -397,8 +389,34 @@ final class CloudSender {
         _ => null,
       };
 
-  CannotRead? cannotRead(String strategyId) =>
-      readMemory(strategyId).cannotRead;
+  CannotRead? cannotRead(String strategyId) => _accessRung(strategyId)?.cannot;
+
+  AccessRung? accessRung(String strategyId) => _accessRung(strategyId);
+
+  AccessRung? _accessRung(String id) => switch (_access[id]) {
+        final rung?
+            when rung.account == _inputs.account &&
+                rung.signIns == _inputs.signIns =>
+          rung,
+        _ => null,
+      };
+
+  bool _accessStopped(String id) => switch (_accessRung(id)) {
+        (:final count, at: _, cannot: _, account: _, signIns: _) =>
+          _timing.accessAfter(count) == null,
+        null => false,
+      };
+
+  void _climbAccess(String id, Snapshot snap, CannotRead? cannot) {
+    final kept = _accessRung(id);
+    _access[id] = (
+      account: snap.account!,
+      signIns: snap.signIns,
+      count: (kept?.count ?? 0) + 1,
+      at: _clock(),
+      cannot: cannot,
+    );
+  }
 
   ReadMemory readMemory(String strategyId) =>
       _memoryUnder(strategyId, readsUnder(_inputs));
@@ -430,11 +448,10 @@ final class CloudSender {
     final now = _clock();
     final memory = readMemory(strategyId);
     final stuck = [
-      for (final MapEntry(key: subject, value: (:rounds, :at))
-          in memory.rounds.entries)
-        if (rounds >= _timing.unresolvedRounds &&
-            at.add(_timing.readAgainAfter).isAfter(now))
-          ('$subject', at.add(_timing.readAgainAfter)),
+      for (final MapEntry(key: read, value: (:count, :at))
+          in memory.settle.entries)
+        if (count >= _timing.unresolvedRounds)
+          (read, at.add(_timing.readAgainAfter)),
       if (cloud ?? _lastSeen[strategyId] case final seen?)
         for (final (page, until)
             in Retiring.stuck(seen, now, _timing.retiring, memory.retired))
@@ -464,12 +481,6 @@ final class CloudSender {
         ReadAt(blocked != null && blocked.isAfter(at) ? blocked : at),
       (planned: null, due: null) => const NothingToRead(),
     };
-  }
-
-  void _forget(String id) {
-    if (_memory[id] case final kept? when kept.rounds.isNotEmpty) {
-      _memory[id] = kept.withRounds(const {});
-    }
   }
 
   set inputs(Snapshot next) {
@@ -515,9 +526,21 @@ final class CloudSender {
     _lastEdit[strategyId] = now;
     _firstEdit[strategyId] ??= now;
     _checkedClean.remove(strategyId);
-    _forget(strategyId);
     retiring.active(strategyId, now);
     wake();
+  }
+
+  void retryNow(String strategyId) {
+    _newEvidence(strategyId);
+    notBefore.remove(strategyId);
+    wake();
+  }
+
+  void _newEvidence(String id) {
+    _access.remove(id);
+    if (_memory[id] case final kept? when kept.settle.isNotEmpty) {
+      _memory[id] = kept.keeping((read, rung) => false);
+    }
   }
 
   void adopt(String strategyId) {
@@ -663,7 +686,10 @@ final class CloudSender {
     DateTime now,
   ) async {
     final memory = _boundMemory(id, snap);
-    for (final at in [notBefore[id], memory.retryAt]) {
+    for (final at in [
+      notBefore[id],
+      _refusedUntil(id, const _ReadList(), memory),
+    ]) {
       if (at != null && at.isAfter(now)) return _Skipped(at);
     }
     if (_inputs != snap) return const _Restart();
@@ -715,7 +741,7 @@ final class CloudSender {
         _note(id, 'not adopted: the server no longer has it');
         return const _Acted();
       case final other:
-        return _readRefused(id, other, snap);
+        return _readRefused(id, const _ReadList(), other, snap);
     }
   }
 
@@ -834,6 +860,7 @@ final class CloudSender {
     DateTime now,
     ReadMemory memory,
   ) {
+    if (_accessStopped(id)) return (planned: null, due: null);
     DateTime? due;
     for (final (:planned, :wantedAt) in _readsWanted(id, cloud, now, memory)) {
       final at = switch (_refusedUntil(id, planned.read, memory)) {
@@ -855,12 +882,7 @@ final class CloudSender {
     if (standingOf(cloud.queue) == Standing.editAccessLost) {
       yield (
         planned: (read: const _ReadList(), why: _Why.access),
-        wantedAt: switch (memory.viewer) {
-          (:final lossAttempt, :final until)
-              when lossAttempt == _accessLostAt(cloud) =>
-            until,
-          _ => now,
-        },
+        wantedAt: now,
       );
       return;
     }
@@ -870,15 +892,7 @@ final class CloudSender {
             .compareTo(_readOf(b) is _ReadList ? 0 : 1),
       );
     for (final need in needed) {
-      yield (
-        planned: (read: _readOf(need), why: _Why.need),
-        wantedAt: switch (memory.rounds[need]) {
-          null => now,
-          (:final rounds, :final at) when rounds >= _timing.unresolvedRounds =>
-            at.add(_timing.readAgainAfter),
-          (:final rounds, :final at) => at.add(_timing.readRetryAfter(rounds)),
-        },
-      );
+      yield (planned: (read: _readOf(need), why: _Why.need), wantedAt: now);
     }
     for (final page in _unreadPages(cloud)) {
       yield (planned: (read: _ReadPage(page), why: _Why.adopt), wantedAt: now);
@@ -900,11 +914,24 @@ final class CloudSender {
     }
   }
 
-  DateTime? _refusedUntil(String id, _Read read, ReadMemory memory) =>
-      switch ((memory.retryAt, _deferredUntil(id, read))) {
-        (final a?, final b?) => a.isAfter(b) ? a : b,
-        (final a, final b) => a ?? b,
-      };
+  DateTime? _refusedUntil(String id, _Read read, ReadMemory memory) {
+    final settle = switch (memory.settle['$read']) {
+      (:final count, :final at) => at.add(_timing.settleAfter(count)),
+      null => null,
+    };
+    final access = switch (_accessRung(id)) {
+      (:final count, :final at, cannot: _, account: _, signIns: _) => switch (
+            _timing.accessAfter(count)) {
+          final after? => at.add(after),
+          null => null,
+        },
+      null => null,
+    };
+    return switch ((settle, access)) {
+      (final a?, final b?) => a.isAfter(b) ? a : b,
+      (final a, final b) => a ?? b,
+    };
+  }
 
   static List<String> _unreadPages(CloudStrategy cloud) =>
       cloud.queue.shown.pagesToRead.toList();
@@ -922,17 +949,13 @@ final class CloudSender {
 
   void _forgetResolved(String id, CloudStrategy cloud, Snapshot snap) {
     final memory = _boundMemory(id, snap);
-    final raised = _needsOf(cloud);
-    final now = _clock();
-    final kept = {
-      for (final MapEntry(key: subject, value: rounds) in memory.rounds.entries)
-        if (raised.contains(subject) &&
-            (rounds.rounds < _timing.unresolvedRounds ||
-                rounds.at.add(_timing.readAgainAfter).isAfter(now)))
-          subject: rounds,
+    final still = {
+      for (final (:planned, wantedAt: _)
+          in _readsWanted(id, cloud, _clock(), memory))
+        '${planned.read}',
     };
-    if (kept.length != memory.rounds.length) {
-      _memory[id] = memory.withRounds(kept);
+    if (memory.settle.keys.any((read) => !still.contains(read))) {
+      _memory[id] = memory.keeping((read, _) => still.contains(read));
     }
   }
 
@@ -1046,7 +1069,7 @@ final class CloudSender {
               return _troubled(id, trouble);
             }
             return _readFailed(
-                id, 'the store would not keep $read: $why', snap);
+                id, read, 'the store would not keep $read: $why', snap);
           case WriteTroubled(:final trouble):
             return _troubled(id, trouble);
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
@@ -1054,6 +1077,7 @@ final class CloudSender {
               id,
               owner,
               read,
+              snap,
               'the queue did not take $read: ${notApplied.join('; ')}',
             );
           case WrittenWith(:final effects):
@@ -1066,11 +1090,11 @@ final class CloudSender {
                 id,
                 owner,
                 read,
+                snap,
                 'the page list and page $page keep disagreeing about which '
                 'life the page is in',
               );
             }
-            _deferred[id]?.remove('$read');
         }
         if (_inputs != snap) return const _Restart();
         if (read is _ReadList) _unread.add(id);
@@ -1086,7 +1110,7 @@ final class CloudSender {
         notBefore.remove(id);
         return const _Acted();
       case final other:
-        return _readRefused(id, other, snap);
+        return _readRefused(id, read, other, snap);
     }
   }
 
@@ -1099,36 +1123,23 @@ final class CloudSender {
     DateTime started,
     Snapshot snap,
   ) {
+    switch (why) {
+      case _Why.access when !(role?.edits ?? false):
+        _climbAccess(id, snap, null);
+      case _Why.access || _Why.need || _Why.adopt || _Why.retire:
+        _access.remove(id);
+    }
     final memory = _boundMemory(id, snap);
-    _memory[id] = memory.answered(
-      viewer: switch (why) {
-        _Why.access when role?.edits ?? false => null,
-        _Why.access => (
-            lossAttempt: _accessLostAt(cloud),
-            until: started.add(_timing.readAgainAfter),
-          ),
-        _ => memory.viewer,
-      },
-      rounds: switch (why) {
-        _Why.need => {
-            ...memory.rounds,
-            for (final need in _needsOf(cloud))
-              if ('${_readOf(need)}' == '$read')
-                need: (
-                  rounds: (memory.rounds[need]?.rounds ?? 0) + 1,
-                  at: started,
-                ),
-          },
-        _ => memory.rounds,
-      },
-      retired: switch ((why, read)) {
-        (_Why.retire, _ReadPage(:final page)) =>
-          Retiring.read(memory.retired, page, cloud, started),
-        (_Why.retire, _ReadList()) =>
-          Retiring.read(memory.retired, Retiring.list, cloud, started),
-        _ => memory.retired,
-      },
-    );
+    _memory[id] = switch (why) {
+      _Why.need || _Why.adopt => memory.climbed('$read', started),
+      _Why.retire => memory.withRetired(switch (read) {
+          _ReadPage(:final page) =>
+            Retiring.read(memory.retired, page, cloud, started),
+          _ReadList() =>
+            Retiring.read(memory.retired, Retiring.list, cloud, started),
+        }),
+      _Why.access => memory,
+    };
     _store.report(ReadRecorded(id, '$read', why.words, at: started));
   }
 
@@ -1136,12 +1147,11 @@ final class CloudSender {
     String id,
     Account owner,
     _Read read,
+    Snapshot snap,
     String why,
   ) async {
-    final now = _clock();
-    final reads = _deferred[id] ??= {};
-    final previous = reads['$read'];
-    final count = (previous?.count ?? 0) + 1;
+    final climbed = _boundMemory(id, snap).climbed('$read', _clock());
+    final count = climbed.settle['$read']!.count;
     if (count == _timing.unresolvedRounds) {
       final noted = await _store.write(owner, id, [
         ResultRefused(
@@ -1157,30 +1167,25 @@ final class CloudSender {
         return _troubled(id, trouble);
       }
     }
-    reads['$read'] = (count: count, at: now);
+    _memory[id] = climbed;
     _note(id, '$why ($count in a row); $read is read again later');
     return const _Acted();
   }
 
-  DateTime? _deferredUntil(String id, _Read read) =>
-      switch (_deferred[id]?['$read']) {
-        null => null,
-        (:final count, :final at) => at.add(
-            count >= _timing.unresolvedRounds
-                ? _timing.readAgainAfter
-                : _timing.readRetryAfter(count),
-          ),
-      };
-
-  _Step _readFailed(String id, String words, Snapshot snap) {
-    final memory = _boundMemory(id, snap);
-    final at = _clock().add(_timing.readRetryAfter(memory.failures + 1));
-    _memory[id] = memory.failed(at);
-    _note(id, '$words; reading again at $at');
+  _Step _readFailed(String id, _Read read, String words, Snapshot snap) {
+    final memory =
+        _memory[id] = _boundMemory(id, snap).climbed('$read', _clock());
+    final at = _refusedUntil(id, read, memory)!;
+    _note(id, '$words; reading $read again at $at');
     return _Skipped(at);
   }
 
-  _Step _readRefused(String id, StoreReadOutcome outcome, Snapshot snap) {
+  _Step _readRefused(
+    String id,
+    _Read read,
+    StoreReadOutcome outcome,
+    Snapshot snap,
+  ) {
     switch (outcome) {
       case StoreReadRefused(
           refusal: StoreReadRefusal.accountMismatch ||
@@ -1196,18 +1201,24 @@ final class CloudSender {
         return const _Acted();
       case StoreReadRefused(refusal: StoreReadRefusal.forbidden, :final why):
         final cannot = CannotRead(why);
-        final at = _clock().add(_timing.readAgainAfter);
-        _memory[id] = _boundMemory(id, snap).failed(at, cannotRead: cannot);
-        _note(id, '$cannot; reading again at $at');
+        _climbAccess(id, snap, cannot);
+        final at = _refusedUntil(id, read, _boundMemory(id, snap));
+        _note(
+          id,
+          at == null
+              ? '$cannot; reads stop until a sign-in or the app starts again'
+              : '$cannot; reading again at $at',
+        );
         return _Skipped(at);
       case StoreReadUnreadable(:final problem):
         return _readFailed(
           id,
+          read,
           'the read came back in rows this build cannot read ($problem)',
           snap,
         );
       case StoreReadLost(:final why):
-        return _readFailed(id, 'the read was lost ($why)', snap);
+        return _readFailed(id, read, 'the read was lost ($why)', snap);
       case StoreReadAnswered():
         return const _Acted();
     }
@@ -1295,7 +1306,19 @@ final class CloudSender {
         if (effects.any((effect) => effect is ReportUnauthenticated)) {
           signInWaitFrom = snap.signIns;
         }
-        _forget(id);
+        switch (outcome) {
+          case StoreBatchRefusedWhole() || StoreBatchOutsideWindow():
+            _newEvidence(id);
+          case StoreBatchAnswered(:final answers)
+              when answers.any(
+                (answer) => answer is! AppliedAnswer && answer is! NoopAnswer,
+              ):
+            _newEvidence(id);
+          case StoreBatchAnswered() ||
+                StoreBatchLost() ||
+                StoreBatchAccountMismatch():
+            break;
+        }
         retiring.active(id, _clock());
         _note(
           id,

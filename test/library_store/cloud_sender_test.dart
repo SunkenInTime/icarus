@@ -1879,8 +1879,7 @@ void main() {
 
     test(
         'a need that its reads cannot settle is read three times, then shown '
-        'as could not resolve, and after ten minutes read three times again',
-        () {
+        'as could not resolve, and read again once every ten minutes', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       inWorld(
@@ -1922,7 +1921,7 @@ void main() {
               for (final call in server.readCalls)
                 if (call.page == secondId()) call
             ],
-            hasLength(6),
+            hasLength(4),
           );
         },
         storage: storage,
@@ -2575,11 +2574,9 @@ void main() {
           final now = start.add(world.async.elapsed);
           final seeded = (
             under: readsUnder(world.sender.inputs),
-            retryAt: now.add(const Duration(hours: 1)),
-            failures: 4,
-            cannotRead: const CannotRead('seeded'),
-            viewer: (lossAttempt: 7, until: now.add(const Duration(hours: 1))),
-            rounds: {PageResult(pageId): (rounds: 3, at: now)},
+            settle: {
+              'page $pageId': (count: 3, at: now),
+            },
             retired: {
               Retiring.list: (works: {(1, 0)}, at: now, rounds: 3),
             },
