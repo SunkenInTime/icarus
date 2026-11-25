@@ -715,6 +715,52 @@ pub mod tests {
     }
 
     #[tokio::test]
+    async fn test_mutation_waits_for_its_commit_transition() -> anyhow::Result<()> {
+        let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
+        let mut subscription = client.subscribe("getCounter", btreemap! {}).await?;
+        let query_id = subscription.query_id();
+        test_protocol.take_sent().await;
+        let (first, version) = fake_transition(StateVersion::initial(), vec![(query_id, 1.into())]);
+        test_protocol.fake_server_response(first).await?;
+        assert_eq!(
+            subscription.next().await,
+            Some(FunctionResult::Value(1.into()))
+        );
+
+        let mut mutating = client.clone();
+        let mut res =
+            tokio::spawn(async move { mutating.mutation("incrementCounter", btreemap! {}).await });
+        test_protocol.wait_until_n_messages_sent(1).await;
+        test_protocol.take_sent().await;
+
+        let committed_at = version.ts.succ()?.succ()?;
+        test_protocol
+            .fake_server_response(ServerMessage::MutationResponse {
+                request_id: 0,
+                result: FunctionResult::Value(Value::Null).into(),
+                ts: Some(committed_at),
+                log_lines: LogLinesMessage(vec![]),
+            })
+            .await?;
+        let (older, version) = fake_transition(version, vec![]);
+        assert!(version.ts < committed_at);
+        test_protocol.fake_server_response(older).await?;
+        tokio::time::timeout(Duration::from_millis(50), &mut res)
+            .await
+            .unwrap_err();
+
+        let (reflecting, version) = fake_transition(version, vec![(query_id, 2.into())]);
+        assert_eq!(version.ts, committed_at);
+        test_protocol.fake_server_response(reflecting).await?;
+        assert_eq!(res.await??, FunctionResult::Value(Value::Null));
+        assert_eq!(
+            subscription.next().await,
+            Some(FunctionResult::Value(2.into()))
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_mutation_error() -> anyhow::Result<()> {
         let (mut client, mut test_protocol) = ConvexClient::with_test_protocol().await?;
         test_protocol.take_sent().await;
