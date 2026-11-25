@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
@@ -14,12 +16,13 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/editor_input_gate.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
-import 'package:icarus/widgets/strategy_view_skeleton.dart';
+import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _Ascent extends MapProvider {
@@ -128,8 +131,18 @@ Future<ProviderContainer> _editor(WidgetTester tester) async {
   return container;
 }
 
-int _beginOpen(ProviderContainer container) =>
-    container.read(strategyOpeningProvider.notifier).begin('opened');
+int _beginOpen(ProviderContainer container) => container
+    .read(strategyOpeningProvider.notifier)
+    .begin('opened', source: StrategySource.local);
+
+double? _skeletonOpacity(WidgetTester tester) {
+  final fade = find.descendant(
+    of: find.byType(EditorOpeningSkeleton),
+    matching: find.byType(FadeTransition),
+  );
+  if (fade.evaluate().isEmpty) return null;
+  return tester.widget<FadeTransition>(fade.first).opacity.value;
+}
 
 Future<void> _drag(WidgetTester tester, Offset from, Offset to) async {
   final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -254,26 +267,80 @@ void main() {
   });
 
   testWidgets(
-      'the skeleton shows only once an open has run for 200 ms, and goes '
-      'when it ends', (tester) async {
+      'the skeleton is never seen for an open shorter than 0.5 s; a longer '
+      'one fades it fully in, and it is gone once the open ends',
+      (tester) async {
     final container = await _editor(tester);
 
     final quick = _beginOpen(container);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 450));
     container.read(strategyOpeningProvider.notifier).settle(quick);
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(StrategyViewSkeleton), findsNothing,
-        reason: 'an open shorter than 200 ms never shows it');
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(_skeletonOpacity(tester), isNull);
 
     final slow = _beginOpen(container);
-    await tester.pump(const Duration(milliseconds: 190));
-    expect(find.byType(StrategyViewSkeleton), findsNothing);
+    await tester.pump(const Duration(milliseconds: 490));
+    expect(_skeletonOpacity(tester), isNull);
     await tester.pump(const Duration(milliseconds: 20));
     await tester.pump();
-    expect(find.byType(StrategyViewSkeleton), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(_skeletonOpacity(tester), 1);
     container.read(strategyOpeningProvider.notifier).settle(slow);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
-    expect(find.byType(StrategyViewSkeleton), findsNothing);
+    expect(_skeletonOpacity(tester), isNull);
+  });
+
+  testWidgets(
+      'a file dragged over the map while an open runs shows no drop overlay, '
+      'and one dragged before it never leaves the overlay behind',
+      (tester) async {
+    final container = ProviderContainer(overrides: [
+      strategyProvider.overrideWith(_OpenStrategy.new),
+      platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+    ]);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const ShadApp(
+        home: Scaffold(body: ImageDropTarget(child: SizedBox.expand())),
+      ),
+    ));
+    final target = tester.widget<DropTarget>(find.byType(DropTarget));
+    final over = DropEventDetails(
+      localPosition: const Offset(200, 200),
+      globalPosition: const Offset(200, 200),
+    );
+    final label = find.text(
+      lookupAppLocalizations(const Locale('en')).imageDropOverlayLabel,
+    );
+
+    target.onDragEntered!(over);
+    await tester.pump();
+    expect(label, findsOneWidget);
+    final attempt = _beginOpen(container);
+    await tester.pump();
+    target.onDragExited!(over);
+    await tester.pump();
+    expect(label, findsNothing, reason: 'left while the open ran');
+
+    target.onDragEntered!(over);
+    await tester.pump();
+    expect(label, findsNothing, reason: 'entered while the open ran');
+    container.read(strategyOpeningProvider.notifier).settle(attempt);
+    await tester.pump();
+
+    target.onDragEntered!(over);
+    await tester.pump();
+    expect(label, findsOneWidget);
+    _beginOpen(container);
+    await tester.pump();
+    target.onDragDone!(const DropDoneDetails(
+      files: [],
+      localPosition: Offset(200, 200),
+      globalPosition: Offset(200, 200),
+    ));
+    await tester.pump();
+    expect(label, findsNothing, reason: 'dropped while the open ran');
   });
 }

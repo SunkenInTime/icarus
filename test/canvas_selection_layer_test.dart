@@ -16,10 +16,12 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/canvas_selection_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/canvas_selection_layer.dart';
+import 'package:icarus/widgets/editor_input_gate.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 
 class _NoopStrategyProvider extends StrategyProvider {
@@ -84,6 +86,22 @@ Widget _item(
       ),
     );
 
+Widget _gatedIf(bool gated, Widget layer) => gated
+    ? EditorInputGate(
+        child: Stack(
+          children: [
+            layer,
+            const Positioned(
+              left: 600,
+              top: 400,
+              width: 150,
+              child: Material(child: TextField(key: ValueKey('field'))),
+            ),
+          ],
+        ),
+      )
+    : layer;
+
 const _a = (kind: SelectableKind.agent, id: 'a');
 const _b = (kind: SelectableKind.agent, id: 'b');
 const _c = (kind: SelectableKind.agent, id: 'c');
@@ -118,7 +136,11 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  Future<void> pumpCanvas(WidgetTester tester, {bool lineUp = false}) async {
+  Future<void> pumpCanvas(
+    WidgetTester tester, {
+    bool lineUp = false,
+    bool gated = false,
+  }) async {
     container = ProviderContainer(
       overrides: [strategyProvider.overrideWith(_NoopStrategyProvider.new)],
     );
@@ -133,39 +155,42 @@ void main() {
         child: MaterialApp(
           home: Align(
             alignment: Alignment.topLeft,
-            child: CanvasSelectionLayer(
-              enabled: true,
-              child: SizedBox(
-                width: 800,
-                height: 450,
-                child: Stack(
-                  children: [
-                    // As a lineup mode puts the page out of reach.
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        ignoring: lineUp,
-                        child: Stack(
-                          children: [
-                            _item('a', const Offset(100, 100), handle: true),
-                            _item('b', const Offset(200, 100)),
-                            _item('c', const Offset(400, 300)),
-                          ],
+            child: _gatedIf(
+              gated,
+              CanvasSelectionLayer(
+                enabled: true,
+                child: SizedBox(
+                  width: 800,
+                  height: 450,
+                  child: Stack(
+                    children: [
+                      // As a lineup mode puts the page out of reach.
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          ignoring: lineUp,
+                          child: Stack(
+                            children: [
+                              _item('a', const Offset(100, 100), handle: true),
+                              _item('b', const Offset(200, 100)),
+                              _item('c', const Offset(400, 300)),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    if (lineUp) ...[
-                      _item(
-                        'draft-agent',
-                        const Offset(150, 100),
-                        kind: SelectableKind.lineupEnd,
-                      ),
-                      _item(
-                        'draft-ability',
-                        const Offset(150, 150),
-                        kind: SelectableKind.lineupEnd,
-                      ),
+                      if (lineUp) ...[
+                        _item(
+                          'draft-agent',
+                          const Offset(150, 100),
+                          kind: SelectableKind.lineupEnd,
+                        ),
+                        _item(
+                          'draft-ability',
+                          const Offset(150, 150),
+                          kind: SelectableKind.lineupEnd,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -410,6 +435,78 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(container.read(canvasSelectionProvider), {_a, _b, _c});
+  });
+
+  group('while a strategy opens', () {
+    int beginOpen() => container
+        .read(strategyOpeningProvider.notifier)
+        .begin('opened', source: StrategySource.local);
+
+    Future<void> selectAllThenDelete(WidgetTester tester) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pump();
+    }
+
+    testWidgets(
+        'a back-button press on the canvas, then Ctrl+A and Delete, change '
+        'nothing', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      beginOpen();
+      await tester.pump();
+
+      const at = Offset(300, 300);
+      await tester.sendEventToBinding(const PointerDownEvent(
+        kind: PointerDeviceKind.mouse,
+        buttons: kBackMouseButton,
+        position: at,
+      ));
+      await tester.sendEventToBinding(const PointerUpEvent(
+        kind: PointerDeviceKind.mouse,
+        position: at,
+      ));
+      await tester.pump();
+      await selectAllThenDelete(tester);
+
+      expect(container.read(agentProvider), hasLength(3));
+      expect(container.read(canvasSelectionProvider), isEmpty);
+    });
+
+    testWidgets('Tab reaches nothing in the editor', (tester) async {
+      await pumpCanvas(tester, gated: true);
+      beginOpen();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      final field = tester
+          .widget<EditableText>(find.descendant(
+            of: find.byKey(const ValueKey('field')),
+            matching: find.byType(EditableText),
+          ))
+          .focusNode;
+      expect(field.hasFocus, isFalse);
+    });
+
+    testWidgets('once it has opened, Ctrl+A works with no click',
+        (tester) async {
+      await pumpCanvas(tester, gated: true);
+      final attempt = beginOpen();
+      await tester.pump();
+      container.read(strategyOpeningProvider.notifier).settle(attempt);
+      await tester.pump();
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(container.read(canvasSelectionProvider), {_a, _b, _c});
+    });
   });
 
   testWidgets('a copy replaces what the system clipboard held', (tester) async {

@@ -29,23 +29,23 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
       ),
     );
     final canDrop = canEditPages &&
-        ref.watch(strategyOpeningProvider) == null &&
         ref.watch(platformPolicyProvider).supports(PlatformFeature.fileDrop);
 
     return DropTarget(
       onDragEntered: (details) {
-        if (!canDrop) return;
+        if (!canDrop || ref.read(strategyOpeningProvider) != null) return;
         setState(() {
           isDragging = true;
         });
       },
       onDragExited: (details) {
-        if (!canDrop) return;
+        if (!isDragging) return;
         setState(() {
           isDragging = false;
         });
       },
       onDragDone: (details) async {
+        if (isDragging) setState(() => isDragging = false);
         if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages ||
             ref.read(strategyOpeningProvider) != null) {
           return;

@@ -115,10 +115,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// strategy must look first.
   Future<bool> _open(
     String strategyId,
+    StrategySource source,
     Future<bool> Function(OpenAttempt opening) steps,
   ) async {
     final opens = ref.read(strategyOpeningProvider.notifier);
-    final attempt = opens.begin(strategyId);
+    final attempt = opens.begin(strategyId, source: source);
     try {
       return await steps(OpenAttempt(() => opens.isLatest(attempt)));
     } on OpenGaveWay {
@@ -418,7 +419,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     cancelPendingSave();
     ref.read(strategySaveStateProvider.notifier).reset();
 
-    return _open(strategyID, (opening) async {
+    return _open(strategyID, StrategySource.cloud, (opening) async {
       await opening.wait(
         ref
             .read(remoteEditorSnapshotProvider.notifier)
@@ -2264,7 +2265,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     cancelPendingSave();
 
-    return _open(id, (opening) async {
+    return _open(id, StrategySource.local, (opening) async {
       final newStrat = const LocalLibrary().firstStoredWithId(id);
 
       if (newStrat == null) {

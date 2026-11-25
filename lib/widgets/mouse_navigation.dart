@@ -31,6 +31,7 @@ import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/widgets/community/community_post_view.dart';
 import 'package:icarus/widgets/community/open_community_post.dart';
+import 'package:icarus/widgets/strategy_look.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Tracks the live route stack so [MouseNavigation] can tell what is on top:
@@ -473,7 +474,6 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             return false;
           }
         } else if (strategyOpen) {
-          navigator.popUntil((route) => route is! PopupRoute);
           // Already in the strategy view; swap strategies in place, exactly
           // like the quick switcher does.
           // An open that gave way to a newer one (or to a close) did not
@@ -498,11 +498,15 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         }
 
         if (source == StrategySource.cloud) {
+          final look = strategyLookFor(ref, strategyId, StrategySource.cloud);
           unawaited(
             navigator.push(
               StrategyView.route(
                 initialStrategyId: strategyId,
+                initialStrategyName: look.name,
                 initialStrategySource: StrategySource.cloud,
+                initialMapValue: look.map,
+                initialIsAttack: look.isAttack,
               ),
             ),
           );

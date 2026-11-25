@@ -6,11 +6,11 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/caption_card_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/strategy_opening_provider.dart';
-import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/widgets/context_menu_region.dart';
+import 'package:icarus/widgets/strategy_look.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 
-const editorBusyAfter = Duration(milliseconds: 200);
+const editorBusyAfter = Duration(milliseconds: 500);
 
 class EditorInputGate extends ConsumerWidget {
   const EditorInputGate({super.key, required this.child});
@@ -21,16 +21,16 @@ class EditorInputGate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.listen(strategyOpeningProvider, (before, now) {
       if (before != null || now == null) return;
-      FocusManager.instance.primaryFocus?.unfocus();
       ref.read(captionCardProvider.notifier).closeNow();
       ref.read(deleteMenuProvider.notifier).requestClose();
       ContextMenuRegion.closeOpen();
     });
+    final opening = ref.watch(
+      strategyOpeningProvider.select((opening) => opening != null),
+    );
     return AbsorbPointer(
-      absorbing: ref.watch(
-        strategyOpeningProvider.select((opening) => opening != null),
-      ),
-      child: child,
+      absorbing: opening,
+      child: ExcludeFocus(excluding: opening, child: child),
     );
   }
 }
@@ -49,7 +49,7 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
   Timer? _wait;
   var _visible = false;
   var _drawn = false;
-  LocalStrategySummary? _summary;
+  StrategyLook _look = unknownStrategyLook;
 
   @override
   void dispose() {
@@ -69,9 +69,11 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
     }
     _wait = Timer(editorBusyAfter, () {
       if (!mounted) return;
-      final library = ref.read(localLibraryViewProvider);
+      final source = ref.read(strategyOpeningProvider.notifier).source;
       setState(() {
-        _summary = library.isOpen ? library.strategy(opening) : null;
+        _look = source == null
+            ? unknownStrategyLook
+            : strategyLookFor(ref, opening, source);
         _drawn = true;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -85,7 +87,7 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
   @override
   Widget build(BuildContext context) {
     ref.listen(strategyOpeningProvider, (_, now) => _follow(now));
-    final summary = _summary;
+    final look = _look;
     if (!_drawn) return const SizedBox.shrink();
     return IgnorePointer(
       ignoring: !_visible,
@@ -97,9 +99,9 @@ class _EditorOpeningSkeletonState extends ConsumerState<EditorOpeningSkeleton> {
           if (mounted && !_visible) setState(() => _drawn = false);
         },
         child: StrategyViewSkeleton(
-          strategyName: summary?.name,
-          mapValue: summary?.mapData,
-          isAttack: summary?.opensOnAttack ?? true,
+          strategyName: look.name,
+          mapValue: look.map,
+          isAttack: look.isAttack,
           leading: widget.leading,
         ),
       ),
