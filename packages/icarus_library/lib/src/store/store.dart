@@ -1411,7 +1411,7 @@ final class LibraryStore {
       final pending = PendingRows(strategy, header);
       final applied =
           <(StrategyOp, List<RowWrite>, Undo, Map<String, PageTally>)>[];
-      final now = _clock();
+      final now = _storedPrecision(_clock());
       for (final op in asked) {
         if (_blocked(strategy, op) case final refusal?) {
           return Refused(refusal);
@@ -2172,7 +2172,7 @@ final class _LibraryEdit {
           _summaries[digest] = headerSummary;
           return const _Next();
         }
-        final now = _store._clock();
+        final now = _storedPrecision(_store._clock());
         final moved = header.rewritten(
           folder: switch (folderPublicId) {
             final folder? => SetValue(folder),

@@ -1994,18 +1994,27 @@ Page-gone and strategy-gone answers obey the same rules as rows. Only a page
 result started after this device's own answer landed can show that answered
 item missing.
 
-**A record ahead of the server.** A page list of an earlier life than the
-record's is dropped, except after a `STRATEGY_REPLACED` for the record's own
-life: then the next list read after that refusal is adopted when it shows a
-different life, earlier or later (a list showing the very life just refused is
-dropped), and the edits written in the record's life are set aside. The server's
-refusal names no life ([#772](https://github.com/SunkenInTime/icarus/issues/772)),
-so the record infers the current life from that list. If the list were older
-than the state the refusal was judged against, the record would adopt a stale
-life; the edits it sets aside are rightly set aside (their life is gone), and
-the next list read moves the record forward. A read started after a
-mutation's answer should not return such a list, and none of our tests show
-the real read path doing it.
+**After `STRATEGY_REPLACED`.** The refusal names the strategy's current life
+([#772](https://github.com/SunkenInTime/icarus/issues/772)), and the list debt
+keeps it (`ReadOwed.namedLife`, stored as `named`, kept when the list is later
+refused). While it is set, a page list of the named life or a later one is
+adopted, earlier or later than the record's own life, and the edits written in
+the record's life are set aside; a list of any life before the named one is
+dropped and the list stays owed. A later life is adopted because lives are
+creation times and only grow: it is a replacement made after the refusal.
+
+A refusal that names no life (a server from before #772) keeps the earlier way
+out: a page list of an earlier life than the record's is dropped, except after a
+`STRATEGY_REPLACED` for the record's own life, when the next list read after the
+refusal is adopted if it shows a different life (a list showing the very life
+just refused is dropped).
+
+Two limits, neither reached today:
+- A delayed repeat of an earlier `STRATEGY_REPLACED` answer would overwrite a
+  newer named life in the debt. The sender sends one batch at a time and holds
+  sends while the list is owed, so nothing produces that order now.
+- A build from before #772 cannot read an owed list that has the `named` key.
+  The cloud store has not shipped, so only our own machines could hold one.
 
 **An edit names its view.** `commitAs` and `commitAllAs` take `seen:`, the
 `StrategyContent` or `PageContent` the edit was built from, and the life the

@@ -390,7 +390,7 @@ void main() {
         expect(
           gaps[n - 1],
           allOf(
-            greaterThanOrEqualTo(rung),
+            greaterThan(rung - storedPrecision),
             lessThan(rung + const Duration(milliseconds: 500)),
           ),
           reason: 'send ${n + 1}: $gaps',

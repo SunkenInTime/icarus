@@ -23,9 +23,14 @@ bool notesAreText(LineupGroupPayload payload) =>
       _ => true,
     };
 
-final editedAt = DateTime.utc(2026, 11, 20, 12);
+final editedAt = DateTime.utc(2026, 11, 20, 12, 0, 0, 0, 371);
 
 DateTime fixedClock() => editedAt;
+
+DateTime asStored(DateTime time) => DateTime.fromMillisecondsSinceEpoch(
+  time.millisecondsSinceEpoch,
+  isUtc: true,
+);
 
 typedef Contents = Map<String, Map<String, String>>;
 

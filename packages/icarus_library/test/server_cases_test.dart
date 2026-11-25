@@ -125,11 +125,16 @@ void main() {
                         BatchRefusal.strategyReplaced,
                       )
                       .having(
+                        (event) => event.currentLife,
+                        'currentLife',
+                        createdAtOf(server.rows.strategy),
+                      )
+                      .having(
                         (event) => switch (event.currentLife) {
                           final life? => lives.name(life),
                           null => null,
                         },
-                        'currentLife',
+                        'currentLife named',
                         step['currentLife'],
                       ),
                 ]);
