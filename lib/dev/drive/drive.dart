@@ -52,9 +52,7 @@
 //   {"addAgent": id, "at": [x, y], "agent": "jett"?, "cone": "viewCone90"?, "facing": degrees?, "length": n?, "enemy": b?}
 //   {"addHighTide": id, "at": [x, y], "wall": [[dx, dy], ...]?}
 //   {"addSmoke": id, "at": [x, y]}     {"addText": id, "at": [x, y], "text": t?}
-//   {"setCaption": id, "text": t}      what the caption dialog's Done does
-//   {"setWeapon": id, "weapon": name}  what the agent menu's weapon picker does
-//   {"setWallPath": id, "path": [[x, y], ...]}  what dragging a wall's handles does
+//   {"setCaption": id, "text": t}      {"setWeapon": id, "weapon": name}  {"setWallPath": id, "path": [[x, y], ...]}
 //   {"addUtility": id, "type": name, "at": [x, y], "door": id?, "zone": b?}
 //                                      spike, customRectangle, customCircle
 //   {"addImage": path, "at": [x, y]}   {"addLineup": n, "legacy": b?}  two lineups, ids
@@ -106,8 +104,8 @@
 //   {"logUtilities": tag}              every utility's type, position and door
 //   {"logDoors": tag}                  the map doors changed on the page
 //   {"logCoords": tag}                 {"logPage": tag}  {"probe": tag}  {"texts": 1}
-//   {"logCaptions": tag}  {"logCard": tag}  every caption; the open card
-//   {"logLineups": tag}                {"logImages": tag}
+//   {"logCaptions": tag}  {"logCard": tag}  {"logWeapons": tag}  every caption; the open card; weapons
+//   {"logLineups": tag}                {"logImages": tag}  {"rememberPage": tag}  {"expectPage": tag}  fails unless the page's items are as remembered
 //   {"framesStart": 1} / {"framesLog": tag}   frame build and raster times between
 //                                      them: p50, p90, p99, worst, in ms
 //   {"expectText": t, "count": n}      fails unless t is on screen n times  {"expectTopRoute": name}  unless no route covers name
@@ -289,6 +287,7 @@ String? _signals;
 String _out = '.';
 String _here = '.';
 final _entries = <String>[];
+final _rememberedPages = <String, String>{};
 var _flutterErrors = 0;
 var _failedSteps = 0;
 var _steps = 0;
@@ -1818,6 +1817,14 @@ bool _settled() {
       c.read(cloudSyncStatusProvider) == CloudSyncStatus.synced;
 }
 
+String _pageItems(ProviderContainer c) => jsonEncode([
+      AgentProvider.objectToJson(c.read(agentProvider)),
+      AbilityProvider.objectToJson(c.read(abilityProvider)),
+      UtilityProvider.objectToJson(c.read(utilityProvider)),
+      TextProvider.objectToJson(c.read(textProvider)),
+      DrawingProvider.objectToJson(c.read(drawingProvider).elements),
+    ]);
+
 String _probe() {
   final c = appProviderContainer;
   final snapshot = c.read(remoteEditorSnapshotProvider).valueOrNull;
@@ -2893,6 +2900,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       _logLibrary('$value', libraryOnScreen());
     case 'logPagesBar':
       _logPagesBar('$value', pagesBarOnScreen());
+    case 'rememberPage':
+      _rememberedPages[value as String] = _pageItems(c);
+    case 'expectPage':
+      final remembered = _rememberedPages[value as String];
+      if (remembered == null) throw StateError('no page remembered as "$value"');
+      if (_pageItems(c) != remembered) {
+        throw StateError('the page\'s items are not as they were at "$value"');
+      }
     case 'logPage':
       _log(
         'PAGE $value strategy=${c.read(strategyProvider).strategyName} '
