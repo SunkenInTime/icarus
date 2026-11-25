@@ -186,6 +186,25 @@ final stalls = <StallExit, Stall>{
     },
     wentAgain: (world, after) => after.any((call) => call.what == 'page p2'),
   ),
+  StallExit.unreadableRead: Stall(
+    adopts: true,
+    start: (world) {
+      world.server.overrideRead = (call) => call.page == 'p2'
+          ? const StoreReadUnreadable('rows this build cannot read')
+          : null;
+      world
+        ..connection = null
+        ..connection = 2;
+      world.commitPageDelete('delete-p2', 'p2');
+    },
+    goAgain: (world) {
+      world.server.overrideRead = null;
+      world
+        ..connection = null
+        ..connection = 3;
+    },
+    wentAgain: (world, after) => after.any((call) => call.what == 'page p2'),
+  ),
   StallExit.viewerOnly: Stall(
     start: (world) {
       world.server.roles[strategyId] = StoreReadRole.viewer;
@@ -465,6 +484,29 @@ const logs = <StallExit, List<String>>{
     '7022 s list',
   ],
   StallExit.lostRead: [
+    '0 s list',
+    '0 s page p2',
+    '2 s page p2',
+    '6 s page p2',
+    '14 s page p2',
+    '30 s page p2',
+    '62 s page p2',
+    '126 s page p2',
+    '254 s page p2',
+    '510 s page p2',
+    '1022 s page p2',
+    '1622 s page p2',
+    '2222 s page p2',
+    '2822 s page p2',
+    '3422 s page p2',
+    '4022 s page p2',
+    '4622 s page p2',
+    '5222 s page p2',
+    '5822 s page p2',
+    '6422 s page p2',
+    '7022 s page p2',
+  ],
+  StallExit.unreadableRead: [
     '0 s list',
     '0 s page p2',
     '2 s page p2',

@@ -133,8 +133,9 @@ void main() {
   });
 
   group('Sol 4: what is shown while pages are unread', () {
-    test('a strategy whose first page reads are lost is not shown as saved',
-        () {
+    test(
+        'a strategy whose first page reads are lost is shown as awaiting, '
+        'not saved and not unreadable', () {
       inWorld(
         (world) {
           world.server.overrideRead = (call) => call.page == null
@@ -142,15 +143,15 @@ void main() {
               : const StoreReadLost(TransportFailure.network, 'lost');
           world.sender.adopt(strategyId);
           world.settle(const Duration(hours: 1));
-          expect(world.face(), isNotNull);
+          expect(world.face(), Face.awaitingResult);
         },
         addStrategy: false,
       );
     });
 
     test(
-        'lost reads and then refused results reach the bound together and '
-        'write the marker', () {
+        'unreadable reads and then refused results reach the bound together '
+        'and write the marker', () {
       inWorld((world) {
         world.server.answerNext(
           strategyId,
@@ -172,7 +173,7 @@ void main() {
           if (call.page != pageId) return null;
           reads++;
           if (reads <= 3) {
-            return const StoreReadLost(TransportFailure.network, 'lost');
+            return const StoreReadUnreadable('rows this build cannot read');
           }
           final held = world.server.rows[strategyId]!.page(pageId)! as LivePage;
           return StoreReadAnswered(
@@ -298,9 +299,9 @@ void main() {
   });
 
   test(
-      'the marker is a state: a need past the bound whose next read is lost '
-      'writes it then, though the count passed the bound on answered reads',
-      () {
+      'the marker is a state: a need past the bound whose next read is '
+      'unreadable writes it then, though the count passed the bound on '
+      'answered reads', () {
     inWorld(
       (world) {
         world.pagesOnServer(['p2']);
@@ -318,7 +319,7 @@ void main() {
         expect(pageReads(world, 'p2'), hasLength(adopted + 3));
         expect(world.face(), isNot(Face.unreadableWork));
         world.server.overrideRead = (call) => call.page == 'p2'
-            ? const StoreReadLost(TransportFailure.network, 'lost')
+            ? const StoreReadUnreadable('rows this build cannot read')
             : null;
         world.settle(const Duration(seconds: 10));
         expect(pageReads(world, 'p2'), hasLength(adopted + 4));

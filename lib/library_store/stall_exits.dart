@@ -43,8 +43,16 @@ enum StallExit {
     goesAgain: 'a list that shows the page, $newEvidence',
   ),
   lostRead(
-    title: 'A read is lost or comes back unreadable',
-    waitsFor: 'an answer this build can read',
+    title: 'A read is lost or times out',
+    waitsFor: 'an answer',
+    calls: 'that read',
+    onScreen: Face.awaitingResult,
+    goesAgain: 'an answer, $newEvidence',
+  ),
+  unreadableRead(
+    title: 'A read comes back in rows this build cannot read, or the store '
+        'will not keep it',
+    waitsFor: 'an answer this build can read and keep',
     calls: 'that read',
     onScreen: Face.unreadableWork,
     goesAgain: 'an answer, $newEvidence',
@@ -216,7 +224,8 @@ enum StallExit {
       unsettledResult ||
       refusedResult ||
       pageAheadOfList ||
-      lostRead =>
+      lostRead ||
+      unreadableRead =>
         'at once, then ${ladder.join(', ')} apart, then every '
             '${span(timing.readAgainAfter)}; never twice within '
             '${span(timing.readFloor)}',
@@ -247,11 +256,13 @@ enum StallExit {
   }
 
   String bound(SenderTiming timing) => switch (this) {
-        unsettledResult => '${timing.unresolvedRounds} reads, then shown as '
-            'could not resolve; the ladder goes on',
+        unsettledResult ||
+        lostRead =>
+          '${timing.unresolvedRounds} reads, then shown as could not resolve; '
+              'the ladder goes on',
         refusedResult ||
         pageAheadOfList ||
-        lostRead =>
+        unreadableRead =>
           '${timing.unresolvedRounds} reads, then recorded as refused '
               '(unreadable work); the ladder goes on',
         firstRead => 'one read per page',

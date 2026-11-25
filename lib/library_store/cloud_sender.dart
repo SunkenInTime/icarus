@@ -1048,7 +1048,7 @@ final class CloudSender {
               read,
               snap,
               'the store would not keep $read: $why',
-              row: StallExit.lostRead,
+              row: StallExit.unreadableRead,
             );
           case WriteTroubled(:final trouble):
             _governor.hold(id, read, (
@@ -1220,7 +1220,7 @@ final class CloudSender {
           read,
           snap,
           'the read came back in rows this build cannot read ($problem)',
-          row: StallExit.lostRead,
+          row: StallExit.unreadableRead,
           marking: marking,
         );
       case StoreReadLost(:final why):
@@ -1231,7 +1231,6 @@ final class CloudSender {
           snap,
           'the read was lost ($why)',
           row: StallExit.lostRead,
-          marking: marking,
         );
       case StoreReadAnswered():
         return const _Acted();
