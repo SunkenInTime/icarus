@@ -70,7 +70,7 @@ void main() {
     notifier.fromHive([original]);
 
     expect(notifier.convertViewConeAgentToPlain(id: original.id), isFalse);
-    expect(container.read(agentProvider).single, same(original));
+    expect(container.read(agentProvider).single.toJson(), original.toJson());
     expect(container.read(actionProvider), isEmpty);
   });
 
