@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
+import 'package:icarus/dev/drive/store_differences.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_naming.dart';
@@ -502,6 +503,43 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
   if (endSave != null) throw StoreStepFailed(lines);
   if (actionOpsEndProblem(mirror) case final problem?) {
     throw StoreStepFailed([...lines, problem]);
+  }
+  if (check case final StoreChecked checked) {
+    final recorded = {
+      for (final MapEntry(:key, :value)
+          in mirror.strategiesReadingBackDifferently.entries)
+        if (const LocalLibrary().storedStrategy(key) != null) key: value,
+    };
+    if (recorded.isNotEmpty) {
+      final differing = {
+        for (final c in checked.notMirrored) c.strategyId,
+        for (final c in checked.strategyProblems) c.strategyId,
+      };
+      final judged = judgeStoreDifferences(
+        differing: differing,
+        recordedDifferent: recorded,
+        readBackNow: (id) => StrategyImages()
+            .of(strategyAsHiveHoldsIt(
+                const LocalLibrary().storedStrategy(id)!))
+            .readBack,
+      );
+      final restExact = checked.foreignNames.isEmpty &&
+          checked.unplaced.isEmpty &&
+          checked.folderProblems.isEmpty &&
+          checked.sameFolders == checked.hiveFolders &&
+          checked.sameStrategies == checked.hiveStrategies - differing.length;
+      if (judged.problems.isEmpty && restExact) {
+        return [
+          ...lines,
+          for (final expected in judged.expected) 'STORE expected: $expected',
+        ];
+      }
+      throw StoreStepFailed([
+        ...lines,
+        for (final problem in judged.problems) 'STORE problem: $problem',
+        'the store differs from Hive',
+      ]);
+    }
   }
   if (check case StoreChecked(isExact: true)) return lines;
   if (check case final StoreChecked checked
