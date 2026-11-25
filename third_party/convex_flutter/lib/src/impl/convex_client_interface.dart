@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer;
+import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer, TimedGroupUpdate;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -54,6 +54,18 @@ abstract class IConvexClient {
   /// - [TimeoutException] if operation exceeds configured timeout
   /// - [ClientError] for Convex-specific errors
   Future<String> mutation({
+    required String name,
+    required Map<String, dynamic> args,
+  });
+
+  /// [mutation], with the snapshot the client held when it completed it.
+  /// For a success, a snapshot whose time is at or after the commit: the
+  /// first such transition when the response came first, else the snapshot
+  /// current when the response was handled. That live results from it on
+  /// show the write rests on the sync protocol. When the server function
+  /// fails, the last snapshot applied before the response; that failure is
+  /// an answer here, not a thrown error, but a timeout still throws.
+  Future<TimedAnswer> mutationTimed({
     required String name,
     required Map<String, dynamic> args,
   });
@@ -112,6 +124,13 @@ abstract class IConvexClient {
     required List<({String name, Map<String, dynamic> args})> queries,
     required void Function(List<String?>) onUpdate,
     required void Function(String, String?) onError,
+  });
+
+  /// [subscribeGroup], with each update's snapshot, as [queryTimed] gives
+  /// it. A failure comes to [onUpdate] too, as an update with `error` set.
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(TimedGroupUpdate) onUpdate,
   });
 
   // ============================================================================

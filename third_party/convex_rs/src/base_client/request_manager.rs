@@ -14,6 +14,10 @@ use convex_sync_types::{
 use tokio::sync::oneshot;
 
 use crate::{
+    base_client::{
+        QueryResults,
+        TimedResult,
+    },
     sync::ReconnectProtocolReason,
     FunctionResult,
 };
@@ -70,7 +74,7 @@ impl Request {
 }
 
 pub struct RequestManager {
-    ongoing_requests: BTreeMap<RequestId, (Request, oneshot::Sender<FunctionResult>)>,
+    ongoing_requests: BTreeMap<RequestId, (Request, oneshot::Sender<TimedResult>)>,
 }
 
 impl RequestManager {
@@ -94,6 +98,7 @@ impl RequestManager {
         request_type: RequestType,
         value: FunctionResult,
         ts: Option<Timestamp>,
+        now: &QueryResults,
     ) -> Result<bool, ReconnectProtocolReason> {
         let Some((request, _)) = self.ongoing_requests.get_mut(request_id) else {
             tracing::debug!("Ignoring response to request {request_id:?}, which already completed");
@@ -116,7 +121,7 @@ impl RequestManager {
 
         // Actions and errored mutations are ok to complete immediately
         if request_type == RequestType::Action || errored {
-            self._remove_and_notify_completed(request_id);
+            self._remove_and_notify_completed(request_id, now);
             return Ok(true);
         }
         Ok(false)
@@ -124,8 +129,13 @@ impl RequestManager {
 
     /// Removes and notifies every completed request whose result is visible
     /// at `ts`, the timestamp of the latest query results the client has
-    /// received from the server. Returns the IDs of the removed requests.
-    pub fn remove_and_notify_completed(&mut self, ts: Timestamp) -> BTreeSet<RequestId> {
+    /// received from the server. Each answer carries the stamp of `now`, the
+    /// results it is visible in. Returns the IDs of the removed requests.
+    pub fn remove_and_notify_completed(
+        &mut self,
+        ts: Timestamp,
+        now: &QueryResults,
+    ) -> BTreeSet<RequestId> {
         let mut completed_requests = BTreeSet::new();
         for (id, (request, _)) in self.ongoing_requests.iter() {
             // A mutation's result is only visible in query results once a
@@ -137,20 +147,22 @@ impl RequestManager {
             }
         }
         for id in completed_requests.iter() {
-            self._remove_and_notify_completed(id);
+            self._remove_and_notify_completed(id, now);
         }
         completed_requests
     }
 
-    fn _remove_and_notify_completed(&mut self, request_id: &RequestId) {
+    fn _remove_and_notify_completed(&mut self, request_id: &RequestId, now: &QueryResults) {
         let (request, sender) = self
             .ongoing_requests
             .remove(request_id)
             .expect("INTERNAL BUG: request_id must be present");
         if let Err(value) = sender.send(
-            request
-                .value
-                .expect("INTERNAL BUG: Value missing on completed request"),
+            now.stamped(
+                request
+                    .value
+                    .expect("INTERNAL BUG: Value missing on completed request"),
+            ),
         ) {
             tracing::info!(
                 "Request {request_id:?} completed with result {value:?}, but result receiver was \
@@ -164,7 +176,7 @@ impl RequestManager {
         message: &ClientMessage,
         request_id: RequestId,
         request_type: RequestType,
-    ) -> oneshot::Receiver<FunctionResult> {
+    ) -> oneshot::Receiver<TimedResult> {
         let (tx, rx) = oneshot::channel();
         let request = Request::new(request_id, request_type, message.clone());
         self.ongoing_requests.insert(request_id, (request, tx));

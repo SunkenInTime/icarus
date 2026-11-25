@@ -72,11 +72,17 @@ impl std::fmt::Debug for FunctionResult {
 pub struct TimedResult {
     /// The query's result: a value or an error.
     pub value: FunctionResult,
-    /// The server time of the snapshot, as [`QueryResults::ts`].
+    /// The server time of the snapshot, as [`QueryResults::ts`]: `None` for an
+    /// answer given before the client applied any transition (a mutation
+    /// failure, an action, an empty group).
     pub ts: Option<Timestamp>,
     /// The snapshot's number in this client, as [`QueryResults::snapshot`]:
     /// the higher of two is the newer, and equal numbers mean the same result.
     pub snapshot: u64,
+    /// The connection, as [`QueryResults::connection`].
+    pub connection: u64,
+    /// The client, as [`QueryResults::client`].
+    pub client: u64,
 }
 
 /// A mapping from [`SubscriberId`] to its current result [`FunctionResult`]
@@ -87,6 +93,8 @@ pub struct QueryResults {
     pub(super) subscribers: OrdSet<SubscriberId>,
     pub(super) ts: Option<Timestamp>,
     pub(super) snapshot: u64,
+    pub(super) connection: u64,
+    pub(super) client: u64,
 }
 
 impl QueryResults {
@@ -112,13 +120,38 @@ impl QueryResults {
         self.snapshot
     }
 
+    /// The connection generation these results were taken on: 0 until the
+    /// client first reconnects, then one more each time it starts again on a
+    /// new socket, a dial that fails included, so the first socket that opens
+    /// can be 1 and numbers can be skipped. A higher number is a later
+    /// connection. Results kept from an earlier connection carry its number
+    /// until the new connection's first transition replaces them.
+    pub fn connection(&self) -> u64 {
+        self.connection
+    }
+
+    /// The client these results come from, numbered from 1 in the order
+    /// clients are built in this process. Snapshots of different clients do
+    /// not compare.
+    pub fn client(&self) -> u64 {
+        self.client
+    }
+
     /// The result for [`SubscriberId`], with the snapshot it comes from.
     pub fn timed(&self, subscriber_id: &SubscriberId) -> Option<TimedResult> {
-        self.get(subscriber_id).map(|value| TimedResult {
-            value: value.clone(),
+        self.get(subscriber_id)
+            .map(|value| self.stamped(value.clone()))
+    }
+
+    /// [`value`] with this snapshot's stamp.
+    pub(super) fn stamped(&self, value: FunctionResult) -> TimedResult {
+        TimedResult {
+            value,
             ts: self.ts,
             snapshot: self.snapshot,
-        })
+            connection: self.connection,
+            client: self.client,
+        }
     }
 
     /// Get the [`FunctionResult`] for the given [`SubscriberId`]
@@ -178,6 +211,8 @@ mod tests {
             },
             ts: None,
             snapshot: 0,
+            connection: 0,
+            client: 0,
         };
         assert_eq!(
             qr.get(&s(q(0), 0)),

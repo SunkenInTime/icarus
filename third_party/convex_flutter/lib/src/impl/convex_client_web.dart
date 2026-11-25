@@ -6,7 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 import 'package:convex_flutter/src/impl/convex_client_interface.dart';
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer;
+import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer, TimedGroupUpdate;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -633,6 +633,22 @@ class WebConvexClient implements IConvexClient {
   @override
   Future<TimedAnswer> queryTimed(String name, Map<String, dynamic> args) {
     throw UnsupportedError('queryTimed is native only.');
+  }
+
+  @override
+  Future<TimedAnswer> mutationTimed({
+    required String name,
+    required Map<String, dynamic> args,
+  }) {
+    throw UnsupportedError('mutationTimed is native only.');
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeGroupTimed({
+    required List<({String name, Map<String, dynamic> args})> queries,
+    required void Function(TimedGroupUpdate) onUpdate,
+  }) {
+    throw UnsupportedError('subscribeGroupTimed is native only.');
   }
 
   @override

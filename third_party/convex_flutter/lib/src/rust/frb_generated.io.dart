@@ -132,6 +132,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  FutureOr<void> Function(TimedGroupUpdate)
+  dco_decode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(
+    dynamic raw,
+  );
+
+  @protected
   FutureOr<void> Function(WebSocketConnectionState)
   dco_decode_DartFn_Inputs_web_socket_connection_state_Output_unit_AnyhowException(
     dynamic raw,
@@ -232,6 +238,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TimedAnswer dco_decode_timed_answer(dynamic raw);
+
+  @protected
+  TimedGroupUpdate dco_decode_timed_group_update(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -412,6 +421,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   TimedAnswer sse_decode_timed_answer(SseDeserializer deserializer);
 
   @protected
+  TimedGroupUpdate sse_decode_timed_group_update(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_u_8(SseDeserializer deserializer);
 
   @protected
@@ -534,6 +546,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_DartFn_Inputs_timed_answer_Output_unit_AnyhowException(
     FutureOr<void> Function(TimedAnswer) self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_DartFn_Inputs_timed_group_update_Output_unit_AnyhowException(
+    FutureOr<void> Function(TimedGroupUpdate) self,
     SseSerializer serializer,
   );
 
@@ -668,6 +686,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_timed_answer(TimedAnswer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_timed_group_update(
+    TimedGroupUpdate self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

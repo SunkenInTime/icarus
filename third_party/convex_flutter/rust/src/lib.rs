@@ -250,13 +250,39 @@ impl QuerySubscriber for CallbackSubscriberDartFn {
 /// `convex::QueryResults::snapshot`), so it never goes backwards, a reconnect
 /// included, and restarts only with the client. `ts` is the server time of
 /// that snapshot in nanoseconds: an unchanged value carries the time of the
-/// snapshot it was taken from, two snapshots can share a time, and it is never
-/// null for a result the client delivered.
+/// snapshot it was taken from, and two snapshots can share a time. It is null
+/// only for an answer given before the client applied any transition (a
+/// mutation failure, an empty group). `connection` is the connection
+/// generation the snapshot was taken on (see `convex::QueryResults::connection`:
+/// a higher number is a later connection, and numbers can be skipped), and
+/// `client` the client it comes from: snapshots of different clients do not
+/// compare.
+///
+/// A successful mutation's answer carries a snapshot whose time is at or after
+/// its commit: the first such transition if the response came first, else the
+/// snapshot current when the response was handled. A mutation whose server
+/// function failed carries the last snapshot applied before its response.
 pub struct TimedAnswer {
     pub value: Option<String>,
     pub error: Option<QueryFailure>,
     pub ts: Option<i64>,
     pub snapshot: i64,
+    pub connection: i64,
+    pub client: i64,
+}
+
+/// One update of a group of queries subscribed together (see
+/// `subscribe_group`), with the snapshot all of its values come from, as in
+/// [TimedAnswer]. `values` holds each query's JSON in the order given, or
+/// None where it is the same as in the last update; `error` is set instead
+/// when any query fails.
+pub struct TimedGroupUpdate {
+    pub values: Vec<Option<String>>,
+    pub error: Option<QueryFailure>,
+    pub ts: Option<i64>,
+    pub snapshot: i64,
+    pub connection: i64,
+    pub client: i64,
 }
 
 /// A query's error: the message, and a `ConvexError`'s data as JSON.
@@ -294,6 +320,25 @@ impl TimedAnswer {
             error,
             ts: result.ts.map(i64::from),
             snapshot: result.snapshot as i64,
+            connection: result.connection as i64,
+            client: result.client as i64,
+        }
+    }
+}
+
+impl TimedGroupUpdate {
+    fn of(
+        values: Vec<Option<String>>,
+        error: Option<QueryFailure>,
+        results: &convex::QueryResults,
+    ) -> Self {
+        TimedGroupUpdate {
+            values,
+            error,
+            ts: results.ts().map(i64::from),
+            snapshot: results.snapshot() as i64,
+            connection: results.connection() as i64,
+            client: results.client() as i64,
         }
     }
 }
@@ -529,6 +574,33 @@ impl MobileConvexClient {
         on_update: impl Fn(Vec<Option<String>>) -> DartFnFuture<()> + Send + Sync + 'static,
         on_error: impl Fn(String, Option<String>) -> DartFnFuture<()> + Send + Sync + 'static,
     ) -> Result<SubscriptionHandle, ClientError> {
+        self.internal_subscribe_group(queries, move |update| match update.error {
+            Some(QueryFailure { message, data }) => on_error(message, data),
+            None => on_update(update.values),
+        })
+        .await
+        .map_err(Into::into)
+    }
+
+    /// [subscribe_group], with each update's snapshot. A failure comes to
+    /// [on_update] too, as an update with `error` set. Updates arrive in
+    /// order, each after the last one's callback returned.
+    #[frb]
+    pub async fn subscribe_group_timed(
+        &self,
+        queries: Vec<GroupQuery>,
+        on_update: impl Fn(TimedGroupUpdate) -> DartFnFuture<()> + Send + Sync + 'static,
+    ) -> Result<SubscriptionHandle, ClientError> {
+        self.internal_subscribe_group(queries, on_update)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn internal_subscribe_group(
+        &self,
+        queries: Vec<GroupQuery>,
+        deliver: impl Fn(TimedGroupUpdate) -> DartFnFuture<()> + Send + Sync + 'static,
+    ) -> anyhow::Result<SubscriptionHandle> {
         let mut client = self.connected_client().await?;
         let SubscribedSet {
             subscriptions,
@@ -555,10 +627,15 @@ impl MobileConvexClient {
                         GroupStep::Waiting => {}
                         GroupStep::Failed(message, data) => {
                             sent = None;
-                            on_error(message, data).await;
+                            deliver(TimedGroupUpdate::of(
+                                vec![],
+                                Some(QueryFailure { message, data }),
+                                &results,
+                            ))
+                            .await;
                         }
                         GroupStep::Answered(values, payload) => {
-                            on_update(payload).await;
+                            deliver(TimedGroupUpdate::of(payload, None, &results)).await;
                             sent = Some(values);
                         }
                     }
@@ -628,6 +705,24 @@ impl MobileConvexClient {
     ) -> Result<String, ClientError> {
         let result = self.internal_mutation(name, args).await?;
         handle_direct_function_result(result)
+    }
+
+    /// [mutation], with the snapshot the client held when it completed the
+    /// mutation (see [TimedAnswer]). A server function failure is an answer
+    /// here, with its snapshot; a timeout or a bridge error still throws.
+    #[frb]
+    pub async fn mutation_timed(
+        &self,
+        name: String,
+        args: HashMap<String, String>,
+    ) -> Result<TimedAnswer, ClientError> {
+        let mut client = self.connected_client().await?;
+        let result = self
+            .rt
+            .spawn(async move { client.mutation_timed(&name, parse_json_args(args)).await })
+            .await
+            .map_err(anyhow::Error::from)??;
+        Ok(TimedAnswer::of(result))
     }
 
     /// Internal method for mutation logic.
