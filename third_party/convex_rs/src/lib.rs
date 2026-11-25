@@ -69,6 +69,7 @@ pub mod base_client;
 pub use base_client::{
     AuthTokenFetcher,
     FunctionResult,
+    Generation,
     QueryResults,
     SubscriberId,
     TimedResult,

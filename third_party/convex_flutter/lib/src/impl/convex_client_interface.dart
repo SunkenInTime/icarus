@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer, TimedGroupUpdate;
+import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer, TimedGroupUpdate, ClientGeneration;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -58,11 +58,11 @@ abstract class IConvexClient {
     required Map<String, dynamic> args,
   });
 
-  /// The connection generation the client is on, as each stamp's
-  /// `connection` numbers it: one more each time the client starts again on
-  /// a new socket, so a stamp with a lower number comes from an earlier
-  /// connection.
-  Future<int> connectionGeneration();
+  /// The client and the connection generation it is on, as each stamp's
+  /// `client` and `connection` number them: the connection goes up each time
+  /// the client starts again on a new socket, so a stamp with a lower number
+  /// comes from an earlier connection.
+  Future<ClientGeneration> generation();
 
   /// [mutation], with the snapshot the client held when it completed it.
   /// For a success, a snapshot whose time is at or after the commit: the

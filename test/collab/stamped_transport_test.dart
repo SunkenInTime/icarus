@@ -25,9 +25,11 @@ final class _Handle implements SubscriptionHandle {
 }
 
 final class _Scripted implements StampedValueSource {
-  _Scripted(this.outcomes, {this.breaksAfter, this.generations = const [3]});
+  _Scripted(this.outcomes,
+      {this.breaksAfter,
+      this.generations = const [(client: 1, connection: 3)]});
 
-  final List<int> generations;
+  final List<({int client, int connection})> generations;
   var _generationsAsked = 0;
 
   final List<StampedOutcome<Object?>> outcomes;
@@ -97,7 +99,8 @@ final class _Scripted implements StampedValueSource {
   }
 
   @override
-  Future<int> connectionGeneration() async => generations[_generationsAsked++];
+  Future<({int client, int connection})> generation() async =>
+      generations[_generationsAsked++];
 
   @override
   Future<Object?> queryValue(String name, Map<String, Object?> args) =>
@@ -290,12 +293,15 @@ void main() {
     );
   });
 
-  test('the connection generation is asked of the client each time', () async {
+  test('the generation is asked of the client each time', () async {
     final transport = StampedPlatformTransport(
-      _Scripted([], generations: [4, 9]),
+      _Scripted([], generations: [
+        (client: 1, connection: 4),
+        (client: 2, connection: 9)
+      ]),
     );
 
-    expect(await transport.connectionGeneration(), 4);
-    expect(await transport.connectionGeneration(), 9);
+    expect(await transport.generation(), (client: 1, connection: 4));
+    expect(await transport.generation(), (client: 2, connection: 9));
   });
 }

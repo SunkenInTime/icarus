@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -193324100;
+  int get rustContentHash => 52953044;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -107,7 +107,7 @@ abstract class RustLibApi extends BaseApi {
     required Map<String, String> args,
   });
 
-  Future<PlatformInt64> crateMobileConvexClientConnectionGeneration({
+  Future<ClientGeneration> crateMobileConvexClientGeneration({
     required MobileConvexClient that,
   });
 
@@ -496,7 +496,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<PlatformInt64> crateMobileConvexClientConnectionGeneration({
+  Future<ClientGeneration> crateMobileConvexClientGeneration({
     required MobileConvexClient that,
   }) {
     return handler.executeNormal(
@@ -515,19 +515,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_i_64,
+          decodeSuccessData: sse_decode_client_generation,
           decodeErrorData: sse_decode_client_error,
         ),
-        constMeta: kCrateMobileConvexClientConnectionGenerationConstMeta,
+        constMeta: kCrateMobileConvexClientGenerationConstMeta,
         argValues: [that],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateMobileConvexClientConnectionGenerationConstMeta =>
+  TaskConstMeta get kCrateMobileConvexClientGenerationConstMeta =>
       const TaskConstMeta(
-        debugName: "MobileConvexClient_connection_generation",
+        debugName: "MobileConvexClient_generation",
         argNames: ["that"],
       );
 
@@ -1698,6 +1698,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ClientGeneration dco_decode_client_generation(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ClientGeneration(
+      client: dco_decode_i_64(arr[0]),
+      connection: dco_decode_i_64(arr[1]),
+    );
+  }
+
+  @protected
   GroupQuery dco_decode_group_query(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -2095,6 +2107,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       default:
         throw UnimplementedError('');
     }
+  }
+
+  @protected
+  ClientGeneration sse_decode_client_generation(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_client = sse_decode_i_64(deserializer);
+    var var_connection = sse_decode_i_64(deserializer);
+    return ClientGeneration(client: var_client, connection: var_connection);
   }
 
   @protected
@@ -2662,6 +2682,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_client_generation(
+    ClientGeneration self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_64(self.client, serializer);
+    sse_encode_i_64(self.connection, serializer);
+  }
+
+  @protected
   void sse_encode_group_query(GroupQuery self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.name, serializer);
@@ -2970,12 +3000,12 @@ class MobileConvexClientImpl extends RustOpaque implements MobileConvexClient {
     args: args,
   );
 
-  /// The connection generation the client is on, as each stamp's
-  /// `connection` numbers it (see `convex::QueryResults::connection`).
+  /// The client and the connection generation it is on, as each stamp's
+  /// `client` and `connection` number them (see `convex::Generation`).
   /// After a reconnect it is the generation the client started again on,
   /// never an earlier one.
-  Future<PlatformInt64> connectionGeneration() => RustLib.instance.api
-      .crateMobileConvexClientConnectionGeneration(that: this);
+  Future<ClientGeneration> generation() =>
+      RustLib.instance.api.crateMobileConvexClientGeneration(that: this);
 
   /// Executes a mutation on the Convex backend.
   Future<String> mutation({

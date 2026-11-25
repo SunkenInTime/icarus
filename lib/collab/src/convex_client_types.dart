@@ -118,5 +118,5 @@ abstract interface class StampedValueSource implements ConvexClientValueSource {
     required void Function(Object error, StackTrace stackTrace) onBroken,
   });
 
-  Future<int> connectionGeneration();
+  Future<({int client, int connection})> generation();
 }

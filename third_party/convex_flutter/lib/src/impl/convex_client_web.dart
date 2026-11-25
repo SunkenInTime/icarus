@@ -6,7 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as web;
 import 'package:convex_flutter/src/impl/convex_client_interface.dart';
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer, TimedGroupUpdate;
+import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle, TimedAnswer, TimedGroupUpdate, ClientGeneration;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -636,8 +636,8 @@ class WebConvexClient implements IConvexClient {
   }
 
   @override
-  Future<int> connectionGeneration() {
-    throw UnsupportedError('connectionGeneration is native only.');
+  Future<ClientGeneration> generation() {
+    throw UnsupportedError('generation is native only.');
   }
 
   @override

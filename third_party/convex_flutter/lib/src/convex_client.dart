@@ -8,7 +8,8 @@ import 'package:convex_flutter/src/rust/lib.dart'
         SubscriptionHandle,
         AuthHandle,
         TimedAnswer,
-        TimedGroupUpdate;
+        TimedGroupUpdate,
+        ClientGeneration;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -194,11 +195,11 @@ class ConvexClient {
     required Map<String, dynamic> args,
   }) => _impl.mutation(name: name, args: args);
 
-  /// The connection generation the client is on, as each stamp's
-  /// `connection` numbers it: one more each time the client starts again on
-  /// a new socket, so a stamp with a lower number comes from an earlier
-  /// connection. Native only.
-  Future<int> connectionGeneration() => _impl.connectionGeneration();
+  /// The client and the connection generation it is on, as each stamp's
+  /// `client` and `connection` number them: the connection goes up each time
+  /// the client starts again on a new socket, so a stamp with a lower number
+  /// comes from an earlier connection. Native only.
+  Future<ClientGeneration> generation() => _impl.generation();
 
   /// [mutation], with the snapshot the client held when it completed it.
   /// For a success, a snapshot whose time is at or after the commit: the
