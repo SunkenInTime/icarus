@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,8 @@ import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/store_differences.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_store/canvas_units.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/library_listing.dart';
@@ -355,12 +358,29 @@ String mirrorPhaseNow(ProviderContainer c) =>
       Mirroring(:final mirror) => _describePhase(mirror.phase),
     };
 
-StrategyData _withFirstPageRenamed(StrategyData strategy) => strategy.copyWith(
-      pages: [
-        for (final (index, page) in strategy.pages.indexed)
-          index == 0 ? page.copyWith(name: '${page.name} edited') : page,
-      ],
-    );
+(StrategyData, String) _withOneItemChanged(StrategyData strategy) {
+  final changed = cloneStrategy(strategy);
+  for (final page in changed.pages) {
+    for (final drawing in page.drawingData.whereType<FreeDrawing>()) {
+      drawing.replacePoints([
+        for (final point in drawing.listOfPoints) point + const Offset(0.5, 0),
+      ]);
+      return (changed, 'one freehand stroke moved');
+    }
+  }
+  for (final page in changed.pages) {
+    if (page.agentData.isEmpty) continue;
+    page.agentData.first.position += const Offset(0.5, 0);
+    return (changed, 'one agent moved');
+  }
+  return (
+    strategy.copyWith(pages: [
+      for (final (index, page) in strategy.pages.indexed)
+        index == 0 ? page.copyWith(name: '${page.name} edited') : page,
+    ]),
+    'the first page renamed',
+  );
+}
 
 final class ReadBackBudget {
   const ReadBackBudget({
@@ -420,7 +440,7 @@ Future<List<String>> readBackCost(
   }
 
   final rows = timed(() => strategyToRows(held));
-  final edited = _withFirstPageRenamed(held);
+  final (edited, change) = _withOneItemChanged(held);
   Future<({int longest, int total})> stepped(
     StrategyImages images,
     StrategyData strategy,
@@ -472,10 +492,10 @@ Future<List<String>> readBackCost(
       '${_items(target)} items, $readBack), $runs runs: rows in one go median '
       '${_ms(rows[runs ~/ 2])} ms; as the mirror runs it, in steps: total work '
       'cold median ${_ms(coldTotal)} ms, added '
-      '${_ms(coldTotal - rows[runs ~/ 2])} ms; after one page changed median '
+      '${_ms(coldTotal - rows[runs ~/ 2])} ms; after $change, median '
       '${_ms(warmTotal)} ms, added ${_ms(warmTotal - rows[runs ~/ 2])} ms; the '
-      'longest single step: cold worst ${_ms(coldLongest)} ms, after one page '
-      'changed worst ${_ms(warmLongest)} ms';
+      'longest single step: cold worst ${_ms(coldLongest)} ms, after $change, '
+      'worst ${_ms(warmLongest)} ms';
   if (budget == null) return [line];
   final measured = [
     (
@@ -508,18 +528,38 @@ Future<List<String>> readBackCost(
   return lines;
 }
 
-Future<List<String>> readBackFrames(String pick) async {
+Future<List<String>> readBackFrames(
+  String pick, {
+  num? longestStepMs,
+}) async {
   final frames = await _framesAcrossSteps(
     StrategyImages(),
     strategyAsHiveHoldsIt(_picked(pick)),
   );
   final line = 'READBACK $pick frames, with a frame asked for every frame '
       'and betweenAnimations between steps (an idle-priority task, then the '
-      'scheduled frame): ${frames.steps} steps, ${frames.frames} frames, '
+      'frame asked for): ${frames.steps} steps, ${frames.frames} frames ran '
+      'during the check, ${frames.timedFrames} of them timed, '
       '${frames.breaksWithoutFrame} breaks with no frame in them, the longest '
-      'a frame started after its vsync ${_ms(frames.worstVsyncWaitMicros)} '
-      'ms, the check took ${_ms(frames.tookMicros)} ms';
-  if (frames.breaksWithoutFrame > 0) throw StoreStepFailed([line]);
+      'step ${_ms(frames.longestStepMicros)} ms, the longest a frame of the '
+      'check started after its vsync ${_ms(frames.worstVsyncWaitMicros)} ms, '
+      'the check took ${_ms(frames.tookMicros)} ms';
+  final problems = [
+    if (frames.timedFrames == 0) 'no frame of the check was timed',
+    if (frames.breaksWithoutFrame > 0)
+      '${frames.breaksWithoutFrame} breaks had no frame in them',
+    if (longestStepMs != null &&
+        frames.longestStepMicros / 1000 > longestStepMs)
+      'the longest step ${_ms(frames.longestStepMicros)} ms is over '
+          '$longestStepMs ms by '
+          '${_ms(frames.longestStepMicros - (longestStepMs * 1000).round())} ms',
+  ];
+  if (problems.isNotEmpty) {
+    throw StoreStepFailed([
+      line,
+      for (final problem in problems) 'READBACK $pick frames: $problem',
+    ]);
+  }
   return [line];
 }
 
@@ -528,6 +568,8 @@ Future<
       int steps,
       int breaksWithoutFrame,
       int frames,
+      int timedFrames,
+      int longestStepMicros,
       int worstVsyncWaitMicros,
       int tookMicros,
     })> _framesAcrossSteps(
@@ -537,55 +579,77 @@ Future<
   final scheduler = SchedulerBinding.instance;
   var frames = 0;
   var asking = true;
+  var duringCheck = false;
+  final checkFrames = <int>{};
   void askAgain(Duration _) {
     frames += 1;
+    if (duringCheck) {
+      checkFrames.add(PlatformDispatcher.instance.frameData.frameNumber);
+    }
     if (!asking) return;
     scheduler
       ..addPostFrameCallback(askAgain)
       ..scheduleFrame();
   }
 
-  var worstVsyncWait = 0;
-  Completer<void>? nextReport;
+  final vsyncWaits = <int, int>{};
   void timings(List<FrameTiming> timings) {
     for (final timing in timings) {
-      final wait = timing.vsyncOverhead.inMicroseconds;
-      if (wait > worstVsyncWait) worstVsyncWait = wait;
-    }
-    if (nextReport case final report? when !report.isCompleted) {
-      report.complete();
+      vsyncWaits[timing.frameNumber] = timing.vsyncOverhead.inMicroseconds;
     }
   }
 
-  await scheduler.endOfFrame;
+  scheduler.scheduleFrame();
+  await scheduler.endOfFrame.timeout(const Duration(seconds: 5));
   scheduler
     ..addTimingsCallback(timings)
     ..addPostFrameCallback(askAgain)
     ..scheduleFrame();
-  await Future<void>.delayed(const Duration(milliseconds: 1500));
-  final report = nextReport = Completer<void>();
-  await report.future.timeout(const Duration(seconds: 3), onTimeout: () {});
-  worstVsyncWait = 0;
+  await Future<void>.delayed(const Duration(milliseconds: 500));
   var steps = 1;
   var breaksWithoutFrame = 0;
-  final framesBefore = frames;
+  var longestStep = 0;
+  final step = Stopwatch();
+  void stepEnded() {
+    if (step.elapsedMicroseconds > longestStep) {
+      longestStep = step.elapsedMicroseconds;
+    }
+  }
+
+  duringCheck = true;
   final clock = Stopwatch()..start();
+  step.start();
   await images.between(strategy, () async {
+    stepEnded();
     final before = frames;
     await betweenAnimations();
     steps += 1;
     if (frames == before) breaksWithoutFrame += 1;
+    step
+      ..reset()
+      ..start();
   });
+  stepEnded();
   final took = clock.elapsedMicroseconds;
-  final framesDuring = frames - framesBefore;
+  duringCheck = false;
   asking = false;
-  await Future<void>.delayed(const Duration(seconds: 2));
+  final reported = Stopwatch()..start();
+  while (!checkFrames.every(vsyncWaits.containsKey) &&
+      reported.elapsed < const Duration(seconds: 5)) {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
   scheduler.removeTimingsCallback(timings);
+  final timed = [
+    for (final frame in checkFrames)
+      if (vsyncWaits[frame] case final wait?) wait,
+  ];
   return (
     steps: steps,
     breaksWithoutFrame: breaksWithoutFrame,
-    frames: framesDuring,
-    worstVsyncWaitMicros: worstVsyncWait,
+    frames: checkFrames.length,
+    timedFrames: timed.length,
+    longestStepMicros: longestStep,
+    worstVsyncWaitMicros: timed.isEmpty ? 0 : timed.reduce(max),
     tookMicros: took,
   );
 }

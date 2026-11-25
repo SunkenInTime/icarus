@@ -11,7 +11,7 @@ import 'package:icarus/strategy/strategy_models.dart';
 
 import '../library_rows/generated_strategies.dart';
 import '../library_rows/library_sources.dart';
-import 'read_back_in_one_go.dart';
+import 'read_back_on_main.dart';
 
 const corpusVariable = 'ICARUS_LIBRARY_CORPUS';
 
@@ -228,31 +228,42 @@ StrategyData? _firstPageRenamed(StrategyData strategy) {
   }
 }
 
+StrategyData? _firstItemMoved(StrategyData strategy) {
+  if (strategy.pages.isEmpty) return null;
+  final moved = cloneStrategy(strategy);
+  final page = moved.pages.first;
+  if (page.agentData.isNotEmpty) {
+    page.agentData.first.position += const Offset(3, 2);
+  } else if (page.abilityData.isNotEmpty) {
+    page.abilityData.first.position += const Offset(3, 2);
+  } else if (page.utilityData.isNotEmpty) {
+    page.utilityData.first.position += const Offset(3, 2);
+  } else {
+    return null;
+  }
+  return moved;
+}
+
 Future<List<String>> _differences(String label, StrategyData strategy) async {
+  final onMain = MainStrategyImages();
   final stepped = StrategyImages();
   final inOneCall = StrategyImages();
   final checks = [
     ('first check', strategy),
     ('the same again, from the cache', strategy),
     if (_firstPageRenamed(strategy) case final renamed?)
-      ('after the first page changed', renamed),
+      ('after the first page was renamed', renamed),
+    if (_firstItemMoved(strategy) case final moved?)
+      ('after an item on the first page moved', moved),
   ];
   final differences = <String>[];
   for (final (moment, checked) in checks) {
-    final byFingerprint = _verdict(
-      readBackInOneGo(checked, pageKey: fingerprintPageKey),
-    );
-    final byDirect = _verdict(readBackInOneGo(checked));
-    if (byFingerprint != byDirect) {
-      differences.add('$label, $moment: fingerprint key says '
-          '"$byFingerprint", direct key says "$byDirect"');
-    }
-    final inOneGo = verdictKind(readBackInOneGo(checked));
+    final main = _verdict(onMain.of(checked).readBack);
     final bySteps =
-        verdictKind((await stepped.between(checked, () async {})).readBack);
-    final byStepsInOneCall = verdictKind(inOneCall.of(checked).readBack);
-    if (bySteps != inOneGo || byStepsInOneCall != inOneGo) {
-      differences.add('$label, $moment: in one go "$inOneGo", in steps '
+        _verdict((await stepped.between(checked, () async {})).readBack);
+    final byStepsInOneCall = _verdict(inOneCall.of(checked).readBack);
+    if (bySteps != main || byStepsInOneCall != main) {
+      differences.add('$label, $moment: main says "$main", in steps '
           '"$bySteps", in steps in one call "$byStepsInOneCall"');
     }
   }
@@ -263,14 +274,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-      'the direct page key gives the fingerprint key\'s verdicts, and the '
-      'check in steps gives the check in one go\'s, on shapes the real '
-      'libraries do not have', () async {
+      'the check in steps gives the verdicts main\'s check gives, words '
+      'included, on shapes the real libraries do not have', () async {
     final differences = <String>[];
     final verdicts = <String, String>{};
     for (final MapEntry(key: name, value: shape) in _shapes.entries) {
       final s = strategyAsHiveHoldsIt(shape(_strategy('shape-$name')));
-      verdicts[name] = _verdict(readBackInOneGo(s));
+      verdicts[name] = _verdict(MainStrategyImages().of(s).readBack);
       differences.addAll(await _differences(name, s));
     }
     stdout
@@ -281,14 +291,13 @@ void main() {
   });
 
   test(
-      'the direct page key gives the fingerprint key\'s verdicts, and the '
-      'check in steps gives the check in one go\'s, on the values tried on '
-      '#737', () async {
+      'the check in steps gives the verdicts main\'s check gives, words '
+      'included, on the values tried on #737', () async {
     final differences = <String>[];
     final verdicts = <String, String>{};
     for (final MapEntry(key: name, value: change) in _values.entries) {
       final s = strategyAsHiveHoldsIt(change(_strategy('value-$name')));
-      verdicts[name] = _verdict(readBackInOneGo(s));
+      verdicts[name] = _verdict(MainStrategyImages().of(s).readBack);
       differences.addAll(await _differences(name, s));
     }
     for (final MapEntry(:key, :value) in verdicts.entries) {
@@ -302,9 +311,8 @@ void main() {
   final corpus = Platform.environment[corpusVariable];
 
   test(
-    'the direct page key gives the fingerprint key\'s verdicts, and the '
-    'check in steps gives the check in one go\'s, on every strategy in the '
-    'corpus',
+    'the check in steps gives the verdicts main\'s check gives, words '
+    'included, on every strategy in the corpus',
     skip: corpus == null ? 'set $corpusVariable to a corpus folder' : false,
     () async {
       final differences = <String>[];
@@ -314,7 +322,9 @@ void main() {
         for (final strategy in (await loadHiveStore(store)).strategies) {
           final held = strategyAsHiveHoldsIt(strategy);
           strategies += 1;
-          if (readBackInOneGo(held) is ReadsBackEqual) equal += 1;
+          if (MainStrategyImages().of(held).readBack is ReadsBackEqual) {
+            equal += 1;
+          }
           differences.addAll(
               await _differences('${strategy.id} "${strategy.name}"', held));
         }

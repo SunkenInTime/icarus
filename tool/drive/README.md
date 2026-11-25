@@ -79,7 +79,20 @@ With `"ahead": "median"` (`scripts/open-first-frame-abandoned.json`) each press 
 
 `{"readBackCost": "largest", "runs": 21}` (`scripts/read-back-cost.json`) times, on the strategy with the most items, what the mirror spends converting it to rows, and converting it then checking that the rows read back equal to its Hive record, and logs both medians, the worst of each and the difference as a `READBACK` line.
 
-`"budget": {"longestStepMs": x, "addedPerSaveMs": y}` on that step judges two of its numbers. The longest step is the worse of the two longest single steps it reports (cold, and after one page changed): it is what a user feels, a frame the mirror holds. Added per save is the median it adds once one page changed: it is the total work each save costs. Each gets a `READBACK <strategy> within budget: …` or `READBACK <strategy> over budget: <value> ms, target <x> ms, over by <d> ms` line, and the step fails if either is over. `scripts/read-back-budget.json` runs it in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
+`"budget": {"longestStepMs": x, "addedPerSaveMs": y}` on that step judges two of its numbers, each measured on the check alone, not on the whole save (the store's own write is not part of it):
+- **Longest step:** the worse of the longest single steps it reports, cold and after one item changed (a freehand stroke moved when there is one). It is what a user feels, a frame the mirror holds.
+- **Added per save:** the median the check adds once one item changed. It is the total work each save costs.
+
+Each number gets a `READBACK <strategy> within budget: …` or `READBACK <strategy> over budget: <value> ms, target <x> ms, over by <d> ms` line, and the step fails if either is over.
+
+`{"readBackFrames": pick, "longestStepMs": x?}` runs the same check with the real scheduler while a frame is asked for every frame. It logs:
+- how many breaks had no frame in them;
+- the longest step between breaks;
+- the longest any frame that ran during the check waited after its vsync, matched by frame number.
+
+It fails if a break had no frame, if no frame of the check was timed, or if a step is over `longestStepMs`. A frame that is asked for waits behind at most the one step running when it was asked for. When nothing asks for a frame, the break does not wait for one.
+
+`scripts/read-back-budget.json` runs both in mirror mode on the round library made by `test/library_store/read_mode_round_test.dart` (see below):
 
 | Strategy | Longest step target | Windows release, 2026-11-25 | Added per save target | Windows release, 2026-11-25 |
 | --- | --- | --- | --- | --- |

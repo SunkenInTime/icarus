@@ -1,4 +1,3 @@
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -196,9 +195,9 @@ void main() {
   });
 
   test(
-      'no step reads more than one drawing\'s points, and each drawing\'s '
-      'points are serialised twice: once for its row and once for its key',
-      () async {
+      'no step reads more than one drawing\'s points, each drawing\'s points '
+      'are serialised twice, once for its row and once for its key, and only '
+      'parts not already known equal are read back', () async {
     final readsPerSerialisation = () {
       final probe = _CountedDrawing('probe', const [Offset(1, 2)]);
       _pointReads.clear();
@@ -209,14 +208,21 @@ void main() {
     final strokes = [
       for (final drawing in strategy.pages[0].drawingData) drawing.id,
     ];
+    final parts = [
+      for (final page in strategy.pages) 1 + pageItemsOf(page).length,
+    ].reduce((a, b) => a + b);
     final images = StrategyImages();
-    for (final moment in ['first check', 'again, every part from the cache']) {
+    for (final (moment, readBack) in [
+      ('first check', parts),
+      ('again, every part from the cache', 0),
+    ]) {
       _pointReads.clear();
       final steps = _Steps();
       final image = await images.between(strategy, () async => steps.endStep());
       steps.endStep();
 
       expect(image.readBack, isA<ReadsBackEqual>(), reason: moment);
+      expect(image.partsReadBack, readBack, reason: moment);
       expect(
         [for (final touched in steps.touched) touched.length].reduce(
           (a, b) => a > b ? a : b,
@@ -243,52 +249,108 @@ void main() {
   });
 
   test(
-      'changing any one field a page saves to Hive changes what the check '
-      'compares for that page', () {
+      'changing any one field a page saves to Hive, each setting, or one '
+      'field of one item in each list, changes what the check compares for '
+      'that page', () {
     final strategy = _strategy('fields');
     final page = strategy.pages[0];
     final graph = page.lineUpGraph;
-    final changes = <int, StrategyPage Function()>{
-      0: () => page.copyWith(id: '${page.id}*'),
-      1: () => page.copyWith(sortIndex: page.sortIndex + 1),
-      2: () => page.copyWith(name: '${page.name}*'),
-      3: () => page.copyWith(drawingData: page.drawingData.skip(1).toList()),
-      4: () => page.copyWith(agentData: page.agentData.skip(1).toList()),
-      5: () => page.copyWith(abilityData: page.abilityData.skip(1).toList()),
-      6: () => page.copyWith(textData: page.textData.skip(1).toList()),
-      7: () => page.copyWith(imageData: page.imageData.skip(1).toList()),
-      8: () => page.copyWith(utilityData: page.utilityData.skip(1).toList()),
-      9: () => page.copyWith(isAttack: !page.isAttack),
-      10: () => page.copyWith(
-            settings: StrategySettings(
-              agentSize: page.settings.agentSize + 1,
-              abilitySize: page.settings.abilitySize,
-              useNeutralTeamColors: page.settings.useNeutralTeamColors,
+    StrategyPage withFirst(
+      StrategyPage Function(StrategyPage copy) change,
+    ) =>
+        change(page.copyWith());
+    StrategyPage settings({
+      double? agentSize,
+      double? abilitySize,
+      bool? useNeutralTeamColors,
+    }) =>
+        page.copyWith(
+          settings: StrategySettings(
+            agentSize: agentSize ?? page.settings.agentSize,
+            abilitySize: abilitySize ?? page.settings.abilitySize,
+            useNeutralTeamColors:
+                useNeutralTeamColors ?? page.settings.useNeutralTeamColors,
+          ),
+        );
+    final changes = <int, List<StrategyPage Function()>>{
+      0: [() => page.copyWith(id: '${page.id}*')],
+      1: [() => page.copyWith(sortIndex: page.sortIndex + 1)],
+      2: [() => page.copyWith(name: '${page.name}*')],
+      3: [
+        () => withFirst((copy) {
+              (copy.drawingData.first as FreeDrawing)
+                  .listOfPoints
+                  .add(const Offset(77, 66));
+              return copy;
+            }),
+      ],
+      4: [
+        () => withFirst((copy) {
+              copy.agentData.first.position += const Offset(1, 0);
+              return copy;
+            }),
+      ],
+      5: [
+        () => withFirst((copy) {
+              copy.abilityData.first.position += const Offset(0, 1);
+              return copy;
+            }),
+      ],
+      6: [
+        () => withFirst((copy) {
+              copy.textData.first.text = '${copy.textData.first.text}*';
+              return copy;
+            }),
+      ],
+      7: [
+        () => withFirst((copy) {
+              copy.imageData.first.caption = 'another caption';
+              return copy;
+            }),
+      ],
+      8: [
+        () => withFirst((copy) {
+              copy.utilityData.first.rotation += 0.5;
+              return copy;
+            }),
+      ],
+      9: [() => page.copyWith(isAttack: !page.isAttack)],
+      10: [
+        () => settings(agentSize: page.settings.agentSize + 1),
+        () => settings(abilitySize: page.settings.abilitySize + 1),
+        () => settings(
+              useNeutralTeamColors: !page.settings.useNeutralTeamColors,
             ),
-          ),
-      14: () => page.copyWith(isAutoNamed: !(page.isAutoNamed ?? false)),
-      15: () => page.copyWith(
-            lineUpGraph: LineUpGraph(origins: [
-              ...graph.origins,
-              graph.origins.first.copyWith(id: 'another origin'),
-            ], landings: graph.landings, links: graph.links),
-          ),
-      16: () => page.copyWith(
-            lineUpGraph: LineUpGraph(
+      ],
+      14: [() => page.copyWith(isAutoNamed: !(page.isAutoNamed ?? false))],
+      15: [
+        () => page.copyWith(
+              lineUpGraph: LineUpGraph(origins: [
+                ...graph.origins,
+                graph.origins.first.copyWith(id: 'another origin'),
+              ], landings: graph.landings, links: graph.links),
+            ),
+      ],
+      16: [
+        () => page.copyWith(
+              lineUpGraph: LineUpGraph(
+                  origins: graph.origins,
+                  landings: [
+                    ...graph.landings,
+                    graph.landings.first.copyWith(id: 'another landing'),
+                  ],
+                  links: graph.links),
+            ),
+      ],
+      17: [
+        () => page.copyWith(
+              lineUpGraph: LineUpGraph(
                 origins: graph.origins,
-                landings: [
-                  ...graph.landings,
-                  graph.landings.first.copyWith(id: 'another landing'),
-                ],
-                links: graph.links),
-          ),
-      17: () => page.copyWith(
-            lineUpGraph: LineUpGraph(
-              origins: graph.origins,
-              landings: graph.landings,
-              links: graph.links.skip(1).toList(),
+                landings: graph.landings,
+                links: graph.links.skip(1).toList(),
+              ),
             ),
-          ),
+      ],
     };
     const projections = {
       11: 'lineUps, rebuilt from the lineup graph whenever a page is built',
@@ -306,9 +368,11 @@ void main() {
           'reason it cannot change on its own',
     );
     final before = _keysOf(strategy, page);
-    for (final MapEntry(key: field, value: change) in changes.entries) {
-      expect(_keysOf(strategy, change()), isNot(before),
-          reason: 'field $field');
+    for (final MapEntry(key: field, value: each) in changes.entries) {
+      for (final (index, change) in each.indexed) {
+        expect(_keysOf(strategy, change()), isNot(before),
+            reason: 'field $field, change $index');
+      }
     }
   });
 }

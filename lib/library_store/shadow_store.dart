@@ -287,10 +287,10 @@ class ShadowNotifier extends Notifier<ShadowState> {
 }
 
 Future<void>? storeCatchUpBeforeClose() => switch (LocalLibrary.follower) {
-      final StoreMirror mirror when shadowReachable => mirror.drained().timeout(
-            const Duration(seconds: 2),
-            onTimeout: () {},
-          ),
+      final StoreMirror mirror when shadowReachable => mirror
+          .drained()
+          .timeout(const Duration(seconds: 2), onTimeout: () {})
+          .whenComplete(mirror.closeWithTheApp),
       _ => null,
     };
 

@@ -35,6 +35,17 @@ final class MirrorFaulted extends MirrorStop {
   String toString() => 'the mirror met an error: $error';
 }
 
+final class MirrorClosedWithTheApp extends MirrorStop {
+  const MirrorClosedWithTheApp();
+
+  @override
+  String toString() => 'the app closed';
+}
+
+final class _StoppedBetweenSteps implements Exception {
+  const _StoppedBetweenSteps();
+}
+
 sealed class MirrorPhase {
   const MirrorPhase();
 }
@@ -292,9 +303,11 @@ final class StoreMirror extends LocalLibraryFollower {
         store,
         images: _images,
         writes: writes,
-        breathe: betweenAnimations,
+        breathe: _betweenSteps,
         progress: progress,
       );
+    } on _StoppedBetweenSteps catch (error, stackTrace) {
+      return ShadowCopyFaulted(error, stackTrace);
     } on Object catch (error, stackTrace) {
       _stop(MirrorFaulted(error, stackTrace));
       return ShadowCopyFaulted(error, stackTrace);
@@ -320,6 +333,15 @@ final class StoreMirror extends LocalLibraryFollower {
 
   void hold() {
     if (_phase case MirrorFollowing()) _phaseIs(const MirrorHeld());
+  }
+
+  void closeWithTheApp() {
+    if (_phase is! MirrorStopped) _stop(const MirrorClosedWithTheApp());
+  }
+
+  Future<void> _betweenSteps() async {
+    await betweenAnimations();
+    if (_phase is MirrorStopped) throw const _StoppedBetweenSteps();
   }
 
   Future<void> drained() => _idle.future;
@@ -385,6 +407,8 @@ final class StoreMirror extends LocalLibraryFollower {
   Future<void> _pump() async {
     try {
       await _batchesWhileDue();
+    } on _StoppedBetweenSteps {
+      return;
     } on Object catch (error, stackTrace) {
       _stop(MirrorFaulted(error, stackTrace));
       return;
@@ -454,7 +478,7 @@ final class StoreMirror extends LocalLibraryFollower {
           strategies: strategies,
           folders: folders,
           handedOff: _handedOff,
-          breathe: betweenAnimations,
+          breathe: _betweenSteps,
         );
       } finally {
         _strategiesInFlight = const {};

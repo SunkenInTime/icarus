@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/library_rows/page_items.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
@@ -26,10 +25,11 @@ final class ReadsBackDifferently extends ReadBack {
 }
 
 final class StrategyImage {
-  const StrategyImage(this.rows, this.readBack);
+  const StrategyImage(this.rows, this.readBack, {this.partsReadBack = 0});
 
   final StrategyToRows rows;
   final ReadBack readBack;
+  final int partsReadBack;
 }
 
 final class StrategyImages {
@@ -61,17 +61,11 @@ final class StrategyImages {
       try {
         switch (step) {
           case ItemConverted(:final page, :final item, row: final row?):
-            parts.add(_ItemPart(map, strategy, page, item, row));
+            parts.add(_ItemPart(map, page, item, row));
           case ItemConverted(row: null):
             break;
-          case PageConverted(
-              :final page,
-              :final row,
-              :final settings,
-              :final lineupGroups,
-            ):
-            parts.add(
-                _PagePart(map, strategy, page, row, settings, lineupGroups));
+          case PageConverted(:final page, :final lineupGroups):
+            parts.add(_PagePart(map, page, lineupGroups));
           case RowsFinished(:final rows):
             converted = rows;
             outline = strategyOutline(strategy);
@@ -85,6 +79,7 @@ final class StrategyImages {
     final StrategyRowSet rows;
     switch (converted) {
       case StrategyRowsRefused():
+        forget(strategy.id);
         yield StrategyImage(
           converted,
           const ReadsBackDifferently('the converter refuses it'),
@@ -93,8 +88,12 @@ final class StrategyImages {
       case StrategyRowsMade(rows: final made):
         rows = made;
     }
-    StrategyImage cannotCompare(Object error) => StrategyImage(
-        converted, ReadsBackDifferently('it cannot be compared: $error'));
+    StrategyImage cannotCompare(Object error) {
+      forget(strategy.id);
+      return StrategyImage(
+          converted, ReadsBackDifferently('it cannot be compared: $error'));
+    }
+
     if (unkeyable != null) {
       yield cannotCompare(unkeyable);
       return;
@@ -111,17 +110,19 @@ final class StrategyImages {
 
     final known = _partsReadingBackEqual[strategy.id] ?? const <String>{};
     final equal = <String>{};
-    _Part? differing;
+    String? differingPage;
+    var partsReadBack = 0;
     for (final part in parts) {
       if (known.contains(part.key)) {
         equal.add(part.key);
         continue;
       }
       try {
+        partsReadBack += 1;
         if (part.readBack(rows) == part.key) {
           equal.add(part.key);
         } else {
-          differing ??= part;
+          differingPage ??= part.pageId;
         }
       } on Object catch (error) {
         yield cannotCompare(error);
@@ -138,16 +139,25 @@ final class StrategyImages {
         const ReadsBackDifferently(
           'its fields, page order or positions read back differently',
         ),
+        partsReadBack: partsReadBack,
       );
       return;
     }
-    if (differing == null) {
-      yield StrategyImage(converted, const ReadsBackEqual());
+    if (differingPage == null) {
+      yield StrategyImage(
+        converted,
+        const ReadsBackEqual(),
+        partsReadBack: partsReadBack,
+      );
       return;
     }
     yield null;
     try {
-      yield StrategyImage(converted, differing.differences(rows));
+      yield StrategyImage(
+        converted,
+        _pageDifferences(strategy, rows, differingPage),
+        partsReadBack: partsReadBack,
+      );
     } on Object catch (error) {
       yield cannotCompare(error);
     }
@@ -155,23 +165,19 @@ final class StrategyImages {
 }
 
 sealed class _Part {
-  _Part(this.key);
+  _Part(this.pageId, this.key);
 
+  final String pageId;
   final String key;
 
   String? readBack(StrategyRowSet rows);
-
-  ReadBack differences(StrategyRowSet rows);
 }
 
 final class _ItemPart extends _Part {
-  _ItemPart(this.map, this.strategy, this.page, this.item, this.row)
-      : super(itemKey(map, item));
+  _ItemPart(this.map, StrategyPage page, PageItem item, this.row)
+      : super(page.id, itemKey(map, item));
 
   final MapValue map;
-  final StrategyData strategy;
-  final StrategyPage page;
-  final PageItem item;
   final LiveElement row;
 
   @override
@@ -185,35 +191,23 @@ final class _ItemPart extends _Part {
           },
         UnreadableElement() || DeletedElement() => null,
       };
-
-  @override
-  ReadBack differences(StrategyRowSet rows) => _differences(
-        strategy.copyWith(pages: [_pageHolding(page, item)]),
-        _alone(rows, page.id, elements: [row]),
-        'item ${item.id} on page ${page.id} reads back differently',
-      );
 }
 
 final class _PagePart extends _Part {
-  _PagePart(
-    this.map,
-    this.strategy,
-    this.page,
-    this.row,
-    this.settings,
-    this.lineupGroups,
-  ) : super(pagePartKey(map, page));
+  _PagePart(this.map, StrategyPage page, this.lineupGroups)
+      : super(page.id, pagePartKey(map, page));
 
   final MapValue map;
-  final StrategyData strategy;
-  final StrategyPage page;
-  final LivePage row;
-  final ReadablePageSettings settings;
   final List<LiveLineupGroup> lineupGroups;
 
   @override
-  String? readBack(StrategyRowSet rows) => switch (strategyFromRows(
-          rowsAsStored(_alone(rows, page.id, lineupGroups: lineupGroups)))) {
+  String? readBack(StrategyRowSet rows) =>
+      switch (strategyFromRows(rowsAsStored(StrategyRowSet(
+        strategy: rows.strategy,
+        pages: [if (rows.page(pageId) case final page?) page],
+        settings: [if (rows.settingsOf(pageId) case final settings?) settings],
+        lineupGroups: lineupGroups,
+      )))) {
         StrategyDataMade(
           strategy: final back,
           :final unreadable,
@@ -225,50 +219,29 @@ final class _PagePart extends _Part {
           pagePartKey(map, back.pages.single),
         StrategyDataMade() || StrategyDataRefused() => null,
       };
-
-  @override
-  ReadBack differences(StrategyRowSet rows) => _differences(
-        strategy.copyWith(pages: [_pageHolding(page, null)]),
-        _alone(rows, page.id, lineupGroups: lineupGroups),
-        'page ${page.id} reads back differently',
-      );
 }
 
-StrategyRowSet _alone(
+ReadBack _pageDifferences(
+  StrategyData strategy,
   StrategyRowSet rows,
-  String pageId, {
-  List<ElementRow> elements = const [],
-  List<LineupGroupRow> lineupGroups = const [],
-}) =>
-    StrategyRowSet(
-      strategy: rows.strategy,
-      pages: [if (rows.page(pageId) case final page?) page],
-      settings: [if (rows.settingsOf(pageId) case final settings?) settings],
-      elements: elements,
-      lineupGroups: lineupGroups,
-    );
-
-StrategyPage _pageHolding(StrategyPage page, PageItem? item) => page.copyWith(
-      agentData: [if (item case AgentItem(:final agent)) agent],
-      abilityData: [if (item case AbilityItem(:final ability)) ability],
-      drawingData: [if (item case DrawingItem(:final drawing)) drawing],
-      textData: [if (item case TextItem(:final text)) text],
-      imageData: [if (item case ImageItem(:final image)) image],
-      utilityData: [if (item case UtilityItem(:final utility)) utility],
-      lineUpGraph: item == null ? page.lineUpGraph : LineUpGraph.empty,
-    );
-
-ReadBack _differences(
-  StrategyData original,
-  StrategyRowSet rows,
-  String otherwise,
+  String pageId,
 ) {
-  final differences = switch (strategyFromRows(rowsAsStored(rows))) {
+  final page = strategy.pages.firstWhere((page) => page.id == pageId);
+  final back = strategyFromRows(rowsAsStored(StrategyRowSet(
+    strategy: rows.strategy,
+    pages: [if (rows.page(pageId) case final row?) row],
+    settings: [if (rows.settingsOf(pageId) case final settings?) settings],
+    elements: rows.elementsOn(pageId),
+    lineupGroups: rows.lineupGroupsOn(pageId),
+  )));
+  final differences = switch (back) {
     StrategyDataMade(strategy: final made) when made.pages.length == 1 =>
-      strategyDifferences(original, made),
+      strategyDifferences(strategy.copyWith(pages: [page]), made),
     _ => const <StrategyDifference>[],
   };
-  if (differences.isEmpty) return ReadsBackDifferently(otherwise);
+  if (differences.isEmpty) {
+    return ReadsBackDifferently('page $pageId reads back differently');
+  }
   return ReadsBackDifferently([
     ...differences.take(3).map((difference) => '$difference'),
     if (differences.length > 3) '${differences.length - 3} more',

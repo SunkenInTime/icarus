@@ -105,9 +105,9 @@ void main() {
   });
 
   test(
-      'as the mirror runs it, the check breaks between frames after each '
-      'item and each page\'s own fields, and comes to the same answer as in '
-      'one go', () async {
+      'as the mirror runs it, the check gives way after each item and each '
+      'page\'s own fields, so a frame asked for waits behind at most one '
+      'step, and comes to the same answer as in one go', () async {
     final strategy = _strategy('between');
     final changed = _withPage(
       strategy,

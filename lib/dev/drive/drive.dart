@@ -2514,7 +2514,11 @@ Future<void> _run(Map<String, dynamic> step) async {
       )))
           .forEach(_log);
     case 'readBackFrames':
-      (await _storeLines(readBackFrames(value as String))).forEach(_log);
+      (await _storeLines(readBackFrames(
+        value as String,
+        longestStepMs: step['longestStepMs'] as num?,
+      )))
+          .forEach(_log);
     case 'openStoredCloudStrategy':
       unawaited(
         Navigator.of(appNavigatorKey.currentContext!).push(
