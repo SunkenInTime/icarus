@@ -848,10 +848,16 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     'median' => unique[unique.length ~/ 2],
     _ => unique.firstWhere((strategy) => strategy.name == pick),
   };
+  final others = [
+    for (final strategy in openable)
+      if (strategy.id != target.id) strategy,
+  ];
   final ahead = switch (step['ahead']) {
     null => null,
-    'median' => unique[unique.length ~/ 2],
-    final String name => unique.firstWhere((strategy) => strategy.name == name),
+    _ when others.isEmpty =>
+      throw StateError('no other strategy to open ahead of ${target.name}'),
+    'median' => others[others.length ~/ 2],
+    final String name => others.firstWhere((strategy) => strategy.name == name),
     _ => throw StateError('ahead names a strategy or median'),
   };
   final firstPage = _firstPageOf(target);
@@ -957,7 +963,7 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
       'OPENFRAME run $run, $label: built ${ms(submittedAt!)} ms, painted '
       '${ms(submittedAt! + raster)} ms after the pointer-up '
       '(that frame rasterised in ${ms(raster)} ms), mirror $mirrorAtStart'
-      '${ahead == null ? '' : ', an open of another strategy started at the press'}',
+      '${ahead == null ? '' : ', an open of ${ahead.pages.length} pages and ${_itemsIn(ahead)} items started at the press'}',
     );
     await _seconds(1);
   }
