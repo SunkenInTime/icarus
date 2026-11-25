@@ -4,6 +4,7 @@ import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
 import '../rows.dart';
+import 'version.dart';
 
 const retriesBeforePause = 8;
 
@@ -372,17 +373,22 @@ final class ProducedRow {
     required this.page,
     required this.revision,
     required this.digest,
+    this.life,
     this.justifies = true,
   });
 
   final String? page;
   final int revision;
+  final int? life;
   final String digest;
   final bool justifies;
+
+  Version get version => Version(revision, life: life);
 
   ProducedRow unjustified() => ProducedRow(
     page: page,
     revision: revision,
+    life: life,
     digest: digest,
     justifies: false,
   );
@@ -392,12 +398,13 @@ final class ProducedRow {
       other is ProducedRow &&
       other.page == page &&
       other.revision == revision &&
+      other.life == life &&
       other.digest == digest &&
       other.justifies == justifies;
 
   @override
   int get hashCode =>
-      Object.hash(ProducedRow, page, revision, digest, justifies);
+      Object.hash(ProducedRow, page, revision, life, digest, justifies);
 
   @override
   String toString() => 'ProducedRow($page, $revision)';
@@ -407,12 +414,14 @@ final class AuthoredRow extends Authored {
   const AuthoredRow({
     required this.revision,
     required this.digest,
+    this.life,
     this.payloadVersion,
     this.produces,
     this.movedRow,
   });
 
   final int revision;
+  final int? life;
   final String digest;
   final int? payloadVersion;
   final ProducedRow? produces;
@@ -422,6 +431,7 @@ final class AuthoredRow extends Authored {
   bool operator ==(Object other) =>
       other is AuthoredRow &&
       other.revision == revision &&
+      other.life == life &&
       other.digest == digest &&
       other.payloadVersion == payloadVersion &&
       other.produces == produces &&
@@ -431,6 +441,7 @@ final class AuthoredRow extends Authored {
   int get hashCode => Object.hash(
     AuthoredRow,
     revision,
+    life,
     digest,
     payloadVersion,
     produces,
@@ -455,16 +466,19 @@ final class AuthoredUnreadable extends Authored {
 }
 
 final class KeptOverServer extends Authored {
-  const KeptOverServer(this.revision);
+  const KeptOverServer(this.revision, {this.life});
 
   final int revision;
+  final int? life;
 
   @override
   bool operator ==(Object other) =>
-      other is KeptOverServer && other.revision == revision;
+      other is KeptOverServer &&
+      other.revision == revision &&
+      other.life == life;
 
   @override
-  int get hashCode => Object.hash(KeptOverServer, revision);
+  int get hashCode => Object.hash(KeptOverServer, revision, life);
 
   @override
   String toString() => 'KeptOverServer($revision)';
@@ -614,10 +628,12 @@ final class ServerSnapshot extends ServerCopy {
     required this.target,
     required this.revision,
     required Map<String, Object?> value,
+    this.life,
   }) : value = jsonObject(value);
 
   final SnapshotTarget target;
   final int revision;
+  final int? life;
   final JsonObject value;
 
   @override
@@ -625,10 +641,11 @@ final class ServerSnapshot extends ServerCopy {
       other is ServerSnapshot &&
       other.target == target &&
       other.revision == revision &&
+      other.life == life &&
       sameJson(other.value, value);
 
   @override
-  int get hashCode => Object.hash(ServerSnapshot, target, revision);
+  int get hashCode => Object.hash(ServerSnapshot, target, revision, life);
 }
 
 enum SnapshotTarget { strategy, page, pageContent, element, lineup }
@@ -797,6 +814,7 @@ final class LandedWork {
     required this.shape,
     required this.own,
     required this.firstSentAt,
+    this.life,
     this.produced,
     this.movedRow,
     this.shownWithout = false,
@@ -806,6 +824,7 @@ final class LandedWork {
   final int position;
   final StrategyOp op;
   final int revision;
+  final int? life;
   final LandedShape shape;
   final bool own;
   final DateTime firstSentAt;
@@ -818,6 +837,7 @@ final class LandedWork {
     position: position,
     op: op,
     revision: revision,
+    life: life,
     shape: shape,
     own: own,
     firstSentAt: firstSentAt,
@@ -830,6 +850,7 @@ final class LandedWork {
     position: position,
     op: op,
     revision: revision,
+    life: life,
     shape: shape,
     own: own,
     firstSentAt: firstSentAt,
@@ -845,6 +866,7 @@ final class LandedWork {
       other.position == position &&
       other.op == op &&
       other.revision == revision &&
+      other.life == life &&
       other.shape == shape &&
       other.own == own &&
       other.firstSentAt == firstSentAt &&
@@ -859,12 +881,15 @@ final class LandedWork {
     position,
     op,
     revision,
+    life,
     shape,
     own,
     firstSentAt,
     produced,
     shownWithout,
   );
+
+  Version get version => Version(revision, life: life);
 
   int compareTo(LandedWork other) {
     final byAttempt = attempt.compareTo(other.attempt);
