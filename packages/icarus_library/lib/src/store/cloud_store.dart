@@ -2240,6 +2240,7 @@ extension _CloudStore on LibraryStore {
       () {
         _summaries[digest] = summary;
         _unsaved.remove(digest);
+        _refusedThisSession.remove(digest);
         return summary;
       },
     );

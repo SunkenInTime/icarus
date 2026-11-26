@@ -696,6 +696,7 @@ final class LibraryStore {
   }
 
   void _listGone(String digest) {
+    _refusedThisSession.remove(digest);
     _summaries.remove(digest);
     _unsaved.remove(digest);
     _strategies.remove(digest);
@@ -2285,6 +2286,7 @@ final class _LibraryEdit {
       _store._queues.remove(digest);
       _store._sessions.remove(digest);
       _store._unreadable.remove(digest);
+      _store._refusedThisSession.remove(digest);
     }
     _store._summaries.addAll(_putSummaries);
     for (final MapEntry(:key, :value) in _headers.entries) {

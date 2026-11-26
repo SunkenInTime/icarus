@@ -710,9 +710,15 @@ String renderTable() {
     ..writeln()
     ..writeln(
       'Nothing about the refusal is stored. A disagreement found in this '
-      'session refuses the strategy until the store closes or the strategy is '
-      'added to the store again; after a restart it is found again when the '
-      'same check runs.',
+      'session refuses that strategy from the load that found it until the '
+      'store closes, or until the strategy\'s stored rows are removed from '
+      'this device or written afresh (the strategy removed, its rows found '
+      'gone, its unreadable queue discarded, or the strategy added to the '
+      'store again); it is never written to disk and is consulted only to '
+      'refuse that strategy\'s open. After a restart the open passes the '
+      'queue-load check when the fault is on a page, and the strategy is '
+      'refused again as soon as that page loads, whether a reader, a '
+      'result or the summary loads it first.',
     )
     ..writeln()
     ..writeln(

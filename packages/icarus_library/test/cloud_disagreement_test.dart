@@ -547,6 +547,45 @@ void main() {
     });
   });
 
+  test('after a restart the open passes the queue-load check, and the '
+      'strategy is refused again when a result first loads the bad page, with '
+      'nothing written', () async {
+    final disk = await addedOnDisk();
+    disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+    final storage = MemoryStorage(disk);
+    final first = await Opened.over(storage);
+    await readEveryPage(first.store);
+    expect(await refusedFor(first.store), isNotNull);
+    await first.close();
+
+    final again = await Opened.over(MemoryStorage(storage.contents));
+    await recordAll(again.store, [const AppRestarted(build: build)]);
+    expect(await refusedFor(again.store), isNull);
+    final session = await sessionOf(again.store);
+    final from = await beganIn(again.store);
+    final commits = again.counts.commits;
+    expect(
+      await again.store.record(testAccount, strategyId, [
+        BaseArrived(
+          pageReadOf(initialRows(), 'page-a'),
+          session: session,
+          from: from,
+        ),
+      ]),
+      isA<Refused<Recorded, CommitRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<StoredRowsDisagree>(),
+      ),
+    );
+    expect(again.counts.commits, commits);
+    expect(
+      await refusedFor(again.store),
+      'a row on page page-a is damaged here',
+    );
+    expect(await again.refusalsReported(), hasLength(1));
+  });
+
   test('a strategy refused this session, removed and added again is not '
       'refused', () async {
     final disk = await addedOnDisk();
