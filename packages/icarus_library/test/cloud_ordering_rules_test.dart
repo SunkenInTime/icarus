@@ -151,8 +151,11 @@ void main() {
       }
     });
 
-    test('client 0 is not a client', () {
+    test('client 0 is not a client, even to a session no connection has '
+        'answered yet', () {
       final client = connectedOn();
+      client.must(const AppRestarted(build: build));
+      expect(client.queue.session.generation, isNull);
       expect(
         notApplicable(
           client.step(
@@ -165,6 +168,7 @@ void main() {
         ),
         isA<FromAnEndedSession>(),
       );
+      expect(client.queue.session.generation, isNull);
     });
 
     test(
@@ -220,6 +224,29 @@ void main() {
         isA<OlderResult>(),
       );
       expect(client.queue.shown.pageRead('page-a'), isA<ReadRefused>());
+    });
+
+    test('an older refusal after a newer one changes nothing, for a page '
+        'and for the list', () {
+      for (final page in ['page-a', null]) {
+        final client = connectedOn();
+        ResultRefused refusal(String problem, int snapshot) => ResultRefused(
+          page: page,
+          problem: problem,
+          session: client.queue.session.number,
+          point: pointAt(snapshot),
+        );
+        client.must(refusal('newer', 22));
+        expect(
+          notApplicable(client.step(refusal('older', 20))),
+          isA<OlderResult>(),
+          reason: '$page',
+        );
+        final held = page == null
+            ? client.queue.shown.list
+            : client.queue.shown.pageRead(page);
+        expect((held as ReadRefused).problem, 'newer', reason: '$page');
+      }
     });
 
     test('a list refusal older than the list taken changes nothing', () {
