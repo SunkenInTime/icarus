@@ -9,7 +9,7 @@ import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart' show servedAccount, strategyId;
+import 'server_fixtures.dart' show servedAccount, strategyId;
 import 'sender_world.dart';
 
 const pageId = 'p1';

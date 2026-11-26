@@ -11,7 +11,7 @@ import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart'
+import 'server_fixtures.dart'
     show secondPage, serverRows, servedAccount, strategyId;
 import 'sender_world.dart';
 

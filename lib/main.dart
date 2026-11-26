@@ -427,7 +427,7 @@ Future<void> main(List<String> args) async {
       if (stores.opening != null) {
         closeLibraryStoreOnExit(appProviderContainer);
       }
-      beginCloudShadow(appProviderContainer, stores,
+      beginCloudSender(appProviderContainer, stores,
           build: Settings.versionName);
       if (shadowStore case (:final opening, :final directory, :final mode)) {
         appProviderContainer.read(shadowProvider.notifier).begin(

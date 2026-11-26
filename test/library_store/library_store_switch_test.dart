@@ -113,28 +113,29 @@ void main() {
   });
 
   test(
-      'asking for the cloud shadow stops the launch with a reason naming '
-      'what brings it back, and the send mode is still its own flag', () {
-    expect(
-      () => LibraryStoreLaunch.parse(
-        const ['--cloud-store=shadow', 'a.ica'],
-        mayShadow: true,
-      ),
-      throwsA(
-        isA<ArgumentError>()
-            .having((error) => error.message, 'message', cloudShadowOff),
-      ),
-    );
-    expect(cloudShadowOff, contains('PR 5'));
+      'an unknown cloud store value stops the launch as a usage error, and '
+      'send is still its own flag', () {
+    for (final value in ['shadow', 'mirror', '']) {
+      expect(
+        () => LibraryStoreLaunch.parse(
+          ['${LibraryStoreLaunch.cloudStoreFlag}$value', 'a.ica'],
+          mayShadow: true,
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message,
+            'message',
+            '--cloud-store has no value "$value"; it takes send',
+          ),
+        ),
+      );
+    }
 
     final both = LibraryStoreLaunch.parse(
       const ['--cloud-store=send', '--library-store=mirror'],
       mayShadow: true,
     );
-    expect(
-      both.cloud,
-      isA<CloudStoreShadow>().having((cloud) => cloud.sends, 'sends', true),
-    );
+    expect(both.cloud, isA<CloudStoreSend>());
     expect(both.choice, isA<StoreSwitchMirror>());
     expect(both.otherArgs, isEmpty);
   });
@@ -142,11 +143,16 @@ void main() {
   test(
       'a build that may not shadow keeps the cloud store off, and still drops the flag',
       () {
-    final launch = LibraryStoreLaunch.parse(
-      const ['--cloud-store=shadow', 'a.ica'],
-      mayShadow: false,
-    );
-    expect(launch.cloud, isA<CloudStoreOff>());
-    expect(launch.otherArgs, ['a.ica']);
+    for (final flag in [
+      LibraryStoreLaunch.cloudSendFlag,
+      '${LibraryStoreLaunch.cloudStoreFlag}mirror',
+    ]) {
+      final launch = LibraryStoreLaunch.parse(
+        [flag, 'a.ica'],
+        mayShadow: false,
+      );
+      expect(launch.cloud, isA<CloudStoreOff>(), reason: flag);
+      expect(launch.otherArgs, ['a.ica'], reason: flag);
+    }
   });
 }

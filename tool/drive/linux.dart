@@ -14,7 +14,7 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
       [--companion FILE] [--companion-account EMAIL] [--exe DIR] [--out DIR]
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
       [--hive-store DIR] [--library-store off|shadow|mirror|read|ops|store]
-      [--cloud-store shadow|send] [--second-account EMAIL]
+      [--cloud-store send] [--second-account EMAIL]
       [--kill-after-seconds S] [--main-scope UNIT]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
@@ -40,8 +40,7 @@ run     Runs --script, and --companion beside it when given, against the
         runs on the store, and leaves the Hive files as they were.
         --cloud-store send passes --cloud-store=send to every instance: the
         store reads the open cloud strategy and sends its queue to the
-        server. --cloud-store shadow is refused with exit 2 until the store
-        takes its live results with stamps (slice 3, PR 5).
+        server.
         --second-account gives the main instance a second account, which a
         {"signIn": "second"} step signs in to.
         --kill-after-seconds kills the main instance with SIGKILL S seconds
@@ -287,12 +286,6 @@ List<String> storeArgs(Map<String, String> options) {
     );
   }
   final cloudStore = options['cloud-store'];
-  if (cloudStore == 'shadow') {
-    throw UsageError(
-      'the cloud shadow is off until the store takes its live results with '
-      'stamps (slice 3, PR 5); use --cloud-store send',
-    );
-  }
   if (cloudStore != null && cloudStore != 'send') {
     throw UsageError('--cloud-store is send, not "$cloudStore"');
   }

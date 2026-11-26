@@ -14,7 +14,7 @@ import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/stamp_source.dart';
 
-import 'cloud_shadow_test.dart'
+import 'server_fixtures.dart'
     show at, pageList, secondPage, serverRows, servedAccount, strategyId;
 
 final start = DateTime.utc(2026, 11, 23, 12, 0, 0, 0, 371);

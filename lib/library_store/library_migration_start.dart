@@ -28,7 +28,7 @@ Future<Future<LibraryStoreOpened>?> moveLibraryIntoStore(
   }
   final opening = container.read(libraryStoreProvider.notifier).open(
         libraryStoreFile(hiveDirectory),
-        build: launch.cloud is CloudStoreShadow ? build : '',
+        build: launch.cloud is CloudStoreSend ? build : '',
       );
   final migration = switch (await opening) {
     LibraryStoreReady(:final store) => await migrateLibraryIntoStore(

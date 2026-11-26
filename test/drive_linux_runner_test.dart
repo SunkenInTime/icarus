@@ -102,9 +102,9 @@ void main() {
   });
 
   test(
-      'a cloud shadow run is refused before the run makes a folder or looks '
-      'for the build', () async {
-    final folder = Directory.systemTemp.createTempSync('shadow_refused');
+      'an unknown cloud store value is refused before the run makes a folder '
+      'or looks for the build', () async {
+    final folder = Directory.systemTemp.createTempSync('cloud_store_refused');
     addTearDown(() => folder.deleteSync(recursive: true));
     await expectLater(
       runScripts({
@@ -117,7 +117,7 @@ void main() {
         isA<UsageError>().having(
           (error) => error.message,
           'message',
-          startsWith('the cloud shadow is off'),
+          '--cloud-store is send, not "shadow"',
         ),
       ),
     );
