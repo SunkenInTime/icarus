@@ -1,5 +1,7 @@
 import 'dart:collection';
 
+import 'package:collection/collection.dart';
+
 import '../json.dart';
 import '../ops.dart';
 import '../outcome.dart';
@@ -1296,7 +1298,13 @@ final class _Edit {
     _pruneAttempts(this);
     if (shown.list != original.shown.list) change.everything = true;
     final (was, now) = (original.shown.fresh, shown.fresh);
-    if (was.listSinceTouch != now.listSinceTouch) change.everything = true;
+    if (was.listSinceTouch != now.listSinceTouch ||
+        !const SetEquality<String>().equals(
+          was.touchedSinceList,
+          now.touchedSinceList,
+        )) {
+      change.everything = true;
+    }
     change.pages.addAll({
       ...was.pagesSinceTouch.difference(now.pagesSinceTouch),
       ...now.pagesSinceTouch.difference(was.pagesSinceTouch),
@@ -1783,7 +1791,8 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
     },
     PageGone(:final pagePublicId)
         when shown.pages.containsKey(pagePublicId) &&
-            (shown.listTaken?.order.isBefore(arrival.order) == false) =>
+            (shown.listTaken != null &&
+                arrival.order.isBefore(shown.listTaken!.order)) =>
       ResultFit.older,
     PageGone() || StrategyGone() => ResultFit.applies,
   };
@@ -2779,9 +2788,11 @@ void _oweTheRowsRead(
         ServerSnapshot(target: SnapshotTarget.lineup) &&
             final ServerSnapshot snapshot,
         LineupTarget(),
-      )
-          when snapshot.life != null =>
-        RowAtLeast(checked, life: snapshot.life, revision: snapshot.revision),
+      ) when snapshot.life != null => RowAtLeast(
+        checked,
+        life: snapshot.life,
+        revision: snapshot.revision,
+      ),
       _ => null,
     },
   );

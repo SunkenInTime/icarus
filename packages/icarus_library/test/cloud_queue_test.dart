@@ -2626,7 +2626,8 @@ void main() {
     });
 
     test('nothing to do at the justified revision keeps the predictions '
-        'queued behind it', () {
+        'queued behind it, once a page result after the answer shows the '
+        'page current', () {
       final start = strategyRows(
         elements: [
           element(
@@ -2660,6 +2661,11 @@ void main() {
           server.apply(clientId, client.lastSent().single),
           point: tick(),
         ),
+      );
+      expect(client.view('w1').sendable, isFalse);
+      client.arrive(
+        pageReadOf(server.rows, 'page-a'),
+        asked: const NotCausal(),
       );
       sendAndAnswer(client, server, ['w1']);
       expect(client.view('w2').sendable, isTrue);

@@ -93,6 +93,7 @@ Arrival arrivalOf(ResultOrder order, {int? time, int? requestedAt}) => Arrival(
     serverTime: time,
   ),
   requestedAt: requestedAt,
+  requestedIn: order.session,
 );
 
 ResultOrder orderAt(int snapshot, {int session = 3, int client = 1}) =>
