@@ -543,11 +543,19 @@ void main() {
       int.tryParse(Platform.environment['ARRIVAL_ORDER_SEEDS'] ?? '') ??
       80 * families;
   final one = int.tryParse(Platform.environment['ARRIVAL_ORDER_SEED'] ?? '');
+  final family = int.tryParse(
+    Platform.environment['ARRIVAL_ORDER_FAMILY'] ?? '',
+  );
   test('reads delivered in every order end where a model of the server says, '
       'whatever their stamps', () {
     var checked = 0;
     for (final seed
-        in one == null ? [for (var s = 1; s <= seeds; s++) s] : [one]) {
+        in one == null
+            ? [
+                for (var s = 1; s <= seeds; s++)
+                  if (family == null || s % families == family) s,
+              ]
+            : [one]) {
       final scenario = Scenario(seed)..build();
       for (final order in orders(scenario.facts)) {
         checked++;
@@ -570,7 +578,7 @@ void main() {
         stdout.writeln('$key: $value');
       }
     }
-    if (one != null) return;
+    if (one != null || family != null) return;
     expect(checked, greaterThan(seeds * 20));
     for (final MapEntry(key: what, value: least) in floors.entries) {
       expect(cases[what] ?? 0, greaterThanOrEqualTo(least), reason: what);
