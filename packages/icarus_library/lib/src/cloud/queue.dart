@@ -2625,6 +2625,10 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer, ResultPoint point) {
       edit.put(
         entry.copyWith(refusal: RefusedWith(AnsweredWithoutLife(revision))),
       );
+    case RejectedAnswer(current: ServerSnapshot(life: null, :final revision)):
+      edit.put(
+        entry.copyWith(refusal: RefusedWith(AnsweredWithoutLife(revision))),
+      );
     case NoopWithoutRevision():
       edit.remove(entry.id, const Delivered(Delivery.nothingToDo));
     case RejectedAnswer(reason: RejectionReason.rowReplaced, :final current):

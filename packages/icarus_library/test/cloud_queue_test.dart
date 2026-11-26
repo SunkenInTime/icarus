@@ -149,6 +149,7 @@ void main() {
       final current = ServerSnapshot(
         target: SnapshotTarget.element,
         revision: 3,
+        life: fixtureLife,
         value: const {'kind': 'agent'},
       );
       client.must(
@@ -193,6 +194,7 @@ void main() {
             ServerSnapshot(
               target: SnapshotTarget.strategy,
               revision: 4,
+              life: strategyCreatedAt.millisecondsSinceEpoch,
               value: const {'name': 'Retake A', 'mapData': 'ascent'},
             ),
           ),
@@ -223,6 +225,7 @@ void main() {
             ServerSnapshot(
               target: SnapshotTarget.element,
               revision: 3,
+              life: fixtureLife,
               value: sent.payload!.toJson(),
             ),
           ),

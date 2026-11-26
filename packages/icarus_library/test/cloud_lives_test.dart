@@ -232,6 +232,77 @@ void main() {
     });
   });
 
+  test('a rejection whose server copy has no life is not evidence: the op is '
+      'not taken as delivered and owes no read, it asks the user as an answer '
+      'with no life', () {
+    for (final reason in [
+      RejectionReason.revisionMismatch,
+      RejectionReason.rowReplaced,
+    ]) {
+      final client = Client();
+      final move = movePatch('move');
+      client.edit(move);
+      final attempt = client.claim(['move']);
+      final held = asTheServerHoldsIt(move, life: fixtureLife);
+      final lifeless = ServerSnapshot(
+        target: held.target,
+        revision: held.revision,
+        value: held.value.toJson(),
+      );
+      final pageBefore = client.queue.shown.pageRead('page-a');
+      client.must(
+        OpAnswered(
+          attempt,
+          RejectedAnswer('move', reason, lifeless),
+          point: tick(),
+        ),
+      );
+      expect(
+        stateOf(client, 'move'),
+        NeedsUser(RefusedByServer(AnsweredWithoutLife(held.revision))),
+        reason: '$reason',
+      );
+      expect(client.queue.landed, isEmpty, reason: '$reason');
+      expect(
+        client.queue.shown.pageRead('page-a'),
+        pageBefore,
+        reason: '$reason',
+      );
+    }
+  });
+
+  test('a rename rejected with a server copy that holds its name but no life '
+      'is not taken as already written', () {
+    final client = Client();
+    client.edit(
+      const StrategyPatchOp(
+        opId: 'rename',
+        expectedStrategyRevision: 1,
+        name: 'Retake A',
+      ),
+    );
+    final attempt = client.claim(['rename']);
+    client.must(
+      OpAnswered(
+        attempt,
+        RejectedAnswer(
+          'rename',
+          RejectionReason.revisionMismatch,
+          ServerSnapshot(
+            target: SnapshotTarget.strategy,
+            revision: 4,
+            value: const {'name': 'Retake A', 'mapData': 'ascent'},
+          ),
+        ),
+        point: tick(),
+      ),
+    );
+    expect(
+      stateOf(client, 'rename'),
+      const NeedsUser(RefusedByServer(AnsweredWithoutLife(4))),
+    );
+  });
+
   test('a replay answered with no life asks the user, counted as the server '
       'forgetting its answer', () {
     final client = Client();

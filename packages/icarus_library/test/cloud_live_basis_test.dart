@@ -314,10 +314,20 @@ void main() {
     final entry = client.queue.entries.single as PendingOp;
     final json = entryToJson(entry);
     expect(json['basis'], {
-      'serverTime': 1000,
+      'serverTime': '1000',
       'heldAtMicros': heldAt.inMicroseconds,
     });
     switch (decodeEntry(entry.place, json, sendable: true)) {
+      case Read(:final value):
+        expect(value, entry);
+      case final other:
+        fail('$other');
+    }
+    final asNumber = {
+      ...json,
+      'basis': {'serverTime': 1000, 'heldAtMicros': heldAt.inMicroseconds},
+    };
+    switch (decodeEntry(entry.place, asNumber, sendable: true)) {
       case Read(:final value):
         expect(value, entry);
       case final other:
