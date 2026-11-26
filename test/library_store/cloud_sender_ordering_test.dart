@@ -65,6 +65,40 @@ void sendLostThenRead(
   expect(world.server.calls, hasLength(1));
 }
 
+DateTime readDueAt(World world) => switch (world.sender.outlook(
+      strategyId,
+      world.cloud(),
+    )) {
+      ReadAt(:final at) => at,
+      final other => throw StateError('no read is due later: $other'),
+    };
+
+({DateTime at, String what}) firstCallAfter(World world, DateTime due) {
+  expect(world.sender.busy, isFalse, reason: 'the sender is not idle');
+  expect(world.sender.armedFor, due, reason: 'the sender sleeps until');
+  final sends = world.server.calls.length;
+  final reads = world.server.readCalls.length;
+  final wakes = world.sender.wakes;
+  final dues = world.sender.dues;
+  while (true) {
+    world.async.elapse(const Duration(milliseconds: 10));
+    if (world.sender.dues != dues) break;
+    expect(world.server.calls, hasLength(sends));
+    expect(world.server.readCalls, hasLength(reads));
+    expect(world.sender.wakes, wakes, reason: 'woken before its deadline');
+  }
+  while (world.server.calls.length == sends &&
+      world.server.readCalls.length == reads) {
+    world.async.elapse(const Duration(milliseconds: 10));
+    if (now(world).difference(due) > const Duration(minutes: 5)) {
+      throw StateError('no call within five minutes of $due');
+    }
+  }
+  return world.server.calls.length > sends
+      ? (at: world.server.calls.last.at!, what: 'send')
+      : (at: world.server.readCalls.last.at!, what: 'read');
+}
+
 void main() {
   test(
       'a result read after a later connection\'s stamp opened a session, '
@@ -203,6 +237,61 @@ void main() {
       final discarded = world.written().whereType<ServerTimeHeld>().single;
       expect(discarded.point.connection, 1);
       expect(world.cloud().queue.session.basis, held);
+    });
+  });
+
+  test(
+      'an idle strategy whose send retry comes before its deferred read makes '
+      'its first call, a send, at the send\'s deadline', () {
+    inWorld((world) {
+      world.settle();
+      for (var lost = 0; lost < 2; lost++) {
+        world.server.answerReadWith(
+          strategyId,
+          const StoreReadLost(TransportFailure.network, 'lost'),
+        );
+      }
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+      world.settle(const Duration(seconds: 3));
+      world.server.answerWith(
+        strategyId,
+        const StoreBatchLost(TransportFailure.network, 'lost'),
+      );
+      world.commitMove(1);
+      world.settle(const Duration(milliseconds: 500));
+      final send = sendRetryAt(world);
+      final read = readDueAt(world);
+      expect(send.isBefore(read), isTrue, reason: 'send $send, read $read');
+      expect(firstCallAfter(world, send), (at: send, what: 'send'));
+    });
+  });
+
+  test(
+      'an idle strategy whose deferred read comes before its send retry makes '
+      'its first call, a read, at the read\'s deadline', () {
+    inWorld((world) {
+      world.settle();
+      for (var lost = 0; lost < 4; lost++) {
+        world.server.answerWith(
+          strategyId,
+          const StoreBatchLost(TransportFailure.network, 'lost'),
+        );
+      }
+      world.commitMove(1);
+      while (world.server.calls.length < 4) {
+        world.settle(const Duration(seconds: 1));
+      }
+      world.settle(const Duration(milliseconds: 500));
+      world.server.answerReadWith(
+        strategyId,
+        const StoreReadLost(TransportFailure.network, 'lost'),
+      );
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+      world.settle(const Duration(milliseconds: 500));
+      final send = sendRetryAt(world);
+      final read = readDueAt(world);
+      expect(read.isBefore(send), isTrue, reason: 'read $read, send $send');
+      expect(firstCallAfter(world, read), (at: read, what: 'read'));
     });
   });
 

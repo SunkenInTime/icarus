@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/call_governor.dart';
+import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -135,6 +136,67 @@ void main() {
       expect(world.sender.cannotRead(strategyId), isNotNull);
     });
   });
+
+  test(
+      'a batch refused whole on a connection that has ended leaves the read '
+      'ladder where it was', () {
+    inWorld((world) {
+      world.settle();
+      for (var lost = 0; lost < 2; lost++) {
+        world.server.answerReadWith(
+          strategyId,
+          const StoreReadLost(TransportFailure.network, 'lost'),
+        );
+      }
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+      world.settle(const Duration(seconds: 3));
+      final list = '${const ReadOfList()}';
+      final ladder = world.sender.readMemory(strategyId).settle[list];
+      expect(ladder?.count, 2);
+      world.server.answerNext(strategyId, (call) async {
+        world.server.connection = 2;
+        return StoreBatchRefusedWhole(
+          BatchRefusal.strategyReplaced,
+          point: onConnection(world, 1),
+          currentLife: firstLife + 1,
+        );
+      });
+      world.commitMove(1);
+      world.settle(const Duration(milliseconds: 500));
+      expect(world.server.calls, hasLength(1));
+      expect(world.sender.readMemory(strategyId).settle[list], ladder);
+    });
+  });
+
+  for (final (refusal, connection, holds) in [
+    (BatchRefusal.unauthenticated, 1, true),
+    (BatchRefusal.unauthenticated, 0, false),
+  ]) {
+    test(
+        'a batch refused with no server time, before the client applied any '
+        'state, is judged by its connection: '
+        '${holds ? 'the current one holds the run' : 'an ended one is lost'}',
+        () {
+      inWorld((world) {
+        world.settle();
+        world.server.answerNext(strategyId, (call) async {
+          world.server.connection = 2;
+          return StoreBatchRefusedWhole(
+            refusal,
+            point: ResultPoint(
+              client: 1,
+              connection: connection + 1,
+              snapshot: 0,
+            ),
+          );
+        });
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 5));
+        expect(world.sender.runHold, holds ? isA<SignInHold>() : isNull);
+        expect(world.server.calls, hasLength(holds ? 1 : 2));
+      });
+    });
+  }
 
   test(
       'an answer that acknowledges nothing proposes no server time to judge '
