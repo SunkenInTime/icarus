@@ -80,112 +80,121 @@ final class ShownRow {
   int get hashCode => Object.hash(page, revision, life, digest);
 }
 
+final class Seen {
+  const Seen(this.at, {this.gone = false});
+
+  final Arrival? at;
+  final bool gone;
+
+  bool reaches(AfterAnswer? mark) =>
+      mark == null || (at != null && mark.reachedBy(at!));
+
+  @override
+  bool operator ==(Object other) =>
+      other is Seen && other.at == at && other.gone == gone;
+
+  @override
+  int get hashCode => Object.hash(at, gone);
+}
+
 final class Freshness {
   Freshness._({
-    required this.listSinceTouch,
+    required this.listRead,
     required Set<String> listed,
-    required Set<String> touchedSinceList,
-    required Set<String> pagesSinceTouch,
-    required Set<String> goneByResult,
+    required Map<String, Seen> pagesRead,
     required this.listMark,
+    required Map<String, AfterAnswer> listMarks,
     required this.allPagesMark,
     required Map<String, AfterAnswer> pageMarks,
   }) : listed = Set.unmodifiable(listed),
-       goneByResult = Set.unmodifiable(goneByResult),
-       touchedSinceList = Set.unmodifiable(touchedSinceList),
-       pagesSinceTouch = Set.unmodifiable(pagesSinceTouch),
+       pagesRead = Map.unmodifiable(pagesRead),
+       listMarks = Map.unmodifiable(listMarks),
        pageMarks = Map.unmodifiable(pageMarks);
 
   static final none = Freshness._(
-    listSinceTouch: false,
+    listRead: null,
     listed: const {},
-    touchedSinceList: const {},
-    pagesSinceTouch: const {},
-    goneByResult: const {},
+    pagesRead: const {},
     listMark: null,
+    listMarks: const {},
     allPagesMark: null,
     pageMarks: const {},
   );
 
-  final bool listSinceTouch;
-  final Set<String> goneByResult;
+  final Seen? listRead;
   final Set<String> listed;
-  final Set<String> touchedSinceList;
-  final Set<String> pagesSinceTouch;
+  final Map<String, Seen> pagesRead;
   final AfterAnswer? listMark;
+  final Map<String, AfterAnswer> listMarks;
   final AfterAnswer? allPagesMark;
   final Map<String, AfterAnswer> pageMarks;
 
-  static bool _restores(AfterAnswer? mark, Arrival? arrival) =>
-      mark == null || (arrival != null && mark.reachedBy(arrival));
+  Freshness _copy({
+    Seen? listRead,
+    bool forgetReads = false,
+    Set<String>? listed,
+    Map<String, Seen>? pagesRead,
+    AfterAnswer? listMark,
+    Map<String, AfterAnswer>? listMarks,
+    AfterAnswer? allPagesMark,
+    Map<String, AfterAnswer>? pageMarks,
+  }) => Freshness._(
+    listRead: forgetReads ? null : listRead ?? this.listRead,
+    listed: listed ?? this.listed,
+    pagesRead: pagesRead ?? this.pagesRead,
+    listMark: listMark ?? this.listMark,
+    listMarks: listMarks ?? this.listMarks,
+    allPagesMark: allPagesMark ?? this.allPagesMark,
+    pageMarks: pageMarks ?? this.pageMarks,
+  );
 
   Freshness afterList(Iterable<String> live, Arrival? arrival) =>
-      _restores(listMark, arrival)
-      ? Freshness._(
-          listSinceTouch: true,
-          listed: {...live},
-          touchedSinceList: const {},
-          pagesSinceTouch: pagesSinceTouch,
-          goneByResult: goneByResult,
-          listMark: null,
-          allPagesMark: allPagesMark,
-          pageMarks: pageMarks,
-        )
-      : this;
+      _copy(listRead: Seen(arrival), listed: {...live});
 
   Freshness afterPage(
     String page, {
     required bool gone,
     required Arrival? arrival,
-  }) => _restores(allPagesMark, arrival) && _restores(pageMarks[page], arrival)
-      ? Freshness._(
-          listSinceTouch: listSinceTouch,
-          listed: listed,
-          touchedSinceList: touchedSinceList,
-          pagesSinceTouch: {...pagesSinceTouch, page},
-          goneByResult: gone
-              ? {...goneByResult, page}
-              : ({...goneByResult}..remove(page)),
-          listMark: listMark,
-          allPagesMark: allPagesMark,
-          pageMarks: {...pageMarks}..remove(page),
-        )
-      : this;
+  }) => _copy(pagesRead: {...pagesRead, page: Seen(arrival, gone: gone)});
 
   Freshness touched(
     Iterable<String> pages, {
     required bool list,
     required AfterAnswer mark,
-  }) => Freshness._(
-    listSinceTouch: listSinceTouch && !list,
-    listed: listed,
-    touchedSinceList: {...touchedSinceList, ...pages},
-    pagesSinceTouch: list ? const {} : ({...pagesSinceTouch}..removeAll(pages)),
-    goneByResult: goneByResult,
-    listMark: mark.and(listMark),
-    allPagesMark: list ? mark.and(allPagesMark) : allPagesMark,
-    pageMarks: {
-      ...pageMarks,
-      if (!list)
-        for (final page in pages) page: mark.and(pageMarks[page]),
-    },
-  );
+  }) => list
+      ? _copy(listMark: mark.and(listMark), allPagesMark: mark.and(allPagesMark))
+      : _copy(
+          listMarks: {
+            ...listMarks,
+            for (final page in pages) page: mark.and(listMarks[page]),
+          },
+          pageMarks: {
+            ...pageMarks,
+            for (final page in pages) page: mark.and(pageMarks[page]),
+          },
+        );
 
-  Freshness get inNewSession => Freshness._(
-    listSinceTouch: false,
-    listed: const {},
-    touchedSinceList: const {},
-    pagesSinceTouch: const {},
-    goneByResult: const {},
-    listMark: listMark,
-    allPagesMark: allPagesMark,
-    pageMarks: pageMarks,
-  );
+  Freshness get inNewSession =>
+      _copy(forgetReads: true, listed: const {}, pagesRead: const {});
+
+  bool get listSinceTouch => listRead?.reaches(listMark) ?? false;
 
   bool listFreshFor(String page) =>
-      listSinceTouch && !touchedSinceList.contains(page);
+      listSinceTouch && listRead!.reaches(listMarks[page]);
 
-  bool pageFreshFor(String page) => pagesSinceTouch.contains(page);
+  bool pageFreshFor(String page) => switch (pagesRead[page]) {
+    final seen? => seen.reaches(allPagesMark) && seen.reaches(pageMarks[page]),
+    null => false,
+  };
+
+  bool goneByResult(String page) => pagesRead[page]?.gone ?? false;
+
+  Set<String> get subjects => {
+    ...listed,
+    ...pagesRead.keys,
+    ...listMarks.keys,
+    ...pageMarks.keys,
+  };
 
   bool freshFor(String page) =>
       listFreshFor(page) && (pageFreshFor(page) || !listed.contains(page));
@@ -193,23 +202,19 @@ final class Freshness {
   bool disagreeOn(String page) =>
       listFreshFor(page) &&
       pageFreshFor(page) &&
-      listed.contains(page) == goneByResult.contains(page);
+      listed.contains(page) == goneByResult(page);
 
   @override
   bool operator ==(Object other) =>
       other is Freshness &&
-      other.listSinceTouch == listSinceTouch &&
+      other.listRead == listRead &&
       const SetEquality<String>().equals(other.listed, listed) &&
-      const SetEquality<String>().equals(
-        other.touchedSinceList,
-        touchedSinceList,
-      ) &&
-      const SetEquality<String>().equals(
-        other.pagesSinceTouch,
-        pagesSinceTouch,
-      ) &&
-      const SetEquality<String>().equals(other.goneByResult, goneByResult) &&
+      const MapEquality<String, Seen>().equals(other.pagesRead, pagesRead) &&
       other.listMark == listMark &&
+      const MapEquality<String, AfterAnswer>().equals(
+        other.listMarks,
+        listMarks,
+      ) &&
       other.allPagesMark == allPagesMark &&
       const MapEquality<String, AfterAnswer>().equals(
         other.pageMarks,
@@ -217,7 +222,7 @@ final class Freshness {
       );
 
   @override
-  int get hashCode => Object.hash(listSinceTouch, listed.length, listMark);
+  int get hashCode => Object.hash(listRead, listed.length, listMark);
 }
 
 final class ResultOrder {

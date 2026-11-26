@@ -1320,19 +1320,15 @@ final class _Edit {
     _pruneAttempts(this);
     if (shown.list != original.shown.list) change.everything = true;
     final (was, now) = (original.shown.fresh, shown.fresh);
-    if (was.listSinceTouch != now.listSinceTouch ||
-        !const SetEquality<String>().equals(
-          was.touchedSinceList,
-          now.touchedSinceList,
-        )) {
-      change.everything = true;
+    if (was != now) {
+      if (was.listSinceTouch != now.listSinceTouch) change.everything = true;
+      change.pages.addAll({
+        for (final page in {...was.subjects, ...now.subjects})
+          if (was.listFreshFor(page) != now.listFreshFor(page) ||
+              was.pageFreshFor(page) != now.pageFreshFor(page))
+            page,
+      });
     }
-    change.pages.addAll({
-      ...was.pagesSinceTouch.difference(now.pagesSinceTouch),
-      ...now.pagesSinceTouch.difference(was.pagesSinceTouch),
-      ...was.touchedSinceList.difference(now.touchedSinceList),
-      ...now.touchedSinceList.difference(was.touchedSinceList),
-    });
     for (final page in {
       ...shown.pageReads.keys,
       ...original.shown.pageReads.keys,
@@ -2017,22 +2013,12 @@ void _resultsStale(
     if (row case PageTarget(:final pagePublicId)) pagePublicId,
     if (row case SettingsTarget(:final pagePublicId)) pagePublicId,
   };
-  bool shows(String? subject) => switch (edit.shown.takenOf(subject)) {
-    final taken? => answeredAt.reachedBy(taken),
-    null => false,
-  };
   final list =
-      (row is StrategyTarget ||
-          row is PageTarget ||
-          row is SettingsTarget ||
-          renumbersPages(sent)) &&
-      !shows(null);
-  final stale = {
-    for (final page in pages)
-      if (!shows(page)) page,
-  };
-  if (stale.isEmpty && !list) return;
-  edit.shown = edit.shown.touched(stale, list: list, mark: answeredAt);
+      row is StrategyTarget ||
+      row is PageTarget ||
+      row is SettingsTarget ||
+      renumbersPages(sent);
+  edit.shown = edit.shown.touched(pages, list: list, mark: answeredAt);
   edit.change.lives.addAll({
     ...pages,
     if (list) ...{...edit.shown.pages.keys, ...edit.shown.fresh.listed},
