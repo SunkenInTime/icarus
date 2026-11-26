@@ -21,7 +21,7 @@ final class StrategyOpeningNotifier extends Notifier<StrategyOpening?> {
   StrategyOpening? build() => null;
 
   int begin(String strategyId, {required StrategySource source}) {
-    _attempt += 1;
+    _counted(_attempt + 1);
     state = StrategyOpening(
       attempt: _attempt,
       strategyId: strategyId,
@@ -40,11 +40,18 @@ final class StrategyOpeningNotifier extends Notifier<StrategyOpening?> {
   }
 
   void endAll() {
-    _attempt += 1;
+    _counted(_attempt + 1);
     _settled = _attempt;
     state = null;
   }
+
+  void _counted(int opens) {
+    _attempt = opens;
+    ref.read(openCountProvider.notifier).state = opens;
+  }
 }
+
+final openCountProvider = StateProvider<int>((ref) => 0);
 
 final strategyOpeningProvider =
     NotifierProvider<StrategyOpeningNotifier, StrategyOpening?>(

@@ -140,7 +140,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   OpenSeen get _seen => OpenSeen(
         state.strategyId,
-        ref.read(strategyOpeningProvider.notifier).opens,
+        ref.read(openCountProvider),
         source: state.source,
       );
 

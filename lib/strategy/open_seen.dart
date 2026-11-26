@@ -27,6 +27,10 @@ final class Stay extends LeaveAnswer {
   const Stay();
 }
 
+final class Superseded extends LeaveAnswer {
+  const Superseded();
+}
+
 sealed class LocalOpenChange {}
 
 sealed class OpenChange implements LocalOpenChange {}

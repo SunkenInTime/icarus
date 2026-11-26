@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,11 +12,13 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum UnsavedStrategyDecision {
@@ -29,40 +34,37 @@ enum CloudExitDecision {
   retryAuth,
 }
 
-Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
-  BuildContext context, {
-  required String? strategyId,
-}) async {
-  final result = await showShadDialog<UnsavedStrategyDecision>(
-    context: context,
-    builder: (context) {
+Future<UnsavedStrategyDecision> _showUnsavedStrategyDialog(
+  BuildContext context,
+  _ExitQuestion question,
+) async {
+  final result = await question.ask<UnsavedStrategyDecision>(
+    context,
+    (context, answer) {
       final l10n = context.l10n;
-      return _AsksWhileOpen(
-        strategyId: strategyId,
-        child: ShadDialog.alert(
-          title: Text(l10n.unsavedGuardTitle),
-          description: Text(l10n.unsavedGuardDescription),
-          actions: [
-            ShadButton.ghost(
-              onPressed: () {
-                Navigator.of(context).pop(UnsavedStrategyDecision.cancel);
-              },
-              child: Text(l10n.commonCancel),
-            ),
-            ShadButton.destructive(
-              onPressed: () {
-                Navigator.of(context).pop(UnsavedStrategyDecision.dontSave);
-              },
-              child: Text(l10n.unsavedGuardDontSave),
-            ),
-            ShadButton(
-              onPressed: () {
-                Navigator.of(context).pop(UnsavedStrategyDecision.save);
-              },
-              child: Text(l10n.commonSave),
-            ),
-          ],
-        ),
+      return ShadDialog.alert(
+        title: Text(l10n.unsavedGuardTitle),
+        description: Text(l10n.unsavedGuardDescription),
+        actions: [
+          ShadButton.ghost(
+            onPressed: () {
+              answer(UnsavedStrategyDecision.cancel);
+            },
+            child: Text(l10n.commonCancel),
+          ),
+          ShadButton.destructive(
+            onPressed: () {
+              answer(UnsavedStrategyDecision.dontSave);
+            },
+            child: Text(l10n.unsavedGuardDontSave),
+          ),
+          ShadButton(
+            onPressed: () {
+              answer(UnsavedStrategyDecision.save);
+            },
+            child: Text(l10n.commonSave),
+          ),
+        ],
       );
     },
   );
@@ -70,37 +72,16 @@ Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
   return result ?? UnsavedStrategyDecision.cancel;
 }
 
-class _AsksWhileOpen extends ConsumerWidget {
-  const _AsksWhileOpen({required this.strategyId, required this.child});
-
-  final String? strategyId;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final asking = ModalRoute.of(context);
-    ref.listen(strategyProvider.select((state) => state.strategyId), (_, now) {
-      if (now == strategyId || asking == null || !asking.isActive) return;
-      final navigator = Navigator.of(context);
-      if (asking.isCurrent) {
-        navigator.pop(UnsavedStrategyDecision.cancel);
-      } else {
-        navigator.removeRoute(asking, UnsavedStrategyDecision.cancel);
-      }
-    });
-    return child;
-  }
-}
-
 Future<CloudExitDecision> _showCloudSyncBlockedDialog(
-  BuildContext context, {
+  BuildContext context,
+  _ExitQuestion question, {
   required String message,
   required bool allowLeaveAnyway,
   required bool showRetryAuth,
 }) async {
-  final result = await showShadDialog<CloudExitDecision>(
-    context: context,
-    builder: (context) {
+  final result = await question.ask<CloudExitDecision>(
+    context,
+    (context, answer) {
       final l10n = context.l10n;
       return ShadDialog.alert(
         title: Text(l10n.unsavedGuardCloudPendingTitle),
@@ -116,27 +97,27 @@ Future<CloudExitDecision> _showCloudSyncBlockedDialog(
               children: [
                 ShadButton.ghost(
                   onPressed: () {
-                    Navigator.of(context).pop(CloudExitDecision.stay);
+                    answer(CloudExitDecision.stay);
                   },
                   child: Text(l10n.unsavedGuardStayHere),
                 ),
                 if (showRetryAuth)
                   ShadButton.secondary(
                     onPressed: () {
-                      Navigator.of(context).pop(CloudExitDecision.retryAuth);
+                      answer(CloudExitDecision.retryAuth);
                     },
                     child: Text(l10n.unsavedGuardRetrySignIn),
                   ),
                 if (allowLeaveAnyway)
                   ShadButton.secondary(
                     onPressed: () {
-                      Navigator.of(context).pop(CloudExitDecision.leaveAnyway);
+                      answer(CloudExitDecision.leaveAnyway);
                     },
                     child: Text(l10n.unsavedGuardLeaveAnyway),
                   ),
                 ShadButton(
                   onPressed: () {
-                    Navigator.of(context).pop(CloudExitDecision.retrySync);
+                    answer(CloudExitDecision.retrySync);
                   },
                   child: Text(l10n.unsavedGuardRetrySync),
                 ),
@@ -182,6 +163,7 @@ Future<LeaveAnswer> _guardCloudStrategyExit({
   required BuildContext context,
   required WidgetRef ref,
   required OpenSeen asked,
+  required _ExitQuestion question,
 }) async {
   final l10n = context.l10n;
   final openingStrategy = ref.read(strategyProvider);
@@ -311,12 +293,11 @@ Future<LeaveAnswer> _guardCloudStrategyExit({
       );
     }
 
-    if (!context.mounted) {
-      return const Stay();
-    }
+    if (!context.mounted) return const Stay();
 
     final decision = await _showCloudSyncBlockedDialog(
       context,
+      question,
       message: _cloudSyncBlockedMessage(
         l10n: context.l10n,
         isConnected: isConnected,
@@ -431,13 +412,244 @@ Future<void> _saveUntilItHoldsEditsMadeMeanwhile(
       asked.isNow(strategies.askedByTheUserNow()));
 }
 
+final class _LeaveRequest {
+  _LeaveRequest({required this.closesWindow});
+
+  final bool closesWindow;
+  final answer = Completer<LeaveAnswer>();
+}
+
+sealed class _QuestionState {
+  const _QuestionState();
+}
+
+final class _Saving extends _QuestionState {
+  const _Saving();
+}
+
+final class _Asking extends _QuestionState {
+  _Asking(this.dialog, this.unanswered);
+
+  final Route<dynamic> dialog;
+  final void Function() unanswered;
+  final stopWatching = <void Function()>[];
+}
+
+final class _Settled extends _QuestionState {
+  const _Settled();
+}
+
+typedef _AnswerBuilder<T> = Widget Function(
+  BuildContext context,
+  void Function(T decision) answer,
+);
+
+final class _ExitQuestion {
+  _ExitQuestion(this.asked, this._container);
+
+  final OpenSeen asked;
+  final ProviderContainer _container;
+  final requests = <_LeaveRequest>[];
+  _QuestionState _state = const _Saving();
+
+  bool _mayAsk() =>
+      asked.isNow(
+          _container.read(strategyProvider.notifier).askedByTheUserNow()) &&
+      StrategyView.onScreen.value > 0;
+
+  bool takes(OpenSeen now) => _state is! _Settled && asked.isNow(now);
+
+  Future<T?> ask<T>(BuildContext context, _AnswerBuilder<T> builder) {
+    if (_state is _Settled) return Future.value();
+    if (!_mayAsk()) {
+      settle(const Superseded());
+      return Future.value();
+    }
+    final answered = Completer<T?>();
+    late final _Asking asking;
+    bool end(T? decision) {
+      if (!identical(_state, asking)) return false;
+      if (!_mayAsk()) {
+        settle(const Superseded());
+        return false;
+      }
+      _stopAsking(asking);
+      answered.complete(decision);
+      return true;
+    }
+
+    final dialog = _dialogRoute<T>(
+      context,
+      (context) => identical(_state, asking)
+          ? builder(context, (decision) {
+              if (end(decision)) Navigator.of(context).pop();
+            })
+          : const SizedBox.shrink(),
+    );
+    asking = _Asking(dialog, () {
+      if (!answered.isCompleted) answered.complete();
+    });
+    _state = asking;
+    asking.stopWatching.addAll([
+      _container.listen(strategyProvider, (_, __) => _recheck()).close,
+      _container.listen(openCountProvider, (_, __) => _recheck()).close,
+    ]);
+    StrategyView.onScreen.addListener(_recheck);
+    asking.stopWatching
+        .add(() => StrategyView.onScreen.removeListener(_recheck));
+    unawaited(Navigator.of(context, rootNavigator: true)
+        .push(dialog)
+        .then((_) => end(null)));
+    return answered.future;
+  }
+
+  void _recheck() {
+    if (_state is _Asking && !_mayAsk()) settle(const Superseded());
+  }
+
+  void _stopAsking(_Asking asking) {
+    for (final stop in asking.stopWatching) {
+      stop();
+    }
+    _state = const _Saving();
+  }
+
+  void settle(LeaveAnswer answer) {
+    final ended = _state;
+    if (ended is _Settled) return;
+    if (ended is _Asking) _stopAsking(ended);
+    _state = const _Settled();
+    _questions.remove(this);
+    final goes = switch (answer) {
+      Stay() || Superseded() => null,
+      Leave() => requests.lastWhere(
+          (request) => request.closesWindow,
+          orElse: () => requests.last,
+        ),
+    };
+    for (final request in requests) {
+      request.answer.complete(switch (answer) {
+        Superseded() => answer,
+        _ => identical(request, goes) ? answer : const Stay(),
+      });
+    }
+    if (ended is _Asking) {
+      ended.unanswered();
+      _remove(ended.dialog);
+    }
+  }
+
+  static void _remove(Route<dynamic> dialog) {
+    void remove() {
+      if (dialog.isActive) dialog.navigator?.removeRoute(dialog);
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => remove());
+    } else {
+      remove();
+    }
+  }
+}
+
+ShadDialogRoute<T> _dialogRoute<T>(
+  BuildContext context,
+  WidgetBuilder builder,
+) {
+  final dialogTheme = ShadTheme.of(context).primaryDialogTheme;
+  final animateIn = dialogTheme.animateIn ??
+      const [
+        FadeEffect(),
+        ScaleEffect(begin: Offset(.95, .95), end: Offset(1, 1)),
+      ];
+  final animateOut = dialogTheme.animateOut ??
+      const [
+        FadeEffect(begin: 1, end: 0),
+        ScaleEffect(begin: Offset(1, 1), end: Offset(.95, .95)),
+      ];
+  Duration longest(List<AnimateEffect<dynamic>> effects) => effects.fold(
+        Duration.zero,
+        (longest, effect) {
+          final total = (effect.delay ?? Duration.zero) +
+              (effect.duration ?? Animate.defaultDuration);
+          return total > longest ? total : longest;
+        },
+      );
+  return ShadDialogRoute<T>(
+    pageBuilder: builder,
+    barrierColor: const Color(0xcc000000),
+    barrierDismissible: true,
+    barrierLabel: '',
+    transitionDuration: longest(animateIn),
+    reverseTransitionDuration: longest(animateOut),
+    transitionBuilder: (context, animation, _, child) {
+      if (animation.status == AnimationStatus.completed) return child;
+      return ShadAnimate(
+        effects: animation.status == AnimationStatus.forward
+            ? animateIn
+            : animateOut,
+        child: child,
+      );
+    },
+  );
+}
+
+final _questions = <_ExitQuestion>[];
+
 @useResult
 Future<LeaveAnswer> guardUnsavedStrategyExit({
   required BuildContext context,
   required WidgetRef ref,
   required String source,
+  bool closesWindow = false,
+}) {
+  final strategies = ref.read(strategyProvider.notifier);
+  final asked = strategies.askedByTheUserNow();
+  final request = _LeaveRequest(closesWindow: closesWindow);
+  final asking =
+      _questions.where((question) => question.takes(asked)).lastOrNull;
+  if (asking != null) {
+    asking.requests.add(request);
+    return request.answer.future;
+  }
+  final question = _ExitQuestion(
+    asked,
+    ProviderScope.containerOf(context, listen: false),
+  )..requests.add(request);
+  _questions.add(question);
+  final l10n = context.l10n;
+  unawaited(() async {
+    LeaveAnswer answer = const Stay();
+    try {
+      answer = await _askAbout(
+        context: context,
+        ref: ref,
+        source: source,
+        asked: asked,
+        question: question,
+      );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        l10n.unsavedGuardSaveFailed,
+        error: error,
+        stackTrace: stackTrace,
+        source: source,
+      );
+    } finally {
+      question.settle(answer);
+    }
+  }());
+  return request.answer.future;
+}
+
+Future<LeaveAnswer> _askAbout({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String source,
+  required OpenSeen asked,
+  required _ExitQuestion question,
 }) async {
-  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
   final l10n = context.l10n;
   final strategyState = ref.read(strategyProvider);
   final saveState = ref.read(strategySaveStateProvider);
@@ -446,6 +658,7 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
       context: context,
       ref: ref,
       asked: asked,
+      question: question,
     );
   }
 
@@ -474,14 +687,9 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
     );
   }
 
-  if (!context.mounted) {
-    return const Stay();
-  }
+  if (!context.mounted) return const Stay();
 
-  final decision = await showUnsavedStrategyDialog(
-    context,
-    strategyId: strategyState.strategyId,
-  );
+  final decision = await _showUnsavedStrategyDialog(context, question);
   switch (decision) {
     case UnsavedStrategyDecision.save:
       try {

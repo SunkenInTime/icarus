@@ -69,20 +69,34 @@ class _WindowCloseGuardState extends ConsumerState<WindowCloseGuard>
           context: navigator.context,
           ref: ref,
           source: 'WindowCloseGuard',
+          closesWindow: true,
         );
-        if (answer is! Leave || !mounted) return;
-        if (answer.seen.isNow(strategies.askedByTheUserNow())) {
-          strategies.cancelPendingSave();
-          _closing = _Closing.sent;
-          _preventsClose = false;
-          unawaited(windowManager.setPreventClose(false));
-          unawaited(windowManager.close());
-          return;
+        if (!mounted) return;
+        switch (answer) {
+          case Stay():
+            return;
+          case Leave(:final seen)
+              when seen.isNow(strategies.askedByTheUserNow()):
+            strategies.cancelPendingSave();
+            _sendTheClose();
+            return;
+          case Leave() || Superseded() when StrategyView.onScreen.value == 0:
+            _sendTheClose();
+            return;
+          case Leave() || Superseded():
+            break;
         }
       }
     } finally {
       if (_closing == _Closing.asking) _closing = _Closing.no;
     }
+  }
+
+  void _sendTheClose() {
+    _closing = _Closing.sent;
+    _preventsClose = false;
+    unawaited(windowManager.setPreventClose(false));
+    unawaited(windowManager.close());
   }
 
   @override

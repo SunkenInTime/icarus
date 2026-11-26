@@ -299,7 +299,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     );
     if (!mounted) return null;
     switch (answer) {
-      case Stay():
+      case Stay() || Superseded():
         return null;
       case Leave(:final seen):
         switch (
