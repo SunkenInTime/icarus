@@ -221,11 +221,10 @@ final class UncheckedWithoutBasis extends SenderReport {
   final ClaimedBatch batch;
 }
 
-final class StoreRepairedFor extends SenderReport {
-  StoreRepairedFor(super.strategyId, List<Repair> repairs)
-    : repairs = List.unmodifiable(repairs);
+final class BaseNotAgreeing extends SenderReport {
+  const BaseNotAgreeing(super.strategyId, this.base);
 
-  final List<Repair> repairs;
+  final BaseState base;
 }
 
 final class WriteNotMade extends SenderReport {
@@ -276,12 +275,23 @@ base class SenderStore {
   Future<Reading<StrategyContent>> readStrategy(String strategyId) =>
       store.readStrategy(strategyId);
 
+  final _bases = <String, BaseState>{};
+
   Future<QueueRead> read(String strategyId) async {
     final Reading<StrategyContent> reading;
     try {
       reading = await readStrategy(strategyId);
     } catch (error) {
       return QueueTroubled(StoreShut('the store threw: $error'));
+    }
+    if (reading case Found(
+      value: StrategyContent(sync: CloudStrategy(:final queue)),
+    )) {
+      final base = queue.strategy.base;
+      if (_bases[strategyId] != base) {
+        _bases[strategyId] = base;
+        if (base is! BaseAgrees) report(BaseNotAgreeing(strategyId, base));
+      }
     }
     return switch (reading) {
       Found(value: StrategyContent(sync: final CloudStrategy cloud)) =>

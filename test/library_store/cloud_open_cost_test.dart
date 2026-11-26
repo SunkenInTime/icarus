@@ -141,11 +141,13 @@ Future<String> _measured(StrategyRowSet rows, String label) async {
   }
   final opens = <int>[];
   final pageReads = <int>[];
+  final lists = <int>[];
+  final pageResults = <int>[];
   final counts = <String>{};
   for (var run = 0; run < 3 + 21; run++) {
+    final watch = Stopwatch()..start();
     final (store, clock, engine) = await _open(path);
     clock.reset();
-    final watch = Stopwatch()..start();
     expect(await store.readStrategy(id), isA<Found<StrategyContent>>());
     final opened = watch.elapsedMicroseconds;
     final openReads = clock.reads;
@@ -153,14 +155,52 @@ Future<String> _measured(StrategyRowSet rows, String label) async {
     watch.reset();
     expect(await store.readPage(id, firstPage), isA<Found<PageContent>>());
     final paged = watch.elapsedMicroseconds;
+    final pageReadsDone = clock.reads;
+    final session = switch (await store.readStrategy(id)) {
+      Found(value: StrategyContent(sync: final CloudStrategy cloud)) =>
+        cloud.queue.session.number,
+      final other => fail('no cloud strategy: $other'),
+    };
+    final beforeList = clock.reads;
+    watch.reset();
+    await store.record(_account, id, [
+      BaseArrived(
+        HeaderRead(
+          strategy: rows.strategy,
+          pages: rows.pages.toList(),
+          settings: rows.settings.toList(),
+        ),
+        session: session,
+        from: const LiveResult(),
+      ),
+    ]);
+    final listed = watch.elapsedMicroseconds;
+    final listReads = clock.reads - beforeList;
+    final lastPage = rows.pages.last.publicId;
+    final beforePage = clock.reads;
+    watch.reset();
+    await store.record(_account, id, [
+      BaseArrived(
+        PageRead(
+          page: rows.pages.last,
+          elements: rows.elementsOn(lastPage).toList(),
+          lineupGroups: rows.lineupGroupsOn(lastPage).toList(),
+        ),
+        session: session,
+        from: const LiveResult(),
+      ),
+    ]);
+    final pageTaken = watch.elapsedMicroseconds;
     counts.add(
       'open: $openReads reads, $openCommits commits; first page: '
-      '${clock.reads - openReads} reads, ${clock.commits - openCommits} '
-      'commits',
+      '${pageReadsDone - openReads} reads; a list that keeps every page: '
+      '$listReads reads; a page result: ${clock.reads - beforePage} reads',
     );
     if (run >= 3) {
       opens.add(opened);
       pageReads.add(paged);
+      lists.add(listed);
+      pageResults.add(pageTaken);
     }
     await store.close();
     await engine.close();
@@ -169,8 +209,9 @@ Future<String> _measured(StrategyRowSet rows, String label) async {
   String ms(int micros) => (micros / 1000).toStringAsFixed(2);
   return 'CLOUDOPEN $label: open and read the strategy '
       '${ms(median(opens))} ms (worst ${ms(opens.reduce((a, b) => a > b ? a : b))}), '
-      'then the first page ${ms(median(pageReads))} ms, medians of 21; '
-      '${counts.join(' | ')}';
+      'then the first page ${ms(median(pageReads))} ms, a list that keeps '
+      'every page ${ms(median(lists))} ms, a page result '
+      '${ms(median(pageResults))} ms, medians of 21; ${counts.join(' | ')}';
 }
 
 void main() {

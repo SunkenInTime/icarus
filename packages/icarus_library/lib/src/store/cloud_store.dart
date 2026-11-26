@@ -690,7 +690,7 @@ extension _CloudStore on LibraryStore {
       return _CloudRefused(NotACloudStrategy(strategyPublicId));
     }
     return switch (await _queueOf(strategy)) {
-      _QueueLoaded(:final queue) => switch (await _reconciled(
+      _QueueLoaded(:final queue) => switch (await _agreed(
         _CloudReady(strategy, header, queue),
       )) {
         StorageFailed(:final failure) => _CloudUnread(failure),
@@ -952,36 +952,40 @@ extension _CloudStore on LibraryStore {
     List<RowDecision> decisions,
   ) async {
     final area = strategy.area;
-    final digests = <String>{};
+    final checked = <String>{};
+    final leaving = <String>{};
     final items = _ItemDigests(strategy);
     for (final decision in decisions) {
       switch (decision) {
-        case RowTaken(row: final PageRow row):
-          digests.add(items.of(row.publicId));
-        case RowTaken(row: final PageSettingsRow row):
-          digests.add(items.of(row.pagePublicId));
         case RowTaken(row: final ElementRow row):
-          digests
+          checked
             ..add(items.of(row.pagePublicId))
             ..addAll(strategy.pagesOfElementAt(items.of(row.publicId)));
         case RowTaken(row: final LineupGroupRow row):
-          digests
+          checked
             ..add(items.of(row.pagePublicId))
             ..addAll(strategy.pagesOfLineupGroupAt(items.of(row.publicId)));
         case RowUnchanged(row: ElementRow(:final pagePublicId)) ||
             RowUnchanged(row: LineupGroupRow(:final pagePublicId)):
-          digests.add(items.of(pagePublicId));
-        case ItemLeft(:final page) ||
-            PageLeft(:final page) ||
-            SettingsLeft(:final page) ||
-            UnreadableLeft(:final page):
-          digests.add(items.of(page));
-        case RowTaken() || RowKept() || RowUnchanged():
+          checked.add(items.of(pagePublicId));
+        case ItemLeft(:final page) || UnreadableLeft(:final page):
+          checked.add(items.of(page));
+        case PageLeft(:final page):
+          leaving.add(items.of(page));
+        case BaseLeft():
+          leaving.addAll(strategy.pageDigests);
+        case UnlistedLeft(:final listed):
+          final kept = {for (final page in listed) digestOf(page)};
+          leaving.addAll([
+            for (final digest in strategy.pageDigests)
+              if (!kept.contains(digest)) digest,
+          ]);
+        case RowTaken() || RowKept() || RowUnchanged() || SettingsLeft():
           break;
       }
     }
     if (await _loadPages(strategy, [
-          for (final digest in digests)
+          for (final digest in leaving)
             if (strategy.hasPageRow(digest) ||
                 strategy.pageDigests.contains(digest))
               digest,
@@ -989,7 +993,18 @@ extension _CloudStore on LibraryStore {
         case StorageFailed(:final failure)) {
       return StorageFailed(failure);
     }
-    for (final digest in digests) {
+    void mustBeChecked(Iterable<String> digests) {
+      for (final digest in digests) {
+        if (strategy.loadedPage(digest)?.checked != true) {
+          throw StateError(
+            'a decision about page ${strategy.pageIdOf(digest) ?? digest} was '
+            'made before its stored rows were checked against the queue',
+          );
+        }
+      }
+    }
+
+    for (final digest in {...checked, ...leaving}) {
       items.learnPage(digest);
     }
     final before = <String, (StoreName, Held)>{};
@@ -1021,9 +1036,29 @@ extension _CloudStore on LibraryStore {
       }
     }
 
-    void dropPage(String page) {
-      final digest = digestOf(page);
-      pages.add(page);
+    void dropContentAt(String digest) {
+      if (strategy.pageIdOf(digest) case final page?) pages.add(page);
+      if (strategy.loadedPage(digest) case final loaded?) {
+        for (final row in loaded.elements.values) {
+          remember(nameOf(row));
+          rows.add(ElementTarget(row.publicId));
+        }
+        for (final row in loaded.lineupGroups.values) {
+          remember(nameOf(row));
+          rows.add(LineupTarget(row.publicId));
+        }
+        for (final row in loaded.unplaced.values) {
+          gone.add(row.ref.name);
+        }
+        for (final row in loaded.unknownKinds) {
+          gone.add(row.key);
+        }
+      }
+      strategy.forgetContent(digest);
+    }
+
+    void dropPageAt(String digest) {
+      if (strategy.pageIdOf(digest) case final page?) pages.add(page);
       remember(PageName(digest));
       remember(SettingsName(digest));
       if (strategy.loadedPage(digest) case final loaded?) {
@@ -1065,15 +1100,13 @@ extension _CloudStore on LibraryStore {
       if (row case PageRow(:final publicId)) {
         final page = digestOf(publicId);
         if (!strategy.hasPageRow(page) && !strategy.isLoaded(page)) {
-          strategy.addLoadedPage(page, LoadedPage());
+          strategy.addLoadedPage(page, LoadedPage()..markChecked());
         }
       }
       strategy.keepRow(row);
       switch (row) {
-        case PageRow(:final publicId) ||
-            ElementRow(pagePublicId: final publicId) ||
-            LineupGroupRow(pagePublicId: final publicId) ||
-            PageSettingsRow(pagePublicId: final publicId):
+        case ElementRow(pagePublicId: final publicId) ||
+            LineupGroupRow(pagePublicId: final publicId):
           pages.add(publicId);
         case _:
           break;
@@ -1094,6 +1127,25 @@ extension _CloudStore on LibraryStore {
 
     for (final decision in decisions) {
       switch (decision) {
+        case RowTaken(row: final ElementRow row):
+          mustBeChecked([
+            items.of(row.pagePublicId),
+            ...strategy.pagesOfElementAt(items.of(row.publicId)),
+          ]);
+        case RowTaken(row: final LineupGroupRow row):
+          mustBeChecked([
+            items.of(row.pagePublicId),
+            ...strategy.pagesOfLineupGroupAt(items.of(row.publicId)),
+          ]);
+        case RowUnchanged(row: ElementRow(:final pagePublicId)) ||
+            RowUnchanged(row: LineupGroupRow(:final pagePublicId)):
+          mustBeChecked([items.of(pagePublicId)]);
+        case ItemLeft(:final page) || UnreadableLeft(:final page):
+          mustBeChecked([items.of(page)]);
+        case _:
+          break;
+      }
+      switch (decision) {
         case RowTaken(:final row):
           put(row);
         case RowKept():
@@ -1113,7 +1165,30 @@ extension _CloudStore on LibraryStore {
               throw TakesDiffer.missing('${row.key}');
           }
         case PageLeft(:final page):
-          dropPage(page);
+          dropPageAt(digestOf(page));
+        case UnlistedLeft(:final listed):
+          final kept = {for (final page in listed) digestOf(page)};
+          for (final digest in [...strategy.pageDigests]) {
+            if (!kept.contains(digest)) dropPageAt(digest);
+          }
+          for (final name in [...strategy.unplaced.keys]) {
+            final digest = name.split('/').last;
+            if (kept.contains(digest)) continue;
+            gone.add(name);
+            strategy.unplaced.remove(name);
+          }
+        case BaseLeft():
+          for (final digest in [...strategy.pageDigests]) {
+            if (strategy.hasPageRow(digest)) {
+              dropContentAt(digest);
+            } else {
+              dropPageAt(digest);
+            }
+          }
+          for (final name in [...strategy.unplaced.keys]) {
+            gone.add(name);
+            strategy.unplaced.remove(name);
+          }
         case SettingsLeft(:final page):
           drop(SettingsName(items.of(page)));
         case UnreadableLeft(:final page, :final carried):
@@ -1124,7 +1199,9 @@ extension _CloudStore on LibraryStore {
             for (final name in [...loaded.unplaced.keys]) {
               if (carriedNames.contains(name)) continue;
               gone.add(name);
-              loaded.unplaced.remove(name);
+              strategy.forgetUnplaced(
+                readName(StrategyArea(strategy.digest), name),
+              );
             }
             for (final row in loaded.unknownKinds) {
               gone.add(row.key);
@@ -1397,7 +1474,7 @@ extension _CloudStore on LibraryStore {
     final owned = {
       for (final op in asked) ..._ownPages(strategy, cloud.queue.current, op),
     };
-    if (await _reconciled(
+    if (await _agreed(
           cloud,
           load: _wantedPages(strategy, cloud.queue.current, SomePages(owned)),
         )
@@ -1441,7 +1518,7 @@ extension _CloudStore on LibraryStore {
       final List<StrategyOp> ops;
       switch (op) {
         case PageAddOp(copyContentFromPagePublicId: final source?)
-            when !queue.shown.content.containsKey(source):
+            when !pageContentShown(queue, source):
           return Refused(CopyNeedsContent(source));
         case PageAddOp(copyContentFromPagePublicId: _?):
           switch (expandCopy(rows, op)) {
@@ -1598,13 +1675,32 @@ extension _CloudStore on LibraryStore {
     if (_unfitResult(strategyPublicId, events) case final refusal?) {
       return Refused(refusal);
     }
-    if (await _reconciled(
+    final shownNow = cloud.queue.current.shown;
+    if (await _agreed(
           cloud,
-          load: [
+          load: {
             for (final event in events)
-              if (event case BaseArrived(base: PageRead(:final page)))
+              if (event case BaseArrived(
+                base: PageRead(
+                  :final page,
+                  :final elements,
+                  :final lineupGroups,
+                ),
+              )) ...[
                 digestOf(page.publicId),
-          ],
+                for (final row in <Row>[...elements, ...lineupGroups])
+                  if (shownNow.rows[switch (row) {
+                        ElementRow(:final publicId) =>
+                          ElementTarget(publicId) as Target,
+                        LineupGroupRow(:final publicId) => LineupTarget(
+                          publicId,
+                        ),
+                        _ => const StrategyTarget(),
+                      }]
+                      case final held?)
+                    digestOf(held.page),
+              ],
+          },
         )
         case StorageFailed(:final failure)) {
       return NotSaved(failure);
@@ -1648,6 +1744,9 @@ extension _CloudStore on LibraryStore {
       (summary) => Recorded(outcomes: outcomes, summary: summary),
     );
     if (result case Saved(:final value)) {
+      if (await _rereadSettled(cloud) case StorageFailed(:final failure)) {
+        return NotSaved(failure);
+      }
       _emit(
         StrategyRefreshed(
           strategyPublicId: strategyPublicId,
@@ -1658,250 +1757,210 @@ extension _CloudStore on LibraryStore {
     return result;
   }
 
-  Future<Stored<void>> _reconciled(
+  Future<Stored<void>> _agreed(
     _CloudReady cloud, {
     Iterable<String> load = const [],
   }) async {
     final strategy = cloud.strategy;
-    final queue = cloud.queue;
-    var shown = queue.current.shown;
-    final decisions = <RowDecision>[];
-    final repairs = <Repair>[];
-    void add(Reconciled reconciled) {
-      shown = reconciled.shown;
-      decisions.addAll(reconciled.decisions);
-      repairs.addAll(reconciled.repairs);
-    }
-
-    final settled = <Target>{};
-    for (var pass = 0; pass < 2; pass++) {
-      if (!queue.membershipChecked) {
-        add(
-          shown.withHeaderHeld(
-            HeaderHeld(
-              strategy: switch (strategy.header) {
-                HeaderPlaced(row: final ReadableStrategy row) => row,
-                _ => null,
-              },
-              pages: strategy.pages,
-              settings: strategy.allSettings,
-              damaged: (target) => switch (target) {
-                PageTarget(:final pagePublicId) =>
-                  strategy.heldUnder(PageName(digestOf(pagePublicId)))
-                      is HeldUnplaced,
-                SettingsTarget(:final pagePublicId) =>
-                  strategy.heldUnder(SettingsName(digestOf(pagePublicId)))
-                      is HeldUnplaced,
-                _ => false,
-              },
-            ),
-          ),
-        );
-        final named = _itemsByDigest(shown.rows.keys);
-        final pageDigests = <String, String>{};
-        String pageDigest(String page) => pageDigests[page] ??= digestOf(page);
-        final toLoad = <String>{};
-        final disagreeing = <Target>{};
-        for (final (lineup, index) in [
-          (false, strategy.elementIndex),
-          (true, strategy.lineupIndex),
-        ]) {
-          for (final MapEntry(key: digest, value: pages) in index.entries) {
-            if (pages.isEmpty) continue;
-            final target = named[(lineup, digest)];
-            if (target == null) {
-              toLoad.addAll(pages);
-              continue;
-            }
-            final expected = pageDigest(shown.rows[target]!.page);
-            if (pages.length == 1 &&
-                pages.single == expected &&
-                strategy.hasPageRow(expected)) {
-              continue;
-            }
-            disagreeing.add(target);
-            toLoad
-              ..addAll(pages)
-              ..add(expected);
-          }
-        }
-        for (final MapEntry(key: (lineup, digest), value: target)
-            in named.entries) {
-          final index = lineup ? strategy.lineupIndex : strategy.elementIndex;
-          if (index[digest]?.isNotEmpty != true) disagreeing.add(target);
-        }
-        final loading = [
-          for (final digest in toLoad)
+    if (await _loadPages(strategy, [
+          for (final digest in load)
             if (strategy.hasPageRow(digest)) digest,
-        ];
-        if (await _loadPages(strategy, loading) case StorageFailed(
-          :final failure,
-        )) {
-          return StorageFailed(failure);
-        }
-        final copies = <Target, List<HeldCopy>>{
-          for (final target in disagreeing) target: [],
-        };
-        for (final target in disagreeing) {
-          final page = shown.rows[target]!.page;
-          final digest = pageDigest(page);
-          if (strategy.hasPageRow(digest)) continue;
-          final index = target is LineupTarget
-              ? strategy.lineupIndex
-              : strategy.elementIndex;
-          final item = switch (target) {
-            ElementTarget(:final elementPublicId) => elementPublicId,
-            LineupTarget(:final lineupPublicId) => lineupPublicId,
-            _ => throw StateError('$target is not an item'),
-          };
-          if (index[digestOf(item)]?.contains(digest) ?? false) {
-            copies[target]!.add(HeldCopy(page));
-          }
-        }
-        final storedOnly = <Target>{
-          for (final digest in loading)
-            if (strategy.loadedPage(digest) case final loaded?) ...[
-              for (final row in loaded.elements.values)
-                if (!shown.rows.containsKey(ElementTarget(row.publicId)))
-                  ElementTarget(row.publicId),
-              for (final row in loaded.lineupGroups.values)
-                if (!shown.rows.containsKey(LineupTarget(row.publicId)))
-                  LineupTarget(row.publicId),
-            ],
-        };
-        final allNamed = {...named, ..._itemsByDigest(storedOnly)};
-        for (final digest in loading) {
-          _copiesOn(
-            strategy,
-            digest,
-            allNamed,
-            copies,
-            wanted: (target) =>
-                disagreeing.contains(target) || storedOnly.contains(target),
-          );
-        }
-        add(shown.withItemsHeld(copies, compareDigests: shownTakesChecked));
-        settled.addAll(copies.keys);
-        queue.membershipChecked = true;
-      }
-      if (await _loadPages(strategy, [
-            for (final digest in load)
-              if (strategy.hasPageRow(digest)) digest,
-          ])
-          case StorageFailed(:final failure)) {
-        return StorageFailed(failure);
-      }
-      final copies = <Target, List<HeldCopy>>{};
-      var elsewhere = false;
-      final unreconciled = [
-        for (final digest in strategy.loadedPages)
-          if (!strategy.reconciled.contains(digest)) digest,
-      ];
-      final byPage = <String, Set<Target>>{};
-      if (unreconciled.isNotEmpty) {
-        for (final MapEntry(:key, :value) in shown.rows.entries) {
-          if (!settled.contains(key)) (byPage[value.page] ??= {}).add(key);
-        }
-      }
-      for (final digest in unreconciled) {
-        strategy.reconciled.add(digest);
-        final page = strategy.pageIdOf(digest);
-        if (page == null) continue;
-        final onPage = byPage[page] ?? const <Target>{};
-        for (final target in onPage) {
-          copies[target] = [];
-        }
-        _copiesOn(
-          strategy,
-          digest,
-          strategy.loadedPage(digest)?.unplaced.isEmpty ?? true
-              ? const {}
-              : _itemsByDigest(onPage),
-          copies,
-          wanted: (target) {
-            if (settled.contains(target)) return false;
-            final held = shown.rows[target];
-            if (held == null || held.page == page) return true;
-            elsewhere = true;
-            return false;
-          },
-        );
-      }
-      add(shown.withItemsHeld(copies, compareDigests: shownTakesChecked));
-      settled.addAll(copies.keys);
-      if (!elsewhere) break;
-      if (shownTakesChecked) {
-        throw StateError(
-          'a loaded page holds an item the queue holds on another page, '
-          'after the store and the queue were made to agree',
-        );
-      }
-      queue.membershipChecked = false;
+        ])
+        case StorageFailed(:final failure)) {
+      return StorageFailed(failure);
     }
-    if (repairs.isEmpty) return done;
-    final result = await _finishCloud(
+    final shown = cloud.queue.current.shown;
+    final reason = _disagreement(
+      strategy,
+      cloud.header,
+      shown,
+      membership: !strategy.membershipChecked,
+      pages: [
+        for (final digest in strategy.loadedPages)
+          if (!strategy.loadedPage(digest)!.checked) digest,
+      ],
+    );
+    strategy.membershipChecked = true;
+    for (final digest in strategy.loadedPages) {
+      strategy.loadedPage(digest)!.markChecked();
+    }
+    if (reason == null) return done;
+    final setAside = switch (cloud.queue.current.strategy.base) {
+      BaseAgrees() => true,
+      BaseRereading() => false,
+      BaseDisagreesAfterRereading(:final build) => build != _build,
+    };
+    if (!setAside) return done;
+    return _stepped(cloud, StoredBaseDisagrees(reason, build: _build));
+  }
+
+  Future<Stored<void>> _stepped(_CloudReady cloud, QueueEvent event) async {
+    final step = transition(cloud.queue.current, event, now: _cloudNow());
+    final decisions = switch (step) {
+      Stepped(:final decisions) => decisions,
+      NotApplicable(:final why) => throw StateError('$event: $why'),
+    };
+    return switch (await _finishCloud(
       cloud,
-      queue.current.withShown(
-        shown.owingReadsFor(repairs, queue.current.session.readStart),
-      ),
+      step.queue,
       decisions,
       const {},
       (summary) => summary,
-    );
-    switch (result) {
-      case Saved() || NothingToSave():
-        _emit(StoreRepaired(cloud.header.publicId, repairs));
-        return done;
-      case NotSaved(:final failure) || SaveInDoubt(:final failure):
-        return StorageFailed(failure);
-      case Refused(:final reason):
-        throw StateError('a repair was refused: $reason');
-    }
+    )) {
+      Saved() || NothingToSave() => done,
+      NotSaved(:final failure) ||
+      SaveInDoubt(:final failure) => StorageFailed(failure),
+      Refused(:final reason) => throw StateError('$event refused: $reason'),
+    };
   }
 
-  static Map<(bool, String), Target> _itemsByDigest(Iterable<Target> targets) =>
-      {
-        for (final target in targets)
-          ...switch (target) {
-            ElementTarget(:final elementPublicId) => {
-              (false, digestOf(elementPublicId)): target,
-            },
-            LineupTarget(:final lineupPublicId) => {
-              (true, digestOf(lineupPublicId)): target,
-            },
-            _ => const <(bool, String), Target>{},
-          },
-      };
+  Future<Stored<void>> _rereadSettled(_CloudReady cloud) async {
+    final queue = cloud.queue.current;
+    if (queue.strategy.base is! BaseRereading) return done;
+    final shown = queue.shown;
+    final read =
+        shown.strategy != null &&
+        shown.list is ReadThisSession &&
+        shown.pages.keys.every(
+          (page) => shown.pageRead(page) is ReadThisSession,
+        );
+    if (!read) return done;
+    final strategy = cloud.strategy;
+    if (await _loadPages(strategy, strategy.pageDigests) case StorageFailed(
+      :final failure,
+    )) {
+      return StorageFailed(failure);
+    }
+    return _stepped(
+      cloud,
+      StoredBaseReadAgain(
+        stillDisagrees: _disagreement(
+          strategy,
+          cloud.header,
+          shown,
+          membership: true,
+          pages: strategy.loadedPages,
+        ),
+        build: _build,
+      ),
+    );
+  }
 
-  static void _copiesOn(
+  String? _disagreement(
     LoadedStrategy strategy,
-    String digest,
-    Map<(bool, String), Target> named,
-    Map<Target, List<HeldCopy>> copies, {
-    required bool Function(Target target) wanted,
+    ReadableStrategy header,
+    Shown shown, {
+    required bool membership,
+    required Iterable<String> pages,
   }) {
-    final page = strategy.pageIdOf(digest);
-    final loaded = strategy.loadedPage(digest);
-    if (page == null || loaded == null) return;
-    for (final row in loaded.elements.values) {
-      final target = ElementTarget(row.publicId);
-      if (wanted(target)) (copies[target] ??= []).add(HeldCopy(page, row));
-    }
-    for (final row in loaded.lineupGroups.values) {
-      final target = LineupTarget(row.publicId);
-      if (wanted(target)) (copies[target] ??= []).add(HeldCopy(page, row));
-    }
-    final area = StrategyArea(strategy.digest);
-    for (final key in loaded.unplaced.keys) {
-      final target = switch (readName(area, key)) {
-        ElementName(digest: final item) => named[(false, item)],
-        LineupName(digest: final item) => named[(true, item)],
-        _ => null,
+    final checking = pages.toList();
+    if (!membership && checking.isEmpty) return null;
+    String? item(Target target) => switch (target) {
+      ElementTarget(:final elementPublicId) => elementPublicId,
+      LineupTarget(:final lineupPublicId) => lineupPublicId,
+      _ => null,
+    };
+    if (membership) {
+      final stored = switch (strategy.header) {
+        HeaderPlaced(row: final ReadableStrategy row) => row,
+        _ => header,
       };
-      if (target != null && wanted(target)) {
-        (copies[target] ??= []).add(HeldCopy(page));
+      if (shown.strategy case final held?
+          when held.version != versionOfRow(stored)) {
+        return 'the strategy row is at ${versionOfRow(stored)} here and at '
+            '${held.version} in the queue';
+      }
+      if (strategy.unplaced.isNotEmpty) {
+        return 'a page or settings row is damaged here';
+      }
+      final live = {
+        for (final row in strategy.pages)
+          if (lifeOfRow(row) == Life.live) row.publicId: versionOfRow(row),
+      };
+      for (final MapEntry(key: page, value: row) in shown.pages.entries) {
+        if (!live.containsKey(page)) {
+          return 'page $page is live in the queue and not here';
+        }
+        if (live[page] != row.version) {
+          return 'page $page is at ${live[page]} here and at ${row.version} '
+              'in the queue';
+        }
+      }
+      for (final page in live.keys) {
+        if (!shown.pages.containsKey(page)) {
+          return 'page $page is live here and not in the queue';
+        }
+      }
+      final settings = {
+        for (final row in strategy.allSettings)
+          row.pagePublicId: versionOfRow(row),
+      };
+      if (settings.length != shown.settings.length) {
+        return 'the settings held here are not the ones the queue holds';
+      }
+      for (final MapEntry(key: page, value: row) in shown.settings.entries) {
+        if (!settings.containsKey(page) || settings[page] != row.version) {
+          return 'the settings of page $page are at ${settings[page]} here '
+              'and at ${row.version} in the queue';
+        }
+      }
+      final pageDigests = <String, String>{};
+      final named = <(bool, String), String>{};
+      for (final MapEntry(key: target, value: row) in shown.rows.entries) {
+        if (item(target) case final id?) {
+          named[(target is LineupTarget, digestOf(id))] =
+              pageDigests[row.page] ??= digestOf(row.page);
+        }
+      }
+      for (final (lineup, index) in [
+        (false, strategy.elementIndex),
+        (true, strategy.lineupIndex),
+      ]) {
+        for (final MapEntry(key: digest, value: on) in index.entries) {
+          if (on.isEmpty) continue;
+          final expected = named[(lineup, digest)];
+          if (expected == null) {
+            return 'an item is held here that the queue does not hold';
+          }
+          if (on.length != 1 || on.single != expected) {
+            return 'an item is held here on another page than in the queue, '
+                'or on more than one';
+          }
+          if (!strategy.hasPageRow(expected)) {
+            return 'an item is held on a page with no page row here';
+          }
+        }
+      }
+      for (final (lineup, digest) in named.keys) {
+        final index = lineup ? strategy.lineupIndex : strategy.elementIndex;
+        if (index[digest]?.isNotEmpty != true) {
+          return 'the queue holds an item that has no copy here';
+        }
       }
     }
+    for (final digest in checking) {
+      final page = strategy.pageIdOf(digest);
+      final loaded = strategy.loadedPage(digest);
+      if (page == null || loaded == null) continue;
+      if (loaded.unplaced.isNotEmpty) {
+        return 'a row on page $page is damaged here';
+      }
+      for (final row in <Row>[
+        ...loaded.elements.values,
+        ...loaded.lineupGroups.values,
+      ]) {
+        final target = switch (row) {
+          ElementRow(:final publicId) => ElementTarget(publicId) as Target,
+          LineupGroupRow(:final publicId) => LineupTarget(publicId),
+          _ => throw StateError('only items are stored on a page'),
+        };
+        if (shown.rows[target]?.version != versionOfRow(row)) {
+          return '$target is at ${versionOfRow(row)} here and at '
+              '${shown.rows[target]?.version} in the queue';
+        }
+      }
+    }
+    return null;
   }
 
   CloudStrategy _syncView(_LoadedQueue loaded) => CloudStrategy(
@@ -1911,9 +1970,9 @@ extension _CloudStore on LibraryStore {
     tally: Tally.of(loaded.current, _cloudNow()),
   );
 
-  Future<Stored<void>> _reconciledFor(_CloudOpen cloud, Pages pages) =>
+  Future<Stored<void>> _agreedFor(_CloudOpen cloud, Pages pages) =>
       switch (cloud) {
-        final _CloudReady ready => _reconciled(
+        final _CloudReady ready => _agreed(
           ready,
           load: _wantedPages(ready.strategy, ready.queue.current, pages),
         ),
@@ -1921,7 +1980,7 @@ extension _CloudStore on LibraryStore {
       };
 
   Future<Reading<StrategyContent>> _readCloudStrategy(_CloudOpen cloud) async {
-    if (await _reconciledFor(cloud, SomePages(const [])) case StorageFailed(
+    if (await _agreedFor(cloud, SomePages(const [])) case StorageFailed(
       :final failure,
     )) {
       return NotRead(failure);
@@ -1972,8 +2031,9 @@ extension _CloudStore on LibraryStore {
     _CloudOpen cloud,
     String pagePublicId,
   ) async {
-    if (await _reconciledFor(cloud, SomePages([pagePublicId]))
-        case StorageFailed(:final failure)) {
+    if (await _agreedFor(cloud, SomePages([pagePublicId])) case StorageFailed(
+      :final failure,
+    )) {
       return NotRead(failure);
     }
     return _readCloudPageNow(cloud, pagePublicId);
@@ -1990,7 +2050,7 @@ extension _CloudStore on LibraryStore {
         queue.current,
         pagePublicId,
         sync: _syncView(queue),
-        content: queue.current.shown.content.containsKey(pagePublicId)
+        content: pageContentShown(queue.current, pagePublicId)
             ? const ContentShown()
             : const ContentNotRead(),
       ),

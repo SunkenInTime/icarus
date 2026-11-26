@@ -655,6 +655,15 @@ Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
           ],
         },
     ],
+  if (facts.base case BaseDisagreed(:final reason, :final build))
+    'base': {
+      'state': switch (facts.base) {
+        BaseRereading() => 'rereading',
+        _ => 'disagreesAfterRereading',
+      },
+      'reason': reason,
+      'build': build,
+    },
 };
 
 CloudOwner ownerFromText(String text) => switch (admit(text)) {
@@ -696,6 +705,23 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
       final Object raw => _setAside(raw),
     };
     if (setAside == null) fields.reject('an unreadable set-aside record');
+    final BaseState? base = switch (fields.json['base']) {
+      null => const BaseAgrees(),
+      {
+        'state': 'rereading',
+        'reason': final String reason,
+        'build': final String build,
+      } =>
+        BaseRereading(reason, build: build),
+      {
+        'state': 'disagreesAfterRereading',
+        'reason': final String reason,
+        'build': final String build,
+      } =>
+        BaseDisagreesAfterRereading(reason, build: build),
+      _ => null,
+    };
+    if (base == null) fields.reject('an unreadable base state');
     return () => CloudFacts(
       Account(account),
       StrategyFacts(
@@ -704,6 +730,7 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
         accessConfirmedAt: confirmed,
         upgradeTold: upgrade,
         setAside: setAside!,
+        base: base!,
       ),
     );
   }),
@@ -885,7 +912,6 @@ List<Object?> _shownRow(String key, ShownRow row) => [
   row.page,
   row.revision,
   row.digest,
-  if (!row.here) false,
 ];
 
 (String, ShownRow)? _shownRowFrom(Object? raw) => switch (raw) {
@@ -894,17 +920,14 @@ List<Object?> _shownRow(String key, ShownRow row) => [
     final String page,
     final Object? revision,
     final String digest,
-    ...final rest,
   ]
-      when (revision == null || (revision is num && isSafeWhole(revision))) &&
-          (rest.isEmpty || (rest.length == 1 && rest.single == false)) =>
+      when revision == null || (revision is num && isSafeWhole(revision)) =>
     (
       key,
       ShownRow(
         page: page,
         revision: (revision as num?)?.toInt(),
         digest: digest,
-        here: rest.isEmpty,
       ),
     ),
   _ => null,
@@ -935,7 +958,6 @@ Map<String, ShownRow> _withLives(
       revision: value.revision,
       digest: value.digest,
       life: lives[key],
-      here: value.here,
     ),
 };
 

@@ -444,33 +444,33 @@ void main() {
     );
   }
 
-  test('a damaged copy of an item on a page it moved away from is removed '
-      'when the store opens, and an older result of that page does not take '
-      'the item back', () async {
+  test('a damaged copy left on a page an item moved away from sets the base '
+      'aside when the store opens, and reading the list and pages again ends '
+      'with the store and the queue agreeing', () async {
     final storage = MemoryStorage();
     var store = await openCloudStore(MemoryEngine(storage));
     await addCloud(store, initialRows());
-    final older = await beganIn(store);
-    await arriveIn(
-      store,
-      pageReadOf(movedToB(initialRows()), 'page-b'),
-      await beganIn(store),
-    );
+    final moved = movedToB(initialRows());
+    await arriveIn(store, pageReadOf(moved, 'page-b'), await beganIn(store));
     await store.close();
     final contents = editable(storage.contents);
     contents[strategyArea(strategyId)]![elementName('page-a', 'e1')] =
         '{"broken":true}';
     store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
     await recordAll(store, [const AppRestarted(build: build)]);
+    expect((await syncOf(store)).queue.strategy.base, isA<BaseRereading>());
     expect(
       (await store.readPage(strategyId, 'page-a') as Found<PageContent>)
           .value
           .unplaced,
       isEmpty,
     );
-    await expectAgree(store);
 
-    await arriveIn(store, pageReadOf(initialRows(), 'page-a'), older);
+    await arriveIn(store, headerReadOf(moved), await beganIn(store));
+    for (final page in ['page-a', 'page-b']) {
+      await arriveIn(store, pageReadOf(moved, page), await beganIn(store));
+    }
+    expect((await syncOf(store)).queue.strategy.base, isA<BaseAgrees>());
     expect(await itemsOn(store, 'page-a'), isNot(contains('e1')));
     expect(await itemsOn(store, 'page-b'), contains('e1'));
     await expectAgree(store);

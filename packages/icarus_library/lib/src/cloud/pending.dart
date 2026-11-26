@@ -955,6 +955,7 @@ final class StrategyFacts {
     required this.accessConfirmedAt,
     required this.upgradeTold,
     this.setAside = const NothingSetAside(),
+    this.base = const BaseAgrees(),
   });
 
   static const fresh = StrategyFacts(
@@ -969,6 +970,7 @@ final class StrategyFacts {
   final int accessConfirmedAt;
   final UpgradeTold upgradeTold;
   final SetAsideRecord setAside;
+  final BaseState base;
 
   StrategyFacts copyWith({
     Presence? presence,
@@ -976,12 +978,14 @@ final class StrategyFacts {
     int? accessConfirmedAt,
     UpgradeTold? upgradeTold,
     SetAsideRecord? setAside,
+    BaseState? base,
   }) => StrategyFacts(
     presence: presence ?? this.presence,
     accessLostAt: accessLostAt ?? this.accessLostAt,
     accessConfirmedAt: accessConfirmedAt ?? this.accessConfirmedAt,
     upgradeTold: upgradeTold ?? this.upgradeTold,
     setAside: setAside ?? this.setAside,
+    base: base ?? this.base,
   );
 
   @override
@@ -991,7 +995,8 @@ final class StrategyFacts {
       other.accessLostAt == accessLostAt &&
       other.accessConfirmedAt == accessConfirmedAt &&
       other.upgradeTold == upgradeTold &&
-      other.setAside == setAside;
+      other.setAside == setAside &&
+      other.base == base;
 
   @override
   int get hashCode => Object.hash(
@@ -1000,7 +1005,56 @@ final class StrategyFacts {
     accessConfirmedAt,
     upgradeTold,
     setAside,
+    base,
   );
+}
+
+sealed class BaseState {
+  const BaseState();
+}
+
+final class BaseAgrees extends BaseState {
+  const BaseAgrees();
+
+  @override
+  bool operator ==(Object other) => other is BaseAgrees;
+
+  @override
+  int get hashCode => (BaseAgrees).hashCode;
+
+  @override
+  String toString() => 'agrees';
+}
+
+sealed class BaseDisagreed extends BaseState {
+  const BaseDisagreed(this.reason, {required this.build});
+
+  final String reason;
+  final String build;
+
+  @override
+  bool operator ==(Object other) =>
+      other.runtimeType == runtimeType &&
+      other is BaseDisagreed &&
+      other.reason == reason &&
+      other.build == build;
+
+  @override
+  int get hashCode => Object.hash(runtimeType, reason, build);
+}
+
+final class BaseRereading extends BaseDisagreed {
+  const BaseRereading(super.reason, {required super.build});
+
+  @override
+  String toString() => 'read again by $build because $reason';
+}
+
+final class BaseDisagreesAfterRereading extends BaseDisagreed {
+  const BaseDisagreesAfterRereading(super.reason, {required super.build});
+
+  @override
+  String toString() => 'still disagrees after $build read it again: $reason';
 }
 
 sealed class SetAsideRecord {

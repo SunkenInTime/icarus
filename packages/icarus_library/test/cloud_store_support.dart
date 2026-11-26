@@ -121,157 +121,150 @@ Held shownOf(ShownRow row) => (
   digest: row.digest,
 );
 
+typedef StoredPage = ({
+  List<ElementRow> elements,
+  List<LineupGroupRow> lineupGroups,
+  List<String> damaged,
+});
+
+List<String> agreementProblems({
+  required StrategyRow strategy,
+  required List<PageRow> pages,
+  required Map<String, PageSettingsRow> settings,
+  required List<String> damaged,
+  required Map<String, StoredPage> content,
+  required Shown shown,
+}) {
+  final problems = <String>[];
+  final digests = <String, Target>{
+    for (final target in shown.rows.keys)
+      switch (target) {
+        ElementTarget(:final elementPublicId) => digestOf(elementPublicId),
+        LineupTarget(:final lineupPublicId) => digestOf(lineupPublicId),
+        _ => '',
+      }: target,
+  };
+  for (final name in damaged) {
+    problems.add('a damaged row is held here as $name');
+  }
+  final both = shown.pages.keys.toSet().intersection(
+    shown.trashed.keys.toSet(),
+  );
+  if (both.isNotEmpty) {
+    problems.add('the queue holds $both as live and trashed');
+  }
+  final pageIds = <String>{};
+  for (final page in pages) {
+    if (!pageIds.add(page.publicId)) {
+      problems.add('page ${page.publicId} is held twice here');
+    }
+  }
+  if (shown.strategy case final held?
+      when (revisionOfRow(strategy), createdAtOf(strategy)) !=
+          (held.revision, held.life)) {
+    problems.add('the strategy row is at another version here');
+  }
+  final storedPages = {
+    for (final page in pages)
+      page.publicId: (heldOf(page, page.publicId), page is TrashedPage),
+  };
+  final shownPages = {
+    for (final MapEntry(:key, :value) in shown.pages.entries)
+      key: (shownOf(value), false),
+    for (final MapEntry(:key, :value) in shown.trashed.entries)
+      key: (shownOf(value), true),
+  };
+  for (final page in {...storedPages.keys, ...shownPages.keys}) {
+    if (storedPages[page] != shownPages[page]) {
+      problems.add(
+        'page $page is ${storedPages[page]} here and ${shownPages[page]} in '
+        'the queue',
+      );
+    }
+  }
+  for (final page in {...settings.keys, ...shown.settings.keys}) {
+    final here = switch (settings[page]) {
+      final row? => heldOf(row, page),
+      null => null,
+    };
+    final queued = switch (shown.settings[page]) {
+      final row? => shownOf(row),
+      null => null,
+    };
+    if (here != queued) {
+      problems.add('the settings of $page are $here here and $queued queued');
+    }
+  }
+  final items = <Target, Held>{};
+  for (final MapEntry(key: page, value: stored) in content.entries) {
+    for (final name in stored.damaged) {
+      final owner = digests[name.split('/').last];
+      problems.add(
+        owner == null
+            ? 'a damaged row is held on $page as $name'
+            : 'a damaged copy of $owner is held on $page',
+      );
+    }
+    for (final (target, row) in <(Target, Row)>[
+      for (final row in stored.elements) (ElementTarget(row.publicId), row),
+      for (final row in stored.lineupGroups) (LineupTarget(row.publicId), row),
+    ]) {
+      if (items[target] case final first?) {
+        problems.add('$target is held on ${first.page} and on $page here');
+        continue;
+      }
+      items[target] = heldOf(row, page);
+    }
+  }
+  final shownItems = {
+    for (final MapEntry(:key, :value) in shown.rows.entries)
+      key: shownOf(value),
+  };
+  for (final target in {...items.keys, ...shownItems.keys}) {
+    final here = items[target];
+    final queued = shownItems[target];
+    if (here == queued) continue;
+    if (here != null && queued != null && here.page != queued.page) {
+      problems.add(
+        '$target is on ${here.page} here and on ${queued.page} in the queue',
+      );
+    } else {
+      problems.add('$target is $here here and $queued in the queue');
+    }
+  }
+  return problems;
+}
+
 Future<void> expectAgree(LibraryStore store) async {
-  final content = switch (await store.readStrategy(strategyId)) {
+  final strategy = switch (await store.readStrategy(strategyId)) {
     Found(value: final StrategyContent value) => value,
     final other => fail('the strategy did not read: $other'),
   };
-  final pageReads = <String, PageContent>{};
-  for (final page in content.pages) {
-    if (pageReads.containsKey(page.publicId)) {
-      fail('the store holds page ${page.publicId} twice');
-    }
+  final content = <String, StoredPage>{};
+  for (final page in strategy.pages) {
+    if (content.containsKey(page.publicId)) continue;
     switch (await store.readPage(strategyId, page.publicId)) {
       case Found(:final value):
-        pageReads[page.publicId] = value;
+        content[page.publicId] = (
+          elements: value.elements.toList(),
+          lineupGroups: value.lineupGroups.toList(),
+          damaged: [for (final row in value.unplaced) row.ref.name],
+        );
       case NotFound():
         break;
       case final other:
         fail('page ${page.publicId} did not read: $other');
     }
   }
-  final shown = (await syncOf(store)).queue.shown;
-  final both = shown.pages.keys.toSet().intersection(
-    shown.trashed.keys.toSet(),
+  final problems = agreementProblems(
+    strategy: strategy.strategy,
+    pages: strategy.pages,
+    settings: strategy.settings,
+    damaged: [for (final row in strategy.unplaced) row.ref.name],
+    content: content,
+    shown: (await syncOf(store)).queue.shown,
   );
-  if (both.isNotEmpty) fail('the queue holds $both as live and trashed');
-
-  expect(
-    (
-      revision: revisionOfRow(content.strategy),
-      life: createdAtOf(content.strategy),
-      here: true,
-    ),
-    (
-      revision: shown.strategy?.revision,
-      life: shown.strategy?.life,
-      here: shown.strategy?.here,
-    ),
-    reason: 'the strategy row',
-  );
-
-  final unplaced = {for (final row in content.unplaced) row.ref.name};
-  void expectHeader(
-    String what,
-    Map<String, Object> stored,
-    Map<String, (ShownRow, Object)> held,
-    String Function(String id) name,
-  ) {
-    expect(stored, {
-      for (final MapEntry(:key, value: (row, kind)) in held.entries)
-        if (row.here) key: (shownOf(row), kind),
-    }, reason: '$what with a readable copy here');
-    for (final MapEntry(:key, value: (row, _)) in held.entries) {
-      if (row.here) {
-        expect(
-          unplaced.contains(name(key)),
-          isFalse,
-          reason: '$what $key is readable to the queue but damaged here',
-        );
-      }
-    }
-    for (final damaged in unplaced) {
-      final owner = [
-        for (final MapEntry(:key, value: (row, _)) in held.entries)
-          if (name(key) == damaged) row,
-      ].singleOrNull;
-      if (owner != null) {
-        expect(owner.here, isFalse, reason: '$what damaged as $damaged');
-      }
-    }
-  }
-
-  expectHeader(
-    'page rows',
-    {
-      for (final page in content.pages)
-        page.publicId: (heldOf(page, page.publicId), page is TrashedPage),
-    },
-    {
-      for (final MapEntry(:key, :value) in shown.pages.entries)
-        key: (value, false),
-      for (final MapEntry(:key, :value) in shown.trashed.entries)
-        key: (value, true),
-    },
-    pageName,
-  );
-  expectHeader(
-    'settings rows',
-    {
-      for (final MapEntry(:key, :value) in content.settings.entries)
-        key: (heldOf(value, key), true),
-    },
-    {
-      for (final MapEntry(:key, :value) in shown.settings.entries)
-        key: (value, true),
-    },
-    settingsName,
-  );
-
-  final items = <Target, Held>{};
-  final damaged = <String, String>{};
-  for (final MapEntry(key: page, value: read) in pageReads.entries) {
-    for (final (target, row) in [
-      for (final row in read.elements) (ElementTarget(row.publicId), row),
-      for (final row in read.lineupGroups) (LineupTarget(row.publicId), row),
-    ]) {
-      if (items.containsKey(target)) {
-        fail('the store holds $target on ${items[target]!.page} and $page');
-      }
-      items[target] = heldOf(row, page);
-    }
-    for (final row in read.unplaced) {
-      damaged[row.ref.name] = page;
-    }
-  }
-  expect(items, {
-    for (final MapEntry(:key, :value) in shown.rows.entries)
-      if (value.here) key: shownOf(value),
-  }, reason: 'items with a readable copy here');
-  String itemName(Target target, String page) => switch (target) {
-    ElementTarget(:final elementPublicId) => elementName(page, elementPublicId),
-    LineupTarget(:final lineupPublicId) => lineupName(page, lineupPublicId),
-    _ => fail('$target is not an item'),
-  };
-  for (final MapEntry(key: target, value: row) in shown.rows.entries) {
-    if (!row.here) {
-      expect(
-        items.containsKey(target),
-        isFalse,
-        reason: '$target is unreadable to the queue but readable here',
-      );
-    }
-  }
-  for (final MapEntry(key: name, value: page) in damaged.entries) {
-    final owners = [
-      for (final MapEntry(key: target, value: row) in shown.rows.entries)
-        if (itemName(target, row.page) == name) row,
-    ];
-    for (final row in owners) {
-      expect(row.here, isFalse, reason: 'item damaged as $name on $page');
-    }
-    final item = name.split('/').last;
-    for (final MapEntry(key: target, value: row) in shown.rows.entries) {
-      final id = switch (target) {
-        ElementTarget(:final elementPublicId) => elementPublicId,
-        LineupTarget(:final lineupPublicId) => lineupPublicId,
-        _ => null,
-      };
-      if (id != null && digestOf(id) == item && row.page != page) {
-        fail('$target is held on ${row.page} and damaged on $page');
-      }
-    }
-  }
+  if (problems.isNotEmpty) fail(problems.join('\n'));
 }
 
 Future<ResultSource> beganIn(LibraryStore store) async {

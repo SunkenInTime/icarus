@@ -1048,8 +1048,8 @@ void main() {
       expect(items(store), 3);
     });
 
-    test('a fresh result that repairs a damaged row clears its warning at '
-        'once', () async {
+    test('a damaged row sets the base aside when its page is read, and its '
+        'warning is gone at once', () async {
       final storage = MemoryStorage();
       var store = await openCloudStore(MemoryEngine(storage));
       await addCloud(store, initialRows());
@@ -1060,19 +1060,9 @@ void main() {
       await recordAll(store, [const AppRestarted(build: build)]);
       expect(
         pageOf(await store.readPage(strategyId, 'page-a')).unplaced,
-        isNotEmpty,
-      );
-      await recordAll(store, [
-        BaseArrived(
-          pageReadOf(initialRows(), 'page-a'),
-          session: await sessionOf(store),
-          from: await readStartOf(store),
-        ),
-      ]);
-      expect(
-        pageOf(await store.readPage(strategyId, 'page-a')).unplaced,
         isEmpty,
       );
+      expect((await syncOf(store)).queue.strategy.base, isA<BaseRereading>());
     });
 
     test(
@@ -2197,7 +2187,8 @@ void main() {
         });
       }
 
-      test('the list counts the unplaced rows a page reports', () async {
+      test('the list counts the unplaced rows a page reports, none once a '
+          'damaged row set the base aside', () async {
         final storage = MemoryStorage();
         var store = await openCloudStore(MemoryEngine(storage));
         await addCloud(store, initialRows());
@@ -2206,9 +2197,9 @@ void main() {
         contents[area]![elementName('page-a', 'e1')] = '{"broken":true}';
         store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
         final page = pageOf(await store.readPage(strategyId, 'page-a'));
-        expect(page.unplaced, hasLength(1));
+        expect(page.unplaced, isEmpty);
         expect(
-          listOf(store).strategies.single.tallies['page-a']!.damaged,
+          listOf(store).strategies.single.tallies['page-a']?.damaged ?? 0,
           page.unplaced.length,
         );
       });
@@ -2241,31 +2232,26 @@ void main() {
         },
       );
 
-      test('a full page result removes an unplaced row the server no longer '
-          'has', () async {
-        final storage = MemoryStorage();
-        var store = await openCloudStore(MemoryEngine(storage));
-        await addCloud(store, initialRows());
-        await store.close();
-        final contents = editable(storage.contents);
-        final key = elementName('page-a', 'gone');
-        contents[area]![key] = '{"broken":true}';
-        final disk = MemoryStorage(contents);
-        store = await openCloudStore(MemoryEngine(disk));
-        await recordAll(store, [const AppRestarted(build: build)]);
-        await recordAll(store, [
-          BaseArrived(
-            pageReadOf(initialRows(), 'page-a'),
-            session: await sessionOf(store),
-            from: await readStartOf(store),
-          ),
-        ]);
-        expect(
-          pageOf(await store.readPage(strategyId, 'page-a')).unplaced,
-          isEmpty,
-        );
-        expect(disk.contents[area]!.containsKey(key), isFalse);
-      });
+      test(
+        'an unplaced row is gone from disk once it has set the base aside',
+        () async {
+          final storage = MemoryStorage();
+          var store = await openCloudStore(MemoryEngine(storage));
+          await addCloud(store, initialRows());
+          await store.close();
+          final contents = editable(storage.contents);
+          final key = elementName('page-a', 'gone');
+          contents[area]![key] = '{"broken":true}';
+          final disk = MemoryStorage(contents);
+          store = await openCloudStore(MemoryEngine(disk));
+          await recordAll(store, [const AppRestarted(build: build)]);
+          expect(
+            pageOf(await store.readPage(strategyId, 'page-a')).unplaced,
+            isEmpty,
+          );
+          expect(disk.contents[area]!.containsKey(key), isFalse);
+        },
+      );
 
       test('a shown row stored in two page groups holds the queue', () async {
         final storage = MemoryStorage();

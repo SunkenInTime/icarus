@@ -402,6 +402,7 @@ final class StoreModel {
   }) async {
     await reading(() => store.readStrategy(strategyId));
     final before = listOf(store).strategies.single;
+    final baseBefore = await baseNow();
     final mine = await visible();
     final reported = <String, PageTally>{};
     for (final page in mine.pages) {
@@ -417,8 +418,11 @@ final class StoreModel {
       );
     }
     final after = listOf(store).strategies.single;
+    final setAsideByTheReads =
+        baseBefore is! BaseRereading && await baseNow() is BaseRereading;
     for (final (moment, summary) in [
-      if (beforeReads) ('before the pages were read', before),
+      if (beforeReads && !setAsideByTheReads)
+        ('before the pages were read', before),
       ('after the pages were read', after),
     ]) {
       for (final MapEntry(key: page, value: tally) in reported.entries) {
@@ -461,7 +465,40 @@ final class StoreModel {
     count('unloads that changed nothing');
   }
 
+  bool damageSeeded = false;
+
+  Future<BaseState?> baseNow() async =>
+      switch (await reading(() => store.readStrategy(strategyId))) {
+        Found(value: StrategyContent(sync: CloudStrategy(:final queue))) =>
+          queue.strategy.base,
+        _ => null,
+      };
+
+  Future<void> baseFollowsSeeds(String label) async {
+    final base = await baseNow();
+    if (base == null) return;
+    switch (base) {
+      case BaseAgrees():
+        break;
+      case BaseRereading() when damageSeeded:
+        damageSeeded = false;
+        count('base read again after seeded damage');
+      case BaseRereading() when lastBase is BaseRereading:
+        break;
+      case _:
+        throw StateError(
+          'after $label the base is $base, and nothing seeded it',
+        );
+    }
+    if (base != lastBase) log.add('the base: $base');
+    lastBase = base;
+  }
+
+  BaseState lastBase = const BaseAgrees();
+  final writtenWhileReadAgain = <String>{};
+
   Future<void> damagedRowsArrive() async {
+    if (lastBase is! BaseAgrees) return;
     final (pages, _) = await livePagesAndElements();
     if (pages.isEmpty) return;
     faults = false;
@@ -476,6 +513,7 @@ final class StoreModel {
         )]!['content/${digestOf(page)}/z/${digestOf(id)}'] =
         '{"kind":"from a newer build"}';
     storage = MemoryStorage(contents);
+    damageSeeded = true;
     await open();
     await restartSession();
     await listMatchesPages(
@@ -554,6 +592,7 @@ final class StoreModel {
           row,
     ];
     final opId = fresh('op');
+    if (lastBase is! BaseAgrees) writtenWhileReadAgain.add(opId);
     final roll = random.nextInt(13);
     final StrategyOp op;
     if (roll < 5 && live.isNotEmpty) {
@@ -1198,7 +1237,11 @@ final class StoreModel {
         _ => null,
       };
       if (action == null) continue;
-      if (!teammates && action is! UserRetried && !userRemoved) {
+      if (writtenWhileReadAgain.contains(entry.id)) {
+        count(
+          'the user asked about work written while the base was read again',
+        );
+      } else if (!teammates && action is! UserRetried && !userRemoved) {
         throw StateError(
           'the user was asked $action for ${entry.id}: '
           '${view?.state}, ${view?.holds}',
@@ -1594,6 +1637,7 @@ Future<void> runSeed(int seed, int steps) async {
     await model.start();
     for (var i = 0; i < steps; i++) {
       await model.stepOnce();
+      await model.baseFollowsSeeds('step $i');
     }
     if (seed % 9 == 0) {
       await model.strategyGone();

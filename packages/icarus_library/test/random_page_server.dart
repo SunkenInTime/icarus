@@ -151,17 +151,19 @@ final class RandomServer {
     final row = held[random.nextInt(held.length)];
     switch (random.nextInt(9)) {
       case 0 || 1:
+        final was = row.x;
         row
           ..x = random.nextDouble() * 1000
           ..revision += 1;
-        _generated('payload changed', item: row);
+        if (row.x != was) _generated('payload changed', item: row);
       case 2:
+        final from = row.page;
         row
           ..page = serverPages
               .where((page) => page != row.page)
               .toList()[random.nextInt(2)]
           ..revision += 1;
-        _generated('moved between pages', item: row);
+        if (row.page != from) _generated('moved between pages', item: row);
       case 3:
         final deleted = [
           for (final each in held)
@@ -329,11 +331,13 @@ final class RandomServer {
     ];
     final leftOut = included.length < onPage.length;
     if (leftOut) _made('rows left out of a read');
-    if (trashedRow) _made('trashed page row read');
+    final pageRowRead = trashedRow ? trashedPageRow(page) : pageRow(page);
+    final readTrashed = pageRowRead is TrashedPage;
+    if (readTrashed) _made('trashed page row read');
     final rows = [for (final item in included) item.row];
     final result = ServerResult(
       PageRead(
-        page: trashedRow ? trashedPageRow(page) : pageRow(page),
+        page: pageRowRead,
         elements: [
           for (final row in rows)
             if (row is ElementRow) row,
@@ -345,7 +349,7 @@ final class RandomServer {
       ),
       [
         if (leftOut) 'rows left out of a read',
-        if (trashedRow) 'trashed page row read',
+        if (readTrashed) 'trashed page row read',
         ..._deliveredPage(page),
         for (final item in included) ...?_itemCases.remove(item.id),
       ],

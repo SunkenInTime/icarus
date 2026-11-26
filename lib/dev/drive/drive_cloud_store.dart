@@ -1526,9 +1526,9 @@ CloudStoreLine? _senderReportLine(SenderReport report) => switch (report) {
           'server refused it for that: the queue must never send this',
           problem: true,
         ),
-      StoreRepairedFor(:final strategyId, :final repairs) => CloudStoreLine(
-          'CLOUDSTORE the store and the queue of $strategyId disagreed when '
-          'it loaded, and were made to agree: ${repairs.join('; ')}',
+      BaseNotAgreeing(:final strategyId, :final base) => CloudStoreLine(
+          'CLOUDSTORE the rows stored for $strategyId disagreed with its '
+          'queue: $base',
           problem: true,
         ),
       WriteNotMade(:final strategyId, :final trouble) => CloudStoreLine(

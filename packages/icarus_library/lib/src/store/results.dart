@@ -3,7 +3,6 @@ import '../rows.dart';
 import '../strategy_rows.dart';
 import '../cloud/account.dart';
 import '../cloud/queue.dart';
-import '../cloud/shown.dart' show Repair;
 import '../cloud/sync.dart';
 import '../cloud/version.dart';
 import '../undo.dart';
@@ -432,14 +431,6 @@ final class StrategyRefreshed extends StoreChange {
 
   final String strategyPublicId;
   final StrategySummary summary;
-}
-
-final class StoreRepaired extends StoreChange {
-  StoreRepaired(this.strategyPublicId, List<Repair> repairs)
-    : repairs = List.unmodifiable(repairs);
-
-  final String strategyPublicId;
-  final List<Repair> repairs;
 }
 
 final class LibraryEdited extends StoreChange {

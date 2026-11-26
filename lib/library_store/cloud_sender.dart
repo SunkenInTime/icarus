@@ -433,9 +433,6 @@ final class CloudSender {
     _changes ??= _store.store.changes.listen(
       (change) => switch (change) {
         StrategyEdited(:final strategyPublicId) => edited(strategyPublicId),
-        StoreRepaired(:final strategyPublicId, :final repairs) => _store.report(
-          StoreRepairedFor(strategyPublicId, repairs),
-        ),
         _ => wake(),
       },
       onDone: wake,

@@ -44,6 +44,11 @@ final class LoadedPage {
   final unknownKinds = <UnknownKindRow>[];
   final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
+  bool _checked = false;
+
+  bool get checked => _checked;
+
+  void markChecked() => _checked = true;
 
   bool get isEmpty =>
       elements.isEmpty &&
@@ -77,10 +82,10 @@ final class LoadedStrategy {
     for (final name in names) {
       switch (name) {
         case ElementName(:final page, :final digest):
-          (_elementPages[digest] ??= {}).add(page);
+          _index(false, digest, page);
           _contentPages.add(page);
         case LineupName(:final page, :final digest):
-          (_lineupPages[digest] ??= {}).add(page);
+          _index(true, digest, page);
           _contentPages.add(page);
         case UnknownKindName(:final page):
           _contentPages.add(page);
@@ -169,6 +174,19 @@ final class LoadedStrategy {
   final _settings = <String, PageSettingsRow>{};
   final _elementPages = <String, Set<String>>{};
   final _lineupPages = <String, Set<String>>{};
+  final _itemsOnPage = <String, Set<(bool, String)>>{};
+  bool membershipChecked = false;
+
+  void _index(bool lineup, String item, String page) {
+    ((lineup ? _lineupPages : _elementPages)[item] ??= {}).add(page);
+    (_itemsOnPage[page] ??= {}).add((lineup, item));
+  }
+
+  void _unindex(bool lineup, String item, String page) {
+    (lineup ? _lineupPages : _elementPages)[item]?.remove(page);
+    _itemsOnPage[page]?.remove((lineup, item));
+  }
+
   final _contentPages = <String>{};
   final _loaded = <String, LoadedPage>{};
 
@@ -403,19 +421,17 @@ final class LoadedStrategy {
       case ElementName(:final page, :final digest):
         _loaded[page]?.unplaced.remove(name.name);
         if (_loaded[page]?.elements.containsKey(digest) != true) {
-          _elementPages[digest]?.remove(page);
+          _unindex(false, digest, page);
         }
       case LineupName(:final page, :final digest):
         _loaded[page]?.unplaced.remove(name.name);
         if (_loaded[page]?.lineupGroups.containsKey(digest) != true) {
-          _lineupPages[digest]?.remove(page);
+          _unindex(true, digest, page);
         }
       case _:
         unplaced.remove(name.name);
     }
   }
-
-  final reconciled = <String>{};
 
   Iterable<String> get loadedPages => _loaded.keys;
 
@@ -436,14 +452,24 @@ final class LoadedStrategy {
     }
   }
 
+  void forgetContent(String pageDigest) {
+    _contentPages.remove(pageDigest);
+    _loaded.remove(pageDigest);
+    for (final (lineup, item) in [...?_itemsOnPage.remove(pageDigest)]) {
+      (lineup ? _lineupPages : _elementPages)[item]?.remove(pageDigest);
+    }
+    if (_pages.containsKey(pageDigest)) {
+      _loaded[pageDigest] = LoadedPage()..markChecked();
+    }
+  }
+
   void forgetPage(String pageDigest) {
     _pages.remove(pageDigest);
     _settings.remove(pageDigest);
     _contentPages.remove(pageDigest);
     _loaded.remove(pageDigest);
-    reconciled.remove(pageDigest);
-    for (final pages in [..._elementPages.values, ..._lineupPages.values]) {
-      pages.remove(pageDigest);
+    for (final (lineup, item) in [...?_itemsOnPage.remove(pageDigest)]) {
+      (lineup ? _lineupPages : _elementPages)[item]?.remove(pageDigest);
     }
     unplaced.removeWhere((name, _) => name == SettingsName(pageDigest).name);
   }
@@ -454,12 +480,12 @@ final class LoadedStrategy {
         final page = digestOf(pagePublicId);
         final digest = digestOf(publicId);
         _loaded[page]?.elements.remove(digest);
-        _elementPages[digest]?.remove(page);
+        _unindex(false, digest, page);
       case LineupGroupRow(:final pagePublicId, :final publicId):
         final page = digestOf(pagePublicId);
         final digest = digestOf(publicId);
         _loaded[page]?.lineupGroups.remove(digest);
-        _lineupPages[digest]?.remove(page);
+        _unindex(true, digest, page);
       case StrategyRow() || FolderRow() || PageRow() || PageSettingsRow():
         throw StateError('$row does not change name');
     }
@@ -477,13 +503,13 @@ final class LoadedStrategy {
         final page = digestOf(pagePublicId);
         final digest = digestOf(publicId);
         _mustBeLoaded(page).elements[digest] = row;
-        (_elementPages[digest] ??= {}).add(page);
+        _index(false, digest, page);
         _contentPages.add(page);
       case LineupGroupRow(:final pagePublicId, :final publicId):
         final page = digestOf(pagePublicId);
         final digest = digestOf(publicId);
         _mustBeLoaded(page).lineupGroups[digest] = row;
-        (_lineupPages[digest] ??= {}).add(page);
+        _index(true, digest, page);
         _contentPages.add(page);
       case FolderRow():
         throw StateError('$row is not written as a row of a strategy');

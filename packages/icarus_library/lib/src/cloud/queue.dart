@@ -1440,6 +1440,21 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
     case ReadBegun():
       edit.effects.add(ReadStartIssued(edit.readsAfterThis()));
       return edit.done();
+    case StoredBaseDisagrees(:final reason, :final build):
+      edit.decisions.add(const BaseLeft());
+      edit.shown = edit.shown.setAside(edit.readsAfterThis());
+      edit.strategy = edit.strategy.copyWith(
+        base: BaseRereading(reason, build: build),
+      );
+      return edit.done();
+    case StoredBaseReadAgain(:final stillDisagrees, :final build):
+      edit.strategy = edit.strategy.copyWith(
+        base: switch (stillDisagrees) {
+          final reason? => BaseDisagreesAfterRereading(reason, build: build),
+          null => const BaseAgrees(),
+        },
+      );
+      return edit.done();
     case BaseArrived(:final base, :final session, :final from):
       if (session == 0 || session != edit.session.number) {
         return NotApplicable(queue, FromAnEndedSession(session));

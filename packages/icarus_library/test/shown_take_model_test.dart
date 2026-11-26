@@ -13,7 +13,6 @@ ShownRow _loaded(ShownRow row) => ShownRow(
   revision: row.revision,
   digest: row.digest,
   life: row.life,
-  here: row.here,
 );
 
 Shown fromScratch(Shown shown) => Shown(

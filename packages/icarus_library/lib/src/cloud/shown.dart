@@ -59,7 +59,6 @@ final class ShownRow {
     required this.digest,
     this.life,
     this.digestedThisRun = false,
-    this.here = true,
   });
 
   final String page;
@@ -67,19 +66,8 @@ final class ShownRow {
   final int? life;
   final String digest;
   final bool digestedThisRun;
-  final bool here;
-
-  ShownRow get notHere => ShownRow(
-    page: page,
-    revision: revision,
-    life: life,
-    digest: digest,
-    digestedThisRun: digestedThisRun,
-    here: false,
-  );
 
   bool holdsDigestOf(Row row, String page) =>
-      here &&
       digestedThisRun &&
       revision != null &&
       this.page == page &&
@@ -97,11 +85,10 @@ final class ShownRow {
       other.page == page &&
       other.revision == revision &&
       other.life == life &&
-      other.digest == digest &&
-      other.here == here;
+      other.digest == digest;
 
   @override
-  int get hashCode => Object.hash(page, revision, life, digest, here);
+  int get hashCode => Object.hash(page, revision, life, digest);
 }
 
 final class Freshness {
@@ -334,114 +321,6 @@ bool replaces(ShownRow? held, Row incoming) =>
 
 enum KeptBecause { heldIsNewer, leftByANewerResult }
 
-sealed class Repair {
-  const Repair(this.target, {required this.page});
-
-  final Target target;
-  final String page;
-
-  @override
-  bool operator ==(Object other) =>
-      other.runtimeType == runtimeType &&
-      other is Repair &&
-      other.target == target &&
-      other.page == page &&
-      other._version == _version;
-
-  Version? get _version => null;
-
-  @override
-  int get hashCode => Object.hash(runtimeType, target, page, _version);
-}
-
-final class TakenFromThisDevice extends Repair {
-  const TakenFromThisDevice(super.target, {required super.page, this.version});
-
-  final Version? version;
-
-  @override
-  Version? get _version => version;
-
-  @override
-  String toString() => '$target on $page taken as stored here, at $version';
-}
-
-final class SecondCopyRemoved extends Repair {
-  const SecondCopyRemoved(super.target, {required super.page});
-
-  @override
-  String toString() => 'a second copy of $target on $page removed';
-}
-
-final class NoCopyOnThisDevice extends Repair {
-  const NoCopyOnThisDevice(super.target, {required super.page, this.version});
-
-  final Version? version;
-
-  @override
-  Version? get _version => version;
-
-  @override
-  String toString() => '$target on $page, at $version, has no copy here';
-}
-
-final class DamagedOnThisDevice extends Repair {
-  const DamagedOnThisDevice(super.target, {required super.page, this.version});
-
-  final Version? version;
-
-  @override
-  Version? get _version => version;
-
-  @override
-  String toString() => '$target on $page, at $version, is damaged here';
-}
-
-final class HeldCopy {
-  const HeldCopy(this.page, [this.row]);
-
-  final String page;
-  final Row? row;
-
-  Version? get version => switch (row) {
-    final row? => versionOfRow(row),
-    null => null,
-  };
-
-  bool isBetterThan(HeldCopy other) {
-    if (_outranks(version, other.version)) return true;
-    if (_outranks(other.version, version)) return false;
-    return page.compareTo(other.page) < 0;
-  }
-}
-
-final class HeaderHeld {
-  const HeaderHeld({
-    required this.strategy,
-    required this.pages,
-    required this.settings,
-    required this.damaged,
-  });
-
-  final StrategyRow? strategy;
-  final Iterable<PageRow> pages;
-  final Iterable<PageSettingsRow> settings;
-  final bool Function(Target target) damaged;
-}
-
-final class Reconciled {
-  Reconciled(
-    this.shown, {
-    List<RowDecision> decisions = const [],
-    List<Repair> repairs = const [],
-  }) : decisions = List.unmodifiable(decisions),
-       repairs = List.unmodifiable(repairs);
-
-  final Shown shown;
-  final List<RowDecision> decisions;
-  final List<Repair> repairs;
-}
-
 final class Removed {
   const Removed(this.order, {required this.held});
 
@@ -519,6 +398,37 @@ final class RowUnchanged extends RowDecision {
 
   @override
   String toString() => 'unchanged ${row.key}';
+}
+
+final class BaseLeft extends RowDecision {
+  const BaseLeft();
+
+  @override
+  bool operator ==(Object other) => other is BaseLeft;
+
+  @override
+  int get hashCode => (BaseLeft).hashCode;
+
+  @override
+  String toString() => 'every result row held on this device left';
+}
+
+final class UnlistedLeft extends RowDecision {
+  UnlistedLeft(Iterable<String> listed) : listed = Set.unmodifiable(listed);
+
+  final Set<String> listed;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UnlistedLeft &&
+      other.listed.length == listed.length &&
+      other.listed.containsAll(listed);
+
+  @override
+  int get hashCode => Object.hash(UnlistedLeft, listed.length);
+
+  @override
+  String toString() => 'every stored page but $listed left';
 }
 
 final class ItemLeft extends RowDecision {
@@ -801,209 +711,6 @@ final class Shown {
     },
   );
 
-  Reconciled withHeaderHeld(HeaderHeld held) {
-    final repairs = <Repair>[];
-    var strategyRow = strategy;
-    final storedStrategy = switch (held.strategy) {
-      final row? => _strategyRow(row, held.pages),
-      null => null,
-    };
-    if (storedStrategy != null &&
-        (strategyRow == null ||
-            !strategyRow.here ||
-            strategyRow.version != storedStrategy.version)) {
-      strategyRow = storedStrategy;
-      repairs.add(
-        TakenFromThisDevice(
-          const StrategyTarget(),
-          page: '',
-          version: storedStrategy.version,
-        ),
-      );
-    }
-    final nextPages = {...pages};
-    final nextTrashed = {...trashed};
-    final raised = <Target, Version>{};
-    final stored = <String>{};
-    for (final row in held.pages) {
-      final id = row.publicId;
-      stored.add(id);
-      final atStore = _rowOf(row, row);
-      final isTrashed = row is TrashedPage;
-      final held = (isTrashed ? trashed : pages)[id];
-      if (held == atStore) continue;
-      nextPages.remove(id);
-      nextTrashed.remove(id);
-      (isTrashed ? nextTrashed : nextPages)[id] = atStore;
-      if ((isTrashed, atStore.version) case (false, final version?)) {
-        raised[PageTarget(id)] = version;
-      }
-      repairs.add(
-        TakenFromThisDevice(PageTarget(id), page: id, version: atStore.version),
-      );
-    }
-    for (final id in {...pages.keys, ...trashed.keys}) {
-      if (stored.contains(id)) continue;
-      final inLive = nextPages.containsKey(id);
-      final row = (inLive ? nextPages : nextTrashed)[id]!;
-      if (!row.here) continue;
-      (inLive ? nextPages : nextTrashed)[id] = row.notHere;
-      repairs.add(_unreadable(held, PageTarget(id), id, row));
-    }
-    final nextSettings = {...settings};
-    final storedSettings = <String>{};
-    for (final row in held.settings) {
-      final id = row.pagePublicId;
-      storedSettings.add(id);
-      final atStore = _rowOf(row, id);
-      if (settings[id] == atStore) continue;
-      nextSettings[id] = atStore;
-      if (atStore.version case final version?) {
-        raised[SettingsTarget(id)] = version;
-      }
-      repairs.add(
-        TakenFromThisDevice(
-          SettingsTarget(id),
-          page: id,
-          version: atStore.version,
-        ),
-      );
-    }
-    for (final MapEntry(key: id, value: row) in settings.entries) {
-      if (storedSettings.contains(id) || !row.here) continue;
-      nextSettings[id] = row.notHere;
-      repairs.add(_unreadable(held, SettingsTarget(id), id, row));
-    }
-    if (repairs.isEmpty) return Reconciled(this);
-    if (strategyRow?.version case final version?) {
-      raised[const StrategyTarget()] = version;
-    }
-    return Reconciled(
-      _with(
-        strategy: strategyRow,
-        pages: nextPages,
-        trashed: nextTrashed,
-        settings: nextSettings,
-        highest: _raised(highest, raised),
-      ),
-      repairs: repairs,
-    );
-  }
-
-  static Repair _unreadable(
-    HeaderHeld held,
-    Target target,
-    String page,
-    ShownRow row,
-  ) => held.damaged(target)
-      ? DamagedOnThisDevice(target, page: page, version: row.version)
-      : NoCopyOnThisDevice(target, page: page, version: row.version);
-
-  Reconciled withItemsHeld(
-    Map<Target, List<HeldCopy>> copies, {
-    required bool compareDigests,
-  }) {
-    final repairs = <Repair>[];
-    final decisions = <RowDecision>[];
-    Map<Target, ShownRow>? changed;
-    Map<String, Map<SeenPart, String>>? changedContent;
-    Map<Target, ShownRow> next() => changed ??= {...rows};
-    Map<String, Map<SeenPart, String>> nextContent() => changedContent ??= {
-      for (final MapEntry(:key, :value) in content.entries) key: {...value},
-    };
-    final raised = <Target, Version>{};
-    for (final MapEntry(key: target, value: held) in copies.entries) {
-      final shown = rows[target];
-      HeldCopy? kept;
-      for (final copy in held) {
-        if (shown != null && copy.page == shown.page) kept = copy;
-      }
-      if (kept == null) {
-        for (final copy in held) {
-          if (kept == null || copy.isBetterThan(kept)) kept = copy;
-        }
-      }
-      for (final copy in held) {
-        if (identical(copy, kept)) continue;
-        decisions.add(ItemLeft(target, page: copy.page));
-        repairs.add(SecondCopyRemoved(target, page: copy.page));
-      }
-      switch ((kept, shown)) {
-        case (null, null):
-          break;
-        case (null, final shown?):
-          if (!shown.here) break;
-          next()[target] = shown.notHere;
-          repairs.add(
-            NoCopyOnThisDevice(
-              target,
-              page: shown.page,
-              version: shown.version,
-            ),
-          );
-        case (HeldCopy(row: null, :final page), final shown)
-            when shown != null && shown.page == page:
-          if (!shown.here) break;
-          next()[target] = shown.notHere;
-          repairs.add(
-            DamagedOnThisDevice(target, page: page, version: shown.version),
-          );
-        case (HeldCopy(row: null, :final page), final shown):
-          next()[target] = ShownRow(
-            page: page,
-            revision: null,
-            digest: '',
-          ).notHere;
-          _withoutPart(nextContent(), target, shown?.page);
-          repairs.add(DamagedOnThisDevice(target, page: page));
-        case (HeldCopy(:final row?, :final page), final shown):
-          if (shown != null &&
-              shown.here &&
-              shown.page == page &&
-              shown.version == versionOfRow(row) &&
-              (!compareDigests || shown.digest == rowDigest(row))) {
-            break;
-          }
-          final atStore = _rowOf(row, page);
-          next()[target] = atStore;
-          _withoutPart(nextContent(), target, shown?.page);
-          if (_partOf(target) case final part?
-              when lifeOfRow(row) == Life.live) {
-            (nextContent()[page] ??= {})[part] = atStore.digest;
-          }
-          if (atStore.version case final version?) raised[target] = version;
-          repairs.add(
-            TakenFromThisDevice(target, page: page, version: atStore.version),
-          );
-      }
-    }
-    if (repairs.isEmpty) return Reconciled(this);
-    return Reconciled(
-      _with(
-        rows: changed,
-        content: switch (changedContent) {
-          final changed? => {
-            for (final MapEntry(:key, :value) in changed.entries)
-              if (content.containsKey(key) || value.isNotEmpty) key: value,
-          },
-          null => null,
-        },
-        highest: _raised(highest, raised),
-      ),
-      decisions: decisions,
-      repairs: repairs,
-    );
-  }
-
-  static void _withoutPart(
-    Map<String, Map<SeenPart, String>> content,
-    Target target,
-    String? page,
-  ) {
-    if (page == null) return;
-    if (_partOf(target) case final part?) content[page]?.remove(part);
-  }
-
   Shown _with({
     Freshness? fresh,
     ReadState? list,
@@ -1037,12 +744,7 @@ final class Shown {
     rows: rows ?? this.rows,
   );
 
-  Set<String> get knownPages => {
-    ...pages.keys,
-    ...trashed.keys,
-    ...settings.keys,
-    for (final row in rows.values) row.page,
-  };
+  Set<String> get knownPages => {...pages.keys, ...trashed.keys};
 
   Map<Target, Removed> _removedOn(
     bool Function(String page) gone,
@@ -1105,6 +807,7 @@ final class Shown {
     final decisions = <RowDecision>[
       for (final page in knownPages)
         if (!listedIds.contains(page)) PageLeft(page),
+      UnlistedLeft(listedIds),
       RowTaken(strategyRow),
     ];
     final nextPages = <String, ShownRow>{};
@@ -1209,23 +912,10 @@ final class Shown {
 
   Shown owingList(ReadStart since) => _with(list: ReadOwed(since: since));
 
-  Shown owingReadsFor(Iterable<Repair> repairs, ReadStart since) {
-    var shown = this;
-    for (final repair in repairs) {
-      if (repair is! NoCopyOnThisDevice && repair is! DamagedOnThisDevice) {
-        continue;
-      }
-      switch (repair.target) {
-        case StrategyTarget() || PageTarget() || SettingsTarget():
-          if (!isDebt(shown.list)) shown = shown.owingList(since);
-        case ElementTarget() || LineupTarget():
-          if (!isDebt(shown.pageRead(repair.page))) {
-            shown = shown.owingPage(repair.page, since);
-          }
-      }
-    }
-    return shown;
-  }
+  Shown setAside(ReadStart fence) => Shown.nothing
+      ._with(strategy: strategy)
+      .fencedAt(fence, after: this)
+      .owingList(fence);
 
   Shown owingListPast(int? life, ReadStart since, {int? named}) => _with(
     list: ReadOwed(unlessLife: life, namedLife: named, since: since),

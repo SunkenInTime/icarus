@@ -832,6 +832,9 @@ Set<ResultSubject> owedReads(CloudQueue queue) => {
     if (isDebt(value)) PageResult(key),
 };
 
+bool pageContentShown(CloudQueue queue, String page) =>
+    queue.strategy.base is BaseAgrees && queue.shown.content.containsKey(page);
+
 Set<String> pagesNeverRead(CloudQueue queue) => {
   for (final page in queue.shown.pages.keys)
     if (!queue.shown.content.containsKey(page) &&
