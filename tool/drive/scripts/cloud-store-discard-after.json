@@ -5,7 +5,7 @@
   {"wait": 6},
   {"storeExpect": "held"},
   {"storeDiscardUnreadable": true},
-  {"wait": 75},
+  {"wait": 12},
   {"waitStoreSent": 120},
   {"storeSyncState": true},
   {"wait": 3},

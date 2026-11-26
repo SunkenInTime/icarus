@@ -2835,6 +2835,39 @@ void main() {
     });
 
     test(
+        'a discard ends the hold the sender backed off for: it reads the list '
+        'at once, without waiting out the backoff', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents[strategyArea(strategyId)]!['pending/999'] = 'not a queue row';
+      inWorld(
+        (world) {
+          world.settle(const Duration(seconds: 5));
+          final before = server.readCalls.length;
+          Saving<StrategySummary, CommitRefusal>? discarded;
+          world.store
+              .discardUnreadableQueue(
+                servedAccount,
+                strategyId,
+                const DiscardsUnsentWork(),
+              )
+              .then((result) => discarded = result);
+          world.settle(const Duration(seconds: 2));
+          expect(discarded, isA<Saved<StrategySummary, CommitRefusal>>());
+          expect(readsAfter(world, before), contains('list'));
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
         'a refusal the store made at open, before the sender started, is '
         'reported once when the sender starts, and nothing is read', () {
       final storage = MemoryStorage();

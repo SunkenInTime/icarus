@@ -435,6 +435,7 @@ final class CloudSender {
         StrategyEdited(:final strategyPublicId) => edited(strategyPublicId),
         StrategyRefused(:final strategyPublicId, :final refusal) =>
           _store.refused(strategyPublicId, refusal),
+        LibraryEdited(:final summaries) => _libraryEdited(summaries),
         _ => wake(),
       },
       onDone: wake,
@@ -463,6 +464,16 @@ final class CloudSender {
     _firstEdit[strategyId] ??= now;
     _checkedClean.remove(strategyId);
     retiring.active(strategyId, now);
+    wake();
+  }
+
+  void _libraryEdited(List<StrategySummary> summaries) {
+    for (final summary in summaries) {
+      if (_waits[summary.publicId] == StallExit.localTrouble) {
+        _governor.newEvidence(summary.publicId);
+        notBefore.remove(summary.publicId);
+      }
+    }
     wake();
   }
 
