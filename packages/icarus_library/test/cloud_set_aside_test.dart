@@ -99,17 +99,17 @@ void main() {
           laterLife,
         ),
       ]);
-      client.arrive(pageReadOf(again, 'page-a'));
+      client.arrive(pageReadOf(again, 'page-a'), asked: const NotCausal());
       expect(isDebt(client.queue.shown.list), isTrue);
       expect(setAsideIds(client.queue), isEmpty);
-      client.arrive(headerReadOf(again));
+      client.arrive(headerReadOf(again), asked: const NotCausal());
       expect(setAsideIds(client.queue), ['move', 'later']);
     });
 
     test('a list of the same life sets nothing aside, and one of an earlier '
         'life is dropped', () {
       final client = withTwoEdits();
-      client.arrive(headerReadOf(initialRows()));
+      client.arrive(headerReadOf(initialRows()), asked: const NotCausal());
       expect(setAsideIds(client.queue), isEmpty);
       expect(
         client.step(
@@ -152,7 +152,10 @@ void main() {
       );
       expect(setAsideIds(client.queue), isEmpty);
       expect(isDebt(client.queue.shown.list), isTrue);
-      client.arrive(headerReadOf(replaced(initialRows())));
+      client.arrive(
+        headerReadOf(replaced(initialRows())),
+        asked: client.askedNow,
+      );
       expect(setAsideIds(client.queue), ['move']);
       expect(client.queue.shown.list, const ReadThisSession());
     });

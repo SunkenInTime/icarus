@@ -181,6 +181,7 @@ final rows = <Row>[
           lineupGroups: const [],
         ),
       ),
+      asked: const NotCausal(),
     );
   }),
   Row('sending in attempt 1', () {
@@ -278,7 +279,7 @@ final rows = <Row>[
       ),
     );
     client.edit(onVisible(client.visible, movePatch('x', x: 70)));
-    return client..arrive(const PageGone('page-a'));
+    return client..arrive(const PageGone('page-a'), asked: const NotCausal());
   }),
   Row('a format this build no longer sends', () {
     final client = Client();
@@ -305,7 +306,7 @@ final rows = <Row>[
   Row('waiting, strategy deleted on the server', () {
     return Client()
       ..edit(movePatch('x'))
-      ..arrive(const StrategyGone());
+      ..arrive(const StrategyGone(), asked: const NotCausal());
   }),
   Row('waiting, edit access lost', () {
     final client = Client()
@@ -451,8 +452,11 @@ final events = <String, QueueEvent Function(Client)>{
     point: tick(),
     requestedAt: c.queue.session.sequence,
   ),
-  'result: page list the store would not keep': (c) =>
-      c.readRefused(null, 'ResultWithoutLife(page-a)'),
+  'result: page list the store would not keep': (c) => c.readRefused(
+    null,
+    'ResultWithoutLife(page-a)',
+    asked: c.askedNow,
+  ),
   'user: discard what was set aside': (c) => const UserDiscardedReplaced(),
   'result: page-a of another life': (c) => BaseArrived(
     PageRead(

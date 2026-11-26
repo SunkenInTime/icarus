@@ -27,24 +27,50 @@ var _snapshot = 0;
 Generation get currentGeneration =>
     Generation(client: testClient, connection: _connection);
 
+const firstServerTime = 1795000000000000000;
+
+int serverTimeOf(int snapshot) => firstServerTime + snapshot * 1000000;
+
 ResultPoint tick() => ResultPoint(
   client: testClient,
   connection: _connection,
   snapshot: ++_snapshot,
-  serverTime: _snapshot * 1000,
+  serverTime: serverTimeOf(_snapshot),
 );
 
 ResultPoint get lastPoint => ResultPoint(
   client: testClient,
   connection: _connection,
   snapshot: _snapshot,
-  serverTime: _snapshot * 1000,
+  serverTime: serverTimeOf(_snapshot),
 );
 
 typedef ReadAsked = ({ResultPoint point, int requestedAt});
 
 ReadAsked askRead(CloudQueue queue) =>
     (point: tick(), requestedAt: queue.session.sequence);
+
+sealed class Asked {
+  const Asked();
+
+  int? get requestedAt;
+}
+
+final class AskedAtStep extends Asked {
+  const AskedAtStep(this.step);
+
+  final int step;
+
+  @override
+  int get requestedAt => step;
+}
+
+final class NotCausal extends Asked {
+  const NotCausal();
+
+  @override
+  int? get requestedAt => null;
+}
 
 ConnectionReturned reconnected() => ConnectionReturned(
   Generation(client: testClient, connection: ++_connection),
@@ -321,30 +347,39 @@ final class Client {
   List<StrategyOp> lastSent() =>
       effects.whereType<SendBatch>().last.ops.toList();
 
-  void arrive(ArrivedBase base, {ResultPoint? at}) =>
-      must(arrival(base, at: at));
+  AskedAtStep get askedNow => AskedAtStep(queue.session.sequence);
 
-  BaseArrived arrival(ArrivedBase base, {ResultPoint? at, int? requestedAt}) =>
-      BaseArrived(
-        base,
-        session: queue.session.number,
-        point: at ?? tick(),
-        requestedAt: requestedAt ?? queue.session.sequence,
-      );
+  void arrive(ArrivedBase base, {required Asked asked, ResultPoint? at}) =>
+      must(arrival(base, asked: asked, at: at));
 
-  ResultRefused readRefused(String? page, String problem) => ResultRefused(
+  BaseArrived arrival(
+    ArrivedBase base, {
+    required Asked asked,
+    ResultPoint? at,
+  }) => BaseArrived(
+    base,
+    session: queue.session.number,
+    point: at ?? tick(),
+    requestedAt: asked.requestedAt,
+  );
+
+  ResultRefused readRefused(
+    String? page,
+    String problem, {
+    required Asked asked,
+  }) => ResultRefused(
     page: page,
     problem: problem,
     session: queue.session.number,
     point: tick(),
-    requestedAt: queue.session.sequence,
+    requestedAt: asked.requestedAt,
   );
 
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
-    arrive(headerReadOf(server));
+    arrive(headerReadOf(server), asked: askedNow);
     for (final page in pages ?? server.pages.map((page) => page.publicId)) {
-      arrive(pageReadOf(server, page));
+      arrive(pageReadOf(server, page), asked: askedNow);
     }
   }
 

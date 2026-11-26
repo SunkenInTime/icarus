@@ -673,8 +673,8 @@ void main() {
         ),
       ).queue;
       expect(client.view('blind').sendable, isFalse);
-      client.arrive(headerReadOf(base));
-      client.arrive(pageReadOf(base, 'page-b'));
+      client.arrive(headerReadOf(base), asked: const NotCausal());
+      client.arrive(pageReadOf(base, 'page-b'), asked: const NotCausal());
       expect(
         stateOf(client, 'blind'),
         const NeedsUser(DeleteHeld(HeldDeleteCause.contentNeverRead)),
@@ -830,10 +830,7 @@ void main() {
                 RetryAfter(retryTimeAfter(at, n), failedAt: at),
               ),
         );
-        expect(
-          Tally.of(client.queue, at).waiting,
-          {Underway.unsent: 1},
-        );
+        expect(Tally.of(client.queue, at).waiting, {Underway.unsent: 1});
       }
       final last = client.claim(['move']);
       client.must(
@@ -844,10 +841,7 @@ void main() {
           point: tick(),
         ),
       );
-      expect(
-        stateOf(client, 'move'),
-        const NeedsUser(RetriesExhausted()),
-      );
+      expect(stateOf(client, 'move'), const NeedsUser(RetriesExhausted()));
       final stored = attemptFromText(
         last,
         jsonEncode(attemptToJson(client.queue.attempts[last]!)),
@@ -985,7 +979,7 @@ void main() {
 
     test('an empty queue on a deleted strategy is not plain all saved', () {
       final client = online();
-      client.arrive(const StrategyGone());
+      client.arrive(const StrategyGone(), asked: const NotCausal());
       expect(
         syncStateOf(
           OwnedBy(testAccount),
@@ -1084,7 +1078,7 @@ void main() {
       final client = online();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.arrive(const StrategyGone());
+      client.arrive(const StrategyGone(), asked: const NotCausal());
       client.must(
         OpAnswered(
           attempt,
@@ -1099,7 +1093,7 @@ void main() {
     test('a strategy gone from the server keeps every entry', () {
       final client = online();
       client.edit(movePatch('move'));
-      client.arrive(const StrategyGone());
+      client.arrive(const StrategyGone(), asked: const NotCausal());
       expect(standingOf(client.queue), Standing.deletedOnServer);
       expect(client.queue.entry('move'), isNotNull);
     });
@@ -1441,6 +1435,7 @@ void main() {
       client.must(reconnected());
       client.arrive(
         headerReadOf(withOp(initialRows(), movePatch('t', rotation: 90))),
+        asked: const NotCausal(),
       );
       expect(client.view('drop').holds, [
         awaitingResult(const PageResult('page-a')),
@@ -1781,8 +1776,8 @@ void main() {
         awaitingResult(const PageResult('page-b')),
       ]);
       final gone = withOp(server.rows, pageDelete('t', 'page-b'));
-      client.arrive(headerReadOf(gone));
-      client.arrive(const PageGone('page-b'));
+      client.arrive(headerReadOf(gone), asked: const NotCausal());
+      client.arrive(const PageGone('page-b'), asked: const NotCausal());
       expect(client.view('drop').sendable, isTrue);
     });
   });
@@ -1966,10 +1961,11 @@ void main() {
       client.edit(pageDelete('drop', 'page-b'));
       client.must(const ConnectionLost());
       client.must(reconnected());
-      client.arrive(const PageGone('page-b'));
+      client.arrive(const PageGone('page-b'), asked: const NotCausal());
       expect(client.view('drop').sendable, isFalse);
       client.arrive(
         headerReadOf(withOp(server.rows, pageDelete('t', 'page-b'))),
+        asked: const NotCausal(),
       );
       expect(client.view('drop').sendable, isTrue);
     });
@@ -2234,7 +2230,10 @@ void main() {
         ),
       );
       sendAndAnswer(client, server, ['move']);
-      client.arrive(pageReadOf(server.rows, 'page-a'));
+      client.arrive(
+        pageReadOf(server.rows, 'page-a'),
+        asked: const NotCausal(),
+      );
       final base = StrategyRowSet(
         strategy: initialRows().strategy,
         pages: initialRows().pages,
@@ -2266,7 +2265,7 @@ void main() {
       );
       client.edit(onVisible(client.visible, movePatch('whole', x: 70)));
       expect(client.view('whole').sendable, isFalse);
-      client.arrive(const PageGone('page-a'));
+      client.arrive(const PageGone('page-a'), asked: const NotCausal());
       expect(stateOf(client, 'whole'), const NeedsUser(RowPageGone()));
     });
 
@@ -2291,7 +2290,7 @@ void main() {
         server.rows,
         pageDelete('t', 'page-c', expected: server.rows.strategy.revision),
       );
-      client.arrive(headerReadOf(server.rows));
+      client.arrive(headerReadOf(server.rows), asked: const NotCausal());
       expect(stateOf(client, 'rename'), const NeedsUser(RowPageGone()));
     });
 
@@ -2433,8 +2432,8 @@ void main() {
           ),
         ),
       );
-      client.arrive(const PageGone('page-a'));
-      client.arrive(headerReadOf(server.rows));
+      client.arrive(const PageGone('page-a'), asked: const NotCausal());
+      client.arrive(headerReadOf(server.rows), asked: const NotCausal());
       expect(stateOf(client, 'rename'), isNot(const NeedsUser(RowPageGone())));
     });
 
@@ -2468,7 +2467,10 @@ void main() {
         final answer = server.apply(clientId, client.lastSent().single);
         if (answered) client.must(OpAnswered(attempt, answer, point: tick()));
         client.base = withoutE1(client.base);
-        client.arrive(pageReadOf(server.rows, 'page-a'));
+        client.arrive(
+          pageReadOf(server.rows, 'page-a'),
+          asked: const NotCausal(),
+        );
         final drawn = client.visible.element('e1');
         expect(drawn?.pagePublicId, 'page-b');
         expect(
@@ -2492,7 +2494,10 @@ void main() {
       client.claim(['move']);
       server.apply(clientId, client.lastSent().single);
       client.base = withoutE1(client.base);
-      client.arrive(pageReadOf(server.rows, 'page-a'));
+      client.arrive(
+        pageReadOf(server.rows, 'page-a'),
+        asked: const NotCausal(),
+      );
       expect(
         (client.visible.element('e1')! as LiveElement).revision,
         (server.rows.element('e1')! as LiveElement).revision,
@@ -2505,7 +2510,10 @@ void main() {
       final client = online();
       client.edit(pageAdd('add', 'page-c'));
       sendAndAnswer(client, server, ['add']);
-      client.arrive(pageReadOf(server.rows, 'page-c'));
+      client.arrive(
+        pageReadOf(server.rows, 'page-c'),
+        asked: const NotCausal(),
+      );
       client.edit(
         onVisible(client.visible, pageDelete('del', 'page-c', expected: 2)),
       );
@@ -2513,7 +2521,10 @@ void main() {
         server.rows,
         elementAdd('t', elementId: 'theirs', pageId: 'page-c'),
       );
-      client.arrive(pageReadOf(server.rows, 'page-c'));
+      client.arrive(
+        pageReadOf(server.rows, 'page-c'),
+        asked: const NotCausal(),
+      );
       expect(client.view('del').sendable, isFalse);
     });
   });
@@ -2747,10 +2758,16 @@ void main() {
               if (client.base.element('e1')?.pagePublicId == 'page-a') {
                 client.base = withoutE1(client.base);
               }
-              client.arrive(pageReadOf(server.rows, 'page-a'));
+              client.arrive(
+                pageReadOf(server.rows, 'page-a'),
+                asked: const NotCausal(),
+              );
             case 'destination':
               client.base = withoutE1(client.base).withRows([moved]);
-              client.arrive(pageReadOf(server.rows, 'page-b'));
+              client.arrive(
+                pageReadOf(server.rows, 'page-b'),
+                asked: const NotCausal(),
+              );
             case _:
               client.must(OpAnswered(attempt, answer, point: tick()));
           }
@@ -2777,9 +2794,10 @@ void main() {
       String page,
       bool listFirst,
     ) {
-      if (listFirst) client.arrive(headerReadOf(server.rows));
-      client.arrive(pageReadOf(server.rows, page));
-      if (!listFirst) client.arrive(headerReadOf(server.rows));
+      const asked = NotCausal();
+      if (listFirst) client.arrive(headerReadOf(server.rows), asked: asked);
+      client.arrive(pageReadOf(server.rows, page), asked: asked);
+      if (!listFirst) client.arrive(headerReadOf(server.rows), asked: asked);
     }
 
     test('a delete with nothing ahead of it on a page read this session goes '
@@ -2812,9 +2830,12 @@ void main() {
         );
         client.must(reconnected());
         if (listFirst) {
-          client.arrive(headerReadOf(server.rows));
+          client.arrive(headerReadOf(server.rows), asked: const NotCausal());
         } else {
-          client.arrive(pageReadOf(server.rows, 'page-b'));
+          client.arrive(
+            pageReadOf(server.rows, 'page-b'),
+            asked: const NotCausal(),
+          );
         }
         expect(client.view('del').sendable, isFalse);
         bothResults(client, server, 'page-b', listFirst);
@@ -2864,7 +2885,10 @@ void main() {
             client.view('del').holds,
             contains(awaitingResult(const PageResult('page-c'))),
           );
-          client.arrive(pageReadOf(server.rows, 'page-c'));
+          client.arrive(
+            pageReadOf(server.rows, 'page-c'),
+            asked: const NotCausal(),
+          );
         }
         expect(stateOf(client, 'del'), isA<NeedsUser>());
       });
@@ -2936,7 +2960,10 @@ void main() {
         server.rows,
         elementAdd('t', elementId: 'theirs', pageId: 'page-a'),
       );
-      client.arrive(pageReadOf(server.rows, 'page-b'));
+      client.arrive(
+        pageReadOf(server.rows, 'page-b'),
+        asked: const NotCausal(),
+      );
       client.must(OpAnswered(attempt, answer, point: tick()));
       expect(client.view('del').sendable, isFalse);
       client.read(server.rows);
@@ -2994,11 +3021,11 @@ void main() {
         client.edit(pageDelete('del', 'page-b'));
         final gone = withOp(initialRows(), pageDelete('t', 'page-b'));
         if (listFirst) {
-          client.arrive(headerReadOf(initialRows()));
-          client.arrive(const PageGone('page-b'));
+          client.arrive(headerReadOf(initialRows()), asked: const NotCausal());
+          client.arrive(const PageGone('page-b'), asked: const NotCausal());
         } else {
-          client.arrive(const PageGone('page-b'));
-          client.arrive(headerReadOf(initialRows()));
+          client.arrive(const PageGone('page-b'), asked: const NotCausal());
+          client.arrive(headerReadOf(initialRows()), asked: const NotCausal());
         }
         expect(gone.page('page-b'), isA<TrashedPage>());
         expect(stateOf(client, 'del'), isNot(isA<NeedsUser>()));
@@ -3030,7 +3057,7 @@ void main() {
         server.rows,
         pageDelete('t', 'page-b', expected: server.rows.strategy.revision),
       );
-      client.arrive(headerReadOf(server.rows));
+      client.arrive(headerReadOf(server.rows), asked: const NotCausal());
       expect(client.view('del').sendable, isTrue);
     });
   });

@@ -62,7 +62,10 @@ void main() {
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
       client.must(TransportFailed(attempt, TransportFailure.network, at: now));
-      client.arrive(pageReadOf(withE1BornAgain(), 'page-a'));
+      client.arrive(
+        pageReadOf(withE1BornAgain(), 'page-a'),
+        asked: const NotCausal(),
+      );
       client.clock = now.add(const Duration(minutes: 5));
       client.claim(['move']);
       expect(lastBatch(client).lives, {'move': fixtureLife});
@@ -150,7 +153,10 @@ void main() {
       final client = Client();
       client.edit(movePatch('move', x: 40));
       client.base = withE1BornAgain(x: 7);
-      client.arrive(pageReadOf(client.base, 'page-a'));
+      client.arrive(
+        pageReadOf(client.base, 'page-a'),
+        asked: const NotCausal(),
+      );
       expect(
         client.visible.element('e1')!.toJson(),
         e1BornAgain(x: 7).toJson(),
@@ -535,7 +541,13 @@ void main() {
     test('a refused page is counted as unreadable work until a page the store '
         'keeps arrives', () {
       final client = Client();
-      client.must(client.readRefused('page-a', 'ResultWithoutLife(e1)'));
+      client.must(
+        client.readRefused(
+          'page-a',
+          'ResultWithoutLife(e1)',
+          asked: const NotCausal(),
+        ),
+      );
       final tally = Tally.of(client.queue, now);
       expect(tally.readsRefused, 1);
       expect(tally.unreadable, 0);
@@ -555,7 +567,10 @@ void main() {
         ),
       );
       expect(owedReads(client.queue), {const PageResult('page-a')});
-      client.arrive(pageReadOf(initialRows(), 'page-a'));
+      client.arrive(
+        pageReadOf(initialRows(), 'page-a'),
+        asked: const NotCausal(),
+      );
       expect(Tally.of(client.queue, now).readsRefused, 0);
       expect(owedReads(client.queue), isEmpty);
     });
@@ -697,17 +712,23 @@ void main() {
           Face.awaitingResult,
         ),
       );
-      client.arrive(pageReadOf(initialRows(), pages.first));
+      client.arrive(
+        pageReadOf(initialRows(), pages.first),
+        asked: const NotCausal(),
+      );
       expect(Tally.of(client.queue, now).notYetRead, pages.length - 1);
       for (final page in pages.skip(1)) {
-        client.arrive(pageReadOf(initialRows(), page));
+        client.arrive(
+          pageReadOf(initialRows(), page),
+          asked: const NotCausal(),
+        );
       }
       expect(Tally.of(client.queue, now).notYetRead, 0);
     });
 
     test('an answer that the strategy is gone pays the debt', () {
       final client = discardedTheLastRefusedOp();
-      client.arrive(const StrategyGone());
+      client.arrive(const StrategyGone(), asked: client.askedNow);
       expect(owedReads(client.queue), isEmpty);
       expect(Tally.of(client.queue, now).readsOwed, 0);
     });
@@ -736,7 +757,10 @@ void main() {
         contains(awaitingResult(const PageResult('page-a'))),
       );
       expect(Tally.of(client.queue, now).readsOwed, 1);
-      client.arrive(pageReadOf(initialRows(), 'page-a'));
+      client.arrive(
+        pageReadOf(initialRows(), 'page-a'),
+        asked: client.askedNow,
+      );
       expect(client.queue.shown.pageRead('page-a'), const ReadThisSession());
       expect(owedReads(client.queue), isEmpty);
     });
@@ -905,7 +929,10 @@ void main() {
       client.edit(movePatch('first', x: 40));
       final attempt = client.claim(['first']);
       client.base = withE1BornAgain(x: 7);
-      client.arrive(pageReadOf(client.base, 'page-a'));
+      client.arrive(
+        pageReadOf(client.base, 'page-a'),
+        asked: const NotCausal(),
+      );
       client.must(
         OpAnswered(
           attempt,
@@ -927,7 +954,10 @@ void main() {
       final position = FieldMerge(fields: ['position']);
       client.edit(movePatch('first', x: 40, merge: position));
       client.base = withE1BornAgain(x: 7);
-      client.arrive(pageReadOf(client.base, 'page-a'));
+      client.arrive(
+        pageReadOf(client.base, 'page-a'),
+        asked: const NotCausal(),
+      );
       client.edit(movePatch('second', x: 90, merge: position));
       expect(
         [for (final entry in client.queue.entries) entry.id],

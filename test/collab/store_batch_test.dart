@@ -9,11 +9,11 @@ import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-const _stamp =
-    ResultStamp(client: 2, connection: 3, snapshot: 41, serverTime: 4100);
+const _stamp = ResultStamp(
+    client: 2, connection: 3, snapshot: 41, serverTime: 1795000000123456789);
 
-const _point =
-    ResultPoint(client: 2, connection: 3, snapshot: 41, serverTime: 4100);
+const _point = ResultPoint(
+    client: 2, connection: 3, snapshot: 41, serverTime: 1795000000123456789);
 
 final class _Recording implements StampedConvexTransport {
   final mutations = <(String, Map<String, Object?>)>[];

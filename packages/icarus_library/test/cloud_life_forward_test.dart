@@ -58,7 +58,10 @@ void main() {
       );
       expect(late, isA<NotApplicable>());
       expect(client.queue, same(before));
-      client.arrive(headerReadOf(replaced(initialRows())));
+      client.arrive(
+        headerReadOf(replaced(initialRows())),
+        asked: const NotCausal(),
+      );
       expect(client.queue.strategy.setAside.count, 1);
       expect([for (final entry in client.queue.entries) entry.id], ['new']);
     });
@@ -72,7 +75,9 @@ void main() {
       client.must(
         BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
       );
-      client.must(client.readRefused(null, 'lifeless'));
+      client.must(
+        client.readRefused(null, 'lifeless', asked: const NotCausal()),
+      );
       final late = client.step(
         BaseArrived(
           headerReadOf(replaced(initialRows(), life: strategyLife - 1000)),
@@ -85,7 +90,10 @@ void main() {
       expect(client.queue.shown.strategy?.life, strategyLife);
       expect(isDebt(client.queue.shown.list), isTrue);
       expect(client.view('move').sendable, isFalse);
-      client.arrive(headerReadOf(replaced(initialRows())));
+      client.arrive(
+        headerReadOf(replaced(initialRows())),
+        asked: client.askedNow,
+      );
       expect(setAsideIds(client.queue), ['move']);
     });
 
@@ -93,7 +101,7 @@ void main() {
         'edit of the replacement can be sent', () {
       final client = Client();
       client.edit(movePatch('old'));
-      client.arrive(const StrategyGone());
+      client.arrive(const StrategyGone(), asked: const NotCausal());
       expect(standingOf(client.queue), Standing.deletedOnServer);
       client.read(replaced(initialRows()));
       expect(standingOf(client.queue), Standing.good);
@@ -133,7 +141,10 @@ void main() {
         expect(notApplicable(between), isA<OlderResult>());
         expect(client.queue.shown.strategy?.life, strategyLife);
         expect(isDebt(client.queue.shown.list), isTrue);
-        client.arrive(headerReadOf(replaced(initialRows(), life: thirdLife)));
+        client.arrive(
+          headerReadOf(replaced(initialRows(), life: thirdLife)),
+          asked: const NotCausal(),
+        );
         expect(client.queue.shown.strategy?.life, thirdLife);
         expect(isDebt(client.queue.shown.list), isFalse);
         expect(setAsideIds(client.queue), ['move']);
@@ -164,7 +175,7 @@ void main() {
       );
       expect(notApplicable(other), isA<OlderResult>());
       expect(client.queue.shown.strategy?.life, yearAhead);
-      client.arrive(headerReadOf(initialRows()));
+      client.arrive(headerReadOf(initialRows()), asked: const NotCausal());
       expect(client.queue.shown.strategy?.life, strategyLife);
       expect(setAsideIds(client.queue), ['move']);
     });
@@ -181,7 +192,9 @@ void main() {
           point: tick(),
         ),
       );
-      client.must(client.readRefused(null, 'lifeless'));
+      client.must(
+        client.readRefused(null, 'lifeless', asked: const NotCausal()),
+      );
       expect(
         client.queue.shown.list,
         isA<ReadRefused>().having(
@@ -205,7 +218,7 @@ void main() {
       client.must(
         BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
       );
-      client.arrive(headerReadOf(initialRows()));
+      client.arrive(headerReadOf(initialRows()), asked: client.askedNow);
       expect(client.queue.shown.strategy?.life, strategyLife);
       expect(client.queue.entries, isEmpty);
       final generation =
@@ -297,6 +310,7 @@ void main() {
       final started = askRead(client.queue);
       client.arrive(
         headerReadOf(replacedWithNewPage(initialRows(), laterLife)),
+        asked: const NotCausal(),
       );
       final step = client.step(
         BaseArrived(
@@ -342,7 +356,10 @@ void main() {
         isA<OlderResult>(),
       );
       expect(isDebt(client.queue.shown.pageRead('page-a')), isTrue);
-      client.arrive(pageReadOf(initialRows(), 'page-a'));
+      client.arrive(
+        pageReadOf(initialRows(), 'page-a'),
+        asked: client.askedNow,
+      );
       expect(isDebt(client.queue.shown.pageRead('page-a')), isFalse);
     });
   });
@@ -424,7 +441,10 @@ void main() {
       () {
         final client = withPageOwed();
         final before = askRead(client.queue);
-        client.arrive(headerReadOf(replaced(initialRows())));
+        client.arrive(
+          headerReadOf(replaced(initialRows())),
+          asked: const NotCausal(),
+        );
         final step = client.step(
           BaseArrived(
             const PageGone('page-a'),

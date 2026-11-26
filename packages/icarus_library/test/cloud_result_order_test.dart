@@ -48,9 +48,16 @@ void main() {
         'taken is dropped', () {
       final client = Client();
       final earlier = tick();
-      client.arrive(pageReadOf(initialRows(), 'page-a'));
+      client.arrive(
+        pageReadOf(initialRows(), 'page-a'),
+        asked: const NotCausal(),
+      );
       final late = client.step(
-        client.arrival(const PageGone('page-a'), at: earlier),
+        client.arrival(
+          const PageGone('page-a'),
+          at: earlier,
+          asked: const NotCausal(),
+        ),
       );
       expect(notApplicable(late), isA<OlderResult>());
       expect(client.queue.shown.pages, contains('page-a'));
@@ -62,10 +69,15 @@ void main() {
       final earlier = tick();
       client.arrive(
         pageReadOf(withOp(initialRows(), movePatch('t', x: 9)), 'page-a'),
+        asked: const NotCausal(),
       );
       final shown = client.queue.shown;
       final late = client.step(
-        client.arrival(pageReadOf(initialRows(), 'page-a'), at: earlier),
+        client.arrival(
+          pageReadOf(initialRows(), 'page-a'),
+          at: earlier,
+          asked: const NotCausal(),
+        ),
       );
       expect(notApplicable(late), isA<OlderResult>());
       expect(client.queue.shown.content, shown.content);
@@ -77,20 +89,27 @@ void main() {
         'and come back', () {
       final client = Client();
       final inFirstStay = tick();
-      client.arrive(headerReadOf(replaced(initialRows())));
+      client.arrive(
+        headerReadOf(replaced(initialRows())),
+        asked: const NotCausal(),
+      );
       expect(client.queue.shown.strategy?.life, laterLife);
       client.edit(movePatch('move'));
-      client.arrive(pageReadOf(replaced(initialRows()), 'page-a'));
+      client.arrive(
+        pageReadOf(replaced(initialRows()), 'page-a'),
+        asked: const NotCausal(),
+      );
       final attempt = client.claim(['move']);
       client.must(
         BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
       );
-      client.arrive(headerReadOf(initialRows()));
+      client.arrive(headerReadOf(initialRows()), asked: client.askedNow);
       expect(client.queue.shown.strategy?.life, strategyLife);
       final late = client.step(
         client.arrival(
           pageReadOf(withOp(initialRows(), movePatch('t', x: 9)), 'page-a'),
           at: inFirstStay,
+          asked: const NotCausal(),
         ),
       );
       expect(notApplicable(late), isA<StartedInAnotherLife>());
@@ -101,9 +120,16 @@ void main() {
         'shows the adopted life', () {
       final client = Client();
       final before = tick();
-      client.arrive(headerReadOf(replaced(initialRows())));
+      client.arrive(
+        headerReadOf(replaced(initialRows())),
+        asked: const NotCausal(),
+      );
       final late = client.step(
-        client.arrival(headerReadOf(replaced(initialRows())), at: before),
+        client.arrival(
+          headerReadOf(replaced(initialRows())),
+          at: before,
+          asked: const NotCausal(),
+        ),
       );
       expect(notApplicable(late), isA<StartedInAnotherLife>());
     });
@@ -132,7 +158,7 @@ void main() {
           isA<FromAnEndedSession>(),
         ),
       );
-      expect(storage.contents.keys, before.keys);
+      expect(storage.contents, before);
     });
   });
 
@@ -148,6 +174,7 @@ void main() {
         client.arrival(
           pageReadOf(withOp(initialRows(), movePatch('t', x: 9)), 'page-a'),
           at: onNextConnection(),
+          asked: const NotCausal(),
         ),
       );
       expect(step, isA<Stepped>().having((it) => it.tookResult, 'took', true));
@@ -155,7 +182,11 @@ void main() {
       expect(client.queue.session.number, session + 1);
       expect(client.queue.session.connected, isTrue);
       final late = client.step(
-        client.arrival(headerReadOf(initialRows()), at: onOld),
+        client.arrival(
+          headerReadOf(initialRows()),
+          at: onOld,
+          asked: const NotCausal(),
+        ),
       );
       expect(notApplicable(late), isA<FromAnEndedSession>());
     });
@@ -165,7 +196,11 @@ void main() {
       final client = Client();
       client.must(reconnected());
       final next = onNextConnection();
-      client.arrive(headerReadOf(initialRows()), at: next);
+      client.arrive(
+        headerReadOf(initialRows()),
+        at: next,
+        asked: const NotCausal(),
+      );
       final session = client.queue.session.number;
       client.must(ConnectionReturned(next.generation));
       expect(client.queue.session.number, session);
@@ -246,11 +281,14 @@ void main() {
       final early = client.step(
         client.arrival(
           headerReadOf(replaced(initialRows())),
-          requestedAt: requestedBefore,
+          asked: AskedAtStep(requestedBefore),
         ),
       );
       expect(notApplicable(early), isA<OlderResult>());
-      client.arrive(headerReadOf(replaced(initialRows())));
+      client.arrive(
+        headerReadOf(replaced(initialRows())),
+        asked: client.askedNow,
+      );
       expect(client.queue.shown.strategy?.life, laterLife);
       expect(setAsideIds(client.queue), ['move']);
     });
@@ -272,10 +310,34 @@ void main() {
       client.must(
         client.arrival(
           headerReadOf(replaced(initialRows())),
-          requestedAt: requestedBefore,
+          asked: AskedAtStep(requestedBefore),
         ),
       );
       expect(client.queue.shown.strategy?.life, laterLife);
+    });
+
+    test('a later list that does not say when it was asked for pays nothing, '
+        'and the same list asked for after the refusal pays it', () {
+      final client = Client();
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
+      final unasked = client.step(
+        client.arrival(
+          headerReadOf(replaced(initialRows())),
+          asked: const NotCausal(),
+        ),
+      );
+      expect(notApplicable(unasked), isA<OlderResult>());
+      expect(setAsideIds(client.queue), isEmpty);
+      client.arrive(
+        headerReadOf(replaced(initialRows())),
+        asked: client.askedNow,
+      );
+      expect(client.queue.shown.strategy?.life, laterLife);
+      expect(setAsideIds(client.queue), ['move']);
     });
 
     test('a list from a later connection pays it', () {
@@ -289,7 +351,7 @@ void main() {
         client.arrival(
           headerReadOf(replaced(initialRows())),
           at: onNextConnection(),
-          requestedAt: -1,
+          asked: const NotCausal(),
         ),
       );
       expect(client.queue.shown.strategy?.life, laterLife);
@@ -315,7 +377,9 @@ void main() {
         ),
       );
       expect((client.queue.shown.list as ReadRefused).since, owed);
-      client.must(client.readRefused(null, 'unreadable'));
+      client.must(
+        client.readRefused(null, 'unreadable', asked: client.askedNow),
+      );
       expect(
         (client.queue.shown.list as ReadRefused).since,
         isA<ResultAtOrAfter>(),
@@ -342,11 +406,13 @@ void main() {
       client.arrive(
         pageReadOf(initialRows(), 'page-a'),
         at: at(answered.snapshot + 1, answered.serverTime! - 1),
+        asked: const NotCausal(),
       );
       expect(client.queue.landed.single.shownWithout, isFalse);
       client.arrive(
         pageReadOf(initialRows(), 'page-a'),
         at: at(answered.snapshot + 2, answered.serverTime! + 1),
+        asked: const NotCausal(),
       );
       expect(client.queue.landed.single.shownWithout, isTrue);
     });
@@ -368,13 +434,21 @@ void main() {
         ),
       );
       expect(client.queue.shown.fresh.pageFreshFor('page-a'), isFalse);
-      client.arrive(headerReadOf(initialRows()), at: stale);
-      client.arrive(pageReadOf(initialRows(), 'page-a'), at: stale);
+      client.arrive(
+        headerReadOf(initialRows()),
+        at: stale,
+        asked: const NotCausal(),
+      );
+      client.arrive(
+        pageReadOf(initialRows(), 'page-a'),
+        at: stale,
+        asked: const NotCausal(),
+      );
       expect(client.queue.shown.fresh.pageFreshFor('page-a'), isFalse);
       expect(client.queue.shown.fresh.listFreshFor('page-a'), isFalse);
       final after = withOp(initialRows(), movePatch('move'));
-      client.arrive(headerReadOf(after));
-      client.arrive(pageReadOf(after, 'page-a'));
+      client.arrive(headerReadOf(after), asked: const NotCausal());
+      client.arrive(pageReadOf(after, 'page-a'), asked: const NotCausal());
       expect(client.queue.shown.fresh.freshFor('page-a'), isTrue);
     });
   });
