@@ -381,10 +381,16 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
       if (_handedOn) return;
-      if (!widget.asked
-          .isNow(ref.read(strategyProvider.notifier).askedByTheUserNow())) {
-        _leaveAfterFailedLoad();
-        return;
+      final strategies = ref.read(strategyProvider.notifier);
+      switch (strategies.closeAfterFailedOpen(asked: widget.asked)) {
+        case Changed():
+          break;
+        case GaveWay()
+            when !widget.asked.isNow(strategies.askedByTheUserNow()):
+          _leaveAfterFailedLoad();
+          return;
+        case GaveWay():
+          break;
       }
       final notKept = ref.read(remoteEditorSnapshotProvider).error
           is StrategyNotKeptOffline;

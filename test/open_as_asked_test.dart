@@ -90,8 +90,8 @@ void main() {
 
     expect(
         strategies.claimForAnEditor(strategies.askedByTheUserNow()), isNotNull);
+    expect(container.read(strategyOpeningProvider), isNull);
     opens.settle(replaced);
-
     expect(container.read(strategyOpeningProvider), isNull);
   });
 

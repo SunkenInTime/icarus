@@ -107,6 +107,7 @@ const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
 final class _HeldPages extends StrategyPageSessionNotifier {
   final held = <String, Completer<void>>{};
+  final fails = <String>{};
 
   @override
   Future<void> initializeForStrategy({
@@ -117,6 +118,9 @@ final class _HeldPages extends StrategyPageSessionNotifier {
     OpenAttempt? attempt,
   }) async {
     if (held[strategyId] case final hold?) await hold.future;
+    if (fails.contains(strategyId)) {
+      throw StateError('The pages of $strategyId could not be read.');
+    }
     return super.initializeForStrategy(
       strategyId: strategyId,
       source: source,
@@ -713,6 +717,55 @@ void main() {
     expect(calls, ['allow close', 'prevent close', 'close']);
     expect(container.read(agentProvider).map((agent) => agent.id),
         contains('placed-while-closing'));
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'an editor for a local strategy that is not stored leaves and says it '
+      'could not load', (tester) async {
+    await pumpLibraryWithEditors(tester, container);
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'never-stored',
+        initialStrategyName: 'never-stored',
+      ),
+      isA<Pushed>(),
+    );
+    await settleWithDisk(tester);
+
+    expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
+    expect(find.text('Could not load strategy.'), findsOneWidget);
+    expect(container.read(strategyProvider).strategyId, isNull);
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a cloud editor whose open fails after it put the strategy on screen '
+      'closes it, leaves and says it could not load', (tester) async {
+    container.read(_cloudReady.notifier).state = true;
+    pages.fails.add('broken-cloud');
+    addTearDown(() {
+      pages.fails.clear();
+      container.read(_cloudReady.notifier).state = null;
+    });
+    await pumpLibraryWithEditors(tester, container);
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'broken-cloud',
+        initialStrategyName: 'broken-cloud',
+        initialStrategySource: StrategySource.cloud,
+      ),
+      isA<Pushed>(),
+    );
+    await settleWithDisk(tester);
+
+    expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
+    expect(find.text('Could not load strategy.'), findsOneWidget);
+    expect(container.read(strategyProvider).strategyId, isNull);
     await leaveEditors(tester, container);
   });
 }
