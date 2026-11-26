@@ -10,6 +10,7 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
@@ -292,6 +293,26 @@ void main() {
     expect(container.read(strategyProvider).strategyId, 'active-strategy');
   });
 
+  testWidgets(
+      'a cloud open that has not yet put its strategy on screen is closed '
+      'before signing out', (tester) async {
+    final opening = _OpeningACloudStrategy();
+    final container = _container(
+      strategy: () => opening,
+      closesTheRealEditor: true,
+    );
+    addTearDown(container.dispose);
+    container.read(strategyProvider);
+    container
+        .read(strategyOpeningProvider.notifier)
+        .begin('still-opening', source: StrategySource.cloud);
+
+    await container.read(cloudEditorCloseProvider)();
+
+    expect(opening.closes, 1);
+    expect(container.read(strategyOpeningProvider), isNull);
+  });
+
   testWidgets('raw sign-out failure does not report success or navigate',
       (tester) async {
     var editorCloses = 0;
@@ -465,6 +486,19 @@ class _ActiveCloudStrategy extends StrategyProvider {
         storageDirectory: null,
         isOpen: true,
       );
+}
+
+class _OpeningACloudStrategy extends StrategyProvider {
+  var closes = 0;
+
+  @override
+  StrategyState build() => const StrategyState();
+
+  @override
+  CloseChange closeStrategy({required OpenSeen asked}) {
+    closes += 1;
+    return super.closeStrategy(asked: asked);
+  }
 }
 
 class _ClosesNothing extends _ActiveCloudStrategy {

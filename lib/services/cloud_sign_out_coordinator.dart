@@ -7,6 +7,7 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -39,7 +40,8 @@ final cloudSignOutPreparationProvider = Provider<CloudSignOutPreparation>(
 
 final cloudEditorCloseProvider = Provider<CloudEditorClose>(
   (ref) => () async {
-    if (ref.read(strategyProvider).source == StrategySource.cloud) {
+    if (ref.read(strategyProvider).source == StrategySource.cloud ||
+        ref.read(strategyOpeningProvider)?.source == StrategySource.cloud) {
       final strategies = ref.read(strategyProvider.notifier);
       final signingOut = strategies.askedByTheUserNow();
       switch (strategies.closeStrategy(asked: signingOut)) {
