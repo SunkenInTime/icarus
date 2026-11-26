@@ -24,11 +24,11 @@ final class EventFact extends Fact {
 }
 
 final class ReadFact extends Fact {
-  ReadFact(this.base, super.label, {super.phase});
+  ReadFact(this.base, super.label, {super.phase}) : point = tick();
 
   final ArrivedBase base;
   late final int session;
-  late final ResultPoint point;
+  final ResultPoint point;
   late final int requestedAt;
 }
 
@@ -330,7 +330,6 @@ final class Scenario {
         fact.session = fact.phase == 2
             ? client.queue.nextSession
             : client.queue.session.number;
-        fact.point = tick();
         fact.requestedAt = fact.phase == 2 ? 0 : client.queue.session.sequence;
       }
     }
