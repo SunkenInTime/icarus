@@ -402,7 +402,6 @@ final class StoreModel {
   }) async {
     await reading(() => store.readStrategy(strategyId));
     final before = listOf(store).strategies.single;
-    final baseBefore = await baseNow();
     final mine = await visible();
     final reported = <String, PageTally>{};
     for (final page in mine.pages) {
@@ -418,11 +417,8 @@ final class StoreModel {
       );
     }
     final after = listOf(store).strategies.single;
-    final setAsideByTheReads =
-        baseBefore is! BaseRereading && await baseNow() is BaseRereading;
     for (final (moment, summary) in [
-      if (beforeReads && !setAsideByTheReads)
-        ('before the pages were read', before),
+      if (beforeReads) ('before the pages were read', before),
       ('after the pages were read', after),
     ]) {
       for (final MapEntry(key: page, value: tally) in reported.entries) {
@@ -465,63 +461,48 @@ final class StoreModel {
     count('unloads that changed nothing');
   }
 
-  bool damageSeeded = false;
-
-  Future<BaseState?> baseNow() async =>
-      switch (await reading(() => store.readStrategy(strategyId))) {
-        Found(value: StrategyContent(sync: CloudStrategy(:final queue))) =>
-          queue.strategy.base,
-        _ => null,
-      };
-
-  Future<void> baseFollowsSeeds(String label) async {
-    final base = await baseNow();
-    if (base == null) return;
-    switch (base) {
-      case BaseAgrees():
-        break;
-      case BaseRereading() when damageSeeded:
-        damageSeeded = false;
-        count('base read again after seeded damage');
-      case BaseRereading() when lastBase is BaseRereading:
-        break;
-      case _:
-        throw StateError(
-          'after $label the base is $base, and nothing seeded it',
-        );
-    }
-    if (base != lastBase) log.add('the base: $base');
-    lastBase = base;
-  }
-
-  BaseState lastBase = const BaseAgrees();
-  final writtenWhileReadAgain = <String>{};
-
   Future<void> damagedRowsArrive() async {
-    if (lastBase is! BaseAgrees) return;
     final (pages, _) = await livePagesAndElements();
     if (pages.isEmpty) return;
     faults = false;
     await store.close();
-    final contents = editable(storage.contents);
+    final area = strategyArea(strategyId);
     final page = pick(pages);
-    final id = fresh('damaged');
-    contents[strategyArea(strategyId)]![elementName(page, id)] =
-        '{"broken":true}';
-    contents[strategyArea(
-          strategyId,
-        )]!['content/${digestOf(page)}/z/${digestOf(id)}'] =
+    final contents = editable(storage.contents);
+    contents[area]!['content/${digestOf(page)}/z/${digestOf(fresh('newer'))}'] =
         '{"kind":"from a newer build"}';
+    final undamaged = MemoryStorage(editable(contents));
+    contents[area]![elementName(page, fresh('damaged'))] = '{"broken":true}';
     storage = MemoryStorage(contents);
-    damageSeeded = true;
     await open();
     await restartSession();
-    await listMatchesPages(
-      'a damaged row and an unknown kind arrived',
-      beforeReads: false,
-    );
+    final before = commits;
+    final read = await store.readPage(strategyId, page);
+    if (read case InUnreadableStrategy(
+      listing: UnreadableStrategyListing(refused: StoredRowsDisagree()),
+    )) {
+      count('damaged rows that refused the strategy');
+    } else {
+      throw StateError('a damaged row on $page did not refuse it: $read');
+    }
+    if (commits != before) {
+      throw StateError('refusing the strategy made a commit');
+    }
+    if (await store.record(testAccount, strategyId, const [
+          ConnectionReturned(),
+        ])
+        case Refused(reason: StoredRowsDisagree())) {
+      count('events refused after a refusal');
+    } else {
+      throw StateError('an event was taken by a refused strategy');
+    }
+    await store.close();
+    storage = undamaged;
+    await open();
+    await restartSession();
+    await listMatchesPages('an unknown kind arrived', beforeReads: false);
     faults = true;
-    count('damaged and unknown rows compared against the list');
+    count('unknown rows compared against the list');
   }
 
   Future<void> readerLearnsAgents() async {
@@ -592,7 +573,6 @@ final class StoreModel {
           row,
     ];
     final opId = fresh('op');
-    if (lastBase is! BaseAgrees) writtenWhileReadAgain.add(opId);
     final roll = random.nextInt(13);
     final StrategyOp op;
     if (roll < 5 && live.isNotEmpty) {
@@ -1237,11 +1217,7 @@ final class StoreModel {
         _ => null,
       };
       if (action == null) continue;
-      if (writtenWhileReadAgain.contains(entry.id)) {
-        count(
-          'the user asked about work written while the base was read again',
-        );
-      } else if (!teammates && action is! UserRetried && !userRemoved) {
+      if (!teammates && action is! UserRetried && !userRemoved) {
         throw StateError(
           'the user was asked $action for ${entry.id}: '
           '${view?.state}, ${view?.holds}',
@@ -1637,7 +1613,6 @@ Future<void> runSeed(int seed, int steps) async {
     await model.start();
     for (var i = 0; i < steps; i++) {
       await model.stepOnce();
-      await model.baseFollowsSeeds('step $i');
     }
     if (seed % 9 == 0) {
       await model.strategyGone();
@@ -1695,7 +1670,9 @@ void main() {
       'pages gone under a queued move',
       'held queues compared against the list',
       'readers that learned a payload',
-      'damaged and unknown rows compared against the list',
+      'damaged rows that refused the strategy',
+      'events refused after a refusal',
+      'unknown rows compared against the list',
       'unloads that changed nothing',
       'events delivered again after a commit that was not stored',
       'memory checked after a call that was not stored',

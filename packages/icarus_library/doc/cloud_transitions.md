@@ -35,33 +35,12 @@ An op names the revision the user's edit was made against. The device keeps, per
 
 ## When the stored base disagrees with the queue
 
-The queue's record (`Shown`) and the stored rows must agree: the strategy, page and settings rows and which items are stored on which page when a strategy's queue loads, and each item's version when a page is first loaded. Two rows agree when their name, page and version match, whether or not this build can read their contents. A damaged row never agrees. Rows of a kind this build does not know are left out. Rows are only ever read from a checked page. When they disagree, the base is read again (ADR 0012). The state is part of the cloud facts row and is written in the commit of the event that changes it; the read again phase is derived from the stored list debt and the stored page content.
+The queue's record (`Shown`) and the stored rows must agree. When a strategy's queue loads: its strategy, page and settings rows, and which items are stored on which page. When a page loads, before any of its rows is used: each item's page and version, and in checked builds its contents against a digest this run computed. Two rows agree when their name, page and version match, whether or not this build can read their contents. A damaged row never agrees. Rows of a kind this build does not know are left out. A cloud strategy's pages enter memory only through that check.
 
-- **Agreeing**: `BaseAgrees`.
-- **List owed**: `BaseRereading`, and the page list is owed.
-- **Pages owed**: `BaseRereading`, the list has landed, and a page it names has no content yet.
-- **Held**: `BaseHeld`. The base is absent and stays absent in the builds that tried.
+A disagreement refuses the strategy: nothing is written, no result is taken, the reader does not show it, and the sender neither reads nor sends for it and reports the reason once. Queued work stays on disk as it was. How a refused strategy gets its copy back is decided before the store is switched on for users (#819).
 
-A **set-aside** removes every base row but the strategy row, restarts `Shown` with nothing known (its strategy row included) and the list owed behind a fence, adds this build to the builds that tried, and wakes the sender. **Complete** means the list debt is paid and every page the current list names has content; the event that completes it checks every page and writes `BaseAgrees`, or `BaseHeld` when they still disagree, in its own commit.
+Nothing about the refusal is stored. A disagreement found in this session refuses the strategy until the store closes or the strategy is added to the store again; after a restart it is found again when the same check runs.
 
-| Event | Agreeing | List owed | Pages owed | Held |
-|---|---|---|---|---|
-| a disagreement found by a check (queue load, a result's pages, a reader, the summary rebuild, a removal) | set-aside, list owed, reported | held: the base rows leave again, no fence, no reads, reported | held, as list owed | cannot happen: no base rows are held |
-| the page list lands past the fence | taken | taken whatever life it names; queued work written for another life is set aside as an adoption sets it aside; pages owed, or complete | taken; a page it no longer lists leaves with its content; may complete | not taken |
-| a page result lands past the fence | taken | not taken; the page is read after the list | taken; may complete | not taken |
-| `PageGone` | taken | taken | taken: the page leaves; may complete | not taken |
-| `StrategyGone` | taken: the strategy is gone | the page and settings rows leave, agreeing, gone | as list owed | as list owed |
-| a result read before the fence | dropped, once a re-read has set a fence | dropped | dropped | not taken |
-| the app restarts | agreeing, checked again at load | list owed | pages owed | held |
-| a build that has not tried opens it | agreeing | list owed; the build is added to those that tried | pages owed; the build is added | set-aside, list owed, reported |
-| a build that has tried opens it | agreeing | list owed | pages owed | held, reported |
-| the event's write is refused | unchanged; the loaded strategy is dropped and checked again on the next load | unchanged | unchanged | unchanged |
-| the event's write outcome is unknown | the store shuts; the next open derives the state from what landed | as agreeing | as agreeing | as agreeing |
-
-- **Queued work.** Agreeing and pages owed: the usual rules. List owed: it waits for the list (no life is known to judge it against), then work written for the list's life goes on and the rest is set aside. Held: work that needs no evidence from the base (adds, field merges that stay on their page) sends; work that needs it waits, and the sender reports why.
-- **Landed work while held.** Work that sends and lands while the base is held stays recorded as landed, as far as the user and the server are concerned it is done, and nothing counts it as unsent or waits on it. No result is taken to bring it into the base until a build that has not tried reads the base again.
-- **What the reader shows.** In the agreeing state, as before: a page never read still draws this device's own queued work. In the other states a page is shown only once the base agrees again; until then it returns no rows and cannot be copied, and the list counts nothing on it.
-- **What the sender reads.** List owed: the list. Pages owed: every page the list names that has no content. Held: nothing. Each state other than agreeing is reported from the stored state whenever the strategy is read, and every set-aside wakes the sender.
 - When a page result leaves out an item the device held there, the item is marked with that result's read order and the version last held. A later-arriving result whose read started before that order, carrying the item at that version or older, does not bring it back; a newer version always does. Marks are kept in memory and end with the session. `test/cloud_row_decision_test.dart` covers both ("a page result read before another page removed an item stays out when it carries the version last held, and is taken when it carries a newer one").
 - One case is taken although it may be stale. The device holds an item on page A. On the server it moves to page B, and a read of B starts. While that read is in flight, the item moves back to A, is deleted, and is purged by the server. A read of A that started after the read of B arrives first and leaves the item out. Then the read of B arrives carrying the item at a version newer than the one last held, so nothing shows it is stale, and the item is shown on B. A purged row has been deleted for a long time, so all of this has to happen while one read is in flight. The next read of B removes it. A read of the same page that started before the removal is dropped whole as older. The same case arises without the move back when the device never saw the move to B: the read of A leaves the item out, and an older read of B arrives after it carrying the item at a version newer than the device held. It is taken for the same reason and corrected the same way.
 

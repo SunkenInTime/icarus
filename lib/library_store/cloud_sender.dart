@@ -433,6 +433,8 @@ final class CloudSender {
     _changes ??= _store.store.changes.listen(
       (change) => switch (change) {
         StrategyEdited(:final strategyPublicId) => edited(strategyPublicId),
+        StrategyRefused(:final strategyPublicId, :final refusal) =>
+          _store.refused(strategyPublicId, refusal),
         _ => wake(),
       },
       onDone: wake,

@@ -178,9 +178,11 @@ Future<Counts> runSeed(int seed, int steps) async {
     }
     await expectAgree(stores.first);
     for (final store in stores) {
-      final base = (await syncOf(store)).queue.strategy.base;
-      if (base is! BaseAgrees) {
-        fail('seed $seed step $step: the base is $base, and nothing seeded it');
+      if (await refusedFor(store) case final reason?) {
+        fail(
+          'seed $seed step $step: the store refused the strategy, and '
+          'nothing seeded a disagreement: $reason',
+        );
       }
     }
     final apart = differences(reusing.contents, fresh.contents);

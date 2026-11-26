@@ -642,6 +642,12 @@ final class CloudShadow {
         content = value;
       case NotFound():
         return const ['the store does not hold the strategy'];
+      case InUnreadableStrategy(
+          listing: UnreadableStrategyListing(
+            refused: StoredRowsDisagree(:final reason),
+          ),
+        ):
+        return ['the store refuses the strategy: $reason'];
       case InUnreadableStrategy():
         return const ['the store lists the strategy as unreadable'];
       case NotRead(:final failure):
@@ -708,6 +714,12 @@ final class CloudShadow {
         return [
           if (sentPage != null) 'page $pageId: missing from the store',
         ];
+      case InUnreadableStrategy(
+          listing: UnreadableStrategyListing(
+            refused: StoredRowsDisagree(:final reason),
+          ),
+        ):
+        return ['the store refuses the strategy: $reason'];
       case InUnreadableStrategy():
         return const ['the store lists the strategy as unreadable'];
       case NotRead(:final failure):

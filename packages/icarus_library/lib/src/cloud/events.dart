@@ -283,23 +283,6 @@ final class EditOfAnotherLife extends QueueEvent {
   final int? madeOn;
 }
 
-final class StoredBaseDisagrees extends QueueEvent {
-  const StoredBaseDisagrees(this.reason, {required this.build});
-
-  final String reason;
-  final String build;
-}
-
-final class StoredBaseReadAgain extends QueueEvent {
-  const StoredBaseReadAgain();
-}
-
-final class StoredBaseCarriedOn extends QueueEvent {
-  const StoredBaseCarriedOn({required this.build});
-
-  final String build;
-}
-
 final class ReadBegun extends QueueEvent {
   const ReadBegun();
 }

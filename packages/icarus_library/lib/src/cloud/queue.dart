@@ -142,21 +142,6 @@ final class CloudQueue {
 
   QueueEntry? entry(String id) => _index.byId[id];
 
-  CloudQueue withShown(Shown shown) => identical(shown, this.shown)
-      ? this
-      : CloudQueue._(
-          entries: entries,
-          attempts: attempts,
-          landed: landed,
-          nextAttempt: nextAttempt,
-          nextSession: nextSession,
-          shown: shown,
-          strategy: strategy,
-          session: session,
-          index: _index,
-          lineage: _Lineage(this, _Change()..everything = true),
-        );
-
   CloudQueue raisedTo({required int nextAttempt, required int nextSession}) {
     if (nextAttempt <= this.nextAttempt && nextSession <= this.nextSession) {
       return this;
@@ -999,15 +984,6 @@ final class OtherEntity extends Inapplicable {
   String toString() => 'OtherEntity($opId)';
 }
 
-final class BaseIsHeld extends Inapplicable {
-  const BaseIsHeld();
-
-  @override
-  String toString() =>
-      'a result for a strategy whose stored base is held after it was read '
-      'again';
-}
-
 final class StartedInAnotherLife extends Inapplicable {
   const StartedInAnotherLife();
 
@@ -1159,48 +1135,6 @@ final class _Edit {
           for (final entry in entries) entry.place,
       ].reduce((a, b) => a > b ? a : b) +
       1;
-
-  void setAsideOtherLives(int listed) {
-    final moved = [
-      for (final entry in entries)
-        if (entry case PendingOp(
-          :final strategyLife?,
-        ) when strategyLife != listed)
-          entry,
-    ];
-    if (moved.isEmpty) return;
-    final ids = {for (final entry in moved) entry.id};
-    for (final old in moved) {
-      entries.remove(old);
-      index.remove(old);
-      change.removed.add(old);
-      change.touched.remove(old.id);
-    }
-    for (final attempt in [...attempts.values]) {
-      if (attempt.opIds.any(ids.contains)) dropAttempt(attempt);
-    }
-    landed.removeWhere((work) => ids.contains(work.op.opId));
-    final kept = switch (strategy.setAside) {
-      SetAside(:final generations) => generations,
-      NothingSetAside() => const <SetAsideGeneration>[],
-    };
-    strategy = strategy.copyWith(
-      setAside: SetAside([
-        ...kept,
-        for (final life in {for (final entry in moved) entry.strategyLife})
-          SetAsideGeneration(
-            writtenIn: life,
-            replacedBy: listed,
-            entries: [
-              for (final entry in moved)
-                if (entry.strategyLife == life) entry,
-            ],
-          ),
-      ]),
-    );
-    change.everything = true;
-    effects.add(StrategySetAside(moved.length));
-  }
 
   void setAsideAll(int? writtenIn, int replacedBy) {
     final kept = switch (strategy.setAside) {
@@ -1369,7 +1303,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       ) when made != record) {
         return _setAsideEdit(edit, change, made, record, now);
       }
-      return _userEdited(edit, change, now, life: recordLife ?? madeOn);
+      return _userEdited(edit, change, now);
     case BatchClaimed(:final clientId, :final opIds, :final at, :final elapsed):
       return _claim(edit, clientId, opIds, at, elapsed?.call(), now);
     case ServerTimeHeld(:final serverTime, :final at, :final session):
@@ -1490,41 +1424,6 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       return _setAsideEdit(edit, change, madeOn, recordLife, now);
     case ReadBegun():
       edit.effects.add(ReadStartIssued(edit.readsAfterThis()));
-      return edit.done();
-    case StoredBaseDisagrees(:final reason, :final build):
-      edit.decisions.add(const BaseLeft());
-      switch (edit.strategy.base) {
-        case BaseAgrees():
-          edit.shown = edit.shown.setAside(edit.readsAfterThis());
-          edit.strategy = edit.strategy.copyWith(
-            base: BaseRereading(reason, tried: [build]),
-          );
-        case BaseHeld(:final tried) when !tried.contains(build):
-          edit.shown = edit.shown.setAside(edit.readsAfterThis());
-          edit.strategy = edit.strategy.copyWith(
-            base: BaseRereading(reason, tried: [...tried, build]),
-          );
-        case BaseRereading(:final tried):
-          edit.shown = Shown.nothing;
-          edit.strategy = edit.strategy.copyWith(
-            base: BaseHeld(reason, tried: {...tried, build}),
-          );
-        case BaseHeld():
-          break;
-      }
-      return edit.done();
-    case StoredBaseReadAgain():
-      edit.strategy = edit.strategy.copyWith(base: const BaseAgrees());
-      return edit.done();
-    case StoredBaseCarriedOn(:final build):
-      if (edit.strategy.base case BaseRereading(
-        :final reason,
-        :final tried,
-      ) when !tried.contains(build)) {
-        edit.strategy = edit.strategy.copyWith(
-          base: BaseRereading(reason, tried: [...tried, build]),
-        );
-      }
       return edit.done();
     case BaseArrived(:final base, :final session, :final from):
       if (session == 0 || session != edit.session.number) {
@@ -1667,22 +1566,6 @@ int? _refusedLife(ReadState list) => switch (list) {
 };
 
 Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
-  switch ((edit.strategy.base, base)) {
-    case (BaseDisagreed(), StrategyGone()):
-      edit.decisions.add(UnlistedLeft(const []));
-      edit.shown = Shown.nothing;
-      edit.strategy = edit.strategy.copyWith(
-        presence: Presence.gone,
-        base: const BaseAgrees(),
-      );
-      return edit.done();
-    case (BaseHeld(), _):
-      return NotApplicable(edit.original, const BaseIsHeld());
-    case _:
-      break;
-  }
-  final listOwedSinceSetAside =
-      edit.strategy.base is BaseRereading && edit.shown.strategy == null;
   final fit = resultFit(edit.shown, edit.session, base, from);
   final started = switch (from) {
     ReadOfThisDevice(:final started) => started,
@@ -1725,9 +1608,6 @@ Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
   final taken = edit.shown.taken(base, started: started);
   edit.decisions.addAll(taken.decisions);
   edit.shown = taken.shown;
-  if ((listOwedSinceSetAside, base) case (true, HeaderRead(:final strategy))) {
-    if (createdAtOf(strategy) case final life?) edit.setAsideOtherLives(life);
-  }
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -1931,7 +1811,7 @@ bool _opIdTaken(_Edit edit, String opId) =>
       NothingSetAside() => false,
     };
 
-Step _userEdited(_Edit edit, Edit change, DateTime now, {required int? life}) {
+Step _userEdited(_Edit edit, Edit change, DateTime now) {
   final queue = edit.original;
   final op = change.op;
   if (!isJson(op.toJson())) return NotApplicable(queue, NotJson(op.opId));
@@ -2013,7 +1893,7 @@ Step _userEdited(_Edit edit, Edit change, DateTime now, {required int? life}) {
       retriedAfter: edit.lastAttempt,
       behindOwn: behindOwn,
       basis: edit.session.basis,
-      strategyLife: life,
+      strategyLife: queue.shown.strategy?.life,
     ),
   );
   return edit.done();

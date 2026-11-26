@@ -101,6 +101,17 @@ final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
   String toString() => 'UnreadableRowInTheWay(${row.key})';
 }
 
+final class StoredRowsDisagree implements CommitRefusal, LibraryRefusal {
+  const StoredRowsDisagree(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() =>
+      'StoredRowsDisagree: the rows stored for it disagree with its queue: '
+      '$reason';
+}
+
 final class UnplacedRowInTheWay implements CommitRefusal, LibraryRefusal {
   const UnplacedRowInTheWay(this.ref);
 
@@ -433,6 +444,16 @@ final class StrategyRefreshed extends StoreChange {
   final StrategySummary summary;
 }
 
+final class StrategyRefused extends StoreChange {
+  const StrategyRefused({
+    required this.strategyPublicId,
+    required this.refusal,
+  });
+
+  final String strategyPublicId;
+  final StoredRowsDisagree refusal;
+}
+
 final class LibraryEdited extends StoreChange {
   LibraryEdited({
     required List<StrategySummary> summaries,
@@ -540,10 +561,15 @@ final class UnplacedRow {
 }
 
 final class UnreadableStrategyListing {
-  const UnreadableStrategyListing({required this.ref, required this.header});
+  const UnreadableStrategyListing({
+    required this.ref,
+    required this.header,
+    this.refused,
+  });
 
   final StrategyRef ref;
   final StrategyHeader header;
+  final CommitRefusal? refused;
 }
 
 final class UnknownKindRow {

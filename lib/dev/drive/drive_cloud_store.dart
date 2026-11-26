@@ -395,6 +395,10 @@ Future<List<(String, CloudStrategy)>> _cloudQueues(LibraryStore store) async {
     switch (await store.readStrategy(strategyId)) {
       case Found(value: StrategyContent(sync: final CloudStrategy cloud)):
         queues.add((strategyId, cloud));
+      case InUnreadableStrategy(
+          listing: UnreadableStrategyListing(refused: StoredRowsDisagree()),
+        ):
+        break;
       case final other:
         throw StateError('the queue of $strategyId could not be read: $other');
     }
@@ -1526,9 +1530,9 @@ CloudStoreLine? _senderReportLine(SenderReport report) => switch (report) {
           'server refused it for that: the queue must never send this',
           problem: true,
         ),
-      BaseNotAgreeing(:final strategyId, :final base) => CloudStoreLine(
-          'CLOUDSTORE the rows stored for $strategyId disagreed with its '
-          'queue: $base',
+      StoredRowsRefused(:final strategyId, :final refusal) => CloudStoreLine(
+          'CLOUDSTORE the rows stored for $strategyId disagree with its '
+          'queue, so the store refuses it: ${refusal.reason}',
           problem: true,
         ),
       WriteNotMade(:final strategyId, :final trouble) => CloudStoreLine(

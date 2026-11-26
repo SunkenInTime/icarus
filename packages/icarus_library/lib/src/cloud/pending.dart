@@ -955,7 +955,6 @@ final class StrategyFacts {
     required this.accessConfirmedAt,
     required this.upgradeTold,
     this.setAside = const NothingSetAside(),
-    this.base = const BaseAgrees(),
   });
 
   static const fresh = StrategyFacts(
@@ -970,7 +969,6 @@ final class StrategyFacts {
   final int accessConfirmedAt;
   final UpgradeTold upgradeTold;
   final SetAsideRecord setAside;
-  final BaseState base;
 
   StrategyFacts copyWith({
     Presence? presence,
@@ -978,14 +976,12 @@ final class StrategyFacts {
     int? accessConfirmedAt,
     UpgradeTold? upgradeTold,
     SetAsideRecord? setAside,
-    BaseState? base,
   }) => StrategyFacts(
     presence: presence ?? this.presence,
     accessLostAt: accessLostAt ?? this.accessLostAt,
     accessConfirmedAt: accessConfirmedAt ?? this.accessConfirmedAt,
     upgradeTold: upgradeTold ?? this.upgradeTold,
     setAside: setAside ?? this.setAside,
-    base: base ?? this.base,
   );
 
   @override
@@ -995,8 +991,7 @@ final class StrategyFacts {
       other.accessLostAt == accessLostAt &&
       other.accessConfirmedAt == accessConfirmedAt &&
       other.upgradeTold == upgradeTold &&
-      other.setAside == setAside &&
-      other.base == base;
+      other.setAside == setAside;
 
   @override
   int get hashCode => Object.hash(
@@ -1005,58 +1000,7 @@ final class StrategyFacts {
     accessConfirmedAt,
     upgradeTold,
     setAside,
-    base,
   );
-}
-
-sealed class BaseState {
-  const BaseState();
-}
-
-final class BaseAgrees extends BaseState {
-  const BaseAgrees();
-
-  @override
-  bool operator ==(Object other) => other is BaseAgrees;
-
-  @override
-  int get hashCode => (BaseAgrees).hashCode;
-
-  @override
-  String toString() => 'agrees';
-}
-
-sealed class BaseDisagreed extends BaseState {
-  BaseDisagreed(this.reason, {required Iterable<String> tried})
-    : tried = List.unmodifiable(tried);
-
-  final String reason;
-  final List<String> tried;
-
-  @override
-  bool operator ==(Object other) =>
-      other.runtimeType == runtimeType &&
-      other is BaseDisagreed &&
-      other.reason == reason &&
-      const ListEquality<String>().equals(other.tried, tried);
-
-  @override
-  int get hashCode => Object.hash(runtimeType, reason, Object.hashAll(tried));
-}
-
-final class BaseRereading extends BaseDisagreed {
-  BaseRereading(super.reason, {required super.tried});
-
-  @override
-  String toString() => 'read again by ${tried.last} because $reason';
-}
-
-final class BaseHeld extends BaseDisagreed {
-  BaseHeld(super.reason, {required super.tried});
-
-  @override
-  String toString() =>
-      'held: ${tried.join(', ')} read it again and it still disagrees: $reason';
 }
 
 sealed class SetAsideRecord {

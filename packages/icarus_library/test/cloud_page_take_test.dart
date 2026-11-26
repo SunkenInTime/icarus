@@ -418,8 +418,9 @@ void main() {
       );
     }
 
-    test('because a check throws leaves the page as stored, and the next '
-        'result is taken', () async {
+    test('because a row it finds unchanged differs from the stored copy '
+        'refuses the strategy with the page as stored, and a reopen takes the '
+        'next result', () async {
       shownTakesChecked = true;
       final storage = MemoryStorage();
       final store = await openCloudStore(MemoryEngine(storage));
@@ -441,12 +442,26 @@ void main() {
         [for (final row in odd.elementsOn('page-a')) row.publicId],
         ['e1', 'e2'],
       );
-      await expectLater(takePage(store, odd), throwsA(isA<TakesDiffer>()));
+      final before = editable(storage.contents);
       expect(
-        await storedRows(store, 'page-a'),
-        await rowsOnDisk(storage, 'page-a'),
+        await store.record(testAccount, strategyId, [
+          BaseArrived(
+            pageReadOf(odd, 'page-a'),
+            session: await sessionOf(store),
+            from: await readStartOf(store),
+          ),
+        ]),
+        isA<Refused<Recorded, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<StoredRowsDisagree>(),
+        ),
       );
-      await nextIsTaken(store, storage);
+      expect(sameContents(storage.contents, before), isTrue);
+      await store.close();
+      final reopened = await openCloudStore(MemoryEngine(storage));
+      await recordAll(reopened, const [AppRestarted(build: build)]);
+      await nextIsTaken(reopened, storage);
     });
 
     test('because the write fails leaves the page as stored, and the next '

@@ -2454,9 +2454,9 @@ void main() {
         );
 
     test(
-        'a reader that finds the stored rows disagreeing with the queue wakes '
-        'the sender, which reads the list and every page again and reports '
-        'it, with no other event', () {
+        'a reader that finds the stored rows disagreeing with the queue '
+        'refuses the strategy: the sender reports it once and reads nothing '
+        'for it', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       withSecondPage(storage, server);
@@ -2472,20 +2472,17 @@ void main() {
       inWorld(
         (world) {
           world.settle(const Duration(minutes: 1));
-          final pages = [
-            for (final page in server.rows[strategyId]!.pages) page.publicId,
-          ];
           final before = server.readCalls.length;
-          for (final page in pages) {
-            world.store.readPage(strategyId, page);
+          for (final page in server.rows[strategyId]!.pages) {
+            world.store.readPage(strategyId, page.publicId);
           }
-          world.settle(const Duration(minutes: 1));
-          final reads = readsAfter(world, before);
-          expect(reads, contains('list'));
-          expect(reads, containsAll([for (final page in pages) 'page $page']));
+          world.settle(const Duration(hours: 1));
+          expect(readsAfter(world, before), isEmpty);
           expect(
-            world.sender.store.reports.whereType<BaseNotAgreeing>(),
-            isNotEmpty,
+            world.sender.store.reports
+                .whereType<StoredRowsRefused>()
+                .map((report) => report.strategyId),
+            [strategyId],
           );
         },
         storage: MemoryStorage(contents),
