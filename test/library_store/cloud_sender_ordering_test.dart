@@ -267,6 +267,34 @@ void main() {
   });
 
   test(
+      'a success that is the first stamp from a later connection opens its '
+      'session and still sets the server time live writes are judged by', () {
+    inWorld((world) {
+      world.settle();
+      final before = world.cloud().queue.session.number;
+      late final int time;
+      world.server.answerNext(strategyId, (call) async {
+        world.server.connection = 2;
+        final applied = world.server.applyAll(call) as StoreBatchAnswered;
+        time = world.server.serverNow;
+        return StoreBatchAnswered(
+          applied.answers,
+          complete: applied.complete,
+          point: onConnection(world, 2),
+          serverTime: time,
+        );
+      });
+      world.commitMove(1);
+      world.settle(const Duration(milliseconds: 500));
+      expect(world.connection, 1);
+      final queue = world.cloud().queue;
+      expect(queue.session.number, greaterThan(before));
+      expect(queue.session.generation?.connection, 2);
+      expect(queue.session.basis?.serverTime, time);
+    });
+  });
+
+  test(
       'a success stamped on a connection that has ended does not set the '
       'server time live writes are judged by', () {
     inWorld((world) {
