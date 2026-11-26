@@ -421,4 +421,92 @@ void main() {
       expect(client.queue.shown.pagesTaken, isEmpty);
     });
   });
+
+  group('freshness does not depend on which arrived first', () {
+    void answerMove(Client client, ResultPoint at) {
+      client.edit(movePatch('move', x: 40));
+      final attempt = client.claim(['move']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+          point: at,
+        ),
+      );
+    }
+
+    void answerReorder(Client client, ResultPoint at) {
+      const reorder = PageReorderOp(
+        opId: 'reorder',
+        pagePublicId: 'page-b',
+        sortIndex: 0,
+        expectedStrategyRevision: 1,
+      );
+      client.edit(reorder);
+      final attempt = client.claim(['reorder']);
+      client.must(
+        OpAnswered(
+          attempt,
+          AppliedAnswer(
+            'reorder',
+            revision: 2,
+            life: createdAtOf(initialRows().strategy)!,
+          ),
+          point: at,
+        ),
+      );
+    }
+
+    test('a list at the answer\'s point keeps the list current for the '
+        'answer\'s page, in either order', () {
+      final listFirst = connectedOn();
+      listFirst.must(
+        arrivalAt(listFirst, headerReadOf(initialRows()), pointAt(12)),
+      );
+      answerMove(listFirst, pointAt(12));
+      expect(listFirst.queue.shown.listCurrentFor('page-a'), isTrue);
+
+      final answerFirst = connectedOn();
+      answerMove(answerFirst, pointAt(12));
+      answerFirst.must(
+        arrivalAt(answerFirst, headerReadOf(initialRows()), pointAt(12)),
+      );
+      expect(answerFirst.queue.shown.listCurrentFor('page-a'), isTrue);
+    });
+
+    test('a page result at the point of a list-changing answer keeps the page '
+        'current, in either order', () {
+      final pageFirst = connectedOn();
+      pageFirst.must(arrivalAt(pageFirst, pageA(), pointAt(12)));
+      answerReorder(pageFirst, pointAt(12));
+      expect(pageFirst.queue.shown.pageCurrent('page-a'), isTrue);
+
+      final answerFirst = connectedOn();
+      answerReorder(answerFirst, pointAt(12));
+      answerFirst.must(arrivalAt(answerFirst, pageA(), pointAt(12)));
+      expect(answerFirst.queue.shown.pageCurrent('page-a'), isTrue);
+    });
+
+    test('a newer list after an older one, our move between them, keeps the '
+        'list current for the page (seed 28)', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(7)));
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(9)));
+      answerMove(client, pointAt(8));
+      client.must(arrivalAt(client, pageA(), pointAt(8)));
+      expect(client.queue.shown.listCurrentFor('page-a'), isTrue);
+    });
+
+    test('a page result at the reorder\'s point, delivered before it, keeps '
+        'the page current (seed 76)', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(7)));
+      client.must(
+        arrivalAt(client, pageReadOf(initialRows(), 'page-b'), pointAt(8)),
+      );
+      client.must(arrivalAt(client, pageA(), pointAt(9)));
+      answerReorder(client, pointAt(9));
+      expect(client.queue.shown.pageCurrent('page-a'), isTrue);
+    });
+  });
 }

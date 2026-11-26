@@ -458,7 +458,7 @@ final class Reference {
           page.publicId: (at: 0, items: itemsOf(first.rows, page.publicId)),
       },
       pagesThisSession = livePagesOf(first.rows),
-      pagesFresh = livePagesOf(first.rows);
+      readFirst = livePagesOf(first.rows);
 
   int listAt;
   Set<String> listed;
@@ -472,12 +472,8 @@ final class Reference {
   final Set<String> pagesThisSession;
   ReadFact? listTaken;
   final pageTaken = <String, ReadFact>{};
-  bool listFresh = true;
-  final Set<String> pagesFresh;
-  final touched = <String>{};
-  final listMarks = <AnswerFact>[];
-  final allPagesMarks = <AnswerFact>[];
-  final pageMarks = <String, List<AnswerFact>>{};
+  bool listReadFirst = true;
+  final Set<String> readFirst;
   final debts = <String, ({int session, AnswerFact refusal})>{};
   final landed = <String>{};
 
@@ -503,12 +499,41 @@ final class Reference {
         (final answered?, final shown?) => shown >= answered,
       };
 
-  bool listCurrent() => listThisSession && owedSince == null && listFresh;
+  final answers = <AnswerFact>[];
 
-  bool listCurrentFor(String page) => listCurrent() && !touched.contains(page);
+  static bool readsPast(
+    ReadFact? read,
+    Iterable<AnswerFact> answers, {
+    required bool readFirst,
+  }) => switch (read) {
+    final read? => answers.every((answer) => reaches(read, answer)),
+    null => readFirst && answers.isEmpty,
+  };
+
+  bool listCurrent() =>
+      listThisSession &&
+      owedSince == null &&
+      readsPast(
+        listTaken,
+        answers.where((a) => a.work.changesList),
+        readFirst: listReadFirst,
+      );
+
+  bool listCurrentFor(String page) =>
+      listCurrent() &&
+      readsPast(
+        listTaken,
+        answers.where((a) => a.work.page == page),
+        readFirst: listReadFirst,
+      );
 
   bool pageCurrent(String page) =>
-      pagesThisSession.contains(page) && pagesFresh.contains(page);
+      pagesThisSession.contains(page) &&
+      readsPast(
+        pageTaken[page],
+        answers.where((a) => a.work.changesList || a.work.page == page),
+        readFirst: readFirst.contains(page),
+      );
 
   void newSession() {
     session++;
@@ -519,9 +544,8 @@ final class Reference {
     pagesThisSession.clear();
     listTaken = null;
     pageTaken.clear();
-    listFresh = false;
-    pagesFresh.clear();
-    touched.clear();
+    listReadFirst = false;
+    readFirst.clear();
   }
 
   bool admits(Generation generation) {
@@ -537,9 +561,7 @@ final class Reference {
         this.run = run;
         held = generation;
         newSession();
-        listMarks.clear();
-        allPagesMarks.clear();
-        pageMarks.clear();
+        answers.clear();
       case ReconnectFact(:final generation):
         if (held case final now? when !before(now, generation)) return;
         newSession();
@@ -554,21 +576,7 @@ final class Reference {
   void _answer(AnswerFact answer) {
     if (!admits(answer.point.generation)) return;
     final page = answer.work.page;
-    bool shows(ReadFact? taken) => taken != null && reaches(taken, answer);
-    final list = answer.work.changesList && !shows(listTaken);
-    final stale = !shows(pageTaken[page]);
-    if (list || stale) {
-      listFresh = listFresh && !list;
-      if (stale && !shows(listTaken)) touched.add(page);
-      listMarks.add(answer);
-      if (list) {
-        pagesFresh.removeWhere((page) => !shows(pageTaken[page]));
-        allPagesMarks.add(answer);
-      } else {
-        pagesFresh.remove(page);
-        (pageMarks[page] ??= []).add(answer);
-      }
-    }
+    answers.add(answer);
     if (answer.refused) {
       debts[page] = (session: session, refusal: answer);
       pagesThisSession.remove(page);
@@ -596,15 +604,6 @@ final class Reference {
     }
     debts.remove(page);
     pageTaken[page] = read;
-    _pageFreshAfter(read, page);
-  }
-
-  void _pageFreshAfter(ReadFact read, String page) {
-    if (allPagesMarks.every((mark) => reaches(read, mark)) &&
-        (pageMarks[page] ?? const []).every((mark) => reaches(read, mark))) {
-      pagesFresh.add(page);
-      pageMarks.remove(page);
-    }
   }
 
   void _read(ReadFact read) {
@@ -632,11 +631,6 @@ final class Reference {
         );
         listThisSession = true;
         listTaken = read;
-        if (listMarks.every((mark) => reaches(read, mark))) {
-          listFresh = true;
-          touched.clear();
-          listMarks.clear();
-        }
       case StrategyGone():
         if (owedSince case final owed? when at < owed) return;
         if (at <= listAt) return;
@@ -653,7 +647,7 @@ final class Reference {
             debts.remove(id);
             pagesThisSession.add(id);
           }
-          _pageFreshAfter(read, id);
+          pageTaken[id] = read;
           return;
         }
         if (!pays(read, id)) return;
@@ -1027,6 +1021,10 @@ const floors = {
   'orders with a page gone': 2800,
   'orders with the strategy gone': 960,
   'orders with two reads of one snapshot': 3000,
-  'an older list leaving a page out after a newer read of it': 1700,
-  'an older page-gone after a newer list showing the page': 1700,
+  'an older list leaving a page out after a newer read of it': 850,
+  'an older page-gone after a newer list showing the page': 700,
+  'a list older than our answer delivered after it': 1800,
+  'a read asked in one session delivered after a refusal opened the next': 300,
+  'an answer at the point of a page result delivered before it': 350,
+  'a repeat at the point of a taken result after a refusal there': 120,
 };
