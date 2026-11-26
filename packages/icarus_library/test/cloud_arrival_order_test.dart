@@ -29,13 +29,40 @@ sealed class Fact {
   const Fact();
 }
 
+sealed class Ask {
+  const Ask();
+}
+
+final class NotAsked extends Ask {
+  const NotAsked();
+}
+
+final class AskedAtStart extends Ask {
+  const AskedAtStart();
+}
+
+final class AskedAfter extends Ask {
+  const AskedAfter(this.answer);
+
+  final AnswerFact answer;
+}
+
 final class ReadFact extends Fact {
-  ReadFact(this.page, this.state, this.point, this.run);
+  ReadFact(
+    this.page,
+    this.state,
+    this.point,
+    this.run, {
+    required this.tick,
+    this.asked = const NotAsked(),
+  });
 
   final String? page;
   final ServerState state;
   final ResultPoint point;
   final int run;
+  final int tick;
+  final Ask asked;
 
   ArrivedBase get base => state.read(page);
 
@@ -49,8 +76,65 @@ final class ReadFact extends Fact {
         PageRead() => 'page $page',
         PageGone() => '$page gone',
       }} of state ${state.index} at ${point.client}/${point.connection}/'
-      '${point.snapshot} run $run';
+      '${point.snapshot} run $run${switch (asked) {
+        NotAsked() => '',
+        AskedAtStart() => ', asked at the start',
+        AskedAfter(:final answer) => ', asked after the ${answer.work.op.opId} '
+            'answer',
+      }}';
 }
+
+final class OwnWork {
+  const OwnWork(
+    this.op,
+    this.attempt, {
+    required this.page,
+    required this.changesList,
+  });
+
+  final StrategyOp op;
+  final int attempt;
+  final String page;
+  final bool changesList;
+}
+
+final class AnswerFact extends Fact {
+  AnswerFact(this.work, this.answer, this.point, {required this.tick});
+
+  final OwnWork work;
+  final OpAnswer answer;
+  final ResultPoint point;
+  final int tick;
+
+  bool get refused => answer is RejectedAnswer;
+
+  @override
+  String toString() =>
+      '${work.op.opId} ${refused ? 'refused' : 'applied'} at '
+      '${point.client}/${point.connection}/${point.snapshot}';
+}
+
+const reorder = PageReorderOp(
+  opId: 'reorder',
+  pagePublicId: 'page-b',
+  sortIndex: 0,
+  expectedStrategyRevision: 1,
+);
+
+const rename = PagePatchOp(
+  opId: 'rename',
+  pagePublicId: 'page-a',
+  expectedPageRevision: 1,
+  name: 'Mine',
+);
+
+final move = movePatch('move', x: 40);
+
+List<StrategyOp> queuedIn(int family) => switch (family) {
+  6 => [reorder, rename],
+  7 || 8 || 9 => [move],
+  _ => const [],
+};
 
 final class ReconnectFact extends Fact {
   const ReconnectFact(this.generation, this.run);
@@ -75,7 +159,21 @@ final class RestartFact extends Fact {
 final class Scenario {
   Scenario(this.seed) : random = Random(seed) {
     client = Client();
+    final queued = queuedIn(seed % families);
+    if (queued.isNotEmpty) {
+      client.must(reconnected());
+      client.read(initialRows());
+      queued.forEach(client.edit);
+      final first = queued.first;
+      work = OwnWork(
+        first,
+        client.claim([first.opId]),
+        page: first == reorder ? 'page-b' : 'page-a',
+        changesList: first == reorder,
+      );
+    }
     start = client.queue;
+    lastStamp = lastPoint;
     clock = (lastPoint.serverTime ?? firstServerTime) + 1000000000;
     stamps = StampSource(
       Random(seed * 7 + 3),
@@ -94,6 +192,18 @@ final class Scenario {
   final states = <ServerState>[];
   final facts = <Fact>[];
   int run = 0;
+  OwnWork? work;
+  late ResultPoint lastStamp;
+  int tick = 0;
+  bool readHere = false;
+
+  int tickOf(ResultPoint point) {
+    if (point != lastStamp) {
+      tick++;
+      lastStamp = point;
+    }
+    return tick;
+  }
 
   ServerState get now => states.last;
 
@@ -104,9 +214,75 @@ final class Scenario {
     states.add(ServerState(states.length, rows, exists: exists));
   }
 
-  void read(String? page) {
+  void read(String? page, {Ask asked = const NotAsked()}) {
     pass();
-    facts.add(ReadFact(page, now, stamps.at(now), run));
+    _readAt(page, stamps.at(now), asked);
+  }
+
+  void readAtHeldPoint(String page, Ask asked) {
+    pass();
+    _readAt(page, stamps.answered, asked);
+  }
+
+  void _readAt(String? page, ResultPoint point, Ask asked) {
+    readHere = true;
+    facts.add(
+      ReadFact(page, now, point, run, tick: tickOf(point), asked: asked),
+    );
+  }
+
+  void lands(StrategyOp op) => write(withOp(now.rows, op));
+
+  AnswerFact answer({required bool atHeldPoint, bool refused = false}) {
+    final work = this.work!;
+    if (atHeldPoint && !readHere) fail('no read holds a point to answer at');
+    pass();
+    final point = atHeldPoint ? stamps.answered : stamps.at(now);
+    final row = switch (checkTargetOf(work.op)) {
+      StrategyTarget() => now.rows.strategy,
+      ElementTarget(:final elementPublicId) => now.rows.element(
+        elementPublicId,
+      )!,
+      final other => fail('no checked row for $other'),
+    };
+    final fact = AnswerFact(
+      work,
+      refused
+          ? RejectedAnswer(
+              work.op.opId,
+              RejectionReason.rowReplaced,
+              const NoServerCopy(),
+            )
+          : AppliedAnswer(
+              work.op.opId,
+              revision: revisionOfRowForTest(row)!,
+              life: createdAtOf(row)!,
+            ),
+      point,
+      tick: tickOf(point),
+    );
+    facts.add(fact);
+    return fact;
+  }
+
+  void teammateRenames(String page) => write(
+    withOp(
+      now.rows,
+      onVisible(
+        now.rows,
+        PagePatchOp(
+          opId: 't${states.length}',
+          pagePublicId: page,
+          expectedPageRevision: 1,
+          name: 'Theirs',
+        ),
+      ),
+    ),
+  );
+
+  void reconnectOnce() {
+    pass();
+    facts.add(ReconnectFact(stamps.reconnect(), run));
   }
 
   List<String> get livePages => [
@@ -217,7 +393,7 @@ final class Scenario {
         deleteStrategy();
         read(null);
         read(page);
-      case _:
+      case 5:
         if (random.nextBool()) teammateWrites(page);
         read(null);
         final before = now.rows;
@@ -231,23 +407,58 @@ final class Scenario {
           read(page);
           if (random.nextBool()) read(null);
         }
+      case 6:
+        lands(reorder);
+        read(null);
+        if (random.nextInt(3) == 0) read('page-b');
+        teammateRenames('page-a');
+        if (random.nextInt(3) == 0) read(null);
+        answer(atHeldPoint: readHere && random.nextInt(4) == 0);
+        if (random.nextBool()) read(null);
+        if (random.nextInt(3) == 0) read('page-a');
+      case 7:
+        if (random.nextInt(4) != 0) reconnectOnce();
+        read('page-a', asked: const AskedAtStart());
+        if (random.nextBool()) teammateWrites('page-a');
+        final refusal = answer(atHeldPoint: false, refused: true);
+        switch (random.nextInt(4)) {
+          case 0:
+            read('page-a', asked: AskedAfter(refusal));
+          case 1:
+            reconnectOnce();
+            read('page-a');
+          case _:
+            break;
+        }
+      case 8:
+        lands(move);
+        if (random.nextInt(3) == 0) read(null);
+        read('page-a');
+        answer(atHeldPoint: random.nextInt(3) != 0);
+        if (random.nextBool()) read('page-a');
+        if (random.nextInt(3) == 0) read(null);
+      case _:
+        if (random.nextInt(3) == 0) read(null);
+        read('page-a');
+        final refusal = answer(atHeldPoint: true, refused: true);
+        readAtHeldPoint('page-a', AskedAfter(refusal));
+        if (random.nextBool()) read('page-a', asked: AskedAfter(refusal));
     }
   }
 }
 
-const families = 6;
+const families = 10;
 
 final class Reference {
   Reference(ServerState first, this.held)
     : listAt = 0,
-      listed = {
-        for (final page in first.rows.pages)
-          if (page is LivePage) page.publicId,
-      },
+      listed = livePagesOf(first.rows),
       pages = {
         for (final page in first.rows.pages)
           page.publicId: (at: 0, items: itemsOf(first.rows, page.publicId)),
-      };
+      },
+      pagesThisSession = livePagesOf(first.rows),
+      pagesFresh = livePagesOf(first.rows);
 
   int listAt;
   Set<String> listed;
@@ -256,6 +467,24 @@ final class Reference {
   final Map<String, ({int at, Items? items})> pages;
   int run = 0;
   Generation? held;
+  int session = 0;
+  bool listThisSession = true;
+  final Set<String> pagesThisSession;
+  ReadFact? listTaken;
+  final pageTaken = <String, ReadFact>{};
+  bool listFresh = true;
+  final Set<String> pagesFresh;
+  final touched = <String>{};
+  final listMarks = <AnswerFact>[];
+  final allPagesMarks = <AnswerFact>[];
+  final pageMarks = <String, List<AnswerFact>>{};
+  final debts = <String, ({int session, AnswerFact refusal})>{};
+  final landed = <String>{};
+
+  static Set<String> livePagesOf(StrategyRows rows) => {
+    for (final page in rows.pages)
+      if (page is LivePage) page.publicId,
+  };
 
   static Items itemsOf(StrategyRows rows, String page) => {
     for (final row in rows.elementsOn(page))
@@ -266,25 +495,122 @@ final class Reference {
       a.client < b.client ||
       (a.client == b.client && a.connection < b.connection);
 
+  static bool reaches(ReadFact read, AnswerFact answer) =>
+      read.tick >= answer.tick &&
+      switch ((answer.point.serverTime, read.point.serverTime)) {
+        (null, _) => true,
+        (_, null) => false,
+        (final answered?, final shown?) => shown >= answered,
+      };
+
+  bool listCurrent() => listThisSession && owedSince == null && listFresh;
+
+  bool listCurrentFor(String page) => listCurrent() && !touched.contains(page);
+
+  bool pageCurrent(String page) =>
+      pagesThisSession.contains(page) && pagesFresh.contains(page);
+
+  void newSession() {
+    session++;
+    listAt = -1;
+    pages.updateAll((_, held) => (at: -1, items: held.items));
+    if (owedSince != null) owedSince = -1;
+    listThisSession = false;
+    pagesThisSession.clear();
+    listTaken = null;
+    pageTaken.clear();
+    listFresh = false;
+    pagesFresh.clear();
+    touched.clear();
+  }
+
+  bool admits(Generation generation) {
+    if (held case final now? when before(generation, now)) return false;
+    if (held case final now? when before(now, generation)) newSession();
+    held = generation;
+    return true;
+  }
+
   void apply(Fact fact) {
     switch (fact) {
       case RestartFact(:final run, :final generation):
         this.run = run;
         held = generation;
+        newSession();
+        listMarks.clear();
+        allPagesMarks.clear();
+        pageMarks.clear();
       case ReconnectFact(:final generation):
         if (held case final now? when !before(now, generation)) return;
+        newSession();
         held = generation;
       case ReadFact():
         _read(fact);
+      case AnswerFact():
+        _answer(fact);
+    }
+  }
+
+  void _answer(AnswerFact answer) {
+    if (!admits(answer.point.generation)) return;
+    final page = answer.work.page;
+    bool shows(ReadFact? taken) => taken != null && reaches(taken, answer);
+    final list = answer.work.changesList && !shows(listTaken);
+    final stale = !shows(pageTaken[page]);
+    if (list || stale) {
+      listFresh = listFresh && !list;
+      if (stale && !shows(listTaken)) touched.add(page);
+      listMarks.add(answer);
+      if (list) {
+        pagesFresh.removeWhere((page) => !shows(pageTaken[page]));
+        allPagesMarks.add(answer);
+      } else {
+        pagesFresh.remove(page);
+        (pageMarks[page] ??= []).add(answer);
+      }
+    }
+    if (answer.refused) {
+      debts[page] = (session: session, refusal: answer);
+      pagesThisSession.remove(page);
+    } else {
+      landed.add(answer.work.op.opId);
+    }
+  }
+
+  bool pays(ReadFact read, String page) => switch (debts[page]) {
+    null => true,
+    final debt =>
+      session > debt.session ||
+          before(debt.refusal.point.generation, read.point.generation) ||
+          switch (read.asked) {
+            AskedAfter(:final answer) => answer == debt.refusal,
+            _ => false,
+          },
+  };
+
+  void _pageTaken(ReadFact read, String page, {required bool live}) {
+    if (live) {
+      pagesThisSession.add(page);
+    } else {
+      pagesThisSession.remove(page);
+    }
+    debts.remove(page);
+    pageTaken[page] = read;
+    _pageFreshAfter(read, page);
+  }
+
+  void _pageFreshAfter(ReadFact read, String page) {
+    if (allPagesMarks.every((mark) => reaches(read, mark)) &&
+        (pageMarks[page] ?? const []).every((mark) => reaches(read, mark))) {
+      pagesFresh.add(page);
+      pageMarks.remove(page);
     }
   }
 
   void _read(ReadFact read) {
     if (read.run != run) return;
-    final generation = read.point.generation;
-    if (held case final now? when before(generation, now)) return;
-    held = generation;
-    final at = read.state.index;
+    if (!admits(read.point.generation)) return;
+    final at = read.tick;
     switch (read.base) {
       case HeaderRead(:final pages):
         if (owedSince case final owed? when at < owed) return;
@@ -304,26 +630,47 @@ final class Reference {
         this.pages.removeWhere(
           (page, held) => !listed.contains(page) && held.at <= at,
         );
+        listThisSession = true;
+        listTaken = read;
+        if (listMarks.every((mark) => reaches(read, mark))) {
+          listFresh = true;
+          touched.clear();
+          listMarks.clear();
+        }
       case StrategyGone():
         if (owedSince case final owed? when at < owed) return;
         if (at <= listAt) return;
         listAt = at;
         owedSince = null;
         gone = true;
+        listThisSession = true;
+        listTaken = read;
       case PageRead(:final page):
         final id = page.publicId;
-        if (pages[id] case final held? when at <= held.at) return;
+        if (pages[id] case final held? when at < held.at) return;
+        if (pages[id] case final held? when at == held.at) {
+          if (pays(read, id) && debts.containsKey(id)) {
+            debts.remove(id);
+            pagesThisSession.add(id);
+          }
+          _pageFreshAfter(read, id);
+          return;
+        }
+        if (!pays(read, id)) return;
         if (!listed.contains(id)) {
           if (at < listAt) return;
           owedSince = max(owedSince ?? at, at);
           return;
         }
         pages[id] = (at: at, items: itemsOf(read.state.rows, id));
+        _pageTaken(read, id, live: true);
       case PageGone(:final pagePublicId):
         if (pages[pagePublicId] case final held? when at <= held.at) return;
+        if (!pays(read, pagePublicId)) return;
         if (listed.contains(pagePublicId) && at < listAt) return;
         pages[pagePublicId] = (at: at, items: null);
         listed = {...listed}..remove(pagePublicId);
+        _pageTaken(read, pagePublicId, live: false);
     }
   }
 }
@@ -335,8 +682,14 @@ Iterable<List<Fact>> orders(List<Fact> facts) sync* {
     ReadFact(:final run) ||
     ReconnectFact(:final run) ||
     RestartFact(:final run) => run,
+    AnswerFact() => 0,
   };
   bool allowed(int index) {
+    if (facts[index] case ReadFact(
+      asked: AskedAfter(:final answer),
+    ) when !used[facts.indexOf(answer)]) {
+      return false;
+    }
     for (var other = 0; other < facts.length; other++) {
       if (used[other] || other == index) continue;
       if (facts[other] is RestartFact &&
@@ -374,7 +727,7 @@ final cases = <String, int>{};
 
 void count(String what) => cases[what] = (cases[what] ?? 0) + 1;
 
-void countCases(List<Fact> order) {
+void countCases(List<Fact> order, Generation? started) {
   final reads = order.whereType<ReadFact>().toList();
   for (var i = 0; i < reads.length; i++) {
     for (var j = i + 1; j < reads.length; j++) {
@@ -443,10 +796,11 @@ void countCases(List<Fact> order) {
             )) {
           count('a read from an earlier connection after a reconnect event');
         }
-      case ReadFact():
+      case ReadFact() || AnswerFact():
         break;
     }
   }
+  countOwnWork(order, started);
   if (reads.any((read) => read.base is PageGone)) {
     count('orders with a page gone');
   }
@@ -459,16 +813,54 @@ void countCases(List<Fact> order) {
   }
 }
 
-final class Delivered {
-  Delivered(this.queue, this.labels);
-
-  final CloudQueue queue;
-  final List<String> labels;
+void countOwnWork(List<Fact> order, Generation? started) {
+  for (final (at, fact) in order.indexed) {
+    if (fact is! AnswerFact) continue;
+    final before = order.take(at).toList();
+    final after = order.skip(at + 1).toList();
+    if (fact.work.changesList &&
+        after.whereType<ReadFact>().any(
+          (read) => read.page == null && read.tick < fact.tick,
+        )) {
+      count('a list older than our answer delivered after it');
+    }
+    if (fact.refused &&
+        !before.any((other) => other is ReconnectFact) &&
+        started != null &&
+        Reference.before(started, fact.point.generation) &&
+        after.whereType<ReadFact>().any(
+          (read) =>
+              read.asked is AskedAtStart &&
+              read.point.generation == fact.point.generation &&
+              read.tick < fact.tick,
+        )) {
+      count(
+        'a read asked in one session delivered after a refusal opened '
+        'the next',
+      );
+    }
+    if (!fact.refused &&
+        before.whereType<ReadFact>().any(
+          (read) => read.page == fact.work.page && read.tick == fact.tick,
+        )) {
+      count('an answer at the point of a page result delivered before it');
+    }
+    if (fact.refused &&
+        before.whereType<ReadFact>().any(
+          (read) => read.page == fact.work.page && read.tick == fact.tick,
+        ) &&
+        after.whereType<ReadFact>().any(
+          (read) => read.asked is AskedAfter && read.tick == fact.tick,
+        )) {
+      count('a repeat at the point of a taken result after a refusal there');
+    }
+  }
 }
 
 CloudQueue deliver(CloudQueue start, List<Fact> order) {
   var queue = start;
   final labelsFrom = <int, int>{0: start.session.labelsFrom};
+  final askedAfter = <AnswerFact, (int, int)>{};
   void step(QueueEvent event) {
     queue = transition(queue, event, now: now).queue;
   }
@@ -481,13 +873,21 @@ CloudQueue deliver(CloudQueue start, List<Fact> order) {
         labelsFrom[run] = queue.session.labelsFrom;
       case ReconnectFact(:final generation):
         step(ConnectionReturned(generation));
-      case ReadFact(:final base, :final point, :final run):
+      case AnswerFact(:final work, :final answer, :final point):
+        step(OpAnswered(work.attempt, answer, point: point));
+        askedAfter[fact] = (queue.session.number, queue.session.sequence);
+      case ReadFact(:final base, :final point, :final run, :final asked):
+        final (session, requestedAt) = switch (asked) {
+          NotAsked() => (labelsFrom[run]!, null),
+          AskedAtStart() => (start.session.number, start.session.sequence),
+          AskedAfter(:final answer) => askedAfter[answer]!,
+        };
         step(
           BaseArrived(
             base,
-            session: labelsFrom[run]!,
+            session: session,
             point: point,
-            requestedAt: null,
+            requestedAt: requestedAt,
           ),
         );
     }
@@ -532,7 +932,36 @@ String? disagreement(CloudQueue queue, Reference want) {
             held.entries.every((entry) => wanted[entry.key] == entry.value));
     if (!same) {
       return 'page $page holds $held, the reference '
-          '${wanted ?? 'nothing'} from state ${want.pages[page]?.at}';
+          '${wanted ?? 'nothing'} from ${want.pages[page]?.at}';
+    }
+  }
+  if (shown.listCurrent != want.listCurrent()) {
+    return 'the page list is ${shown.listCurrent ? '' : 'not '}current, the '
+        'reference says ${want.listCurrent() ? '' : 'not '}current';
+  }
+  for (final page in {...listed, ...want.listed, ...want.debts.keys}) {
+    if (shown.listCurrentFor(page) != want.listCurrentFor(page)) {
+      return 'the page list is ${shown.listCurrentFor(page) ? '' : 'not '}'
+          'current for $page, the reference says '
+          '${want.listCurrentFor(page) ? '' : 'not '}current';
+    }
+    if (shown.pageCurrent(page) != want.pageCurrent(page)) {
+      return 'page $page is ${shown.pageCurrent(page) ? '' : 'not '}current, '
+          'the reference says ${want.pageCurrent(page) ? '' : 'not '}current';
+    }
+    if (isDebt(shown.pageRead(page)) != want.debts.containsKey(page)) {
+      return 'page $page is ${shown.pageRead(page)}, the reference '
+          '${want.debts.containsKey(page) ? 'owes a read after the refusal' : 'owes nothing'}';
+    }
+  }
+  if (entryViews(queue, now)['rename'] case final view?) {
+    final waits = view.holds.any((hold) => hold is AwaitingResult);
+    final shouldWait =
+        want.landed.contains('reorder') && !want.listCurrentFor('page-a');
+    if (waits != shouldWait) {
+      return 'the rename ${waits ? 'waits' : 'does not wait'} for a result '
+          '(${view.state}, ${view.holds}), the reference says it '
+          '${shouldWait ? 'waits' : 'does not'}';
     }
   }
   return null;
@@ -559,7 +988,7 @@ void main() {
       final scenario = Scenario(seed)..build();
       for (final order in orders(scenario.facts)) {
         checked++;
-        countCases(order);
+        countCases(order, scenario.start.session.generation);
         final want = Reference(scenario.states.first, lastHeld(scenario));
         order.forEach(want.apply);
         final queue = deliver(scenario.start, order);
