@@ -21,6 +21,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
@@ -255,9 +256,11 @@ void main() {
       expect(container.read(strategyProvider).strategyId, 'shared-id');
     });
 
-    testWidgets('a back whose open gave way does not count as having moved',
-        (tester) async {
+    testWidgets(
+        'a back whose open gave way does not count as having moved, and '
+        "leaves the editor's tool as it was", (tester) async {
       final strategies = _RecordingStrategies()..givesWay.add('shared-id');
+      late ProviderContainer container;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -268,7 +271,10 @@ void main() {
           child: ShadApp(
             navigatorKey: appNavigatorKey,
             navigatorObservers: [mouseNavigationRouteObserver],
-            builder: (_, child) => MouseNavigation(child: child!),
+            builder: (context, child) {
+              container = ProviderScope.containerOf(context);
+              return MouseNavigation(child: child!);
+            },
             home: const Scaffold(body: Text('library')),
           ),
         ),
@@ -277,6 +283,9 @@ void main() {
       await tester.pump();
       strategies.show('other-id', StrategySource.local);
       await tester.pump();
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.drawing);
 
       Future<void> back(int pointer) async {
         await tester.sendEventToBinding(
@@ -292,6 +301,7 @@ void main() {
 
       await back(1);
       expect(strategies.state.strategyId, 'other-id');
+      expect(container.read(interactionStateProvider), InteractionState.drawing);
       // Still one step back from where the reader is: back tries it again.
       await back(2);
       expect(strategies.opened, ['local:shared-id', 'local:shared-id']);
