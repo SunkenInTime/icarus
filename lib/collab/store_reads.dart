@@ -40,10 +40,11 @@ final class StoreReadAnswered extends StoreReadOutcome {
 }
 
 final class StoreReadRefused extends StoreReadOutcome {
-  const StoreReadRefused(this.refusal, this.why);
+  const StoreReadRefused(this.refusal, this.why, {this.point});
 
   final StoreReadRefusal refusal;
   final String why;
+  final store.ResultPoint? point;
 }
 
 final class StoreReadUnreadable extends StoreReadOutcome {
@@ -157,16 +158,32 @@ StoreReadOutcome storeReadOutcomeOfError(
   required store.ResultPoint? point,
 }) {
   if (isClientUpgradeRequiredError(error)) {
-    return StoreReadRefused(StoreReadRefusal.upgradeRequired, '$error');
+    return StoreReadRefused(
+      StoreReadRefusal.upgradeRequired,
+      '$error',
+      point: point,
+    );
   }
   if (isTypedConvexUnauthenticatedError(error)) {
-    return StoreReadRefused(StoreReadRefusal.unauthenticated, '$error');
+    return StoreReadRefused(
+      StoreReadRefusal.unauthenticated,
+      '$error',
+      point: point,
+    );
   }
   if (isAccountMismatchError(error)) {
-    return StoreReadRefused(StoreReadRefusal.accountMismatch, '$error');
+    return StoreReadRefused(
+      StoreReadRefusal.accountMismatch,
+      '$error',
+      point: point,
+    );
   }
   if (isTypedConvexForbiddenError(error)) {
-    return StoreReadRefused(StoreReadRefusal.forbidden, '$error');
+    return StoreReadRefused(
+      StoreReadRefusal.forbidden,
+      '$error',
+      point: point,
+    );
   }
   if (point != null &&
       (isTypedConvexNotFoundError(error) || _isPageElsewhere(error))) {

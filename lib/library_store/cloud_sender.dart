@@ -85,7 +85,7 @@ final class SignInHold extends RunHold {
   String toString() => 'waiting for the sign-in to change from count $from';
 }
 
-typedef _Asked = ({int session, ResultPoint point, int requestedAt});
+typedef _Asked = ({int session, ResultPoint point, int? requestedAt});
 
 typedef Bound = ({
   int connection,
@@ -269,6 +269,7 @@ final class CloudSender {
   String? ended;
   var disposed = false;
   final bound = <String, Bound>{};
+  final _unanswered = <String, int?>{};
   final restarted = <String>{};
   final notBefore = <String, DateTime>{};
   final _failures = <String, int>{};
@@ -844,7 +845,7 @@ final class CloudSender {
           _restingOn(id, cloud, fresh.why),
           _nextDue(id, cloud, snap),
         );
-      case NothingSendable(:final why, :final retryAt):
+      case NothingSendable(:final why):
         if (fresh.planned case final next?) {
           return _readStep(id, owner, snap, session, cloud, next);
         }
@@ -1038,7 +1039,7 @@ final class CloudSender {
       _Why.need || _Why.adopt => cloud,
       _Why.access || _Why.retire => null,
     };
-    final int requestedAt;
+    final int? requestedAt;
     final StoreReadOutcome outcome;
     final DateTime started;
     final kept = _governor.heldFor(id, read, under);
@@ -1059,7 +1060,12 @@ final class CloudSender {
             when at.isAfter(_clock())) {
           return _Skipped(row ?? why.row, at);
         }
-        requestedAt = cloud.queue.session.sequence;
+        if (_store.shut case final shut?) return _troubled(id, shut);
+        final key = '$id $read';
+        requestedAt = _unanswered.containsKey(key) &&
+                _unanswered[key] == snap.connection
+            ? null
+            : cloud.queue.session.sequence;
         switch (await _issue(id, owner, read, snap, why)) {
           case NotYet(:final at, why: final row):
             return _Skipped(row ?? why.row, at);
@@ -1069,6 +1075,14 @@ final class CloudSender {
         }
     }
     if (disposed) return const _Ended();
+    switch (outcome) {
+      case StoreReadLost(failure: TransportFailure.timeout):
+        _unanswered['$id $read'] = snap.connection;
+      case StoreReadAnswered() || StoreReadRefused() || StoreReadUnreadable():
+        _unanswered.remove('$id $read');
+      case StoreReadLost():
+        break;
+    }
     if (_inputs != snap) {
       _note(
           id,
@@ -1327,10 +1341,25 @@ final class CloudSender {
     Snapshot snap, {
     required bool held,
     CloudStrategy? marking,
-    ({int session, int requestedAt})? request,
+    ({int session, int? requestedAt})? request,
     CloudStrategy? planned,
   }) async {
     switch (outcome) {
+      case StoreReadRefused(
+            refusal: StoreReadRefusal.unauthenticated,
+            point: final point?,
+          )
+          when await _onAnEndedConnection(point):
+        return _unsettled(
+          id,
+          owner,
+          read,
+          snap,
+          'the read was refused for the sign-in on a connection that has '
+          'since ended',
+          row: StallExit.lostRead,
+          planned: planned,
+        );
       case StoreReadRefused(
           refusal: StoreReadRefusal.accountMismatch ||
               StoreReadRefusal.unauthenticated,
@@ -1534,6 +1563,16 @@ final class CloudSender {
         NoopWithoutRevision() =>
           false,
       };
+
+  Future<bool> _onAnEndedConnection(ResultPoint point) async {
+    try {
+      final now = await _generation();
+      return point.generation
+          .isBefore(Generation(client: now.client, connection: now.connection));
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<_Session> _openSession(
     String id,
