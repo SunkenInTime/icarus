@@ -17,6 +17,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/strategy/open_seen.dart';
 
 class CloudOutboxSummaryBanner extends ConsumerWidget {
   const CloudOutboxSummaryBanner({super.key, this.onOpenStrategy});
@@ -312,12 +313,15 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
       callback(strategyId);
       return;
     }
-    StrategyView.open(
+    switch (StrategyView.open(
       Navigator.of(context),
       asked: ref.read(strategyProvider.notifier).askedByTheUserNow(),
       initialStrategyId: strategyId,
       initialStrategySource: StrategySource.cloud,
-    );
+    )) {
+      case Pushed() || Refused():
+        break;
+    }
   }
 
   String _attentionLabel(

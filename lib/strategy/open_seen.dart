@@ -22,16 +22,36 @@ final class Stay extends LeaveAnswer {
   const Stay();
 }
 
-sealed class OpenChange {
-  const OpenChange();
-}
+sealed class LocalOpenChange {}
 
-final class Changed extends OpenChange {
+sealed class OpenChange implements LocalOpenChange {}
+
+sealed class CloseChange {}
+
+final class Changed implements OpenChange, CloseChange {
   const Changed(this.after);
 
   final OpenSeen after;
 }
 
-final class GaveWay extends OpenChange {
+final class GaveWay implements OpenChange, CloseChange {
   const GaveWay();
+}
+
+final class Missing implements LocalOpenChange {
+  const Missing();
+}
+
+sealed class EditorPush {
+  const EditorPush();
+}
+
+final class Pushed extends EditorPush {
+  const Pushed(this.closed);
+
+  final Future<void> closed;
+}
+
+final class Refused extends EditorPush {
+  const Refused();
 }

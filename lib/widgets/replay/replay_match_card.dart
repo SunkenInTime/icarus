@@ -168,8 +168,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
     String pageId,
     OpenSeen asked,
   ) async {
-    widget.playback.pause();
-    final opened = await StrategyView.open(
+    final push = StrategyView.open(
       Navigator.of(context),
       asked: asked,
       initialStrategyId: strategy.id,
@@ -180,7 +179,10 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
       initialPageId: pageId,
       backTooltip: context.l10n.replayMatchBackToReplay,
     );
-    if (!opened || !mounted) return;
+    if (push is! Pushed) return;
+    widget.playback.pause();
+    await push.closed;
+    if (!mounted) return;
     widget.onReturnFromEditor();
     // The editor may have removed pages, or the whole strategy.
     try {

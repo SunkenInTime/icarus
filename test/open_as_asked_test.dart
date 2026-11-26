@@ -52,7 +52,8 @@ void main() {
   });
   setUp(openUnitHive);
   tearDown(() async {
-    strategies.closeStrategy(asked: strategies.askedByTheUserNow());
+    expect(strategies.closeStrategy(asked: strategies.askedByTheUserNow()),
+        isA<Changed>());
     await Hive.close();
   });
 
@@ -131,13 +132,16 @@ void main() {
     final navigator = appNavigatorKey.currentState!;
     final lateAsked = strategies.askedByTheUserNow();
 
-    StrategyView.open(
-      navigator,
-      asked: strategies.askedByTheUserNow(),
-      initialStrategyId: 'wanted',
-      initialStrategyName: 'wanted',
+    expect(
+      StrategyView.open(
+        navigator,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'wanted',
+        initialStrategyName: 'wanted',
+      ),
+      isA<Pushed>(),
     );
-    final beforeItsFirstFrame = await StrategyView.open(
+    final beforeItsFirstFrame = StrategyView.open(
       navigator,
       asked: lateAsked,
       initialStrategyId: 'late',
@@ -145,11 +149,11 @@ void main() {
     );
     await settleWithDisk(tester);
 
-    expect(beforeItsFirstFrame, isFalse);
+    expect(beforeItsFirstFrame, isA<Refused>());
     expect(container.read(strategyProvider).strategyId, 'wanted');
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
 
-    final afterItOpened = await StrategyView.open(
+    final afterItOpened = StrategyView.open(
       navigator,
       asked: lateAsked,
       initialStrategyId: 'late',
@@ -157,7 +161,7 @@ void main() {
     );
     await settleWithDisk(tester);
 
-    expect(afterItOpened, isFalse);
+    expect(afterItOpened, isA<Refused>());
     expect(container.read(strategyProvider).strategyId, 'wanted');
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
     await leaveEditors(tester, container);

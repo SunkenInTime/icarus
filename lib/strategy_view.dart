@@ -51,6 +51,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:icarus/strategy/open_seen.dart';
+import 'package:meta/meta.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/eased_route_transition.dart';
@@ -97,20 +98,21 @@ class StrategyView extends ConsumerStatefulWidget {
 
   /// A Community post over the tab it was opened from: a sheet first, that
   /// opens out to the full view-only editor in place.
-  static Future<bool> openPost(
+  @useResult
+  static EditorPush openPost(
     NavigatorState navigator,
     CommunityPost post, {
     required OpenSeen asked,
     bool expanded = false,
-  }) async {
+  }) {
     final claimed = _claim(navigator, asked);
-    if (claimed == null) return false;
-    await navigator
-        .push(_communityRoute(post, asked: claimed, expanded: expanded));
-    return true;
+    if (claimed == null) return const Refused();
+    return Pushed(navigator
+        .push(_communityRoute(post, asked: claimed, expanded: expanded)));
   }
 
-  static Future<bool> open(
+  @useResult
+  static EditorPush open(
     NavigatorState navigator, {
     required OpenSeen asked,
     String? initialStrategyId,
@@ -120,10 +122,10 @@ class StrategyView extends ConsumerStatefulWidget {
     bool initialIsAttack = true,
     String? initialPageId,
     String? backTooltip,
-  }) async {
+  }) {
     final claimed = _claim(navigator, asked);
-    if (claimed == null) return false;
-    await navigator.push(_route(
+    if (claimed == null) return const Refused();
+    return Pushed(navigator.push(_route(
       asked: claimed,
       initialStrategyId: initialStrategyId,
       initialStrategyName: initialStrategyName,
@@ -132,8 +134,7 @@ class StrategyView extends ConsumerStatefulWidget {
       initialIsAttack: initialIsAttack,
       initialPageId: initialPageId,
       backTooltip: backTooltip,
-    ));
-    return true;
+    )));
   }
 
   static OpenSeen? _claim(NavigatorState navigator, OpenSeen asked) =>

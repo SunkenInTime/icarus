@@ -9,6 +9,7 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:meta/meta.dart';
 import 'package:icarus/widgets/community/community_post_view.dart';
 
 /// Opens the post a feed card shows. The card may be minutes old and its
@@ -49,27 +50,33 @@ Future<void> openCommunityPostFromCard(
   }
   // The card left the screen while its post was read: a filter changed.
   if (!ref.context.mounted) return;
-  await openCommunityPost(ref, found.post, asked: asked);
+  switch (openCommunityPost(ref, found.post, asked: asked)) {
+    case Pushed(:final closed):
+      await closed;
+    case Refused():
+      break;
+  }
 }
 
 /// Opens [post] over the library: a quick look, or the full view-only
 /// editor when [expanded]. A post [underReview] opens full screen with a
 /// reviewer's controls; [stillUp] when reports haven't hidden it.
-Future<void> openCommunityPost(
+@useResult
+EditorPush openCommunityPost(
   WidgetRef ref,
   CommunityPost post, {
   required OpenSeen asked,
   bool expanded = false,
   bool underReview = false,
   bool stillUp = false,
-}) async {
+}) {
   final navigator = appNavigatorKey.currentState;
-  if (navigator == null) return;
+  if (navigator == null) return const Refused();
   if (!asked.isNow(ref.read(strategyProvider.notifier).askedByTheUserNow())) {
-    return;
+    return const Refused();
   }
   showCommunityPost(ref, post, underReview: underReview, stillUp: stillUp);
-  await StrategyView.openPost(
+  return StrategyView.openPost(
     navigator,
     post,
     asked: asked,

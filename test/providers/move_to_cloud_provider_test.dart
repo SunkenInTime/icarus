@@ -1145,7 +1145,7 @@ class _HeldStrategy extends StrategyProvider {
   }
 
   @override
-  OpenChange closeStrategy({required OpenSeen asked}) {
+  CloseChange closeStrategy({required OpenSeen asked}) {
     if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     if (!letsGo) return Changed(askedByTheUserNow());
     ref.read(strategyOpeningProvider.notifier).endAll();

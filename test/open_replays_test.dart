@@ -43,7 +43,7 @@ class _OpenStrategy extends StrategyProvider {
   void cancelPendingSave() {}
 
   @override
-  OpenChange closeStrategy({required OpenSeen asked}) {
+  CloseChange closeStrategy({required OpenSeen asked}) {
     if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     ref.read(strategyOpeningProvider.notifier).endAll();
     state = _noStrategy;

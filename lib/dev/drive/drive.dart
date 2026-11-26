@@ -606,9 +606,12 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
   Future<String> serverMap(String id) async =>
       (await repository.fetchShell(id)).header.mapData;
   Future<void> openAndSettle(String id) async {
-    if (await strategies.openCloud(id,
-        asked: strategies.askedByTheUserNow()) is! Changed) {
-      throw StateError('$id did not open');
+    switch (await strategies.openCloud(id,
+        asked: strategies.askedByTheUserNow())) {
+      case Changed():
+        break;
+      case GaveWay():
+        throw StateError('$id did not open');
     }
     await _waitFor(
       () => !c.read(strategyPageSessionProvider).isApplyingPage,
@@ -744,9 +747,12 @@ Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
   final left = idOf(leftName)!;
   listing.close();
   Future<void> openAndSettle(String id) async {
-    if (await strategies.openCloud(id,
-        asked: strategies.askedByTheUserNow()) is! Changed) {
-      throw StateError('$id did not open');
+    switch (await strategies.openCloud(id,
+        asked: strategies.askedByTheUserNow())) {
+      case Changed():
+        break;
+      case GaveWay():
+        throw StateError('$id did not open');
     }
     await _waitFor(
       () => !c.read(strategyPageSessionProvider).isApplyingPage,
@@ -917,7 +923,10 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
   for (var run = 1; run <= runs; run++) {
     if (c.read(strategyProvider).strategyId != null) {
       final strategies = c.read(strategyProvider.notifier);
-      strategies.closeStrategy(asked: strategies.askedByTheUserNow());
+      switch (strategies.closeStrategy(asked: strategies.askedByTheUserNow())) {
+        case Changed() || GaveWay():
+          break;
+      }
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       await _seconds(1);
       await _frames();
@@ -1396,9 +1405,12 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     final original =
         cloneStrategy(const LocalLibrary().storedStrategy(left.id)!);
     final strategies = c.read(strategyProvider.notifier);
-    if (await strategies.openLocal(left.id,
-        asked: strategies.askedByTheUserNow()) is! Changed) {
-      throw StateError('$leftName did not open');
+    switch (await strategies.openLocal(left.id,
+        asked: strategies.askedByTheUserNow())) {
+      case Changed():
+        break;
+      case GaveWay() || Missing():
+        throw StateError('$leftName did not open');
     }
     await _frames();
     if (undoes) {
@@ -2551,14 +2563,15 @@ Future<void> _run(Map<String, dynamic> step) async {
       )))
           .forEach(_log);
     case 'openStoredCloudStrategy':
-      unawaited(
-        StrategyView.open(
-          Navigator.of(appNavigatorKey.currentContext!),
-          asked: c.read(strategyProvider.notifier).askedByTheUserNow(),
-          initialStrategyId: storedCloudStrategy(c),
-          initialStrategySource: StrategySource.cloud,
-        ),
-      );
+      switch (StrategyView.open(
+        Navigator.of(appNavigatorKey.currentContext!),
+        asked: c.read(strategyProvider.notifier).askedByTheUserNow(),
+        initialStrategyId: storedCloudStrategy(c),
+        initialStrategySource: StrategySource.cloud,
+      )) {
+        case Pushed() || Refused():
+          break;
+      }
     case 'breakConvexSignIn':
       _log(await breakConvexSignIn());
     case 'restoreConvexSignIn':

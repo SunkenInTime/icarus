@@ -73,7 +73,7 @@ void main() {
 
     for (final (path, signature, through) in [
       (provider, 'Future<OpenChange> openCloud(', 'opening.wait('),
-      (provider, 'Future<OpenChange> openLocal(', 'opening.wait('),
+      (provider, 'Future<LocalOpenChange> openLocal(', 'opening.wait('),
       (session, 'Future<void> initializeForStrategy(', 'opening.wait('),
       (session, 'Future<void> _rehydrateActivePageFromSource(', 'opening.wait('),
       (session, 'Future<String?> _applyLoadedPageData(', 'opening.wait('),
@@ -103,7 +103,7 @@ void main() {
     test('the page step of both opens is given the attempt', () {
       for (final signature in [
         'Future<OpenChange> openCloud(',
-        'Future<OpenChange> openLocal(',
+        'Future<LocalOpenChange> openLocal(',
       ]) {
         final body = _bodyOf(provider, signature);
         expect(body, contains('initializeForStrategy('));

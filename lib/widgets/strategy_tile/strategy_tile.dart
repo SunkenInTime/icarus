@@ -610,7 +610,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
     try {
       if (!context.mounted) return;
-      await StrategyView.open(
+      switch (StrategyView.open(
         Navigator.of(context),
         asked: asked,
         initialStrategyId: _strategyId,
@@ -619,7 +619,12 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             _isCloud ? StrategySource.cloud : StrategySource.local,
         initialMapValue: _mapValue,
         initialIsAttack: _isAttack,
-      );
+      )) {
+        case Pushed(:final closed):
+          await closed;
+        case Refused():
+          break;
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -648,7 +653,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     switch (await ref
         .read(strategyProvider.notifier)
         .openLocal(_strategyId, asked: asked)) {
-      case GaveWay():
+      case GaveWay() || Missing():
         return;
       case Changed():
         break;

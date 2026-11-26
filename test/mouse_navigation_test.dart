@@ -620,7 +620,7 @@ class _RecordingStrategies extends StrategyProvider {
   Future<void> Function()? whileOpening;
 
   @override
-  OpenChange closeStrategy({required OpenSeen asked}) {
+  CloseChange closeStrategy({required OpenSeen asked}) {
     if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     ref.read(strategyOpeningProvider.notifier).endAll();
     state = const StrategyState();

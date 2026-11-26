@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:meta/meta.dart';
 import 'package:icarus/l10n/cloud_sync_error_text.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -401,6 +402,7 @@ String _cloudSyncBlockedMessage({
   return l10n.unsavedGuardStayAndRetry(base);
 }
 
+@useResult
 Future<LeaveAnswer> guardUnsavedStrategyExit({
   required BuildContext context,
   required WidgetRef ref,

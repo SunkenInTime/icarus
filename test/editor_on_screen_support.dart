@@ -7,6 +7,7 @@ import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/strategy/open_seen.dart';
 
 const _reportsOfTheTestFontAndTeardown = [
   'overflowed',
@@ -59,7 +60,10 @@ Future<void> leaveEditors(
   ProviderContainer container,
 ) async {
   final strategies = container.read(strategyProvider.notifier);
-  strategies.closeStrategy(asked: strategies.askedByTheUserNow());
+  switch (strategies.closeStrategy(asked: strategies.askedByTheUserNow())) {
+    case Changed() || GaveWay():
+      break;
+  }
   appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
   await settleWithDisk(tester);
   await tester.pumpWidget(const SizedBox());

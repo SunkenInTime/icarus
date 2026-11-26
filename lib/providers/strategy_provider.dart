@@ -141,6 +141,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   OpenSeen askedByTheUserNow() => _seen;
 
+  @useResult
   OpenSeen? claimForAnEditor(OpenSeen asked) {
     if (!asked.isNow(_seen)) return null;
     ref.read(strategyOpeningProvider.notifier).editorPushed();
@@ -148,6 +149,10 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   bool get isOpening => ref.read(strategyOpeningProvider) != null;
+
+  @useResult
+  CloseChange closeAfterFailedOpen({required OpenSeen asked}) =>
+      closeStrategy(asked: OpenSeen(asked.strategyId, asked.opens + 1));
 
   @override
   StrategyState build() {
@@ -425,6 +430,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// it has that page. [GaveWay] when what is open is not what [asked] saw,
   /// or when it gave way to a newer open or a close before it finished (see
   /// [_open]); throws when it could not be read.
+  @useResult
   Future<OpenChange> openCloud(
     String strategyID, {
     String? pageId,
@@ -944,7 +950,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     state = opened;
   }
 
-  OpenChange closeStrategy({required OpenSeen asked}) {
+  @useResult
+  CloseChange closeStrategy({required OpenSeen asked}) {
     if (!asked.isNow(_seen)) return const GaveWay();
     ref.read(strategyOpeningProvider.notifier).endAll();
     cancelPendingSave();
@@ -2278,7 +2285,8 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   /// Opens strategy [id] on its first page, or on [pageId] when given.
-  Future<OpenChange> openLocal(
+  @useResult
+  Future<LocalOpenChange> openLocal(
     String id, {
     String? pageId,
     required OpenSeen asked,
@@ -2289,6 +2297,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     // local original the move deletes.
     if (ref.read(movingToCloudProvider).contains(id)) {
       throw StateError('This strategy is moving to the cloud.');
+    }
+    if (const LocalLibrary().firstStoredWithId(id) == null) {
+      return const Missing();
     }
     cancelPendingSave();
 
@@ -2391,8 +2402,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   /// Creates an empty strategy on [map] and returns it. Without [name] it
   /// is auto-named after the map ("Haven", then "Haven 2", ...). In the cloud
-  /// workspace the strategy is created on the server and opened; nothing is
-  /// written to the local library. With [local] it goes to the local library
+  /// workspace the strategy is created on the server; nothing is written to
+  /// the local library. With [local] it goes to the local library
   /// (its open folder) whichever workspace is selected: a replay's Capture
   /// writes its pages there while the user is signed out.
   Future<StrategyData> createNewStrategy({

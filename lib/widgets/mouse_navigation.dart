@@ -249,16 +249,15 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     final leftAgain =
         await _leaveOpenStrategy(navigator, 'openCommunityPost', left);
     if (leftAgain == null) return false;
-    // Not waited for: it ends when the post is closed.
-    unawaited(
-      openCommunityPost(
-        ref,
-        found.post,
-        asked: leftAgain,
-        underReview: found.status == CommunityPostStatus.hidden,
-      ),
-    );
-    return true;
+    return switch (openCommunityPost(
+      ref,
+      found.post,
+      asked: leftAgain,
+      underReview: found.status == CommunityPostStatus.hidden,
+    )) {
+      Pushed() => true,
+      Refused() => false,
+    };
   }
 
   /// Leaves the strategy or Community post that is open, if one is, asking
@@ -508,7 +507,6 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             source: 'MouseNavigation.navigateToStrategy',
           );
           if (answer is! Leave) return false;
-          _resetStrategyUiState();
           final opened = switch (source) {
             StrategySource.local => await ref
                 .read(strategyProvider.notifier)
@@ -516,39 +514,37 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             StrategySource.cloud =>
               await _openCloudInPlace(strategyId, navigator, answer.seen),
           };
-          return opened is Changed && mounted;
+          if (opened is! Changed || !mounted) return false;
+          _resetStrategyUiState();
+          return true;
         }
 
         if (source == StrategySource.cloud) {
           final look = strategyLookFor(ref, strategyId, StrategySource.cloud);
-          unawaited(
-            StrategyView.open(
-              navigator,
-              asked: over,
-              initialStrategyId: strategyId,
-              initialStrategyName: look.name,
-              initialStrategySource: StrategySource.cloud,
-              initialMapValue: look.map,
-              initialIsAttack: look.isAttack,
-            ),
+          final push = StrategyView.open(
+            navigator,
+            asked: over,
+            initialStrategyId: strategyId,
+            initialStrategyName: look.name,
+            initialStrategySource: StrategySource.cloud,
+            initialMapValue: look.map,
+            initialIsAttack: look.isAttack,
           );
-          return true;
+          return push is Pushed;
         }
         final strategy =
             ref.read(localLibraryViewProvider).strategy(strategyId);
         if (strategy == null) return false;
-        unawaited(
-          StrategyView.open(
-            navigator,
-            asked: over,
-            initialStrategyId: strategy.id,
-            initialStrategyName: strategy.name,
-            initialStrategySource: StrategySource.local,
-            initialMapValue: strategy.mapData,
-            initialIsAttack: strategy.opensOnAttack,
-          ),
+        final push = StrategyView.open(
+          navigator,
+          asked: over,
+          initialStrategyId: strategy.id,
+          initialStrategyName: strategy.name,
+          initialStrategySource: StrategySource.local,
+          initialMapValue: strategy.mapData,
+          initialIsAttack: strategy.opensOnAttack,
         );
-        return true;
+        return push is Pushed;
     }
   }
 
@@ -565,8 +561,6 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     try {
       return await strategies.openCloud(strategyId, asked: asked);
     } catch (error, stackTrace) {
-      final now = strategies.askedByTheUserNow();
-      final onlyThisOpenSince = now.opens == asked.opens + 1;
       AppErrorReporter.reportWarning(
         'Opening a cloud strategy over the open one failed.',
         source: 'MouseNavigation.openCloudInPlace',
@@ -590,8 +584,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             ? Settings.tacticalVioletTheme.secondary
             : Settings.tacticalVioletTheme.destructive,
       );
-      if (!onlyThisOpenSince) return const GaveWay();
-      switch (strategies.closeStrategy(asked: now)) {
+      switch (strategies.closeAfterFailedOpen(asked: asked)) {
         case GaveWay():
           break;
         case Changed():

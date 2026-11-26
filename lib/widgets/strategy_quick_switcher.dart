@@ -98,16 +98,17 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
         source: 'StrategyQuickSwitcher.switchStrategy',
       );
       if (answer case Leave(:final seen)) {
-        ref
-            .read(interactionStateProvider.notifier)
-            .update(InteractionState.navigation);
-        ref
-            .read(agentFilterProvider.notifier)
-            .updateFilterState(FilterState.all);
         switch (await ref
             .read(strategyProvider.notifier)
             .openLocal(strategyId, asked: seen)) {
-          case Changed() || GaveWay():
+          case Changed():
+            ref
+                .read(interactionStateProvider.notifier)
+                .update(InteractionState.navigation);
+            ref
+                .read(agentFilterProvider.notifier)
+                .updateFilterState(FilterState.all);
+          case GaveWay() || Missing():
             break;
         }
       }

@@ -290,11 +290,11 @@ Future<void> pickMapAndOpenNewStrategy({
   required BuildContext context,
 }) async {
   if (_refusedCloudChangeOffline(ref)) return;
-  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
   final map = await showDialog<MapValue>(
     context: context,
     builder: (context) => const CreateStrategyDialog(),
   );
+  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
   if (map == null || !context.mounted) return;
   await _createStrategyAndOpen(map, ref: ref, context: context, asked: asked);
 }
@@ -323,13 +323,17 @@ Future<void> _createStrategyAndOpen(
   }
   if (!context.mounted) return;
 
+  final strategies = ref.read(strategyProvider.notifier);
+  final EditorPush push;
   if (isCloud) {
     final OpenChange opened;
     try {
-      opened = await ref
-          .read(strategyProvider.notifier)
-          .openCloud(strategy.id, asked: asked);
+      opened = await strategies.openCloud(strategy.id, asked: asked);
     } catch (error, stackTrace) {
+      switch (strategies.closeAfterFailedOpen(asked: asked)) {
+        case Changed() || GaveWay():
+          break;
+      }
       AppErrorReporter.reportWarning(
         'Created a cloud strategy but could not open it.',
         source: 'FolderNavigator.createStrategyAndOpen',
@@ -347,18 +351,24 @@ Future<void> _createStrategyAndOpen(
         return;
       case Changed(:final after):
         if (!context.mounted) return;
-        await StrategyView.open(Navigator.of(context), asked: after);
+        push = StrategyView.open(Navigator.of(context), asked: after);
     }
-    return;
+  } else {
+    push = StrategyView.open(
+      Navigator.of(context),
+      asked: asked,
+      initialStrategyId: strategy.id,
+      initialStrategyName: strategy.name,
+      initialStrategySource: StrategySource.local,
+      initialMapValue: strategy.mapData,
+    );
   }
-  await StrategyView.open(
-    Navigator.of(context),
-    asked: asked,
-    initialStrategyId: strategy.id,
-    initialStrategyName: strategy.name,
-    initialStrategySource: StrategySource.local,
-    initialMapValue: strategy.mapData,
-  );
+  switch (push) {
+    case Pushed(:final closed):
+      await closed;
+    case Refused():
+      break;
+  }
 }
 
 /// Something the user can drag around the library grid.
