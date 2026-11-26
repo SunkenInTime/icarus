@@ -1,6 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/agents.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -222,4 +228,72 @@ void main() {
       await leaveEditors(tester, container);
     });
   }
+
+  testWidgets(
+      'a quick switch whose Save ends after another strategy opened leaves '
+      'that strategy open, with its tool and its edit, and the edit saves',
+      (tester) async {
+    await tester.runAsync(() async {
+      await _stored('asked-about');
+      await _stored('opened-since');
+      await _stored('switch-target');
+    });
+    await pumpLibraryWithEditors(tester, container);
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'asked-about',
+        initialStrategyName: 'asked-about',
+      ),
+      isA<Pushed>(),
+    );
+    await settleWithDisk(tester);
+    container.read(strategySaveStateProvider.notifier).markDirty();
+    final held = strategies.held = Completer<void>();
+
+    await tester.tap(find.descendant(
+      of: find.byKey(const ValueKey('strategy-quick-switcher-control')),
+      matching: find.byType(ShadIconButton),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('switch-target'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+
+    expect(
+      await tester.runAsync(() => strategies.openLocal('opened-since',
+          asked: strategies.askedByTheUserNow())),
+      isA<Changed>(),
+    );
+    container
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.drawing);
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'placed-on-opened-since',
+          type: AgentType.jett,
+          position: const Offset(500, 500),
+        ));
+    held.complete();
+    strategies.held = null;
+    await settleWithDisk(tester);
+
+    expect(container.read(strategyProvider).strategyId, 'opened-since');
+    expect(container.read(interactionStateProvider), InteractionState.drawing);
+    expect(
+      container.read(agentProvider).map((agent) => agent.id),
+      contains('placed-on-opened-since'),
+    );
+    await tester.runAsync(() => strategies.forceSaveNow('opened-since'));
+    final saved =
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get('opened-since')!;
+    expect(
+      saved.pages.expand((page) => page.agentData).map((agent) => agent.id),
+      contains('placed-on-opened-since'),
+    );
+    await leaveEditors(tester, container);
+  });
 }
