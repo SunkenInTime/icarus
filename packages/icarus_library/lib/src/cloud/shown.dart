@@ -565,8 +565,8 @@ final class ReadOwed extends ReadState {
   String toString() => switch ((unlessLife, namedLife)) {
     (null, _) => 'owed',
     (final refused?, null) =>
-      'owed by a list of another life than $refused, read after the refusal',
-    (_, final named?) => 'owed by a list of life $named or later',
+      'owed by a list of another life than $refused, paid by $since',
+    (_, final named?) => 'owed by a list of life $named or later, paid by $since',
   };
 }
 
@@ -599,10 +599,11 @@ final class ReadRefused extends ReadState {
   String toString() => switch ((unlessLife, namedLife)) {
     (null, _) => 'refused: $problem',
     (final refused?, null) =>
-      'refused: $problem, owed by a list of another life than $refused, read '
-          'after the refusal',
+      'refused: $problem, owed by a list of another life than $refused, '
+          'paid by $since',
     (_, final named?) =>
-      'refused: $problem, owed by a list of life $named or later',
+      'refused: $problem, owed by a list of life $named or later, paid by '
+          '$since',
   };
 }
 

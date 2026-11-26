@@ -599,8 +599,8 @@ String renderTable() {
     ..writeln('## Who decides')
     ..writeln()
     ..writeln(
-      '- The server\'s answer to an op is the only thing that takes it out of '
-      'the queue or hands it to the user. Applied or nothing to do: done. '
+      '- Of what the server sends, only its answer to an op takes the op out '
+      'of the queue or hands it to the user. Applied or nothing to do: done. '
       'Rejected: the user decides, and later work on that row waits behind '
       'it, unless the row the rejection carries already holds what the op '
       'wrote, which never applies to `row_replaced`: that row is another life '
@@ -611,6 +611,11 @@ String renderTable() {
       '- When the user gives up an entry (takes the cloud\'s version or '
       'discards it), every later entry for the same row, page or strategy '
       'goes with it, because it was built on the work given up.',
+    )
+    ..writeln(
+      '- An entry also leaves the queue when a page list of a later life of '
+      'the strategy is adopted: every entry is set aside for the user. A '
+      'page delete is handed to the user by its own verdict, below.',
     )
     ..writeln(
       '- Results (the rows the server sent) never settle or drop an entry. '
@@ -843,8 +848,9 @@ String renderTable() {
       'server checks the page itself, one rule decides a page delete, with no '
       'partial cases. It is decided only when the device holds a page list '
       'and a result of that page, both from the current session and both '
-      'received after this device\'s last answered op that touches that page '
-      'or the page list; until then it waits, and `resultsNeeded` asks for '
+      'at or after this device\'s last answered op that touches that page '
+      'or the page list, in snapshot order and in server time when the '
+      'answer carried one; until then it waits, and `resultsNeeded` asks for '
       'whichever of the two is missing. Then: if the page list says the page '
       'is gone, the delete goes and the server answers; the page\'s own result '
       'is not needed then, since it cannot change the outcome. Otherwise the '
@@ -863,8 +869,9 @@ String renderTable() {
       'page list, the list for every page. A page list and a page result '
       'that disagree about whether the page exists are no verdict: the delete '
       'waits and asks for both. For a page delete the hold\'s verdict that the '
-      'page is gone comes before the revision check, and a page delete queued '
-      'behind other entries asks for nothing until it reaches the head. All '
+      'page is gone comes before the revision check at any place in the '
+      'queue, and a page delete queued behind other entries adds no result '
+      'it waits for until it reaches the head. All '
       'of this lives in '
       '`lib/src/cloud/held_page_delete.dart` and comes out in one piece when '
       '#670 lands.',
@@ -904,14 +911,26 @@ String renderTable() {
 }
 
 void main() {
-  test('every row answers every event without throwing', () {
+  test('every row answers every event without throwing, and every event '
+      'applies in some row except the two made never to apply', () {
+    final applied = <String>{};
     for (final row in rows) {
-      for (final make in events.values) {
+      for (final MapEntry(key: name, value: make) in events.entries) {
         final client = row.build();
-        final event = make(client);
-        expect(transition(client.queue, event, now: client.at), isA<Step>());
+        final step = transition(client.queue, make(client), now: client.at);
+        if (step is Stepped) applied.add(name);
       }
     }
+    expect(
+      {
+        for (final name in events.keys)
+          if (!applied.contains(name)) name,
+      },
+      {
+        'answer from an attempt that did not hold it',
+        'result: page-a from a session that ended',
+      },
+    );
   });
 
   test('every kind of entry and every standing the queue can reach has a '
