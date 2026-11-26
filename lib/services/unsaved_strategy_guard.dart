@@ -409,7 +409,7 @@ Future<AutosaveBeforeExit> _autosaveUntilItHoldsEditsMadeMeanwhile(
 ) async {
   var autosave = await strategies.flushPendingAutosaveBeforeExit();
   while (autosave is EditedDuringTheAutosave &&
-      asked.isTheSameOpen(strategies.askedByTheUserNow())) {
+      asked.isNow(strategies.askedByTheUserNow())) {
     autosave = await strategies.flushPendingAutosaveBeforeExit();
   }
   return autosave;
@@ -428,7 +428,7 @@ Future<void> _saveUntilItHoldsEditsMadeMeanwhile(
     await strategies.forceSaveNow(strategyId);
   } while (edits.dirtyMarks != marks &&
       ref.read(strategySaveStateProvider).isDirty &&
-      asked.isTheSameOpen(strategies.askedByTheUserNow()));
+      asked.isNow(strategies.askedByTheUserNow()));
 }
 
 @useResult
@@ -499,8 +499,8 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
         );
         return const Stay();
       }
-      if (asked.isTheSameOpen(
-              ref.read(strategyProvider.notifier).askedByTheUserNow()) &&
+      if (asked
+              .isNow(ref.read(strategyProvider.notifier).askedByTheUserNow()) &&
           ref.read(strategySaveStateProvider).isDirty) {
         AppErrorReporter.reportError(l10n.unsavedGuardSaveFailed,
             source: source);
