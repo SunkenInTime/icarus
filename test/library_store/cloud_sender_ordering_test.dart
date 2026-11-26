@@ -57,7 +57,6 @@ void sendLostThenRead(
   world.server.answerReadWith(strategyId, answer);
   world.sender.owesFreshRead(strategyId, read);
   world.settle(const Duration(milliseconds: 100));
-  printOnFailure('send again at ${sendRetryAt(world)}, now ${now(world)}');
   expect(
     [for (final call in world.server.readCalls.skip(reads)) '$call'],
     [call],
@@ -250,8 +249,8 @@ void main() {
         [for (final call in world.server.readCalls.skip(reads)) '$call'],
         ['page $pageId'],
       );
-      expect(world.written().whereType<BaseArrived>().last.requestedAt, isNull);
       expect(world.cloud().queue.shown.pageRead(pageId), isA<ReadOwed>());
+      expect(world.written().whereType<BaseArrived>().last.requestedAt, isNull);
       world.settle(const Duration(seconds: 10));
       expect(
         world.cloud().queue.shown.pageRead(pageId),
