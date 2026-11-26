@@ -16,6 +16,8 @@ import 'cloud_shadow_test.dart'
 import 'sender_world.dart';
 
 const seeds = int.fromEnvironment('SENDER_MODEL_SEEDS', defaultValue: 480);
+const from = int.fromEnvironment('SENDER_MODEL_FROM');
+final stampsMade = <String, int>{};
 const steps = 70;
 const strategies = [strategyId, otherStrategy];
 
@@ -120,6 +122,7 @@ final class Model {
     world.store.close();
     async.flushMicrotasks();
     restarts++;
+    server.appStarted();
     refusedAt = null;
     _read = 0;
     _restartsWritten.clear();
@@ -806,6 +809,11 @@ final class Model {
   void checkSafety() {
     checkAccounted();
     expect(broken, isEmpty, reason: trail);
+    expect(
+      server.floorBroken,
+      isEmpty,
+      reason: 'a subject was read twice inside the floor\n$trail',
+    );
     expect(server.anyAppliedTwice, isFalse, reason: 'applied twice\n$trail');
     expect(
       server.wrongAccount.map((call) => '${call.strategyId} ${call.account}'),
@@ -1056,7 +1064,7 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
       async,
       Random(seed),
       MemoryStorage(),
-      FakeServer(),
+      FakeServer(varies: Random(seed * 31 + 7)),
       dropLost: dropLost,
       drops: dropLost == null ? null : Random(0),
     );
@@ -1087,6 +1095,9 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
       found?.add(
           'seed $seed${dropLost == null ? '' : ' (ConnectionLost ${dropLost ? 'dropped' : 'kept'})'}: ${failure.message}');
     } finally {
+      for (final MapEntry(:key, :value) in model.server.made.entries) {
+        stampsMade[key] = (stampsMade[key] ?? 0) + value;
+      }
       model.world.sender.dispose();
       model.world.store.close();
       async.flushMicrotasks();
@@ -1098,13 +1109,31 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
 void main() {
   test('the loop keeps its promises through $seeds random runs', () {
     final found = <String>[];
-    for (var seed = const int.fromEnvironment('SENDER_MODEL_FROM');
-        seed < seeds;
-        seed++) {
+    var ran = 0;
+    for (var seed = from; seed < seeds; seed++) {
+      ran++;
       runSeed(seed, found: found);
       if (found.isNotEmpty) break;
     }
+    expect(
+      ran,
+      greaterThan(0),
+      reason:
+          'SENDER_MODEL_FROM=$from is at or past SENDER_MODEL_SEEDS=$seeds, '
+          'so no seed ran',
+    );
     expect(found, isEmpty);
+    printOnFailure('$stampsMade');
+    if (from == 0 && seeds >= 480) {
+      for (final MapEntry(key: shape, value: least) in const {
+        'two calls answered at one snapshot': 800,
+        'a new snapshot at the same time': 750,
+        'a second client': 270,
+        'time went back on a new connection': 65,
+      }.entries) {
+        expect(stampsMade[shape] ?? 0, greaterThan(least), reason: shape);
+      }
+    }
   });
 
   test(

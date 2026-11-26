@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_results.dart';
@@ -132,6 +134,9 @@ int lifeOfChecked(StrategyRowSet rows, StrategyOp op) {
 const stampedWhenAnswered = ResultPoint(client: 0, connection: 0, snapshot: 0);
 
 final class FakeServer {
+  FakeServer({this.varies});
+
+  final Random? varies;
   int nextLife = firstLife + 1;
   final calls = <ServerCall>[];
   final log = <String>[];
@@ -150,18 +155,84 @@ final class FakeServer {
   DateTime Function()? clock;
   String? Function()? whyNow;
   StoreReadOutcome? Function(ReadCall call)? overrideRead;
-  int connection = 1;
+  int client = 1;
+  int _connection = 1;
+  int _applied = 1;
   var _snapshot = 0;
+  int? _time;
+  int _lag = 0;
+  List<(String, StrategyRowSet)>? _seen;
+  final made = <String, int>{};
 
-  ResultPoint stamp() => ResultPoint(
-        client: 1,
-        connection: connection,
-        snapshot: ++_snapshot,
-        serverTime: _snapshot * 1000,
+  void _count(String what) => made[what] = (made[what] ?? 0) + 1;
+
+  int get connection => _connection;
+
+  set connection(int next) {
+    if (next == _connection) return;
+    _connection = next;
+    final random = varies;
+    if (random == null) return;
+    if (random.nextBool()) _lag = 1 + random.nextInt(2000000000);
+    if (random.nextInt(5) == 0) {
+      client++;
+      _applied = next;
+      _snapshot = 0;
+      _time = null;
+      _seen = null;
+      _count('a second client');
+    }
+  }
+
+  int get _nowNanos =>
+      (clock?.call() ?? DateTime.now()).microsecondsSinceEpoch * 1000 +
+      skew * 1000000;
+
+  ResultPoint get current => ResultPoint(
+        client: client,
+        connection: _applied,
+        snapshot: _snapshot,
+        serverTime: _time,
       );
 
+  bool _unchangedSince(List<(String, StrategyRowSet)>? seen) =>
+      seen != null &&
+      seen.length == rows.length &&
+      seen.every((held) => identical(rows[held.$1], held.$2));
+
+  ResultPoint stamp() {
+    final random = varies;
+    final sameConnection = _applied == _connection;
+    if (random != null &&
+        _time != null &&
+        sameConnection &&
+        _unchangedSince(_seen) &&
+        random.nextInt(3) == 0) {
+      _count('two calls answered at one snapshot');
+      return current;
+    }
+    _seen = [for (final MapEntry(:key, :value) in rows.entries) (key, value)];
+    _snapshot++;
+    _applied = _connection;
+    final before = _time;
+    if (random != null &&
+        sameConnection &&
+        before != null &&
+        random.nextInt(6) == 0) {
+      _count('a new snapshot at the same time');
+    } else {
+      final floor = sameConnection ? before ?? 0 : 0;
+      _time = max(floor, _nowNanos - _lag) + 1 + (random?.nextInt(1000) ?? 0);
+    }
+    _lag ~/= 2;
+    if (!sameConnection && before != null && _time! < before) {
+      _count('time went back on a new connection');
+    }
+    return current;
+  }
+
   Future<({int client, int connection})> generation() async =>
-      (client: 1, connection: connection);
+      (client: client, connection: _connection);
 
   int get applied => appliedTimes.length;
 
@@ -572,7 +643,7 @@ final class RefusingEngine implements StorageEngine {
 
 Future<void> none() async {}
 
-final class _Flag {
+final class OnOff {
   var value = false;
 }
 
@@ -697,7 +768,7 @@ final class World {
   final LibraryStore store;
   final FakeServer server;
   final CloudSender sender;
-  late _Flag dropsConnectionLost;
+  late OnOff dropsConnectionLost;
   late _Slept _slept;
   late _Shows _shows;
 
@@ -778,7 +849,7 @@ final class World {
   }) {
     final inputs = startingWith ??
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
-    final dropsConnectionLost = _Flag();
+    final dropsConnectionLost = OnOff();
     final slept = _Slept();
     final shows = _Shows();
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));

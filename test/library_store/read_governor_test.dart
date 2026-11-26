@@ -89,7 +89,7 @@ void main() {
           world.async.flushMicrotasks();
         }
         world.settle(const Duration(seconds: 1));
-        expect(pageReads(world, pageId).length - before, lessThanOrEqualTo(1));
+        expect(pageReads(world, pageId).length - before, 1);
       });
     });
 
