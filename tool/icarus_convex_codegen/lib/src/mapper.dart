@@ -29,11 +29,13 @@ final class MappedFunction {
     required this.contract,
     required this.argsFields,
     required this.resultType,
+    this.handleName,
   });
 
   final ConvexFunctionContract contract;
   final List<MappedField> argsFields;
   final MappedType resultType;
+  final String? handleName;
 }
 
 final class MappedField {
@@ -354,7 +356,22 @@ final class _ContractMapper {
 
   MappedContract map() {
     final mappedFunctions = <MappedFunction>[];
+    final endpoints = <String, Set<String>>{};
     for (final function in contract.functions) {
+      (endpoints[function.moduleName] ??= {}).add(
+        lowerCamelCase(function.functionName),
+      );
+    }
+    for (final function in contract.functions) {
+      final handle = function.kind == ConvexFunctionKind.mutation
+          ? '${lowerCamelCase(function.functionName)}Mutation'
+          : null;
+      if (handle != null && endpoints[function.moduleName]!.contains(handle)) {
+        throw ContractException(
+          'The mutation handle ${function.moduleName}.$handle collides with '
+          'the function of that name',
+        );
+      }
       final prefix =
           '${pascalCase(function.moduleName)}${pascalCase(function.functionName)}';
       final argsFields = _mapObjectFields(function.args, '${prefix}Args');
@@ -364,6 +381,7 @@ final class _ContractMapper {
           contract: function,
           argsFields: argsFields,
           resultType: resultType,
+          handleName: handle,
         ),
       );
     }

@@ -89,6 +89,40 @@ final class StampedConvexQuery<T> {
   }
 }
 
+final class ConvexMutation<T> {
+  const ConvexMutation({
+    required ConvexTransport transport,
+    required String name,
+    required ConvexObject args,
+    required T Function(ConvexValue) decode,
+  }) : _transport = transport,
+       _name = name,
+       _args = args,
+       _decode = decode;
+
+  final ConvexTransport _transport;
+  final String _name;
+  final ConvexObject _args;
+  final T Function(ConvexValue) _decode;
+
+  Future<T> run() => _invoke(() => _transport.mutation(_name, _args), _decode);
+
+  StampedConvexMutation<T> stampedOn(StampedConvexTransport transport) =>
+      StampedConvexMutation._(transport, this);
+}
+
+final class StampedConvexMutation<T> {
+  const StampedConvexMutation._(this._transport, this._mutation);
+
+  final StampedConvexTransport _transport;
+  final ConvexMutation<T> _mutation;
+
+  Future<Stamped<T>> run() async => _decodeStamped(
+    await _transport.mutationStamped(_mutation._name, _mutation._args),
+    _mutation._decode,
+  );
+}
+
 Stamped<T> _decodeStamped<V, T>(Stamped<V> stamped, T Function(V) decode) =>
     switch (stamped) {
       StampedValue(:final value, :final stamp) => StampedValue(
@@ -283,6 +317,12 @@ abstract interface class CommunityModule {
     required String postPublicId,
     required String publicId,
   });
+  ConvexMutation<ConvexValue> copyPostMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String postPublicId,
+    required String publicId,
+  });
   ConvexQuery<CommunityGetPostResult?> getPost({required String postPublicId});
   ConvexQuery<CommunityGetPostPreviewResult> getPostPreview({
     required String strategyPublicId,
@@ -322,7 +362,19 @@ abstract interface class CommunityModule {
     required String strategyPublicId,
     required String title,
   });
+  ConvexMutation<CommunityPublishResult> publishMutation({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    required String strategyPublicId,
+    required String title,
+  });
   Future<CommunityReportResult> report({
+    required double clientProtocolVersion,
+    ConvexOptional<String> note = const ConvexOptional.absent(),
+    required String postPublicId,
+    required CommunityGetReportsResultItemReason reason,
+  });
+  ConvexMutation<CommunityReportResult> reportMutation({
     required double clientProtocolVersion,
     ConvexOptional<String> note = const ConvexOptional.absent(),
     required String postPublicId,
@@ -333,7 +385,17 @@ abstract interface class CommunityModule {
     required CommunityReviewArgsDecision decision,
     required String postPublicId,
   });
+  ConvexMutation<CommunityReportResult> reviewMutation({
+    required double clientProtocolVersion,
+    required CommunityReviewArgsDecision decision,
+    required String postPublicId,
+  });
   Future<CommunityReportResult> setStar({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    required bool starred,
+  });
+  ConvexMutation<CommunityReportResult> setStarMutation({
     required double clientProtocolVersion,
     required String postPublicId,
     required bool starred,
@@ -342,7 +404,17 @@ abstract interface class CommunityModule {
     required double clientProtocolVersion,
     required String postPublicId,
   });
+  ConvexMutation<CommunityReportResult> takeDownMutation({
+    required double clientProtocolVersion,
+    required String postPublicId,
+  });
   Future<CommunityReportResult> updatePost({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    ConvexOptional<bool> refresh = const ConvexOptional.absent(),
+    ConvexOptional<String> title = const ConvexOptional.absent(),
+  });
+  ConvexMutation<CommunityReportResult> updatePostMutation({
     required double clientProtocolVersion,
     required String postPublicId,
     ConvexOptional<bool> refresh = const ConvexOptional.absent(),
@@ -359,6 +431,18 @@ final class _CommunityModule implements CommunityModule {
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String postPublicId,
     required String publicId,
+  }) => copyPostMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    folderPublicId: folderPublicId,
+    postPublicId: postPublicId,
+    publicId: publicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> copyPostMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String postPublicId,
+    required String publicId,
   }) {
     final args = encodeCommunityCopyPostArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -366,9 +450,11 @@ final class _CommunityModule implements CommunityModule {
       postPublicId: postPublicId,
       publicId: publicId,
     );
-    return _invoke(
-      () => _transport.mutation('community:copyPost', args),
-      decodeCommunityCopyPostResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'community:copyPost',
+      args: args,
+      decode: decodeCommunityCopyPostResult,
     );
   }
 
@@ -548,6 +634,18 @@ final class _CommunityModule implements CommunityModule {
     required String postPublicId,
     required String strategyPublicId,
     required String title,
+  }) => publishMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    postPublicId: postPublicId,
+    strategyPublicId: strategyPublicId,
+    title: title,
+  ).run();
+  @override
+  ConvexMutation<CommunityPublishResult> publishMutation({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    required String strategyPublicId,
+    required String title,
   }) {
     final args = encodeCommunityPublishArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -555,14 +653,28 @@ final class _CommunityModule implements CommunityModule {
       strategyPublicId: strategyPublicId,
       title: title,
     );
-    return _invoke(
-      () => _transport.mutation('community:publish', args),
-      decodeCommunityPublishResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'community:publish',
+      args: args,
+      decode: decodeCommunityPublishResult,
     );
   }
 
   @override
   Future<CommunityReportResult> report({
+    required double clientProtocolVersion,
+    ConvexOptional<String> note = const ConvexOptional.absent(),
+    required String postPublicId,
+    required CommunityGetReportsResultItemReason reason,
+  }) => reportMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    note: note,
+    postPublicId: postPublicId,
+    reason: reason,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> reportMutation({
     required double clientProtocolVersion,
     ConvexOptional<String> note = const ConvexOptional.absent(),
     required String postPublicId,
@@ -574,14 +686,26 @@ final class _CommunityModule implements CommunityModule {
       postPublicId: postPublicId,
       reason: reason,
     );
-    return _invoke(
-      () => _transport.mutation('community:report', args),
-      decodeCommunityReportResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'community:report',
+      args: args,
+      decode: decodeCommunityReportResult,
     );
   }
 
   @override
   Future<CommunityReportResult> review({
+    required double clientProtocolVersion,
+    required CommunityReviewArgsDecision decision,
+    required String postPublicId,
+  }) => reviewMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    decision: decision,
+    postPublicId: postPublicId,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> reviewMutation({
     required double clientProtocolVersion,
     required CommunityReviewArgsDecision decision,
     required String postPublicId,
@@ -591,14 +715,26 @@ final class _CommunityModule implements CommunityModule {
       decision: decision,
       postPublicId: postPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('community:review', args),
-      decodeCommunityReviewResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'community:review',
+      args: args,
+      decode: decodeCommunityReviewResult,
     );
   }
 
   @override
   Future<CommunityReportResult> setStar({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    required bool starred,
+  }) => setStarMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    postPublicId: postPublicId,
+    starred: starred,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> setStarMutation({
     required double clientProtocolVersion,
     required String postPublicId,
     required bool starred,
@@ -608,9 +744,11 @@ final class _CommunityModule implements CommunityModule {
       postPublicId: postPublicId,
       starred: starred,
     );
-    return _invoke(
-      () => _transport.mutation('community:setStar', args),
-      decodeCommunitySetStarResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'community:setStar',
+      args: args,
+      decode: decodeCommunitySetStarResult,
     );
   }
 
@@ -618,19 +756,41 @@ final class _CommunityModule implements CommunityModule {
   Future<CommunityReportResult> takeDown({
     required double clientProtocolVersion,
     required String postPublicId,
+  }) => takeDownMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    postPublicId: postPublicId,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> takeDownMutation({
+    required double clientProtocolVersion,
+    required String postPublicId,
   }) {
     final args = encodeCommunityTakeDownArgs(
       clientProtocolVersion: clientProtocolVersion,
       postPublicId: postPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('community:takeDown', args),
-      decodeCommunityTakeDownResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'community:takeDown',
+      args: args,
+      decode: decodeCommunityTakeDownResult,
     );
   }
 
   @override
   Future<CommunityReportResult> updatePost({
+    required double clientProtocolVersion,
+    required String postPublicId,
+    ConvexOptional<bool> refresh = const ConvexOptional.absent(),
+    ConvexOptional<String> title = const ConvexOptional.absent(),
+  }) => updatePostMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    postPublicId: postPublicId,
+    refresh: refresh,
+    title: title,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> updatePostMutation({
     required double clientProtocolVersion,
     required String postPublicId,
     ConvexOptional<bool> refresh = const ConvexOptional.absent(),
@@ -642,9 +802,11 @@ final class _CommunityModule implements CommunityModule {
       refresh: refresh,
       title: title,
     );
-    return _invoke(
-      () => _transport.mutation('community:updatePost', args),
-      decodeCommunityUpdatePostResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'community:updatePost',
+      args: args,
+      decode: decodeCommunityUpdatePostResult,
     );
   }
 }
@@ -720,7 +882,24 @@ abstract interface class FoldersModule {
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
     required String publicId,
   });
+  ConvexMutation<ConvexValue> createMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<String> color = const ConvexOptional.absent(),
+    ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
+    ConvexOptional<double> iconCodePoint = const ConvexOptional.absent(),
+    ConvexOptional<String> iconFontFamily = const ConvexOptional.absent(),
+    ConvexOptional<String> iconFontPackage = const ConvexOptional.absent(),
+    ConvexOptional<double> iconId = const ConvexOptional.absent(),
+    required String name,
+    ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
+    required String publicId,
+  });
   Future<CommunityReportResult> delete({
+    required double clientProtocolVersion,
+    required String folderPublicId,
+    ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
+  });
+  ConvexMutation<CommunityReportResult> deleteMutation({
     required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
@@ -734,7 +913,26 @@ abstract interface class FoldersModule {
     required String folderPublicId,
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
   });
+  ConvexMutation<CommunityReportResult> moveMutation({
+    required double clientProtocolVersion,
+    required String folderPublicId,
+    ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
+  });
   Future<CommunityReportResult> update({
+    ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
+    ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
+    ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
+    ConvexOptional<String> color = const ConvexOptional.absent(),
+    ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
+    required String folderPublicId,
+    ConvexOptional<double> iconCodePoint = const ConvexOptional.absent(),
+    ConvexOptional<String> iconFontFamily = const ConvexOptional.absent(),
+    ConvexOptional<String> iconFontPackage = const ConvexOptional.absent(),
+    ConvexOptional<double> iconId = const ConvexOptional.absent(),
+    ConvexOptional<String> name = const ConvexOptional.absent(),
+  });
+  ConvexMutation<CommunityReportResult> updateMutation({
     ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
@@ -765,6 +963,30 @@ final class _FoldersModule implements FoldersModule {
     required String name,
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
     required String publicId,
+  }) => createMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    color: color,
+    customColorValue: customColorValue,
+    iconCodePoint: iconCodePoint,
+    iconFontFamily: iconFontFamily,
+    iconFontPackage: iconFontPackage,
+    iconId: iconId,
+    name: name,
+    parentFolderPublicId: parentFolderPublicId,
+    publicId: publicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> createMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<String> color = const ConvexOptional.absent(),
+    ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
+    ConvexOptional<double> iconCodePoint = const ConvexOptional.absent(),
+    ConvexOptional<String> iconFontFamily = const ConvexOptional.absent(),
+    ConvexOptional<String> iconFontPackage = const ConvexOptional.absent(),
+    ConvexOptional<double> iconId = const ConvexOptional.absent(),
+    required String name,
+    ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
+    required String publicId,
   }) {
     final args = encodeFoldersCreateArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -778,14 +1000,26 @@ final class _FoldersModule implements FoldersModule {
       parentFolderPublicId: parentFolderPublicId,
       publicId: publicId,
     );
-    return _invoke(
-      () => _transport.mutation('folders:create', args),
-      decodeFoldersCreateResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'folders:create',
+      args: args,
+      decode: decodeFoldersCreateResult,
     );
   }
 
   @override
   Future<CommunityReportResult> delete({
+    required double clientProtocolVersion,
+    required String folderPublicId,
+    ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
+  }) => deleteMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    folderPublicId: folderPublicId,
+    withinFolderPublicId: withinFolderPublicId,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> deleteMutation({
     required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
@@ -795,9 +1029,11 @@ final class _FoldersModule implements FoldersModule {
       folderPublicId: folderPublicId,
       withinFolderPublicId: withinFolderPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('folders:delete', args),
-      decodeFoldersDeleteResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'folders:delete',
+      args: args,
+      decode: decodeFoldersDeleteResult,
     );
   }
 
@@ -820,20 +1056,60 @@ final class _FoldersModule implements FoldersModule {
     required double clientProtocolVersion,
     required String folderPublicId,
     ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
+  }) => moveMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    folderPublicId: folderPublicId,
+    parentFolderPublicId: parentFolderPublicId,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> moveMutation({
+    required double clientProtocolVersion,
+    required String folderPublicId,
+    ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
   }) {
     final args = encodeFoldersMoveArgs(
       clientProtocolVersion: clientProtocolVersion,
       folderPublicId: folderPublicId,
       parentFolderPublicId: parentFolderPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('folders:move', args),
-      decodeFoldersMoveResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'folders:move',
+      args: args,
+      decode: decodeFoldersMoveResult,
     );
   }
 
   @override
   Future<CommunityReportResult> update({
+    ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
+    ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
+    ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
+    ConvexOptional<String> color = const ConvexOptional.absent(),
+    ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
+    required String folderPublicId,
+    ConvexOptional<double> iconCodePoint = const ConvexOptional.absent(),
+    ConvexOptional<String> iconFontFamily = const ConvexOptional.absent(),
+    ConvexOptional<String> iconFontPackage = const ConvexOptional.absent(),
+    ConvexOptional<double> iconId = const ConvexOptional.absent(),
+    ConvexOptional<String> name = const ConvexOptional.absent(),
+  }) => updateMutation(
+    clearCustomColorValue: clearCustomColorValue,
+    clearIconFontFamily: clearIconFontFamily,
+    clearIconFontPackage: clearIconFontPackage,
+    clientProtocolVersion: clientProtocolVersion,
+    color: color,
+    customColorValue: customColorValue,
+    folderPublicId: folderPublicId,
+    iconCodePoint: iconCodePoint,
+    iconFontFamily: iconFontFamily,
+    iconFontPackage: iconFontPackage,
+    iconId: iconId,
+    name: name,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> updateMutation({
     ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
     ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
@@ -861,9 +1137,11 @@ final class _FoldersModule implements FoldersModule {
       iconId: iconId,
       name: name,
     );
-    return _invoke(
-      () => _transport.mutation('folders:update', args),
-      decodeFoldersUpdateResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'folders:update',
+      args: args,
+      decode: decodeFoldersUpdateResult,
     );
   }
 }
@@ -1086,6 +1364,13 @@ abstract interface class InvitesModule {
     required String strategyPublicId,
     required String token,
   });
+  ConvexMutation<CommunityReportResult> createMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
+    required InvitesCreateArgsRole role,
+    required String strategyPublicId,
+    required String token,
+  });
   ConvexQuery<ConvexValue> getValue({
     ConvexOptional<String> strategyPublicId = const ConvexOptional.absent(),
     ConvexOptional<String> token = const ConvexOptional.absent(),
@@ -1094,7 +1379,16 @@ abstract interface class InvitesModule {
     required double clientProtocolVersion,
     required String token,
   });
+  ConvexMutation<InvitesRedeemResult> redeemMutation({
+    required double clientProtocolVersion,
+    required String token,
+  });
   Future<CommunityReportResult> revoke({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+    required String token,
+  });
+  ConvexMutation<CommunityReportResult> revokeMutation({
     required double clientProtocolVersion,
     required String strategyPublicId,
     required String token,
@@ -1111,6 +1405,20 @@ final class _InvitesModule implements InvitesModule {
     required InvitesCreateArgsRole role,
     required String strategyPublicId,
     required String token,
+  }) => createMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    expiresAt: expiresAt,
+    role: role,
+    strategyPublicId: strategyPublicId,
+    token: token,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> createMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
+    required InvitesCreateArgsRole role,
+    required String strategyPublicId,
+    required String token,
   }) {
     final args = encodeInvitesCreateArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -1119,9 +1427,11 @@ final class _InvitesModule implements InvitesModule {
       strategyPublicId: strategyPublicId,
       token: token,
     );
-    return _invoke(
-      () => _transport.mutation('invites:create', args),
-      decodeInvitesCreateResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'invites:create',
+      args: args,
+      decode: decodeInvitesCreateResult,
     );
   }
 
@@ -1146,19 +1456,39 @@ final class _InvitesModule implements InvitesModule {
   Future<InvitesRedeemResult> redeem({
     required double clientProtocolVersion,
     required String token,
+  }) => redeemMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    token: token,
+  ).run();
+  @override
+  ConvexMutation<InvitesRedeemResult> redeemMutation({
+    required double clientProtocolVersion,
+    required String token,
   }) {
     final args = encodeInvitesRedeemArgs(
       clientProtocolVersion: clientProtocolVersion,
       token: token,
     );
-    return _invoke(
-      () => _transport.mutation('invites:redeem', args),
-      decodeInvitesRedeemResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'invites:redeem',
+      args: args,
+      decode: decodeInvitesRedeemResult,
     );
   }
 
   @override
   Future<CommunityReportResult> revoke({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+    required String token,
+  }) => revokeMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    strategyPublicId: strategyPublicId,
+    token: token,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> revokeMutation({
     required double clientProtocolVersion,
     required String strategyPublicId,
     required String token,
@@ -1168,9 +1498,11 @@ final class _InvitesModule implements InvitesModule {
       strategyPublicId: strategyPublicId,
       token: token,
     );
-    return _invoke(
-      () => _transport.mutation('invites:revoke', args),
-      decodeInvitesRevokeResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'invites:revoke',
+      args: args,
+      decode: decodeInvitesRevokeResult,
     );
   }
 }
@@ -1247,6 +1579,25 @@ abstract interface class OpsModule {
     ConvexOptional<double> strategyLife = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
+  ConvexMutation<OpsApplyBatchResult> applyBatchMutation({
+    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkTrashedPageDeletes =
+        const ConvexOptional.absent(),
+    required String clientId,
+    required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
+    ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
+    ConvexOptional<double> liveBasis = const ConvexOptional.absent(),
+    required List<OpsApplyBatchArgsOpsItem> ops,
+    ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
+    ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
+    ConvexOptional<bool> sendsLives = const ConvexOptional.absent(),
+    ConvexOptional<double> strategyLife = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  });
 }
 
 final class _OpsModule implements OpsModule {
@@ -1254,6 +1605,43 @@ final class _OpsModule implements OpsModule {
   final ConvexTransport _transport;
   @override
   Future<OpsApplyBatchResult> applyBatch({
+    ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
+    ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkLineupLinkEnds = const ConvexOptional.absent(),
+    ConvexOptional<bool> checkTrashedPageDeletes =
+        const ConvexOptional.absent(),
+    required String clientId,
+    required double clientProtocolVersion,
+    ConvexOptional<double> elementFieldLevel = const ConvexOptional.absent(),
+    ConvexOptional<bool> includeWasApplied = const ConvexOptional.absent(),
+    ConvexOptional<double> liveBasis = const ConvexOptional.absent(),
+    required List<OpsApplyBatchArgsOpsItem> ops,
+    ConvexOptional<bool> readsAccountMismatch = const ConvexOptional.absent(),
+    ConvexOptional<bool> sendsLiveBasis = const ConvexOptional.absent(),
+    ConvexOptional<bool> sendsLives = const ConvexOptional.absent(),
+    ConvexOptional<double> strategyLife = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  }) => applyBatchMutation(
+    acceptsPictureIds: acceptsPictureIds,
+    accountSubject: accountSubject,
+    checkLineupEndDeletes: checkLineupEndDeletes,
+    checkLineupLinkEnds: checkLineupLinkEnds,
+    checkTrashedPageDeletes: checkTrashedPageDeletes,
+    clientId: clientId,
+    clientProtocolVersion: clientProtocolVersion,
+    elementFieldLevel: elementFieldLevel,
+    includeWasApplied: includeWasApplied,
+    liveBasis: liveBasis,
+    ops: ops,
+    readsAccountMismatch: readsAccountMismatch,
+    sendsLiveBasis: sendsLiveBasis,
+    sendsLives: sendsLives,
+    strategyLife: strategyLife,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<OpsApplyBatchResult> applyBatchMutation({
     ConvexOptional<bool> acceptsPictureIds = const ConvexOptional.absent(),
     ConvexOptional<String> accountSubject = const ConvexOptional.absent(),
     ConvexOptional<bool> checkLineupEndDeletes = const ConvexOptional.absent(),
@@ -1290,9 +1678,11 @@ final class _OpsModule implements OpsModule {
       strategyLife: strategyLife,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('ops:applyBatch', args),
-      decodeOpsApplyBatchResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'ops:applyBatch',
+      args: args,
+      decode: decodeOpsApplyBatchResult,
     );
   }
 }
@@ -1422,7 +1812,25 @@ abstract interface class PagesModule {
     required double sortIndex,
     required String strategyPublicId,
   });
+  ConvexMutation<ConvexValue> addMutation({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    required bool isAttack,
+    ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
+    required String name,
+    required String pagePublicId,
+    ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings> settings =
+        const ConvexOptional.absent(),
+    required double sortIndex,
+    required String strategyPublicId,
+  });
   Future<ConvexValue> delete({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    required String pagePublicId,
+    required String strategyPublicId,
+  });
+  ConvexMutation<ConvexValue> deleteMutation({
     required double clientProtocolVersion,
     required double expectedRevision,
     required String pagePublicId,
@@ -1442,13 +1850,32 @@ abstract interface class PagesModule {
     required String pagePublicId,
     required String strategyPublicId,
   });
+  ConvexMutation<ConvexValue> renameMutation({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
+    required String name,
+    required String pagePublicId,
+    required String strategyPublicId,
+  });
   Future<ConvexValue> reorder({
     required double clientProtocolVersion,
     required double expectedRevision,
     required List<String> orderedPagePublicIds,
     required String strategyPublicId,
   });
+  ConvexMutation<ConvexValue> reorderMutation({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    required List<String> orderedPagePublicIds,
+    required String strategyPublicId,
+  });
   Future<ConvexValue> restore({
+    required double clientProtocolVersion,
+    required String pagePublicId,
+    required String strategyPublicId,
+  });
+  ConvexMutation<ConvexValue> restoreMutation({
     required double clientProtocolVersion,
     required String pagePublicId,
     required String strategyPublicId,
@@ -1460,6 +1887,29 @@ final class _PagesModule implements PagesModule {
   final ConvexTransport _transport;
   @override
   Future<ConvexValue> add({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    required bool isAttack,
+    ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
+    required String name,
+    required String pagePublicId,
+    ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings> settings =
+        const ConvexOptional.absent(),
+    required double sortIndex,
+    required String strategyPublicId,
+  }) => addMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    expectedRevision: expectedRevision,
+    isAttack: isAttack,
+    isAutoNamed: isAutoNamed,
+    name: name,
+    pagePublicId: pagePublicId,
+    settings: settings,
+    sortIndex: sortIndex,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> addMutation({
     required double clientProtocolVersion,
     required double expectedRevision,
     required bool isAttack,
@@ -1482,14 +1932,28 @@ final class _PagesModule implements PagesModule {
       sortIndex: sortIndex,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('pages:add', args),
-      decodePagesAddResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'pages:add',
+      args: args,
+      decode: decodePagesAddResult,
     );
   }
 
   @override
   Future<ConvexValue> delete({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    required String pagePublicId,
+    required String strategyPublicId,
+  }) => deleteMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    expectedRevision: expectedRevision,
+    pagePublicId: pagePublicId,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> deleteMutation({
     required double clientProtocolVersion,
     required double expectedRevision,
     required String pagePublicId,
@@ -1501,9 +1965,11 @@ final class _PagesModule implements PagesModule {
       pagePublicId: pagePublicId,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('pages:delete', args),
-      decodePagesDeleteResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'pages:delete',
+      args: args,
+      decode: decodePagesDeleteResult,
     );
   }
 
@@ -1543,6 +2009,22 @@ final class _PagesModule implements PagesModule {
     required String name,
     required String pagePublicId,
     required String strategyPublicId,
+  }) => renameMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    expectedRevision: expectedRevision,
+    isAutoNamed: isAutoNamed,
+    name: name,
+    pagePublicId: pagePublicId,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> renameMutation({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
+    required String name,
+    required String pagePublicId,
+    required String strategyPublicId,
   }) {
     final args = encodePagesRenameArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -1552,14 +2034,28 @@ final class _PagesModule implements PagesModule {
       pagePublicId: pagePublicId,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('pages:rename', args),
-      decodePagesRenameResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'pages:rename',
+      args: args,
+      decode: decodePagesRenameResult,
     );
   }
 
   @override
   Future<ConvexValue> reorder({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    required List<String> orderedPagePublicIds,
+    required String strategyPublicId,
+  }) => reorderMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    expectedRevision: expectedRevision,
+    orderedPagePublicIds: orderedPagePublicIds,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> reorderMutation({
     required double clientProtocolVersion,
     required double expectedRevision,
     required List<String> orderedPagePublicIds,
@@ -1571,14 +2067,26 @@ final class _PagesModule implements PagesModule {
       orderedPagePublicIds: orderedPagePublicIds,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('pages:reorder', args),
-      decodePagesReorderResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'pages:reorder',
+      args: args,
+      decode: decodePagesReorderResult,
     );
   }
 
   @override
   Future<ConvexValue> restore({
+    required double clientProtocolVersion,
+    required String pagePublicId,
+    required String strategyPublicId,
+  }) => restoreMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    pagePublicId: pagePublicId,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> restoreMutation({
     required double clientProtocolVersion,
     required String pagePublicId,
     required String strategyPublicId,
@@ -1588,15 +2096,21 @@ final class _PagesModule implements PagesModule {
       pagePublicId: pagePublicId,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('pages:restore', args),
-      decodePagesRestoreResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'pages:restore',
+      args: args,
+      decode: decodePagesRestoreResult,
     );
   }
 }
 
 abstract interface class PresenceModule {
   Future<PresenceIssueRoomPassResult?> issueRoomPass({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  });
+  ConvexMutation<PresenceIssueRoomPassResult?> issueRoomPassMutation({
     required double clientProtocolVersion,
     required String strategyPublicId,
   });
@@ -1609,14 +2123,24 @@ final class _PresenceModule implements PresenceModule {
   Future<PresenceIssueRoomPassResult?> issueRoomPass({
     required double clientProtocolVersion,
     required String strategyPublicId,
+  }) => issueRoomPassMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<PresenceIssueRoomPassResult?> issueRoomPassMutation({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
   }) {
     final args = encodePresenceIssueRoomPassArgs(
       clientProtocolVersion: clientProtocolVersion,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('presence:issueRoomPass', args),
-      decodePresenceIssueRoomPassResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'presence:issueRoomPass',
+      args: args,
+      decode: decodePresenceIssueRoomPassResult,
     );
   }
 }
@@ -1629,7 +2153,19 @@ abstract interface class SharesModule {
     required SharesCreateArgsTargetType targetType,
     required String token,
   });
+  ConvexMutation<CommunityReportResult> createMutation({
+    required double clientProtocolVersion,
+    required InvitesCreateArgsRole role,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+    required String token,
+  });
   Future<CommunityReportResult> leave({
+    required double clientProtocolVersion,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
+  ConvexMutation<CommunityReportResult> leaveMutation({
     required double clientProtocolVersion,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
@@ -1656,7 +2192,17 @@ abstract interface class SharesModule {
     required double clientProtocolVersion,
     required String token,
   });
+  ConvexMutation<SharesRedeemResult> redeemMutation({
+    required double clientProtocolVersion,
+    required String token,
+  });
   Future<CommunityReportResult> removeMember({
+    required double clientProtocolVersion,
+    required String memberId,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
+  ConvexMutation<CommunityReportResult> removeMemberMutation({
     required double clientProtocolVersion,
     required String memberId,
     required String targetPublicId,
@@ -1670,7 +2216,21 @@ abstract interface class SharesModule {
     required SharesCreateArgsTargetType targetType,
     required String token,
   });
+  ConvexMutation<CommunityReportResult> revokeMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<bool> removeMembers = const ConvexOptional.absent(),
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+    required String token,
+  });
   Future<CommunityReportResult> setMemberRole({
+    required double clientProtocolVersion,
+    required String memberId,
+    required InvitesCreateArgsRole role,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  });
+  ConvexMutation<CommunityReportResult> setMemberRoleMutation({
     required double clientProtocolVersion,
     required String memberId,
     required InvitesCreateArgsRole role,
@@ -1689,6 +2249,20 @@ final class _SharesModule implements SharesModule {
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
+  }) => createMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    role: role,
+    targetPublicId: targetPublicId,
+    targetType: targetType,
+    token: token,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> createMutation({
+    required double clientProtocolVersion,
+    required InvitesCreateArgsRole role,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+    required String token,
   }) {
     final args = encodeSharesCreateArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -1697,14 +2271,26 @@ final class _SharesModule implements SharesModule {
       targetType: targetType,
       token: token,
     );
-    return _invoke(
-      () => _transport.mutation('shares:create', args),
-      decodeSharesCreateResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'shares:create',
+      args: args,
+      decode: decodeSharesCreateResult,
     );
   }
 
   @override
   Future<CommunityReportResult> leave({
+    required double clientProtocolVersion,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) => leaveMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    targetPublicId: targetPublicId,
+    targetType: targetType,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> leaveMutation({
     required double clientProtocolVersion,
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
@@ -1714,9 +2300,11 @@ final class _SharesModule implements SharesModule {
       targetPublicId: targetPublicId,
       targetType: targetType,
     );
-    return _invoke(
-      () => _transport.mutation('shares:leave', args),
-      decodeSharesLeaveResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'shares:leave',
+      args: args,
+      decode: decodeSharesLeaveResult,
     );
   }
 
@@ -1805,19 +2393,41 @@ final class _SharesModule implements SharesModule {
   Future<SharesRedeemResult> redeem({
     required double clientProtocolVersion,
     required String token,
+  }) => redeemMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    token: token,
+  ).run();
+  @override
+  ConvexMutation<SharesRedeemResult> redeemMutation({
+    required double clientProtocolVersion,
+    required String token,
   }) {
     final args = encodeSharesRedeemArgs(
       clientProtocolVersion: clientProtocolVersion,
       token: token,
     );
-    return _invoke(
-      () => _transport.mutation('shares:redeem', args),
-      decodeSharesRedeemResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'shares:redeem',
+      args: args,
+      decode: decodeSharesRedeemResult,
     );
   }
 
   @override
   Future<CommunityReportResult> removeMember({
+    required double clientProtocolVersion,
+    required String memberId,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) => removeMemberMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    memberId: memberId,
+    targetPublicId: targetPublicId,
+    targetType: targetType,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> removeMemberMutation({
     required double clientProtocolVersion,
     required String memberId,
     required String targetPublicId,
@@ -1829,9 +2439,11 @@ final class _SharesModule implements SharesModule {
       targetPublicId: targetPublicId,
       targetType: targetType,
     );
-    return _invoke(
-      () => _transport.mutation('shares:removeMember', args),
-      decodeSharesRemoveMemberResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'shares:removeMember',
+      args: args,
+      decode: decodeSharesRemoveMemberResult,
     );
   }
 
@@ -1853,6 +2465,20 @@ final class _SharesModule implements SharesModule {
     required String targetPublicId,
     required SharesCreateArgsTargetType targetType,
     required String token,
+  }) => revokeMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    removeMembers: removeMembers,
+    targetPublicId: targetPublicId,
+    targetType: targetType,
+    token: token,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> revokeMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<bool> removeMembers = const ConvexOptional.absent(),
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+    required String token,
   }) {
     final args = encodeSharesRevokeArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -1861,14 +2487,30 @@ final class _SharesModule implements SharesModule {
       targetType: targetType,
       token: token,
     );
-    return _invoke(
-      () => _transport.mutation('shares:revoke', args),
-      decodeSharesRevokeResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'shares:revoke',
+      args: args,
+      decode: decodeSharesRevokeResult,
     );
   }
 
   @override
   Future<CommunityReportResult> setMemberRole({
+    required double clientProtocolVersion,
+    required String memberId,
+    required InvitesCreateArgsRole role,
+    required String targetPublicId,
+    required SharesCreateArgsTargetType targetType,
+  }) => setMemberRoleMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    memberId: memberId,
+    role: role,
+    targetPublicId: targetPublicId,
+    targetType: targetType,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> setMemberRoleMutation({
     required double clientProtocolVersion,
     required String memberId,
     required InvitesCreateArgsRole role,
@@ -1882,9 +2524,11 @@ final class _SharesModule implements SharesModule {
       targetPublicId: targetPublicId,
       targetType: targetType,
     );
-    return _invoke(
-      () => _transport.mutation('shares:setMemberRole', args),
-      decodeSharesSetMemberRoleResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'shares:setMemberRole',
+      args: args,
+      decode: decodeSharesSetMemberRoleResult,
     );
   }
 }
@@ -1894,7 +2538,24 @@ abstract interface class StrategiesModule {
     required double clientProtocolVersion,
     required String strategyPublicId,
   });
+  ConvexMutation<StrategiesAbandonMoveResult> abandonMoveMutation({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
+  });
   Future<ConvexValue> create({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String mapData,
+    required String name,
+    required String publicId,
+    ConvexOptional<
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
+    ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+  });
+  ConvexMutation<ConvexValue> createMutation({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String mapData,
@@ -1928,7 +2589,34 @@ abstract interface class StrategiesModule {
     ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
     ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
   });
+  ConvexMutation<ConvexValue> createWithInitialPageMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required bool initialPageIsAttack,
+    ConvexOptional<bool> initialPageIsAutoNamed = const ConvexOptional.absent(),
+    required String initialPageName,
+    required String initialPagePublicId,
+    ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings>
+        initialPageSettings =
+        const ConvexOptional.absent(),
+    required String mapData,
+    required String name,
+    required String publicId,
+    ConvexOptional<
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
+    ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+    ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
+  });
   Future<CommunityReportResult> delete({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    required String strategyPublicId,
+    ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
+  });
+  ConvexMutation<CommunityReportResult> deleteMutation({
     required double clientProtocolVersion,
     required double expectedRevision,
     required String strategyPublicId,
@@ -1941,7 +2629,19 @@ abstract interface class StrategiesModule {
     required String publicId,
     required String sourceStrategyPublicId,
   });
+  ConvexMutation<ConvexValue> duplicateMutation({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String name,
+    required String publicId,
+    required String sourceStrategyPublicId,
+  });
   Future<CommunityReportResult> finishMove({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  });
+  ConvexMutation<CommunityReportResult> finishMoveMutation({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -1965,7 +2665,29 @@ abstract interface class StrategiesModule {
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
   });
+  ConvexMutation<ConvexValue> moveMutation({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  });
   Future<ConvexValue> update({
+    ConvexOptional<bool> clearThemeOverridePalette =
+        const ConvexOptional.absent(),
+    ConvexOptional<bool> clearThemeProfileId = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    ConvexOptional<String> mapData = const ConvexOptional.absent(),
+    ConvexOptional<String> name = const ConvexOptional.absent(),
+    required String strategyPublicId,
+    ConvexOptional<
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
+    ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+  });
+  ConvexMutation<ConvexValue> updateMutation({
     ConvexOptional<bool> clearThemeOverridePalette =
         const ConvexOptional.absent(),
     ConvexOptional<bool> clearThemeProfileId = const ConvexOptional.absent(),
@@ -1990,19 +2712,51 @@ final class _StrategiesModule implements StrategiesModule {
   Future<StrategiesAbandonMoveResult> abandonMove({
     required double clientProtocolVersion,
     required String strategyPublicId,
+  }) => abandonMoveMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<StrategiesAbandonMoveResult> abandonMoveMutation({
+    required double clientProtocolVersion,
+    required String strategyPublicId,
   }) {
     final args = encodeStrategiesAbandonMoveArgs(
       clientProtocolVersion: clientProtocolVersion,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('strategies:abandonMove', args),
-      decodeStrategiesAbandonMoveResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'strategies:abandonMove',
+      args: args,
+      decode: decodeStrategiesAbandonMoveResult,
     );
   }
 
   @override
   Future<ConvexValue> create({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String mapData,
+    required String name,
+    required String publicId,
+    ConvexOptional<
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
+    ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+  }) => createMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    folderPublicId: folderPublicId,
+    mapData: mapData,
+    name: name,
+    publicId: publicId,
+    themeOverridePalette: themeOverridePalette,
+    themeProfileId: themeProfileId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> createMutation({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String mapData,
@@ -2024,14 +2778,52 @@ final class _StrategiesModule implements StrategiesModule {
       themeOverridePalette: themeOverridePalette,
       themeProfileId: themeProfileId,
     );
-    return _invoke(
-      () => _transport.mutation('strategies:create', args),
-      decodeStrategiesCreateResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'strategies:create',
+      args: args,
+      decode: decodeStrategiesCreateResult,
     );
   }
 
   @override
   Future<ConvexValue> createWithInitialPage({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required bool initialPageIsAttack,
+    ConvexOptional<bool> initialPageIsAutoNamed = const ConvexOptional.absent(),
+    required String initialPageName,
+    required String initialPagePublicId,
+    ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings>
+        initialPageSettings =
+        const ConvexOptional.absent(),
+    required String mapData,
+    required String name,
+    required String publicId,
+    ConvexOptional<
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
+    ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+    ConvexOptional<bool> unfinishedMove = const ConvexOptional.absent(),
+  }) => createWithInitialPageMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    folderPublicId: folderPublicId,
+    initialPageIsAttack: initialPageIsAttack,
+    initialPageIsAutoNamed: initialPageIsAutoNamed,
+    initialPageName: initialPageName,
+    initialPagePublicId: initialPagePublicId,
+    initialPageSettings: initialPageSettings,
+    mapData: mapData,
+    name: name,
+    publicId: publicId,
+    themeOverridePalette: themeOverridePalette,
+    themeProfileId: themeProfileId,
+    unfinishedMove: unfinishedMove,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> createWithInitialPageMutation({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required bool initialPageIsAttack,
@@ -2067,14 +2859,28 @@ final class _StrategiesModule implements StrategiesModule {
       themeProfileId: themeProfileId,
       unfinishedMove: unfinishedMove,
     );
-    return _invoke(
-      () => _transport.mutation('strategies:createWithInitialPage', args),
-      decodeStrategiesCreateWithInitialPageResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'strategies:createWithInitialPage',
+      args: args,
+      decode: decodeStrategiesCreateWithInitialPageResult,
     );
   }
 
   @override
   Future<CommunityReportResult> delete({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    required String strategyPublicId,
+    ConvexOptional<String> withinFolderPublicId = const ConvexOptional.absent(),
+  }) => deleteMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    expectedRevision: expectedRevision,
+    strategyPublicId: strategyPublicId,
+    withinFolderPublicId: withinFolderPublicId,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> deleteMutation({
     required double clientProtocolVersion,
     required double expectedRevision,
     required String strategyPublicId,
@@ -2086,14 +2892,30 @@ final class _StrategiesModule implements StrategiesModule {
       strategyPublicId: strategyPublicId,
       withinFolderPublicId: withinFolderPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('strategies:delete', args),
-      decodeStrategiesDeleteResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'strategies:delete',
+      args: args,
+      decode: decodeStrategiesDeleteResult,
     );
   }
 
   @override
   Future<ConvexValue> duplicate({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String name,
+    required String publicId,
+    required String sourceStrategyPublicId,
+  }) => duplicateMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    folderPublicId: folderPublicId,
+    name: name,
+    publicId: publicId,
+    sourceStrategyPublicId: sourceStrategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> duplicateMutation({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String name,
@@ -2107,14 +2929,26 @@ final class _StrategiesModule implements StrategiesModule {
       publicId: publicId,
       sourceStrategyPublicId: sourceStrategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('strategies:duplicate', args),
-      decodeStrategiesDuplicateResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'strategies:duplicate',
+      args: args,
+      decode: decodeStrategiesDuplicateResult,
     );
   }
 
   @override
   Future<CommunityReportResult> finishMove({
+    required double clientProtocolVersion,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String strategyPublicId,
+  }) => finishMoveMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    folderPublicId: folderPublicId,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> finishMoveMutation({
     required double clientProtocolVersion,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
@@ -2124,9 +2958,11 @@ final class _StrategiesModule implements StrategiesModule {
       folderPublicId: folderPublicId,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('strategies:finishMove', args),
-      decodeStrategiesFinishMoveResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'strategies:finishMove',
+      args: args,
+      decode: decodeStrategiesFinishMoveResult,
     );
   }
 
@@ -2197,6 +3033,18 @@ final class _StrategiesModule implements StrategiesModule {
     required double expectedRevision,
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required String strategyPublicId,
+  }) => moveMutation(
+    clientProtocolVersion: clientProtocolVersion,
+    expectedRevision: expectedRevision,
+    folderPublicId: folderPublicId,
+    strategyPublicId: strategyPublicId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> moveMutation({
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
+    required String strategyPublicId,
   }) {
     final args = encodeStrategiesMoveArgs(
       clientProtocolVersion: clientProtocolVersion,
@@ -2204,14 +3052,43 @@ final class _StrategiesModule implements StrategiesModule {
       folderPublicId: folderPublicId,
       strategyPublicId: strategyPublicId,
     );
-    return _invoke(
-      () => _transport.mutation('strategies:move', args),
-      decodeStrategiesMoveResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'strategies:move',
+      args: args,
+      decode: decodeStrategiesMoveResult,
     );
   }
 
   @override
   Future<ConvexValue> update({
+    ConvexOptional<bool> clearThemeOverridePalette =
+        const ConvexOptional.absent(),
+    ConvexOptional<bool> clearThemeProfileId = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
+    required double expectedRevision,
+    ConvexOptional<String> mapData = const ConvexOptional.absent(),
+    ConvexOptional<String> name = const ConvexOptional.absent(),
+    required String strategyPublicId,
+    ConvexOptional<
+          OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette
+        >
+        themeOverridePalette =
+        const ConvexOptional.absent(),
+    ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
+  }) => updateMutation(
+    clearThemeOverridePalette: clearThemeOverridePalette,
+    clearThemeProfileId: clearThemeProfileId,
+    clientProtocolVersion: clientProtocolVersion,
+    expectedRevision: expectedRevision,
+    mapData: mapData,
+    name: name,
+    strategyPublicId: strategyPublicId,
+    themeOverridePalette: themeOverridePalette,
+    themeProfileId: themeProfileId,
+  ).run();
+  @override
+  ConvexMutation<ConvexValue> updateMutation({
     ConvexOptional<bool> clearThemeOverridePalette =
         const ConvexOptional.absent(),
     ConvexOptional<bool> clearThemeProfileId = const ConvexOptional.absent(),
@@ -2238,9 +3115,11 @@ final class _StrategiesModule implements StrategiesModule {
       themeOverridePalette: themeOverridePalette,
       themeProfileId: themeProfileId,
     );
-    return _invoke(
-      () => _transport.mutation('strategies:update', args),
-      decodeStrategiesUpdateResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'strategies:update',
+      args: args,
+      decode: decodeStrategiesUpdateResult,
     );
   }
 }
@@ -2366,6 +3245,9 @@ abstract interface class UsersModule {
   Future<CommunityReportResult> ensureCurrentUser({
     required double clientProtocolVersion,
   });
+  ConvexMutation<CommunityReportResult> ensureCurrentUserMutation({
+    required double clientProtocolVersion,
+  });
   ConvexQuery<UsersMeResult?> me();
 }
 
@@ -2375,13 +3257,21 @@ final class _UsersModule implements UsersModule {
   @override
   Future<CommunityReportResult> ensureCurrentUser({
     required double clientProtocolVersion,
+  }) => ensureCurrentUserMutation(
+    clientProtocolVersion: clientProtocolVersion,
+  ).run();
+  @override
+  ConvexMutation<CommunityReportResult> ensureCurrentUserMutation({
+    required double clientProtocolVersion,
   }) {
     final args = encodeUsersEnsureCurrentUserArgs(
       clientProtocolVersion: clientProtocolVersion,
     );
-    return _invoke(
-      () => _transport.mutation('users:ensureCurrentUser', args),
-      decodeUsersEnsureCurrentUserResult,
+    return ConvexMutation(
+      transport: _transport,
+      name: 'users:ensureCurrentUser',
+      args: args,
+      decode: decodeUsersEnsureCurrentUserResult,
     );
   }
 
