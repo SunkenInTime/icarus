@@ -1232,6 +1232,11 @@ final class _Edit {
     }) {
       if (shown.pageRead(page) != original.shown.pageRead(page)) {
         change.pages.add(page);
+        for (final rows in [shown.rows, original.shown.rows]) {
+          for (final MapEntry(:key, :value) in rows.entries) {
+            if (value.page == page) change.targets.add(key);
+          }
+        }
       }
     }
     return CloudQueue._(
