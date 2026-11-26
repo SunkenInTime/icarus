@@ -842,9 +842,11 @@ final class ReportApplied extends ReportOutcome {
 }
 
 final class ReportNotApplicable extends ReportOutcome {
-  const ReportNotApplicable(this.why);
+  ReportNotApplicable(this.why, {List<QueueEffect> effects = const []})
+    : effects = List.unmodifiable(effects);
 
   final Inapplicable why;
+  final List<QueueEffect> effects;
 }
 
 final class EditsGoThroughCommit extends ReportOutcome {

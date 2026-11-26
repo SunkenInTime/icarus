@@ -888,7 +888,11 @@ final class StoreModel {
     switch (standingOf(cloud.queue)) {
       case Standing.editAccessLost:
         await record([
-          EditAccessConfirmed(afterAttempt: cloud.queue.nextAttempt - 1),
+          EditAccessConfirmed(
+            afterAttempt: cloud.queue.nextAttempt - 1,
+            session: cloud.queue.session.number,
+            point: tick(),
+          ),
         ], 'access confirmed');
       case Standing.upgradeRequired:
         build = 'build-up-${restarts++}';

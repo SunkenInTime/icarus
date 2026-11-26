@@ -1092,7 +1092,12 @@ final class CloudSender {
             point: point,
             requestedAt: requestedAt,
           ),
-          if (confirms) EditAccessConfirmed(afterAttempt: _accessLostAt(cloud)),
+          if (confirms)
+            EditAccessConfirmed(
+              afterAttempt: _accessLostAt(cloud),
+              session: session,
+              point: point,
+            ),
         ]);
         if (disposed) return const _Ended();
         switch (written) {

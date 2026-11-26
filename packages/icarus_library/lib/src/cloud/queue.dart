@@ -21,13 +21,15 @@ final class QueueSession {
     required this.build,
     required this.number,
     required this.sequence,
+    int? labelsFrom,
     this.generation,
     this.basis,
-  });
+  }) : labelsFrom = labelsFrom ?? number;
 
   final bool connected;
   final String build;
   final int number;
+  final int labelsFrom;
   final int sequence;
   final Generation? generation;
   final ServerTimeBasis? basis;
@@ -47,6 +49,7 @@ final class QueueSession {
     connected: connected ?? this.connected,
     build: build,
     number: number,
+    labelsFrom: labelsFrom,
     sequence: sequence ?? this.sequence,
     generation: generation ?? this.generation,
     basis: basis,
@@ -62,19 +65,30 @@ final class QueueSession {
 
   QueueSession get stepped => _copy(sequence: sequence + 1, basis: basis);
 
+  bool labels(int label) => label != 0 && label >= labelsFrom && label <= number;
+
   @override
   bool operator ==(Object other) =>
       other is QueueSession &&
       other.connected == connected &&
       other.build == build &&
       other.number == number &&
+      other.labelsFrom == labelsFrom &&
       other.sequence == sequence &&
       other.generation == generation &&
       other.basis == basis;
 
   @override
   int get hashCode =>
-      Object.hash(connected, build, number, sequence, generation, basis);
+      Object.hash(
+        connected,
+        build,
+        number,
+        labelsFrom,
+        sequence,
+        generation,
+        basis,
+      );
 }
 
 final class CloudQueue {
@@ -769,6 +783,22 @@ final class SessionOpened extends QueueEffect {
   String toString() => 'SessionOpened($session)';
 }
 
+final class ReportReplacedWithoutEvidence extends QueueEffect {
+  const ReportReplacedWithoutEvidence(this.opId);
+
+  final String opId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReportReplacedWithoutEvidence && other.opId == opId;
+
+  @override
+  int get hashCode => Object.hash(ReportReplacedWithoutEvidence, opId);
+
+  @override
+  String toString() => 'ReportReplacedWithoutEvidence($opId)';
+}
+
 final class ReportReplacedWithoutLife extends QueueEffect {
   const ReportReplacedWithoutLife(this.attempt);
 
@@ -877,9 +907,11 @@ final class Stepped extends Step {
 }
 
 final class NotApplicable extends Step {
-  const NotApplicable(super.queue, this.why);
+  NotApplicable(super.queue, this.why, {List<QueueEffect> effects = const []})
+    : effects = List.unmodifiable(effects);
 
   final Inapplicable why;
+  final List<QueueEffect> effects;
 }
 
 sealed class Inapplicable {
@@ -1011,6 +1043,22 @@ final class OlderResult extends Inapplicable {
   @override
   String toString() =>
       'a result read before one already taken, or of an earlier life';
+}
+
+final class SameResult extends Inapplicable {
+  const SameResult();
+
+  @override
+  String toString() => 'a result at the point of one already taken';
+}
+
+final class AnswerAlreadyHandled extends Inapplicable {
+  const AnswerAlreadyHandled(this.attempt);
+
+  final int attempt;
+
+  @override
+  String toString() => 'attempt $attempt was already refused';
 }
 
 final class NothingSetAsideToDiscard extends Inapplicable {
@@ -1211,11 +1259,14 @@ final class _Edit {
     required bool connected,
     required String build,
     Generation? generation,
+    bool sameLabels = false,
   }) {
+    final number = nextSession++;
     session = QueueSession(
       connected: connected,
       build: build,
-      number: nextSession++,
+      number: number,
+      labelsFrom: sameLabels ? session.labelsFrom : number,
       sequence: 0,
       generation: generation,
     );
@@ -1308,8 +1359,30 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
   final step = _step(_Edit(start, now), start, event, now);
   return switch (step) {
     Stepped() => step,
-    NotApplicable(:final why) => NotApplicable(start, why),
+    NotApplicable(:final why) => _inapplicable(start, event, why, now),
   };
+}
+
+NotApplicable _inapplicable(
+  CloudQueue start,
+  QueueEvent event,
+  Inapplicable why,
+  DateTime now,
+) {
+  final point = switch (event) {
+    BaseArrived(:final point) ||
+    ResultRefused(:final point) ||
+    OpAnswered(:final point) ||
+    BatchRefused(:final point) ||
+    EditAccessConfirmed(:final point) => point,
+    _ => null,
+  };
+  if (point == null) return NotApplicable(start, why);
+  final admitted = _Edit(start, now);
+  if (!_admitted(admitted, point) || admitted.session == start.session) {
+    return NotApplicable(start, why);
+  }
+  return NotApplicable(admitted.build(), why, effects: admitted.effects);
 }
 
 Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
@@ -1397,6 +1470,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
             connected: true,
             build: edit.session.build,
             generation: generation,
+            sameLabels: true,
           );
       }
       return edit.done();
@@ -1406,7 +1480,10 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         build: edit.session.build,
       );
       return edit.done();
-    case EditAccessConfirmed(:final afterAttempt):
+    case EditAccessConfirmed(:final afterAttempt, :final session, :final point):
+      if (!_admitted(edit, point) || !edit.session.labels(session)) {
+        return NotApplicable(queue, FromAnEndedSession(session));
+      }
       if (afterAttempt < 1 || afterAttempt >= edit.nextAttempt) {
         return NotApplicable(queue, NoSuchAttempt(afterAttempt));
       }
@@ -1456,7 +1533,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final point,
       :final requestedAt,
     ):
-      if (session != edit.session.number || !_admitted(edit, point)) {
+      if (!_admitted(edit, point) || !edit.session.labels(session)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       final refused = Arrival(
@@ -1464,17 +1541,35 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         point: point,
         requestedAt: requestedAt,
       );
-      final since = switch (switch (page) {
+      if (edit.shown.fence case final fence?
+          when refused.order.isBefore(fence)) {
+        return NotApplicable(queue, const StartedInAnotherLife());
+      }
+      if (edit.shown.takenOf(page) case final taken?
+          when !taken.isBefore(refused.order)) {
+        return NotApplicable(
+          queue,
+          taken == refused.order ? const SameResult() : const OlderResult(),
+        );
+      }
+      final held = switch (page) {
         final page? => edit.shown.pageRead(page),
         null => edit.shown.list,
-      }) {
-        ReadOwed(since: final owed) ||
-        ReadRefused(since: final owed) when !owed.paidBy(refused, null) => owed,
+      };
+      final since = switch (held) {
+        ReadOwed(since: final owed) || ReadRefused(since: final owed)
+            when !owed.paidBy(refused, null) =>
+          both(owed, ResultAtOrAfter(refused.order)),
         _ => ResultAtOrAfter(refused.order),
       };
       edit.shown = switch (page) {
-        final page? => edit.shown.pageRefused(page, problem, since),
-        null => edit.shown.listRefused(problem, since),
+        final page? => edit.shown.pageRefused(
+          page,
+          problem,
+          since,
+          at: refused.order,
+        ),
+        null => edit.shown.listRefused(problem, since, at: refused.order),
       };
       return edit.done();
     case EditOfAnotherLife(edit: final change, :final madeOn):
@@ -1489,9 +1584,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final point,
       :final requestedAt,
     ):
-      if (session == 0 ||
-          session != edit.session.number ||
-          !_admitted(edit, point)) {
+      if (!_admitted(edit, point) || !edit.session.labels(session)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       return _arrived(
@@ -1508,6 +1601,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
 
 bool _admitted(_Edit edit, ResultPoint point) {
   final generation = point.generation;
+  if (generation.client < 1) return false;
   switch (edit.session.generation) {
     case null:
       edit.session = edit.session.on(generation);
@@ -1518,6 +1612,7 @@ bool _admitted(_Edit edit, ResultPoint point) {
         connected: true,
         build: edit.session.build,
         generation: generation,
+        sameLabels: true,
       );
     case _:
       break;
@@ -1562,9 +1657,10 @@ Step _batchRefused(
 ) {
   final fact = edit.attempts[attempt];
   if (fact == null) return NotApplicable(edit.original, NoSuchAttempt(attempt));
-  if (fact.outcome is! AttemptRefusedWhole) {
-    edit.setAttempt(fact.withOutcome(AttemptRefusedWhole(refusal, at: at)));
+  if (fact.outcome is AttemptRefusedWhole) {
+    return NotApplicable(edit.original, AnswerAlreadyHandled(attempt));
   }
+  edit.setAttempt(fact.withOutcome(AttemptRefusedWhole(refusal, at: at)));
   if (refusal == BatchRefusal.uncheckedTooLate) _dropRefusedBases(edit, fact);
   switch (refusal) {
     case BatchRefusal.upgradeRequired:
@@ -1623,7 +1719,14 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
   return edit.done();
 }
 
-enum ResultFit { applies, adopts, listFirst, older, startedInAnotherLife }
+enum ResultFit {
+  applies,
+  adopts,
+  listFirst,
+  same,
+  older,
+  startedInAnotherLife,
+}
 
 ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   final held = shown.strategy?.life;
@@ -1631,8 +1734,8 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
     return ResultFit.startedInAnotherLife;
   }
   if (shown.takenFor(base) case final taken?
-      when arrival.order.isBefore(taken)) {
-    return ResultFit.older;
+      when !taken.isBefore(arrival.order)) {
+    return taken == arrival.order ? ResultFit.same : ResultFit.older;
   }
   if (shown.owedBy(base) case final owed? when !owed.paidBy(arrival, base)) {
     return ResultFit.older;
@@ -1675,12 +1778,12 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   switch (resultFit(edit.shown, base, arrival)) {
     case ResultFit.older:
       return NotApplicable(edit.original, const OlderResult());
+    case ResultFit.same:
+      return NotApplicable(edit.original, const SameResult());
     case ResultFit.startedInAnotherLife:
       return NotApplicable(edit.original, const StartedInAnotherLife());
     case ResultFit.listFirst:
-      if (!isDebt(edit.shown.list)) {
-        edit.shown = edit.shown.owingList(ResultAtOrAfter(arrival.order));
-      }
+      edit.shown = edit.shown.owingList(ResultAtOrAfter(arrival.order));
       if (base case PageRead(:final page)) {
         edit.effects.add(PageResultDeferred(page.publicId));
       }
@@ -2643,6 +2746,9 @@ void _oweTheRowsRead(
       _ => null,
     },
   );
+  if (since.evidence == null) {
+    edit.effects.add(ReportReplacedWithoutEvidence(entry.opId));
+  }
   if (page == null) {
     edit.shown = edit.shown.owingList(since);
   } else {

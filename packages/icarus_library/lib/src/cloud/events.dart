@@ -288,9 +288,15 @@ final class AccountChanged extends QueueEvent {
 }
 
 final class EditAccessConfirmed extends QueueEvent {
-  const EditAccessConfirmed({required this.afterAttempt});
+  const EditAccessConfirmed({
+    required this.afterAttempt,
+    required this.session,
+    required this.point,
+  });
 
   final int afterAttempt;
+  final int session;
+  final ResultPoint point;
 }
 
 sealed class UserAction extends QueueEvent {

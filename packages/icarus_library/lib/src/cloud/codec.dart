@@ -1110,6 +1110,9 @@ AfterAnswer? _answerFrom(Object? raw) => switch (raw) {
 };
 
 Object? _debtToJson(PaidBy debt) => switch (debt) {
+  AllOf(:final each) => {
+    'allOf': [for (final one in each) _debtToJson(one)],
+  },
   ResultAtOrAfter(:final order) => _startToJson(order),
   AfterAnswer() => {'afterAnswer': _answerToJson(debt)},
   AfterRefusal(:final session, :final point, :final step, :final evidence) => {
@@ -1134,6 +1137,12 @@ Object? _debtToJson(PaidBy debt) => switch (debt) {
 };
 
 PaidBy? _debtFrom(Object? raw) => switch (raw) {
+  {'allOf': final List<Object?> each} when raw.length == 1 && each.length > 1 =>
+    switch ([for (final one in each) _debtFrom(one)]) {
+      final debts when debts.every((debt) => debt != null && debt is! AllOf) =>
+        debts.nonNulls.reduce(both),
+      _ => null,
+    },
   {'afterAnswer': final Object? answer} when raw.length == 1 => _answerFrom(
     answer,
   ),

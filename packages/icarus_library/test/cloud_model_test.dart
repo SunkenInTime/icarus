@@ -1075,7 +1075,11 @@ final class Model {
     switch (standingOf(client.queue)) {
       case Standing.editAccessLost:
         must(
-          EditAccessConfirmed(afterAttempt: client.queue.nextAttempt - 1),
+          EditAccessConfirmed(
+            afterAttempt: client.queue.nextAttempt - 1,
+            session: client.queue.session.number,
+            point: tick(),
+          ),
           'access confirmed',
         );
       case Standing.upgradeRequired:

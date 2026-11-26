@@ -215,6 +215,12 @@ final class Client {
     read(this.base);
   }
 
+  EditAccessConfirmed accessConfirmed(int afterAttempt) => EditAccessConfirmed(
+    afterAttempt: afterAttempt,
+    session: queue.session.number,
+    point: tick(),
+  );
+
   StrategyRowSet base;
   DateTime? clock;
   late CloudQueue queue;

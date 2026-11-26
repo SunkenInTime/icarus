@@ -785,7 +785,7 @@ void main() {
             point: tick(),
           ),
         );
-        client.must(EditAccessConfirmed(afterAttempt: attempt));
+        client.must(client.accessConfirmed(attempt));
         expect(
           stateOf(client, 'move'),
           isA<RefusedAgain>()
@@ -836,7 +836,7 @@ void main() {
       final first = client.claim(['a']);
       client.must(TransportFailed(first, TransportFailure.network, at: now));
       final second = client.claim(['b']);
-      client.must(EditAccessConfirmed(afterAttempt: second));
+      client.must(client.accessConfirmed(second));
       client.must(
         BatchRefused(first, BatchRefusal.editAccessRemoved, point: tick()),
       );
@@ -844,7 +844,7 @@ void main() {
       client.must(
         BatchRefused(second, BatchRefusal.strategyDeleted, point: tick()),
       );
-      client.must(EditAccessConfirmed(afterAttempt: second));
+      client.must(client.accessConfirmed(second));
       expect(standingOf(client.queue), Standing.deletedOnServer);
     });
 
@@ -1087,7 +1087,9 @@ void main() {
         'applicable', () {
       expect(
         notApplicable(
-          Client().step(const EditAccessConfirmed(afterAttempt: 7)),
+          Client().step(
+            EditAccessConfirmed(afterAttempt: 7, session: 1, point: tick()),
+          ),
         ),
         isA<NoSuchAttempt>(),
       );

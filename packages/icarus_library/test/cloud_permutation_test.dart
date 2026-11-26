@@ -23,6 +23,12 @@ final class EventFact extends Fact {
   final QueueEvent event;
 }
 
+final class AccessFact extends Fact {
+  AccessFact(this.afterAttempt, super.label, {super.phase});
+
+  final int afterAttempt;
+}
+
 final class ReadFact extends Fact {
   ReadFact(this.base, super.label, {super.phase});
 
@@ -266,12 +272,7 @@ final class Scenario {
               'access refused ${sent.$1}',
             ),
           );
-          facts.add(
-            EventFact(
-              EditAccessConfirmed(afterAttempt: sent.$1),
-              'access confirmed after ${sent.$1}',
-            ),
-          );
+          facts.add(AccessFact(sent.$1, 'access confirmed after ${sent.$1}'));
         case 1:
           facts.add(
             EventFact(
@@ -424,6 +425,14 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
     switch (fact) {
       case EventFact(:final event):
         step(event);
+      case AccessFact(:final afterAttempt):
+        step(
+          EditAccessConfirmed(
+            afterAttempt: afterAttempt,
+            session: queue.session.number,
+            point: tick(),
+          ),
+        );
       case ReadFact(
         :final base,
         :final session,

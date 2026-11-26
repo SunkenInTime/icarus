@@ -430,6 +430,62 @@ final class AfterAnswer extends PaidBy {
   String toString() => 'a result at or after $order and time $serverTime';
 }
 
+final class AllOf extends PaidBy {
+  AllOf._(Iterable<PaidBy> each) : each = Set.unmodifiable(each);
+
+  final Set<PaidBy> each;
+
+  @override
+  bool paidBy(Arrival arrival, ArrivedBase? base) =>
+      each.every((debt) => debt.paidBy(arrival, base));
+
+  @override
+  bool operator ==(Object other) =>
+      other is AllOf && const SetEquality<PaidBy>().equals(other.each, each);
+
+  @override
+  int get hashCode => Object.hash(AllOf, Object.hashAllUnordered(each));
+
+  @override
+  String toString() => 'all of ${each.join('; ')}';
+}
+
+PaidBy both(PaidBy held, PaidBy added) {
+  final each = [
+    for (final debt in [held, added])
+      if (debt case AllOf(each: final inner)) ...inner else debt,
+  ];
+  ResultAtOrAfter? atOrAfter;
+  AfterAnswer? answer;
+  final rest = <PaidBy>{};
+  for (final debt in each) {
+    switch (debt) {
+      case ResultAtOrAfter(:final order):
+        atOrAfter = switch (atOrAfter) {
+          ResultAtOrAfter(order: final mine) when !mine.isBefore(order) =>
+            atOrAfter,
+          _ => debt,
+        };
+      case AfterAnswer():
+        answer = debt.and(answer);
+      case AllOf() || AfterRefusal():
+        rest.add(debt);
+    }
+  }
+  final combined = {?atOrAfter, ?answer, ...rest};
+  return combined.length == 1 ? combined.single : AllOf._(combined);
+}
+
+PaidBy oweAlso(ReadState state, PaidBy added) => switch (state) {
+  ReadOwed(:final since) || ReadRefused(:final since) => both(since, added),
+  NotReadThisSession() || ReadThisSession() => added,
+};
+
+int? _later(int? held, int? added) => switch ((held, added)) {
+  (final a?, final b?) => a > b ? a : b,
+  (final a, final b) => a ?? b,
+};
+
 bool paidBy(ReadState state, Arrival? arrival, ArrivedBase base) =>
     switch (state) {
       ReadOwed(:final since) || ReadRefused(:final since) =>
@@ -533,6 +589,11 @@ final class ReadRefused extends ReadState {
       'refused: $problem, owed by a list of life $named or later',
   };
 }
+
+int? _refusedLifeOf(ReadState state) => switch (state) {
+  ReadOwed(:final unlessLife) || ReadRefused(:final unlessLife) => unlessLife,
+  NotReadThisSession() || ReadThisSession() => null,
+};
 
 int? namedLifeOf(ReadState state) => switch (state) {
   ReadOwed(:final namedLife) || ReadRefused(:final namedLife) => namedLife,
@@ -846,11 +907,14 @@ final class Shown {
     fence: fence,
   );
 
-  ResultOrder? takenFor(ArrivedBase result) => switch (result) {
-    HeaderRead() || StrategyGone() => listTaken,
-    PageRead(:final page) => pagesTaken[page.publicId],
-    PageGone(:final pagePublicId) => pagesTaken[pagePublicId],
-  };
+  ResultOrder? takenFor(ArrivedBase result) => takenOf(switch (result) {
+    HeaderRead() || StrategyGone() => null,
+    PageRead(:final page) => page.publicId,
+    PageGone(:final pagePublicId) => pagePublicId,
+  });
+
+  ResultOrder? takenOf(String? page) =>
+      page == null ? listTaken : pagesTaken[page];
 
   int? get strategyRevision => strategy?.revision;
 
@@ -1112,33 +1176,55 @@ final class Shown {
     fresh: fresh.touched(pages, list: list, mark: mark),
   );
 
-  Shown owingList(PaidBy since) => _with(list: ReadOwed(since: since));
+  Shown owingList(PaidBy since) => owingListPast(null, since);
 
   Shown owingListPast(int? life, PaidBy since, {int? named}) => _with(
-    list: ReadOwed(unlessLife: life, namedLife: named, since: since),
+    list: switch (list) {
+      ReadRefused(:final problem) => ReadRefused(
+        problem,
+        unlessLife: _later(_refusedLifeOf(list), life),
+        namedLife: _later(namedLifeOf(list), named),
+        since: oweAlso(list, since),
+      ),
+      _ => ReadOwed(
+        unlessLife: _later(_refusedLifeOf(list), life),
+        namedLife: _later(namedLifeOf(list), named),
+        since: oweAlso(list, since),
+      ),
+    },
   );
 
   Shown owingPage(String page, PaidBy since) => _with(
     pageReads: {
       ...pageReads,
-      page: ReadOwed(since: since),
+      page: switch (pageRead(page)) {
+        ReadRefused(:final problem) && final held => ReadRefused(
+          problem,
+          since: oweAlso(held, since),
+        ),
+        final held => ReadOwed(since: oweAlso(held, since)),
+      },
     },
   );
 
-  Shown listRefused(String problem, PaidBy since) => _with(
-    list: ReadRefused(
-      problem,
-      unlessLife: switch (list) {
-        ReadOwed(:final unlessLife) ||
-        ReadRefused(:final unlessLife) => unlessLife,
-        NotReadThisSession() || ReadThisSession() => null,
-      },
-      namedLife: namedLifeOf(list),
-      since: since,
-    ),
-  );
+  Shown listRefused(String problem, PaidBy since, {required ResultOrder at}) =>
+      _with(
+        listTaken: at,
+        list: ReadRefused(
+          problem,
+          unlessLife: _refusedLifeOf(list),
+          namedLife: namedLifeOf(list),
+          since: since,
+        ),
+      );
 
-  Shown pageRefused(String page, String problem, PaidBy since) => _with(
+  Shown pageRefused(
+    String page,
+    String problem,
+    PaidBy since, {
+    required ResultOrder at,
+  }) => _with(
+    pagesTaken: {...pagesTaken, page: at},
     pageReads: {
       ...pageReads,
       page: ReadRefused(problem, since: since),

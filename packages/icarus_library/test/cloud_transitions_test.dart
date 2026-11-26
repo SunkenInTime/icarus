@@ -396,8 +396,11 @@ final events = <String, QueueEvent Function(Client)>{
     session: c.queue.session.number,
   ),
   'account changed': (c) => const AccountChanged(),
-  'edit access confirmed after attempt 5': (c) =>
-      const EditAccessConfirmed(afterAttempt: 5),
+  'edit access confirmed after attempt 5': (c) => EditAccessConfirmed(
+    afterAttempt: 5,
+    session: c.queue.session.number,
+    point: tick(),
+  ),
   'user: retry': (c) => const UserRetried('x'),
   'user: keep mine, same item': (c) => UserKeptMine(
     'x',
@@ -564,6 +567,8 @@ String outcome(Client before, Step result) {
             StrategySetAside(:final count) => 'sets $count aside',
             ReportReplacedWithoutLife(:final attempt) =>
               'reports attempt $attempt replaced without a life',
+            ReportReplacedWithoutEvidence(:final opId) =>
+              'reports $opId replaced without the server\'s row',
             PageResultDeferred(:final page) => 'defers $page for the page list',
             SetAsideDiscarded(:final count) => 'discards $count set aside',
           },
