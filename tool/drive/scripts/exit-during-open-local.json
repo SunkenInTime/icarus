@@ -29,7 +29,6 @@
   {"tapAt": [691, 20]},
   {"wait": 1.5},
   {"tapText": "Opened slowly {run}"},
-  {"addAgent": "edit-during-open-{run}", "agent": "jett", "at": [600, 430]},
   {"tapIcon": "house300"},
   {"wait": 0.5},
   {"shot": "{out}/1-after-home.png"},

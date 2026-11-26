@@ -297,6 +297,7 @@ final _entries = <String>[];
 final _rememberedPages = <String, String>{};
 var _flutterErrors = 0;
 var _failedSteps = 0;
+final _delayedLinks = <Future<void>>[];
 var _steps = 0;
 final _misplaced = <String>{};
 final _cloudStore = CloudStoreLog();
@@ -397,6 +398,7 @@ Future<void> _play(String script) async {
   final cloudEnd =
       _cloudStore.end(appProviderContainer, lastStep: DateTime.now());
   await Future.wait(_pictureWatches);
+  await Future.wait(_delayedLinks);
   _logCloudStore(await cloudEnd);
   _log(_runFrames.stop());
   _log(buildsLine());
@@ -2728,10 +2730,14 @@ Future<void> _run(Map<String, dynamic> step) async {
 
       switch (step['afterMs']) {
         case final num after:
-          unawaited(Future<void>.delayed(
+          _delayedLinks.add(Future<void>.delayed(
             Duration(milliseconds: after.toInt()),
             deliver,
-          ));
+          ).catchError((Object error) {
+            _failedSteps++;
+            _log('FAIL the link opened ${after.toInt()} ms after its step: '
+                '$error');
+          }));
         case _:
           await deliver();
       }

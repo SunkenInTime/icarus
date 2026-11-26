@@ -48,6 +48,7 @@ What doesn't run on Linux:
 - The `clipboard` step puts a picture on the Windows clipboard through PowerShell. `run` refuses scripts that use it (`paste-on-canvas`, `paste-picture`, `paste-while-busy`).
 - MP4 export needs `ffmpeg` on PATH. `run` refuses scripts that export MP4 when it's missing. Transparent MOV uses the app's own encoder.
 - Growing the window to 2400x1350 (`spawn-barriers-all-maps`) crashes the Linux app with signal 11. Resizes up to 1600x900 work.
+- A script that closes the window (`closeWindow`, as in `close-with-unsaved-local`) crashes in the Linux engine's teardown about half the time, after the save has finished: main at f0d6bb86 and #811 alike gave 2 SIGSEGV and 3 SIGABRT in 10 runs each. So on Linux such a script proves what was saved, not a clean exit; check the exit on Windows. The app closes before it writes `SUMMARY`, so `run` reports these runs as failed whatever their exit status; read the log of the run that reopens the strategy to see what was saved.
 - The app draws system cursors instead of its custom drawing and rotation cursors, because the vendored `custom_mouse_cursor` has no Linux code. Shots don't include the cursor, so they look the same.
 
 ## How long a cloud open takes, by the back button
