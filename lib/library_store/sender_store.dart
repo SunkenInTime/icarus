@@ -221,6 +221,13 @@ final class UncheckedWithoutBasis extends SenderReport {
   final ClaimedBatch batch;
 }
 
+final class StoreRepairedFor extends SenderReport {
+  StoreRepairedFor(super.strategyId, List<Repair> repairs)
+    : repairs = List.unmodifiable(repairs);
+
+  final List<Repair> repairs;
+}
+
 final class WriteNotMade extends SenderReport {
   const WriteNotMade(super.strategyId, this.trouble);
 

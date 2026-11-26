@@ -251,6 +251,35 @@ void main() {
       }
     });
 
+    test('a row whose life is not known is compared by revision alone, in '
+        'both directions', () {
+      final withLife = pageAWith(
+        listed(),
+        e1At(revision: 2, life: fixtureLife),
+      );
+      final lifeless = LiveElement(
+        publicId: 'e1',
+        pagePublicId: 'page-a',
+        payload: agentPayload('e1', const {}),
+        sortIndex: 0,
+        revision: 3,
+      );
+      final higherWithoutLife = pageAWith(withLife.shown, lifeless);
+      expect(itemsTaken(higherWithoutLife), hasLength(1));
+      expect(
+        higherWithoutLife.shown.rows[const ElementTarget('e1')]?.revision,
+        3,
+      );
+
+      final heldWithoutLife = pageAWith(listed(), lifeless);
+      final lowerWithLife = pageAWith(
+        heldWithoutLife.shown,
+        e1At(revision: 2, life: fixtureLife + 50),
+      );
+      expect(itemsTaken(lowerWithLife), isEmpty);
+      expect(lowerWithLife.shown.rows[const ElementTarget('e1')]?.revision, 3);
+    });
+
     test('a row under a newer life replaces the held one even at a lower '
         'revision', () {
       final held = pageAWith(listed(), e1At(revision: 3, life: fixtureLife));
@@ -384,106 +413,72 @@ void main() {
     });
   });
 
-  group('an item the queue holds unchanged that the store has lost', () {
-    final checked = shownTakesChecked;
-    tearDown(() => shownTakesChecked = checked);
+  for (final removal in ['the page is gone', 'a page list leaves it out']) {
+    test(
+      'an item taken on the page it moved to stays out when that page is '
+      'removed ($removal) and an older result of its first page arrives',
+      () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        final olderA = await beganIn(store);
+        final moved = movedToB(initialRows());
+        await arriveIn(
+          store,
+          pageReadOf(moved, 'page-b'),
+          await beganIn(store),
+        );
+        await arriveIn(
+          store,
+          removal == 'the page is gone'
+              ? const PageGone('page-b')
+              : headerReadOf(withoutPage(moved, 'page-b')),
+          await beganIn(store),
+        );
+        await arriveIn(store, pageReadOf(initialRows(), 'page-a'), olderA);
+        expect(await itemsOn(store, 'page-a'), isNot(contains('e1')));
+        await expectAgree(store);
+        store = await reopened(store, storage);
+        expect(await itemsOn(store, 'page-a'), isNot(contains('e1')));
+      },
+    );
+  }
 
-    Future<(LibraryStore, ResultSource)> lostE1() async {
-      final storage = MemoryStorage();
-      final store = await openCloudStore(MemoryEngine(storage));
-      await addCloud(store, initialRows());
-      await store.close();
-      final contents = {
-        for (final MapEntry(key: area, value: values)
-            in storage.contents.entries)
-          area: {
-            for (final MapEntry(:key, :value) in values.entries)
-              if (!(key.contains('/e/') && value.contains('"id":"e1"')))
-                key: value,
-          },
-      };
-      expect(
-        contents.values.expand((values) => values.values).length,
-        storage.contents.values.expand((values) => values.values).length - 1,
-      );
-      final again = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
-      await recordAll(again, [const AppRestarted(build: 'test')]);
-      return (again, await beganIn(again));
-    }
+  test('a damaged copy of an item on a page it moved away from is removed '
+      'when the store opens, and an older result of that page does not take '
+      'the item back', () async {
+    final storage = MemoryStorage();
+    var store = await openCloudStore(MemoryEngine(storage));
+    await addCloud(store, initialRows());
+    final older = await beganIn(store);
+    await arriveIn(
+      store,
+      pageReadOf(movedToB(initialRows()), 'page-b'),
+      await beganIn(store),
+    );
+    await store.close();
+    final contents = editable(storage.contents);
+    contents[strategyArea(strategyId)]![elementName('page-a', 'e1')] =
+        '{"broken":true}';
+    store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+    await recordAll(store, [const AppRestarted(build: build)]);
+    expect(
+      (await store.readPage(strategyId, 'page-a') as Found<PageContent>)
+          .value
+          .unplaced,
+      isEmpty,
+    );
+    await expectAgree(store);
 
-    test('a build without checks writes it back and reports it', () async {
-      shownTakesChecked = false;
-      final (store, start) = await lostE1();
-      final recorded = await recordAll(store, [
-        BaseArrived(
-          pageReadOf(initialRows(), 'page-a'),
-          session: await sessionOf(store),
-          from: start,
-        ),
-      ]);
-      expect(recorded.healed, [const ElementKey('e1')]);
-      expect(await itemsOn(store, 'page-a'), contains('e1'));
-      await expectAgree(store);
-    });
-
-    test('a checked build throws', () async {
-      shownTakesChecked = true;
-      final (store, start) = await lostE1();
-      await expectLater(
-        store.record(testAccount, strategyId, [
-          BaseArrived(
-            pageReadOf(initialRows(), 'page-a'),
-            session: await sessionOf(store),
-            from: start,
-          ),
-        ]),
-        throwsA(isA<TakesDiffer>()),
-      );
-    });
+    await arriveIn(store, pageReadOf(initialRows(), 'page-a'), older);
+    expect(await itemsOn(store, 'page-a'), isNot(contains('e1')));
+    expect(await itemsOn(store, 'page-b'), contains('e1'));
+    await expectAgree(store);
   });
 
-  test(
-    'a damaged copy of an item on a page it moved away from is removed by '
-    'an older result of that page, which does not take the item back',
-    () async {
-      final storage = MemoryStorage();
-      var store = await openCloudStore(MemoryEngine(storage));
-      await addCloud(store, initialRows());
-      final older = await beganIn(store);
-      await arriveIn(
-        store,
-        pageReadOf(movedToB(initialRows()), 'page-b'),
-        await beganIn(store),
-      );
-      await store.close();
-      final contents = editable(storage.contents);
-      contents[strategyArea(strategyId)]![elementName('page-a', 'e1')] =
-          '{"broken":true}';
-      store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
-      await recordAll(store, [const AppRestarted(build: build)]);
-      expect(
-        (await store.readPage(strategyId, 'page-a') as Found<PageContent>)
-            .value
-            .unplaced,
-        isNotEmpty,
-      );
-
-      await arriveIn(store, pageReadOf(initialRows(), 'page-a'), older);
-      expect(
-        (await store.readPage(strategyId, 'page-a') as Found<PageContent>)
-            .value
-            .unplaced,
-        isEmpty,
-      );
-      expect(await itemsOn(store, 'page-a'), isNot(contains('e1')));
-      expect(await itemsOn(store, 'page-b'), contains('e1'));
-      await expectAgree(store);
-    },
-  );
-
-  test('a trashed page the page list carried is in the stored results, and '
-      'results stored before they carried trashed pages are filled from the '
-      'trashed page rows on disk', () async {
+  test('a trashed page the page list carried is held in Shown from its page '
+      'row on disk, not from the stored results, which load whether or not '
+      'they carry a trashed list', () async {
     final storage = MemoryStorage();
     var store = await openCloudStore(MemoryEngine(storage));
     await addCloud(store, initialRows());
@@ -491,26 +486,43 @@ void main() {
       page('page-b', sortIndex: 1, deleted: true, revision: 2),
     ]);
     await arriveIn(store, headerReadOf(trashed), await beganIn(store));
+    expect((await syncOf(store)).queue.shown.trashed.keys, ['page-b']);
     await expectAgree(store);
     await store.close();
 
     final area = strategyArea(strategyId);
     final header = jsonDecode(storage.contents[area]!['read/header']!) as Map;
-    expect(header['trashed'], isNotEmpty);
-    expect((header['lives'] as Map)['trashed'], isNotEmpty);
+    expect(header.containsKey('trashed'), isFalse);
+    expect((header['lives'] as Map?)?.containsKey('trashed') ?? false, isFalse);
+    store = await reopened(store, storage);
+    expect((await syncOf(store)).queue.shown.trashed.keys, ['page-b']);
+    await store.close();
+
     final contents = editable(storage.contents);
     contents[area]!['read/header'] = jsonEncode({
-      for (final MapEntry(:key, :value) in header.entries)
-        if (key != 'trashed')
-          key: key == 'lives'
-              ? {
-                  for (final MapEntry(:key, :value) in (value as Map).entries)
-                    if (key != 'trashed') key: value,
-                }
-              : value,
+      ...header,
+      'trashed': header['pages'],
+      'lives': {...?(header['lives'] as Map?), 'trashed': <String, Object?>{}},
     });
     store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
     expect((await syncOf(store)).queue.shown.trashed.keys, ['page-b']);
     await expectAgree(store);
   });
 }
+
+StrategyRowSet withoutPage(StrategyRowSet rows, String page) => StrategyRowSet(
+  strategy: rows.strategy,
+  pages: [
+    for (final row in rows.pages)
+      if (row.publicId != page) row,
+  ],
+  settings: [
+    for (final row in rows.settings)
+      if (row.pagePublicId != page) row,
+  ],
+  elements: [
+    for (final row in rows.elements)
+      if (row.pagePublicId != page) row,
+  ],
+  lineupGroups: rows.lineupGroups,
+);

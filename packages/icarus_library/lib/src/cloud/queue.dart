@@ -142,6 +142,21 @@ final class CloudQueue {
 
   QueueEntry? entry(String id) => _index.byId[id];
 
+  CloudQueue withShown(Shown shown) => identical(shown, this.shown)
+      ? this
+      : CloudQueue._(
+          entries: entries,
+          attempts: attempts,
+          landed: landed,
+          nextAttempt: nextAttempt,
+          nextSession: nextSession,
+          shown: shown,
+          strategy: strategy,
+          session: session,
+          index: _index,
+          lineage: _Lineage(this, _Change()..everything = true),
+        );
+
   CloudQueue raisedTo({required int nextAttempt, required int nextSession}) {
     if (nextAttempt <= this.nextAttempt && nextSession <= this.nextSession) {
       return this;
@@ -1061,7 +1076,7 @@ LandedShape _shapeOf(StrategyOp sent) => switch (sent) {
 };
 
 final class _Edit {
-  _Edit(this.original, this.now, [this.damaged = const {}])
+  _Edit(this.original, this.now)
     : entries = [...original.entries],
       attempts = {...original.attempts},
       landed = [...original.landed],
@@ -1073,7 +1088,6 @@ final class _Edit {
       index = _IndexEdit(original._index);
 
   final CloudQueue original;
-  final Set<RowKey> damaged;
   final decisions = <RowDecision>[];
   final DateTime now;
   final List<QueueEntry> entries;
@@ -1285,14 +1299,9 @@ void _pruneAttempts(_Edit edit) {
   }
 }
 
-Step transition(
-  CloudQueue queue,
-  QueueEvent event, {
-  required DateTime now,
-  Set<RowKey> damaged = const {},
-}) {
+Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
   final start = recordExpiries(queue, now);
-  final step = _step(_Edit(start, now, damaged), start, event, now);
+  final step = _step(_Edit(start, now), start, event, now);
   return switch (step) {
     Stepped() => step,
     NotApplicable(:final why) => NotApplicable(start, why),
@@ -1597,8 +1606,7 @@ Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
       final taken = edit.shown;
       final adopted = Shown.nothing.taken(base, started: started);
       edit.decisions.addAll([
-        for (final page in {...taken.pages.keys, ...taken.trashed.keys})
-          PageLeft(page),
+        for (final page in taken.knownPages) PageLeft(page),
         ...adopted.decisions,
       ]);
       edit.shown = adopted.shown.fencedAt(edit.readsAfterThis(), after: taken);
@@ -1612,7 +1620,7 @@ Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
     return edit.done();
   }
   final before = edit.shown;
-  final taken = edit.shown.taken(base, started: started, damaged: edit.damaged);
+  final taken = edit.shown.taken(base, started: started);
   edit.decisions.addAll(taken.decisions);
   edit.shown = taken.shown;
   if (base case HeaderRead(:final strategy)) {

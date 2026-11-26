@@ -284,7 +284,9 @@ final class StoreModel {
       throw StateError('after $label the disk holds $got, memory $want');
     }
     final stored = shownFromGroups(disk.groups);
-    if (stored is! ShownRead || stored.shown != memory.shown.inNewSession()) {
+    if (stored is! ShownRead ||
+        stored.shown !=
+            memory.shown.inNewSession().withTrashedPages(const [])) {
       throw StateError(
         'after $label the results on disk differ from memory: '
         '${disk.groups.keys} vs ${memory.shown.content.keys}',

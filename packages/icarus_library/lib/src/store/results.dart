@@ -3,6 +3,7 @@ import '../rows.dart';
 import '../strategy_rows.dart';
 import '../cloud/account.dart';
 import '../cloud/queue.dart';
+import '../cloud/shown.dart' show Repair;
 import '../cloud/sync.dart';
 import '../cloud/version.dart';
 import '../undo.dart';
@@ -433,6 +434,14 @@ final class StrategyRefreshed extends StoreChange {
   final StrategySummary summary;
 }
 
+final class StoreRepaired extends StoreChange {
+  StoreRepaired(this.strategyPublicId, List<Repair> repairs)
+    : repairs = List.unmodifiable(repairs);
+
+  final String strategyPublicId;
+  final List<Repair> repairs;
+}
+
 final class LibraryEdited extends StoreChange {
   LibraryEdited({
     required List<StrategySummary> summaries,
@@ -829,16 +838,11 @@ final class EditsGoThroughCommit extends ReportOutcome {
 }
 
 final class Recorded {
-  Recorded({
-    required List<ReportOutcome> outcomes,
-    required this.summary,
-    List<RowKey> healed = const [],
-  }) : outcomes = List.unmodifiable(outcomes),
-       healed = List.unmodifiable(healed);
+  Recorded({required List<ReportOutcome> outcomes, required this.summary})
+    : outcomes = List.unmodifiable(outcomes);
 
   final List<ReportOutcome> outcomes;
   final StrategySummary summary;
-  final List<RowKey> healed;
 }
 
 typedef RecordResult = Saving<Recorded, CommitRefusal>;

@@ -236,6 +236,7 @@ void main() {
       'stale list',
       'purged',
       'added',
+      'trashed page row read',
       'older list after a newer page',
       'older page after a newer list',
       'started with the read before it',

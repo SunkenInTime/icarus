@@ -13,6 +13,7 @@ ShownRow _loaded(ShownRow row) => ShownRow(
   revision: row.revision,
   digest: row.digest,
   life: row.life,
+  here: row.here,
 );
 
 Shown fromScratch(Shown shown) => Shown(
@@ -55,7 +56,7 @@ void expectWhatTheServerSent(Shown shown, ArrivedBase base, String where) {
       final sent = <Row>[...elements, ...lineupGroups];
       expect(
         shown.content[pageId],
-        liveContentOn(sent, pageId),
+        page is TrashedPage ? isNull : liveContentOn(sent, pageId),
         reason: '$where: content of $pageId',
       );
       for (final row in sent) {
@@ -92,8 +93,26 @@ void expectWhatTheServerSent(Shown shown, ArrivedBase base, String where) {
   }
 }
 
-void expectNoRowGoesBack(Shown before, Shown after, String where) {
+void expectNoRowGoesBack(
+  Shown before,
+  Shown after,
+  ArrivedBase base,
+  String where,
+) {
+  bool mayRemove(String page) => switch (base) {
+    PageRead(page: final read) => read.publicId == page,
+    PageGone(:final pagePublicId) => pagePublicId == page,
+    HeaderRead(:final pages) => !pages.any((row) => row.publicId == page),
+    StrategyGone() => false,
+  };
   for (final MapEntry(key: target, value: was) in before.rows.entries) {
+    if (!after.rows.containsKey(target)) {
+      expect(
+        mayRemove(was.page),
+        isTrue,
+        reason: '$where: $target left without a result of its page',
+      );
+    }
     if ((was.version, after.rows[target]?.version) case (
       final was?,
       final now?,
@@ -122,6 +141,7 @@ Map<String, int> runSeed(int seed, int steps) {
   var lastPage = 0;
   var lastList = 0;
   ReadStart? lastFresh;
+  final firstStart = <int, ReadStart>{};
   for (var step = 0; step < steps; step++) {
     final where = 'seed $seed step $step';
     if (server.random.nextBool()) server.change();
@@ -130,7 +150,7 @@ Map<String, int> runSeed(int seed, int steps) {
         : server.read();
     final tie =
         !result.stale && lastFresh != null && server.random.nextInt(5) == 0;
-    final started = tie
+    final started = firstStart[result.read] ??= tie
         ? lastFresh
         : ReadStart(session: 1, sequence: result.read * 2);
     if (!result.stale) lastFresh = started;
@@ -177,7 +197,7 @@ Map<String, int> runSeed(int seed, int steps) {
       if (decisionCase(decision) case final what?) count(what);
     }
     if (result.stale) {
-      expectNoRowGoesBack(before, cached, where);
+      expectNoRowGoesBack(before, cached, result.base, where);
     } else {
       expectWhatTheServerSent(cached, result.base, where);
     }
@@ -219,6 +239,7 @@ void main() {
       'stale list',
       'purged',
       'added',
+      'trashed page row read',
       'older list after a newer page',
       'older page after a newer list',
       'started with the read before it',

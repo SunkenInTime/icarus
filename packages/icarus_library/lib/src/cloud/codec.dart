@@ -885,6 +885,7 @@ List<Object?> _shownRow(String key, ShownRow row) => [
   row.page,
   row.revision,
   row.digest,
+  if (!row.here) false,
 ];
 
 (String, ShownRow)? _shownRowFrom(Object? raw) => switch (raw) {
@@ -893,14 +894,17 @@ List<Object?> _shownRow(String key, ShownRow row) => [
     final String page,
     final Object? revision,
     final String digest,
+    ...final rest,
   ]
-      when revision == null || (revision is num && isSafeWhole(revision)) =>
+      when (revision == null || (revision is num && isSafeWhole(revision))) &&
+          (rest.isEmpty || (rest.length == 1 && rest.single == false)) =>
     (
       key,
       ShownRow(
         page: page,
         revision: (revision as num?)?.toInt(),
         digest: digest,
+        here: rest.isEmpty,
       ),
     ),
   _ => null,
@@ -931,6 +935,7 @@ Map<String, ShownRow> _withLives(
       revision: value.revision,
       digest: value.digest,
       life: lives[key],
+      here: value.here,
     ),
 };
 
@@ -997,7 +1002,6 @@ bool _sameHeader(Shown before, Shown after) =>
     before.strategy == after.strategy &&
     before.list == after.list &&
     _sameInOrder(before.pages, after.pages) &&
-    _sameInOrder(before.trashed, after.trashed) &&
     _sameInOrder(before.settings, after.settings) &&
     _sameInOrder(before.highest, after.highest);
 
@@ -1024,11 +1028,6 @@ Map<String, Object?> _headerGroup(Shown shown) => {
     for (final MapEntry(:key, :value) in shown.pages.entries)
       _shownRow(key, value),
   ],
-  if (shown.trashed.isNotEmpty)
-    'trashed': [
-      for (final MapEntry(:key, :value) in shown.trashed.entries)
-        _shownRow(key, value),
-    ],
   'settings': [
     for (final MapEntry(:key, :value) in shown.settings.entries)
       _shownRow(key, value),
@@ -1040,7 +1039,6 @@ Map<String, Object?> _headerGroup(Shown shown) => {
   'lives': ?_unlessEmpty({
     'strategy': _livesOf({'strategy': ?shown.strategy}),
     'pages': _livesOf(shown.pages),
-    if (shown.trashed.isNotEmpty) 'trashed': _livesOf(shown.trashed),
     'settings': _livesOf(shown.settings),
     'highest': {
       for (final MapEntry(:key, :value) in shown.highest.entries)
@@ -1194,7 +1192,6 @@ final class ShownUnreadable extends ShownReading {
 ShownReading shownFromGroups(Map<String?, String> texts) {
   ShownRow? strategy;
   final pages = <String, ShownRow>{};
-  final trashed = <String, ShownRow>{};
   final settings = <String, ShownRow>{};
   final highest = <Target, Version>{};
   final content = <String, Map<SeenPart, String>>{};
@@ -1215,12 +1212,10 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
           if (lives == null) fields.reject('unreadable lives');
           final strategyLives = _livesFrom(lives?['strategy']);
           final pageLives = _livesFrom(lives?['pages']);
-          final trashedLives = _livesFrom(lives?['trashed']);
           final settingsLives = _livesFrom(lives?['settings']);
           final highestLives = _livesFrom(lives?['highest']);
           if (strategyLives == null ||
               pageLives == null ||
-              trashedLives == null ||
               settingsLives == null ||
               highestLives == null) {
             fields.reject('unreadable lives');
@@ -1233,22 +1228,15 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
           final owed = _readFrom(fields.json['read']);
           if (owed == null) fields.reject('an unreadable page list debt');
           final pageRows = _shownRows(fields.json['pages']);
-          final trashedRows = _shownRows(
-            fields.json['trashed'] ?? const <Object?>[],
-          );
           final settingsRows = _shownRows(fields.json['settings']);
           final tops = _highest(fields.json['highest']);
-          if (pageRows == null ||
-              trashedRows == null ||
-              settingsRows == null ||
-              tops == null) {
+          if (pageRows == null || settingsRows == null || tops == null) {
             fields.reject('unreadable shown rows');
           }
           return () {
             list = owed!;
             strategy = _withLives(strategyRows!, strategyLives!)['strategy'];
             pages.addAll(_withLives(pageRows!, pageLives!));
-            trashed.addAll(_withLives(trashedRows!, trashedLives!));
             settings.addAll(_withLives(settingsRows!, settingsLives!));
             highest.addAll({
               for (final MapEntry(:key, :value) in tops!.entries)
@@ -1307,7 +1295,6 @@ ShownReading shownFromGroups(Map<String?, String> texts) {
     Shown(
       strategy: strategy,
       pages: pages,
-      trashed: trashed,
       settings: settings,
       content: content,
       rows: rows,

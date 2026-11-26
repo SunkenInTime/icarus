@@ -675,7 +675,36 @@ String renderTable() {
       'store writes what it decides and nothing else. A row replaces the held '
       'copy unless the held copy is newer: lives compare first when both are '
       'known, revisions otherwise. A row without a revision never replaces '
-      'one with a revision.',
+      'one with a revision. A taken row whose stored copy already has the '
+      'same contents is not written again. One removal can cover several '
+      'stored rows: a page leaving takes its page row, its settings and every '
+      'item on it, damaged ones included.',
+    )
+    ..writeln(
+      '- `taken` is never given a result older than one already taken for the '
+      'same page or the same list. `resultFit` in `lib/src/cloud/queue.dart` '
+      'drops those as `OlderResult` before any row is compared.',
+    )
+    ..writeln(
+      '- When a strategy\'s queue loads, and when one of its pages is loaded, '
+      'the queue and the store are made to agree once, and after that only '
+      'decisions change either. Each disagreement is repaired the same way '
+      'every time, the repair is written in one commit at once, and it is '
+      'reported (`StoreRepaired`), so a second load finds nothing to repair. '
+      'A row the store holds and the queue does not know is taken into the '
+      'queue at its stored version and page. A second stored copy of an item '
+      'the queue holds on one page is removed. Of two or more stored copies '
+      'of an item the queue does not hold, the newest by version is kept; a '
+      'damaged copy has no version, so any readable copy beats it, and at the '
+      'same version the lower page id wins, so the order rows come back from '
+      'disk does not matter. '
+      'A row the queue holds with no readable copy here, missing or damaged, '
+      'is held at its version as not readable here, and the next result of '
+      'its page at that version or newer writes it. A damaged row whose id '
+      'cannot be read cannot be named by the queue; it stays until a full '
+      'result of its page or the page leaving removes it. Trashed pages are '
+      'known to the queue from the trashed page rows on disk, and are not '
+      'stored with its results.',
     )
     ..writeln(
       '- When a page result leaves out an item the device held there, the '
@@ -699,7 +728,11 @@ String renderTable() {
       'purged row has been deleted for a long time, so all of this has to '
       'happen while one read is in flight. The next read of B removes it. A '
       'read of the same page that started before the removal is dropped '
-      'whole as older.',
+      'whole as older. The same case arises without the move back when the '
+      'device never saw the move to B: the read of A leaves the item out, and '
+      'an older read of B arrives after it carrying the item at a version '
+      'newer than the device held. It is taken for the same reason and '
+      'corrected the same way.',
     )
     ..writeln()
     ..writeln('## Folding')

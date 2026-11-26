@@ -139,6 +139,15 @@ final class RandomServer {
   }
 
   void change() {
+    final before = {for (final each in held) each.id: each.page};
+    _change();
+    final after = {for (final each in held) each.id};
+    for (final MapEntry(key: id, value: page) in before.entries) {
+      if (!after.contains(id)) _generated('purged', page: page);
+    }
+  }
+
+  void _change() {
     final row = held[random.nextInt(held.length)];
     switch (random.nextInt(9)) {
       case 0 || 1:
@@ -182,6 +191,7 @@ final class RandomServer {
           for (final each in serverPages)
             if (!trashed.contains(each) && each != page) each,
         ]..sort((a, b) => sortIndexOf[a]!.compareTo(sortIndexOf[b]!));
+        revisionOf[page] = revisionOf[page]! + 1;
         if (trashing) {
           trashed.add(page);
         } else {
@@ -204,7 +214,6 @@ final class RandomServer {
         final purged = deleted[random.nextInt(deleted.length)];
         held.remove(purged);
         _itemCases.remove(purged.id);
-        _generated('purged', page: purged.page);
       case _:
         final id = 'added-${_added++}';
         final item = HeldItem(
@@ -224,6 +233,16 @@ final class RandomServer {
   ]..sort((a, b) => sortIndexOf[a]!.compareTo(sortIndexOf[b]!));
 
   LivePage pageRow(String page) => LivePage(
+    publicId: page,
+    strategyPublicId: strategyId,
+    name: page,
+    sortIndex: sortIndexOf[page]!,
+    isAttack: true,
+    revision: revisionOf[page]!,
+    unknownFields: jsonObject(const {'createdAt': fixtureLife}),
+  );
+
+  PendingTrashedPage trashedPageRow(String page) => PendingTrashedPage(
     publicId: page,
     strategyPublicId: strategyId,
     name: page,
@@ -291,7 +310,8 @@ final class RandomServer {
       }
     }
     final page = serverPages[random.nextInt(serverPages.length)];
-    if (trashed.contains(page)) {
+    final trashedRow = trashed.contains(page) && random.nextBool();
+    if (trashed.contains(page) && !trashedRow) {
       _made('trashed page read');
       return ServerResult(PageGone(page), [
         'trashed page read',
@@ -299,17 +319,21 @@ final class RandomServer {
       ], read: ++reads);
     }
     final leaving = random.nextInt(5) == 0;
-    final included = [
+    final onPage = [
       for (final each in held)
-        if (each.page == page && !(leaving && random.nextBool())) each,
+        if (each.page == page) each,
     ];
-    if (leaving) {
-      _made('rows left out of a read');
-    }
+    final included = [
+      for (final each in onPage)
+        if (!(leaving && random.nextBool())) each,
+    ];
+    final leftOut = included.length < onPage.length;
+    if (leftOut) _made('rows left out of a read');
+    if (trashedRow) _made('trashed page row read');
     final rows = [for (final item in included) item.row];
     final result = ServerResult(
       PageRead(
-        page: pageRow(page),
+        page: trashedRow ? trashedPageRow(page) : pageRow(page),
         elements: [
           for (final row in rows)
             if (row is ElementRow) row,
@@ -320,7 +344,8 @@ final class RandomServer {
         ],
       ),
       [
-        if (leaving) 'rows left out of a read',
+        if (leftOut) 'rows left out of a read',
+        if (trashedRow) 'trashed page row read',
         ..._deliveredPage(page),
         for (final item in included) ...?_itemCases.remove(item.id),
       ],

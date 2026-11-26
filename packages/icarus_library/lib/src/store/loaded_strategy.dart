@@ -400,12 +400,28 @@ final class LoadedStrategy {
 
   void forgetUnplaced(StoreName name) {
     switch (name) {
-      case ElementName(:final page) || LineupName(:final page):
+      case ElementName(:final page, :final digest):
         _loaded[page]?.unplaced.remove(name.name);
+        if (_loaded[page]?.elements.containsKey(digest) != true) {
+          _elementPages[digest]?.remove(page);
+        }
+      case LineupName(:final page, :final digest):
+        _loaded[page]?.unplaced.remove(name.name);
+        if (_loaded[page]?.lineupGroups.containsKey(digest) != true) {
+          _lineupPages[digest]?.remove(page);
+        }
       case _:
         unplaced.remove(name.name);
     }
   }
+
+  final reconciled = <String>{};
+
+  Iterable<String> get loadedPages => _loaded.keys;
+
+  Map<String, Set<String>> get elementIndex => _elementPages;
+
+  Map<String, Set<String>> get lineupIndex => _lineupPages;
 
   void forgetRow(Row row) {
     switch (row) {
@@ -424,12 +440,10 @@ final class LoadedStrategy {
     _pages.remove(pageDigest);
     _settings.remove(pageDigest);
     _contentPages.remove(pageDigest);
-    final loaded = _loaded.remove(pageDigest);
-    for (final digest in [...?loaded?.elements.keys]) {
-      _elementPages[digest]?.remove(pageDigest);
-    }
-    for (final digest in [...?loaded?.lineupGroups.keys]) {
-      _lineupPages[digest]?.remove(pageDigest);
+    _loaded.remove(pageDigest);
+    reconciled.remove(pageDigest);
+    for (final pages in [..._elementPages.values, ..._lineupPages.values]) {
+      pages.remove(pageDigest);
     }
     unplaced.removeWhere((name, _) => name == SettingsName(pageDigest).name);
   }
