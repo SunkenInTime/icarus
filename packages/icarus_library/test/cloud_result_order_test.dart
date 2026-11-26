@@ -586,6 +586,65 @@ void main() {
     );
   });
 
+  group('debts as stored now', () {
+    ShownReading readWithList(Object? read) {
+      final groups = shownToGroups(Shown.nothing);
+      return shownFromGroups({
+        for (final MapEntry(:key, :value) in groups.entries)
+          key: jsonEncode(key == null ? {...value, 'read': read} : value),
+      });
+    }
+
+    test('an owed order without its snapshot is unreadable', () {
+      expect(
+        readWithList({
+          'owedSince': {'session': 3, 'client': 1},
+        }),
+        isA<ShownUnreadable>(),
+      );
+    });
+
+    test('a combined debt written as text reads as every member', () {
+      final read = readWithList({
+        'owedSince': {
+          'allOf': [
+            {'session': 3, 'client': 1, 'snapshot': 9},
+            {
+              'afterRefusal': {
+                'session': 3,
+                'client': 1,
+                'connection': 2,
+                'snapshot': 5,
+                'time': '1795435204780123456',
+                'step': 4,
+              },
+            },
+          ],
+        },
+      });
+      expect(
+        (read as ShownRead).shown.list,
+        ReadOwed(
+          since: both(
+            const ResultAtOrAfter(
+              ResultOrder(session: 3, client: 1, snapshot: 9),
+            ),
+            const AfterRefusal(
+              session: 3,
+              point: ResultPoint(
+                client: 1,
+                connection: 2,
+                snapshot: 5,
+                serverTime: 1795435204780123456,
+              ),
+              step: 4,
+            ),
+          ),
+        ),
+      );
+    });
+  });
+
   group('marks stored by earlier builds', () {
     test('an owed list stored as a session and step reads as owed from the '
         'start of that session, and any result of the session or a later one '

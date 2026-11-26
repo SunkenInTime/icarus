@@ -3,6 +3,7 @@ import 'package:test/test.dart';
 
 import 'cloud_ordering_rules_test.dart'
     show arrivalAt, connectedOn, pageA, pointAt, stateIn;
+import 'cloud_set_aside_test.dart' show replaced;
 import 'cloud_store_support.dart';
 import 'cloud_support.dart';
 import 'support.dart';
@@ -323,6 +324,101 @@ void main() {
         for (final MapEntry(:key, :value) in trashed.queue.shown.rows.entries)
           if (value.page == 'page-a') key,
       }, items);
+    });
+  });
+
+  group('sessions', () {
+    test('an op answer stamped on a later connection before the reconnect '
+        'opens the session, lands, and marks freshness in the new session', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, pageA(), pointAt(3)));
+      final before = client.queue.session.number;
+      client.edit(movePatch('move', x: 40));
+      final attempt = client.claim(['move']);
+      client.effects.clear();
+      client.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('move', revision: 2, life: fixtureLife),
+          point: pointAt(4, later: 1),
+        ),
+      );
+      final opened = client.queue.session.number;
+      expect(opened, greaterThan(before));
+      expect(client.effects, contains(SessionOpened(opened)));
+      expect(
+        client.effects,
+        contains(const OpRemoved('move', Delivered(Delivery.applied))),
+      );
+      expect(
+        client.queue.shown.fresh.pageMarks['page-a']?.order.session,
+        opened,
+      );
+    });
+
+    test('a list of an older life is dropped but still opens the session its '
+        'later connection starts', () {
+      final client = connectedOn();
+      client.must(
+        arrivalAt(client, headerReadOf(replaced(initialRows())), pointAt(5)),
+      );
+      final life = client.queue.shown.strategy?.life;
+      final before = client.queue.session.number;
+      expect(
+        notApplicable(
+          client.step(
+            arrivalAt(
+              client,
+              headerReadOf(initialRows()),
+              pointAt(6, later: 1),
+            ),
+          ),
+        ),
+        isA<OlderResult>(),
+      );
+      expect(client.queue.shown.strategy?.life, life);
+      expect(client.queue.session.number, greaterThan(before));
+    });
+
+    test('a result labelled with an ended lifecycle opens nothing, even '
+        'stamped ahead of the bound connection', () {
+      final client = connectedOn();
+      final old = client.queue.session.number;
+      client.must(const AppRestarted(build: build));
+      client.must(ConnectionReturned(pointAt(1, later: 1).generation));
+      final session = client.queue.session;
+      client.effects.clear();
+      expect(
+        notApplicable(
+          client.step(
+            BaseArrived(pageA(), session: old, point: pointAt(2, later: 2)),
+          ),
+        ),
+        isA<FromAnEndedSession>(),
+      );
+      expect(client.queue.session, session);
+      expect(client.effects.whereType<SessionOpened>(), isEmpty);
+    });
+
+    test('a session opening clears the taken orders and the fence', () {
+      final client = connectedOn();
+      client.must(
+        arrivalAt(client, headerReadOf(replaced(initialRows())), pointAt(5)),
+      );
+      client.must(
+        arrivalAt(
+          client,
+          pageReadOf(replaced(initialRows()), 'page-a'),
+          pointAt(6),
+        ),
+      );
+      expect(client.queue.shown.fence, isNotNull);
+      expect(client.queue.shown.listTaken, isNotNull);
+      expect(client.queue.shown.pagesTaken, isNotEmpty);
+      client.must(ConnectionReturned(pointAt(7, later: 1).generation));
+      expect(client.queue.shown.fence, isNull);
+      expect(client.queue.shown.listTaken, isNull);
+      expect(client.queue.shown.pagesTaken, isEmpty);
     });
   });
 }
