@@ -605,6 +605,7 @@ void main() {
       const StoreSwitchMirror(),
       const StoreSwitchRead(),
       const StoreSwitchOps(),
+      const StoreSwitchStore(),
     ]) {
       final start = LibraryStoreStart.of(choice, clock: () => Duration.zero);
       final container = ProviderContainer(overrides: start.overrides);
@@ -613,7 +614,7 @@ void main() {
       expect(container.read(libraryStoreSwitchProvider).runtimeType,
           choice.runtimeType);
       switch (choice) {
-        case StoreSwitchOff():
+        case StoreSwitchOff() || StoreSwitchStore():
           expect(start.mode, isNull);
         case StoreSwitchShadow():
           expect(start.mode, isA<ShadowOnly>());

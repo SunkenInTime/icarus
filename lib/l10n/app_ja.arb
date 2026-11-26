@@ -1417,5 +1417,8 @@
   "onboardingSunTitle": "太陽に触れる準備はできた？",
   "onboardingSunBody": "マップを選べばすぐにボードへ。すべてのエージェントとアビリティを配置できます。",
   "onboardingSunBodyLogIn": "ログインしてマップを選ぶと、すべてのエージェントが揃ったボードが開き、ライブラリも同期されます。",
-  "onboardingSunStart": "マップを選ぶ"
+  "onboardingSunStart": "マップを選ぶ",
+  "libraryLeftBehindTitle": "一部の作戦が古いライブラリに残りました",
+  "libraryLeftBehindBody": "これらは新しいライブラリに移せなかったため、今のライブラリには表示されません。このコンピューターの古いライブラリ（{folder}）にそのまま保存されています。",
+  "libraryLeftBehindFolder": "フォルダー: {name}"
 }

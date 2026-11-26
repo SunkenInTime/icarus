@@ -13,7 +13,7 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
   dart tool/drive/linux.dart run --script FILE [--account EMAIL]
       [--companion FILE] [--companion-account EMAIL] [--exe DIR] [--out DIR]
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
-      [--hive-store DIR] [--library-store off|shadow|mirror|read|ops]
+      [--hive-store DIR] [--library-store off|shadow|mirror|read|ops|store]
       [--cloud-store shadow|send] [--second-account EMAIL]
       [--kill-after-seconds S] [--main-scope UNIT]
 
@@ -35,7 +35,9 @@ run     Runs --script, and --companion beside it when given, against the
         starts, mirror also writes the store after every save, read
         also draws the library list and folders from the store, and ops
         also commits each editor action's ops to the store as it happens
-        and checks the store against the canvas after every turn.
+        and checks the store against the canvas after every turn. store
+        moves the library into the store once, as the app will when it
+        runs on the store, and leaves the Hive files as they were.
         --cloud-store send passes --cloud-store=send to every instance: the
         store reads the open cloud strategy and sends its queue to the
         server. --cloud-store shadow is refused with exit 2 until the store
@@ -278,7 +280,7 @@ class _Instance {
 List<String> storeArgs(Map<String, String> options) {
   final libraryStore = options['library-store'];
   if (libraryStore != null &&
-      !const {'off', 'shadow', 'mirror', 'read', 'ops'}
+      !const {'off', 'shadow', 'mirror', 'read', 'ops', 'store'}
           .contains(libraryStore)) {
     throw UsageError(
       '--library-store is off, shadow, mirror, read or ops, not "$libraryStore"',

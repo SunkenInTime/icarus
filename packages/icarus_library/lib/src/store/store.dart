@@ -15,6 +15,7 @@ import '../wire.dart';
 import 'engine.dart';
 import 'layout.dart';
 import 'loaded_strategy.dart';
+import 'migration.dart';
 import 'results.dart';
 import 'summary.dart';
 import '../cloud/account.dart';
@@ -136,6 +137,12 @@ final class _DeleteName extends _Write {
 
 final class _ClearArea extends _Write {
   const _ClearArea(super.area);
+}
+
+final class _PutMigration extends _Write {
+  const _PutMigration(this.migration) : super(libraryArea);
+
+  final RecordedMigration migration;
 }
 
 sealed class _FolderPlace {
@@ -358,6 +365,16 @@ final class LibraryStore {
 
   void Function(String strategy, String page)? pageEnteringMemory;
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
+  Migration _migration = const MigrationNotStarted();
+
+  Migration get migration => _migration;
+
+  Future<MigrationRecordResult> recordMigration(RecordedMigration migration) =>
+      _inTurn(
+        () => _commit<RecordedMigration, Never>([
+          _PutMigration(migration),
+        ], () => _migration = migration),
+      );
   _NumbersRow _numbersRow = const _NoNumbersRow();
 
   UnreadableQueueRow? get _numbersHold => switch (_numbersRow) {
@@ -469,6 +486,7 @@ final class LibraryStore {
       SummaryName() ||
       CloudName() ||
       NumbersName() ||
+      MigrationName() ||
       PendingName() ||
       AttemptName() ||
       LandedName() ||
@@ -545,6 +563,13 @@ final class LibraryStore {
               NotAdmitted(:final problem) => wouldNot(name, problem),
             };
         }
+      case _PutMigration(:final migration):
+        final name = const MigrationName().name;
+        final text = migrationToJson(migration);
+        final back = migrationFromText(text);
+        return back is RecordedMigration && migrationToJson(back) == text
+            ? Done(Put(libraryArea, name, text))
+            : wouldNot(name, 'does not read back as written');
       case _DeleteName(:final area, :final name):
         return Done(Delete(area, name));
       case _ClearArea(:final area):
@@ -666,6 +691,8 @@ final class LibraryStore {
           }
         case final ForeignName name:
           foreign.add(name);
+        case MigrationName():
+          _migration = migrationFromText(value);
         case NumbersName():
           switch (countersFromText(value)) {
             case CloudRowRead(value: final numbers):

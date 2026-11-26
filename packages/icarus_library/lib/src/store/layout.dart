@@ -153,6 +153,13 @@ final class NumbersName extends StoreName {
   String get name => 'numbers';
 }
 
+final class MigrationName extends StoreName {
+  const MigrationName();
+
+  @override
+  String get name => 'migration';
+}
+
 const placeDigits = 16;
 
 final _place = RegExp(r'^[0-9]{16}$');
@@ -253,6 +260,7 @@ StoreName readName(StoreArea area, String name) =>
       (LibraryArea(), ['folder', final digest]) when _isDigest(digest) =>
         FolderName(digest),
       (LibraryArea(), ['numbers']) => const NumbersName(),
+      (LibraryArea(), ['migration']) => const MigrationName(),
       (StrategyArea(), ['strategy']) => const HeaderName(),
       (StrategyArea(), ['cloud']) => const CloudName(),
       (StrategyArea(), ['pending', final place]) when _isPlace(place) =>

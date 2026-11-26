@@ -20,16 +20,21 @@ StoreStartup openStores(
   required String? hiveDirectory,
   required bool allowsLocalLibrary,
   required String build,
+  Future<LibraryStoreOpened>? alreadyOpening,
 }) {
-  final localShadow = launch.choice is! StoreSwitchOff && allowsLocalLibrary;
+  final localShadow = launch.choice is! StoreSwitchOff &&
+      launch.choice is! StoreSwitchStore &&
+      allowsLocalLibrary;
   final cloudShadow = launch.cloud is CloudStoreShadow;
   return (
-    opening: switch (hiveDirectory) {
-      final String directory when localShadow || cloudShadow => container
-          .read(libraryStoreProvider.notifier)
-          .open(libraryStoreFile(directory), build: cloudShadow ? build : ''),
-      _ => null,
-    },
+    opening: alreadyOpening ??
+        switch (hiveDirectory) {
+          final String directory when localShadow || cloudShadow => container
+              .read(libraryStoreProvider.notifier)
+              .open(libraryStoreFile(directory),
+                  build: cloudShadow ? build : ''),
+          _ => null,
+        },
     localShadow: localShadow,
     cloudShadow: cloudShadow,
     cloudSends: switch (launch.cloud) {
