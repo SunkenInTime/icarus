@@ -255,7 +255,7 @@ final class StoreModel {
           '${attempt.number}': attemptToJson(attempt),
       },
       'facts': factsToJson(cloud.owner, memory.strategy),
-      'landed': [for (final work in memory.landed) landedToJson(work)],
+      'landed': memory.landed,
       'counters': memory.nextAttempt,
     };
     final got = {
@@ -270,11 +270,10 @@ final class StoreModel {
             in (disk.landed.entries.toList()
               ..sort((a, b) => a.key.compareTo(b.key))))
           switch (name.split('/')) {
-            [_, final attempt, final position] => landedToJson(
+            [_, final attempt, final position] =>
               (landedFromText(int.parse(attempt), int.parse(position), text)
                       as CloudRowRead<LandedWork>)
                   .value,
-            ),
             _ => throw StateError(name),
           },
       ],
