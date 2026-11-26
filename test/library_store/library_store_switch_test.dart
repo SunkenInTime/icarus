@@ -96,21 +96,29 @@ void main() {
     expect(launch.cloud, isA<CloudStoreOff>());
   });
 
-  test('the cloud shadow is its own flag: either can be on without the other',
-      () {
-    final cloudOnly = LibraryStoreLaunch.parse(
-      const ['--cloud-store=shadow', 'a.ica'],
-      mayShadow: true,
+  test(
+      'asking for the cloud shadow stops the launch with a reason naming '
+      'what brings it back, and the send mode is still its own flag', () {
+    expect(
+      () => LibraryStoreLaunch.parse(
+        const ['--cloud-store=shadow', 'a.ica'],
+        mayShadow: true,
+      ),
+      throwsA(
+        isA<ArgumentError>()
+            .having((error) => error.message, 'message', cloudShadowOff),
+      ),
     );
-    expect(cloudOnly.cloud, isA<CloudStoreShadow>());
-    expect(cloudOnly.choice, isA<StoreSwitchOff>());
-    expect(cloudOnly.otherArgs, ['a.ica']);
+    expect(cloudShadowOff, contains('PR 5'));
 
     final both = LibraryStoreLaunch.parse(
-      const ['--cloud-store=shadow', '--library-store=mirror'],
+      const ['--cloud-store=send', '--library-store=mirror'],
       mayShadow: true,
     );
-    expect(both.cloud, isA<CloudStoreShadow>());
+    expect(
+      both.cloud,
+      isA<CloudStoreShadow>().having((cloud) => cloud.sends, 'sends', true),
+    );
     expect(both.choice, isA<StoreSwitchMirror>());
     expect(both.otherArgs, isEmpty);
   });

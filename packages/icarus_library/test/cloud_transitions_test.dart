@@ -84,7 +84,7 @@ Client sentAndLost() {
 Client answered(OpAnswer answer, {StrategyOp? op}) {
   final client = Client()..edit(op ?? movePatch('x'));
   final attempt = client.claim(['x']);
-  return client..must(OpAnswered(attempt, answer));
+  return client..must(OpAnswered(attempt, answer, point: tick()));
 }
 
 ElementAddOp putBack(String opId, StrategyRows rows) {
@@ -115,6 +115,7 @@ final rows = <Row>[
       OpAnswered(
         attempt,
         const AppliedAnswer('first', revision: 3, life: fixtureLife),
+        point: tick(),
       ),
     );
     return client..edit(onVisible(client.visible, movePatch('x', x: 70)));
@@ -128,6 +129,7 @@ final rows = <Row>[
         OpAnswered(
           attempt,
           const AppliedAnswer('first', revision: 3, life: fixtureLife),
+          point: tick(),
         ),
       );
       return client..edit(pageDelete('x', 'page-a'));
@@ -152,6 +154,7 @@ final rows = <Row>[
             RejectionReason.rowReplaced,
             NoServerCopy(),
           ),
+          point: tick(),
         ),
       )
       ..must(const UserDiscarded('x'));
@@ -160,7 +163,9 @@ final rows = <Row>[
       'later strategy life', () {
     final client = Client()..edit(movePatch('x'));
     final attempt = client.claim(['x']);
-    return client..must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+    return client..must(
+      BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+    );
   }),
   Row('set aside after the strategy was replaced', () {
     final client = Client()..edit(movePatch('x'));
@@ -176,6 +181,7 @@ final rows = <Row>[
           lineupGroups: const [],
         ),
       ),
+      asked: const NotCausal(),
     );
   }),
   Row('sending in attempt 1', () {
@@ -257,6 +263,7 @@ final rows = <Row>[
           replay: NoopReplay.notApplied,
           life: fixtureLife,
         ),
+        point: tick(),
       ),
     );
   }),
@@ -268,10 +275,11 @@ final rows = <Row>[
       OpAnswered(
         attempt,
         const AppliedAnswer('first', revision: 3, life: fixtureLife),
+        point: tick(),
       ),
     );
     client.edit(onVisible(client.visible, movePatch('x', x: 70)));
-    return client..arrive(const PageGone('page-a'));
+    return client..arrive(const PageGone('page-a'), asked: const NotCausal());
   }),
   Row('a format this build no longer sends', () {
     final client = Client();
@@ -298,21 +306,25 @@ final rows = <Row>[
   Row('waiting, strategy deleted on the server', () {
     return Client()
       ..edit(movePatch('x'))
-      ..arrive(const StrategyGone());
+      ..arrive(const StrategyGone(), asked: const NotCausal());
   }),
   Row('waiting, edit access lost', () {
     final client = Client()
       ..edit(movePatch('x'))
       ..edit(movePatch('y', elementId: 'e2'));
     final attempt = client.claim(['y']);
-    return client..must(BatchRefused(attempt, BatchRefusal.editAccessRemoved));
+    return client..must(
+      BatchRefused(attempt, BatchRefusal.editAccessRemoved, point: tick()),
+    );
   }),
   Row('waiting, upgrade required', () {
     final client = Client()
       ..edit(movePatch('x'))
       ..edit(movePatch('y', elementId: 'e2'));
     final attempt = client.claim(['y']);
-    return client..must(BatchRefused(attempt, BatchRefusal.upgradeRequired));
+    return client..must(
+      BatchRefused(attempt, BatchRefusal.upgradeRequired, point: tick()),
+    );
   }),
 ];
 
@@ -327,9 +339,12 @@ final events = <String, QueueEvent Function(Client)>{
   'attempt 1 released': (c) => const ClaimReleased(1),
   'attempt 1 transport failed': (c) =>
       TransportFailed(1, TransportFailure.network, at: c.at),
-  'applied at 2': (c) =>
-      const OpAnswered(1, AppliedAnswer('x', revision: 2, life: fixtureLife)),
-  'noop at 2, applied when first received': (c) => const OpAnswered(
+  'applied at 2': (c) => OpAnswered(
+    1,
+    AppliedAnswer('x', revision: 2, life: fixtureLife),
+    point: tick(),
+  ),
+  'noop at 2, applied when first received': (c) => OpAnswered(
     1,
     NoopAnswer(
       'x',
@@ -337,8 +352,9 @@ final events = <String, QueueEvent Function(Client)>{
       replay: NoopReplay.appliedWhenFirstReceived,
       life: fixtureLife,
     ),
+    point: tick(),
   ),
-  'noop at 2, not applied': (c) => const OpAnswered(
+  'noop at 2, not applied': (c) => OpAnswered(
     1,
     NoopAnswer(
       'x',
@@ -346,34 +362,61 @@ final events = <String, QueueEvent Function(Client)>{
       replay: NoopReplay.notApplied,
       life: fixtureLife,
     ),
+    point: tick(),
   ),
   'noop without a revision': (c) =>
-      const OpAnswered(1, NoopWithoutRevision('x')),
+      OpAnswered(1, NoopWithoutRevision('x'), point: tick()),
   'answered at 2 with no life': (c) =>
-      const OpAnswered(1, AnswerWithoutLife('x', revision: 2)),
+      OpAnswered(1, AnswerWithoutLife('x', revision: 2), point: tick()),
   for (final reason in RejectionReason.values)
-    'rejected: ${reason.wireName}': (c) =>
-        OpAnswered(1, RejectedAnswer('x', reason, const NoServerCopy())),
-  'failed: INTERNAL_ERROR': (c) => const OpAnswered(
+    'rejected: ${reason.wireName}': (c) => OpAnswered(
+      1,
+      RejectedAnswer('x', reason, const NoServerCopy()),
+      point: tick(),
+    ),
+  'failed: INTERNAL_ERROR': (c) => OpAnswered(
     1,
     FailedAnswer('x', OtherFailure('INTERNAL_ERROR'), 'unexpected'),
+    point: tick(),
   ),
-  'answer from an attempt that did not hold it': (c) =>
-      const OpAnswered(99, AppliedAnswer('x', revision: 2, life: fixtureLife)),
+  'answer from an attempt that did not hold it': (c) => OpAnswered(
+    99,
+    AppliedAnswer('x', revision: 2, life: fixtureLife),
+    point: tick(),
+  ),
   for (final refusal in BatchRefusal.values)
-    'attempt 1 refused whole: ${refusal.name}': (c) => BatchRefused(1, refusal),
+    'attempt 1 refused whole: ${refusal.name}': (c) =>
+        BatchRefused(1, refusal, point: tick()),
+  'attempt 1 refused for another account': (c) =>
+      BatchAccountMismatch(1, point: tick()),
+  for (final refusal in SignInRefusal.values)
+    'read refused for the sign-in: ${refusal.name}': (c) =>
+        ReadRefusedForSignIn(
+          refusal,
+          session: c.queue.session.number,
+          point: tick(),
+        ),
+  'read refused for an upgrade': (c) => ReadRefusedForUpgrade(
+    build: build,
+    session: c.queue.session.number,
+    point: tick(),
+  ),
   'app restarted, same build': (c) => const AppRestarted(build: build),
   'app restarted, new build': (c) => const AppRestarted(build: 'build-2'),
   'connection lost': (c) => const ConnectionLost(),
-  'connection returned': (c) => const ConnectionReturned(),
+  'connection returned': (c) => reconnected(),
   'server time held': (c) => ServerTimeHeld(
     1764000000000,
     at: Duration.zero,
     session: c.queue.session.number,
+    point: lastPoint,
   ),
   'account changed': (c) => const AccountChanged(),
-  'edit access confirmed after attempt 5': (c) =>
-      const EditAccessConfirmed(afterAttempt: 5),
+  'edit access confirmed after attempt 5': (c) => EditAccessConfirmed(
+    afterAttempt: 5,
+    session: c.queue.session.number,
+    point: tick(),
+  ),
   'user: retry': (c) => const UserRetried('x'),
   'user: keep mine, same item': (c) => UserKeptMine(
     'x',
@@ -386,7 +429,8 @@ final events = <String, QueueEvent Function(Client)>{
   'result: header as it is': (c) => BaseArrived(
     headerReadOf(c.base),
     session: c.queue.session.number,
-    from: readFrom(c.queue),
+    point: tick(),
+    requestedAt: c.queue.session.sequence,
   ),
   'result: page-a with the item at revision 2': (c) => BaseArrived(
     PageRead(
@@ -395,31 +439,35 @@ final events = <String, QueueEvent Function(Client)>{
       lineupGroups: const [],
     ),
     session: c.queue.session.number,
-    from: readFrom(c.queue),
+    point: tick(),
+    requestedAt: c.queue.session.sequence,
   ),
   'result: page-a with the item as this device wrote it at 2': (c) =>
       BaseArrived(
         pageReadOf(withOp(initialRows(), movePatch('m')), 'page-a'),
         session: c.queue.session.number,
-        from: readFrom(c.queue),
+        point: tick(),
+        requestedAt: c.queue.session.sequence,
       ),
   'result: page-a from a session that ended': (c) => BaseArrived(
     pageReadOf(initialRows(), 'page-a'),
     session: c.queue.session.number - 1,
-    from: readFrom(c.queue),
+    point: tick(),
   ),
   'result: page-b gone': (c) => BaseArrived(
     const PageGone('page-b'),
     session: c.queue.session.number,
-    from: readFrom(c.queue),
+    point: tick(),
+    requestedAt: c.queue.session.sequence,
   ),
   'result: strategy gone': (c) => BaseArrived(
     const StrategyGone(),
     session: c.queue.session.number,
-    from: readFrom(c.queue),
+    point: tick(),
+    requestedAt: c.queue.session.sequence,
   ),
   'result: page list the store would not keep': (c) =>
-      const ResultRefused(page: null, problem: 'ResultWithoutLife(page-a)'),
+      c.readRefused(null, 'ResultWithoutLife(page-a)', asked: c.askedNow),
   'user: discard what was set aside': (c) => const UserDiscardedReplaced(),
   'result: page-a of another life': (c) => BaseArrived(
     PageRead(
@@ -436,7 +484,8 @@ final events = <String, QueueEvent Function(Client)>{
       lineupGroups: const [],
     ),
     session: c.queue.session.number,
-    from: readFrom(c.queue),
+    point: tick(),
+    requestedAt: c.queue.session.sequence,
   ),
   'result: page list of an earlier strategy life': (c) => BaseArrived(
     headerReadOf(
@@ -451,7 +500,8 @@ final events = <String, QueueEvent Function(Client)>{
       ),
     ),
     session: c.queue.session.number,
-    from: readFrom(c.queue),
+    point: tick(),
+    requestedAt: c.queue.session.sequence,
   ),
   'result: page list of a later strategy life': (c) => BaseArrived(
     headerReadOf(
@@ -466,7 +516,8 @@ final events = <String, QueueEvent Function(Client)>{
       ),
     ),
     session: c.queue.session.number,
-    from: readFrom(c.queue),
+    point: tick(),
+    requestedAt: c.queue.session.sequence,
   ),
 };
 
@@ -529,8 +580,17 @@ String outcome(Client before, Step result) {
             SessionOpened(:final session) => 'opens session $session',
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
+            ReportAccountMismatch() => 'reports another account',
+            AnswerAdmitted(:final attempt, :final opId) =>
+              'admits attempt $attempt\'s answer'
+                  '${opId == null ? '' : ' for $opId'}',
             StrategySetAside(:final count) => 'sets $count aside',
-            ReadStartIssued(:final started) => 'issues read start $started',
+            ReportReplacedWithoutLife(:final attempt) =>
+              'reports attempt $attempt replaced without a life',
+            ReportResultsDisagree(:final page) =>
+              'reports results for ${page ?? 'the page list'} that disagree',
+            ReportReplacedWithoutEvidence(:final opId) =>
+              'reports $opId replaced without the server\'s row',
             PageResultDeferred(:final page) => 'defers $page for the page list',
             SetAsideDiscarded(:final count) => 'discards $count set aside',
           },
@@ -560,8 +620,8 @@ String renderTable() {
     ..writeln('## Who decides')
     ..writeln()
     ..writeln(
-      '- The server\'s answer to an op is the only thing that takes it out of '
-      'the queue or hands it to the user. Applied or nothing to do: done. '
+      '- Of what the server sends, only its answer to an op takes the op out '
+      'of the queue or hands it to the user. Applied or nothing to do: done. '
       'Rejected: the user decides, and later work on that row waits behind '
       'it, unless the row the rejection carries already holds what the op '
       'wrote, which never applies to `row_replaced`: that row is another life '
@@ -572,6 +632,11 @@ String renderTable() {
       '- When the user gives up an entry (takes the cloud\'s version or '
       'discards it), every later entry for the same row, page or strategy '
       'goes with it, because it was built on the work given up.',
+    )
+    ..writeln(
+      '- An entry also leaves the queue when a page list of a later life of '
+      'the strategy is adopted: every entry is set aside for the user. A '
+      'page delete is handed to the user by its own verdict, below.',
     )
     ..writeln(
       '- Results (the rows the server sent) never settle or drop an entry. '
@@ -804,8 +869,9 @@ String renderTable() {
       'server checks the page itself, one rule decides a page delete, with no '
       'partial cases. It is decided only when the device holds a page list '
       'and a result of that page, both from the current session and both '
-      'received after this device\'s last answered op that touches that page '
-      'or the page list; until then it waits, and `resultsNeeded` asks for '
+      'at or after this device\'s last answered op that touches that page '
+      'or the page list, in snapshot order and in server time when the '
+      'answer carried one; until then it waits, and `resultsNeeded` asks for '
       'whichever of the two is missing. Then: if the page list says the page '
       'is gone, the delete goes and the server answers; the page\'s own result '
       'is not needed then, since it cannot change the outcome. Otherwise the '
@@ -824,8 +890,9 @@ String renderTable() {
       'page list, the list for every page. A page list and a page result '
       'that disagree about whether the page exists are no verdict: the delete '
       'waits and asks for both. For a page delete the hold\'s verdict that the '
-      'page is gone comes before the revision check, and a page delete queued '
-      'behind other entries asks for nothing until it reaches the head. All '
+      'page is gone comes before the revision check at any place in the '
+      'queue, and a page delete queued behind other entries adds no result '
+      'it waits for until it reaches the head. All '
       'of this lives in '
       '`lib/src/cloud/held_page_delete.dart` and comes out in one piece when '
       '#670 lands.',
@@ -865,14 +932,26 @@ String renderTable() {
 }
 
 void main() {
-  test('every row answers every event without throwing', () {
+  test('every row answers every event without throwing, and every event '
+      'applies in some row except the two made never to apply', () {
+    final applied = <String>{};
     for (final row in rows) {
-      for (final make in events.values) {
+      for (final MapEntry(key: name, value: make) in events.entries) {
         final client = row.build();
-        final event = make(client);
-        expect(transition(client.queue, event, now: client.at), isA<Step>());
+        final step = transition(client.queue, make(client), now: client.at);
+        if (step is Stepped) applied.add(name);
       }
     }
+    expect(
+      {
+        for (final name in events.keys)
+          if (!applied.contains(name)) name,
+      },
+      {
+        'answer from an attempt that did not hold it',
+        'result: page-a from a session that ended',
+      },
+    );
   });
 
   test('every kind of entry and every standing the queue can reach has a '

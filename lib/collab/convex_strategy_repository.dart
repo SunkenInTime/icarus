@@ -40,7 +40,17 @@ abstract interface class ResultTap {
 }
 
 class ConvexStrategyRepository {
-  ConvexStrategyRepository(this._api);
+  ConvexStrategyRepository(this._api) : _stamped = null;
+
+  ConvexStrategyRepository.stamped(StampedConvexTransport transport)
+      : _api = IcarusConvexApi(transport),
+        _stamped = transport;
+
+  final StampedConvexTransport? _stamped;
+
+  StampedConvexTransport get _stampedTransport =>
+      _stamped ??
+      (throw StateError('this repository was not built with stamped calls'));
 
   ResultTap? tap;
 
@@ -84,6 +94,16 @@ class ConvexStrategyRepository {
   static final _elementFieldLevel = ConvexOptional.present(
     currentElementFieldLevel.toDouble(),
   );
+
+  // This client restores deleted pages, so it sends such a delete again.
+  static const _checksTrashedPageDeletes = ConvexOptional.present(true);
+
+  // This client keeps an image's picture id (PlacedImage.assetId).
+  static const _acceptsPictureIds = ConvexOptional.present(true);
+
+  // This client moves its waiting work onto the revision a resent op
+  // made (StrategyOpQueueNotifier._ownRevision).
+  static const _includesWasApplied = ConvexOptional.present(true);
 
   /// Permission to join [strategyPublicId]'s presence room, or null when this
   /// deployment has no presence service.
@@ -267,22 +287,42 @@ class ConvexStrategyRepository {
         );
   }
 
+  ConvexQuery<StrategyGetPageListResult> _pageListQuery(
+    String strategyPublicId,
+    String accountSubject,
+  ) =>
+      _api.strategy.getPageList(
+        clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+        strategyPublicId: strategyPublicId,
+        accountSubject: ConvexOptional.present(accountSubject),
+      );
+
+  RemotePageList _pageList(StrategyGetPageListResult result) => RemotePageList(
+        header: _strategyHeader(result.header),
+        pages: result.pages.map(_fullPage).toList(growable: false),
+      );
+
+  ConvexQuery<PageGetSnapshotResult> _pageQuery(
+    String strategyPublicId,
+    String pagePublicId,
+    String accountSubject,
+  ) =>
+      _api.page.getSnapshot(
+        clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+        strategyPublicId: strategyPublicId,
+        pagePublicId: pagePublicId,
+        accountSubject: ConvexOptional.present(accountSubject),
+        acceptsPictureIds: const ConvexOptional.present(true),
+        elementFieldLevel: _elementFieldLevel,
+      );
+
   Future<RemotePageList> readPageListAs(
     String strategyPublicId, {
     required String accountSubject,
-  }) async {
-    final result = await _api.strategy
-        .getPageList(
-          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-          strategyPublicId: strategyPublicId,
-          accountSubject: ConvexOptional.present(accountSubject),
-        )
-        .fetch();
-    return RemotePageList(
-      header: _strategyHeader(result.header),
-      pages: result.pages.map(_fullPage).toList(growable: false),
-    );
-  }
+  }) async =>
+      _pageList(
+        await _pageListQuery(strategyPublicId, accountSubject).fetch(),
+      );
 
   Future<RemotePageSnapshot> readPageAs({
     required String strategyPublicId,
@@ -290,16 +330,31 @@ class ConvexStrategyRepository {
     required String accountSubject,
   }) async =>
       _pageSnapshot(
-        await _api.page
-            .getSnapshot(
-              clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-              strategyPublicId: strategyPublicId,
-              pagePublicId: pagePublicId,
-              accountSubject: ConvexOptional.present(accountSubject),
-              acceptsPictureIds: const ConvexOptional.present(true),
-              elementFieldLevel: _elementFieldLevel,
-            )
+        await _pageQuery(strategyPublicId, pagePublicId, accountSubject)
             .fetch(),
+      );
+
+  Future<Stamped<RemotePageList>> readPageListStamped(
+    String strategyPublicId, {
+    required String accountSubject,
+  }) async =>
+      _mapStamped(
+        await _pageListQuery(strategyPublicId, accountSubject)
+            .stampedOn(_stampedTransport)
+            .fetch(),
+        _pageList,
+      );
+
+  Future<Stamped<RemotePageSnapshot>> readPageStamped({
+    required String strategyPublicId,
+    required String pagePublicId,
+    required String accountSubject,
+  }) async =>
+      _mapStamped(
+        await _pageQuery(strategyPublicId, pagePublicId, accountSubject)
+            .stampedOn(_stampedTransport)
+            .fetch(),
+        _pageSnapshot,
       );
 
   /// The pages watched in slices right now (see [watchPageSnapshot]), by
@@ -699,98 +754,74 @@ class ConvexStrategyRepository {
       throw StateError('Cloud operation batch exceeds the payload policy.');
     }
 
-    return _applyBatch(
-      strategyPublicId,
-      clientId,
-      _typedOps(ops),
-      accountSubject,
-      readsAccountMismatch: false,
-    );
+    final result = await _batch(
+      strategyPublicId: strategyPublicId,
+      clientId: clientId,
+      ops: _typedOps(ops),
+      accountSubject: accountSubject,
+    ).run();
+    return result.results.map(_opAck).toList(growable: false);
   }
 
-  Future<({List<OpAck> acks, double? serverTime})> applyWireBatch({
+  Future<Stamped<({List<OpAck> acks, double? serverTime})>>
+      applyWireBatchStamped({
     required String strategyPublicId,
     required String clientId,
     required List<Map<String, Object?>> ops,
     required String accountSubject,
+    required bool sendsLiveBasis,
+    required double? liveBasis,
+    required int? strategyLife,
+  }) async =>
+          _mapStamped(
+            await _batch(
+              strategyPublicId: strategyPublicId,
+              clientId: clientId,
+              ops: _typedWire(ops),
+              accountSubject: accountSubject,
+              readsAccountMismatch: true,
+              sendsLiveBasis: sendsLiveBasis,
+              liveBasis: liveBasis,
+              sendsLives: true,
+              strategyLife: strategyLife,
+            ).stampedOn(_stampedTransport).run(),
+            (result) => (
+              acks: result.results.map(_opAck).toList(growable: false),
+              serverTime:
+                  result.serverTime.isPresent ? result.serverTime.value : null,
+            ),
+          );
+
+  ConvexMutation<OpsApplyBatchResult> _batch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<OpsApplyBatchArgsOpsItem> ops,
+    required String? accountSubject,
+    bool readsAccountMismatch = false,
     bool sendsLiveBasis = false,
     double? liveBasis,
     bool sendsLives = false,
     int? strategyLife,
-  }) async {
-    if (ops.isEmpty) return (acks: const <OpAck>[], serverTime: null);
-    final result = await _applyBatchResult(
-      strategyPublicId,
-      clientId,
-      _typedWire(ops),
-      accountSubject,
-      readsAccountMismatch: true,
-      sendsLiveBasis: sendsLiveBasis,
-      liveBasis: liveBasis,
-      sendsLives: sendsLives,
-      strategyLife: strategyLife,
-    );
-    return (
-      acks: result.results.map(_opAck).toList(growable: false),
-      serverTime: result.serverTime.isPresent ? result.serverTime.value : null,
-    );
-  }
+  }) =>
+      _api.ops.applyBatchMutation(
+        strategyPublicId: strategyPublicId,
+        clientId: clientId,
+        clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+        ops: ops,
+        accountSubject: _optional(accountSubject),
+        checkTrashedPageDeletes: _checksTrashedPageDeletes,
+        acceptsPictureIds: _acceptsPictureIds,
+        elementFieldLevel: _elementFieldLevel,
+        includeWasApplied: _includesWasApplied,
+        readsAccountMismatch: _presentWhen(readsAccountMismatch),
+        sendsLiveBasis: _presentWhen(sendsLiveBasis),
+        liveBasis: _optional(liveBasis),
+        sendsLives: _presentWhen(sendsLives),
+        strategyLife: _optional(strategyLife?.toDouble()),
+      );
 
-  Future<List<OpAck>> _applyBatch(
-    String strategyPublicId,
-    String clientId,
-    List<OpsApplyBatchArgsOpsItem> ops,
-    String? accountSubject, {
-    required bool readsAccountMismatch,
-  }) async {
-    final result = await _applyBatchResult(
-      strategyPublicId,
-      clientId,
-      ops,
-      accountSubject,
-      readsAccountMismatch: readsAccountMismatch,
-    );
-    return result.results.map(_opAck).toList(growable: false);
-  }
-
-  Future<OpsApplyBatchResult> _applyBatchResult(
-    String strategyPublicId,
-    String clientId,
-    List<OpsApplyBatchArgsOpsItem> ops,
-    String? accountSubject, {
-    required bool readsAccountMismatch,
-    bool sendsLiveBasis = false,
-    double? liveBasis,
-    bool sendsLives = false,
-    int? strategyLife,
-  }) {
-    return _api.ops.applyBatch(
-      strategyPublicId: strategyPublicId,
-      clientId: clientId,
-      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-      ops: ops,
-      accountSubject: _optional(accountSubject),
-      // This client restores deleted pages, so it sends such a delete again.
-      checkTrashedPageDeletes: const ConvexOptional.present(true),
-      // This client keeps an image's picture id (PlacedImage.assetId).
-      acceptsPictureIds: const ConvexOptional.present(true),
-      elementFieldLevel: _elementFieldLevel,
-      // This client moves its waiting work onto the revision a resent op
-      // made (StrategyOpQueueNotifier._ownRevision).
-      includeWasApplied: const ConvexOptional.present(true),
-      readsAccountMismatch: readsAccountMismatch
-          ? const ConvexOptional.present(true)
-          : const ConvexOptional.absent(),
-      sendsLiveBasis: sendsLiveBasis
-          ? const ConvexOptional.present(true)
-          : const ConvexOptional.absent(),
-      liveBasis: _optional(liveBasis),
-      sendsLives: sendsLives
-          ? const ConvexOptional.present(true)
-          : const ConvexOptional.absent(),
-      strategyLife: _optional(strategyLife?.toDouble()),
-    );
-  }
+  static ConvexOptional<bool> _presentWhen(bool flag) =>
+      flag ? const ConvexOptional.present(true) : const ConvexOptional.absent();
 
   Future<void> sendEmptyBatch({
     required String strategyPublicId,
@@ -1939,4 +1970,11 @@ InvitesCreateArgsRole _shareRole(String value) => switch (value) {
       'editor' => InvitesCreateArgsRole.editor,
       'viewer' => InvitesCreateArgsRole.viewer,
       _ => throw ArgumentError.value(value, 'role', 'Unsupported share role'),
+    };
+
+Stamped<T> _mapStamped<V, T>(Stamped<V> stamped, T Function(V) map) =>
+    switch (stamped) {
+      StampedValue(:final value, :final stamp) =>
+        StampedValue(map(value), stamp),
+      StampedError(:final error, :final stamp) => StampedError(error, stamp),
     };

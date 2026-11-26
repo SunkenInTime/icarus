@@ -30,6 +30,8 @@ import 'package:icarus_library/icarus_library.dart';
 import '../library_rows/generated_strategies.dart';
 import 'hive_scratch.dart';
 
+const _listedAt = ResultPoint(client: 1, connection: 1, snapshot: 1);
+
 Future<void> _still() async {}
 
 final class _CountedHive extends HiveLibraryListing {
@@ -357,8 +359,7 @@ void main() {
   test(
       'a Hive strategy whose id the store holds as a cloud strategy is drawn from Hive with the mark even when the mirror never refused it, and a cloud strategy Hive does not hold adds no row and no mark',
       () async {
-    final store = await _store()
-      ..takeCloudResultsFrom(CloudResults.thisDevicesReads);
+    final store = await _store();
     for (final (id, name) in [
       ('z-in-both', 'In the cloud'),
       ('y-cloud-only', 'Only in the cloud'),
@@ -371,15 +372,18 @@ void main() {
       expect(
         await store.addCloudStrategy(
           Account('account-a'),
-          HeaderRead(
-            strategy: rows.strategy,
-            pages: [
-              for (final page in rows.pages) bornIn(page, 1) as PageRow,
-            ],
-            settings: [
-              for (final row in rows.settings)
-                bornIn(row, 1) as PageSettingsRow,
-            ],
+          StampedRead(
+            HeaderRead(
+              strategy: rows.strategy,
+              pages: [
+                for (final page in rows.pages) bornIn(page, 1) as PageRow,
+              ],
+              settings: [
+                for (final row in rows.settings)
+                  bornIn(row, 1) as PageSettingsRow,
+              ],
+            ),
+            _listedAt,
           ),
           const [],
         ),

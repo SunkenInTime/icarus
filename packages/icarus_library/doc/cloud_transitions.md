@@ -6,8 +6,9 @@ Each section builds a queue by real events until op `x` is in that state, then a
 
 ## Who decides
 
-- The server's answer to an op is the only thing that takes it out of the queue or hands it to the user. Applied or nothing to do: done. Rejected: the user decides, and later work on that row waits behind it, unless the row the rejection carries already holds what the op wrote, which never applies to `row_replaced`: that row is another life of the row, so the op is not delivered whatever its value. Failed: the user decides.
+- Of what the server sends, only its answer to an op takes the op out of the queue or hands it to the user. Applied or nothing to do: done. Rejected: the user decides, and later work on that row waits behind it, unless the row the rejection carries already holds what the op wrote, which never applies to `row_replaced`: that row is another life of the row, so the op is not delivered whatever its value. Failed: the user decides.
 - When the user gives up an entry (takes the cloud's version or discards it), every later entry for the same row, page or strategy goes with it, because it was built on the work given up.
+- An entry also leaves the queue when a page list of a later life of the strategy is adopted: every entry is set aside for the user. A page delete is handed to the user by its own verdict, below.
 - Results (the rows the server sent) never settle or drop an entry. They end the drawing of landed work, and they tell a whole-row write whether its row is as the user saw it. Two results also stop sending: the page delete below, and a result saying the strategy is gone, which stops every claim for that strategy.
 
 ## Which revision an op names
@@ -55,7 +56,7 @@ A field edit folds into an earlier field edit of the same row only when the earl
 
 ## The page delete exception, until #670
 
-The server guards a page delete by the strategy's revision only, so a page delete can land after a teammate changed the page ([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the server checks the page itself, one rule decides a page delete, with no partial cases. It is decided only when the device holds a page list and a result of that page, both from the current session and both received after this device's last answered op that touches that page or the page list; until then it waits, and `resultsNeeded` asks for whichever of the two is missing. Then: if the page list says the page is gone, the delete goes and the server answers; the page's own result is not needed then, since it cannot change the outcome. Otherwise the page (its name, its settings, and the rows on it by id and content, leaving out a row a result shows on another page) is compared with what the user saw: equal means the delete goes, anything else means the user is asked. Both results arrive after every answered op of this device's that touches the page, so they already include its landed work. A delete with nothing ahead of it on a page already read this session goes at once; a delete queued behind this device's own work on that page waits for the page list and the page to come round once more after the last answer. That wait is deliberate and goes away with #670. Every answer, whatever it says, resets the results of every page its op touches (both ends of a move) and, when it touches the page list, the list for every page. A page list and a page result that disagree about whether the page exists are no verdict: the delete waits and asks for both. For a page delete the hold's verdict that the page is gone comes before the revision check, and a page delete queued behind other entries asks for nothing until it reaches the head. All of this lives in `lib/src/cloud/held_page_delete.dart` and comes out in one piece when #670 lands.
+The server guards a page delete by the strategy's revision only, so a page delete can land after a teammate changed the page ([#670](https://github.com/SunkenInTime/icarus/issues/670)). Until the server checks the page itself, one rule decides a page delete, with no partial cases. It is decided only when the device holds a page list and a result of that page, both from the current session and both at or after this device's last answered op that touches that page or the page list, in snapshot order and in server time when the answer carried one; until then it waits, and `resultsNeeded` asks for whichever of the two is missing. Then: if the page list says the page is gone, the delete goes and the server answers; the page's own result is not needed then, since it cannot change the outcome. Otherwise the page (its name, its settings, and the rows on it by id and content, leaving out a row a result shows on another page) is compared with what the user saw: equal means the delete goes, anything else means the user is asked. Both results arrive after every answered op of this device's that touches the page, so they already include its landed work. A delete with nothing ahead of it on a page already read this session goes at once; a delete queued behind this device's own work on that page waits for the page list and the page to come round once more after the last answer. That wait is deliberate and goes away with #670. Every answer, whatever it says, resets the results of every page its op touches (both ends of a move) and, when it touches the page list, the list for every page. A page list and a page result that disagree about whether the page exists are no verdict: the delete waits and asks for both. For a page delete the hold's verdict that the page is gone comes before the revision check at any place in the queue, and a page delete queued behind other entries adds no result it waits for until it reaches the head. All of this lives in `lib/src/cloud/held_page_delete.dart` and comes out in one piece when #670 lands.
 
 ## waiting, nothing ahead of it
 
@@ -67,6 +68,9 @@ Starts as: waiting.
 | user edits the same item | w: waiting, behind x (sameRow) |
 | claimed | x: sending in 1; sends attempt 1 (x) |
 | claimed under another client id | x: sending in 1; sends attempt 1 (x) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -82,7 +86,7 @@ Starts as: waiting.
 | result: page-a of another life | x: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## held behind an earlier edit of the row
 
@@ -94,12 +98,16 @@ Starts as: waiting, behind first (sameRow).
 | user edits the same item | w: waiting, behind x (sameRow) |
 | attempt 1 released | first: waiting |
 | attempt 1 transport failed | first: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z |
-| attempt 1 refused whole: upgradeRequired | first: waiting; standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | first: waiting; reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | first: waiting; standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | first: waiting; standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | first: waiting |
-| attempt 1 refused whole: strategyReplaced | first: waiting, awaiting a result for the page list; x: waiting, awaiting a result for the page list, behind first (sameRow); page list owed by a list of another life than 1767322800000, read after the refusal |
+| attempt 1 refused whole: upgradeRequired | first: waiting; standing upgradeRequired; admits attempt 1's answer; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | first: waiting; admits attempt 1's answer; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | first: waiting; standing editAccessLost; admits attempt 1's answer |
+| attempt 1 refused whole: strategyDeleted | first: waiting; standing deletedOnServer; admits attempt 1's answer |
+| attempt 1 refused whole: uncheckedTooLate | first: waiting; admits attempt 1's answer |
+| attempt 1 refused whole: strategyReplaced | first: waiting, awaiting a result for the page list; x: waiting, awaiting a result for the page list, behind first (sameRow); page list owed by a list of another life than 1767322800000, paid by content, a later connection, client or session, or a read requested after step 1 of session 1; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused for another account | first: waiting; admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | first: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | first: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -125,6 +133,9 @@ Starts as: waiting, awaiting a result for ElementTarget(e1).
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -140,7 +151,7 @@ Starts as: waiting, awaiting a result for ElementTarget(e1).
 | result: page-a of another life | x: waiting, awaiting a result for the page list, awaiting a result for ElementTarget(e1); page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; stops drawing first as landed; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## page delete waiting for its page after this device's work landed where it did not predict
 
@@ -150,6 +161,9 @@ Starts as: waiting, awaiting a result for the page list, awaiting a result for p
 | --- | --- |
 | user edits another item | z: waiting, behind x (pageDelete) |
 | user edits the same item | w: waiting, behind x (pageDelete) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -165,7 +179,7 @@ Starts as: waiting, awaiting a result for the page list, awaiting a result for p
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; stops drawing first as landed; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## nothing queued, the page list owed
 
@@ -175,6 +189,9 @@ Starts as: gone; page list owed.
 | --- | --- |
 | user edits another item | z: waiting, awaiting a result for the page list |
 | user edits the same item | w: waiting, awaiting a result for the page list |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -187,14 +204,14 @@ Starts as: gone; page list owed.
 | result: page-b gone | page-b not read this session |
 | result: strategy gone | standing deletedOnServer; page list read this session |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
-| result: page-a of another life | defers page-a for the page list |
+| result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | page list read this session; page-a not read this session; page-b not read this session |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## refused whole as STRATEGY_REPLACED, waiting for a page list of a later strategy life
 
-Starts as: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal.
+Starts as: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, paid by content, a later connection, client or session, or a read requested after step 1 of session 1.
 
 | Event | Result |
 | --- | --- |
@@ -202,29 +219,27 @@ Starts as: waiting, awaiting a result for the page list; page list owed by a lis
 | user edits the same item | w: waiting, awaiting a result for the page list, behind x (sameRow) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); removes x (Delivered(alreadyThere)) |
-| noop without a revision | x: gone; removes x (Delivered(nothingToDo)) |
-| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2) |
-| rejected: already_exists | x: needs user: RejectedByServer(already_exists) |
-| rejected: deleted | x: needs user: RejectedByServer(deleted) |
-| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch) |
-| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch) |
-| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision) |
-| rejected: not_found | x: needs user: RejectedByServer(not_found) |
-| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch) |
-| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch) |
-| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
-| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
-| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed |
-| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | unchanged |
-| attempt 1 refused whole: strategyReplaced | page list owed by a list of another life than 1767322800000, read after the refusal |
+| applied at 2 | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(alreadyThere)) |
+| noop without a revision | x: gone; admits attempt 1's answer for x; removes x (Delivered(nothingToDo)) |
+| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2); admits attempt 1's answer for x |
+| rejected: already_exists | x: needs user: RejectedByServer(already_exists); admits attempt 1's answer for x |
+| rejected: deleted | x: needs user: RejectedByServer(deleted); admits attempt 1's answer for x |
+| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision); admits attempt 1's answer for x |
+| rejected: not_found | x: needs user: RejectedByServer(not_found); admits attempt 1's answer for x |
+| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch); admits attempt 1's answer for x |
+| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict); admits attempt 1's answer for x |
+| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid); admits attempt 1's answer for x |
+| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed; admits attempt 1's answer for x; reports x replaced without the server's row |
+| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR); admits attempt 1's answer for x |
+| attempt 1 refused for another account | admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -235,12 +250,12 @@ Starts as: waiting, awaiting a result for the page list; page list owed by a lis
 | result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | page-b not read this session |
 | result: strategy gone | x: waiting; standing deletedOnServer; page list read this session |
-| result: page list the store would not keep | page list refused: ResultWithoutLife(page-a), owed by a list of another life than 1767322800000, read after the refusal |
-| result: page-a of another life | defers page-a for the page list |
+| result: page list the store would not keep | page list refused: ResultWithoutLife(page-a), owed by a list of another life than 1767322800000, paid by a result at or after session 1, client 1, snapshot 7741 |
+| result: page-a of another life | page list owed by a list of another life than 1767322800000, paid by all of a result at or after session 1, client 1, snapshot 7753; content, a later connection, client or session, or a read requested after step 1 of session 1; defers page-a for the page list |
 | result: page list of an earlier strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
 | result: page list of a later strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; user: discard what was set aside.
+Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; user: discard what was set aside.
 
 ## set aside after the strategy was replaced
 
@@ -250,6 +265,9 @@ Starts as: set aside.
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -265,7 +283,7 @@ Starts as: set aside.
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | unchanged |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; result: page list of an earlier strategy life.
 
 ## sending in attempt 1
 
@@ -277,29 +295,33 @@ Starts as: sending in 1.
 | user edits the same item | w: waiting, behind x (sameRow) |
 | attempt 1 released | x: waiting |
 | attempt 1 transport failed | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z |
-| applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); removes x (Delivered(alreadyThere)) |
-| noop without a revision | x: gone; removes x (Delivered(nothingToDo)) |
-| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2) |
-| rejected: already_exists | x: needs user: RejectedByServer(already_exists) |
-| rejected: deleted | x: needs user: RejectedByServer(deleted) |
-| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch) |
-| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch) |
-| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision) |
-| rejected: not_found | x: needs user: RejectedByServer(not_found) |
-| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch) |
-| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch) |
-| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
-| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
-| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed |
-| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | x: waiting; standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | x: waiting; reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | x: waiting |
-| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal |
+| applied at 2 | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(alreadyThere)) |
+| noop without a revision | x: gone; admits attempt 1's answer for x; removes x (Delivered(nothingToDo)) |
+| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2); admits attempt 1's answer for x |
+| rejected: already_exists | x: needs user: RejectedByServer(already_exists); admits attempt 1's answer for x |
+| rejected: deleted | x: needs user: RejectedByServer(deleted); admits attempt 1's answer for x |
+| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision); admits attempt 1's answer for x |
+| rejected: not_found | x: needs user: RejectedByServer(not_found); admits attempt 1's answer for x |
+| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch); admits attempt 1's answer for x |
+| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict); admits attempt 1's answer for x |
+| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid); admits attempt 1's answer for x |
+| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed; admits attempt 1's answer for x; reports x replaced without the server's row |
+| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR); admits attempt 1's answer for x |
+| attempt 1 refused whole: upgradeRequired | x: waiting; standing upgradeRequired; admits attempt 1's answer; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | x: waiting; admits attempt 1's answer; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost; admits attempt 1's answer |
+| attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer; admits attempt 1's answer |
+| attempt 1 refused whole: uncheckedTooLate | x: waiting; admits attempt 1's answer |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, paid by content, a later connection, client or session, or a read requested after step 1 of session 1; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused for another account | x: waiting; admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -327,29 +349,33 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 
 | user edits the same item | w: waiting |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); removes x (Delivered(alreadyThere)) |
-| noop without a revision | x: gone; removes x (Delivered(nothingToDo)) |
-| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2) |
-| rejected: already_exists | x: needs user: RejectedByServer(already_exists) |
-| rejected: deleted | x: needs user: RejectedByServer(deleted) |
-| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch) |
-| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch) |
-| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision) |
-| rejected: not_found | x: needs user: RejectedByServer(not_found) |
-| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch) |
-| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch) |
-| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
-| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
-| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed |
-| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | x: waiting; standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | x: waiting; reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | x: waiting |
-| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal |
+| applied at 2 | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(alreadyThere)) |
+| noop without a revision | x: gone; admits attempt 1's answer for x; removes x (Delivered(nothingToDo)) |
+| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2); admits attempt 1's answer for x |
+| rejected: already_exists | x: needs user: RejectedByServer(already_exists); admits attempt 1's answer for x |
+| rejected: deleted | x: needs user: RejectedByServer(deleted); admits attempt 1's answer for x |
+| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision); admits attempt 1's answer for x |
+| rejected: not_found | x: needs user: RejectedByServer(not_found); admits attempt 1's answer for x |
+| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch); admits attempt 1's answer for x |
+| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict); admits attempt 1's answer for x |
+| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid); admits attempt 1's answer for x |
+| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed; admits attempt 1's answer for x; reports x replaced without the server's row |
+| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR); admits attempt 1's answer for x |
+| attempt 1 refused whole: upgradeRequired | x: waiting; standing upgradeRequired; admits attempt 1's answer; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | x: waiting; admits attempt 1's answer; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost; admits attempt 1's answer |
+| attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer; admits attempt 1's answer |
+| attempt 1 refused whole: uncheckedTooLate | x: waiting; admits attempt 1's answer |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, paid by content, a later connection, client or session, or a read requested after step 1 of session 1; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused for another account | admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -378,29 +404,33 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z).
 | claimed | x: sending in 2; sends attempt 2 (x) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); removes x (Delivered(alreadyThere)) |
-| noop without a revision | x: gone; removes x (Delivered(nothingToDo)) |
-| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2) |
-| rejected: already_exists | x: needs user: RejectedByServer(already_exists) |
-| rejected: deleted | x: needs user: RejectedByServer(deleted) |
-| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch) |
-| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch) |
-| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision) |
-| rejected: not_found | x: needs user: RejectedByServer(not_found) |
-| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch) |
-| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch) |
-| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
-| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
-| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed |
-| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | x: waiting; standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | x: waiting; reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | x: waiting |
-| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal |
+| applied at 2 | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(alreadyThere)) |
+| noop without a revision | x: gone; admits attempt 1's answer for x; removes x (Delivered(nothingToDo)) |
+| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2); admits attempt 1's answer for x |
+| rejected: already_exists | x: needs user: RejectedByServer(already_exists); admits attempt 1's answer for x |
+| rejected: deleted | x: needs user: RejectedByServer(deleted); admits attempt 1's answer for x |
+| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision); admits attempt 1's answer for x |
+| rejected: not_found | x: needs user: RejectedByServer(not_found); admits attempt 1's answer for x |
+| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch); admits attempt 1's answer for x |
+| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict); admits attempt 1's answer for x |
+| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid); admits attempt 1's answer for x |
+| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed; admits attempt 1's answer for x; reports x replaced without the server's row |
+| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR); admits attempt 1's answer for x |
+| attempt 1 refused whole: upgradeRequired | x: waiting; standing upgradeRequired; admits attempt 1's answer; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | x: waiting; admits attempt 1's answer; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost; admits attempt 1's answer |
+| attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer; admits attempt 1's answer |
+| attempt 1 refused whole: uncheckedTooLate | x: waiting; admits attempt 1's answer |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, paid by content, a later connection, client or session, or a read requested after step 1 of session 1; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused for another account | admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -426,6 +456,9 @@ Starts as: needs user: RejectedByServer(revision_mismatch).
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -444,7 +477,7 @@ Starts as: needs user: RejectedByServer(revision_mismatch).
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## needs user: failed on the server with PAGE_DELETED
 
@@ -454,6 +487,9 @@ Starts as: needs user: FailedOnServer(PAGE_DELETED).
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -472,7 +508,7 @@ Starts as: needs user: FailedOnServer(PAGE_DELETED).
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## needs user: unanswered for 29 days
 
@@ -484,29 +520,33 @@ Starts as: needs user: the server may have forgotten whether it landed.
 | user edits the same item | w: waiting |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); removes x (Delivered(alreadyThere)) |
-| noop without a revision | x: gone; removes x (Delivered(nothingToDo)) |
-| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2) |
-| rejected: already_exists | x: needs user: RejectedByServer(already_exists) |
-| rejected: deleted | x: needs user: RejectedByServer(deleted) |
-| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch) |
-| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch) |
-| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision) |
-| rejected: not_found | x: needs user: RejectedByServer(not_found) |
-| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch) |
-| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch) |
-| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
-| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
-| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed |
-| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | unchanged |
-| attempt 1 refused whole: strategyReplaced | page list owed by a list of another life than 1767322800000, read after the refusal |
+| applied at 2 | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(alreadyThere)) |
+| noop without a revision | x: gone; admits attempt 1's answer for x; removes x (Delivered(nothingToDo)) |
+| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2); admits attempt 1's answer for x |
+| rejected: already_exists | x: needs user: RejectedByServer(already_exists); admits attempt 1's answer for x |
+| rejected: deleted | x: needs user: RejectedByServer(deleted); admits attempt 1's answer for x |
+| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision); admits attempt 1's answer for x |
+| rejected: not_found | x: needs user: RejectedByServer(not_found); admits attempt 1's answer for x |
+| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch); admits attempt 1's answer for x |
+| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict); admits attempt 1's answer for x |
+| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid); admits attempt 1's answer for x |
+| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed; admits attempt 1's answer for x; reports x replaced without the server's row |
+| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR); admits attempt 1's answer for x |
+| attempt 1 refused whole: upgradeRequired | standing upgradeRequired; admits attempt 1's answer; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | admits attempt 1's answer; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | standing editAccessLost; admits attempt 1's answer |
+| attempt 1 refused whole: strategyDeleted | standing deletedOnServer; admits attempt 1's answer |
+| attempt 1 refused whole: uncheckedTooLate | admits attempt 1's answer |
+| attempt 1 refused whole: strategyReplaced | page list owed by a list of another life than 1767322800000, paid by content, a later connection, client or session, or a read requested after step 1 of session 1; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused for another account | admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -534,6 +574,9 @@ Starts as: needs user: written more than 29 days ago, too long to check against 
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -552,7 +595,7 @@ Starts as: needs user: written more than 29 days ago, too long to check against 
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## needs user: retries exhausted
 
@@ -564,29 +607,33 @@ Starts as: needs user: retries exhausted.
 | user edits the same item | w: waiting, behind x (sameRow) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| applied at 2 | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); removes x (Delivered(applied)) |
-| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); removes x (Delivered(alreadyThere)) |
-| noop without a revision | x: gone; removes x (Delivered(nothingToDo)) |
-| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2) |
-| rejected: already_exists | x: needs user: RejectedByServer(already_exists) |
-| rejected: deleted | x: needs user: RejectedByServer(deleted) |
-| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch) |
-| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch) |
-| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision) |
-| rejected: not_found | x: needs user: RejectedByServer(not_found) |
-| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch) |
-| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch) |
-| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict) |
-| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid) |
-| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed |
-| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR) |
-| attempt 1 refused whole: upgradeRequired | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing upgradeRequired; holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z |
-| attempt 1 refused whole: strategyReplaced | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), awaiting a result for the page list, until 2026-11-20T12:00:19.200Z; page list owed by a list of another life than 1767322800000, read after the refusal |
+| applied at 2 | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, applied when first received | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(applied)) |
+| noop at 2, not applied | x: gone; draws x as landed at 2 (whole); admits attempt 1's answer for x; removes x (Delivered(alreadyThere)) |
+| noop without a revision | x: gone; admits attempt 1's answer for x; removes x (Delivered(nothingToDo)) |
+| answered at 2 with no life | x: needs user: AnsweredWithoutLife(2); admits attempt 1's answer for x |
+| rejected: already_exists | x: needs user: RejectedByServer(already_exists); admits attempt 1's answer for x |
+| rejected: deleted | x: needs user: RejectedByServer(deleted); admits attempt 1's answer for x |
+| rejected: element_strategy_mismatch | x: needs user: RejectedByServer(element_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: lineup_strategy_mismatch | x: needs user: RejectedByServer(lineup_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: missing_expected_revision | x: needs user: RejectedByServer(missing_expected_revision); admits attempt 1's answer for x |
+| rejected: not_found | x: needs user: RejectedByServer(not_found); admits attempt 1's answer for x |
+| rejected: page_strategy_mismatch | x: needs user: RejectedByServer(page_strategy_mismatch); admits attempt 1's answer for x |
+| rejected: revision_mismatch | x: needs user: RejectedByServer(revision_mismatch); admits attempt 1's answer for x |
+| rejected: field_conflict | x: needs user: RejectedByServer(field_conflict); admits attempt 1's answer for x |
+| rejected: merge_invalid | x: needs user: RejectedByServer(merge_invalid); admits attempt 1's answer for x |
+| rejected: row_replaced | x: needs user: RejectedByServer(row_replaced); page-a owed; admits attempt 1's answer for x; reports x replaced without the server's row |
+| failed: INTERNAL_ERROR | x: needs user: FailedOnServer(INTERNAL_ERROR); admits attempt 1's answer for x |
+| attempt 1 refused whole: upgradeRequired | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing upgradeRequired; admits attempt 1's answer; holds sending until upgrade |
+| attempt 1 refused whole: unauthenticated | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; admits attempt 1's answer; reports unauthenticated |
+| attempt 1 refused whole: editAccessRemoved | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing editAccessLost; admits attempt 1's answer |
+| attempt 1 refused whole: strategyDeleted | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing deletedOnServer; admits attempt 1's answer |
+| attempt 1 refused whole: uncheckedTooLate | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; admits attempt 1's answer |
+| attempt 1 refused whole: strategyReplaced | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), awaiting a result for the page list, until 2026-11-20T12:00:19.200Z; page list owed by a list of another life than 1767322800000, paid by content, a later connection, client or session, or a read requested after step 1 of session 1; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused for another account | admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -615,6 +662,9 @@ Starts as: needs user: page delete held (pageChanged).
 | --- | --- |
 | user edits another item | z: waiting, behind x (pageDelete) |
 | user edits the same item | w: waiting, behind x (pageDelete) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | x: waiting, awaiting a result for the page list, awaiting a result for page page-a; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | x: waiting, awaiting a result for the page list, awaiting a result for page page-a; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -632,7 +682,7 @@ Starts as: needs user: page delete held (pageChanged).
 | result: page-a of another life | x: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## needs user: oversized
 
@@ -642,6 +692,9 @@ Starts as: needs user: oversized.
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -658,7 +711,7 @@ Starts as: needs user: oversized.
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## needs user: a put-back after someone else deleted the row
 
@@ -668,6 +721,9 @@ Starts as: needs user: changed by someone else since the user saw it.
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -685,7 +741,7 @@ Starts as: needs user: changed by someone else since the user saw it.
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; stops drawing del as landed; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## needs user: an edit waiting for a row whose page is gone
 
@@ -695,6 +751,9 @@ Starts as: needs user: its page is gone.
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | x: waiting, awaiting a result for ElementTarget(e1); page list not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -713,7 +772,7 @@ Starts as: needs user: its page is gone.
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-b not read this session; stops drawing first as landed; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## a format this build no longer sends
 
@@ -723,6 +782,9 @@ Starts as: retired format.
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | standing upgradeRequired; holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -739,7 +801,7 @@ Starts as: retired format.
 | result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## waiting, strategy deleted on the server
 
@@ -749,6 +811,9 @@ Starts as: waiting.
 | --- | --- |
 | user edits another item | z: waiting |
 | user edits the same item | w: waiting, behind x (sameRow) |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -765,7 +830,7 @@ Starts as: waiting.
 | result: page-a of another life | x: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; standing good; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; attempt 1 refused for another account; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## waiting, edit access lost
 
@@ -777,12 +842,10 @@ Starts as: waiting.
 | user edits the same item | w: waiting, behind x (sameRow) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| attempt 1 refused whole: upgradeRequired | holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | unchanged |
-| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | unchanged |
-| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal |
+| attempt 1 refused for another account | admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -799,7 +862,7 @@ Starts as: waiting.
 | result: page-a of another life | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; y: set aside; page-a not read this session; page-b not read this session; sets 2 aside |
 
-Does not apply: claimed; claimed under another client id; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## waiting, upgrade required
 
@@ -811,12 +874,10 @@ Starts as: waiting.
 | user edits the same item | w: waiting, behind x (sameRow) |
 | attempt 1 released | unchanged |
 | attempt 1 transport failed | unchanged |
-| attempt 1 refused whole: upgradeRequired | holds sending until upgrade |
-| attempt 1 refused whole: unauthenticated | reports unauthenticated |
-| attempt 1 refused whole: editAccessRemoved | standing editAccessLost |
-| attempt 1 refused whole: strategyDeleted | standing deletedOnServer |
-| attempt 1 refused whole: uncheckedTooLate | unchanged |
-| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal |
+| attempt 1 refused for another account | admits attempt 1's answer; reports another account |
+| read refused for the sign-in: unauthenticated | reports unauthenticated |
+| read refused for the sign-in: accountMismatch | reports another account |
+| read refused for an upgrade | holds sending until upgrade |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | standing good; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -832,4 +893,4 @@ Starts as: waiting.
 | result: page-a of another life | x: waiting, awaiting a result for the page list; y: waiting, awaiting a result for the page list; page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; y: set aside; page-a not read this session; page-b not read this session; sets 2 aside |
 
-Does not apply: claimed; claimed under another client id; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.

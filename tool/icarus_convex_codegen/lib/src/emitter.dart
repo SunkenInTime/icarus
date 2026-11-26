@@ -437,6 +437,9 @@ void _emitModule(
   out.writeln('abstract interface class $moduleType {');
   for (final function in functions) {
     out.writeln('  ${_methodSignature(function)};');
+    if (function.contract.kind == ConvexFunctionKind.mutation) {
+      out.writeln('  ${_mutationSignature(function)};');
+    }
   }
   out
     ..writeln('}')
@@ -445,9 +448,25 @@ void _emitModule(
     ..writeln('  const _$moduleType(this._transport);')
     ..writeln('  final ConvexTransport _transport;');
   for (final function in functions) {
-    out
-      ..writeln('  @override')
-      ..writeln('  ${_methodSignature(function)} {');
+    if (function.contract.kind == ConvexFunctionKind.mutation) {
+      out
+        ..writeln('  @override')
+        ..write('  ${_methodSignature(function)} => ')
+        ..write('${_mutationName(function)}(')
+        ..write(
+          [
+            for (final field in function.argsFields)
+              '${field.dartName}: ${field.dartName},',
+          ].join(),
+        )
+        ..writeln(').run();')
+        ..writeln('  @override')
+        ..writeln('  ${_mutationSignature(function)} {');
+    } else {
+      out
+        ..writeln('  @override')
+        ..writeln('  ${_methodSignature(function)} {');
+    }
     final prefix = _functionPrefix(function);
     out.write('    final args = encode${prefix}Args(');
     if (function.argsFields.isNotEmpty) {
@@ -468,9 +487,13 @@ void _emitModule(
           ..writeln('      decode: $decode,')
           ..writeln('    );');
       case ConvexFunctionKind.mutation:
-        out.writeln(
-          "    return _invoke(() => _transport.mutation('${_escape(route)}', args), $decode);",
-        );
+        out
+          ..writeln('    return ConvexMutation(')
+          ..writeln('      transport: _transport,')
+          ..writeln("      name: '${_escape(route)}',")
+          ..writeln('      args: args,')
+          ..writeln('      decode: $decode,')
+          ..writeln('    );');
       case ConvexFunctionKind.action:
         out.writeln(
           "    return _invoke(() => _transport.action('${_escape(route)}', args), $decode);",
@@ -493,6 +516,18 @@ String _methodSignature(MappedFunction function) {
     ConvexFunctionKind.mutation ||
     ConvexFunctionKind.action => 'Future<${function.resultType.dartType}>',
   };
+  return '$returnType ${lowerCamelCase(function.contract.functionName)}'
+      '(${_parameters(function)})';
+}
+
+String _mutationName(MappedFunction function) =>
+    '${lowerCamelCase(function.contract.functionName)}Mutation';
+
+String _mutationSignature(MappedFunction function) =>
+    'ConvexMutation<${function.resultType.dartType}> '
+    '${_mutationName(function)}(${_parameters(function)})';
+
+String _parameters(MappedFunction function) {
   final parameters = StringBuffer();
   if (function.argsFields.isNotEmpty) {
     parameters.write('{');
@@ -508,7 +543,7 @@ String _methodSignature(MappedFunction function) {
     }
     parameters.write('}');
   }
-  return '$returnType ${lowerCamelCase(function.contract.functionName)}($parameters)';
+  return parameters.toString();
 }
 
 final class _RawPredicateEmitter {
@@ -829,6 +864,43 @@ final class StampedConvexQuery<T> {
       ],
     );
   }
+}
+
+final class ConvexMutation<T> {
+  const ConvexMutation({
+    required ConvexTransport transport,
+    required String name,
+    required ConvexObject args,
+    required T Function(ConvexValue) decode,
+  })  : _transport = transport,
+        _name = name,
+        _args = args,
+        _decode = decode;
+
+  final ConvexTransport _transport;
+  final String _name;
+  final ConvexObject _args;
+  final T Function(ConvexValue) _decode;
+
+  Future<T> run() => _invoke(
+        () => _transport.mutation(_name, _args),
+        _decode,
+      );
+
+  StampedConvexMutation<T> stampedOn(StampedConvexTransport transport) =>
+      StampedConvexMutation._(transport, this);
+}
+
+final class StampedConvexMutation<T> {
+  const StampedConvexMutation._(this._transport, this._mutation);
+
+  final StampedConvexTransport _transport;
+  final ConvexMutation<T> _mutation;
+
+  Future<Stamped<T>> run() async => _decodeStamped(
+        await _transport.mutationStamped(_mutation._name, _mutation._args),
+        _mutation._decode,
+      );
 }
 
 Stamped<T> _decodeStamped<V, T>(Stamped<V> stamped, T Function(V) decode) =>

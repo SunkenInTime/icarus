@@ -28,6 +28,19 @@
         ]
       },
       "visibility": { "kind": "public" }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "name": { "fieldType": { "type": "string" }, "optional": false },
+          "note": { "fieldType": { "type": "string" }, "optional": true }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "fixture.js:rename",
+      "returns": { "type": "null" },
+      "visibility": { "kind": "public" }
     }
   ]
 }

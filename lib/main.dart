@@ -29,6 +29,7 @@ import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
+import 'package:icarus/startup/launch_refusal.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/config/cloud_build_config.dart';
 import 'package:icarus/hive/hive_registration.dart';
@@ -192,10 +193,22 @@ Future<void> main(List<String> args) async {
       Animate.defaultDuration = const Duration(milliseconds: 200);
 
       final introSwitch = LaunchIntroSwitch.parse(args, page: Uri.base);
-      final storeLaunch = LibraryStoreLaunch.parse(
-        introSwitch.otherArgs,
-        mayShadow: shadowReachable,
-      );
+      final LibraryStoreLaunch storeLaunch;
+      try {
+        storeLaunch = LibraryStoreLaunch.parse(
+          introSwitch.otherArgs,
+          mayShadow: shadowReachable,
+        );
+      } on ArgumentError catch (refused) {
+        await _initializePersistedDebugLog();
+        AppErrorReporter.reportError(
+          'Icarus did not start: ${refused.message}',
+          source: 'main.libraryStoreLaunch',
+          promptUser: false,
+        );
+        await AppErrorReporter.flushPersistedLog();
+        await refuseLaunch('Icarus did not start: ${refused.message}');
+      }
       final storeStart = LibraryStoreStart.of(
         storeLaunch.choice,
         clock: () => launchClock.elapsed,

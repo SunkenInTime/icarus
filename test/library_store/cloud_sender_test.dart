@@ -10,6 +10,8 @@ import 'package:icarus/dev/drive/drive_cloud_store.dart'
     show useCloudAs, waitStoreSentIn;
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/call_governor.dart';
+import 'package:icarus/library_store/library_store_switch.dart'
+    show cloudShadowOff;
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
@@ -48,6 +50,51 @@ void holdNextWrite(MemoryStorage storage, void Function() atIt) {
 
 void main() {
   group('the loop over the real queue', () {
+    test(
+        'a page read answered on a newer connection before the sender has '
+        'heard of it opens the session from its stamp and is taken once, and '
+        'the reconnect the sender writes after it opens no other session', () {
+      inWorld((world) {
+        world.server.answerReadNext(
+          strategyId,
+          (call) => Future.value(world.server.answerNow(call)),
+        );
+        world.server.answerReadNext(strategyId, (call) {
+          world.server.connection = 2;
+          return Future.value(world.server.answerNow(call));
+        });
+        world.sender.adopt(strategyId);
+        world.settle();
+        final opened = world.cloud().queue;
+        expect(
+          opened.session.generation,
+          const Generation(client: 1, connection: 2),
+        );
+        expect(world.written().whereType<ConnectionReturned>(), isEmpty);
+        expect(opened.shown.list, const NotReadThisSession());
+        final pageReads =
+            world.server.readCalls.where((call) => call.page != null).toList();
+        expect(pageReads, hasLength(1));
+        expect(
+          opened.shown.pageRead(pageReads.single.page!),
+          const ReadThisSession(),
+        );
+
+        world.connection = 2;
+        world.commitMove(1);
+        world.settle();
+        expect(world.server.calls, hasLength(1));
+        expect(world.queueLength(), 0);
+        final returned = world.sessionWrites().whereType<ConnectionReturned>();
+        expect(returned, hasLength(1));
+        expect(
+          returned.last.generation,
+          const Generation(client: 1, connection: 2),
+        );
+        expect(world.cloud().queue.session.number, opened.session.number);
+      }, addStrategy: false);
+    });
+
     test('sends a commit once, after the wait, as the strategy\'s owner', () {
       inWorld((world) {
         world.commitMove(1);
@@ -112,6 +159,7 @@ void main() {
                 ),
               ],
               complete: true,
+              point: stampedWhenAnswered,
             ),
           );
         });
@@ -129,31 +177,37 @@ void main() {
         () {
       final refusals = <String, (StoreBatchOutcome, List<String>)>{
         'STRATEGY_REPLACED': (
-          const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+          const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced,
+              point: stampedWhenAnswered),
           ['send move-1', 'list', 'page p1'],
         ),
         'ACCOUNT_MISMATCH': (
-          const StoreBatchAccountMismatch('refused'),
+          const StoreBatchAccountMismatch('refused',
+              point: stampedWhenAnswered),
           ['send move-1'],
         ),
         'UNCHECKED_OUTSIDE_WINDOW': (
-          const StoreBatchOutsideWindow('refused'),
+          const StoreBatchOutsideWindow('refused', point: stampedWhenAnswered),
           ['send move-1', 'send move-1', 'page p1'],
         ),
         'CLIENT_UPGRADE_REQUIRED': (
-          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired),
+          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired,
+              point: stampedWhenAnswered),
           ['send move-1'],
         ),
         'UNAUTHENTICATED': (
-          const StoreBatchRefusedWhole(BatchRefusal.unauthenticated),
+          const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
+              point: stampedWhenAnswered),
           ['send move-1'],
         ),
         'FORBIDDEN': (
-          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+              point: stampedWhenAnswered),
           ['send move-1', 'list', 'send move-1', 'page p1'],
         ),
         'NOT_FOUND': (
-          const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted),
+          const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted,
+              point: stampedWhenAnswered),
           ['send move-1'],
         ),
       };
@@ -190,9 +244,11 @@ void main() {
         world.server.answerNext(
           strategyId,
           (call) => Future.value(
-            storeBatchOutcomeOf(call.ops, [
-              app.AppliedOpAck(opId: call.opIds.single, revision: 2),
-            ]),
+            storeBatchOutcomeOf(
+              call.ops,
+              [app.AppliedOpAck(opId: call.opIds.single, revision: 2)],
+              point: stampedWhenAnswered,
+            ),
           ),
         );
         world.commitMove(1);
@@ -250,7 +306,8 @@ void main() {
           BaseArrived(
             world.server.headerOf(strategyId),
             session: world.cloud().queue.session.number,
-            from: ReadOfThisDevice(world.cloud().queue.session.readStart),
+            point: world.server.stamp(),
+            requestedAt: world.cloud().queue.session.sequence,
           ),
         ]).then((value) => recorded = value);
         world.async.flushMicrotasks();
@@ -289,6 +346,7 @@ void main() {
                 ),
               ],
               complete: true,
+              point: stampedWhenAnswered,
             ),
           ),
         );
@@ -309,6 +367,7 @@ void main() {
               ],
               lineupGroups: const [],
             ),
+            point: stampedWhenAnswered,
           ),
         );
         world.commitMove(1);
@@ -335,7 +394,8 @@ void main() {
         world.server.answerNext(strategyId, (call) {
           world.replaceStrategyOnServer();
           return Future.value(
-            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced,
+                point: stampedWhenAnswered),
           );
         });
         world.server.answerReadWith(
@@ -357,6 +417,7 @@ void main() {
               ],
               settings: header.settings,
             ),
+            point: stampedWhenAnswered,
           ),
         );
         world.commitMove(1);
@@ -381,7 +442,8 @@ void main() {
           world.commitMove(2);
           world.replaceStrategyOnServer();
           return Future.value(
-            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced,
+                point: stampedWhenAnswered),
           );
         });
         world.commitMove(1);
@@ -403,7 +465,8 @@ void main() {
         world.server.answerNext(strategyId, (call) {
           world.replaceStrategyOnServer();
           return Future.value(
-            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced,
+                point: stampedWhenAnswered),
           );
         });
         world.server.answerReadWith(
@@ -425,9 +488,11 @@ void main() {
               ],
               settings: original.settings,
             ),
+            point: stampedWhenAnswered,
           ),
         );
-        world.server.answerReadWith(strategyId, StoreReadAnswered(original));
+        world.server.answerReadWith(strategyId,
+            StoreReadAnswered(original, point: stampedWhenAnswered));
         world.commitMove(1);
         world.settle(const Duration(minutes: 10));
         expect(
@@ -507,6 +572,7 @@ void main() {
                 ),
               ],
               complete: true,
+              point: stampedWhenAnswered,
             ),
           ),
         );
@@ -532,6 +598,7 @@ void main() {
               elements: const [],
               lineupGroups: const [],
             ),
+            point: stampedWhenAnswered,
           );
         };
         world.commitMove(1);
@@ -637,7 +704,7 @@ void main() {
           return null;
         };
         final page = truth.pages.first as LivePage;
-        world.recordAsRead([
+        world.recordRead([
           PageRead(
             page: bornIn(
               LivePage(
@@ -679,6 +746,7 @@ void main() {
                 ),
               ],
               complete: true,
+              point: stampedWhenAnswered,
             ),
           ),
         );
@@ -691,6 +759,7 @@ void main() {
               elements: const [],
               lineupGroups: const [],
             ),
+            point: stampedWhenAnswered,
           );
         };
         world.slowStore.refusesRefusedResult = 1;
@@ -841,8 +910,10 @@ void main() {
         'UNAUTHENTICATED and ACCOUNT_MISMATCH make no further call until the '
         'sign-in changes, through a hold and release', () {
       for (final refusal in <StoreBatchOutcome>[
-        const StoreBatchRefusedWhole(BatchRefusal.unauthenticated),
-        const StoreBatchAccountMismatch('another account'),
+        const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
+            point: stampedWhenAnswered),
+        const StoreBatchAccountMismatch('another account',
+            point: stampedWhenAnswered),
       ]) {
         inWorld((world) {
           world.server.answerWith(strategyId, refusal);
@@ -868,7 +939,8 @@ void main() {
         world.server.answerNext(strategyId, (_) {
           world.authChanges = 2;
           return Future.value(
-            const StoreBatchRefusedWhole(BatchRefusal.unauthenticated),
+            const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
+                point: stampedWhenAnswered),
           );
         });
         world.commitMove(1);
@@ -884,7 +956,8 @@ void main() {
         world.addOtherStrategy();
         world.server.answerWith(
           strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired),
+          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired,
+              point: stampedWhenAnswered),
         );
         world.commitMove(1);
         world.settle();
@@ -908,7 +981,8 @@ void main() {
         inWorld((world) {
           world.addOtherStrategy();
           world.server.roles[strategyId] = StoreReadRole.viewer;
-          world.server.answerWith(strategyId, StoreBatchRefusedWhole(refusal));
+          world.server.answerWith(strategyId,
+              StoreBatchRefusedWhole(refusal, point: stampedWhenAnswered));
           world.commitMove(1);
           world.settle(const Duration(minutes: 1));
           expect(world.face(), face);
@@ -1073,7 +1147,7 @@ void main() {
         world.authChanges = 2;
         world.commitRename(strategyId, 'after-refresh');
         world.settle();
-        final events = world.written();
+        final events = world.sessionWrites();
         expect(events.whereType<AccountChanged>(), isEmpty);
         expect(events.whereType<ConnectionReturned>(), isEmpty);
         expect(world.server.calls, hasLength(2));
@@ -1082,8 +1156,11 @@ void main() {
           ..connection = 2;
         world.commitAdds(1);
         world.settle();
-        expect(world.written().whereType<AccountChanged>(), isEmpty);
-        expect(world.written().whereType<ConnectionReturned>(), hasLength(1));
+        expect(world.sessionWrites().whereType<AccountChanged>(), isEmpty);
+        expect(
+          world.sessionWrites().whereType<ConnectionReturned>(),
+          hasLength(1),
+        );
         expect(world.server.calls, hasLength(3));
       });
     });
@@ -1310,11 +1387,13 @@ void main() {
     test('the run-wide holds are facts a sync state can be combined with', () {
       for (final (refusal, hold) in [
         (
-          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired),
+          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired,
+              point: stampedWhenAnswered),
           isA<UpgradeHold>(),
         ),
         (
-          const StoreBatchRefusedWhole(BatchRefusal.unauthenticated),
+          const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
+              point: stampedWhenAnswered),
           isA<SignInHold>(),
         ),
       ]) {
@@ -1345,6 +1424,7 @@ void main() {
               ),
             ],
             complete: true,
+            point: stampedWhenAnswered,
           ),
         );
         world.commitMove(1);
@@ -1418,7 +1498,8 @@ void main() {
         'a connection that changes while the queue is read gets no session '
         'written for it', () {
       inWorld((world) {
-        final before = world.written().whereType<ConnectionReturned>().length;
+        final before =
+            world.sessionWrites().whereType<ConnectionReturned>().length;
         world.sender.hold('held by the test');
         world.connection = 2;
         world.commitMove(1);
@@ -1430,7 +1511,7 @@ void main() {
         world.connection = 3;
         world.settle();
         expect(
-          world.written().whereType<ConnectionReturned>(),
+          world.sessionWrites().whereType<ConnectionReturned>(),
           hasLength(before + 1),
         );
         expect(world.server.calls, hasLength(1));
@@ -1541,7 +1622,7 @@ void main() {
     await shadow.idle;
 
     expect(shadow.ledger.last.verdict, isNot(isA<Skipped>()));
-  });
+  }, skip: cloudShadowOff);
 
   group('the read step', () {
     List<String> readsAfter(World world, int before) =>
@@ -1725,7 +1806,8 @@ void main() {
           world.server.roles[strategyId] = role;
           world.server.answerWith(
             strategyId,
-            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+                point: stampedWhenAnswered),
           );
           final before = world.server.readCalls.length;
           world.commitMove(1);
@@ -1761,7 +1843,8 @@ void main() {
       inWorld((world) {
         world.server.answerReadWith(
           strategyId,
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden',
+              point: stampedWhenAnswered),
         );
         world.commitMove(1);
         world.settle();
@@ -1779,7 +1862,8 @@ void main() {
       inWorld((world) {
         world.server.answerReadWith(
           strategyId,
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden',
+              point: stampedWhenAnswered),
         );
         world.commitMove(1);
         world.settle(const Duration(minutes: 1));
@@ -1799,7 +1883,7 @@ void main() {
         inWorld((world) {
           world.server.answerReadWith(
             strategyId,
-            StoreReadRefused(refusal, '$refusal'),
+            StoreReadRefused(refusal, '$refusal', point: stampedWhenAnswered),
           );
           world.commitMove(1);
           world.settle(const Duration(minutes: 1));
@@ -1951,7 +2035,8 @@ void main() {
       inWorld(
         (world) {
           server.overrideRead = (call) => call.page == secondId()
-              ? const StoreReadAnswered(PageGone('nowhere'))
+              ? const StoreReadAnswered(PageGone('nowhere'),
+                  point: stampedWhenAnswered)
               : null;
           server.readCalls.clear();
           world.commitPageDelete('delete-p2', secondId());
@@ -2130,7 +2215,8 @@ void main() {
       inWorld((world) {
         world.server.answerWith(
           strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+              point: stampedWhenAnswered),
         );
         world.server.answerReadWith(
           strategyId,
@@ -2225,6 +2311,7 @@ void main() {
           settings: header.settings,
         ),
         role: role,
+        point: stampedWhenAnswered,
       );
     }
 
@@ -2237,6 +2324,7 @@ void main() {
           elements: [for (final row in rows.elementsOn(page)) lived(row)],
           lineupGroups: const [],
         ),
+        point: stampedWhenAnswered,
       );
     }
 
@@ -2254,7 +2342,8 @@ void main() {
         start: (world) {
           world.server.answerWith(
             strategyId,
-            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+                point: stampedWhenAnswered),
           );
           world.server.overrideRead = (call) => call.page == null
               ? earlierList(world, role: StoreReadRole.viewer)
@@ -2277,6 +2366,7 @@ void main() {
                   ),
                 ],
                 complete: true,
+                point: stampedWhenAnswered,
               ),
             ),
           );
@@ -2352,7 +2442,8 @@ void main() {
         world.server.answerNext(strategyId, (call) {
           world.replaceStrategyOnServer();
           return Future.value(
-            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+            const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced,
+                point: stampedWhenAnswered),
           );
         });
         world.commitMove(1);
@@ -2393,6 +2484,7 @@ void main() {
               ),
             ],
             complete: true,
+            point: stampedWhenAnswered,
           ),
         ),
       );
@@ -2412,6 +2504,7 @@ void main() {
             ],
             lineupGroups: const [],
           ),
+          point: stampedWhenAnswered,
         );
 
     test(
@@ -3042,7 +3135,8 @@ void main() {
       inWorld(
         (world) {
           server.overrideRead = (call) => call.page == secondId()
-              ? const StoreReadAnswered(PageGone('nowhere'))
+              ? const StoreReadAnswered(PageGone('nowhere'),
+                  point: stampedWhenAnswered)
               : null;
           world.commitPageDelete('delete-p2', secondId());
           world.settle(const Duration(minutes: 1));
@@ -3071,7 +3165,8 @@ void main() {
           ..roles[strategyId] = StoreReadRole.editor
           ..answerWith(
             strategyId,
-            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+                point: stampedWhenAnswered),
           );
         world.commitMove(1);
         world.settle(const Duration(seconds: 30));
@@ -3080,7 +3175,8 @@ void main() {
           ..roles[strategyId] = StoreReadRole.viewer
           ..answerWith(
             strategyId,
-            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+                point: stampedWhenAnswered),
           );
         final before = world.server.readCalls.length;
         world.commitMove(2);
@@ -3290,8 +3386,9 @@ void main() {
     });
 
     test(
-        'a server time answered after the connection changed is not held, '
-        'so the next edit goes checked', () {
+        'a server time answered after the connection changed is not held: '
+        'that answer is lost, its edit is sent again checked, and the next '
+        'edit is judged by a time from the new connection', () {
       inWorld((world) {
         world.commitMerge(1);
         world.settle();
@@ -3305,10 +3402,15 @@ void main() {
         world.async.elapse(const Duration(seconds: 1));
         world.commitMerge(2);
         world.settle();
+        final [sent, again] = callsOf(world, 'merge-2');
+        expect(sent.unchecked, ['merge-2']);
+        expect(again.unchecked, isEmpty);
+        final heldAfter = world.written().whereType<ServerTimeHeld>().last;
+        expect(heldAfter.point.connection, 2);
         world.commitMerge(3);
         world.settle();
         final [third] = callsOf(world, 'merge-3');
-        expect(third.unchecked, isEmpty);
+        expect(third.basis, heldAfter.serverTime);
       });
     });
 
@@ -3447,21 +3549,24 @@ void main() {
         });
         world.commitMerge(2);
         world.settle(const Duration(seconds: 10));
-        final written = world.written();
-        final held = written.whereType<ServerTimeHeld>().last;
+        final held = world.written().whereType<ServerTimeHeld>().last;
         expect(held.session, bound);
-        final claimed = written.lastIndexWhere(
-          (event) => event is BatchClaimed,
-          written.indexOf(held),
+        final writes = [
+          for (final report in world.sender.store.reports)
+            if (report is EventsWritten) report.events,
+        ];
+        final answered = writes.lastIndexWhere(
+          (events) => events.contains(held),
+        );
+        final claimed = writes.lastIndexWhere(
+          (events) => events.any((event) => event is BatchClaimed),
+          answered,
         );
         expect(
-          written.sublist(claimed, written.indexOf(held)).where(
-                (event) =>
-                    event is ConnectionLost ||
-                    event is ConnectionReturned ||
-                    event is AccountChanged ||
-                    event is AppRestarted,
-              ),
+          [
+            for (final events in writes.sublist(claimed, answered))
+              ...events.where(World.isSessionEvent),
+          ],
           isEmpty,
         );
       });
@@ -3492,6 +3597,7 @@ void main() {
             }),
             convexSignInsProvider.overrideWithValue(const Stream.empty()),
             storeReadsProvider.overrideWithValue(world.server.reads),
+            storeGenerationProvider.overrideWithValue(world.server.generation),
             senderEditorProvider.overrideWithValue(_editorOpen),
             cloudSenderClockProvider.overrideWithValue(
               () => start.add(world.async.elapsed),
@@ -3518,6 +3624,7 @@ void main() {
           StoreBatchAnswered(
             [const AppliedAnswer('move-1', revision: 3, life: firstLife)],
             complete: true,
+            point: stampedWhenAnswered,
           ),
         );
         world.settle(const Duration(minutes: 1));

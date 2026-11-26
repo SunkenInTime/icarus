@@ -35,6 +35,10 @@ param(
   [string]$SecondAccount
 )
 $ErrorActionPreference = 'Stop'
+if ($CloudStore -eq 'shadow') {
+  Write-Host 'The cloud shadow is off until the store takes its live results with stamps (slice 3, PR 5); use -CloudStore send.'
+  exit 2
+}
 # New every run: the server refuses an item id another strategy holds.
 $run = [guid]::NewGuid().ToString('N').Substring(0, 8)
 if (-not $Out) { $Out = Join-Path (Split-Path -Parent (Resolve-Path $Exe)) "drive-$run" }

@@ -22,10 +22,12 @@ List<DateTime> pageReads(World world, String page) => [
 void forbidEveryRead(World world) {
   world.server.answerWith(
     strategyId,
-    const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+    const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+        point: stampedWhenAnswered),
   );
-  world.server.overrideRead =
-      (call) => const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+  world.server.overrideRead = (call) => const StoreReadRefused(
+      StoreReadRefusal.forbidden, 'forbidden',
+      point: stampedWhenAnswered);
 }
 
 void main() {
@@ -69,6 +71,7 @@ void main() {
                 ),
               ],
               complete: true,
+              point: stampedWhenAnswered,
             ),
           ),
         );
@@ -87,7 +90,7 @@ void main() {
           world.async.flushMicrotasks();
         }
         world.settle(const Duration(seconds: 1));
-        expect(pageReads(world, pageId).length - before, lessThanOrEqualTo(1));
+        expect(pageReads(world, pageId).length - before, 1);
       });
     });
 
@@ -101,7 +104,8 @@ void main() {
             world.sender.adopt(strategyId);
             world.settle(const Duration(minutes: 1));
             world.server.overrideRead = (call) => call.page == 'p2'
-                ? const StoreReadAnswered(PageGone('nowhere'))
+                ? const StoreReadAnswered(PageGone('nowhere'),
+                    point: stampedWhenAnswered)
                 : null;
             world
               ..connection = null
@@ -117,6 +121,7 @@ void main() {
                   StoreBatchAnswered(
                     [for (final op in call.opIds) answer(op)],
                     complete: true,
+                    point: stampedWhenAnswered,
                   ),
                 ),
               );
@@ -165,6 +170,7 @@ void main() {
                 ),
               ],
               complete: true,
+              point: stampedWhenAnswered,
             ),
           ),
         );
@@ -173,7 +179,8 @@ void main() {
           if (call.page != pageId) return null;
           reads++;
           if (reads <= 3) {
-            return const StoreReadUnreadable('rows this build cannot read');
+            return const StoreReadUnreadable('rows this build cannot read',
+                point: stampedWhenAnswered);
           }
           final held = world.server.rows[strategyId]!.page(pageId)! as LivePage;
           return StoreReadAnswered(
@@ -182,6 +189,7 @@ void main() {
               elements: const [],
               lineupGroups: const [],
             ),
+            point: stampedWhenAnswered,
           );
         };
         world.commitMove(1);
@@ -213,6 +221,7 @@ void main() {
                 ),
               ],
               complete: true,
+              point: stampedWhenAnswered,
             ),
           ),
         );
@@ -234,6 +243,7 @@ void main() {
               : const StoreReadRefused(
                   StoreReadRefusal.upgradeRequired,
                   'upgrade',
+                  point: stampedWhenAnswered,
                 );
           world.sender.adopt(strategyId);
           world.settle(const Duration(minutes: 10));
@@ -260,12 +270,14 @@ void main() {
                 ),
               ],
               complete: true,
+              point: stampedWhenAnswered,
             ),
           ),
         );
         world.server.overrideRead = (call) => const StoreReadRefused(
               StoreReadRefusal.unauthenticated,
               'signed out',
+              point: stampedWhenAnswered,
             );
         world.commitMove(1);
         world.settle(const Duration(seconds: 5));
@@ -308,7 +320,8 @@ void main() {
         world.sender.adopt(strategyId);
         world.settle(const Duration(minutes: 1));
         world.server.overrideRead = (call) => call.page == 'p2'
-            ? const StoreReadAnswered(PageGone('nowhere'))
+            ? const StoreReadAnswered(PageGone('nowhere'),
+                point: stampedWhenAnswered)
             : null;
         world
           ..connection = null
@@ -319,7 +332,8 @@ void main() {
         expect(pageReads(world, 'p2'), hasLength(adopted + 3));
         expect(world.face(), isNot(Face.unreadableWork));
         world.server.overrideRead = (call) => call.page == 'p2'
-            ? const StoreReadUnreadable('rows this build cannot read')
+            ? const StoreReadUnreadable('rows this build cannot read',
+                point: stampedWhenAnswered)
             : null;
         world.settle(const Duration(seconds: 10));
         expect(pageReads(world, 'p2'), hasLength(adopted + 4));

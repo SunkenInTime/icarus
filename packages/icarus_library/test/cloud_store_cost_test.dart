@@ -62,22 +62,24 @@ void main() {
       savedValue(
         await store.addCloudStrategy(
           testAccount,
-          HeaderRead(
-            strategy: strategyRow(publicId: id),
-            pages: [
-              LivePage(
-                publicId: 'page-a',
-                strategyPublicId: id,
-                name: 'Page 1',
-                sortIndex: 0,
-                isAttack: true,
-                revision: 1,
-                unknownFields: jsonObject({'createdAt': fixtureLife}),
-              ),
-            ],
-            settings: [settings('page-a')],
+          stamped(
+            HeaderRead(
+              strategy: strategyRow(publicId: id),
+              pages: [
+                LivePage(
+                  publicId: 'page-a',
+                  strategyPublicId: id,
+                  name: 'Page 1',
+                  sortIndex: 0,
+                  isAttack: true,
+                  revision: 1,
+                  unknownFields: jsonObject({'createdAt': fixtureLife}),
+                ),
+              ],
+              settings: [settings('page-a')],
+            ),
           ),
-          const [],
+          stampedPages(const []),
         ),
       );
       expect(await store.unload(id), isA<Unloaded>());

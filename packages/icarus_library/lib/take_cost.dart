@@ -514,6 +514,15 @@ void _applied(Recorded recorded, String what) {
   }
 }
 
+var _snapshots = 0;
+
+ResultPoint nextStamp() => ResultPoint(
+  client: 1,
+  connection: 1,
+  snapshot: ++_snapshots,
+  serverTime: DateTime.now().microsecondsSinceEpoch * 1000 + _snapshots,
+);
+
 final class Bench {
   Bench._(
     this.store,
@@ -559,12 +568,13 @@ final class Bench {
       StoreOpened(:final store) => store,
       StoreNotOpened(:final problem) => _fail('store did not open: $problem'),
     };
-    store.takeCloudResultsFrom(CloudResults.liveQueries);
     if (adding) {
       _saved(
-        await store.addCloudStrategy(takeAccount, server.header(), [
-          server.read(),
-        ]),
+        await store.addCloudStrategy(
+          takeAccount,
+          StampedRead(server.header(), nextStamp()),
+          [StampedRead(server.read(), nextStamp())],
+        ),
         'adding the cloud strategy',
       );
     }
@@ -572,7 +582,7 @@ final class Bench {
       _saved(
         await store.record(takeAccount, takeStrategyId, const [
           AppRestarted(build: _build),
-          ConnectionReturned(),
+          ConnectionReturned(Generation(client: 1, connection: 1)),
         ]),
         'opening a session',
       ),
@@ -589,7 +599,7 @@ final class Bench {
   Future<void> take(PageRead result) async => _applied(
     _saved(
       await store.record(takeAccount, takeStrategyId, [
-        BaseArrived(result, session: session, from: const LiveResult()),
+        BaseArrived(result, session: session, point: nextStamp()),
       ]),
       'a live page result',
     ),

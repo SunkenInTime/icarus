@@ -68,7 +68,8 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: before.session.number,
-          from: readFrom(before),
+          point: tick(),
+          requestedAt: before.session.sequence,
         ),
         now: client.at,
       );
@@ -98,17 +99,17 @@ void main() {
           laterLife,
         ),
       ]);
-      client.arrive(pageReadOf(again, 'page-a'));
+      client.arrive(pageReadOf(again, 'page-a'), asked: const NotCausal());
       expect(isDebt(client.queue.shown.list), isTrue);
       expect(setAsideIds(client.queue), isEmpty);
-      client.arrive(headerReadOf(again));
+      client.arrive(headerReadOf(again), asked: const NotCausal());
       expect(setAsideIds(client.queue), ['move', 'later']);
     });
 
     test('a list of the same life sets nothing aside, and one of an earlier '
         'life is dropped', () {
       final client = withTwoEdits();
-      client.arrive(headerReadOf(initialRows()));
+      client.arrive(headerReadOf(initialRows()), asked: const NotCausal());
       expect(setAsideIds(client.queue), isEmpty);
       expect(
         client.step(
@@ -120,7 +121,8 @@ void main() {
               ),
             ),
             session: client.queue.session.number,
-            from: readFrom(client.queue),
+            point: tick(),
+            requestedAt: client.queue.session.sequence,
           ),
         ),
         isA<NotApplicable>(),
@@ -134,20 +136,26 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       expect(
         client.step(
           BaseArrived(
             headerReadOf(initialRows()),
             session: client.queue.session.number,
-            from: client.beginRead(),
+            point: tick(),
+            requestedAt: client.queue.session.sequence,
           ),
         ),
         isA<NotApplicable>(),
       );
       expect(setAsideIds(client.queue), isEmpty);
       expect(isDebt(client.queue.shown.list), isTrue);
-      client.arrive(headerReadOf(replaced(initialRows())));
+      client.arrive(
+        headerReadOf(replaced(initialRows())),
+        asked: client.askedNow,
+      );
       expect(setAsideIds(client.queue), ['move']);
       expect(client.queue.shown.list, const ReadThisSession());
     });
@@ -162,6 +170,7 @@ void main() {
         OpAnswered(
           attempt,
           const AppliedAnswer('move', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.queue.landed, isNotEmpty);
@@ -274,7 +283,9 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       expect(client.view('move').state, isNot(isA<NeedsUser>()));
       expect(Tally.of(client.queue, now).needingYou, 0);
       expect(client.step(keepMine(client)), isA<NotApplicable>());
@@ -350,7 +361,7 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: await sessionOf(store),
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
     }

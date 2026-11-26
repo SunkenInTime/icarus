@@ -3,8 +3,9 @@ import 'dart:math';
 
 import 'package:flutter/painting.dart' show Offset;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart'
-    show AppliedOpAck, ElementDeleteOp;
+    show AppliedOpAck, ElementDeleteOp, RemotePageSnapshot;
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/agents.dart';
@@ -16,6 +17,7 @@ import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_sqlite.dart';
+import 'package:icarus/library_store/server_rows.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
@@ -108,8 +110,8 @@ Future<String> storeAdd(
     payload: payload,
     sortIndex: 1000 + Random().nextInt(1000),
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: add $kind $itemId to page $page of '
       '$strategyId at (${at.$1}, ${at.$2})';
@@ -129,8 +131,8 @@ Future<String> storeAddPage(ProviderContainer c) async {
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: add page ${op.pagePublicId} to '
       '$strategyId with no editor open';
@@ -282,8 +284,8 @@ Future<String> storeDelete(ProviderContainer c, String itemId) async {
     pagePublicId: element.pagePublicId,
     expectedElementRevision: element.revision,
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: delete $itemId of $strategyId over '
       'revision ${element.revision}';
@@ -310,8 +312,8 @@ Future<String> storeSetField(
     ),
     merge: FieldMerge(fields: [field]),
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: $field of $itemId of $strategyId '
       'set to $value as a field merge over revision ${element.revision}';
@@ -360,8 +362,8 @@ Future<String> storeDeletePage(ProviderContainer c, int index) async {
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: delete page $page of $strategyId '
       'with no editor open';
@@ -621,6 +623,237 @@ Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
 }
+
+Future<String> waitStoreReading(ProviderContainer c, Duration within) async {
+  final sender = _sender(c);
+  final before = sender.reads;
+  final until = DateTime.now().add(within);
+  while (true) {
+    if (sender.reads > before) {
+      if (sender.reading case final why?) {
+        return 'CLOUDSTORE the sender had a read in flight when this step '
+            'looked: $why; it may be answered or lost before the network '
+            'returns; sender ${_senderWords(c)}';
+      }
+    }
+    if (DateTime.now().isAfter(until)) {
+      throw StateError(
+        'the sender had no read in flight that it began within '
+        '${within.inSeconds} s; ${sender.reads - before} began and ended; '
+        'sender ${_senderWords(c)}',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
+
+List<String> storeSessionOpenings(
+  ProviderContainer c, {
+  required bool stampExpected,
+}) =>
+    [
+      reconnectSessionOpening(
+        _sender(c).store.reports,
+        storedCloudStrategy(c),
+        stampExpected: stampExpected,
+      ),
+    ];
+
+String reconnectSessionOpening(
+  List<SenderReport> reports,
+  String strategyId, {
+  required bool stampExpected,
+}) {
+  final binds = [
+    for (final (index, report) in reports.indexed)
+      if (report
+          case SessionOpenedFor(
+            strategyId: final id,
+            :final session,
+            :final stamp,
+          ) when id == strategyId)
+        (index: index, session: session, connection: stamp.connection),
+  ];
+  final connections = {for (final bind in binds) bind.connection};
+  if (binds.isEmpty || connections.length != 2) {
+    throw StateError(
+      'the sender bound $strategyId on ${connections.length} connections, '
+      'not two, so the cut cannot be told apart',
+    );
+  }
+  final first = binds.first.connection;
+  final at = binds.indexWhere((bind) => bind.connection != first);
+  final cut = binds[at - 1].index;
+  final session = binds[at].session;
+  final opened = [
+    for (final report in reports.sublist(cut + 1))
+      if (report
+          case EventsWritten(
+            strategyId: final id,
+            :final events,
+            :final effects
+          ) when id == strategyId)
+        for (final opening in effects.whereType<SessionOpened>())
+          (session: opening.session, by: _openedBy(events)),
+  ];
+  String words(({int session, String? by}) opening) =>
+      'session ${opening.session} by ${opening.by ?? 'a result\'s stamp'}';
+  if (opened case [final only] when only.session == session) {
+    if (stampExpected && only.by != null) {
+      throw StateError(
+        'the reconnect after the cut bound $strategyId to ${words(only)}, '
+        'not by a result\'s stamp',
+      );
+    }
+    return 'CLOUDSTORE the reconnect after the cut bound $strategyId to '
+        '${words(only)}, the one session opened from the cut to the end of '
+        'the run';
+  }
+  throw StateError(
+    'the reconnect after the cut bound session $session of $strategyId, and '
+    'from the cut to the end of the run the store opened '
+    '${opened.isEmpty ? 'no session' : opened.map(words).join(', ')}, not '
+    'that session alone',
+  );
+}
+
+List<String> storeAnswerLostAndResent(ProviderContainer c) => [
+      lostAnswerResent(_sender(c).store.reports, storedCloudStrategy(c)),
+    ];
+
+sealed class _Resend {
+  const _Resend(this.words);
+
+  final String words;
+}
+
+final class _AnsweredAsApplied extends _Resend {
+  const _AnsweredAsApplied(super.words);
+}
+
+final class _NeverReceived extends _Resend {
+  const _NeverReceived(super.words);
+}
+
+final class _ResendWrong extends _Resend {
+  const _ResendWrong(super.words);
+}
+
+String lostAnswerResent(List<SenderReport> reports, String strategyId) {
+  final sent = <int, ClaimedBatch>{
+    for (final report in reports)
+      if (report case BatchSentAs(strategyId: final id, :final batch)
+          when id == strategyId)
+        batch.attempt: batch,
+  };
+  final writes = [
+    for (final report in reports)
+      if (report case EventsWritten(strategyId: final id) when id == strategyId)
+        report,
+  ];
+  final lost = <int, String>{};
+  for (final write in writes) {
+    final admitted = {
+      for (final effect in write.effects)
+        if (effect case AnswerAdmitted(:final attempt)) attempt,
+    };
+    for (final event in write.events) {
+      switch (event) {
+        case TransportFailed(:final attempt, :final failure)
+            when sent.containsKey(attempt):
+          lost[attempt] ??= 'no answer came (${failure.name})';
+        case OpAnswered(:final attempt, :final point) ||
+                BatchRefused(:final attempt, :final point) ||
+                BatchAccountMismatch(:final attempt, :final point)
+            when sent.containsKey(attempt) && !admitted.contains(attempt):
+          lost[attempt] ??= 'its answer came on connection '
+              '${point.connection}, which had ended';
+        case _:
+          break;
+      }
+    }
+  }
+  if (lost.isEmpty) {
+    throw StateError(
+      'did not reach the case: none of the ${sent.length} batches sent for '
+      '$strategyId had its answer closed as lost',
+    );
+  }
+  OpAnswer? admittedAnswer(int attempt, String opId) {
+    for (final write in writes) {
+      if (!write.effects.contains(AnswerAdmitted(attempt, opId: opId))) {
+        continue;
+      }
+      for (final event in write.events) {
+        if (event case OpAnswered(attempt: final at, :final answer)
+            when at == attempt && answer.opId == opId) {
+          return answer;
+        }
+      }
+    }
+    return null;
+  }
+
+  final resends = <_Resend>[];
+  for (final MapEntry(key: attempt, value: how) in lost.entries) {
+    final ops = {for (final op in sent[attempt]!.ops) op.opId};
+    final again = [
+      for (final later in sent.values)
+        if (later.attempt > attempt)
+          for (final op in later.ops)
+            if (ops.contains(op.opId)) (attempt: later.attempt, opId: op.opId),
+    ];
+    if (again.isEmpty) {
+      resends.add(
+        _ResendWrong(
+          'attempt $attempt was closed as lost ($how), and none of its ops '
+          'was sent again',
+        ),
+      );
+    }
+    for (final (attempt: resent, :opId) in again) {
+      final first = 'attempt $attempt was closed as lost ($how); $opId was '
+          'sent again in attempt $resent';
+      resends.add(switch (admittedAnswer(resent, opId)) {
+        NoopAnswer(replay: NoopReplay.appliedWhenFirstReceived) =>
+          _AnsweredAsApplied(
+            '$first, and the server answered it as applied when first '
+            'received',
+          ),
+        AppliedAnswer() => _NeverReceived(
+            '$first, and that send applied it: the server never received '
+            'attempt $attempt',
+          ),
+        null => _ResendWrong('$first, and no answer to it was admitted'),
+        final other => _ResendWrong(
+            '$first, and the server answered ${other.runtimeType}',
+          ),
+      });
+    }
+  }
+  if (resends.whereType<_AnsweredAsApplied>().firstOrNull case final done?) {
+    return 'CLOUDSTORE ${done.words}';
+  }
+  final words = resends.map((resend) => resend.words).join('; ');
+  if (resends.every((resend) => resend is _NeverReceived)) {
+    throw StateError('did not reach the case: $words');
+  }
+  throw StateError(words);
+}
+
+String? _openedBy(List<QueueEvent> events) => switch (events
+        .where(
+          (event) =>
+              event is ConnectionReturned ||
+              event is AppRestarted ||
+              event is AccountChanged,
+        )
+        .firstOrNull) {
+      ConnectionReturned() => 'the reconnect event',
+      AppRestarted() => 'the app start',
+      AccountChanged() => 'an account change',
+      _ => null,
+    };
 
 Future<List<String>> storeSyncStates(ProviderContainer c) async {
   final signedIn = switch (c.read(authProvider).user?.id) {
@@ -1027,7 +1260,6 @@ final class CloudStoreLog {
     final asLeft = await _compareWithServer(
       c,
       sender.store.store,
-      build: sender.build,
       when: 'as the run left the store',
       expected: expected,
       lagging: lagging,
@@ -1224,7 +1456,6 @@ Future<List<CloudStoreLine>> _namedReadBack(
         return await _compareWithServer(
           c,
           store,
-          build: sender.build,
           when: 'after reopening the store',
           expected: expected,
           lagging: lagging,
@@ -1246,7 +1477,6 @@ Future<List<CloudStoreLine>> _namedReadBack(
 Future<List<CloudStoreLine>> _compareWithServer(
   ProviderContainer c,
   LibraryStore store, {
-  required String build,
   required String when,
   required List<ExpectedStrategy> expected,
   required List<LaggingRow> lagging,
@@ -1266,11 +1496,45 @@ Future<List<CloudStoreLine>> _compareWithServer(
     ];
   }
   final repository = c.read(convexStrategyRepositoryProvider);
-  final held = <ServerComparison>[];
+  final held = await compareStoreWithServer(
+    store,
+    signedIn: signedIn,
+    server: (
+      pageList: (strategyId) => repository.readPageListAs(
+            strategyId,
+            accountSubject: signedIn.subject,
+          ),
+      page: (strategyId, pageId) => repository.readPageAs(
+            strategyPublicId: strategyId,
+            pagePublicId: pageId,
+            accountSubject: signedIn.subject,
+          ),
+    ),
+  );
+  return comparisonLines(
+    when: when,
+    readAs: signedIn.subject,
+    held: held,
+    expected: expected,
+    lagging: lagging,
+  );
+}
+
+typedef ServerReads = ({
+  Future<RemotePageList> Function(String strategyId) pageList,
+  Future<RemotePageSnapshot> Function(String strategyId, String pageId) page,
+});
+
+Future<List<ServerComparison>> compareStoreWithServer(
+  LibraryStore store, {
+  required Account signedIn,
+  required ServerReads server,
+}) async {
   final library = store.library;
   final summaries = library is LibraryOpen
       ? library.list.strategies
       : const <StrategySummary>[];
+  final held = <ServerComparison>[];
   for (final summary in summaries) {
     final owner = switch (summary.sync) {
       KeptInCloud(owner: OwnedBy(:final account)) ||
@@ -1279,86 +1543,68 @@ Future<List<CloudStoreLine>> _compareWithServer(
       _ => null,
     };
     if (owner == null) continue;
-    final strategyId = summary.publicId;
-    if (owner != signedIn) {
-      held.add(
-        (
-          strategyId: strategyId,
-          name: summary.name,
-          verdict: NotCompared(
-            'the work of ${owner.subject} while signed in as '
-            '${signedIn.subject}',
-          ),
-        ),
-      );
-      continue;
-    }
-    final copy = switch (await LibraryStore.open(
-      MemoryEngine(MemoryStorage()),
-      canRead: appCanRead,
-      build: build,
-    )) {
-      StoreOpened(:final store) => store,
-      StoreNotOpened(:final problem) => throw StateError('$problem'),
-    };
-    final server = CloudShadow(
-      copy,
-      build: build,
-      canRead: appCanRead,
-      breathe: () async {},
-    )..serve(signedIn);
-    try {
-      final list = await repository.readPageListAs(
-        strategyId,
-        accountSubject: signedIn.subject,
-      );
-      server.pageList(strategyId, list, 0);
-      for (final page in list.pages) {
-        server.page(
-          strategyId,
-          await repository.readPageAs(
-            strategyPublicId: strategyId,
-            pagePublicId: page.page.publicId,
-            accountSubject: signedIn.subject,
-          ),
-          0,
-        );
-      }
-      await server.idle;
-      held.add(
-        (
-          strategyId: strategyId,
-          name: summary.name,
-          verdict: Compared(
-            pages: list.pages.length,
-            unjudged: [
-              for (final entry in server.ledger)
-                if (entry.verdict is! ComparedEqual &&
-                    entry.verdict is! ComparedDifferent)
-                  '${entry.what}: ${entry.verdict}',
-            ],
-            differences: (await server.readBack(store))[strategyId],
-          ),
-        ),
-      );
-    } catch (error) {
-      held.add(
-        (
-          strategyId: strategyId,
-          name: summary.name,
-          verdict: NotCompared('could not read the server\'s copy: $error'),
-        ),
-      );
-    } finally {
-      await copy.close();
-    }
+    held.add(
+      (
+        strategyId: summary.publicId,
+        name: summary.name,
+        verdict: owner == signedIn
+            ? await _againstServer(store, summary.publicId, signedIn, server)
+            : NotCompared(
+                'the work of ${owner.subject} while signed in as '
+                '${signedIn.subject}',
+              ),
+      ),
+    );
   }
-  return comparisonLines(
-    when: when,
-    readAs: signedIn.subject,
-    held: held,
-    expected: expected,
-    lagging: lagging,
+  return held;
+}
+
+Future<StoreVerdict> _againstServer(
+  LibraryStore store,
+  String strategyId,
+  Account signedIn,
+  ServerReads server,
+) async {
+  final rows = ServerRows();
+  final unjudged = <String>[];
+  final RemotePageList list;
+  try {
+    list = await server.pageList(strategyId);
+    switch (pageListRead(list)) {
+      case RowsRead(:final value):
+        rows.header(value);
+      case RowsUnreadable(:final problem):
+        return Compared(
+          pages: list.pages.length,
+          unjudged: [
+            'the page list: the server rows could not be read: $problem'
+          ],
+          differences: null,
+        );
+    }
+    for (final page in list.pages) {
+      final pageId = page.page.publicId;
+      switch (pageRead(await server.page(strategyId, pageId), appCanRead)) {
+        case RowsRead(:final value):
+          rows.page(value);
+        case RowsUnreadable(:final problem):
+          unjudged
+              .add('page $pageId: the server rows could not be read: $problem');
+      }
+    }
+  } catch (error) {
+    return NotCompared('could not read the server\'s copy: $error');
+  }
+  return Compared(
+    pages: list.pages.length,
+    unjudged: unjudged,
+    differences: await differencesFromServer(
+      store,
+      strategyId,
+      rows,
+      account: signedIn,
+      pages: null,
+    ),
   );
 }
 
@@ -1616,6 +1862,8 @@ String _eventWords(QueueEvent event) => switch (event) {
         'attempt $attempt: no answer (${failure.name})',
       BatchRefused(:final attempt, :final refusal) =>
         'attempt $attempt refused whole (${refusal.name})',
+      BatchAccountMismatch(:final attempt) =>
+        'attempt $attempt refused for another account',
       ClaimReleased(:final attempt) => 'attempt $attempt given back unsent',
       UserUsedCloud(:final opId) =>
         'the user took the cloud\'s version of $opId',

@@ -16,6 +16,8 @@ import 'cloud_shadow_test.dart'
 import 'sender_world.dart';
 
 const seeds = int.fromEnvironment('SENDER_MODEL_SEEDS', defaultValue: 480);
+const from = int.fromEnvironment('SENDER_MODEL_FROM');
+final stampsMade = <String, int>{};
 const steps = 70;
 const strategies = [strategyId, otherStrategy];
 
@@ -114,12 +116,19 @@ final class Model {
     }
   }
 
+  void _refusedOn(Generation stamped) {
+    final now =
+        Generation(client: server.client, connection: server.connection);
+    if (connection != null && !stamped.isBefore(now)) refusedAt = signIns;
+  }
+
   void restart() {
     _readReports();
     world.sender.dispose();
     world.store.close();
     async.flushMicrotasks();
     restarts++;
+    server.appStarted();
     refusedAt = null;
     _read = 0;
     _restartsWritten.clear();
@@ -312,7 +321,8 @@ final class Model {
       ..roles[strategy] = StoreReadRole.viewer
       ..answerWith(
         strategy,
-        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+            point: stampedWhenAnswered),
       );
     log.add('$strategy refused as a viewer');
   }
@@ -575,18 +585,26 @@ final class Model {
       case 4:
         server.answerNext(
           strategy,
-          (_) => Future.microtask(() {
-            refusedAt = signIns;
-            return const StoreBatchRefusedWhole(BatchRefusal.unauthenticated);
-          }),
+          (_) {
+            final applied = server.current.generation;
+            return Future.microtask(() {
+              _refusedOn(applied);
+              return const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
+                  point: stampedWhenAnswered);
+            });
+          },
         );
       case 5:
         server.answerNext(
           strategy,
-          (_) => Future.microtask(() {
-            refusedAt = signIns;
-            return const StoreBatchAccountMismatch('another account');
-          }),
+          (_) {
+            final applied = server.current.generation;
+            return Future.microtask(() {
+              _refusedOn(applied);
+              return const StoreBatchAccountMismatch('another account',
+                  point: stampedWhenAnswered);
+            });
+          },
         );
       case _:
         final answer = Completer<StoreBatchOutcome>();
@@ -628,29 +646,46 @@ final class Model {
       case 0:
         server.answerReadNext(
           strategy,
-          (_) => Future.microtask(() {
-            refusedAt = signIns;
-            return const StoreReadRefused(
-              StoreReadRefusal.accountMismatch,
-              'another account',
+          (call) {
+            final read = Generation(
+              client: server.client,
+              connection: server.connection,
             );
-          }),
+            final held = world.holds(call.strategyId);
+            return Future.microtask(() {
+              if (held) _refusedOn(read);
+              return const StoreReadRefused(
+                StoreReadRefusal.accountMismatch,
+                'another account',
+                point: stampedWhenAnswered,
+              );
+            });
+          },
         );
       case 1:
         server.answerReadNext(
           strategy,
-          (_) => Future.microtask(() {
-            refusedAt = signIns;
-            return const StoreReadRefused(
-              StoreReadRefusal.unauthenticated,
-              'signed out',
+          (call) {
+            final read = Generation(
+              client: server.client,
+              connection: server.connection,
             );
-          }),
+            final held = world.holds(call.strategyId);
+            return Future.microtask(() {
+              if (held) _refusedOn(read);
+              return const StoreReadRefused(
+                StoreReadRefusal.unauthenticated,
+                'signed out',
+                point: stampedWhenAnswered,
+              );
+            });
+          },
         );
       case 2:
         server.answerReadWith(
           strategy,
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden',
+              point: stampedWhenAnswered),
         );
       case 3:
         server.answerReadWith(
@@ -660,7 +695,8 @@ final class Model {
       case 4:
         server.answerReadWith(
           strategy,
-          const StoreReadUnreadable('rows this build cannot read'),
+          const StoreReadUnreadable('rows this build cannot read',
+              point: stampedWhenAnswered),
         );
       case 7:
         server.answerReadNext(strategy, (call) {
@@ -672,7 +708,8 @@ final class Model {
           final late = Completer<StoreReadOutcome>();
           Timer(
             const Duration(seconds: 60),
-            () => late.complete(const StoreReadAnswered(StrategyGone())),
+            () => late.complete(const StoreReadAnswered(StrategyGone(),
+                point: stampedWhenAnswered)),
           );
           return late.future;
         });
@@ -694,7 +731,8 @@ final class Model {
               );
               world.account = account;
           }
-          return const StoreReadAnswered(StrategyGone());
+          return const StoreReadAnswered(StrategyGone(),
+              point: stampedWhenAnswered);
         });
     }
   }
@@ -801,6 +839,11 @@ final class Model {
   void checkSafety() {
     checkAccounted();
     expect(broken, isEmpty, reason: trail);
+    expect(
+      server.floorBroken,
+      isEmpty,
+      reason: 'a subject was read twice inside the floor\n$trail',
+    );
     expect(server.anyAppliedTwice, isFalse, reason: 'applied twice\n$trail');
     expect(
       server.wrongAccount.map((call) => '${call.strategyId} ${call.account}'),
@@ -1051,7 +1094,7 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
       async,
       Random(seed),
       MemoryStorage(),
-      FakeServer(),
+      FakeServer(varies: Random(seed * 31 + 7)),
       dropLost: dropLost,
       drops: dropLost == null ? null : Random(0),
     );
@@ -1082,6 +1125,9 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
       found?.add(
           'seed $seed${dropLost == null ? '' : ' (ConnectionLost ${dropLost ? 'dropped' : 'kept'})'}: ${failure.message}');
     } finally {
+      for (final MapEntry(:key, :value) in model.server.made.entries) {
+        stampsMade[key] = (stampsMade[key] ?? 0) + value;
+      }
       model.world.sender.dispose();
       model.world.store.close();
       async.flushMicrotasks();
@@ -1093,13 +1139,33 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
 void main() {
   test('the loop keeps its promises through $seeds random runs', () {
     final found = <String>[];
-    for (var seed = const int.fromEnvironment('SENDER_MODEL_FROM');
-        seed < seeds;
-        seed++) {
+    var ran = 0;
+    for (var seed = from; seed < seeds; seed++) {
+      ran++;
       runSeed(seed, found: found);
       if (found.isNotEmpty) break;
     }
+    expect(
+      ran,
+      greaterThan(0),
+      reason:
+          'SENDER_MODEL_FROM=$from is at or past SENDER_MODEL_SEEDS=$seeds, '
+          'so no seed ran',
+    );
     expect(found, isEmpty);
+    printOnFailure('$stampsMade');
+    if (from == 0 && seeds >= 480) {
+      for (final MapEntry(key: shape, value: least) in const {
+        'two calls answered at one snapshot': 800,
+        'a new snapshot at the same time': 750,
+        'a second client': 270,
+        'time went back on a new connection': 65,
+        'a failure on the last snapshot the client applied': 110,
+        'a failure before the client applied any state': 8,
+      }.entries) {
+        expect(stampsMade[shape] ?? 0, greaterThan(least), reason: shape);
+      }
+    }
   });
 
   test(

@@ -151,8 +151,8 @@ final class StoreModel {
       final rows = initialRows();
       final result = await store.addCloudStrategy(
         testAccount,
-        headerReadOf(rows),
-        pageReadsOf(rows),
+        stamped(headerReadOf(rows)),
+        stampedPages(pageReadsOf(rows)),
       );
       if (result case Refused(reason: StrategyAlreadyInStore())) {
         count('add in doubt landed');
@@ -208,7 +208,17 @@ final class StoreModel {
     return value;
   }
 
-  Future<ResultSource> started() async => readFrom((await sync()).queue);
+  Future<ReadAsked> started() async => askRead((await sync()).queue);
+
+  Future<BaseArrived> arrivedIn(ArrivedBase base, int session) async {
+    final asked = await started();
+    return BaseArrived(
+      base,
+      session: session,
+      point: asked.point,
+      requestedAt: asked.requestedAt,
+    );
+  }
 
   Future<CloudStrategy> sync() async => cloudOf(
     switch (await reading(() => store.readStrategy(strategyId))) {
@@ -245,7 +255,7 @@ final class StoreModel {
           '${attempt.number}': attemptToJson(attempt),
       },
       'facts': factsToJson(cloud.owner, memory.strategy),
-      'landed': [for (final work in memory.landed) landedToJson(work)],
+      'landed': memory.landed,
       'counters': memory.nextAttempt,
     };
     final got = {
@@ -260,11 +270,10 @@ final class StoreModel {
             in (disk.landed.entries.toList()
               ..sort((a, b) => a.key.compareTo(b.key))))
           switch (name.split('/')) {
-            [_, final attempt, final position] => landedToJson(
+            [_, final attempt, final position] =>
               (landedFromText(int.parse(attempt), int.parse(position), text)
                       as CloudRowRead<LandedWork>)
                   .value,
-            ),
             _ => throw StateError(name),
           },
       ],
@@ -285,8 +294,10 @@ final class StoreModel {
     }
     final stored = shownFromGroups(disk.groups);
     if (stored is! ShownRead ||
-        stored.shown !=
-            memory.shown.inNewSession().withTrashedPages(const [])) {
+        !const DeepCollectionEquality().equals(
+          shownToGroups(stored.shown),
+          shownToGroups(memory.shown.inNewSession().withTrashedPages(const [])),
+        )) {
       throw StateError(
         'after $label the results on disk differ from memory: '
         '${disk.groups.keys} vs ${memory.shown.content.keys}',
@@ -488,9 +499,7 @@ final class StoreModel {
     if (commits != before) {
       throw StateError('refusing the strategy made a commit');
     }
-    if (await store.record(testAccount, strategyId, const [
-          ConnectionReturned(),
-        ])
+    if (await store.record(testAccount, strategyId, [reconnected()])
         case Refused(reason: StoredRowsDisagree())) {
       count('events refused after a refusal');
     } else {
@@ -703,7 +712,8 @@ final class StoreModel {
     while (inFlight.isNotEmpty) {
       final (attempt, owner, ops) = inFlight.removeAt(0);
       await record([
-        for (final op in ops) OpAnswered(attempt, server.apply(owner, op)),
+        for (final op in ops)
+          OpAnswered(attempt, server.apply(owner, op), point: tick()),
       ], 'answers for $attempt');
     }
   }
@@ -841,19 +851,16 @@ final class StoreModel {
     final answers = [for (final op in ops) server.apply(owner, op)];
     if (random.nextInt(4) == 0) {
       await record([
-        for (final answer in answers) OpAnswered(attempt, answer),
-        BaseArrived(
-          headerReadOf(server.rows),
-          session: live,
-          from: await started(),
-        ),
-        const ConnectionReturned(),
+        for (final answer in answers)
+          OpAnswered(attempt, answer, point: tick()),
+        await arrivedIn(headerReadOf(server.rows), live),
+        reconnected(),
       ], 'answers for $attempt with a header read in one call');
       count('mixed event lists');
       return;
     }
     await record([
-      for (final answer in answers) OpAnswered(attempt, answer),
+      for (final answer in answers) OpAnswered(attempt, answer, point: tick()),
     ], 'answers for $attempt');
   }
 
@@ -872,9 +879,7 @@ final class StoreModel {
   }
 
   Future<void> readOne(ArrivedBase base, String label) async {
-    await record([
-      BaseArrived(base, session: live, from: await started()),
-    ], label);
+    await record([await arrivedIn(base, live)], label);
   }
 
   Future<void> lane() async {
@@ -882,7 +887,11 @@ final class StoreModel {
     switch (standingOf(cloud.queue)) {
       case Standing.editAccessLost:
         await record([
-          EditAccessConfirmed(afterAttempt: cloud.queue.nextAttempt - 1),
+          EditAccessConfirmed(
+            afterAttempt: cloud.queue.nextAttempt - 1,
+            session: cloud.queue.session.number,
+            point: tick(),
+          ),
         ], 'access confirmed');
       case Standing.upgradeRequired:
         build = 'build-up-${restarts++}';
@@ -920,11 +929,7 @@ final class StoreModel {
     if (random.nextInt(3) == 0 && pages.isNotEmpty) {
       await record([
         for (final page in pages)
-          BaseArrived(
-            pageReadOf(server.rows, page),
-            session: live,
-            from: await started(),
-          ),
+          await arrivedIn(pageReadOf(server.rows, page), live),
       ], 'read ${pages.length} pages in one call');
       count('page reads in one call');
     } else {
@@ -974,15 +979,19 @@ final class StoreModel {
       _ => (headerReadOf(server.rows), 'header'),
     };
     if (teammates) teammate();
-    if (await record([
-          const ConnectionLost(),
-          const ConnectionReturned(),
-        ], 'reconnect') ==
+    if (await record([const ConnectionLost(), reconnected()], 'reconnect') ==
         null) {
       return;
     }
     final before = storage.contents;
-    final stale = [BaseArrived(base, session: ended, from: endedFrom)];
+    final stale = [
+      BaseArrived(
+        base,
+        session: ended,
+        point: endedFrom.point,
+        requestedAt: endedFrom.requestedAt,
+      ),
+    ];
     final result = await store.record(testAccount, strategyId, stale);
     log.add(
       'a $kind from the ended session arrives -> ${describeSaving(result)}',
@@ -1003,7 +1012,7 @@ final class StoreModel {
 
   Future<void> sessionOpenedThenReopened() async {
     final opened = await record([
-      const ConnectionReturned(),
+      reconnected(),
     ], 'a session opened and never used');
     if (opened == null) return;
     final session = (await sync()).queue.session.number;
@@ -1017,7 +1026,8 @@ final class StoreModel {
       BaseArrived(
         pageReadOf(server.rows, openPage),
         session: session,
-        from: sessionFrom,
+        point: sessionFrom.point,
+        requestedAt: sessionFrom.requestedAt,
       ),
     ];
     final result = await store.record(testAccount, strategyId, stale);
@@ -1041,7 +1051,7 @@ final class StoreModel {
     if (Tally.of(cloud.queue, clock).total > 0 || inFlight.isNotEmpty) return;
     faults = false;
     final old = cloud.queue.session.number;
-    final oldFrom = readFrom(cloud.queue);
+    final oldFrom = askRead(cloud.queue);
     final oldBase = headerReadOf(server.rows);
     final oldPage = pageReadOf(server.rows, openPage);
     final removed = await store.editLibrary([const RemoveStrategy(strategyId)]);
@@ -1057,8 +1067,8 @@ final class StoreModel {
     final now = reads.take(random.nextInt(reads.length + 1)).toList();
     final added = await store.addCloudStrategy(
       testAccount,
-      headerReadOf(rows),
-      now,
+      stamped(headerReadOf(rows)),
+      stampedPages(now),
     );
     if (added is! Saved<StrategySummary, LibraryRefusal>) {
       throw StateError('adding the strategy again: $added');
@@ -1067,16 +1077,25 @@ final class StoreModel {
     final later = reads.skip(now.length).toList();
     if (later.isNotEmpty) {
       await record([
-        for (final read in later)
-          BaseArrived(read, session: live, from: await started()),
+        for (final read in later) await arrivedIn(read, live),
       ], 'the rest of the import in a later call');
       count('imports in several calls');
     }
     final before = storage.contents;
     final stale = [
-      BaseArrived(oldBase, session: old, from: oldFrom),
+      BaseArrived(
+        oldBase,
+        session: old,
+        point: oldFrom.point,
+        requestedAt: oldFrom.requestedAt,
+      ),
       if (oldPage is PageRead)
-        BaseArrived(oldPage, session: old, from: oldFrom),
+        BaseArrived(
+          oldPage,
+          session: old,
+          point: oldFrom.point,
+          requestedAt: oldFrom.requestedAt,
+        ),
     ];
     final result = await store.record(testAccount, strategyId, stale);
     log.add(
@@ -1313,6 +1332,7 @@ final class StoreModel {
               revision: target?.revision ?? 1,
               life: fixtureLife,
             ),
+            point: tick(),
           ),
         ]),
       ),
@@ -1336,9 +1356,7 @@ final class StoreModel {
       ),
       (
         'another account records a connection',
-        () => store.record(otherAccount, strategyId, [
-          const ConnectionReturned(),
-        ]),
+        () => store.record(otherAccount, strategyId, [reconnected()]),
       ),
       (
         'another account records a result of the current session',
@@ -1346,7 +1364,7 @@ final class StoreModel {
           BaseArrived(
             headerReadOf(server.rows),
             session: this.live,
-            from: ReadOfThisDevice(ReadStart(session: this.live, sequence: 0)),
+            point: tick(),
           ),
         ]),
       ),
@@ -1508,7 +1526,7 @@ final class StoreModel {
           switch (random.nextInt(5)) {
             0 => const AccountChanged(),
             1 || 2 => const ConnectionLost(),
-            _ => const ConnectionReturned(),
+            _ => reconnected(),
           },
         ], 'connection');
     }

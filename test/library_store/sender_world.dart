@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:math';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -131,7 +131,12 @@ int lifeOfChecked(StrategyRowSet rows, StrategyOp op) {
   return (row == null ? null : createdAtOf(row)) ?? firstLife;
 }
 
+const stampedWhenAnswered = ResultPoint(client: 0, connection: 0, snapshot: 0);
+
 final class FakeServer {
+  FakeServer({this.varies});
+
+  final Random? varies;
   int nextLife = firstLife + 1;
   final calls = <ServerCall>[];
   final log = <String>[];
@@ -150,6 +155,96 @@ final class FakeServer {
   DateTime Function()? clock;
   String? Function()? whyNow;
   StoreReadOutcome? Function(ReadCall call)? overrideRead;
+  int client = 1;
+  int _connection = 1;
+  int _applied = 1;
+  var _snapshot = 0;
+  int? _time;
+  int _lag = 0;
+  List<(String, StrategyRowSet)>? _seen;
+  final made = <String, int>{};
+
+  void _count(String what) => made[what] = (made[what] ?? 0) + 1;
+
+  int get connection => _connection;
+
+  set connection(int next) {
+    if (next == _connection) return;
+    _connection = next;
+    final random = varies;
+    if (random == null) return;
+    if (random.nextBool()) _lag = 1 + random.nextInt(2000000000);
+    if (random.nextInt(5) == 0) {
+      client++;
+      _applied = next;
+      _snapshot = 0;
+      _time = null;
+      _seen = null;
+      _count('a second client');
+    }
+  }
+
+  int get _nowNanos =>
+      (clock?.call() ?? DateTime.now()).microsecondsSinceEpoch * 1000 +
+      skew * 1000000;
+
+  ResultPoint get current => ResultPoint(
+        client: client,
+        connection: _applied,
+        snapshot: _snapshot,
+        serverTime: _time,
+      );
+
+  bool _unchangedSince(List<(String, StrategyRowSet)>? seen) =>
+      seen != null &&
+      seen.length == rows.length &&
+      seen.every((held) => identical(rows[held.$1], held.$2));
+
+  ResultPoint stamp() {
+    final random = varies;
+    final sameConnection = _applied == _connection;
+    if (random != null &&
+        _time != null &&
+        sameConnection &&
+        _unchangedSince(_seen) &&
+        random.nextInt(3) == 0) {
+      _count('two calls answered at one snapshot');
+      return current;
+    }
+    _seen = [for (final MapEntry(:key, :value) in rows.entries) (key, value)];
+    _snapshot++;
+    _applied = _connection;
+    final before = _time;
+    if (random != null &&
+        sameConnection &&
+        before != null &&
+        random.nextInt(6) == 0) {
+      _count('a new snapshot at the same time');
+    } else {
+      final floor = sameConnection ? before ?? 0 : 0;
+      _time = max(floor, _nowNanos - _lag) + 1 + (random?.nextInt(1000) ?? 0);
+    }
+    _lag ~/= 2;
+    if (!sameConnection && before != null && _time! < before) {
+      _count('time went back on a new connection');
+    }
+    return current;
+  }
+
+  ResultPoint failedOn(ResultPoint applied) {
+    if (varies == null) return applied;
+    _count(
+      applied.serverTime == null
+          ? 'a failure before the client applied any state'
+          : 'a failure on the last snapshot the client applied',
+    );
+    return applied;
+  }
+
+  ResultPoint failed() => varies == null ? stamp() : failedOn(current);
+
+  Future<({int client, int connection})> generation() async =>
+      (client: client, connection: _connection);
 
   int get applied => appliedTimes.length;
 
@@ -257,6 +352,7 @@ final class FakeServer {
             (createdAtOf(held.strategy) ?? firstLife) != call.strategyLife) {
       return StoreBatchRefusedWhole(
         BatchRefusal.strategyReplaced,
+        point: failed(),
         currentLife: createdAtOf(held.strategy) ?? firstLife,
       );
     }
@@ -264,12 +360,14 @@ final class FakeServer {
     final asked = call.serverTime is ServerTimeAsked;
     switch (call.basis) {
       case null when asked && call.unchecked.isNotEmpty:
-        return const StoreBatchOutsideWindow(
+        return StoreBatchOutsideWindow(
           'An unchecked change needs a live basis',
+          point: failed(),
         );
       case final basis? when basis > now || now - basis > 30000:
-        return const StoreBatchOutsideWindow(
+        return StoreBatchOutsideWindow(
           'The batch arrived too long after its live basis',
+          point: failed(),
         );
       case _:
         break;
@@ -285,9 +383,59 @@ final class FakeServer {
           ),
       ],
       complete: true,
+      point: stamp(),
       serverTime: asked ? now : null,
     );
   }
+
+  static StoreReadOutcome _readAt(StoreReadOutcome outcome, ResultPoint at) =>
+      switch (outcome) {
+        StoreReadAnswered(:final base, :final role, :final point)
+            when point == stampedWhenAnswered =>
+          StoreReadAnswered(base, point: at, role: role),
+        StoreReadUnreadable(:final problem, :final point)
+            when point == stampedWhenAnswered =>
+          StoreReadUnreadable(problem, point: at),
+        StoreReadRefused(:final refusal, :final why, :final point)
+            when point == stampedWhenAnswered =>
+          StoreReadRefused(refusal, why, point: at),
+        _ => outcome,
+      };
+
+  static StoreBatchOutcome _answeredAt(
+    StoreBatchOutcome outcome,
+    ResultPoint at, {
+    required ResultPoint failedAt,
+  }) =>
+      switch (outcome) {
+        StoreBatchAnswered(
+          :final answers,
+          :final complete,
+          :final serverTime,
+          :final point
+        )
+            when point == stampedWhenAnswered =>
+          StoreBatchAnswered(
+            answers,
+            complete: complete,
+            point: at,
+            serverTime: serverTime,
+          ),
+        StoreBatchRefusedWhole(:final refusal, :final currentLife, :final point)
+            when point == stampedWhenAnswered =>
+          StoreBatchRefusedWhole(
+            refusal,
+            point: failedAt,
+            currentLife: currentLife,
+          ),
+        StoreBatchOutsideWindow(:final why, :final point)
+            when point == stampedWhenAnswered =>
+          StoreBatchOutsideWindow(why, point: failedAt),
+        StoreBatchAccountMismatch(:final why, :final point)
+            when point == stampedWhenAnswered =>
+          StoreBatchAccountMismatch(why, point: failedAt),
+        _ => outcome,
+      };
 
   OpAnswer teammate(String strategyId, StrategyOp op) =>
       _applyOne(strategyId, 'teammate', op);
@@ -318,7 +466,16 @@ final class FakeServer {
     }
     final queued = _answers[strategyPublicId];
     if (queued != null && queued.isNotEmpty) {
-      return queued.removeAt(0)(call);
+      final answering = queued.removeAt(0)(call);
+      final applied = current;
+      final point = stamp();
+      return answering.then(
+        (outcome) => _answeredAt(
+          outcome,
+          point,
+          failedAt: varies == null ? point : failedOn(applied),
+        ),
+      );
     }
     return Future.value(applyAll(call));
   }
@@ -341,17 +498,21 @@ final class FakeServer {
     if (held == null) {
       return StoreReadAnswered(
         call.page == null ? const StrategyGone() : PageGone(call.page!),
+        point: stamp(),
       );
     }
     final page = call.page;
     if (page == null) {
       return StoreReadAnswered(
         headerOf(call.strategyId),
+        point: stamp(),
         role: roles[call.strategyId] ?? StoreReadRole.owner,
       );
     }
     final pageRow = held.page(page);
-    if (pageRow == null) return StoreReadAnswered(PageGone(page));
+    if (pageRow == null) {
+      return StoreReadAnswered(PageGone(page), point: stamp());
+    }
     return StoreReadAnswered(
       PageRead(
         page: lived(pageRow),
@@ -360,6 +521,7 @@ final class FakeServer {
           for (final row in held.lineupGroupsOn(page)) lived(row),
         ],
       ),
+      point: stamp(),
     );
   }
 
@@ -393,10 +555,12 @@ final class FakeServer {
     }
     final queued = _readAnswers[call.strategyId];
     if (queued != null && queued.isNotEmpty) {
-      return queued.removeAt(0)(call);
+      final answering = queued.removeAt(0)(call);
+      final point = stamp();
+      return answering.then((outcome) => _readAt(outcome, point));
     }
     if (overrideRead?.call(call) case final outcome?) {
-      return Future.value(outcome);
+      return Future.value(_readAt(outcome, stamp()));
     }
     return Future.value(_answerRead(call));
   }
@@ -505,7 +669,7 @@ final class RefusingEngine implements StorageEngine {
 
 Future<void> none() async {}
 
-final class _Flag {
+final class OnOff {
   var value = false;
 }
 
@@ -630,7 +794,7 @@ final class World {
   final LibraryStore store;
   final FakeServer server;
   final CloudSender sender;
-  late _Flag dropsConnectionLost;
+  late OnOff dropsConnectionLost;
   late _Slept _slept;
   late _Shows _shows;
 
@@ -671,6 +835,7 @@ final class World {
 
   set connection(int? next) {
     _connection = next;
+    if (next != null) server.connection = next;
     _push();
   }
 
@@ -710,7 +875,7 @@ final class World {
   }) {
     final inputs = startingWith ??
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
-    final dropsConnectionLost = _Flag();
+    final dropsConnectionLost = OnOff();
     final slept = _Slept();
     final shows = _Shows();
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
@@ -723,19 +888,21 @@ final class World {
     ).then(
       (opened) => store = switch (opened) {
         StoreOpened(:final store) => store,
-        StoreNotOpened(:final problem) => throw StateError('$problem'),
+        StoreNotOpened(:final problem) => throw StateError(problem.toString()),
       },
     );
     async.flushMicrotasks();
     final fake = server ?? FakeServer();
     fake
       ..owners[strategyId] ??= servedAccount
+      ..connection = inputs.connection ?? fake.connection
       ..clock = () => start.add(async.elapsed);
     fake.rows[strategyId] ??= serverRows();
     final sender = CloudSender(
       store: SlowSenderStore(store!),
       send: fake.send,
       reads: fake.reads,
+      generation: fake.generation,
       build: build,
       clientId: clientId,
       inputs: inputs,
@@ -782,13 +949,14 @@ final class World {
     );
     final header = switch (pageListRead(list)) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError('$problem'),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[id] = StrategyRowSet(
       strategy: header.strategy as ReadableStrategy,
     );
     Saving<StrategySummary, LibraryRefusal>? added;
-    store.addCloudStrategy(whose, header, const []).then(
+    store.addCloudStrategy(
+        whose, StampedRead(header, server.stamp()), const []).then(
       (value) => added = value,
     );
     async.flushMicrotasks();
@@ -868,7 +1036,7 @@ final class World {
       pageList(serverRows(), more: [secondPage()]),
     )) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError('$problem'),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[strategyId] = server.rows[strategyId]!
         .withRows([...header.pages, ...header.settings]);
@@ -897,7 +1065,7 @@ final class World {
       ),
     )) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError(problem),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[strategyId] = server.rows[strategyId]!
         .withRows([...header.pages, ...header.settings]);
@@ -957,34 +1125,15 @@ final class World {
     }
   }
 
-  ResultSource beginRead() {
-    Saving<Recorded, CommitRefusal>? recorded;
-    store.record(servedAccount, strategyId, const [ReadBegun()]).then(
-        (value) => recorded = value);
-    async.flushMicrotasks();
-    return switch (recorded) {
-      Saved(value: Recorded(outcomes: [ReportApplied(:final effects)])) =>
-        effects.whereType<ReadStartIssued>().single.source,
-      final other => throw StateError('no read start was issued: $other'),
-    };
-  }
-
   void recordRead(List<ArrivedBase> results) {
-    final from = beginRead();
-    _record([
-      for (final result in results)
-        BaseArrived(result, session: cloud().queue.session.number, from: from),
-    ]);
-  }
-
-  void recordAsRead(List<ArrivedBase> results) {
-    final queue = cloud().queue;
+    final session = cloud().queue.session;
     _record([
       for (final result in results)
         BaseArrived(
           result,
-          session: queue.session.number,
-          from: ReadOfThisDevice(queue.session.readStart),
+          session: session.number,
+          point: server.stamp(),
+          requestedAt: session.sequence,
         ),
     ]);
   }
@@ -1126,6 +1275,19 @@ final class World {
         for (final report in sender.store.reports)
           if (report case EventsWritten(:final strategyId, :final events)
               when strategyId == strategy)
+            ...events,
+      ];
+
+  static bool isSessionEvent(QueueEvent event) =>
+      event is AppRestarted ||
+      event is AccountChanged ||
+      event is ConnectionReturned ||
+      event is ConnectionLost;
+
+  List<QueueEvent> sessionWrites([String strategy = strategyId]) => [
+        for (final report in sender.store.reports)
+          if (report case EventsWritten(:final strategyId, :final events)
+              when strategyId == strategy && events.every(isSessionEvent))
             ...events,
       ];
 

@@ -9,16 +9,9 @@ import 'store_support.dart';
 final rows = initialRows();
 
 Shown shownOfRows() {
-  var shown = Shown.nothing
-      .taken(headerReadOf(rows), started: ReadStart.beforeAnyRead)
-      .shown;
+  var shown = Shown.nothing.taken(headerReadOf(rows), arrival: null).shown;
   for (final page in rows.pages) {
-    shown = shown
-        .taken(
-          pageReadOf(rows, page.publicId),
-          started: ReadStart.beforeAnyRead,
-        )
-        .shown;
+    shown = shown.taken(pageReadOf(rows, page.publicId), arrival: null).shown;
   }
   return shown;
 }
@@ -147,7 +140,7 @@ void main() {
               page('page-b', sortIndex: 1, deleted: true, revision: 2),
             ]),
           ),
-          started: ReadStart.beforeAnyRead,
+          arrival: null,
         )
         .shown;
     final wrong = Shown(
@@ -164,6 +157,8 @@ void main() {
       fresh: both.fresh,
       listTaken: both.listTaken,
       pagesTaken: both.pagesTaken,
+      listSaid: both.listSaid,
+      pageSaid: both.pageSaid,
       fence: both.fence,
     );
     expect(

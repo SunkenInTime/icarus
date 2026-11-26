@@ -80,68 +80,121 @@ final class ShownRow {
   int get hashCode => Object.hash(page, revision, life, digest);
 }
 
+final class Seen {
+  const Seen(this.at, {this.gone = false});
+
+  final Arrival? at;
+  final bool gone;
+
+  bool reaches(AfterAnswer? mark) =>
+      mark == null || (at != null && mark.reachedBy(at!));
+
+  @override
+  bool operator ==(Object other) =>
+      other is Seen && other.at == at && other.gone == gone;
+
+  @override
+  int get hashCode => Object.hash(at, gone);
+}
+
 final class Freshness {
   Freshness._({
-    required this.listSinceTouch,
+    required this.listRead,
     required Set<String> listed,
-    required Set<String> touchedSinceList,
-    required Set<String> pagesSinceTouch,
-    required Set<String> goneByResult,
+    required Map<String, Seen> pagesRead,
+    required this.listMark,
+    required Map<String, AfterAnswer> listMarks,
+    required this.allPagesMark,
+    required Map<String, AfterAnswer> pageMarks,
   }) : listed = Set.unmodifiable(listed),
-       goneByResult = Set.unmodifiable(goneByResult),
-       touchedSinceList = Set.unmodifiable(touchedSinceList),
-       pagesSinceTouch = Set.unmodifiable(pagesSinceTouch);
+       pagesRead = Map.unmodifiable(pagesRead),
+       listMarks = Map.unmodifiable(listMarks),
+       pageMarks = Map.unmodifiable(pageMarks);
 
   static final none = Freshness._(
-    listSinceTouch: false,
+    listRead: null,
     listed: const {},
-    touchedSinceList: const {},
-    pagesSinceTouch: const {},
-    goneByResult: const {},
+    pagesRead: const {},
+    listMark: null,
+    listMarks: const {},
+    allPagesMark: null,
+    pageMarks: const {},
   );
 
-  final bool listSinceTouch;
-  final Set<String> goneByResult;
+  final Seen? listRead;
   final Set<String> listed;
-  final Set<String> touchedSinceList;
-  final Set<String> pagesSinceTouch;
+  final Map<String, Seen> pagesRead;
+  final AfterAnswer? listMark;
+  final Map<String, AfterAnswer> listMarks;
+  final AfterAnswer? allPagesMark;
+  final Map<String, AfterAnswer> pageMarks;
 
-  Freshness afterList(Iterable<String> live) {
-    final listedNow = {...live};
-    return Freshness._(
-      listSinceTouch: true,
-      listed: listedNow,
-      touchedSinceList: const {},
-      pagesSinceTouch: pagesSinceTouch,
-      goneByResult: goneByResult,
-    );
-  }
-
-  Freshness afterPage(String page, {required bool gone}) => Freshness._(
-    listSinceTouch: listSinceTouch,
-    listed: listed,
-    touchedSinceList: touchedSinceList,
-    pagesSinceTouch: {...pagesSinceTouch, page},
-    goneByResult: gone
-        ? {...goneByResult, page}
-        : ({...goneByResult}..remove(page)),
+  Freshness _copy({
+    Seen? listRead,
+    bool forgetReads = false,
+    Set<String>? listed,
+    Map<String, Seen>? pagesRead,
+    AfterAnswer? listMark,
+    Map<String, AfterAnswer>? listMarks,
+    AfterAnswer? allPagesMark,
+    Map<String, AfterAnswer>? pageMarks,
+  }) => Freshness._(
+    listRead: forgetReads ? null : listRead ?? this.listRead,
+    listed: listed ?? this.listed,
+    pagesRead: pagesRead ?? this.pagesRead,
+    listMark: listMark ?? this.listMark,
+    listMarks: listMarks ?? this.listMarks,
+    allPagesMark: allPagesMark ?? this.allPagesMark,
+    pageMarks: pageMarks ?? this.pageMarks,
   );
 
-  Freshness touched(Iterable<String> pages, {required bool list}) =>
-      Freshness._(
-        listSinceTouch: listSinceTouch && !list,
-        listed: listed,
-        touchedSinceList: {...touchedSinceList, ...pages},
-        pagesSinceTouch: list
-            ? const {}
-            : ({...pagesSinceTouch}..removeAll(pages)),
-        goneByResult: goneByResult,
-      );
+  Freshness afterList(Iterable<String> live, Arrival? arrival) =>
+      _copy(listRead: Seen(arrival), listed: {...live});
+
+  Freshness afterPage(
+    String page, {
+    required bool gone,
+    required Arrival? arrival,
+  }) => _copy(pagesRead: {...pagesRead, page: Seen(arrival, gone: gone)});
+
+  Freshness touched(
+    Iterable<String> pages, {
+    required bool list,
+    required AfterAnswer mark,
+  }) => list
+      ? _copy(listMark: mark.and(listMark), allPagesMark: mark.and(allPagesMark))
+      : _copy(
+          listMarks: {
+            ...listMarks,
+            for (final page in pages) page: mark.and(listMarks[page]),
+          },
+          pageMarks: {
+            ...pageMarks,
+            for (final page in pages) page: mark.and(pageMarks[page]),
+          },
+        );
+
+  Freshness get inNewSession =>
+      _copy(forgetReads: true, listed: const {}, pagesRead: const {});
+
+  bool get listSinceTouch => listRead?.reaches(listMark) ?? false;
 
   bool listFreshFor(String page) =>
-      listSinceTouch && !touchedSinceList.contains(page);
+      listSinceTouch && listRead!.reaches(listMarks[page]);
 
-  bool pageFreshFor(String page) => pagesSinceTouch.contains(page);
+  bool pageFreshFor(String page) => switch (pagesRead[page]) {
+    final seen? => seen.reaches(allPagesMark) && seen.reaches(pageMarks[page]),
+    null => false,
+  };
+
+  bool goneByResult(String page) => pagesRead[page]?.gone ?? false;
+
+  Set<String> get subjects => {
+    ...listed,
+    ...pagesRead.keys,
+    ...listMarks.keys,
+    ...pageMarks.keys,
+  };
 
   bool freshFor(String page) =>
       listFreshFor(page) && (pageFreshFor(page) || !listed.contains(page));
@@ -149,57 +202,337 @@ final class Freshness {
   bool disagreeOn(String page) =>
       listFreshFor(page) &&
       pageFreshFor(page) &&
-      listed.contains(page) == goneByResult.contains(page);
+      listed.contains(page) == goneByResult(page);
 
   @override
   bool operator ==(Object other) =>
       other is Freshness &&
-      other.listSinceTouch == listSinceTouch &&
+      other.listRead == listRead &&
       const SetEquality<String>().equals(other.listed, listed) &&
-      const SetEquality<String>().equals(
-        other.touchedSinceList,
-        touchedSinceList,
+      const MapEquality<String, Seen>().equals(other.pagesRead, pagesRead) &&
+      other.listMark == listMark &&
+      const MapEquality<String, AfterAnswer>().equals(
+        other.listMarks,
+        listMarks,
       ) &&
-      const SetEquality<String>().equals(
-        other.pagesSinceTouch,
-        pagesSinceTouch,
-      ) &&
-      const SetEquality<String>().equals(other.goneByResult, goneByResult);
+      other.allPagesMark == allPagesMark &&
+      const MapEquality<String, AfterAnswer>().equals(
+        other.pageMarks,
+        pageMarks,
+      );
 
   @override
-  int get hashCode => Object.hash(listSinceTouch, listed.length);
+  int get hashCode => Object.hash(listRead, listed.length, listMark);
 }
 
-final class ReadStart {
-  const ReadStart({required this.session, required this.sequence});
+final class ResultOrder {
+  const ResultOrder({
+    required this.session,
+    required this.client,
+    required this.snapshot,
+  });
 
-  static const beforeAnyRead = ReadStart(session: 0, sequence: 0);
+  static const beforeAnyResult = ResultOrder(
+    session: 0,
+    client: 0,
+    snapshot: 0,
+  );
 
   final int session;
-  final int sequence;
+  final int client;
+  final int snapshot;
 
-  bool isBefore(ReadStart other) =>
+  bool isBefore(ResultOrder other) =>
       session < other.session ||
-      (session == other.session && sequence < other.sequence);
+      (session == other.session &&
+          (client < other.client ||
+              (client == other.client && snapshot < other.snapshot)));
 
   @override
   bool operator ==(Object other) =>
-      other is ReadStart &&
+      other is ResultOrder &&
       other.session == session &&
-      other.sequence == sequence;
+      other.client == client &&
+      other.snapshot == snapshot;
 
   @override
-  int get hashCode => Object.hash(session, sequence);
+  int get hashCode => Object.hash(session, client, snapshot);
 
   @override
-  String toString() => 'session $session, step $sequence';
+  String toString() => 'session $session, client $client, snapshot $snapshot';
 }
 
-bool paidBy(ReadState state, ReadStart? started) => switch (state) {
-  ReadOwed(:final since) ||
-  ReadRefused(:final since) => started != null && !started.isBefore(since),
-  NotReadThisSession() || ReadThisSession() => true,
+final class Arrival {
+  const Arrival({
+    required this.order,
+    required this.point,
+    this.requestedAt,
+    this.requestedIn,
+  });
+
+  final ResultOrder order;
+  final ResultPoint point;
+  final int? requestedAt;
+  final int? requestedIn;
+
+  bool requestedAtOrAfter(int session, int step) =>
+      requestedIn == session && (requestedAt ?? -1) >= step;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Arrival &&
+      other.order == order &&
+      other.point == point &&
+      other.requestedAt == requestedAt &&
+      other.requestedIn == requestedIn;
+
+  @override
+  int get hashCode => Object.hash(order, point, requestedAt, requestedIn);
+}
+
+sealed class Evidence {
+  const Evidence();
+
+  bool shownBy(ArrivedBase base);
+}
+
+final class RowAtLeast extends Evidence {
+  const RowAtLeast(this.target, {required this.life, required this.revision});
+
+  final Target target;
+  final int? life;
+  final int revision;
+
+  @override
+  bool shownBy(ArrivedBase base) {
+    final row = rowIn(base, target);
+    if (row == null) return false;
+    final (shownLife, shownRevision) = (createdAtOf(row), revisionOfRow(row));
+    if (shownRevision == null) return false;
+    return switch ((life, shownLife)) {
+      (final wanted?, final shown?) when shown != wanted => shown > wanted,
+      (final _?, null) => false,
+      _ => shownRevision >= revision,
+    };
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is RowAtLeast &&
+      other.target == target &&
+      other.life == life &&
+      other.revision == revision;
+
+  @override
+  int get hashCode => Object.hash(RowAtLeast, target, life, revision);
+}
+
+final class StrategyLifeAtLeast extends Evidence {
+  const StrategyLifeAtLeast(this.life);
+
+  final int life;
+
+  @override
+  bool shownBy(ArrivedBase base) => switch (base) {
+    HeaderRead(:final strategy) => (createdAtOf(strategy) ?? 0) >= life,
+    _ => false,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is StrategyLifeAtLeast && other.life == life;
+
+  @override
+  int get hashCode => Object.hash(StrategyLifeAtLeast, life);
+}
+
+Row? rowIn(ArrivedBase base, Target target) => switch ((base, target)) {
+  (HeaderRead(:final strategy), StrategyTarget()) => strategy,
+  (HeaderRead(:final pages), PageTarget(:final pagePublicId)) =>
+    pages.where((page) => page.publicId == pagePublicId).firstOrNull,
+  (HeaderRead(:final settings), SettingsTarget(:final pagePublicId)) =>
+    settings.where((row) => row.pagePublicId == pagePublicId).firstOrNull,
+  (PageRead(:final elements), ElementTarget(:final elementPublicId)) =>
+    elements.where((row) => row.publicId == elementPublicId).firstOrNull,
+  (PageRead(:final lineupGroups), LineupTarget(:final lineupPublicId)) =>
+    lineupGroups.where((row) => row.publicId == lineupPublicId).firstOrNull,
+  _ => null,
 };
+
+sealed class PaidBy {
+  const PaidBy();
+
+  bool paidBy(Arrival arrival, ArrivedBase? base);
+}
+
+final class ResultAtOrAfter extends PaidBy {
+  const ResultAtOrAfter(this.order);
+
+  static const anyResult = ResultAtOrAfter(ResultOrder.beforeAnyResult);
+
+  final ResultOrder order;
+
+  @override
+  bool paidBy(Arrival arrival, ArrivedBase? base) =>
+      !arrival.order.isBefore(order);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ResultAtOrAfter && other.order == order;
+
+  @override
+  int get hashCode => Object.hash(ResultAtOrAfter, order);
+
+  @override
+  String toString() => 'a result at or after $order';
+}
+
+final class AfterRefusal extends PaidBy {
+  const AfterRefusal({
+    required this.session,
+    required this.point,
+    required this.step,
+    this.evidence,
+  });
+
+  final int session;
+  final ResultPoint point;
+  final int step;
+  final Evidence? evidence;
+
+  @override
+  bool paidBy(Arrival arrival, ArrivedBase? base) =>
+      (base != null && (evidence?.shownBy(base) ?? false)) ||
+      arrival.order.session > session ||
+      (arrival.order.session == session &&
+          (point.generation.isBefore(arrival.point.generation) ||
+              arrival.requestedAtOrAfter(session, step)));
+
+  @override
+  bool operator ==(Object other) =>
+      other is AfterRefusal &&
+      other.session == session &&
+      other.point == point &&
+      other.step == step &&
+      other.evidence == evidence;
+
+  @override
+  int get hashCode => Object.hash(AfterRefusal, session, point, step, evidence);
+
+  @override
+  String toString() =>
+      'content, a later connection, client or session, or a read requested '
+      'after step $step of session $session';
+}
+
+final class AfterAnswer extends PaidBy {
+  const AfterAnswer(this.order, {this.serverTime});
+
+  final ResultOrder order;
+  final int? serverTime;
+
+  bool reachedBy(Arrival arrival) =>
+      !arrival.order.isBefore(order) &&
+      switch ((serverTime, arrival.point.serverTime)) {
+        (null, _) => true,
+        (_, null) => false,
+        (final answered?, final shown?) => shown >= answered,
+      };
+
+  AfterAnswer and(AfterAnswer? other) => switch (other) {
+    null => this,
+    final other => AfterAnswer(
+      order.isBefore(other.order) ? other.order : order,
+      serverTime: switch ((serverTime, other.serverTime)) {
+        (final mine?, final theirs?) => mine > theirs ? mine : theirs,
+        (final mine, final theirs) => mine ?? theirs,
+      },
+    ),
+  };
+
+  @override
+  bool paidBy(Arrival arrival, ArrivedBase? base) => reachedBy(arrival);
+
+  @override
+  bool operator ==(Object other) =>
+      other is AfterAnswer &&
+      other.order == order &&
+      other.serverTime == serverTime;
+
+  @override
+  int get hashCode => Object.hash(AfterAnswer, order, serverTime);
+
+  @override
+  String toString() => 'a result at or after $order and time $serverTime';
+}
+
+final class AllOf extends PaidBy {
+  AllOf._(Iterable<PaidBy> each) : each = Set.unmodifiable(each);
+
+  final Set<PaidBy> each;
+
+  @override
+  bool paidBy(Arrival arrival, ArrivedBase? base) =>
+      each.every((debt) => debt.paidBy(arrival, base));
+
+  @override
+  bool operator ==(Object other) =>
+      other is AllOf && const SetEquality<PaidBy>().equals(other.each, each);
+
+  @override
+  int get hashCode => Object.hash(AllOf, Object.hashAllUnordered(each));
+
+  @override
+  String toString() => 'all of ${each.join('; ')}';
+}
+
+PaidBy both(PaidBy held, PaidBy added) {
+  final each = [
+    for (final debt in [held, added])
+      if (debt case AllOf(each: final inner)) ...inner else debt,
+  ];
+  ResultAtOrAfter? atOrAfter;
+  AfterAnswer? answer;
+  final rest = <PaidBy>{};
+  for (final debt in each) {
+    switch (debt) {
+      case ResultAtOrAfter(:final order):
+        atOrAfter = switch (atOrAfter) {
+          ResultAtOrAfter(order: final mine) when !mine.isBefore(order) =>
+            atOrAfter,
+          _ => debt,
+        };
+      case AfterAnswer():
+        answer = debt.and(answer);
+      case AllOf() || AfterRefusal():
+        rest.add(debt);
+    }
+  }
+  final combined = {
+    if (atOrAfter != ResultAtOrAfter.anyResult) ?atOrAfter,
+    ?answer,
+    ...rest,
+  };
+  if (combined.isEmpty) return ResultAtOrAfter.anyResult;
+  return combined.length == 1 ? combined.single : AllOf._(combined);
+}
+
+PaidBy oweAlso(ReadState state, PaidBy added) => switch (state) {
+  ReadOwed(:final since) || ReadRefused(:final since) => both(since, added),
+  NotReadThisSession() || ReadThisSession() => added,
+};
+
+int? _later(int? held, int? added) => switch ((held, added)) {
+  (final a?, final b?) => a > b ? a : b,
+  (final a, final b) => a ?? b,
+};
+
+bool paidBy(ReadState state, Arrival? arrival, ArrivedBase base) =>
+    switch (state) {
+      ReadOwed(:final since) || ReadRefused(:final since) =>
+        arrival != null && since.paidBy(arrival, base),
+      NotReadThisSession() || ReadThisSession() => true,
+    };
 
 sealed class ReadState {
   const ReadState();
@@ -241,7 +574,7 @@ final class ReadOwed extends ReadState {
 
   final int? unlessLife;
   final int? namedLife;
-  final ReadStart since;
+  final PaidBy since;
 
   @override
   bool operator ==(Object other) =>
@@ -257,8 +590,9 @@ final class ReadOwed extends ReadState {
   String toString() => switch ((unlessLife, namedLife)) {
     (null, _) => 'owed',
     (final refused?, null) =>
-      'owed by a list of another life than $refused, read after the refusal',
-    (_, final named?) => 'owed by a list of life $named or later',
+      'owed by a list of another life than $refused, paid by $since',
+    (_, final named?) =>
+      'owed by a list of life $named or later, paid by $since',
   };
 }
 
@@ -273,7 +607,7 @@ final class ReadRefused extends ReadState {
   final String problem;
   final int? unlessLife;
   final int? namedLife;
-  final ReadStart since;
+  final PaidBy since;
 
   @override
   bool operator ==(Object other) =>
@@ -291,12 +625,18 @@ final class ReadRefused extends ReadState {
   String toString() => switch ((unlessLife, namedLife)) {
     (null, _) => 'refused: $problem',
     (final refused?, null) =>
-      'refused: $problem, owed by a list of another life than $refused, read '
-          'after the refusal',
+      'refused: $problem, owed by a list of another life than $refused, '
+          'paid by $since',
     (_, final named?) =>
-      'refused: $problem, owed by a list of life $named or later',
+      'refused: $problem, owed by a list of life $named or later, paid by '
+          '$since',
   };
 }
+
+int? _refusedLifeOf(ReadState state) => switch (state) {
+  ReadOwed(:final unlessLife) || ReadRefused(:final unlessLife) => unlessLife,
+  NotReadThisSession() || ReadThisSession() => null,
+};
 
 int? namedLifeOf(ReadState state) => switch (state) {
   ReadOwed(:final namedLife) || ReadRefused(:final namedLife) => namedLife,
@@ -315,10 +655,10 @@ enum KeptBecause { heldIsNewer, leftByANewerResult }
 final class Removed {
   const Removed(this.order, {required this.held});
 
-  final ReadStart order;
+  final ResultOrder order;
   final Version? held;
 
-  bool keepsOut(Row row, ReadStart? started) =>
+  bool keepsOut(Row row, ResultOrder? started) =>
       started != null &&
       started.isBefore(order) &&
       switch ((versionOfRow(row), held)) {
@@ -337,6 +677,27 @@ final class Removed {
   @override
   String toString() => 'removed at $order, last held at $held';
 }
+
+enum PageSays { live, trashed, gone }
+
+enum PageDecider { list, page, disagree }
+
+PageDecider pageDecider({
+  required Arrival? list,
+  required PageSays listSays,
+  required Arrival? page,
+  required PageSays? pageSays,
+}) => switch ((list, page, pageSays)) {
+  (_, null, _) || (_, _, null) => PageDecider.list,
+  (null, _, _) => PageDecider.page,
+  (final list?, final page?, final says?) when list.order == page.order =>
+    says == listSays ? PageDecider.page : PageDecider.disagree,
+  (final list?, final page?, _) =>
+    list.order.isBefore(page.order) ? PageDecider.page : PageDecider.list,
+};
+
+PageSays pageSaysOf(PageRow row) =>
+    _isTrashed(row) ? PageSays.trashed : PageSays.live;
 
 sealed class RowDecision {
   const RowDecision();
@@ -493,10 +854,14 @@ final class Shown {
     Map<Target, Version> highest = const {},
     Freshness? fresh,
     this.listTaken,
-    Map<String, ReadStart> pagesTaken = const {},
+    Map<String, Arrival> pagesTaken = const {},
+    Map<String, PageSays> listSaid = const {},
+    Map<String, PageSays> pageSaid = const {},
     this.fence,
   }) : fresh = fresh ?? Freshness.none,
        pagesTaken = Map.unmodifiable(pagesTaken),
+       listSaid = Map.unmodifiable(listSaid),
+       pageSaid = Map.unmodifiable(pageSaid),
        pageReads = Map.unmodifiable({
          for (final MapEntry(:key, :value) in pageReads.entries)
            if (value is! NotReadThisSession) key: value,
@@ -523,9 +888,9 @@ final class Shown {
     var fresh = Freshness.none.afterList([
       for (final page in rows.pages)
         if (!_isTrashed(page)) page.publicId,
-    ]);
+    ], null);
     for (final page in read) {
-      fresh = fresh.afterPage(page, gone: false);
+      fresh = fresh.afterPage(page, gone: false, arrival: null);
     }
     return Shown(
       fresh: fresh,
@@ -579,11 +944,39 @@ final class Shown {
   final Freshness fresh;
   final ReadState list;
   final Map<String, ReadState> pageReads;
-  final ReadStart? listTaken;
-  final Map<String, ReadStart> pagesTaken;
-  final ReadStart? fence;
+  final Arrival? listTaken;
+  final Map<String, Arrival> pagesTaken;
+  final Map<String, PageSays> listSaid;
+  final Map<String, PageSays> pageSaid;
 
-  ReadStart? owedSince(ArrivedBase result) => switch (switch (result) {
+  PageDecider decidesPage(String page, Arrival arrival, PageSays says) =>
+      pageDecider(
+        list: listTaken,
+        listSays: listSaid[page] ?? PageSays.gone,
+        page: arrival,
+        pageSays: says,
+      );
+
+  Set<String> disagreeingPages(HeaderRead result, Arrival? arrival) => {
+    for (final page in {...knownPages, ...pageSaid.keys})
+      if (pageDecider(
+            list: arrival,
+            listSays: _listSays(result, page),
+            page: pagesTaken[page],
+            pageSays: pageSaid[page],
+          ) ==
+          PageDecider.disagree)
+        page,
+  };
+
+  static PageSays _listSays(HeaderRead result, String page) =>
+      switch (result.pages.where((row) => row.publicId == page).firstOrNull) {
+        final row? => pageSaysOf(row),
+        null => PageSays.gone,
+      };
+  final ResultOrder? fence;
+
+  PaidBy? owedBy(ArrivedBase result) => switch (switch (result) {
     HeaderRead() || StrategyGone() => list,
     PageRead(:final page) => pageRead(page.publicId),
     PageGone(:final pagePublicId) => pageRead(pagePublicId),
@@ -592,7 +985,7 @@ final class Shown {
     NotReadThisSession() || ReadThisSession() => null,
   };
 
-  Shown fencedAt(ReadStart fence, {required Shown after}) => Shown(
+  Shown fencedAt(ResultOrder fence, {required Shown after}) => Shown(
     strategy: strategy,
     pages: pages,
     trashed: trashed,
@@ -607,14 +1000,18 @@ final class Shown {
     fresh: fresh,
     listTaken: listTaken ?? after.listTaken,
     pagesTaken: {...after.pagesTaken, ...pagesTaken},
+    listSaid: listTaken == null ? after.listSaid : listSaid,
+    pageSaid: {...after.pageSaid, ...pageSaid},
     fence: fence,
   );
 
-  ReadStart? takenFor(ArrivedBase result) => switch (result) {
-    HeaderRead() || StrategyGone() => listTaken,
-    PageRead(:final page) => pagesTaken[page.publicId],
-    PageGone(:final pagePublicId) => pagesTaken[pagePublicId],
-  };
+  Arrival? takenFor(ArrivedBase result) => takenOf(switch (result) {
+    HeaderRead() || StrategyGone() => null,
+    PageRead(:final page) => page.publicId,
+    PageGone(:final pagePublicId) => pagePublicId,
+  });
+
+  Arrival? takenOf(String? page) => page == null ? listTaken : pagesTaken[page];
 
   int? get strategyRevision => strategy?.revision;
 
@@ -635,6 +1032,14 @@ final class Shown {
   final Map<Target, ShownRow> rows;
 
   bool get headerThisSession => list is ReadThisSession;
+
+  bool get listCurrent => headerThisSession && fresh.listSinceTouch;
+
+  bool listCurrentFor(String page) =>
+      headerThisSession && fresh.listFreshFor(page);
+
+  bool pageCurrent(String page) =>
+      pageReadThisSession(page) && fresh.pageFreshFor(page);
 
   bool pageReadThisSession(String page) => pageReads[page] is ReadThisSession;
 
@@ -682,12 +1087,16 @@ final class Shown {
     Map<String, ShownRow>? settings,
     Map<String, Map<SeenPart, String>>? content,
     Map<Target, ShownRow>? rows,
-    ReadStart? listTaken,
-    Map<String, ReadStart>? pagesTaken,
+    Arrival? listTaken,
+    Map<String, Arrival>? pagesTaken,
+    Map<String, PageSays>? listSaid,
+    Map<String, PageSays>? pageSaid,
     ShownRow? strategy,
   }) => Shown(
     listTaken: listTaken ?? this.listTaken,
     pagesTaken: pagesTaken ?? this.pagesTaken,
+    listSaid: listSaid ?? this.listSaid,
+    pageSaid: pageSaid ?? this.pageSaid,
     fence: fence,
     fresh: fresh ?? this.fresh,
     list: list ?? this.list,
@@ -707,7 +1116,7 @@ final class Shown {
 
   Map<Target, Removed> _removedOn(
     bool Function(String page) gone,
-    ReadStart? started,
+    ResultOrder? started,
   ) => {
     ...tombstones,
     if (started != null)
@@ -715,63 +1124,95 @@ final class Shown {
         if (gone(value.page)) key: Removed(started, held: value.version),
   };
 
-  Taken taken(ArrivedBase result, {required ReadStart? started}) =>
-      switch (result) {
-        HeaderRead() => _withList(result, started),
-        PageRead(:final page, :final elements, :final lineupGroups) =>
-          _checkedTake(
-            page.publicId,
-            (reuse) => _withPage(
-              page,
-              [...elements, ...lineupGroups],
-              paid: paidBy(pageRead(page.publicId), started),
-              started: started,
-              reuse: reuse,
-            ),
-          ),
-        PageGone(:final pagePublicId) => Taken(
-          _with(
-            pagesTaken: {...pagesTaken, pagePublicId: ?started},
-            fresh: fresh.afterPage(pagePublicId, gone: true),
-            pageReads: {...pageReads}..remove(pagePublicId),
-            goneThisSession: {...goneThisSession, pagePublicId},
-            pages: {...pages}..remove(pagePublicId),
-            trashed: {...trashed}..remove(pagePublicId),
-            settings: {...settings}..remove(pagePublicId),
-            content: {...content}..remove(pagePublicId),
-            tombstones: _removedOn((page) => page == pagePublicId, started),
-            rows: {
-              for (final MapEntry(:key, :value) in rows.entries)
-                if (value.page != pagePublicId) key: value,
-            },
-          ),
-          [PageLeft(pagePublicId)],
-        ),
-        StrategyGone() => Taken(
-          _with(
-            listTaken: started,
-            list: paidBy(list, started) ? const ReadThisSession() : list,
-            pageReads: {
-              for (final MapEntry(:key, :value) in pageReads.entries)
-                if (!isDebt(value) || !paidBy(value, started)) key: value,
-            },
-          ),
-          const [],
-        ),
-      };
+  Taken taken(
+    ArrivedBase result, {
+    required Arrival? arrival,
+  }) => switch (result) {
+    HeaderRead() => _withList(result, arrival),
+    PageRead(:final page, :final elements, :final lineupGroups) => _checkedTake(
+      page.publicId,
+      (reuse) => _withPage(
+        page,
+        [...elements, ...lineupGroups],
+        paid: paidBy(pageRead(page.publicId), arrival, result),
+        arrival: arrival,
+        reuse: reuse,
+      ),
+    ),
+    PageGone(:final pagePublicId) => Taken(
+      _with(
+        pagesTaken: {...pagesTaken, pagePublicId: ?arrival},
+        pageSaid: {
+          ...pageSaid,
+          if (arrival != null) pagePublicId: PageSays.gone,
+        },
+        fresh: fresh.afterPage(pagePublicId, gone: true, arrival: arrival),
+        pageReads: {...pageReads}..remove(pagePublicId),
+        goneThisSession: {...goneThisSession, pagePublicId},
+        pages: {...pages}..remove(pagePublicId),
+        trashed: {...trashed}..remove(pagePublicId),
+        settings: {...settings}..remove(pagePublicId),
+        content: {...content}..remove(pagePublicId),
+        tombstones: _removedOn((page) => page == pagePublicId, arrival?.order),
+        rows: {
+          for (final MapEntry(:key, :value) in rows.entries)
+            if (value.page != pagePublicId) key: value,
+        },
+      ),
+      [PageLeft(pagePublicId)],
+    ),
+    StrategyGone() => Taken(
+      _with(
+        listTaken: arrival,
+        listSaid: const {},
+        list: paidBy(list, arrival, result) ? const ReadThisSession() : list,
+        pageReads: {
+          for (final MapEntry(:key, :value) in pageReads.entries)
+            if (!isDebt(value) || !paidBy(value, arrival, result)) key: value,
+        },
+      ),
+      const [],
+    ),
+  };
 
-  Taken _withList(HeaderRead result, ReadStart? started) {
+  Taken _withList(HeaderRead result, Arrival? arrival) {
     final HeaderRead(strategy: strategyRow, pages: listed, :settings) = result;
     final listedIds = {for (final page in listed) page.publicId};
+    final pageDecides = {
+      for (final page in {...knownPages, ...listedIds, ...pageSaid.keys})
+        if (arrival != null &&
+            pageDecider(
+                  list: arrival,
+                  listSays: _listSays(result, page),
+                  page: pagesTaken[page],
+                  pageSays: pageSaid[page],
+                ) !=
+                PageDecider.list)
+          page,
+    };
+    final readLater = {
+      for (final page in pageDecides)
+        if (pages.containsKey(page) || trashed.containsKey(page)) page,
+    };
+    final listDecides = listedIds.difference(pageDecides);
+    final kept = {...listDecides, ...readLater};
     final decisions = <RowDecision>[
       for (final page in knownPages)
-        if (!listedIds.contains(page)) PageLeft(page),
+        if (!kept.contains(page)) PageLeft(page),
       RowTaken(strategyRow),
     ];
-    final nextPages = <String, ShownRow>{};
-    final nextTrashed = <String, ShownRow>{};
+    final nextPages = <String, ShownRow>{
+      for (final page in readLater) page: ?pages[page],
+    };
+    final nextTrashed = <String, ShownRow>{
+      for (final page in readLater) page: ?trashed[page],
+    };
     for (final page in listed) {
       final id = page.publicId;
+      if (pageDecides.contains(id)) {
+        decisions.add(RowKept(page, KeptBecause.leftByANewerResult));
+        continue;
+      }
       final heldLive = pages[id];
       final held = heldLive ?? trashed[id];
       if (replaces(held, page)) {
@@ -782,24 +1223,36 @@ final class Shown {
         (heldLive != null ? nextPages : nextTrashed)[id] = held!;
       }
     }
-    final withSettings = {for (final row in settings) row.pagePublicId};
+    final withSettings = {
+      for (final row in settings) row.pagePublicId,
+      ...readLater,
+    };
     decisions.addAll([
-      for (final page in listedIds)
+      for (final page in listDecides)
         if (!withSettings.contains(page)) SettingsLeft(page),
-      for (final row in settings) RowTaken(row),
+      for (final row in settings)
+        if (pageDecides.contains(row.pagePublicId))
+          RowKept(row, KeptBecause.leftByANewerResult)
+        else
+          RowTaken(row),
     ]);
     final live = nextPages.keys.toSet();
     return Taken(
       Shown(
         fence: fence,
-        listTaken: started ?? listTaken,
+        listTaken: arrival ?? listTaken,
         pagesTaken: {
           for (final MapEntry(:key, :value) in pagesTaken.entries)
-            if (listedIds.contains(key)) key: value,
+            if (kept.contains(key) || pageDecides.contains(key)) key: value,
         },
-        fresh: fresh.afterList(live),
+        listSaid: {for (final page in listed) page.publicId: pageSaysOf(page)},
+        pageSaid: {
+          for (final MapEntry(:key, :value) in pageSaid.entries)
+            if (kept.contains(key) || pageDecides.contains(key)) key: value,
+        },
+        fresh: fresh.afterList(live.difference(readLater), arrival),
         list: switch ((list, createdAtOf(strategyRow))) {
-          (final owed, _) when !paidBy(owed, started) => owed,
+          (final owed, _) when !paidBy(owed, arrival, result) => owed,
           (
             ReadOwed(namedLife: final named?) ||
                 ReadRefused(namedLife: final named?),
@@ -832,10 +1285,12 @@ final class Shown {
         strategy: _strategyRow(strategyRow, listed),
         pages: nextPages,
         trashed: nextTrashed,
-        tombstones: _removedOn((page) => !listedIds.contains(page), started),
+        tombstones: _removedOn((page) => !kept.contains(page), arrival?.order),
         settings: {
+          for (final page in readLater) page: ?this.settings[page],
           for (final row in settings)
-            row.pagePublicId: _rowOf(row, row.pagePublicId),
+            if (!pageDecides.contains(row.pagePublicId))
+              row.pagePublicId: _rowOf(row, row.pagePublicId),
         },
         content: {
           for (final MapEntry(:key, :value) in content.entries)
@@ -843,7 +1298,7 @@ final class Shown {
         },
         rows: {
           for (final MapEntry(:key, :value) in rows.entries)
-            if (listedIds.contains(value.page)) key: value,
+            if (kept.contains(value.page)) key: value,
         },
       ),
       decisions,
@@ -862,43 +1317,82 @@ final class Shown {
   Shown withGone(String page) =>
       _with(goneThisSession: {...goneThisSession, page});
 
-  Shown touched(Iterable<String> pages, {required bool list}) =>
-      _with(fresh: fresh.touched(pages, list: list));
-
-  Shown owingList(ReadStart since) => _with(list: ReadOwed(since: since));
-
-  Shown owingListPast(int? life, ReadStart since, {int? named}) => _with(
-    list: ReadOwed(unlessLife: life, namedLife: named, since: since),
+  Shown touched(
+    Iterable<String> pages, {
+    required bool list,
+    required AfterAnswer mark,
+  }) => _with(
+    fresh: fresh.touched(pages, list: list, mark: mark),
   );
 
-  Shown owingPage(String page, ReadStart since) => _with(
-    pageReads: {
-      ...pageReads,
-      page: ReadOwed(since: since),
+  Shown owingList(PaidBy since) => owingListPast(null, since);
+
+  Shown owingListPast(int? life, PaidBy since, {int? named}) => _with(
+    list: switch (list) {
+      ReadRefused(:final problem) => ReadRefused(
+        problem,
+        unlessLife: _later(_refusedLifeOf(list), life),
+        namedLife: _later(namedLifeOf(list), named),
+        since: oweAlso(list, since),
+      ),
+      _ => ReadOwed(
+        unlessLife: _later(_refusedLifeOf(list), life),
+        namedLife: _later(namedLifeOf(list), named),
+        since: oweAlso(list, since),
+      ),
     },
   );
 
-  Shown listRefused(String problem, ReadStart since) => _with(
-    list: ReadRefused(
-      problem,
-      unlessLife: switch (list) {
-        ReadOwed(:final unlessLife) ||
-        ReadRefused(:final unlessLife) => unlessLife,
-        NotReadThisSession() || ReadThisSession() => null,
+  Shown owingPage(String page, PaidBy since) => _with(
+    pageReads: {
+      ...pageReads,
+      page: switch (pageRead(page)) {
+        ReadRefused(:final problem) && final held => ReadRefused(
+          problem,
+          since: oweAlso(held, since),
+        ),
+        final held => ReadOwed(since: oweAlso(held, since)),
       },
-      namedLife: namedLifeOf(list),
-      since: since,
-    ),
+    },
   );
 
-  Shown pageRefused(String page, String problem, ReadStart since) => _with(
+  Shown listRefused(String problem, PaidBy since, {required Arrival at}) =>
+      _with(
+        listTaken: at,
+        list: ReadRefused(
+          problem,
+          unlessLife: _refusedLifeOf(list),
+          namedLife: namedLifeOf(list),
+          since: since,
+        ),
+      );
+
+  Shown pageRefused(
+    String page,
+    String problem,
+    PaidBy since, {
+    required Arrival at,
+  }) => _with(
+    pagesTaken: {...pagesTaken, page: at},
     pageReads: {
       ...pageReads,
       page: ReadRefused(problem, since: since),
     },
   );
 
+  Shown paidAgain(ArrivedBase result, Arrival arrival) {
+    final again = taken(result, arrival: arrival).shown;
+    return _with(
+      list: again.list,
+      pageReads: again.pageReads,
+      fresh: again.fresh,
+    );
+  }
+
+  Shown asStored() => inNewSession()._with(fresh: Freshness.none);
+
   Shown inNewSession() => Shown(
+    fresh: fresh.inNewSession,
     list: list.inNewSession,
     pageReads: {
       for (final MapEntry(:key, :value) in pageReads.entries)
@@ -923,7 +1417,7 @@ final class Shown {
     PageRow pageRow,
     List<Row> found, {
     required bool paid,
-    required ReadStart? started,
+    required Arrival? arrival,
     required bool reuse,
   }) {
     final page = pageRow.publicId;
@@ -948,7 +1442,7 @@ final class Shown {
         _ => throw StateError('only page content is read with a page'),
       };
       carried.add(target);
-      if (tombstones[target]?.keepsOut(row, started) ?? false) {
+      if (tombstones[target]?.keepsOut(row, arrival?.order) ?? false) {
         decisions.add(RowKept(row, KeptBecause.leftByANewerResult));
         continue;
       }
@@ -979,8 +1473,8 @@ final class Shown {
       if (carried.contains(key)) continue;
       next.remove(key);
       decisions.add(ItemLeft(key, page: page));
-      if (started != null) {
-        nextTombstones[key] = Removed(started, held: value.version);
+      if (arrival != null) {
+        nextTombstones[key] = Removed(arrival.order, held: value.version);
       }
     }
     decisions.add(UnreadableLeft(page, found));
@@ -993,8 +1487,9 @@ final class Shown {
     };
     return Taken(
       _with(
-        pagesTaken: {...pagesTaken, page: ?started},
-        fresh: fresh.afterPage(page, gone: trashedNow),
+        pagesTaken: {...pagesTaken, page: ?arrival},
+        pageSaid: {...pageSaid, if (arrival != null) page: pageSaysOf(pageRow)},
+        fresh: fresh.afterPage(page, gone: trashedNow, arrival: arrival),
         pageReads: {
           ...pageReads,
           page: paid ? const ReadThisSession() : pageRead(page),
@@ -1035,7 +1530,7 @@ final class Shown {
       other.list == list &&
       other.listTaken == listTaken &&
       other.fence == fence &&
-      const MapEquality<String, ReadStart>().equals(
+      const MapEquality<String, Arrival>().equals(
         other.pagesTaken,
         pagesTaken,
       ) &&

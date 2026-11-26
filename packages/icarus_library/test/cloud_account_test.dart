@@ -177,9 +177,10 @@ void main() {
           (
             'an answer',
             (store, _) => store.record(otherAccount, strategyId, [
-              const OpAnswered(
+              OpAnswered(
                 1,
                 AppliedAnswer('mine', revision: 2, life: fixtureLife),
+                point: tick(),
               ),
             ]),
           ),
@@ -197,9 +198,8 @@ void main() {
           ),
           (
             'a connection',
-            (store, _) => store.record(otherAccount, strategyId, [
-              const ConnectionReturned(),
-            ]),
+            (store, _) =>
+                store.record(otherAccount, strategyId, [reconnected()]),
           ),
           (
             'a result of the current session',
@@ -207,7 +207,7 @@ void main() {
               BaseArrived(
                 headerReadOf(renamedRows()),
                 session: session,
-                from: await readStartOf(store),
+                point: tick(),
               ),
             ]),
           ),
@@ -244,7 +244,7 @@ void main() {
         BaseArrived(
           headerReadOf(renamedRows()),
           session: session,
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
       expect(recorded.outcomes.single, isA<ReportApplied>());
@@ -282,9 +282,7 @@ void main() {
         anotherAccountsWork(),
       );
       expect(
-        await store.record(otherAccount, strategyId, const [
-          ConnectionReturned(),
-        ]),
+        await store.record(otherAccount, strategyId, [reconnected()]),
         anotherAccountsWork(),
       );
       expect(
@@ -305,7 +303,7 @@ void main() {
       final elsewhere = BaseArrived(
         headerReadOf(otherStrategyRows()),
         session: (await syncOf(store)).queue.session.number,
-        from: await readStartOf(store),
+        point: tick(),
       );
       expect(
         await store.record(otherAccount, strategyId, [elsewhere]),
@@ -370,7 +368,7 @@ void main() {
     expect(refused.queue.session, read.queue.session);
 
     for (final store in [refusing, reading]) {
-      await store.record(testAccount, strategyId, const [ConnectionReturned()]);
+      await store.record(testAccount, strategyId, [reconnected()]);
       savedValue(
         await store.commitAs(
           testAccount,
@@ -410,9 +408,7 @@ void main() {
         () => store.commitAllAs(otherAccount, strategyId, [
           movePatch('theirs'),
         ], seen: seen),
-        () => store.record(otherAccount, strategyId, const [
-          ConnectionReturned(),
-        ]),
+        () => store.record(otherAccount, strategyId, [reconnected()]),
         () => store.discardUnreadableQueue(
           otherAccount,
           strategyId,
@@ -838,7 +834,7 @@ void discardLeavesTheStrategyToBeReadAgain() {
     reopened = await openCloudStore(MemoryEngine(held));
     await recordAll(reopened, [
       const AppRestarted(build: build),
-      const ConnectionReturned(),
+      reconnected(),
     ]);
     expect(
       resultsNeeded((await syncOf(reopened)).queue, fixedClock()),
@@ -911,12 +907,8 @@ void aResultFromBeforeADiscardIsTurnedAway() {
         (lease) => ServingABrokenPendingRow(lease, () => broken),
       ),
     );
-    await recordAll(store, const [
-      AppRestarted(build: build),
-      ConnectionReturned(),
-    ]);
-    final oldSession = await sessionOf(store);
-    final oldRead = await beganIn(store);
+    await recordAll(store, [const AppRestarted(build: build), reconnected()]);
+    final late = await arrivalIn(store, headerReadOf(initialRows()));
     broken = true;
     expect(await store.unload(strategyId), isA<Unloaded>());
     savedValue(
@@ -927,15 +919,9 @@ void aResultFromBeforeADiscardIsTurnedAway() {
       ),
     );
     broken = false;
-    final late = await recordAll(store, [
-      BaseArrived(
-        headerReadOf(initialRows()),
-        session: oldSession,
-        from: oldRead,
-      ),
-    ]);
+    final recorded = await recordAll(store, [late]);
     expect(
-      late.outcomes.single,
+      recorded.outcomes.single,
       isA<ReportNotApplicable>().having(
         (outcome) => outcome.why,
         'why',
@@ -946,10 +932,7 @@ void aResultFromBeforeADiscardIsTurnedAway() {
       resultsNeeded((await syncOf(store)).queue, fixedClock()),
       contains(isA<PageListResult>()),
     );
-    await recordAll(store, const [
-      AppRestarted(build: build),
-      ConnectionReturned(),
-    ]);
+    await recordAll(store, [const AppRestarted(build: build), reconnected()]);
     await readServer(store, initialRows());
     expect(
       resultsNeeded((await syncOf(store)).queue, fixedClock()),

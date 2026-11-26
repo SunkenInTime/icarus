@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/generated.dart'
+    show ConvexFunctionException;
+import 'package:icarus/collab/store_reads.dart' show pointOf;
 import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/collab/src/convex_client_types.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
@@ -16,18 +19,25 @@ final class StoreBatchAnswered extends StoreBatchOutcome {
   StoreBatchAnswered(
     List<store.OpAnswer> answers, {
     required this.complete,
+    required this.point,
     this.serverTime,
   }) : answers = List.unmodifiable(answers);
 
   final List<store.OpAnswer> answers;
   final bool complete;
+  final store.ResultPoint point;
   final int? serverTime;
 }
 
 final class StoreBatchRefusedWhole extends StoreBatchOutcome {
-  const StoreBatchRefusedWhole(this.refusal, {this.currentLife});
+  const StoreBatchRefusedWhole(
+    this.refusal, {
+    required this.point,
+    this.currentLife,
+  });
 
   final store.BatchRefusal refusal;
+  final store.ResultPoint point;
   final int? currentLife;
 }
 
@@ -39,15 +49,17 @@ final class StoreBatchLost extends StoreBatchOutcome {
 }
 
 final class StoreBatchAccountMismatch extends StoreBatchOutcome {
-  const StoreBatchAccountMismatch(this.why);
+  const StoreBatchAccountMismatch(this.why, {required this.point});
 
   final String why;
+  final store.ResultPoint point;
 }
 
 final class StoreBatchOutsideWindow extends StoreBatchOutcome {
-  const StoreBatchOutsideWindow(this.why);
+  const StoreBatchOutsideWindow(this.why, {required this.point});
 
   final String why;
+  final store.ResultPoint point;
 }
 
 sealed class ServerTimeAsk {
@@ -83,9 +95,12 @@ StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
       required account,
       required serverTime,
     }) async {
-      final ({List<OpAck> acks, double? serverTime}) answer;
+      if (ops.isEmpty) {
+        throw ArgumentError.value(ops, 'ops', 'a batch sends at least one op');
+      }
+      final Stamped<({List<OpAck> acks, double? serverTime})> answer;
       try {
-        answer = await repository.applyWireBatch(
+        answer = await repository.applyWireBatchStamped(
           strategyPublicId: strategyPublicId,
           clientId: clientId,
           ops: [
@@ -95,7 +110,6 @@ StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
                 if (lives[op.opId] case final life?) 'expectedLife': life,
               },
           ],
-          sendsLives: true,
           strategyLife: strategyLife,
           accountSubject: account.subject,
           sendsLiveBasis: serverTime is ServerTimeAsked,
@@ -105,18 +119,26 @@ StoreBatchSend storeBatchSenderOver(ConvexStrategyRepository repository) => ({
           },
         );
       } catch (error) {
-        return storeBatchOutcomeOfError(error);
+        return storeBatchOutcomeOfError(error, point: null);
       }
-      return storeBatchOutcomeOf(
-        ops,
-        answer.acks,
-        serverTime: answer.serverTime?.toInt(),
-      );
+      return switch (answer) {
+        StampedValue(:final value, :final stamp) => storeBatchOutcomeOf(
+            ops,
+            value.acks,
+            point: pointOf(stamp),
+            serverTime: value.serverTime?.toInt(),
+          ),
+        StampedError(:final error, :final stamp) => storeBatchOutcomeOfError(
+            ConvexFunctionException.fromTransport(error),
+            point: pointOf(stamp),
+          ),
+      };
     };
 
 StoreBatchOutcome storeBatchOutcomeOf(
   List<store.StrategyOp> sent,
   List<OpAck> acks, {
+  required store.ResultPoint point,
   int? serverTime,
 }) {
   final sentIds = {for (final op in sent) op.opId};
@@ -141,6 +163,7 @@ StoreBatchOutcome storeBatchOutcomeOf(
   return StoreBatchAnswered(
     answers,
     complete: sentIds.every(answered.contains),
+    point: point,
     serverTime: serverTime,
   );
 }
@@ -229,29 +252,36 @@ int? _currentLifeIn(Object error) => switch (switch (error) {
 
 const _largestSafeWhole = 9007199254740991;
 
-StoreBatchOutcome storeBatchOutcomeOfError(Object error) {
-  if (isClientUpgradeRequiredError(error)) {
-    return const StoreBatchRefusedWhole(store.BatchRefusal.upgradeRequired);
+StoreBatchOutcome storeBatchOutcomeOfError(
+  Object error, {
+  required store.ResultPoint? point,
+}) {
+  if (point != null && isAccountMismatchError(error)) {
+    return StoreBatchAccountMismatch('$error', point: point);
   }
-  if (isTypedConvexUnauthenticatedError(error)) {
-    return const StoreBatchRefusedWhole(store.BatchRefusal.unauthenticated);
+  if (point != null && isUncheckedOutsideWindowError(error)) {
+    return StoreBatchOutsideWindow('$error', point: point);
   }
-  if (isAccountMismatchError(error)) {
-    return StoreBatchAccountMismatch('$error');
-  }
-  if (isUncheckedOutsideWindowError(error)) {
-    return StoreBatchOutsideWindow('$error');
-  }
-  if (isTypedConvexForbiddenError(error)) {
-    return const StoreBatchRefusedWhole(store.BatchRefusal.editAccessRemoved);
-  }
-  if (isTypedConvexNotFoundError(error)) {
-    return const StoreBatchRefusedWhole(store.BatchRefusal.strategyDeleted);
-  }
-  if (isStrategyReplacedError(error)) {
-    return StoreBatchRefusedWhole(
+  final refusal = switch (error) {
+    _ when isClientUpgradeRequiredError(error) =>
+      store.BatchRefusal.upgradeRequired,
+    _ when isTypedConvexUnauthenticatedError(error) =>
+      store.BatchRefusal.unauthenticated,
+    _ when isTypedConvexForbiddenError(error) =>
+      store.BatchRefusal.editAccessRemoved,
+    _ when isTypedConvexNotFoundError(error) =>
+      store.BatchRefusal.strategyDeleted,
+    _ when isStrategyReplacedError(error) =>
       store.BatchRefusal.strategyReplaced,
-      currentLife: _currentLifeIn(error),
+    _ => null,
+  };
+  if ((refusal, point) case (final refusal?, final point?)) {
+    return StoreBatchRefusedWhole(
+      refusal,
+      point: point,
+      currentLife: refusal == store.BatchRefusal.strategyReplaced
+          ? _currentLifeIn(error)
+          : null,
     );
   }
   if (error is TimeoutException) {

@@ -34,6 +34,7 @@ Future<StoreBatchOutcome> rowReplaced(ServerCall call) => Future.value(
                 op, RejectionReason.rowReplaced, const NoServerCopy()),
         ],
         complete: true,
+        point: stampedWhenAnswered,
       ),
     );
 
@@ -45,7 +46,51 @@ StoreReadAnswered laterLifePage(World world, String page) {
       elements: const [],
       lineupGroups: const [],
     ),
+    point: stampedWhenAnswered,
   );
+}
+
+Duration sendRung(int n) => Duration(milliseconds: 300 * (1 << n.clamp(0, 6)));
+
+void expectSendLadder(List<Duration> times, {int from = 1}) {
+  final gaps = [
+    for (var n = 1; n < times.length; n++) times[n] - times[n - 1],
+  ];
+  for (var n = from; n < times.length; n++) {
+    expect(
+      gaps[n - 1],
+      allOf(
+        greaterThan(sendRung(n) - storedPrecision),
+        lessThan(sendRung(n) + const Duration(milliseconds: 500)),
+      ),
+      reason: 'send ${n + 1}: gaps $gaps',
+    );
+  }
+}
+
+List<int> readsBetweenSends(World world) {
+  final sends = sendTimes(world);
+  final reads = [
+    for (final call in world.server.readCalls) call.at!.difference(start),
+  ];
+  return [
+    for (var n = 1; n < sends.length; n++)
+      reads.where((at) => at > sends[n - 1] && at < sends[n]).length,
+  ];
+}
+
+void climbWithReads(World world) {
+  var seen = 0;
+  for (var step = 0;
+      step < 3000 && sendTimes(world).length < retriesBeforePause;
+      step++) {
+    world.settle(const Duration(milliseconds: 100));
+    final sends = sendTimes(world).length;
+    if (sends == seen) continue;
+    seen = sends;
+    world.sender.owesFreshRead(strategyId, const ReadOfList());
+    world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
+  }
 }
 
 void record(World world, List<QueueEvent> events) {
@@ -61,8 +106,9 @@ void stallPageTwo(World world) {
   world.pagesOnServer(['p2']);
   world.sender.adopt(strategyId);
   world.settle(const Duration(minutes: 1));
-  world.server.overrideRead = (call) =>
-      call.page == 'p2' ? const StoreReadAnswered(PageGone('nowhere')) : null;
+  world.server.overrideRead = (call) => call.page == 'p2'
+      ? const StoreReadAnswered(PageGone('nowhere'), point: stampedWhenAnswered)
+      : null;
   world
     ..connection = null
     ..connection = 2;
@@ -109,21 +155,17 @@ void main() {
         for (var n = 0; n < 40; n++) {
           world.server.answerWith(
             strategyId,
-            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+                point: stampedWhenAnswered),
           );
         }
         world.commitMove(1);
-        world.settle(const Duration(seconds: 30));
-        final early = sendTimes(world);
-        for (var n = 1; n < early.length; n++) {
-          expect(
-            early[n] - early[n - 1],
-            greaterThanOrEqualTo(timing.sendFloor),
-            reason: '$early',
-          );
-        }
         world.settle(const Duration(hours: 1));
         expect(sendTimes(world), hasLength(retriesBeforePause));
+        expectSendLadder(sendTimes(world));
+        final between = readsBetweenSends(world);
+        printOnFailure('reads between sends: $between');
+        expect(between.where((reads) => reads > 0), isNotEmpty);
         expect(world.face(), Face.needsYou);
         expect(world.sender.waitingOn(strategyId), StallExit.lostSend);
         world.settle(const Duration(hours: 1));
@@ -142,7 +184,8 @@ void main() {
         for (var n = 0; n < 200; n++) {
           world.server.answerNext(
             strategyId,
-            (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+            (call) => Future.value(const StoreBatchOutsideWindow('refused',
+                point: stampedWhenAnswered)),
           );
         }
         world.commitMove(1);
@@ -163,6 +206,7 @@ void main() {
       world.server.overrideRead = (call) => const StoreReadRefused(
             StoreReadRefusal.upgradeRequired,
             'upgrade',
+            point: stampedWhenAnswered,
           );
       world.settle(const Duration(minutes: 1));
       expect(world.face(), Face.upgradeRequired);
@@ -203,10 +247,12 @@ void main() {
       inWorld((world) {
         world.server.answerWith(
           strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+              point: stampedWhenAnswered),
         );
-        world.server.overrideRead = (call) =>
-            const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+        world.server.overrideRead = (call) => const StoreReadRefused(
+            StoreReadRefusal.forbidden, 'forbidden',
+            point: stampedWhenAnswered);
         world.editorShows = strategyId;
         world.commitMove(1);
         world.settle(const Duration(hours: 2));
@@ -225,10 +271,12 @@ void main() {
       inWorld((world) {
         world.server.answerWith(
           strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+              point: stampedWhenAnswered),
         );
-        world.server.overrideRead = (call) =>
-            const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+        world.server.overrideRead = (call) => const StoreReadRefused(
+            StoreReadRefusal.forbidden, 'forbidden',
+            point: stampedWhenAnswered);
         world.commitMove(1);
         world.settle(const Duration(hours: 2));
         expect(world.sender.accessCheckStopped(strategyId), isTrue);
@@ -240,7 +288,7 @@ void main() {
           world.async.flushMicrotasks();
         }
         world.settle(const Duration(seconds: 1));
-        expect(readTimes(world, null).length - stopped, lessThanOrEqualTo(1));
+        expect(readTimes(world, null).length - stopped, 1);
       });
     });
   });
@@ -298,7 +346,8 @@ void main() {
       world.settle(const Duration(seconds: 10));
       world.server.answerWith(
         strategyId,
-        const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted),
+        const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted,
+            point: stampedWhenAnswered),
       );
       world.commitRename(strategyId, 'rename-1');
       world.settle(const Duration(seconds: 10));
@@ -343,6 +392,7 @@ void main() {
         world.server.overrideRead = (call) => const StoreReadRefused(
               StoreReadRefusal.upgradeRequired,
               'upgrade',
+              point: stampedWhenAnswered,
             );
         world.settle(const Duration(minutes: 1));
         final sends = world.server.calls.length;
@@ -374,28 +424,17 @@ void main() {
       for (var n = 0; n < 40; n++) {
         world.server.answerNext(
           strategyId,
-          (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+          (call) => Future.value(const StoreBatchOutsideWindow('refused',
+              point: stampedWhenAnswered)),
         );
       }
       world.commitMove(1);
+      climbWithReads(world);
       world.settle(const Duration(minutes: 5));
       final times = sendTimes(world);
       expect(times, hasLength(retriesBeforePause));
-      final gaps = [
-        for (var n = 1; n < times.length; n++) times[n] - times[n - 1],
-      ];
-      printOnFailure('sends at $times, gaps $gaps');
-      for (var n = 1; n < times.length; n++) {
-        final rung = Duration(milliseconds: 300 * (1 << n.clamp(0, 6)));
-        expect(
-          gaps[n - 1],
-          allOf(
-            greaterThan(rung - storedPrecision),
-            lessThan(rung + const Duration(milliseconds: 500)),
-          ),
-          reason: 'send ${n + 1}: $gaps',
-        );
-      }
+      expectSendLadder(times);
+      expect(readsBetweenSends(world), [2, 0, 2, 2, 2, 2, 2]);
     });
   });
 
@@ -412,22 +451,17 @@ void main() {
       for (var n = 0; n < 40; n++) {
         world.server.answerNext(
           strategyId,
-          (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+          (call) => Future.value(const StoreBatchOutsideWindow('refused',
+              point: stampedWhenAnswered)),
         );
       }
       world.commitMove(1);
+      climbWithReads(world);
       world.settle(const Duration(minutes: 5));
       final times = sendTimes(world);
       expect(times, hasLength(retriesBeforePause));
-      for (var n = 2; n < times.length; n++) {
-        expect(
-          times[n] - times[n - 1],
-          greaterThanOrEqualTo(
-            Duration(milliseconds: 300 * (1 << n.clamp(0, 6))),
-          ),
-          reason: '$times',
-        );
-      }
+      expectSendLadder(times, from: 2);
+      expect(readsBetweenSends(world), [2, 0, 2, 2, 2, 2, 2]);
     });
   });
 }

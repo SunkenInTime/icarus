@@ -18,6 +18,64 @@ final otherAccount = Account('account-b');
 
 final now = DateTime.utc(2026, 11, 20, 12, 0, 0, 0, 371);
 
+const testClient = 1;
+
+var _connection = 0;
+
+var _snapshot = 0;
+
+Generation get currentGeneration =>
+    Generation(client: testClient, connection: _connection);
+
+const firstServerTime = 1795000000000000000;
+
+int serverTimeOf(int snapshot) => firstServerTime + snapshot * 1000000;
+
+ResultPoint tick() => ResultPoint(
+  client: testClient,
+  connection: _connection,
+  snapshot: ++_snapshot,
+  serverTime: serverTimeOf(_snapshot),
+);
+
+ResultPoint get lastPoint => ResultPoint(
+  client: testClient,
+  connection: _connection,
+  snapshot: _snapshot,
+  serverTime: serverTimeOf(_snapshot),
+);
+
+typedef ReadAsked = ({ResultPoint point, int requestedAt});
+
+ReadAsked askRead(CloudQueue queue) =>
+    (point: tick(), requestedAt: queue.session.sequence);
+
+sealed class Asked {
+  const Asked();
+
+  int? get requestedAt;
+}
+
+final class AskedAtStep extends Asked {
+  const AskedAtStep(this.step);
+
+  final int step;
+
+  @override
+  int get requestedAt => step;
+}
+
+final class NotCausal extends Asked {
+  const NotCausal();
+
+  @override
+  int? get requestedAt => null;
+}
+
+ConnectionReturned reconnected() => ConnectionReturned(
+  Generation(client: testClient, connection: ++_connection),
+);
+
 ElementPatchOp movePatch(
   String opId, {
   String elementId = 'e1',
@@ -183,6 +241,12 @@ final class Client {
     read(this.base);
   }
 
+  EditAccessConfirmed accessConfirmed(int afterAttempt) => EditAccessConfirmed(
+    afterAttempt: afterAttempt,
+    session: queue.session.number,
+    point: tick(),
+  );
+
   StrategyRowSet base;
   DateTime? clock;
   late CloudQueue queue;
@@ -205,6 +269,7 @@ final class Client {
           heldServerTime,
           at: elapsed,
           session: queue.session.number,
+          point: lastPoint,
         ),
       );
     }
@@ -282,20 +347,39 @@ final class Client {
   List<StrategyOp> lastSent() =>
       effects.whereType<SendBatch>().last.ops.toList();
 
-  void arrive(ArrivedBase base) =>
-      must(BaseArrived(base, session: queue.session.number, from: beginRead()));
+  AskedAtStep get askedNow => AskedAtStep(queue.session.sequence);
 
-  ResultSource beginRead() => switch (step(const ReadBegun())) {
-    Stepped(:final effects) =>
-      effects.whereType<ReadStartIssued>().single.source,
-    final other => fail('no read start was issued: $other'),
-  };
+  void arrive(ArrivedBase base, {required Asked asked, ResultPoint? at}) =>
+      must(arrival(base, asked: asked, at: at));
+
+  BaseArrived arrival(
+    ArrivedBase base, {
+    required Asked asked,
+    ResultPoint? at,
+  }) => BaseArrived(
+    base,
+    session: queue.session.number,
+    point: at ?? tick(),
+    requestedAt: asked.requestedAt,
+  );
+
+  ResultRefused readRefused(
+    String? page,
+    String problem, {
+    required Asked asked,
+  }) => ResultRefused(
+    page: page,
+    problem: problem,
+    session: queue.session.number,
+    point: tick(),
+    requestedAt: asked.requestedAt,
+  );
 
   void read(StrategyRowSet server, {Iterable<String>? pages}) {
     base = server;
-    arrive(headerReadOf(server));
+    arrive(headerReadOf(server), asked: askedNow);
     for (final page in pages ?? server.pages.map((page) => page.publicId)) {
-      arrive(pageReadOf(server, page));
+      arrive(pageReadOf(server, page), asked: askedNow);
     }
   }
 
@@ -380,9 +464,6 @@ ArrivedBase pageReadOf(StrategyRows rows, String page) =>
 
 Matcher awaitingResult(ResultSubject subject) =>
     isA<AwaitingResult>().having((hold) => hold.subject, 'subject', subject);
-
-ResultSource readFrom(CloudQueue queue) =>
-    ReadOfThisDevice(queue.session.readStart);
 
 Matcher owed({int? unlessLife, int? namedLife}) => isA<ReadOwed>()
     .having((state) => state.unlessLife, 'unlessLife', unlessLife)

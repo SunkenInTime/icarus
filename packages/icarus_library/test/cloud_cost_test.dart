@@ -17,7 +17,7 @@ QueueEvent added(String opId, String elementId, String pageId) =>
     });
 
 Client queueOf(int length) {
-  final client = Client()..must(const ConnectionReturned());
+  final client = Client()..must(reconnected());
   for (var i = 0; i < length; i++) {
     client.must(added('add$i', 'n$i', i.isEven ? 'page-a' : 'page-b'));
   }
@@ -27,6 +27,7 @@ Client queueOf(int length) {
       OpAnswered(
         accepted,
         AppliedAnswer('add$i', revision: 1, life: fixtureLife),
+        point: tick(),
       ),
     );
   }
@@ -73,7 +74,11 @@ List<Measured> oneEntryEvents(Client client, {int rounds = 30}) {
     if (round.isEven) {
       measure(
         'answer',
-        OpAnswered(attempt, AppliedAnswer(id, revision: 1, life: fixtureLife)),
+        OpAnswered(
+          attempt,
+          AppliedAnswer(id, revision: 1, life: fixtureLife),
+          point: tick(),
+        ),
       );
     } else {
       measure(
@@ -112,7 +117,7 @@ void main() {
   });
 
   (int, int) pageWork(int unrelated) {
-    final client = Client()..must(const ConnectionReturned());
+    final client = Client()..must(reconnected());
     client.must(added('here', 'n-here', 'page-a'));
     for (var i = 0; i < unrelated; i++) {
       client.must(added('add$i', 'n$i', 'page-b'));
@@ -123,7 +128,8 @@ void main() {
       BaseArrived(
         pageReadOf(initialRows(), 'page-a'),
         session: client.queue.session.number,
-        from: readFrom(client.queue),
+        point: tick(),
+        requestedAt: client.queue.session.sequence,
       ),
     );
     entryViews(client.queue, now);

@@ -85,6 +85,8 @@ final class SignInHold extends RunHold {
   String toString() => 'waiting for the sign-in to change from count $from';
 }
 
+typedef _Asked = ({int session, ResultPoint point, int? requestedAt});
+
 typedef Bound = ({
   int connection,
   Account account,
@@ -214,6 +216,7 @@ final class CloudSender {
     required SenderStore store,
     required StoreBatchSend send,
     required StoreReads reads,
+    required Future<({int client, int connection})> Function() generation,
     required this.build,
     required this.clientId,
     Snapshot inputs = (
@@ -239,9 +242,10 @@ final class CloudSender {
         _timing = timing,
         _clock = clock ?? DateTime.now,
         _elapsed = elapsed ?? _monotonic(),
-        _recordsLost = recordsConnectionLost ?? (() => true) {
-    store.store.takeCloudResultsFrom(CloudResults.thisDevicesReads);
-  }
+        _generation = generation,
+        _recordsLost = recordsConnectionLost ?? (() => true);
+
+  final Future<({int client, int connection})> Function() _generation;
 
   final SenderStore _store;
   final CallGovernor _governor;
@@ -265,6 +269,7 @@ final class CloudSender {
   String? ended;
   var disposed = false;
   final bound = <String, Bound>{};
+  final _unanswered = <String, int?>{};
   final restarted = <String>{};
   final notBefore = <String, DateTime>{};
   final _failures = <String, int>{};
@@ -683,13 +688,21 @@ final class CloudSender {
       return const _Restart();
     }
     switch (outcome) {
-      case StoreReadAnswered(base: final HeaderRead header, :final role):
+      case StoreReadAnswered(
+          base: final HeaderRead header,
+          :final point,
+          :final role
+        ):
         if (role == null || !role.edits) {
           _wanted.remove(id);
           _note(id, 'not adopted: this account can only view it');
           return const _Skipped(StallExit.viewerOnTakeUp);
         }
-        final written = await _store.add(account, id, header);
+        final written = await _store.add(
+          account,
+          id,
+          StampedRead(header, point),
+        );
         if (disposed) return const _Ended();
         switch (written) {
           case WriteTroubled(:final trouble):
@@ -723,7 +736,7 @@ final class CloudSender {
         _note(id, 'not adopted: the server no longer has it');
         return const _Skipped(StallExit.goneOnTakeUp);
       case final other:
-        return _readRefused(id, account, read, other, snap, held: false);
+        return _readRefused(id, account, read, other, snap);
     }
   }
 
@@ -788,14 +801,10 @@ final class CloudSender {
             id, cloud, now, _timing.retiring, _boundMemory(id, snap).retired),
       );
       return _Skipped(
-        _restingOn(id, cloud, reading),
-        _earliest(retryAt, readDue),
-      );
+          _restingOn(id, cloud, reading), _nextDue(id, cloud, snap));
     }
-    final int session;
     switch (await _openSession(id, owner, snap)) {
-      case _Open(:final opened, :final number):
-        session = number;
+      case _Open(:final opened):
         if (opened) {
           switch (await _store.read(id)) {
             case QueueFound(cloud: final fresh):
@@ -812,6 +821,7 @@ final class CloudSender {
     }
     if (disposed) return const _Ended();
     if (held != null || _inputs != snap) return const _Restart();
+    final session = cloud.queue.session.number;
     final open = openAttempts(cloud);
     if (open.isNotEmpty) {
       final at = _clock();
@@ -832,15 +842,18 @@ final class CloudSender {
           return _readStep(id, owner, snap, session, cloud, next);
         }
         _note(id, 'held: ${standingOf(cloud.queue).name}');
-        return _Skipped(_restingOn(id, cloud, fresh.why), fresh.due);
-      case NothingSendable(:final why, :final retryAt):
+        return _Skipped(
+          _restingOn(id, cloud, fresh.why),
+          _nextDue(id, cloud, snap),
+        );
+      case NothingSendable(:final why):
         if (fresh.planned case final next?) {
           return _readStep(id, owner, snap, session, cloud, next);
         }
         _note(id, why);
         return _Skipped(
           _restingOn(id, cloud, fresh.why),
-          _earliest(retryAt, fresh.due),
+          _nextDue(id, cloud, snap),
         );
     }
   }
@@ -1003,6 +1016,12 @@ final class CloudSender {
     Snapshot snap,
     _Why why,
   ) async {
+    if (_store.shut != null) return const NotYet(null, StallExit.localTrouble);
+    if (_store.store.refusedStrategies[id] case final refusal?) {
+      _store.refused(id, refusal);
+      _note(id, 'held: $refusal');
+      return const NotYet(null, StallExit.localTrouble);
+    }
     sendingUnder = snap;
     reading = why.words;
     try {
@@ -1027,7 +1046,7 @@ final class CloudSender {
       _Why.need || _Why.adopt => cloud,
       _Why.access || _Why.retire => null,
     };
-    final ResultSource from;
+    final int? requestedAt;
     final StoreReadOutcome outcome;
     final DateTime started;
     final kept = _governor.heldFor(id, read, under);
@@ -1036,10 +1055,10 @@ final class CloudSender {
             outcome: final kept,
             started: final at,
             under: _,
-            read: (from: final source, session: final heldIn)
+            read: (requestedAt: final asked, session: final heldIn)
           )
           when heldIn == session:
-        from = source;
+        requestedAt = asked;
         outcome = kept;
         started = at;
       case _:
@@ -1048,17 +1067,11 @@ final class CloudSender {
             when at.isAfter(_clock())) {
           return _Skipped(row ?? why.row, at);
         }
-        switch (await _store.write(owner, id, const [ReadBegun()])) {
-          case WrittenWith(:final effects)
-              when effects.whereType<ReadStartIssued>().isNotEmpty:
-            from = effects.whereType<ReadStartIssued>().single.source;
-          case WrittenWith(:final notApplied):
-            _note(id, 'no read start was issued: ${notApplied.join('; ')}');
-            return const _Restart();
-          case WriteTroubled(:final trouble):
-            return _troubled(id, trouble);
-        }
-        if (disposed) return const _Ended();
+        final key = '$id $read';
+        requestedAt =
+            _unanswered.containsKey(key) && _unanswered[key] == snap.connection
+                ? null
+                : cloud.queue.session.sequence;
         switch (await _issue(id, owner, read, snap, why)) {
           case NotYet(:final at, why: final row):
             return _Skipped(row ?? why.row, at);
@@ -1068,6 +1081,14 @@ final class CloudSender {
         }
     }
     if (disposed) return const _Ended();
+    switch (outcome) {
+      case StoreReadLost(failure: TransportFailure.timeout):
+        _unanswered['$id $read'] = snap.connection;
+      case StoreReadAnswered() || StoreReadRefused() || StoreReadUnreadable():
+        _unanswered.remove('$id $read');
+      case StoreReadLost():
+        break;
+    }
     if (_inputs != snap) {
       _note(
           id,
@@ -1076,17 +1097,32 @@ final class CloudSender {
       return const _Restart();
     }
     switch (outcome) {
-      case StoreReadAnswered(:final base, :final role):
+      case StoreReadAnswered(:final base, :final point, :final role):
         final confirms = why == _Why.access && (role?.edits ?? false);
+        final asked = (
+          session: session,
+          point: point,
+          requestedAt: requestedAt,
+        );
         final written = await _store.write(owner, id, [
-          BaseArrived(base, session: session, from: from),
-          if (confirms) EditAccessConfirmed(afterAttempt: _accessLostAt(cloud)),
+          BaseArrived(
+            base,
+            session: session,
+            point: point,
+            requestedAt: requestedAt,
+          ),
+          if (confirms)
+            EditAccessConfirmed(
+              afterAttempt: _accessLostAt(cloud),
+              session: session,
+              point: point,
+            ),
         ]);
         if (disposed) return const _Ended();
         switch (written) {
           case WriteTroubled(trouble: ResultNotStored(:final why)):
             _governor.written(id, read, late: kept != null);
-            _governor.keep(id, read, _refusedMark(read, why));
+            _governor.keep(id, read, _refusedMark(read, why, asked));
             return _unsettled(
               id,
               owner,
@@ -1094,13 +1130,14 @@ final class CloudSender {
               snap,
               'the store would not keep $read: $why',
               row: StallExit.unreadableRead,
+              planned: cloud,
             );
           case WriteTroubled(:final trouble):
             _governor.hold(id, read, (
               outcome: outcome,
               started: started,
               under: under,
-              read: (from: from, session: session),
+              read: (requestedAt: requestedAt, session: session),
             ));
             return _troubled(id, trouble);
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
@@ -1112,7 +1149,9 @@ final class CloudSender {
               snap,
               'the queue did not take $read: ${notApplied.join('; ')}',
               row: StallExit.refusedResult,
-              marking: cloud,
+              marking: marking,
+              asked: asked,
+              planned: cloud,
             );
           case WrittenWith(:final effects):
             _governor.written(id, read, late: kept != null);
@@ -1129,7 +1168,9 @@ final class CloudSender {
                 'the page list and page $page keep disagreeing about which '
                 'life the page is in',
                 row: StallExit.pageAheadOfList,
-                marking: cloud,
+                marking: marking,
+                asked: asked,
+                planned: cloud,
               );
             }
         }
@@ -1153,8 +1194,9 @@ final class CloudSender {
           read,
           other,
           snap,
-          held: true,
           marking: marking,
+          request: (session: session, requestedAt: requestedAt),
+          planned: cloud,
         );
     }
   }
@@ -1198,27 +1240,49 @@ final class CloudSender {
     String why, {
     required StallExit row,
     CloudStrategy? marking,
+    _Asked? asked,
+    CloudStrategy? planned,
   }) async {
     final climbed = _boundMemory(id, snap).climbed('$read', _clock(), row);
     final count = climbed.settle['$read']!.count;
     _governor.remember(id, climbed);
-    if (marking != null &&
-        count >= _timing.unresolvedRounds &&
-        !_shownRefused(marking, read)) {
-      _governor.keep(id, read, _refusedMark(read, why));
+    if ((marking, asked) case (final marking?, final asked?)
+        when count >= _timing.unresolvedRounds &&
+            !_shownRefused(marking, read)) {
+      _governor.keep(id, read, _refusedMark(read, why, asked));
     }
     if (await _writeKept(id, owner) case final step?) return step;
     final at = _readAgainAt(id, read, snap);
     _note(id, '$why ($count in a row); reading $read again at $at');
-    return _Skipped(row, at);
+    return _Skipped(row, _earliest(at, _nextDue(id, planned, snap)));
   }
 
-  static QueueEvent _refusedMark(ReadOf read, String problem) => ResultRefused(
+  DateTime? _nextDue(String id, CloudStrategy? cloud, Snapshot snap) {
+    if (cloud == null) return null;
+    final now = _clock();
+    final read = switch (_plan(id, cloud, now, snap)) {
+      (planned: _?, due: _, why: _) => now,
+      (planned: null, :final due, why: _) => due,
+    };
+    final send = switch (pick(cloud, clientId)) {
+      Picked() when _sendable(cloud) =>
+        _governor.sendAt(id) ?? _settledAt(id) ?? now,
+      Picked() => null,
+      NothingSendable(:final retryAt) => retryAt,
+    };
+    return _earliest(read, send);
+  }
+
+  static QueueEvent _refusedMark(ReadOf read, String problem, _Asked asked) =>
+      ResultRefused(
         page: switch (read) {
           ReadOfPage(:final page) => page,
           ReadOfList() => null,
         },
         problem: problem,
+        session: asked.session,
+        point: asked.point,
+        requestedAt: asked.requestedAt,
       );
 
   Future<_Step?> _writeKept(
@@ -1243,13 +1307,19 @@ final class CloudSender {
         _governor.keptWritten(id, subject);
         continue;
       }
-      final written = await _store.write(owner, id, [write]);
+      final events = await _onTheCurrentConnection([write]);
       if (disposed) return const _Ended();
-      if (written case WriteTroubled(:final trouble)) {
-        return _troubled(id, trouble);
+      if (events == null) continue;
+      final written = await _store.write(owner, id, events);
+      if (disposed) return const _Ended();
+      switch (written) {
+        case WriteTroubled(:final trouble):
+          return _troubled(id, trouble);
+        case WrittenWith(:final effects):
+          _governor.keptWritten(id, subject);
+          _note(id, 'wrote what it had kept: $write');
+          if (_holdsFrom(effects, _inputs)) return const _Restart();
       }
-      _governor.keptWritten(id, subject);
-      _note(id, 'wrote what it had kept: $write');
     }
     return null;
   }
@@ -1280,26 +1350,91 @@ final class CloudSender {
     ReadOf read,
     StoreReadOutcome outcome,
     Snapshot snap, {
-    required bool held,
     CloudStrategy? marking,
+    ({int session, int? requestedAt})? request,
+    CloudStrategy? planned,
   }) async {
     switch (outcome) {
       case StoreReadRefused(
-          refusal: StoreReadRefusal.accountMismatch ||
-              StoreReadRefusal.unauthenticated,
-          :final why
+          refusal: final refusal &&
+              (StoreReadRefusal.accountMismatch ||
+                  StoreReadRefusal.unauthenticated ||
+                  StoreReadRefusal.upgradeRequired),
+          :final why,
+          :final point,
         ):
-        signInWaitFrom = snap.signIns;
-        _note(id, 'the read was refused for the sign-in: $why');
-        return const _Acted();
-      case StoreReadRefused(refusal: StoreReadRefusal.upgradeRequired):
-        upgradeAsked = true;
-        if (held) {
-          _governor.keep(id, #upgrade, ReadRefusedForUpgrade(build: build));
-          if (await _writeKept(id, owner) case final step?) return step;
+        final row = switch (refusal) {
+          StoreReadRefusal.upgradeRequired => StallExit.upgrade,
+          _ => StallExit.signIn,
+        };
+        final session = request?.session;
+        if (session == null) {
+          return _unsettled(
+            id,
+            owner,
+            read,
+            snap,
+            'the read to adopt it was refused ($why); only a stored queue '
+            'can say whether the refusal is from the current connection, so '
+            'it is read again',
+            row: row,
+            planned: planned,
+          );
         }
-        _note(id, 'the read asks for a newer build');
-        return const _Acted();
+        final event = switch (refusal) {
+          StoreReadRefusal.upgradeRequired => ReadRefusedForUpgrade(
+              build: build,
+              session: session,
+              point: point,
+            ),
+          StoreReadRefusal.accountMismatch => ReadRefusedForSignIn(
+              SignInRefusal.accountMismatch,
+              session: session,
+              point: point,
+            ),
+          _ => ReadRefusedForSignIn(
+              SignInRefusal.unauthenticated,
+              session: session,
+              point: point,
+            ),
+        };
+        if (event is ReadRefusedForUpgrade) _governor.keep(id, #upgrade, event);
+        final events = await _onTheCurrentConnection([event]);
+        if (disposed) return const _Ended();
+        if (events == null) {
+          return _unsettled(
+            id,
+            owner,
+            read,
+            snap,
+            'the read was refused ($why), and the client did not say which '
+            'connection it is on now',
+            row: StallExit.lostRead,
+            planned: planned,
+          );
+        }
+        final written = await _store.write(owner, id, events);
+        if (disposed) return const _Ended();
+        switch (written) {
+          case WriteTroubled(:final trouble):
+            return _troubled(id, trouble);
+          case WrittenWith(:final effects):
+            _governor.keptWritten(id, #upgrade);
+            if (_holdsFrom(effects, snap)) {
+              _note(id, 'the read was refused: $why');
+              return const _Acted();
+            }
+            return _unsettled(
+              id,
+              owner,
+              read,
+              snap,
+              'the read was refused ($why) on a connection that has since '
+              'ended',
+              row: StallExit.lostRead,
+              planned: planned,
+            );
+        }
       case StoreReadRefused(refusal: StoreReadRefusal.forbidden, :final why):
         final cannot = CannotRead(why);
         _governor.climbAccess(id, snap, cannot);
@@ -1311,8 +1446,11 @@ final class CloudSender {
                   'app starts again'
               : '$cannot; reading again at $at',
         );
-        return _Skipped(StallExit.forbidden, at);
-      case StoreReadUnreadable(:final problem):
+        return _Skipped(
+          StallExit.forbidden,
+          _earliest(at, _nextDue(id, planned, snap)),
+        );
+      case StoreReadUnreadable(:final problem, :final point):
         return _unsettled(
           id,
           owner,
@@ -1321,6 +1459,15 @@ final class CloudSender {
           'the read came back in rows this build cannot read ($problem)',
           row: StallExit.unreadableRead,
           marking: marking,
+          planned: planned,
+          asked: switch (request) {
+            (:final session, :final requestedAt) => (
+                session: session,
+                point: point,
+                requestedAt: requestedAt,
+              ),
+            null => null,
+          },
         );
       case StoreReadLost(:final why):
         return _unsettled(
@@ -1330,6 +1477,7 @@ final class CloudSender {
           snap,
           'the read was lost ($why)',
           row: StallExit.lostRead,
+          planned: planned,
         );
       case StoreReadAnswered():
         return const _Acted();
@@ -1394,52 +1542,39 @@ final class CloudSender {
         batch.unchecked.isNotEmpty) {
       _store.report(UncheckedWithoutBasis(id, batch));
     }
-    switch (outcome) {
-      case StoreBatchRefusedWhole(refusal: BatchRefusal.unauthenticated) ||
-            StoreBatchAccountMismatch():
-        signInWaitFrom = snap.signIns;
-      case StoreBatchRefusedWhole(refusal: BatchRefusal.upgradeRequired):
-        upgradeAsked = true;
-      case _:
-        break;
-    }
-    final written = await _store.write(
-      owner,
-      id,
-      outcome is StoreBatchAccountMismatch
-          ? [ClaimReleased(batch.attempt)]
-          : [
-              ...answersOf(batch, outcome, _clock()),
-              if (outcome case StoreBatchAnswered(serverTime: final time?))
-                ServerTimeHeld(time, at: answeredAt, session: batch.session),
-            ],
-      batch: batch,
-    );
+    final events = switch (outcome) {
+      StoreBatchLost() => answersOf(batch, outcome, _clock()),
+      _ => await _onTheCurrentConnection([
+            ...answersOf(batch, outcome, _clock()),
+            if (outcome
+                case StoreBatchAnswered(
+                  serverTime: final time?,
+                  :final point,
+                  :final answers,
+                ) when answers.isNotEmpty)
+              ServerTimeHeld(
+                time,
+                at: answeredAt,
+                session: batch.session,
+                point: point,
+              ),
+          ]) ??
+          [
+            TransportFailed(
+              batch.attempt,
+              TransportFailure.network,
+              at: _clock(),
+            ),
+          ],
+    };
+    if (disposed) return const _Ended();
+    final written = await _store.write(owner, id, events, batch: batch);
     if (disposed) return const _Ended();
     switch (written) {
       case WrittenWith(:final effects, :final notApplied):
-        if (effects.any((effect) => effect is HoldSendingForUpgrade)) {
-          upgradeAsked = true;
-        }
-        if (effects.any((effect) => effect is ReportUnauthenticated)) {
-          signInWaitFrom = snap.signIns;
-        }
-        switch (outcome) {
-          case StoreBatchRefusedWhole() || StoreBatchOutsideWindow():
-            _governor.newEvidence(id, {const ReadOfList()});
-          case StoreBatchAnswered(:final answers)
-              when answers.any(_refusesAnEdit):
-            _governor.newEvidence(id, {
-              for (final answer in answers)
-                if (_refusesAnEdit(answer))
-                  for (final op in batch.ops)
-                    if (op.opId == answer.opId) _subjectOf(op),
-            });
-          case StoreBatchAnswered() ||
-                StoreBatchLost() ||
-                StoreBatchAccountMismatch():
-            break;
-        }
+        _holdsFrom(effects, snap);
+        final evidence = _evidenceOf(batch, outcome, effects);
+        if (evidence.isNotEmpty) _governor.newEvidence(id, evidence);
         retiring.active(id, _clock());
         _note(
           id,
@@ -1453,6 +1588,48 @@ final class CloudSender {
         if (_troubled(id, trouble) is _Ended) return const _Ended();
     }
     return const _Acted();
+  }
+
+  static Set<ReadOf> _evidenceOf(
+    ClaimedBatch batch,
+    StoreBatchOutcome outcome,
+    List<QueueEffect> effects,
+  ) {
+    final admitted = {
+      for (final effect in effects)
+        if (effect case AnswerAdmitted(:final attempt, :final opId)
+            when attempt == batch.attempt)
+          opId,
+    };
+    return switch (outcome) {
+      StoreBatchRefusedWhole() ||
+      StoreBatchOutsideWindow() when admitted.contains(null) =>
+        {const ReadOfList()},
+      StoreBatchAnswered(:final answers) => {
+          for (final answer in answers)
+            if (_refusesAnEdit(answer) && admitted.contains(answer.opId))
+              for (final op in batch.ops)
+                if (op.opId == answer.opId) _subjectOf(op),
+        },
+      _ => const {},
+    };
+  }
+
+  bool _holdsFrom(List<QueueEffect> effects, Snapshot snap) {
+    var holds = false;
+    for (final effect in effects) {
+      switch (effect) {
+        case HoldSendingForUpgrade():
+          upgradeAsked = true;
+          holds = true;
+        case ReportUnauthenticated() || ReportAccountMismatch():
+          signInWaitFrom = snap.signIns;
+          holds = true;
+        case _:
+          break;
+      }
+    }
+    return holds;
   }
 
   static ReadOf _subjectOf(StrategyOp op) => switch (targetOf(op)) {
@@ -1475,6 +1652,23 @@ final class CloudSender {
           false,
       };
 
+  Future<List<QueueEvent>?> _onTheCurrentConnection(
+    List<QueueEvent> events,
+  ) async {
+    if (_inputs.connection == null) return null;
+    try {
+      final now = await _generation();
+      return [
+        ConnectionReturned(
+          Generation(client: now.client, connection: now.connection),
+        ),
+        ...events,
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<_Session> _openSession(
     String id,
     Account owner,
@@ -1495,10 +1689,28 @@ final class CloudSender {
         'session was opened',
       );
     }
+    final ({int client, int connection}) on;
+    try {
+      on = await _generation();
+    } catch (error) {
+      return _Troubled(
+        NotWrittenNow('the client did not say which connection it is on: '
+            '$error'),
+      );
+    }
+    if (disposed) return const _Stale('the sender was disposed');
+    if (snap != _inputs) {
+      return const _Stale(
+        'the connection, the account or the sign-in changed while the client '
+        'said which connection it is on',
+      );
+    }
     final events = [
       if (!restarted.contains(id)) AppRestarted(build: build),
       if (last != null && last.account != account) const AccountChanged(),
-      const ConnectionReturned(),
+      ConnectionReturned(
+        Generation(client: on.client, connection: on.connection),
+      ),
     ];
     final written = await _store.write(owner, id, events, readSession: true);
     if (disposed) return const _Stale('the sender was disposed');
@@ -1639,8 +1851,9 @@ List<QueueEvent> answersOf(
   DateTime at,
 ) =>
     switch (outcome) {
-      StoreBatchAnswered(:final answers, :final complete) => [
-          for (final answer in answers) OpAnswered(batch.attempt, answer),
+      StoreBatchAnswered(:final answers, :final complete, :final point) => [
+          for (final answer in answers)
+            OpAnswered(batch.attempt, answer, point: point),
           if (!complete)
             TransportFailed(
               batch.attempt,
@@ -1648,10 +1861,16 @@ List<QueueEvent> answersOf(
               at: at,
             ),
         ],
-      StoreBatchRefusedWhole(:final refusal, :final currentLife) => [
+      StoreBatchRefusedWhole(
+        :final refusal,
+        :final currentLife,
+        :final point
+      ) =>
+        [
           BatchRefused(
             batch.attempt,
             refusal,
+            point: point,
             at: at,
             currentLife: currentLife,
           ),
@@ -1659,8 +1878,15 @@ List<QueueEvent> answersOf(
       StoreBatchLost(:final failure) => [
           TransportFailed(batch.attempt, failure, at: at),
         ],
-      StoreBatchAccountMismatch() => [ClaimReleased(batch.attempt)],
-      StoreBatchOutsideWindow() => [
-          BatchRefused(batch.attempt, BatchRefusal.uncheckedTooLate, at: at),
+      StoreBatchAccountMismatch(:final point) => [
+          BatchAccountMismatch(batch.attempt, point: point),
+        ],
+      StoreBatchOutsideWindow(:final point) => [
+          BatchRefused(
+            batch.attempt,
+            BatchRefusal.uncheckedTooLate,
+            point: point,
+            at: at,
+          ),
         ],
     };

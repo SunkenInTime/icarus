@@ -16,8 +16,7 @@ void main() {
           element('e3', pageId: 'page-b'),
         ],
       );
-      final client = Client(base: initialRows())
-        ..must(const ConnectionReturned());
+      final client = Client(base: initialRows())..must(reconnected());
       client.read(initialRows());
       client.read(moved);
       client.base = initialRows();
@@ -33,12 +32,13 @@ void main() {
         OpAnswered(
           attempt,
           const AppliedAnswer('merge', revision: 4, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.queue.landed.single.produced, isNull);
       client
         ..must(const ConnectionLost())
-        ..must(const ConnectionReturned());
+        ..must(reconnected());
       client.edit(movePatch('whole', elementId: 'e2', expected: 4));
       expect(client.view('whole').holds, [
         awaitingResult(RowResult(const ElementTarget('e2'), 'page-b')),
