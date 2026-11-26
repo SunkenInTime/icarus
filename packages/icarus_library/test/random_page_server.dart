@@ -362,7 +362,7 @@ final class RandomServer {
 
 final class Observed {
   final counts = <String, int>{};
-  final _seen = <String, (String, String)>{};
+  final _seen = <String, (String, int?, String)>{};
 
   void _count(String what) => counts[what] = (counts[what] ?? 0) + 1;
 
@@ -383,11 +383,14 @@ final class Observed {
           ),
           _ => throw StateError('not page content'),
         };
-        if (_seen[id] case (final was, final before)) {
+        final life = createdAtOf(row);
+        if (_seen[id] case (final was, final lived, final before)) {
           if (was != pageId) _count('an item seen on another page');
-          if (before != payload) _count('an item seen with another payload');
+          if (was == pageId && lived == life && before != payload) {
+            _count('an item seen with another payload on its page in its life');
+          }
         }
-        _seen[id] = (pageId, payload);
+        _seen[id] = (pageId, life, payload);
       }
     }
   }
