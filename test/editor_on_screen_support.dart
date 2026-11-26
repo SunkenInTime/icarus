@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
@@ -15,6 +16,9 @@ const _reportsOfTheTestFontAndTeardown = [
 ];
 
 FlutterExceptionHandler? _reportedBeforeTheEditor;
+
+late BuildContext libraryContext;
+late WidgetRef libraryRef;
 
 Future<List<MethodCall>> pumpLibraryWithEditors(
   WidgetTester tester,
@@ -44,7 +48,13 @@ Future<List<MethodCall>> pumpLibraryWithEditors(
     child: ShadApp(
       navigatorKey: appNavigatorKey,
       navigatorObservers: [mouseNavigationRouteObserver],
-      home: const Scaffold(body: Text('library')),
+      home: Scaffold(
+        body: Consumer(builder: (context, ref, _) {
+          libraryContext = context;
+          libraryRef = ref;
+          return const Text('library');
+        }),
+      ),
     ),
   ));
   return windowCalls;
@@ -72,5 +82,19 @@ Future<void> leaveEditors(
   await settleWithDisk(tester);
   await tester.pumpWidget(const SizedBox());
   await tester.pump(const Duration(seconds: 30));
+  await settleWithDisk(tester);
   FlutterError.onError = _reportedBeforeTheEditor;
+}
+
+Future<void> closeHive(WidgetTester tester) async {
+  var closed = false;
+  final closing = Hive.close().whenComplete(() => closed = true);
+  for (var turn = 0; turn < 50 && !closed; turn++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  expect(closed, isTrue);
+  await closing;
 }

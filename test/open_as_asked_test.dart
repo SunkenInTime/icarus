@@ -1,16 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
-import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
-import 'package:icarus/strategy_view.dart';
 
-import 'editor_on_screen_support.dart';
 import 'library_rows/generated_strategies.dart';
 import 'library_store/unit_harness.dart';
 
@@ -118,52 +115,5 @@ void main() {
           await strategies.openLocal('wanted', asked: wanted), isA<Changed>());
       expect(container.read(strategyProvider).strategyId, 'wanted');
     });
-  });
-
-  testWidgets(
-      'a late editor push gives way whether it arrives while the wanted '
-      'editor waits for its first frame or after it opened, and the wanted '
-      'one opens', (tester) async {
-    await tester.runAsync(() async {
-      await _stored('wanted');
-      await _stored('late');
-    });
-    await pumpLibraryWithEditors(tester, container);
-    final navigator = appNavigatorKey.currentState!;
-    final lateAsked = strategies.askedByTheUserNow();
-
-    expect(
-      StrategyView.open(
-        navigator,
-        asked: strategies.askedByTheUserNow(),
-        initialStrategyId: 'wanted',
-        initialStrategyName: 'wanted',
-      ),
-      isA<Pushed>(),
-    );
-    final beforeItsFirstFrame = StrategyView.open(
-      navigator,
-      asked: lateAsked,
-      initialStrategyId: 'late',
-      initialStrategyName: 'late',
-    );
-    await settleWithDisk(tester);
-
-    expect(beforeItsFirstFrame, isA<Refused>());
-    expect(container.read(strategyProvider).strategyId, 'wanted');
-    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
-
-    final afterItOpened = StrategyView.open(
-      navigator,
-      asked: lateAsked,
-      initialStrategyId: 'late',
-      initialStrategyName: 'late',
-    );
-    await settleWithDisk(tester);
-
-    expect(afterItOpened, isA<Refused>());
-    expect(container.read(strategyProvider).strategyId, 'wanted');
-    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
-    await leaveEditors(tester, container);
   });
 }

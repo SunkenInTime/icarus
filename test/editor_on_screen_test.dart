@@ -133,4 +133,51 @@ void main() {
     expect(windowCalls.map((call) => call.method), ['close']);
     await leaveEditors(tester, container);
   });
+
+  testWidgets(
+      'a late editor push gives way whether it arrives while the wanted '
+      'editor waits for its first frame or after it opened, and the wanted '
+      'one opens', (tester) async {
+    await tester.runAsync(() async {
+      await _stored('wanted');
+      await _stored('late');
+    });
+    await pumpLibraryWithEditors(tester, container);
+    final navigator = appNavigatorKey.currentState!;
+    final lateAsked = strategies.askedByTheUserNow();
+
+    expect(
+      StrategyView.open(
+        navigator,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'wanted',
+        initialStrategyName: 'wanted',
+      ),
+      isA<Pushed>(),
+    );
+    final beforeItsFirstFrame = StrategyView.open(
+      navigator,
+      asked: lateAsked,
+      initialStrategyId: 'late',
+      initialStrategyName: 'late',
+    );
+    await settleWithDisk(tester);
+
+    expect(beforeItsFirstFrame, isA<Refused>());
+    expect(container.read(strategyProvider).strategyId, 'wanted');
+    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
+
+    final afterItOpened = StrategyView.open(
+      navigator,
+      asked: lateAsked,
+      initialStrategyId: 'late',
+      initialStrategyName: 'late',
+    );
+    await settleWithDisk(tester);
+
+    expect(afterItOpened, isA<Refused>());
+    expect(container.read(strategyProvider).strategyId, 'wanted');
+    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
+    await leaveEditors(tester, container);
+  });
 }
