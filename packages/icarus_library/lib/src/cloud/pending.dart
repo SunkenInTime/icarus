@@ -841,7 +841,13 @@ final class AppClosedWhileSending extends SendCut {
   String toString() => 'app closed';
 }
 
-enum TransportFailure { network, timeout, malformedAnswer, missingAnswer }
+enum TransportFailure {
+  network,
+  timeout,
+  malformedAnswer,
+  missingAnswer,
+  answeredOnEndedConnection,
+}
 
 enum Life { live, gone }
 
@@ -874,7 +880,11 @@ final class LandedWork {
   final ProducedRow? produced;
   final Row? movedRow;
   final bool shownWithout;
-  final ReadStart answeredAt;
+  final AfterAnswer answeredAt;
+
+  static const answeredBeforeAnyResult = AfterAnswer(
+    ResultOrder.beforeAnyResult,
+  );
 
   LandedWork withoutProduced() => LandedWork(
     attempt: attempt,

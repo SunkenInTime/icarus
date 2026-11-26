@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_results.dart';
@@ -131,6 +129,8 @@ int lifeOfChecked(StrategyRowSet rows, StrategyOp op) {
   return (row == null ? null : createdAtOf(row)) ?? firstLife;
 }
 
+const stampedWhenAnswered = ResultPoint(client: 0, connection: 0, snapshot: 0);
+
 final class FakeServer {
   int nextLife = firstLife + 1;
   final calls = <ServerCall>[];
@@ -150,6 +150,18 @@ final class FakeServer {
   DateTime Function()? clock;
   String? Function()? whyNow;
   StoreReadOutcome? Function(ReadCall call)? overrideRead;
+  int connection = 1;
+  var _snapshot = 0;
+
+  ResultPoint stamp() => ResultPoint(
+        client: 1,
+        connection: connection,
+        snapshot: ++_snapshot,
+        serverTime: _snapshot * 1000,
+      );
+
+  Future<({int client, int connection})> generation() async =>
+      (client: 1, connection: connection);
 
   int get applied => appliedTimes.length;
 
@@ -257,6 +269,7 @@ final class FakeServer {
             (createdAtOf(held.strategy) ?? firstLife) != call.strategyLife) {
       return StoreBatchRefusedWhole(
         BatchRefusal.strategyReplaced,
+        point: stamp(),
         currentLife: createdAtOf(held.strategy) ?? firstLife,
       );
     }
@@ -264,12 +277,14 @@ final class FakeServer {
     final asked = call.serverTime is ServerTimeAsked;
     switch (call.basis) {
       case null when asked && call.unchecked.isNotEmpty:
-        return const StoreBatchOutsideWindow(
+        return StoreBatchOutsideWindow(
           'An unchecked change needs a live basis',
+          point: stamp(),
         );
       case final basis? when basis > now || now - basis > 30000:
-        return const StoreBatchOutsideWindow(
+        return StoreBatchOutsideWindow(
           'The batch arrived too long after its live basis',
+          point: stamp(),
         );
       case _:
         break;
@@ -285,9 +300,52 @@ final class FakeServer {
           ),
       ],
       complete: true,
+      point: stamp(),
       serverTime: asked ? now : null,
     );
   }
+
+  static StoreReadOutcome _readAt(StoreReadOutcome outcome, ResultPoint at) =>
+      switch (outcome) {
+        StoreReadAnswered(:final base, :final role, :final point)
+            when point == stampedWhenAnswered =>
+          StoreReadAnswered(base, point: at, role: role),
+        StoreReadUnreadable(:final problem, :final point)
+            when point == stampedWhenAnswered =>
+          StoreReadUnreadable(problem, point: at),
+        _ => outcome,
+      };
+
+  static StoreBatchOutcome _answeredAt(
+    StoreBatchOutcome outcome,
+    ResultPoint at,
+  ) =>
+      switch (outcome) {
+        StoreBatchAnswered(
+          :final answers,
+          :final complete,
+          :final serverTime,
+          :final point
+        )
+            when point == stampedWhenAnswered =>
+          StoreBatchAnswered(
+            answers,
+            complete: complete,
+            point: at,
+            serverTime: serverTime,
+          ),
+        StoreBatchRefusedWhole(:final refusal, :final currentLife, :final point)
+            when point == stampedWhenAnswered =>
+          StoreBatchRefusedWhole(
+            refusal,
+            point: at,
+            currentLife: currentLife,
+          ),
+        StoreBatchOutsideWindow(:final why, :final point)
+            when point == stampedWhenAnswered =>
+          StoreBatchOutsideWindow(why, point: at),
+        _ => outcome,
+      };
 
   OpAnswer teammate(String strategyId, StrategyOp op) =>
       _applyOne(strategyId, 'teammate', op);
@@ -318,7 +376,9 @@ final class FakeServer {
     }
     final queued = _answers[strategyPublicId];
     if (queued != null && queued.isNotEmpty) {
-      return queued.removeAt(0)(call);
+      final answering = queued.removeAt(0)(call);
+      final point = stamp();
+      return answering.then((outcome) => _answeredAt(outcome, point));
     }
     return Future.value(applyAll(call));
   }
@@ -341,17 +401,21 @@ final class FakeServer {
     if (held == null) {
       return StoreReadAnswered(
         call.page == null ? const StrategyGone() : PageGone(call.page!),
+        point: stamp(),
       );
     }
     final page = call.page;
     if (page == null) {
       return StoreReadAnswered(
         headerOf(call.strategyId),
+        point: stamp(),
         role: roles[call.strategyId] ?? StoreReadRole.owner,
       );
     }
     final pageRow = held.page(page);
-    if (pageRow == null) return StoreReadAnswered(PageGone(page));
+    if (pageRow == null) {
+      return StoreReadAnswered(PageGone(page), point: stamp());
+    }
     return StoreReadAnswered(
       PageRead(
         page: lived(pageRow),
@@ -360,6 +424,7 @@ final class FakeServer {
           for (final row in held.lineupGroupsOn(page)) lived(row),
         ],
       ),
+      point: stamp(),
     );
   }
 
@@ -393,10 +458,12 @@ final class FakeServer {
     }
     final queued = _readAnswers[call.strategyId];
     if (queued != null && queued.isNotEmpty) {
-      return queued.removeAt(0)(call);
+      final answering = queued.removeAt(0)(call);
+      final point = stamp();
+      return answering.then((outcome) => _readAt(outcome, point));
     }
     if (overrideRead?.call(call) case final outcome?) {
-      return Future.value(outcome);
+      return Future.value(_readAt(outcome, stamp()));
     }
     return Future.value(_answerRead(call));
   }
@@ -671,6 +738,7 @@ final class World {
 
   set connection(int? next) {
     _connection = next;
+    if (next != null) server.connection = next;
     _push();
   }
 
@@ -723,19 +791,21 @@ final class World {
     ).then(
       (opened) => store = switch (opened) {
         StoreOpened(:final store) => store,
-        StoreNotOpened(:final problem) => throw StateError('$problem'),
+        StoreNotOpened(:final problem) => throw StateError(problem.toString()),
       },
     );
     async.flushMicrotasks();
     final fake = server ?? FakeServer();
     fake
       ..owners[strategyId] ??= servedAccount
+      ..connection = inputs.connection ?? fake.connection
       ..clock = () => start.add(async.elapsed);
     fake.rows[strategyId] ??= serverRows();
     final sender = CloudSender(
       store: SlowSenderStore(store!),
       send: fake.send,
       reads: fake.reads,
+      generation: fake.generation,
       build: build,
       clientId: clientId,
       inputs: inputs,
@@ -782,13 +852,14 @@ final class World {
     );
     final header = switch (pageListRead(list)) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError('$problem'),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[id] = StrategyRowSet(
       strategy: header.strategy as ReadableStrategy,
     );
     Saving<StrategySummary, LibraryRefusal>? added;
-    store.addCloudStrategy(whose, header, const []).then(
+    store.addCloudStrategy(
+        whose, StampedRead(header, server.stamp()), const []).then(
       (value) => added = value,
     );
     async.flushMicrotasks();
@@ -868,7 +939,7 @@ final class World {
       pageList(serverRows(), more: [secondPage()]),
     )) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError('$problem'),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[strategyId] = server.rows[strategyId]!
         .withRows([...header.pages, ...header.settings]);
@@ -897,7 +968,7 @@ final class World {
       ),
     )) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError(problem),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[strategyId] = server.rows[strategyId]!
         .withRows([...header.pages, ...header.settings]);
@@ -957,34 +1028,15 @@ final class World {
     }
   }
 
-  ResultSource beginRead() {
-    Saving<Recorded, CommitRefusal>? recorded;
-    store.record(servedAccount, strategyId, const [ReadBegun()]).then(
-        (value) => recorded = value);
-    async.flushMicrotasks();
-    return switch (recorded) {
-      Saved(value: Recorded(outcomes: [ReportApplied(:final effects)])) =>
-        effects.whereType<ReadStartIssued>().single.source,
-      final other => throw StateError('no read start was issued: $other'),
-    };
-  }
-
   void recordRead(List<ArrivedBase> results) {
-    final from = beginRead();
-    _record([
-      for (final result in results)
-        BaseArrived(result, session: cloud().queue.session.number, from: from),
-    ]);
-  }
-
-  void recordAsRead(List<ArrivedBase> results) {
-    final queue = cloud().queue;
+    final session = cloud().queue.session;
     _record([
       for (final result in results)
         BaseArrived(
           result,
-          session: queue.session.number,
-          from: ReadOfThisDevice(queue.session.readStart),
+          session: session.number,
+          point: server.stamp(),
+          requestedAt: session.sequence,
         ),
     ]);
   }

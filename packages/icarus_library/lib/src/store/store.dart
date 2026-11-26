@@ -336,19 +336,6 @@ final class LibraryStore {
   final CanRead _canRead;
   final DateTime Function() _clock;
   final String _build;
-  CloudResults? _cloudResults;
-
-  CloudResults? get cloudResults => _cloudResults;
-
-  void takeCloudResultsFrom(CloudResults results) {
-    if (_cloudResults case final chosen? when chosen != results) {
-      throw StateError(
-        'this run takes results from ${chosen.name}, not ${results.name}',
-      );
-    }
-    _cloudResults = results;
-  }
-
   _State _state = const _Ready();
   Future<void> _tail = Future.value();
   Future<Releasing>? _released;
@@ -1693,10 +1680,10 @@ final class LibraryStore {
 
   Future<Saving<StrategySummary, LibraryRefusal>> addCloudStrategy(
     Account account,
-    HeaderRead header,
-    List<PageRead> pages,
+    StampedRead<HeaderRead> header,
+    List<StampedRead<PageRead>> pages,
   ) {
-    final asked = List<PageRead>.of(pages);
+    final asked = List<StampedRead<PageRead>>.of(pages);
     return _inTurn(() async {
       if (_settle() case StorageFailed(:final failure)) {
         return NotSaved(failure);

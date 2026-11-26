@@ -42,6 +42,7 @@ StoreBatchAnswered rowReplaced(ServerCall call) => StoreBatchAnswered(
           RejectedAnswer(op, RejectionReason.rowReplaced, const NoServerCopy()),
       ],
       complete: true,
+      point: stampedWhenAnswered,
     );
 
 StoreReadAnswered laterPage(World world, String page) {
@@ -53,6 +54,7 @@ StoreReadAnswered laterPage(World world, String page) {
       elements: const [],
       lineupGroups: const [],
     ),
+    point: stampedWhenAnswered,
   );
 }
 
@@ -123,7 +125,7 @@ final stalls = <StallExit, Stall>{
     adopts: true,
     start: (world) {
       world.server.overrideRead = (call) => call.page == 'p2'
-          ? const StoreReadAnswered(PageGone('nowhere'))
+          ? const StoreReadAnswered(PageGone('nowhere'), point: stampedWhenAnswered)
           : null;
       world
         ..connection = null
@@ -188,7 +190,8 @@ final stalls = <StallExit, Stall>{
     adopts: true,
     start: (world) {
       world.server.overrideRead = (call) => call.page == 'p2'
-          ? const StoreReadUnreadable('rows this build cannot read')
+          ? const StoreReadUnreadable('rows this build cannot read',
+              point: stampedWhenAnswered)
           : null;
       world
         ..connection = null
@@ -208,7 +211,8 @@ final stalls = <StallExit, Stall>{
       world.server.roles[strategyId] = StoreReadRole.viewer;
       world.server.answerWith(
         strategyId,
-        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+            point: stampedWhenAnswered),
       );
       world.commitMove(1);
     },
@@ -221,7 +225,8 @@ final stalls = <StallExit, Stall>{
     start: (world) {
       world.server.answerWith(
         strategyId,
-        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+            point: stampedWhenAnswered),
       );
       world.server.overrideRead = (call) =>
           const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
@@ -236,7 +241,8 @@ final stalls = <StallExit, Stall>{
     start: (world) {
       world.server.answerWith(
         strategyId,
-        const StoreBatchRefusedWhole(BatchRefusal.unauthenticated),
+        const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
+            point: stampedWhenAnswered),
       );
       world.commitMove(1);
     },
@@ -247,7 +253,8 @@ final stalls = <StallExit, Stall>{
     start: (world) {
       world.server.answerWith(
         strategyId,
-        const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired),
+        const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired,
+            point: stampedWhenAnswered),
       );
       world.commitMove(1);
     },
@@ -273,7 +280,8 @@ final stalls = <StallExit, Stall>{
       world.server.answerNext(strategyId, (call) {
         world.replaceStrategyOnServer();
         return Future.value(
-          const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced),
+          const StoreBatchRefusedWhole(BatchRefusal.strategyReplaced,
+              point: stampedWhenAnswered),
         );
       });
       world.commitMove(1);
@@ -285,7 +293,8 @@ final stalls = <StallExit, Stall>{
     start: (world) {
       world.server.answerWith(
         strategyId,
-        const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted),
+        const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted,
+            point: stampedWhenAnswered),
       );
       world.commitMove(1);
     },
@@ -307,6 +316,7 @@ final stalls = <StallExit, Stall>{
                 ),
             ],
             complete: true,
+            point: stampedWhenAnswered,
           ),
         ),
       );
@@ -336,8 +346,9 @@ final stalls = <StallExit, Stall>{
   StallExit.goneOnTakeUp: Stall(
     held: false,
     start: (world) {
-      world.server.overrideRead = (call) =>
-          call.page == null ? const StoreReadAnswered(StrategyGone()) : null;
+      world.server.overrideRead = (call) => call.page == null
+          ? const StoreReadAnswered(StrategyGone(), point: stampedWhenAnswered)
+          : null;
       world.sender.adopt(strategyId);
     },
     goAgain: (world) {
@@ -351,7 +362,8 @@ final stalls = <StallExit, Stall>{
     start: (world) {
       world.server.answerNext(
         strategyId,
-        (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+        (call) => Future.value(
+            const StoreBatchOutsideWindow('refused', point: stampedWhenAnswered)),
       );
       world.commitMove(1);
     },
@@ -757,7 +769,8 @@ void main() {
       inWorld((world) {
         world.server.answerWith(
           strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+              point: stampedWhenAnswered),
         );
         world.server.overrideRead = (call) =>
             const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
@@ -783,7 +796,8 @@ void main() {
       ('an edit rejected', rowReplaced),
       (
         'a batch refused whole',
-        (call) => const StoreBatchRefusedWhole(BatchRefusal.uncheckedTooLate),
+        (call) => const StoreBatchRefusedWhole(BatchRefusal.uncheckedTooLate,
+            point: stampedWhenAnswered),
       ),
     ]) {
       test(
@@ -795,7 +809,8 @@ void main() {
             world.sender.adopt(strategyId);
             world.settle(const Duration(minutes: 1));
             world.server.overrideRead = (call) => call.page == 'p2'
-                ? const StoreReadAnswered(PageGone('nowhere'))
+                ? const StoreReadAnswered(PageGone('nowhere'),
+                    point: stampedWhenAnswered)
                 : null;
             world
               ..connection = null
@@ -831,7 +846,8 @@ void main() {
           world.sender.adopt(strategyId);
           world.settle(const Duration(minutes: 1));
           world.server.overrideRead = (call) => call.page == 'p2'
-              ? const StoreReadAnswered(PageGone('nowhere'))
+              ? const StoreReadAnswered(PageGone('nowhere'),
+                  point: stampedWhenAnswered)
               : null;
           world
             ..connection = null
@@ -861,7 +877,8 @@ void main() {
       (world) {
         world.server.answerWith(
           strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired),
+          const StoreBatchRefusedWhole(BatchRefusal.upgradeRequired,
+              point: stampedWhenAnswered),
         );
         world.commitMove(1);
         world.settle(const Duration(minutes: 10));

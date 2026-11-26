@@ -24,11 +24,12 @@ final class EventFact extends Fact {
 }
 
 final class ReadFact extends Fact {
-  ReadFact(this.base, super.label, {super.phase});
+  ReadFact(this.base, super.label, {super.phase}) : point = tick();
 
   final ArrivedBase base;
   late final int session;
-  late final ResultSource from;
+  final ResultPoint point;
+  late final int requestedAt;
 }
 
 final class ClockFact extends Fact {
@@ -136,7 +137,7 @@ final class Scenario {
         op,
       )) {
         CopyExpanded(:final ops) => ops,
-        CopyNotExpanded() => const <StrategyOp>[],
+        CopyNotExpanded() => <StrategyOp>[],
       },
       _ => [op],
     };
@@ -160,7 +161,7 @@ final class Scenario {
   List<EventFact> answersFor((int, List<StrategyOp>) sent) => [
     for (final op in sent.$2)
       EventFact(
-        OpAnswered(sent.$1, model.apply(clientId, op)),
+        OpAnswered(sent.$1, model.apply(clientId, op), point: tick()),
         'answer ${op.opId}',
       ),
   ];
@@ -257,7 +258,11 @@ final class Scenario {
         case 0:
           facts.add(
             EventFact(
-              BatchRefused(sent.$1, BatchRefusal.editAccessRemoved),
+              BatchRefused(
+                sent.$1,
+                BatchRefusal.editAccessRemoved,
+                point: tick(),
+              ),
               'access refused ${sent.$1}',
             ),
           );
@@ -270,7 +275,11 @@ final class Scenario {
         case 1:
           facts.add(
             EventFact(
-              BatchRefused(sent.$1, BatchRefusal.upgradeRequired),
+              BatchRefused(
+                sent.$1,
+                BatchRefusal.upgradeRequired,
+                point: tick(),
+              ),
               'upgrade ${sent.$1}',
             ),
           );
@@ -291,16 +300,7 @@ final class Scenario {
     }
     switch (random.nextInt(6)) {
       case 0:
-        facts.add(
-          EventFact(
-            BaseArrived(
-              const StrategyGone(),
-              session: client.queue.session.number,
-              from: readFrom(client.queue),
-            ),
-            'strategy gone',
-          ),
-        );
+        facts.add(ReadFact(const StrategyGone(), 'strategy gone'));
       case 1:
         teammateDeletesAndRestoresAPage();
       case 2:
@@ -310,7 +310,7 @@ final class Scenario {
     }
     switch (random.nextInt(4)) {
       case 0:
-        facts.add(ClockFact(const Duration(hours: 1), '+1h'));
+        facts.add(ClockFact(Duration(hours: 1), '+1h'));
       case 1:
         facts.add(ClockFact(serverRemembersAnswersFor, '+30 days'));
       case _:
@@ -319,9 +319,7 @@ final class Scenario {
     if (random.nextInt(3) == 0) facts.add(ClaimFact());
     if (facts.length > most) facts.removeRange(most, facts.length);
     if (random.nextBool()) {
-      facts.add(
-        EventFact(const AppRestarted(build: build), 'restart', phase: 1),
-      );
+      facts.add(EventFact(AppRestarted(build: build), 'restart', phase: 1));
       if (server.pages.isNotEmpty) {
         facts.add(pageRead(server.pages.first.publicId, phase: 2));
         facts.add(headerRead(phase: 2));
@@ -332,11 +330,7 @@ final class Scenario {
         fact.session = fact.phase == 2
             ? client.queue.nextSession
             : client.queue.session.number;
-        fact.from = ReadOfThisDevice(
-          fact.phase == 2
-              ? ReadStart(session: fact.session, sequence: 0)
-              : client.queue.session.readStart,
-        );
+        fact.requestedAt = fact.phase == 2 ? 0 : client.queue.session.sequence;
       }
     }
   }
@@ -429,9 +423,21 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
     switch (fact) {
       case EventFact(:final event):
         step(event);
-      case ReadFact(:final base, :final session, :final from):
+      case ReadFact(
+        :final base,
+        :final session,
+        :final point,
+        :final requestedAt,
+      ):
         if (base is! StrategyGone) lastDelivered[subjectOf(base)] = base;
-        step(BaseArrived(base, session: session, from: from));
+        step(
+          BaseArrived(
+            base,
+            session: session,
+            point: point,
+            requestedAt: requestedAt,
+          ),
+        );
       case ClockFact(:final by):
         at = at.add(by);
       case ClaimFact():
@@ -450,7 +456,13 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
                 '${op.opId} was sent again after the server forgot it',
               );
             }
-            step(OpAnswered(sent.attempt, server.apply(sent.clientId, op)));
+            step(
+              OpAnswered(
+                sent.attempt,
+                server.apply(sent.clientId, op),
+                point: tick(),
+              ),
+            );
           }
         }
     }
@@ -469,7 +481,8 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
         BaseArrived(
           current,
           session: queue.session.number,
-          from: readFrom(queue),
+          point: tick(),
+          requestedAt: queue.session.sequence,
         ),
       );
     }
@@ -503,7 +516,8 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
               ? headerReadOf(server.rows)
               : pageReadOf(server.rows, page),
           session: queue.session.number,
-          from: readFrom(queue),
+          point: tick(),
+          requestedAt: queue.session.sequence,
         ),
       );
     }
@@ -567,7 +581,7 @@ bool sameApartFromResults(CloudQueue a, CloudQueue b) {
           produced: work.produced,
           movedRow: work.movedRow,
           shownWithout: work.shownWithout,
-          answeredAt: ReadStart.beforeAnyRead,
+          answeredAt: LandedWork.answeredBeforeAnyResult,
         ),
     ],
     nextAttempt: queue.nextAttempt,

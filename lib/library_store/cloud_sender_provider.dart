@@ -5,6 +5,8 @@ import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/collab/transport/convex_transport_adapter.dart';
 import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
@@ -32,15 +34,28 @@ final convexSignInsProvider = Provider<Stream<bool>>(
   (ref) => ConvexClient.instance.authState,
 );
 
+final storeTransportProvider = Provider<StampedConvexTransport>(
+  (ref) => StampedPlatformTransport(ConvexClient.instance),
+);
+
+final storeRepositoryProvider = Provider<ConvexStrategyRepository>(
+  (ref) => ConvexStrategyRepository.stamped(ref.read(storeTransportProvider)),
+);
+
 final storeBatchSendProvider = Provider<StoreBatchSend>(
-  (ref) => storeBatchSenderOver(ref.read(convexStrategyRepositoryProvider)),
+  (ref) => storeBatchSenderOver(ref.read(storeRepositoryProvider)),
 );
 
 final storeReadsProvider = Provider<StoreReads>(
   (ref) => storeReadsOver(
-    ref.read(convexStrategyRepositoryProvider),
+    ref.read(storeRepositoryProvider),
     canRead: appCanRead,
   ),
+);
+
+final storeGenerationProvider =
+    Provider<Future<({int client, int connection})> Function()>(
+  (ref) => ref.read(storeTransportProvider).generation,
 );
 
 final senderEditorShowsProvider = Provider<String?>(
@@ -111,6 +126,7 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
       store: SenderStore(store, keepsAllReports: driveBuild),
       send: ref.read(storeBatchSendProvider),
       reads: ref.read(storeReadsProvider),
+      generation: ref.read(storeGenerationProvider),
       build: build,
       clientId: const Uuid().v4(),
       inputs: _inputs(),

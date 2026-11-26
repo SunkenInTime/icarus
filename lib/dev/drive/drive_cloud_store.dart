@@ -3,8 +3,9 @@ import 'dart:math';
 
 import 'package:flutter/painting.dart' show Offset;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart'
-    show AppliedOpAck, ElementDeleteOp;
+    show AppliedOpAck, ElementDeleteOp, RemotePageSnapshot;
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/agents.dart';
@@ -16,6 +17,7 @@ import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_sqlite.dart';
+import 'package:icarus/library_store/server_rows.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
@@ -622,6 +624,45 @@ Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
   }
 }
 
+List<String> storeSessionOpenings(
+  ProviderContainer c, {
+  required bool stampExpected,
+}) {
+  final openings = [
+    for (final report in _sender(c).store.reports)
+      if (report
+          case EventsWritten(:final strategyId, :final events, :final effects))
+        for (final opened in effects.whereType<SessionOpened>())
+          (strategyId, opened.session, _openedBy(events)),
+  ];
+  final byStamp = openings.where((opening) => opening.$3 == null).length;
+  if (stampExpected && byStamp == 0) {
+    throw StateError(
+      'no session was opened by a result\'s stamp; openings: '
+      '${[for (final (id, session, by) in openings) '$id $session by $by']}',
+    );
+  }
+  return [
+    for (final (id, session, by) in openings)
+      'CLOUDSTORE session $session of $id opened by '
+          '${by ?? 'a result\'s stamp'}',
+  ];
+}
+
+String? _openedBy(List<QueueEvent> events) => switch (events
+        .where(
+          (event) =>
+              event is ConnectionReturned ||
+              event is AppRestarted ||
+              event is AccountChanged,
+        )
+        .firstOrNull) {
+      ConnectionReturned() => 'the reconnect event',
+      AppRestarted() => 'the app start',
+      AccountChanged() => 'an account change',
+      _ => null,
+    };
+
 Future<List<String>> storeSyncStates(ProviderContainer c) async {
   final signedIn = switch (c.read(authProvider).user?.id) {
     final String id when id.isNotEmpty => SignedInAs(Account(id)),
@@ -1027,7 +1068,6 @@ final class CloudStoreLog {
     final asLeft = await _compareWithServer(
       c,
       sender.store.store,
-      build: sender.build,
       when: 'as the run left the store',
       expected: expected,
       lagging: lagging,
@@ -1224,7 +1264,6 @@ Future<List<CloudStoreLine>> _namedReadBack(
         return await _compareWithServer(
           c,
           store,
-          build: sender.build,
           when: 'after reopening the store',
           expected: expected,
           lagging: lagging,
@@ -1246,7 +1285,6 @@ Future<List<CloudStoreLine>> _namedReadBack(
 Future<List<CloudStoreLine>> _compareWithServer(
   ProviderContainer c,
   LibraryStore store, {
-  required String build,
   required String when,
   required List<ExpectedStrategy> expected,
   required List<LaggingRow> lagging,
@@ -1266,11 +1304,45 @@ Future<List<CloudStoreLine>> _compareWithServer(
     ];
   }
   final repository = c.read(convexStrategyRepositoryProvider);
-  final held = <ServerComparison>[];
+  final held = await compareStoreWithServer(
+    store,
+    signedIn: signedIn,
+    server: (
+      pageList: (strategyId) => repository.readPageListAs(
+            strategyId,
+            accountSubject: signedIn.subject,
+          ),
+      page: (strategyId, pageId) => repository.readPageAs(
+            strategyPublicId: strategyId,
+            pagePublicId: pageId,
+            accountSubject: signedIn.subject,
+          ),
+    ),
+  );
+  return comparisonLines(
+    when: when,
+    readAs: signedIn.subject,
+    held: held,
+    expected: expected,
+    lagging: lagging,
+  );
+}
+
+typedef ServerReads = ({
+  Future<RemotePageList> Function(String strategyId) pageList,
+  Future<RemotePageSnapshot> Function(String strategyId, String pageId) page,
+});
+
+Future<List<ServerComparison>> compareStoreWithServer(
+  LibraryStore store, {
+  required Account signedIn,
+  required ServerReads server,
+}) async {
   final library = store.library;
   final summaries = library is LibraryOpen
       ? library.list.strategies
       : const <StrategySummary>[];
+  final held = <ServerComparison>[];
   for (final summary in summaries) {
     final owner = switch (summary.sync) {
       KeptInCloud(owner: OwnedBy(:final account)) ||
@@ -1279,86 +1351,68 @@ Future<List<CloudStoreLine>> _compareWithServer(
       _ => null,
     };
     if (owner == null) continue;
-    final strategyId = summary.publicId;
-    if (owner != signedIn) {
-      held.add(
-        (
-          strategyId: strategyId,
-          name: summary.name,
-          verdict: NotCompared(
-            'the work of ${owner.subject} while signed in as '
-            '${signedIn.subject}',
-          ),
-        ),
-      );
-      continue;
-    }
-    final copy = switch (await LibraryStore.open(
-      MemoryEngine(MemoryStorage()),
-      canRead: appCanRead,
-      build: build,
-    )) {
-      StoreOpened(:final store) => store,
-      StoreNotOpened(:final problem) => throw StateError('$problem'),
-    };
-    final server = CloudShadow(
-      copy,
-      build: build,
-      canRead: appCanRead,
-      breathe: () async {},
-    )..serve(signedIn);
-    try {
-      final list = await repository.readPageListAs(
-        strategyId,
-        accountSubject: signedIn.subject,
-      );
-      server.pageList(strategyId, list, 0);
-      for (final page in list.pages) {
-        server.page(
-          strategyId,
-          await repository.readPageAs(
-            strategyPublicId: strategyId,
-            pagePublicId: page.page.publicId,
-            accountSubject: signedIn.subject,
-          ),
-          0,
-        );
-      }
-      await server.idle;
-      held.add(
-        (
-          strategyId: strategyId,
-          name: summary.name,
-          verdict: Compared(
-            pages: list.pages.length,
-            unjudged: [
-              for (final entry in server.ledger)
-                if (entry.verdict is! ComparedEqual &&
-                    entry.verdict is! ComparedDifferent)
-                  '${entry.what}: ${entry.verdict}',
-            ],
-            differences: (await server.readBack(store))[strategyId],
-          ),
-        ),
-      );
-    } catch (error) {
-      held.add(
-        (
-          strategyId: strategyId,
-          name: summary.name,
-          verdict: NotCompared('could not read the server\'s copy: $error'),
-        ),
-      );
-    } finally {
-      await copy.close();
-    }
+    held.add(
+      (
+        strategyId: summary.publicId,
+        name: summary.name,
+        verdict: owner == signedIn
+            ? await _againstServer(store, summary.publicId, signedIn, server)
+            : NotCompared(
+                'the work of ${owner.subject} while signed in as '
+                '${signedIn.subject}',
+              ),
+      ),
+    );
   }
-  return comparisonLines(
-    when: when,
-    readAs: signedIn.subject,
-    held: held,
-    expected: expected,
-    lagging: lagging,
+  return held;
+}
+
+Future<StoreVerdict> _againstServer(
+  LibraryStore store,
+  String strategyId,
+  Account signedIn,
+  ServerReads server,
+) async {
+  final rows = ServerRows();
+  final unjudged = <String>[];
+  final RemotePageList list;
+  try {
+    list = await server.pageList(strategyId);
+    switch (pageListRead(list)) {
+      case RowsRead(:final value):
+        rows.header(value);
+      case RowsUnreadable(:final problem):
+        return Compared(
+          pages: list.pages.length,
+          unjudged: [
+            'the page list: the server rows could not be read: $problem'
+          ],
+          differences: null,
+        );
+    }
+    for (final page in list.pages) {
+      final pageId = page.page.publicId;
+      switch (pageRead(await server.page(strategyId, pageId), appCanRead)) {
+        case RowsRead(:final value):
+          rows.page(value);
+        case RowsUnreadable(:final problem):
+          unjudged
+              .add('page $pageId: the server rows could not be read: $problem');
+      }
+    }
+  } catch (error) {
+    return NotCompared('could not read the server\'s copy: $error');
+  }
+  return Compared(
+    pages: list.pages.length,
+    unjudged: unjudged,
+    differences: await differencesFromServer(
+      store,
+      strategyId,
+      rows,
+      account: signedIn,
+      pages: null,
+    ),
   );
 }
 

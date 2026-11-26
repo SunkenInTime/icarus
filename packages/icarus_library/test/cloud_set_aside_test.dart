@@ -68,7 +68,8 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: before.session.number,
-          from: readFrom(before),
+          point: tick(),
+          requestedAt: before.session.sequence,
         ),
         now: client.at,
       );
@@ -120,7 +121,8 @@ void main() {
               ),
             ),
             session: client.queue.session.number,
-            from: readFrom(client.queue),
+            point: tick(),
+            requestedAt: client.queue.session.sequence,
           ),
         ),
         isA<NotApplicable>(),
@@ -134,13 +136,16 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       expect(
         client.step(
           BaseArrived(
             headerReadOf(initialRows()),
             session: client.queue.session.number,
-            from: client.beginRead(),
+            point: tick(),
+            requestedAt: client.queue.session.sequence,
           ),
         ),
         isA<NotApplicable>(),
@@ -162,6 +167,7 @@ void main() {
         OpAnswered(
           attempt,
           const AppliedAnswer('move', revision: 2, life: fixtureLife),
+          point: tick(),
         ),
       );
       expect(client.queue.landed, isNotEmpty);
@@ -274,7 +280,9 @@ void main() {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      client.must(BatchRefused(attempt, BatchRefusal.strategyReplaced));
+      client.must(
+        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+      );
       expect(client.view('move').state, isNot(isA<NeedsUser>()));
       expect(Tally.of(client.queue, now).needingYou, 0);
       expect(client.step(keepMine(client)), isA<NotApplicable>());
@@ -350,7 +358,7 @@ void main() {
         BaseArrived(
           headerReadOf(replaced(initialRows())),
           session: await sessionOf(store),
-          from: await readStartOf(store),
+          point: tick(),
         ),
       ]);
     }

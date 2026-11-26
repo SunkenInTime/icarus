@@ -112,6 +112,7 @@ final class Server {
             batch.attempt,
             BatchRefusal.strategyReplaced,
             currentLife: createdAtOf(rows.strategy),
+            point: tick(),
           ),
         ]
       : [
@@ -119,6 +120,7 @@ final class Server {
             OpAnswered(
               batch.attempt,
               apply(client, op, expectedLife: batch.lives[op.opId]),
+              point: tick(),
             ),
         ];
 

@@ -14,7 +14,8 @@ void main() {
       world.openInEditor(strategyId);
       world.server.answerWith(
         strategyId,
-        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+            point: stampedWhenAnswered),
       );
       world.server.overrideRead = (call) =>
           const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');

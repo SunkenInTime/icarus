@@ -1,3 +1,9 @@
+@Skip(
+  'The cloud shadow is off until the store takes its live results with '
+  'stamps (slice 3, PR 5).',
+)
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -9,6 +15,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/cloud_shadow.dart';
 import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/library_store/server_rows.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus_library/icarus_library.dart';

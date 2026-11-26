@@ -81,7 +81,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     if (entry.behindOwn) 'behindOwn': true,
     if (entry.basis case final basis?)
       'basis': {
-        'serverTime': basis.serverTime,
+        'serverTime': _timeToJson(basis.serverTime),
         'heldAtMicros': basis.heldAt.inMicroseconds,
       },
     'strategyLife': ?entry.strategyLife,
@@ -279,10 +279,14 @@ Decoded<QueueEntry> decodeEntry(
       final basis = switch (fields.json['basis']) {
         null => null,
         {
-          'serverTime': final int serverTime,
+          'serverTime': final Object serverTime,
           'heldAtMicros': final int heldAt,
-        } =>
-          ServerTimeBasis(serverTime, heldAt: Duration(microseconds: heldAt)),
+        }
+            when _timeFrom(serverTime) != null =>
+          ServerTimeBasis(
+            _timeFrom(serverTime)!,
+            heldAt: Duration(microseconds: heldAt),
+          ),
         _ => () {
           fields.reject('an unreadable basis');
           return null;
@@ -798,8 +802,8 @@ Map<String, Object?> landedToJson(LandedWork work) => {
   if (work.produced case final produced?) 'produced': _producedToJson(produced),
   if (work.movedRow case final moved?) 'movedRow': moved.toJson(),
   if (work.shownWithout) 'shownWithout': true,
-  if (work.answeredAt != ReadStart.beforeAnyRead)
-    'answeredAt': _startToJson(work.answeredAt),
+  if (work.answeredAt != LandedWork.answeredBeforeAnyResult)
+    'answeredAt': _answerToJson(work.answeredAt),
 };
 
 CloudRowReading<LandedWork> landedFromText(
@@ -835,8 +839,8 @@ CloudRowReading<LandedWork> landedFromText(
       }(),
     };
     final answeredAt = fields.has('answeredAt')
-        ? _startFrom(fields.json['answeredAt'])
-        : ReadStart.beforeAnyRead;
+        ? _answerFrom(fields.json['answeredAt'])
+        : LandedWork.answeredBeforeAnyResult;
     if (answeredAt == null) fields.reject('an unreadable answer point');
     return () => LandedWork(
       answeredAt: answeredAt!,
@@ -1061,7 +1065,7 @@ Map<String, Object?> _pageGroup(Shown shown, String page, _PageRows rows) => {
 
 Object? _readToJson(ReadState state) => switch (state) {
   ReadOwed(:final unlessLife, :final namedLife, :final since) => {
-    'owedSince': _startToJson(since),
+    'owedSince': _debtToJson(since),
     'unless': ?unlessLife,
     'named': ?namedLife,
   },
@@ -1075,24 +1079,164 @@ Object? _readToJson(ReadState state) => switch (state) {
       'refused': problem,
       'unless': ?unlessLife,
       'named': ?namedLife,
-      'since': _startToJson(since),
+      'since': _debtToJson(since),
     },
   NotReadThisSession() || ReadThisSession() => null,
 };
 
-Map<String, Object?> _startToJson(ReadStart start) => {
+Map<String, Object?> _startToJson(ResultOrder start) => {
   'session': start.session,
-  'step': start.sequence,
+  'client': start.client,
+  'snapshot': start.snapshot,
 };
 
-ReadStart? _startFrom(Object? raw) => switch (raw) {
+bool _countable(Object? value) =>
+    value is num && isSafeWhole(value) && value >= 0;
+
+Object _timeToJson(int time) => '$time';
+
+int? _timeFrom(Object? raw) => switch (raw) {
+  final String text when RegExp(r'^(0|[1-9][0-9]{0,18})$').hasMatch(text) =>
+    int.tryParse(text),
+  final num time when isSafeWhole(time) && time >= 0 => time.toInt(),
+  _ => null,
+};
+
+Map<String, Object?> _answerToJson(AfterAnswer answer) => {
+  ..._startToJson(answer.order),
+  if (answer.serverTime case final time?) 'time': _timeToJson(time),
+};
+
+AfterAnswer? _answerFrom(Object? raw) => switch (raw) {
+  {'time': final Object? time} when _timeFrom(time) != null =>
+    switch (_startFrom({
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (key != 'time') key: value,
+    })) {
+      final order? => AfterAnswer(order, serverTime: _timeFrom(time)),
+      null => null,
+    },
+  {'time': _} => null,
+  _ => switch (_startFrom(raw)) {
+    final order? => AfterAnswer(order),
+    null => null,
+  },
+};
+
+Object? _debtToJson(PaidBy debt) => switch (debt) {
+  ResultAtOrAfter(:final order) => _startToJson(order),
+  AfterAnswer() => {'afterAnswer': _answerToJson(debt)},
+  AfterRefusal(:final session, :final point, :final step, :final evidence) => {
+    'afterRefusal': {
+      'session': session,
+      'client': point.client,
+      'connection': point.connection,
+      'snapshot': point.snapshot,
+      if (point.serverTime case final time?) 'time': _timeToJson(time),
+      'step': step,
+      'evidence': ?switch (evidence) {
+        RowAtLeast(:final target, :final life, :final revision) => {
+          'row': _targetKey(target),
+          'life': ?life,
+          'revision': revision,
+        },
+        StrategyLifeAtLeast(:final life) => {'strategyLife': life},
+        null => null,
+      },
+    },
+  },
+};
+
+PaidBy? _debtFrom(Object? raw) => switch (raw) {
+  {'afterAnswer': final Object? answer} when raw.length == 1 => _answerFrom(
+    answer,
+  ),
+  {'afterRefusal': final Map<Object?, Object?> refusal} when raw.length == 1 =>
+    _refusalFrom(refusal),
+  _ => switch (_startFrom(raw)) {
+    final order? => ResultAtOrAfter(order),
+    null => null,
+  },
+};
+
+const _refusalKeys = {
+  'session',
+  'client',
+  'connection',
+  'snapshot',
+  'time',
+  'step',
+  'evidence',
+};
+
+AfterRefusal? _refusalFrom(Map<Object?, Object?> raw) => switch (raw) {
+  {
+    'session': final num session,
+    'client': final num client,
+    'connection': final num connection,
+    'snapshot': final num snapshot,
+    'step': final num step,
+  }
+      when [session, client, connection, snapshot, step].every(_countable) &&
+          raw.keys.every(_refusalKeys.contains) &&
+          (raw['time'] == null || _timeFrom(raw['time']) != null) &&
+          (!raw.containsKey('evidence') ||
+              _evidenceFrom(raw['evidence']) != null) =>
+    AfterRefusal(
+      session: session.toInt(),
+      point: ResultPoint(
+        client: client.toInt(),
+        connection: connection.toInt(),
+        snapshot: snapshot.toInt(),
+        serverTime: _timeFrom(raw['time']),
+      ),
+      step: step.toInt(),
+      evidence: raw.containsKey('evidence')
+          ? _evidenceFrom(raw['evidence'])
+          : null,
+    ),
+  _ => null,
+};
+
+bool _optionalWhole(Object? value) =>
+    value == null || (value is num && isSafeWhole(value));
+
+Evidence? _evidenceFrom(Object? raw) => switch (raw) {
+  {'strategyLife': final num life} when raw.length == 1 && isSafeWhole(life) =>
+    StrategyLifeAtLeast(life.toInt()),
+  {'row': final Object? key, 'revision': final num revision}
+      when isSafeWhole(revision) &&
+          _optionalWhole(raw['life']) &&
+          raw.keys.every({'row', 'life', 'revision'}.contains) =>
+    switch (_target(key)) {
+      final target? => RowAtLeast(
+        target,
+        life: (raw['life'] as num?)?.toInt(),
+        revision: revision.toInt(),
+      ),
+      null => null,
+    },
+  _ => null,
+};
+
+ResultOrder? _startFrom(Object? raw) => switch (raw) {
+  {
+    'session': final num session,
+    'client': final num client,
+    'snapshot': final num snapshot,
+  }
+      when raw.length == 3 &&
+          _countable(session) &&
+          _countable(client) &&
+          _countable(snapshot) =>
+    ResultOrder(
+      session: session.toInt(),
+      client: client.toInt(),
+      snapshot: snapshot.toInt(),
+    ),
   {'session': final num session, 'step': final num step}
-      when raw.length == 2 &&
-          isSafeWhole(session) &&
-          isSafeWhole(step) &&
-          session >= 0 &&
-          step >= 0 =>
-    ReadStart(session: session.toInt(), sequence: step.toInt()),
+      when raw.length == 2 && _countable(session) && _countable(step) =>
+    ResultOrder(session: session.toInt(), client: 0, snapshot: 0),
   _ => null,
 };
 
@@ -1128,11 +1272,11 @@ ReadState? _readFrom(Object? raw) => switch (raw) {
     _ => null,
   },
   null => const NotReadThisSession(),
-  'owed' => const ReadOwed(since: ReadStart.beforeAnyRead),
+  'owed' => const ReadOwed(since: ResultAtOrAfter.anyResult),
   {'owedUnless': final num life} when isSafeWhole(life) && raw.length == 1 =>
-    ReadOwed(unlessLife: life.toInt(), since: ReadStart.beforeAnyRead),
+    ReadOwed(unlessLife: life.toInt(), since: ResultAtOrAfter.anyResult),
   {'owedSince': final Object? since} => switch ((
-    _startFrom(since),
+    _debtFrom(since),
     raw['unless'],
     raw.length,
   )) {
@@ -1145,8 +1289,8 @@ ReadState? _readFrom(Object? raw) => switch (raw) {
   },
   {'refused': final String problem} => switch ((
     raw.containsKey('since')
-        ? _startFrom(raw['since'])
-        : ReadStart.beforeAnyRead,
+        ? _debtFrom(raw['since'])
+        : ResultAtOrAfter.anyResult,
     raw['unless'],
     raw.containsKey('unless'),
   )) {

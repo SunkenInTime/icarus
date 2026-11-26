@@ -80,28 +80,14 @@ void main() {
       final (engine, counts) = counting(MemoryEngine(MemoryStorage(disk)));
       final store = await openCloudStore(engine);
       await recordAll(store, [const AppRestarted(build: build)]);
-      final listStart = await beganIn(store);
-      final listSession = await sessionOf(store);
+      final list = await arrivalIn(store, headerReadOf(twentyPages()));
       counts.reset();
-      await recordAll(store, [
-        BaseArrived(
-          headerReadOf(twentyPages()),
-          session: listSession,
-          from: listStart,
-        ),
-      ]);
+      await recordAll(store, [list]);
       expect(contentListed(counts), isEmpty);
       expect(counts.commits, 0);
-      final pageStart = await beganIn(store);
-      final pageSession = await sessionOf(store);
+      final page = await arrivalIn(store, pageReadOf(twentyPages(), 'page-7'));
       counts.reset();
-      await recordAll(store, [
-        BaseArrived(
-          pageReadOf(twentyPages(), 'page-7'),
-          session: pageSession,
-          from: pageStart,
-        ),
-      ]);
+      await recordAll(store, [page]);
       expect(contentListed(counts), ['content/${digestOf('page-7')}/']);
       expect(counts.commits, 0);
     });

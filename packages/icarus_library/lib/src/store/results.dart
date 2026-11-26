@@ -83,15 +83,6 @@ final class NoSuchStrategy implements CommitRefusal, LibraryRefusal {
   String toString() => 'NoSuchStrategy($strategyPublicId)';
 }
 
-final class CloudResultsNotChosen implements CommitRefusal, LibraryRefusal {
-  const CloudResultsNotChosen();
-
-  @override
-  String toString() =>
-      'CloudResultsNotChosen: this run has not said where its results come '
-      'from, so it cannot keep a cloud strategy';
-}
-
 final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
   const UnreadableRowInTheWay(this.row);
 
@@ -851,9 +842,11 @@ final class ReportApplied extends ReportOutcome {
 }
 
 final class ReportNotApplicable extends ReportOutcome {
-  const ReportNotApplicable(this.why);
+  ReportNotApplicable(this.why, {List<QueueEffect> effects = const []})
+    : effects = List.unmodifiable(effects);
 
   final Inapplicable why;
+  final List<QueueEffect> effects;
 }
 
 final class EditsGoThroughCommit extends ReportOutcome {

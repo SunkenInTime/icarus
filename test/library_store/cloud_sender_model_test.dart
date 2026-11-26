@@ -312,7 +312,8 @@ final class Model {
       ..roles[strategy] = StoreReadRole.viewer
       ..answerWith(
         strategy,
-        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+            point: stampedWhenAnswered),
       );
     log.add('$strategy refused as a viewer');
   }
@@ -577,7 +578,8 @@ final class Model {
           strategy,
           (_) => Future.microtask(() {
             refusedAt = signIns;
-            return const StoreBatchRefusedWhole(BatchRefusal.unauthenticated);
+            return const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
+                point: stampedWhenAnswered);
           }),
         );
       case 5:
@@ -660,7 +662,8 @@ final class Model {
       case 4:
         server.answerReadWith(
           strategy,
-          const StoreReadUnreadable('rows this build cannot read'),
+          const StoreReadUnreadable('rows this build cannot read',
+              point: stampedWhenAnswered),
         );
       case 7:
         server.answerReadNext(strategy, (call) {
@@ -672,7 +675,8 @@ final class Model {
           final late = Completer<StoreReadOutcome>();
           Timer(
             const Duration(seconds: 60),
-            () => late.complete(const StoreReadAnswered(StrategyGone())),
+            () => late.complete(
+                const StoreReadAnswered(StrategyGone(), point: stampedWhenAnswered)),
           );
           return late.future;
         });
@@ -694,7 +698,7 @@ final class Model {
               );
               world.account = account;
           }
-          return const StoreReadAnswered(StrategyGone());
+          return const StoreReadAnswered(StrategyGone(), point: stampedWhenAnswered);
         });
     }
   }

@@ -36,10 +36,10 @@ run     Runs --script, and --companion beside it when given, against the
         also draws the library list and folders from the store, and ops
         also commits each editor action's ops to the store as it happens
         and checks the store against the canvas after every turn.
-        --cloud-store shadow passes --cloud-store=shadow to every instance:
-        the open cloud strategy's results go into the store too, and the
-        driver compares the open page with them. --cloud-store send also
-        sends the store's queue to the server.
+        --cloud-store send passes --cloud-store=send to every instance: the
+        store reads the open cloud strategy and sends its queue to the
+        server. --cloud-store shadow is refused with exit 2 until the store
+        takes its live results with stamps (slice 3, PR 5).
         --second-account gives the main instance a second account, which a
         {"signIn": "second"} step signs in to.
         --kill-after-seconds kills the main instance with SIGKILL S seconds
@@ -182,7 +182,7 @@ Future<void> main(List<String> args) async {
       case 'build':
         exit(await _build(parseOptions(rest, {'out', 'mode', 'convex'})));
       case 'run':
-        exit(await _run(parseOptions(rest, {
+        exit(await runScripts(parseOptions(rest, {
           'exe',
           'script',
           'account',
@@ -275,7 +275,33 @@ class _Instance {
   final exited = Completer<int>();
 }
 
-Future<int> _run(Map<String, String> options) async {
+List<String> storeArgs(Map<String, String> options) {
+  final libraryStore = options['library-store'];
+  if (libraryStore != null &&
+      !const {'off', 'shadow', 'mirror', 'read', 'ops'}
+          .contains(libraryStore)) {
+    throw UsageError(
+      '--library-store is off, shadow, mirror, read or ops, not "$libraryStore"',
+    );
+  }
+  final cloudStore = options['cloud-store'];
+  if (cloudStore == 'shadow') {
+    throw UsageError(
+      'the cloud shadow is off until the store takes its live results with '
+      'stamps (slice 3, PR 5); use --cloud-store send',
+    );
+  }
+  if (cloudStore != null && cloudStore != 'send') {
+    throw UsageError('--cloud-store is send, not "$cloudStore"');
+  }
+  return [
+    if (libraryStore != null) '--library-store=$libraryStore',
+    if (cloudStore != null) '--cloud-store=$cloudStore',
+  ];
+}
+
+Future<int> runScripts(Map<String, String> options) async {
+  final appArgs = storeArgs(options);
   final scriptPath =
       options['script'] ?? (throw UsageError('run needs --script; see --help'));
   final timeout = int.tryParse(options['timeout-seconds'] ?? '900') ??
@@ -377,17 +403,6 @@ Future<int> _run(Map<String, String> options) async {
     throw UsageError('${out.path} is not empty; give each run a new --out');
   }
   Directory('${out.path}/signals').createSync();
-  final libraryStore = options['library-store'];
-  if (libraryStore != null &&
-      !const {'off', 'shadow', 'mirror', 'read', 'ops'}.contains(libraryStore)) {
-    throw UsageError(
-      '--library-store is off, shadow, mirror, read or ops, not "$libraryStore"',
-    );
-  }
-  final cloudStore = options['cloud-store'];
-  if (cloudStore != null && cloudStore != 'shadow' && cloudStore != 'send') {
-    throw UsageError('--cloud-store is shadow or send, not "$cloudStore"');
-  }
   if (options['hive-store'] case final String seed) {
     if (!Directory(seed).existsSync()) {
       throw UsageError('No Hive store at $seed');
@@ -429,10 +444,7 @@ Future<int> _run(Map<String, String> options) async {
         run,
         display,
         passwords,
-        [
-          if (libraryStore != null) '--library-store=$libraryStore',
-          if (cloudStore != null) '--cloud-store=$cloudStore',
-        ],
+        appArgs,
         scope: instance.name == 'main' ? options['main-scope'] : null,
       );
     }

@@ -584,5 +584,5 @@ void main() {
         });
       });
     });
-  });
+  }, skip: cloudShadowOff);
 }

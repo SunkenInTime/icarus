@@ -107,7 +107,6 @@ Future<(LibraryStore, EngineClock, SqliteEngine)> _open(String path) async {
     StoreOpened(:final store) => store,
     StoreNotOpened(:final problem) => fail('store did not open: $problem'),
   };
-  store.takeCloudResultsFrom(CloudResults.liveQueries);
   return (store, clock, engine);
 }
 
@@ -121,17 +120,23 @@ Future<String> _measured(StrategyRowSet rows, String label) async {
     final (store, _, engine) = await _open(path);
     final added = await store.addCloudStrategy(
       _account,
-      HeaderRead(
-        strategy: rows.strategy,
-        pages: rows.pages.toList(),
-        settings: rows.settings.toList(),
+      StampedRead(
+        HeaderRead(
+          strategy: rows.strategy,
+          pages: rows.pages.toList(),
+          settings: rows.settings.toList(),
+        ),
+        nextStamp(),
       ),
       [
         for (final page in rows.pages)
-          PageRead(
-            page: page,
-            elements: rows.elementsOn(page.publicId).toList(),
-            lineupGroups: rows.lineupGroupsOn(page.publicId).toList(),
+          StampedRead(
+            PageRead(
+              page: page,
+              elements: rows.elementsOn(page.publicId).toList(),
+              lineupGroups: rows.lineupGroupsOn(page.publicId).toList(),
+            ),
+            nextStamp(),
           ),
       ],
     );
@@ -171,7 +176,7 @@ Future<String> _measured(StrategyRowSet rows, String label) async {
           settings: rows.settings.toList(),
         ),
         session: session,
-        from: const LiveResult(),
+        point: nextStamp(),
       ),
     ]);
     final listed = watch.elapsedMicroseconds;
@@ -187,7 +192,7 @@ Future<String> _measured(StrategyRowSet rows, String label) async {
           lineupGroups: rows.lineupGroupsOn(lastPage).toList(),
         ),
         session: session,
-        from: const LiveResult(),
+        point: nextStamp(),
       ),
     ]);
     final pageTaken = watch.elapsedMicroseconds;

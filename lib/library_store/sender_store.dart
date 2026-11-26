@@ -337,7 +337,8 @@ base class SenderStore {
           switch (outcome) {
             case ReportApplied(effects: final applied):
               effects.addAll(applied);
-            case ReportNotApplicable(:final why):
+            case ReportNotApplicable(:final why, effects: final opened):
+              effects.addAll(opened);
               notApplied.add('$why');
               report(EventNotApplied(strategyId, '$why'));
             case EditsGoThroughCommit():
@@ -415,7 +416,7 @@ base class SenderStore {
   Future<Written> add(
     Account owner,
     String strategyId,
-    HeaderRead header,
+    StampedRead<HeaderRead> header,
   ) async {
     final Saving<StrategySummary, LibraryRefusal> result;
     try {
