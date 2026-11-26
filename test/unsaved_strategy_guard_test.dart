@@ -682,7 +682,7 @@ void main() {
     });
 
     testWidgets(
-        'dirty autosave-disabled exit keeps dont-save branch behavior intact',
+        "Don't save leaves the pending save alone until the exit goes ahead",
         (tester) async {
       notifier = _FakeGuardStrategyProvider(
         initialState: const StrategyState(
@@ -721,7 +721,7 @@ void main() {
       final result = await guardFuture;
       expect(result, isTrue);
       expect(continueCalls, 1);
-      expect(notifier.cancelPendingSaveCalls, 1);
+      expect(notifier.cancelPendingSaveCalls, 0);
       expect(notifier.forceSaveCalls, 0);
     });
 

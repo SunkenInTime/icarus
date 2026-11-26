@@ -11,17 +11,16 @@ import 'package:icarus/strategy/open_seen.dart';
 
 const _reportsOfTheTestFontAndTeardown = [
   'overflowed',
-  "Looking up a deactivated widget's ancestor is unsafe",
   'Cannot get renderObject of inactive element',
 ];
 
 FlutterExceptionHandler? _reportedBeforeTheEditor;
 
-Future<List<bool>> pumpLibraryWithEditors(
+Future<List<MethodCall>> pumpLibraryWithEditors(
   WidgetTester tester,
   ProviderContainer container,
 ) async {
-  final preventClose = <bool>[];
+  final windowCalls = <MethodCall>[];
   tester.view.physicalSize = const Size(2560, 1440);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -36,9 +35,7 @@ Future<List<bool>> pumpLibraryWithEditors(
       .setMockMethodCallHandler(
     const MethodChannel('window_manager'),
     (call) async {
-      if (call.method == 'setPreventClose') {
-        preventClose.add((call.arguments as Map)['isPreventClose'] as bool);
-      }
+      windowCalls.add(call);
       return null;
     },
   );
@@ -50,7 +47,7 @@ Future<List<bool>> pumpLibraryWithEditors(
       home: const Scaffold(body: Text('library')),
     ),
   ));
-  return preventClose;
+  return windowCalls;
 }
 
 Future<void> settleWithDisk(WidgetTester tester) async {

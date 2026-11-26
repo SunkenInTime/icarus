@@ -914,12 +914,18 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       return;
     }
 
+    final strategies = ref.read(strategyProvider.notifier);
     final answer = await guardUnsavedStrategyExit(
       context: context,
       ref: ref,
       source: 'StrategyView.onWindowClose',
     );
     if (answer is! Leave) return;
+    if (!answer.seen.isNow(strategies.askedByTheUserNow())) {
+      unawaited(windowManager.close());
+      return;
+    }
+    strategies.cancelPendingSave();
     _isClosingWindow = true;
     if (storeCatchUpBeforeClose() case final catchingUp?) {
       await catchingUp;

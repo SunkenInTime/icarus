@@ -469,7 +469,6 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
       }
       return Leave(asked);
     case UnsavedStrategyDecision.dontSave:
-      ref.read(strategyProvider.notifier).cancelPendingSave();
       return Leave(asked);
     case UnsavedStrategyDecision.cancel:
       return const Stay();
