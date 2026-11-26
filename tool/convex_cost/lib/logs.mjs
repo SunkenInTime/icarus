@@ -65,8 +65,10 @@ const MARKER = "health:ping";
 /// live queries reflect it), so it lands before the closing marker. Work a
 /// mutation schedules counts only if it finishes inside the window.
 export async function measure(logs, http, work) {
+  await untilEverythingRunIsLogged(logs);
   const start = await mark(logs, http);
   const value = await work();
+  await untilEverythingRunIsLogged(logs);
   const end = await mark(logs, http);
   // Crons run on the backend's own clock, not because of the flow: their
   // runs and what they call are left out. Anything the flow itself
@@ -89,6 +91,22 @@ export async function measure(logs, http, work) {
 
 const FOLD = "maintenance:foldContentChanges";
 const isFoldChain = (entry) => entry.caller === "Scheduler" && entry.identifier === FOLD;
+
+const LOGGING_LAG_MARGIN_MS = 150;
+const BACKGROUND_JOBS_CAP_MS = 5_000;
+
+async function untilEverythingRunIsLogged(logs) {
+  let read = logs.entries.length;
+  let quietSince = Date.now();
+  const deadline = quietSince + BACKGROUND_JOBS_CAP_MS;
+  while (Date.now() - quietSince < LOGGING_LAG_MARGIN_MS && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    for (; read < logs.entries.length; read++) {
+      const entry = logs.entries[read];
+      if (entry.caller !== "Cron" && entry.identifier !== FOLD) quietSince = Date.now();
+    }
+  }
+}
 
 async function mark(logs, http) {
   const from = logs.entries.length;

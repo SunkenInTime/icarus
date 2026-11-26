@@ -64,6 +64,15 @@ live queries reflect it, so those re-runs finish inside the window. Crons are
 left out. Where a second device is watching, the flow waits until that
 device's page shows the edit.
 
+The backend can answer a live query over the websocket a moment before it
+writes that execution to the log, while the HTTP marker is logged as it
+answers. So before each marker the run waits until no entry has arrived for
+150 ms, leaving out the backend's own jobs. Without that wait, a live query
+answered just before the window was sometimes logged after the start marker
+and counted inside it, and one answered at its end was sometimes logged after
+the end marker and left out
+([#825](https://github.com/SunkenInTime/icarus/issues/825)).
+
 The everyday flows also count the bytes each call's arguments take as JSON
 (what the client uploads, without the websocket envelope) and the bytes each
 function returned (`returnBytes` in the log: what a client downloads).
@@ -132,9 +141,12 @@ If the cost is what the change is for (a flow that now does more on
 purpose), run `--update` and say in the PR why the flow costs more.
 
 Budgets sit a little above today's numbers: a quarter more for bytes (row
-sizes drift with harmless additions), a fifth or at least two more for
-call and re-run counts in the move and the everyday flows, none for single
-re-runs and write conflicts.
+sizes drift with harmless additions), and a fifth or at least two more for
+call counts and the move flows' list re-runs. Single re-runs, write
+conflicts and the everyday flows' query re-runs get no headroom. A flow's
+query re-runs are what its own writes make the live queries do, so the count
+is exact: a flow that has none fails on its first, and one that has some
+says why in its description.
 
 The numbers belong to the backend release in `BACKEND_RELEASE`
 (`lib/backend.mjs`). Moving it means checking the numbers again.

@@ -851,7 +851,8 @@ export const SESSIONS = {
     about:
       "One live element.patch moving a freehand drawing of 2,000 points on a 60-item page the editor already watches in " +
       "slices. A move shifts every point, so its fields are listOfPoints and boundingBox and the patch carries the whole " +
-      "drawing: sending only changed fields would send the same points.",
+      "drawing: sending only changed fields would send the same points. The one query re-run is the slice that holds " +
+        "the drawing.",
     world: "team",
     async run({ env, world, rng }) {
       const coach = world.coach;
