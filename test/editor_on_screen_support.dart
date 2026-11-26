@@ -8,8 +8,10 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
+import 'package:icarus/widgets/window_close_guard.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:icarus/strategy/open_seen.dart';
 
 var _appFontsLoaded = false;
@@ -56,7 +58,8 @@ Future<List<MethodCall>> pumpLibraryWithEditors(
         child: ShadApp(
       navigatorKey: appNavigatorKey,
       navigatorObservers: [mouseNavigationRouteObserver],
-      builder: (context, child) => MouseNavigation(child: child!),
+      builder: (context, child) =>
+          WindowCloseGuard(child: MouseNavigation(child: child!)),
       home: Scaffold(
         body: Consumer(builder: (context, ref, _) {
           libraryContext = context;
@@ -106,3 +109,7 @@ Future<void> closeHive(WidgetTester tester) async {
   expect(closed, isTrue);
   await closing;
 }
+
+void closeTheWindow(WidgetTester tester) =>
+    (tester.state(find.byType(WindowCloseGuard)) as WindowListener)
+        .onWindowClose();

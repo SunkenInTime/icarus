@@ -26,7 +26,6 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/canvas_paste.dart';
 import 'package:icarus/widgets/delete_capture.dart';
@@ -135,6 +134,10 @@ class StrategyView extends ConsumerStatefulWidget {
       backTooltip: backTooltip,
     )));
   }
+
+  static var _onScreen = 0;
+
+  static bool get isOnScreen => _onScreen > 0;
 
   static OpenSeen? _claim(NavigatorState navigator, OpenSeen asked) =>
       ProviderScope.containerOf(navigator.context)
@@ -257,9 +260,7 @@ final class EditorClaim {
   bool isHeldBy(OpenSeen asked) => identical(_by, asked);
 }
 
-class _StrategyViewState extends ConsumerState<StrategyView>
-    with WindowListener {
-  bool _isClosingWindow = false;
+class _StrategyViewState extends ConsumerState<StrategyView> {
   late bool _expanded = widget.startExpanded;
   ToastificationItem? _unshownItemsNotice;
   ToastificationItem? _unshownSettingsNotice;
@@ -291,26 +292,18 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         unawaited(_loadInitialStrategy());
       });
     }
-    if (!kIsWeb) {
-      windowManager.addListener(this);
-      if (_editorsOnScreen++ == 0) {
-        unawaited(windowManager.setPreventClose(true));
-      }
+    if (!kIsWeb && StrategyView._onScreen++ == 0) {
+      unawaited(windowManager.setPreventClose(true));
     }
   }
 
   @override
   void dispose() {
-    if (!kIsWeb) {
-      windowManager.removeListener(this);
-      if (--_editorsOnScreen == 0) {
-        unawaited(windowManager.setPreventClose(false));
-      }
+    if (!kIsWeb && --StrategyView._onScreen == 0) {
+      unawaited(windowManager.setPreventClose(false));
     }
     super.dispose();
   }
-
-  static var _editorsOnScreen = 0;
 
   Future<void> _loadInitialStrategy() async {
     final strategyId = widget.initialStrategyId;
@@ -914,48 +907,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         ),
       ),
     );
-  }
-
-  @override
-  void onWindowClose() async {
-    if (kIsWeb) {
-      return;
-    }
-    if (_isClosingWindow) {
-      return;
-    }
-
-    final strategies = ref.read(strategyProvider.notifier);
-    final answer = await guardUnsavedStrategyExit(
-      context: context,
-      ref: ref,
-      source: 'StrategyView.onWindowClose',
-    );
-    if (answer is! Leave) return;
-    bool stillAsAnswered() =>
-        answer.seen.isNow(strategies.askedByTheUserNow());
-    if (!stillAsAnswered()) {
-      unawaited(windowManager.close());
-      return;
-    }
-    strategies.cancelPendingSave();
-    _isClosingWindow = true;
-    if (storeCatchUpBeforeClose() case final catchingUp?) {
-      await catchingUp;
-      if (!stillAsAnswered()) {
-        _isClosingWindow = false;
-        unawaited(windowManager.close());
-        return;
-      }
-    }
-    await windowManager.setPreventClose(false);
-    if (!stillAsAnswered()) {
-      await windowManager.setPreventClose(true);
-      _isClosingWindow = false;
-      unawaited(windowManager.close());
-      return;
-    }
-    await windowManager.close();
   }
 }
 

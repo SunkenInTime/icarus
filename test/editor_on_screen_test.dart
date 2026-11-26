@@ -45,7 +45,6 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'editor_on_screen_support.dart';
 import 'replay_test_support.dart';
@@ -311,7 +310,7 @@ void main() {
     container.read(strategySaveStateProvider.notifier).markDirty();
     final held = strategies.held = Completer<void>();
 
-    (tester.state(find.byType(StrategyView)) as WindowListener).onWindowClose();
+    closeTheWindow(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
     await tester.pump();
@@ -328,8 +327,10 @@ void main() {
 
     expect(container.read(strategyProvider).strategyId, 'opened-since');
     expect(container.read(strategySaveStateProvider).isDirty, isTrue);
-    expect(_preventClose(windowCalls), isEmpty);
-    expect(windowCalls.map((call) => call.method), ['close']);
+    expect(find.text('Save changes?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(windowCalls, isEmpty);
     await leaveEditors(tester, container);
   });
 
@@ -740,9 +741,9 @@ void main() {
   }
 
   testWidgets(
-      'a window close already answered asks again when an edit comes while '
-      'it waits for the platform, and Cancel then keeps the window open',
-      (tester) async {
+      'a window close sends its release and its close together, so the '
+      'window is never left released while it waits, and a second close '
+      'meanwhile is no new question', (tester) async {
     await tester.runAsync(() => _stored('closing-edit'));
     await pumpLibraryWithEditors(tester, container);
     await openWithAnEdit(tester, 'closing-edit');
@@ -758,37 +759,23 @@ void main() {
           : call.method == 'setPreventClose'
               ? 'prevent close'
               : call.method);
-      if (allows && !platformReplies.isCompleted) {
-        await platformReplies.future;
-      }
+      if (allows) await platformReplies.future;
       return null;
     });
-    final editor = tester.state(find.byType(StrategyView)) as WindowListener;
 
-    editor.onWindowClose();
+    closeTheWindow(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text("Don't save"));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(calls, ['allow close']);
-    container.read(agentProvider.notifier).addAgent(PlacedAgent(
-          id: 'placed-while-closing',
-          type: AgentType.jett,
-          position: const Offset(400, 400),
-        ));
+    expect(calls, ['allow close', 'close']);
+
+    closeTheWindow(tester);
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Save changes?'), findsNothing);
+    expect(calls, ['allow close', 'close']);
     platformReplies.complete();
     await tester.pump();
-    await tester.pump();
-
-    expect(calls, ['allow close', 'prevent close', 'close']);
-    editor.onWindowClose();
-    await tester.pumpAndSettle();
-    expect(find.text('Save changes?'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(calls, ['allow close', 'prevent close', 'close']);
-    expect(container.read(agentProvider).map((agent) => agent.id),
-        contains('placed-while-closing'));
     await leaveEditors(tester, container);
   });
 
@@ -885,6 +872,73 @@ void main() {
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
     await expectItsEditSaves(tester, 'opened-meanwhile');
     playback.pause();
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'an editor that leaves while the close question is up sends no close '
+      'and leaves the window free to close on the next one', (tester) async {
+    await tester.runAsync(() => _stored('leaves-during-close'));
+    final windowCalls = await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'leaves-during-close');
+    final editor = mouseNavigationRouteObserver.topRoute!;
+
+    final held = strategies.held = Completer<void>();
+    closeTheWindow(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(strategies.closeStrategy(asked: strategies.askedByTheUserNow()),
+        isA<Changed>());
+    appNavigatorKey.currentState!.removeRoute(editor);
+    await tester.pumpAndSettle();
+    held.complete();
+    strategies.held = null;
+    await settleWithDisk(tester);
+
+    expect(_preventClose(windowCalls), [true, false]);
+    expect(windowCalls.map((call) => call.method), isNot(contains('close')));
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets('one close with two editors on screen asks once', (tester) async {
+    await tester.runAsync(() async {
+      await _stored('under');
+      await _stored('over');
+    });
+    await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'under');
+    await openWithAnEdit(tester, 'over');
+    expect(find.byType(StrategyView, skipOffstage: false), findsNWidgets(2));
+
+    closeTheWindow(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save changes?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a second close while the close question is up is no new question, and '
+      'Cancel closes nothing', (tester) async {
+    await tester.runAsync(() => _stored('closed-twice'));
+    final windowCalls = await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'closed-twice');
+    windowCalls.clear();
+
+    closeTheWindow(tester);
+    await tester.pumpAndSettle();
+    closeTheWindow(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('Save changes?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(windowCalls, isEmpty);
+    expect(container.read(strategyProvider).strategyId, 'closed-twice');
     await leaveEditors(tester, container);
   });
 }

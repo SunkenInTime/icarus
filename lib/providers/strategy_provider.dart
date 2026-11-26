@@ -138,7 +138,6 @@ class StrategyProvider extends Notifier<StrategyState> {
         state.strategyId,
         ref.read(strategyOpeningProvider.notifier).opens,
         source: state.source,
-        edits: ref.read(strategySaveStateProvider.notifier).dirtyMarks,
       );
 
   OpenSeen askedByTheUserNow() => _seen;

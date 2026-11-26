@@ -408,25 +408,7 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
   required WidgetRef ref,
   required String source,
 }) async {
-  final edits = ref.read(strategySaveStateProvider.notifier);
-  final answer = await _askAbout(
-    context: context,
-    ref: ref,
-    source: source,
-    asked: ref.read(strategyProvider.notifier).askedByTheUserNow(),
-  );
-  return switch (answer) {
-    Leave(:final seen) => Leave(seen.withEdits(edits.dirtyMarks)),
-    Stay() => answer,
-  };
-}
-
-Future<LeaveAnswer> _askAbout({
-  required BuildContext context,
-  required WidgetRef ref,
-  required String source,
-  required OpenSeen asked,
-}) async {
+  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
   final l10n = context.l10n;
   final strategyState = ref.read(strategyProvider);
   final saveState = ref.read(strategySaveStateProvider);
