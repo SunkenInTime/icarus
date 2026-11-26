@@ -308,22 +308,22 @@ Future<void> _createStrategyAndOpen(
   required OpenSeen asked,
 }) async {
   final isCloud = ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
+  final l10n = ref.read(l10nProvider);
+  final strategies = ref.read(strategyProvider.notifier);
   final StrategyData strategy;
   try {
-    strategy =
-        await ref.read(strategyProvider.notifier).createNewStrategy(map: map);
+    strategy = await strategies.createNewStrategy(map: map);
   } catch (_) {
     Settings.showToast(
       message: isCloud
-          ? ref.read(l10nProvider).libraryCreateCloudStrategyFailed
-          : ref.read(l10nProvider).libraryCreateStrategyFailed,
+          ? l10n.libraryCreateCloudStrategyFailed
+          : l10n.libraryCreateStrategyFailed,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     return;
   }
   if (!context.mounted) return;
 
-  final strategies = ref.read(strategyProvider.notifier);
   final EditorPush push;
   if (isCloud) {
     final OpenChange opened;
@@ -341,7 +341,7 @@ Future<void> _createStrategyAndOpen(
         stackTrace: stackTrace,
       );
       Settings.showToast(
-        message: ref.read(l10nProvider).strategyMsgCreatedNotOpened,
+        message: l10n.strategyMsgCreatedNotOpened,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return;

@@ -18,6 +18,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 
@@ -295,6 +296,22 @@ void main() {
     expect(editor().isOpening, isFalse);
     await editor().selectPage(b.pages[1].id);
     expect(activePage(), b.pages[1].id);
+  });
+
+  test(
+      'an open replaced while it waited on the disk gives way, even when that '
+      'wait then fails', () async {
+    final a = stored('replaced-a');
+    final b = stored('replaced-b');
+    final hold = gate.holdNext(fails: true);
+    final opening =
+        editor().openLocal(a.id, asked: editor().askedByTheUserNow());
+    await hold.reached.future;
+    expect(await editor().loadFromHive(b.id), isTrue);
+    hold.released.complete();
+
+    expect(await opening, isA<GaveWay>());
+    expect(container.read(strategyProvider).strategyId, b.id);
   });
 
   test(

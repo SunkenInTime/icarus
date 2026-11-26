@@ -129,6 +129,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     } on OpenGaveWay {
       // The newer open, or the close, owns the outcome.
       return const GaveWay();
+    } on Object {
+      if (!opens.isLatest(attempt)) return const GaveWay();
+      rethrow;
     } finally {
       opens.settle(attempt);
     }
@@ -2302,23 +2305,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (ref.read(movingToCloudProvider).contains(id)) {
       throw StateError('This strategy is moving to the cloud.');
     }
-    if (const LocalLibrary().firstStoredWithId(id) == null) {
-      return const Missing();
-    }
+    final newStrat = const LocalLibrary().firstStoredWithId(id);
+    if (newStrat == null) return const Missing();
     cancelPendingSave();
 
     return _open(id, StrategySource.local, (opening) async {
       final reads = ref.read(localPageReadsProvider);
       final open = reads?.opening(id);
       try {
-        final newStrat = const LocalLibrary().firstStoredWithId(id);
-
-        if (newStrat == null) {
-          if (open != null) {
-            reads?.openFailed(open, StateError('Strategy $id not found.'));
-          }
-          return false;
-        }
         List<PlacedImage> pageImageData = [];
         for (final page in newStrat.pages) {
           pageImageData.addAll(page.imageData);

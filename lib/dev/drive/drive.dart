@@ -298,7 +298,7 @@ final _rememberedPages = <String, String>{};
 var _flutterErrors = 0;
 var _failedSteps = 0;
 final _delayedLinks = <Future<void>>[];
-final _linksOpening = <Future<bool>>[];
+final _linksOpening = <Future<void>>[];
 var _steps = 0;
 final _misplaced = <String>{};
 final _cloudStore = CloudStoreLog();
@@ -400,14 +400,7 @@ Future<void> _play(String script) async {
       _cloudStore.end(appProviderContainer, lastStep: DateTime.now());
   await Future.wait(_pictureWatches);
   await Future.wait(_delayedLinks);
-  for (final opening in _linksOpening) {
-    try {
-      await opening;
-    } catch (error) {
-      _failedSteps++;
-      _log('FAIL $error');
-    }
-  }
+  await Future.wait(_linksOpening);
   _logCloudStore(await cloudEnd);
   _log(_runFrames.stop());
   _log(buildsLine());
@@ -2749,12 +2742,13 @@ Future<void> _run(Map<String, dynamic> step) async {
             communityPostIdFromUri(uri, currentOrigin: currentShareOrigin());
         if (postPublicId != null) {
           final opened = Completer<bool>();
-          _linksOpening.add(opened.future.timeout(
-            const Duration(seconds: 60),
-            onTimeout: () => throw StateError(
-                'the link to $postPublicId had not opened or been refused '
-                '60 s after it arrived'),
-          ));
+          _linksOpening.add(opened.future
+              .timeout(const Duration(seconds: 60))
+              .then<void>((_) {}, onError: (Object error) {
+            _failedSteps++;
+            _log('FAIL the link to $postPublicId had not opened or been '
+                'refused 60 s after it arrived: $error');
+          }));
           c.read(communityPostToOpenProvider.notifier).state =
               PostLinkArrived(postPublicId, opened: opened);
         } else {
