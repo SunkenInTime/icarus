@@ -1912,6 +1912,18 @@ int? _refusedLife(ReadState list) => switch (list) {
   NotReadThisSession() || ReadThisSession() => null,
 };
 
+void _retireShown(_Edit edit, Shown before) {
+  for (final work in [...edit.landed]) {
+    if (!_alreadyShown(edit.shown, work)) continue;
+    edit.landed.remove(work);
+    edit.change.lives.addAll([
+      ...pagesNeeded(work.op),
+      ?before.rows[targetOf(work.op)]?.page,
+      ?edit.shown.rows[targetOf(work.op)]?.page,
+    ]);
+  }
+}
+
 Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   switch (resultFit(edit.shown, base, arrival)) {
     case ResultFit.older:
@@ -1921,7 +1933,9 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
       return edit.done();
     case ResultFit.same:
       final paid = edit.shown.paidAgain(base, arrival);
-      if (paid == edit.shown) {
+      final landed = edit.landed.length;
+      _retireShown(edit, edit.shown);
+      if (paid == edit.shown && edit.landed.length == landed) {
         return NotApplicable(edit.original, const SameResult());
       }
       edit.shown = paid;
@@ -1964,6 +1978,18 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   final taken = edit.shown.taken(base, arrival: arrival);
   edit.decisions.addAll(taken.decisions);
   edit.shown = taken.shown;
+  if (base case HeaderRead() || PageGone()) {
+    for (final work in [...edit.landed]) {
+      if (targetOf(work.op) case PageTarget(:final pagePublicId) ||
+              SettingsTarget(:final pagePublicId)
+          when !edit.shown.pages.containsKey(pagePublicId) &&
+              !edit.shown.trashed.containsKey(pagePublicId) &&
+              work.answeredAt.reachedBy(arrival)) {
+        edit.landed.remove(work);
+        edit.change.lives.add(pagePublicId);
+      }
+    }
+  }
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -1995,15 +2021,7 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
       }
     }
   }
-  for (final work in [...edit.landed]) {
-    if (!_alreadyShown(edit.shown, work)) continue;
-    edit.landed.remove(work);
-    edit.change.lives.addAll([
-      ...pagesNeeded(work.op),
-      ?before.rows[targetOf(work.op)]?.page,
-      ?edit.shown.rows[targetOf(work.op)]?.page,
-    ]);
-  }
+  _retireShown(edit, before);
   switch (base) {
     case HeaderRead():
       edit.change.everything = true;

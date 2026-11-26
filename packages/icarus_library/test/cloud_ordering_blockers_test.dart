@@ -509,4 +509,39 @@ void main() {
       expect(client.queue.shown.pageCurrent('page-a'), isTrue);
     });
   });
+
+  test('our page rename stops being drawn once a list past its answer no '
+      'longer has the page, and an older list does not stop it', () {
+    final client = connectedOn();
+    client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(2)));
+    client.edit(
+      const PagePatchOp(
+        opId: 'rename',
+        pagePublicId: 'page-a',
+        expectedPageRevision: 1,
+        name: 'Mine',
+      ),
+    );
+    final attempt = client.claim(['rename']);
+    client.must(
+      OpAnswered(
+        attempt,
+        AppliedAnswer(
+          'rename',
+          revision: 2,
+          life: createdAtOf(initialRows().page('page-a')!)!,
+        ),
+        point: pointAt(10),
+      ),
+    );
+    expect(client.queue.landed, isNotEmpty);
+    client.must(
+      arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(5)),
+    );
+    expect(client.queue.landed, isNotEmpty);
+    client.must(
+      arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(11)),
+    );
+    expect(client.queue.landed, isEmpty);
+  });
 }
