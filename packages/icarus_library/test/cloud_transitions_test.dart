@@ -725,7 +725,9 @@ String renderTable() {
       'refuse that strategy\'s open. After a restart the open passes the '
       'queue-load check when the fault is on a page, and the strategy is '
       'refused again as soon as that page loads, whether a reader, a '
-      'result or the summary loads it first.',
+      'result or the summary loads it first. Each refusal the store makes '
+      'carries a serial that only grows for the life of the store instance '
+      'and is never stored; the sender reports each serial once.',
     )
     ..writeln()
     ..writeln(

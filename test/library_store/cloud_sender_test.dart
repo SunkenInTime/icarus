@@ -2508,6 +2508,71 @@ void main() {
     });
 
     test(
+        'a refused strategy with sendable work: the sender looks at it again '
+        'and again, makes no read and sends no batch, reports it once, and '
+        'the work stays on disk byte for byte', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+          world.signIn(null);
+          world.settle();
+          world.commitMove(1);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      Map<String, String> queued(Map<String, Map<String, String>> all) => {
+            for (final MapEntry(:key, :value) in all[area]!.entries)
+              if (key.startsWith('pending/') || key.startsWith('landed/'))
+                key: value,
+          };
+      expect(queued(contents), isNotEmpty);
+      final damaged = contents[area]!.keys.firstWhere(
+            (key) => key.contains('/e/'),
+          );
+      contents[area]![damaged] = '{"broken":true}';
+      final before = queued(contents);
+      final refused = MemoryStorage(contents);
+      inWorld(
+        (world) {
+          final reads = server.readCalls.length;
+          final batches = server.calls.length;
+          final looks = world.sender.looks;
+          for (final page in server.rows[strategyId]!.pages) {
+            world.store.readPage(strategyId, page.publicId);
+          }
+          world.settle();
+          for (var round = 0; round < 3; round++) {
+            world.sender.retryNow(strategyId);
+            world.settle(const Duration(minutes: 10));
+          }
+          expect(world.sender.looks - looks, greaterThanOrEqualTo(2));
+          expect(server.readCalls.length, reads);
+          expect(server.calls.length, batches);
+          expect(
+            world.sender.store.reports.whereType<StoredRowsRefused>(),
+            hasLength(1),
+          );
+          expect(queued(refused.contents), before);
+        },
+        storage: refused,
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
         'a disagreement the sender meets when it reads the strategy is '
         'reported once, though the store also announces it', () {
       final storage = MemoryStorage();

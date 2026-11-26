@@ -80,6 +80,21 @@ void main() {
     );
   });
 
+  test(
+    'a damaged item the queue does not hold is named by its page and key',
+    () {
+      expect(
+        problemsWith({
+          'page-a': stored('page-a', damaged: [elementName('page-a', 'e9')]),
+          'page-b': stored('page-b'),
+        }),
+        contains(
+          'a damaged row is held on page-a as ${elementName('page-a', 'e9')}',
+        ),
+      );
+    },
+  );
+
   test('an item held on two pages is named, readable or damaged', () {
     expect(
       problemsWith({

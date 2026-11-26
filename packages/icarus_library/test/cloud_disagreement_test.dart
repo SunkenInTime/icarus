@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/store/store.dart' show storeWork;
 import 'package:test/test.dart';
 
 import 'cloud_store_support.dart';
@@ -106,10 +107,43 @@ final class Opened {
     return [for (final refusal in _refusals) refusal.refusal.reason];
   }
 
+  Future<List<int>> serialsReported() async {
+    await pumpEventQueue();
+    return [for (final refusal in _refusals) refusal.refusal.serial];
+  }
+
   Future<void> close() async {
     await _changes.cancel();
     await store.close();
   }
+}
+
+final class ServingAStrayItem extends ForwardingLease {
+  ServingAStrayItem(super.inner, this.serving);
+
+  final bool Function() serving;
+  static final stray = elementName('page-b', 'stray');
+
+  @override
+  Future<Stored<List<String>>> keys(String area, String prefix) async =>
+      switch (await super.keys(area, prefix)) {
+        Done(:final value) when serving() && prefix.isEmpty => Done([
+          ...value,
+          stray,
+        ]),
+        final other => other,
+      };
+}
+
+Future<void> arrive(LibraryStore store, ArrivedBase base) async {
+  final recorded = await recordAll(store, [
+    BaseArrived(
+      base,
+      session: await sessionOf(store),
+      from: await beganIn(store),
+    ),
+  ]);
+  expect(recorded.outcomes.single, isA<ReportApplied>());
 }
 
 Future<RecordResult> arriving(LibraryStore store, ArrivedBase base) async =>
@@ -304,12 +338,9 @@ void main() {
           ),
         );
         seed(disk);
+        final before = editable(disk);
         final storage = MemoryStorage(disk);
         final opened = await Opened.over(storage);
-        await opened.store.record(testAccount, strategyId, const [
-          AppRestarted(build: build),
-        ]);
-        final before = editable(storage.contents);
         await readEveryPage(opened.store);
         await expectRefused(opened.store, reason);
         expect(
@@ -322,13 +353,16 @@ void main() {
           ]),
           isA<Refused<Recorded, CommitRefusal>>(),
         );
+        expect(opened.counts.commits, 0);
         expect(storage.contents, before);
         expect(await opened.refusalsReported(), [contains(reason)]);
         await opened.close();
 
-        final again = await Opened.over(MemoryStorage(storage.contents));
+        final untouched = editable(storage.contents);
+        final again = await Opened.over(MemoryStorage(untouched));
         await readEveryPage(again.store);
         await expectRefused(again.store, reason);
+        expect(again.counts.commits, 0);
         expect(await again.refusalsReported(), [contains(reason)]);
       });
     }
@@ -409,16 +443,27 @@ void main() {
     await store.close();
     final disk = editable(storage.contents);
     disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+    final before = editable(disk);
+    Map<String, String> queued(Contents contents) => {
+      for (final MapEntry(:key, :value) in contents[area]!.entries)
+        if (key.startsWith('pending/') || key.startsWith('landed/')) key: value,
+    };
+    expect(queued(before), isNotEmpty);
     final damaged = MemoryStorage(disk);
-    store = await openCloudStore(MemoryEngine(damaged));
+    final opened = await Opened.over(damaged);
+    store = opened.store;
     await readEveryPage(store);
-    final before = editable(damaged.contents);
+    expect(await refusedFor(store), isNotNull);
+    expect(opened.counts.commits, 0);
+    expect(queued(damaged.contents), queued(before));
     expect(
       await store.record(testAccount, strategyId, [
         BatchClaimed(clientId: clientId, opIds: ['kept'], at: fixedClock()),
       ]),
       isA<Refused<Recorded, CommitRefusal>>(),
     );
+    expect(opened.counts.commits, 0);
+    expect(queued(damaged.contents), queued(before));
     expect(
       await store.commitAs(
         testAccount,
@@ -432,11 +477,8 @@ void main() {
         isA<StoredRowsDisagree>(),
       ),
     );
+    expect(opened.counts.commits, 0);
     expect(damaged.contents, before);
-    expect([
-      for (final key in damaged.contents[area]!.keys)
-        if (key.startsWith('pending/')) key,
-    ], isNotEmpty);
   });
 
   group('a disagreement found at a page load in the middle of a session', () {
@@ -530,6 +572,7 @@ void main() {
         'not rewritten, and it is reported once', () async {
       final (opened, storage) = await damagedOnA();
       final before = editable(storage.contents);
+      final listed = listOf(opened.store).strategies.single.toJson();
       expect(
         await opened.store.rebuildSummary(strategyId),
         isA<Refused<StrategySummary, CommitRefusal>>().having(
@@ -539,7 +582,406 @@ void main() {
         ),
       );
       expect(storage.contents, before);
+      expect(
+        storage.contents['library']![summaryName(strategyId)],
+        before['library']![summaryName(strategyId)],
+      );
+      expect(listOf(opened.store).strategies.single.toJson(), listed);
       expect(await opened.refusalsReported(), hasLength(1));
+    });
+
+    test('a batch with a result for a healthy page before one for the '
+        'damaged page is refused whole, with nothing written', () async {
+      final (opened, storage) = await damagedOnA();
+      final session = await sessionOf(opened.store);
+      final from = await beganIn(opened.store);
+      final before = editable(storage.contents);
+      final commits = opened.counts.commits;
+      final changedB = initialRows().withRows([
+        element('e3', pageId: 'page-b', revision: 2, sortIndex: 5),
+      ]);
+      expect(
+        await opened.store.record(testAccount, strategyId, [
+          BaseArrived(
+            pageReadOf(changedB, 'page-b'),
+            session: session,
+            from: from,
+          ),
+          BaseArrived(
+            pageReadOf(initialRows(), 'page-a'),
+            session: session,
+            from: from,
+          ),
+        ]),
+        isA<Refused<Recorded, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<StoredRowsDisagree>(),
+        ),
+      );
+      expect(opened.counts.commits, commits);
+      expect(storage.contents, before);
+    });
+
+    test('a refused strategy shows nothing, not even a healthy page, and '
+        'copying a healthy page is refused with nothing written', () async {
+      final (opened, storage) = await damagedOnA();
+      final seen = await seenIn(opened.store);
+      expect(
+        await opened.store.readPage(strategyId, 'page-b'),
+        isA<Found<PageContent>>(),
+      );
+      expect(
+        await opened.store.readPage(strategyId, 'page-a'),
+        isA<InUnreadableStrategy<PageContent>>(),
+      );
+      expect(
+        await opened.store.readPage(strategyId, 'page-b'),
+        isA<InUnreadableStrategy<PageContent>>(),
+      );
+      final before = editable(storage.contents);
+      final commits = opened.counts.commits;
+      expect(
+        await opened.store.commitAs(
+          testAccount,
+          strategyId,
+          pageAdd('copy', 'page-c', copyFrom: 'page-b'),
+          seen: seen,
+        ),
+        isA<Refused<Committed, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<StoredRowsDisagree>(),
+        ),
+      );
+      expect(opened.counts.commits, commits);
+      expect(storage.contents, before);
+    });
+  });
+
+  test('in release builds a stored item with other contents at the version '
+      'the queue holds is accepted when an unchanged result arrives: the '
+      'stored copy stays and nothing is refused', () async {
+    final checked = shownTakesChecked;
+    shownTakesChecked = false;
+    addTearDown(() => shownTakesChecked = checked);
+    final disk = await addedOnDisk();
+    final changed = jsonEncode({
+      ...json(disk[area]![elementName('page-a', 'e1')]!),
+      'sortIndex': 99,
+    });
+    disk[area]![elementName('page-a', 'e1')] = changed;
+    final storage = MemoryStorage(disk);
+    final opened = await Opened.over(storage);
+    await recordAll(opened.store, [const AppRestarted(build: build)]);
+    expect(
+      await arriving(opened.store, pageReadOf(initialRows(), 'page-a')),
+      isA<Saved<Recorded, CommitRefusal>>(),
+    );
+    expect(storage.contents[area]![elementName('page-a', 'e1')], changed);
+    expect(await refusedFor(opened.store), isNull);
+    expect(await opened.refusalsReported(), isEmpty);
+  });
+
+  test('a result older than one already taken for its page is dropped before '
+      'the page is read again', () async {
+    final storage = MemoryStorage(await addedOnDisk());
+    final opened = await Opened.over(storage);
+    await recordAll(opened.store, [const AppRestarted(build: build)]);
+    final session = await sessionOf(opened.store);
+    final older = await beganIn(opened.store);
+    final newer = await beganIn(opened.store);
+    await recordAll(opened.store, [
+      BaseArrived(
+        pageReadOf(initialRows(), 'page-a'),
+        session: session,
+        from: newer,
+      ),
+    ]);
+    expect(await opened.store.unload(strategyId), isA<Unloaded>());
+    final listings = opened.counts.entryListings.length;
+    final commits = opened.counts.commits;
+    final recorded = await opened.store.record(testAccount, strategyId, [
+      BaseArrived(
+        pageReadOf(initialRows(), 'page-a'),
+        session: session,
+        from: older,
+      ),
+    ]);
+    expect([
+      for (final (_, prefix) in opened.counts.entryListings.skip(listings))
+        if (prefix.startsWith('content/')) prefix,
+    ], isEmpty);
+    expect(opened.counts.commits, commits);
+    expect(
+      savedValue(recorded).outcomes.single,
+      isA<ReportNotApplicable>().having(
+        (outcome) => outcome.why,
+        'why',
+        isA<OlderResult>(),
+      ),
+    );
+  });
+
+  test(
+    'an item on a page that went is taken once when a later result '
+    'carries it on a surviving page, and the live store equals a reopen',
+    () async {
+      final storage = MemoryStorage(await addedOnDisk());
+      var store = await openCloudStore(MemoryEngine(storage));
+      await recordAll(store, [const AppRestarted(build: build)]);
+      await arrive(store, const PageGone('page-b'));
+      final moved = initialRows().withRows([element('e3', revision: 2)]);
+      await arrive(store, pageReadOf(moved, 'page-a'));
+      List<String> onA(PageContent page) =>
+          [for (final row in page.elements) row.publicId]..sort();
+      final live = onA(pageOf(await store.readPage(strategyId, 'page-a')));
+      expect(live.where((id) => id == 'e3'), hasLength(1));
+      await expectAgree(store);
+      await store.close();
+      store = await openCloudStore(MemoryEngine(storage));
+      expect(onA(pageOf(await store.readPage(strategyId, 'page-a'))), live);
+    },
+  );
+
+  test('an unknown-kind row on a cached page is gone from the next read and '
+      'from disk once a full result for the page leaves it out', () async {
+    final disk = await addedOnDisk();
+    final key = 'content/${digestOf('page-a')}/z/${digestOf('x')}';
+    disk[area]![key] = '{"kind":"from a newer build"}';
+    final storage = MemoryStorage(disk);
+    final store = await openCloudStore(MemoryEngine(storage));
+    await recordAll(store, [const AppRestarted(build: build)]);
+    expect(
+      pageOf(await store.readPage(strategyId, 'page-a')).unknownKinds,
+      isNotEmpty,
+    );
+    await arrive(store, pageReadOf(initialRows(), 'page-a'));
+    expect(
+      pageOf(await store.readPage(strategyId, 'page-a')).unknownKinds,
+      isEmpty,
+    );
+    expect(storage.contents[area]!.containsKey(key), isFalse);
+  });
+
+  test('a page list leaving out a page the queue holds emits UnlistedLeft '
+      'with exactly the pages it lists', () {
+    final shown = Shown.nothing
+        .taken(headerReadOf(initialRows()), started: ReadStart.beforeAnyRead)
+        .shown;
+    final taken = shown.taken(
+      headerReadOf(
+        StrategyRowSet(
+          strategy: initialRows().strategy,
+          pages: [initialRows().page('page-a')!],
+          settings: [
+            for (final row in initialRows().settings)
+              if (row.pagePublicId == 'page-a') row,
+          ],
+        ),
+      ),
+      started: ReadStart.beforeAnyRead,
+    );
+    expect(
+      taken.decisions.whereType<UnlistedLeft>().map((left) => left.listed),
+      [
+        {'page-a'},
+      ],
+    );
+  });
+
+  group('damaged rows main tolerated are now refused, and stay on disk', () {
+    Future<(Opened, MemoryStorage, Contents)> withDamaged(
+      void Function(Contents disk) damage,
+    ) async {
+      final disk = await addedOnDisk();
+      damage(disk);
+      final before = editable(disk);
+      final storage = MemoryStorage(disk);
+      return (await Opened.over(storage), storage, before);
+    }
+
+    LiveElement repairedE9() => LiveElement(
+      publicId: 'e9',
+      pagePublicId: 'page-a',
+      payload: agentPayload('e9', const {}),
+      sortIndex: 0,
+      revision: 1,
+      unknownFields: jsonObject({'createdAt': fixtureLife}),
+    );
+
+    test('a damaged extra item, repaired and then removed by two results in '
+        'one call', () async {
+      final key = elementName('page-a', 'e9');
+      final (opened, storage, before) = await withDamaged(
+        (disk) => disk[area]![key] = '{"broken":true}',
+      );
+      expect(
+        await opened.store.record(testAccount, strategyId, [
+          BaseArrived(
+            pageReadOf(initialRows().withRows([repairedE9()]), 'page-a'),
+            session: 1,
+            from: const LiveResult(),
+          ),
+          BaseArrived(
+            pageReadOf(initialRows(), 'page-a'),
+            session: 1,
+            from: const LiveResult(),
+          ),
+        ]),
+        isA<Refused<Recorded, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<StoredRowsDisagree>(),
+        ),
+      );
+      expect(opened.counts.commits, 0);
+      expect(storage.contents, before);
+      expect(storage.contents[area]![key], '{"broken":true}');
+    });
+
+    test('a damaged extra item that a full page result leaves out', () async {
+      final key = elementName('page-a', 'e9');
+      final (opened, storage, before) = await withDamaged(
+        (disk) => disk[area]![key] = '{"broken":true}',
+      );
+      expect(
+        await opened.store.record(testAccount, strategyId, [
+          BaseArrived(
+            pageReadOf(initialRows(), 'page-a'),
+            session: 1,
+            from: const LiveResult(),
+          ),
+        ]),
+        isA<Refused<Recorded, CommitRefusal>>(),
+      );
+      expect(opened.counts.commits, 0);
+      expect(storage.contents, before);
+    });
+
+    test('a page that goes, with an unreadable settings row', () async {
+      final key = settingsName('page-b');
+      final (opened, storage, before) = await withDamaged(
+        (disk) => disk[area]![key] = '{"broken":true}',
+      );
+      expect(
+        await opened.store.record(testAccount, strategyId, [
+          const BaseArrived(PageGone('page-b'), session: 1, from: LiveResult()),
+        ]),
+        isA<Refused<Recorded, CommitRefusal>>(),
+      );
+      expect(
+        await refusedFor(opened.store),
+        'a page or settings row is damaged here',
+      );
+      expect(opened.counts.commits, 0);
+      expect(storage.contents, before);
+    });
+  });
+
+  test('once refused, a record is answered from the remembered refusal '
+      'without touching disk', () async {
+    final disk = await addedOnDisk();
+    disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+    final opened = await Opened.over(MemoryStorage(disk));
+    await readEveryPage(opened.store);
+    expect(await refusedFor(opened.store), isNotNull);
+    final counts = opened.counts;
+    final touched = (
+      counts.reads.length,
+      counts.keyListings.length,
+      counts.entryListings.length,
+      counts.commits,
+    );
+    expect(
+      await opened.store.record(testAccount, strategyId, const [
+        ConnectionReturned(),
+      ]),
+      isA<Refused<Recorded, CommitRefusal>>(),
+    );
+    expect((
+      counts.reads.length,
+      counts.keyListings.length,
+      counts.entryListings.length,
+      counts.commits,
+    ), touched);
+  });
+
+  group('the store\'s own guards', () {
+    test('a damaged page is never admitted to memory; the strategy and its '
+        'queue leave memory when a batch fails part way', () async {
+      final disk = await addedOnDisk();
+      disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+      final store = await openCloudStore(MemoryEngine(MemoryStorage(disk)));
+      await recordAll(store, [const AppRestarted(build: build)]);
+      final session = await sessionOf(store);
+      final from = await beganIn(store);
+      storeWork.reset();
+      expect(
+        await store.readPage(strategyId, 'page-b'),
+        isA<Found<PageContent>>(),
+      );
+      expect(storeWork.cloudPagesAdmitted, 1);
+      expect(storeWork.strategiesInMemory(), contains(digestOf(strategyId)));
+      expect(
+        await store.record(testAccount, strategyId, [
+          BaseArrived(
+            pageReadOf(
+              initialRows().withRows([
+                element('e3', pageId: 'page-b', revision: 2),
+              ]),
+              'page-b',
+            ),
+            session: session,
+            from: from,
+          ),
+          BaseArrived(
+            pageReadOf(initialRows(), 'page-a'),
+            session: session,
+            from: from,
+          ),
+        ]),
+        isA<Refused<Recorded, CommitRefusal>>(),
+      );
+      expect(storeWork.cloudPagesAdmitted, 1);
+      expect(
+        storeWork.strategiesInMemory(),
+        isNot(contains(digestOf(strategyId))),
+      );
+      expect(storeWork.queuesInMemory(), isNot(contains(digestOf(strategyId))));
+    });
+
+    test('a refusal remembered for a page does not skip the queue-load '
+        'check: a fault found there later is reported as its own', () async {
+      final disk = await addedOnDisk();
+      disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+      var stray = false;
+      final store = await openCloudStore(
+        WrappingEngine(
+          MemoryEngine(MemoryStorage(disk)),
+          (lease) => ServingAStrayItem(lease, () => stray),
+        ),
+      );
+      final refusals = <StoredRowsDisagree>[];
+      final listening = store.changes.listen((change) {
+        if (change is StrategyRefused) refusals.add(change.refusal);
+      });
+      addTearDown(listening.cancel);
+      await store.readPage(strategyId, 'page-a');
+      stray = true;
+      expect(
+        await store.rebuildSummary(strategyId),
+        isA<Refused<StrategySummary, CommitRefusal>>(),
+      );
+      await pumpEventQueue();
+      expect(
+        [for (final refusal in refusals) refusal.reason],
+        [
+          'a row on page page-a is damaged here',
+          'an item is held here that the queue does not hold',
+        ],
+      );
+      expect(refusals.first.serial, isNot(refusals.last.serial));
     });
   });
 
@@ -631,6 +1073,9 @@ void main() {
     final reasons = await opened.refusalsReported();
     expect(reasons, hasLength(2));
     expect(reasons.toSet(), hasLength(1));
+    final serials = await opened.serialsReported();
+    expect(serials.toSet(), hasLength(2));
+    expect(serials.first, lessThan(serials.last));
   });
 
   test('a strategy whose queue cannot be read shows its rows unchecked and '

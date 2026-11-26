@@ -35,13 +35,17 @@ final class StoreWork {
   int resultGroupsEncoded = 0;
   int rowsEncoded = 0;
   int rowsCompared = 0;
+  int cloudPagesAdmitted = 0;
   int Function() sessionRecords = () => 0;
+  Set<String> Function() strategiesInMemory = () => const {};
+  Set<String> Function() queuesInMemory = () => const {};
 
   void reset() {
     rowsDrawn = 0;
     resultGroupsEncoded = 0;
     rowsEncoded = 0;
     rowsCompared = 0;
+    cloudPagesAdmitted = 0;
   }
 }
 
@@ -277,6 +281,8 @@ final class _RebuildNotRead extends _Rebuilt {
 final class LibraryStore {
   LibraryStore._(StorageLease lease, this._canRead, this._clock, this._build) {
     storeWork.sessionRecords = () => _sessions.length;
+    storeWork.strategiesInMemory = () => {..._strategies.keys};
+    storeWork.queuesInMemory = () => {..._queues.keys};
     _lease = _WatchedLease(
       lease,
       () => _shut(const StoreStopped(LeaseEnded())),

@@ -680,6 +680,9 @@ extension _CloudStore on LibraryStore {
   }
 
   Future<_CloudOpen> _openCloud(String strategyPublicId) async {
+    if (_refusedThisSession[digestOf(strategyPublicId)] case final refusal?) {
+      return _CloudRefused(refusal);
+    }
     final LoadedStrategy strategy;
     switch (await _strategy(strategyPublicId)) {
       case Found(:final value):
@@ -702,9 +705,6 @@ extension _CloudStore on LibraryStore {
     }
     if (strategy.keeping == Keeping.here) {
       return _CloudRefused(NotACloudStrategy(strategyPublicId));
-    }
-    if (_refusedThisSession[strategy.digest] case final refusal?) {
-      return _CloudRefused(refusal);
     }
     return switch (await _queueOf(strategy)) {
       _QueueLoaded() when _refusedThisSession.containsKey(strategy.digest) =>
@@ -760,6 +760,7 @@ extension _CloudStore on LibraryStore {
               case final reason?) {
             throw _RowsDisagree(_refuse(strategy, reason));
           }
+          storeWork.cloudPagesAdmitted++;
           _addPage(strategy, digest, page);
       }
     }
