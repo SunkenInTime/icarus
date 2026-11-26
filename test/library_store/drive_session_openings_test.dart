@@ -133,21 +133,36 @@ void main() {
     );
   });
 
-  test('a run with no connection loss, or two, fails', () {
+  test(
+      'a run whose sender stayed on one connection, or moved twice, fails',
+      () {
     expect(
-      () => judged([earlierSession(), openedByStamp(2), reconnected(2)]),
-      refusedWith('0 connection losses'),
+      () => judged([earlierSession(), openedByStamp(2)]),
+      refusedWith('on 1 connections'),
     );
     expect(
       () => judged([
-        lost(),
+        earlierSession(),
         openedByReconnect(2),
         reconnected(2),
-        lost(),
         openedByReconnect(3),
-        reconnected(3),
+        SessionOpenedFor(
+          strategy,
+          3,
+          (account: account, connection: 3, signIns: 1, signOuts: 0),
+        ),
       ]),
-      refusedWith('2 connection losses'),
+      refusedWith('on 3 connections'),
+    );
+  });
+
+  test('a cut the store never saw as a loss is still told apart', () {
+    expect(
+      judged(
+        [earlierSession(), openedByReconnect(2), reconnected(2)],
+        stampExpected: false,
+      ),
+      contains('session 2 by the reconnect event'),
     );
   });
 }

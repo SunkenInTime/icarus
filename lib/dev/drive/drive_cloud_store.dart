@@ -663,29 +663,26 @@ String reconnectSessionOpening(
   String strategyId, {
   required bool stampExpected,
 }) {
-  final losses = [
+  final binds = [
     for (final (index, report) in reports.indexed)
-      if (report case EventsWritten(strategyId: final id, :final events)
-          when id == strategyId &&
-              events.any((event) => event is ConnectionLost))
-        index,
+      if (report case SessionOpenedFor(
+        strategyId: final id,
+        :final session,
+        :final stamp,
+      ) when id == strategyId)
+        (index: index, session: session, connection: stamp.connection),
   ];
-  if (losses.length != 1) {
+  final connections = {for (final bind in binds) bind.connection};
+  if (binds.isEmpty || connections.length != 2) {
     throw StateError(
-      'the store recorded ${losses.length} connection losses for '
-      '$strategyId, not one, so the cut cannot be told apart',
+      'the sender bound $strategyId on ${connections.length} connections, '
+      'not two, so the cut cannot be told apart',
     );
   }
-  final cut = losses.single;
-  final (reconnect, session) = [
-        for (final (index, report) in reports.indexed.skip(cut + 1))
-          if (report case SessionOpenedFor(strategyId: final id, :final session)
-              when id == strategyId)
-            (index, session),
-      ].firstOrNull ??
-      (throw StateError(
-        'no session of $strategyId was bound after the connection was lost',
-      ));
+  final first = binds.first.connection;
+  final at = binds.indexWhere((bind) => bind.connection != first);
+  final cut = binds[at - 1].index;
+  final (reconnect, session) = (binds[at].index, binds[at].session);
   final opened = [
     for (final report in reports.sublist(cut + 1, reconnect))
       if (report
