@@ -22,7 +22,7 @@
   {"waitSignal": "cut", "seconds": 120},
   {"storeDeletePage": 1},
   {"releaseSender": true},
-  {"wait": 50},
+  {"waitStoreReading": 120},
   {"storeSyncState": true},
   {"signal": "edited-offline"},
   {"waitSignal": "restored", "seconds": 120},

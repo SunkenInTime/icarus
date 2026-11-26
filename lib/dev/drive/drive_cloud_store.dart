@@ -624,29 +624,97 @@ Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
   }
 }
 
+Future<String> waitStoreReading(ProviderContainer c, Duration within) async {
+  final sender = _sender(c);
+  final before = sender.reads;
+  final until = DateTime.now().add(within);
+  while (true) {
+    if (sender.reads > before) {
+      if (sender.reading case final why?) {
+        return 'CLOUDSTORE the sender has a read in flight: $why; sender '
+            '${_senderWords(c)}';
+      }
+    }
+    if (DateTime.now().isAfter(until)) {
+      throw StateError(
+        'the sender had no read in flight that it began within '
+        '${within.inSeconds} s; ${sender.reads - before} began and ended; '
+        'sender ${_senderWords(c)}',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
+
 List<String> storeSessionOpenings(
   ProviderContainer c, {
   required bool stampExpected,
+}) =>
+    [
+      reconnectSessionOpening(
+        _sender(c).store.reports,
+        storedCloudStrategy(c),
+        stampExpected: stampExpected,
+      ),
+    ];
+
+String reconnectSessionOpening(
+  List<SenderReport> reports,
+  String strategyId, {
+  required bool stampExpected,
 }) {
-  final openings = [
-    for (final report in _sender(c).store.reports)
-      if (report
-          case EventsWritten(:final strategyId, :final events, :final effects))
-        for (final opened in effects.whereType<SessionOpened>())
-          (strategyId, opened.session, _openedBy(events)),
+  final losses = [
+    for (final (index, report) in reports.indexed)
+      if (report case EventsWritten(strategyId: final id, :final events)
+          when id == strategyId &&
+              events.any((event) => event is ConnectionLost))
+        index,
   ];
-  final byStamp = openings.where((opening) => opening.$3 == null).length;
-  if (stampExpected && byStamp == 0) {
+  if (losses.length != 1) {
     throw StateError(
-      'no session was opened by a result\'s stamp; openings: '
-      '${[for (final (id, session, by) in openings) '$id $session by $by']}',
+      'the store recorded ${losses.length} connection losses for '
+      '$strategyId, not one, so the cut cannot be told apart',
     );
   }
-  return [
-    for (final (id, session, by) in openings)
-      'CLOUDSTORE session $session of $id opened by '
-          '${by ?? 'a result\'s stamp'}',
+  final cut = losses.single;
+  final (reconnect, session) = [
+        for (final (index, report) in reports.indexed.skip(cut + 1))
+          if (report case SessionOpenedFor(strategyId: final id, :final session)
+              when id == strategyId)
+            (index, session),
+      ].firstOrNull ??
+      (throw StateError(
+        'no session of $strategyId was bound after the connection was lost',
+      ));
+  final opened = [
+    for (final report in reports.sublist(cut + 1, reconnect))
+      if (report
+          case EventsWritten(
+            strategyId: final id,
+            :final events,
+            :final effects
+          ) when id == strategyId)
+        for (final opening in effects.whereType<SessionOpened>())
+          (session: opening.session, by: _openedBy(events)),
   ];
+  String words(({int session, String? by}) opening) =>
+      'session ${opening.session} by ${opening.by ?? 'a result\'s stamp'}';
+  if (opened case [final only] when only.session == session) {
+    if (stampExpected && only.by != null) {
+      throw StateError(
+        'the reconnect after the cut bound $strategyId to ${words(only)}, '
+        'not by a result\'s stamp',
+      );
+    }
+    return 'CLOUDSTORE the reconnect after the cut bound $strategyId to '
+        '${words(only)}, the one session opened since the cut';
+  }
+  throw StateError(
+    'the reconnect after the cut bound session $session of $strategyId, and '
+    'since the cut the store opened '
+    '${opened.isEmpty ? 'no session' : opened.map(words).join(', ')}, not '
+    'that session alone',
+  );
 }
 
 String? _openedBy(List<QueueEvent> events) => switch (events

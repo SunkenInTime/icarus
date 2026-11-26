@@ -2704,6 +2704,10 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(
         await waitStoreHeld(c, Duration(seconds: (value as num).toInt())),
       );
+    case 'waitStoreReading':
+      _log(
+        await waitStoreReading(c, Duration(seconds: (value as num).toInt())),
+      );
     case 'killNow':
       _log('KILLED by the script');
       await _flush();
