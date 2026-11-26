@@ -395,6 +395,30 @@ void countCases(List<Fact> order) {
       }
     }
   }
+  bool lists(ReadFact read, String page) => switch (read.base) {
+    HeaderRead(:final pages) => pages.any(
+      (row) => row is LivePage && row.publicId == page,
+    ),
+    _ => false,
+  };
+  for (var i = 0; i < reads.length; i++) {
+    for (var j = i + 1; j < reads.length; j++) {
+      final (first, late) = (reads[i], reads[j]);
+      if (first.run != late.run || late.state.index >= first.state.index) {
+        continue;
+      }
+      switch ((first.base, late.base)) {
+        case (PageRead(:final page), HeaderRead())
+            when !lists(late, page.publicId):
+          count('an older list leaving a page out after a newer read of it');
+        case (HeaderRead(), PageGone(:final pagePublicId))
+            when lists(first, pagePublicId):
+          count('an older page-gone after a newer list showing the page');
+        case _:
+          break;
+      }
+    }
+  }
   for (final (at, fact) in order.indexed) {
     switch (fact) {
       case RestartFact(:final run):
@@ -566,4 +590,6 @@ const floors = {
   'orders with a page gone': 2800,
   'orders with the strategy gone': 960,
   'orders with two reads of one snapshot': 3000,
+  'an older list leaving a page out after a newer read of it': 1700,
+  'an older page-gone after a newer list showing the page': 1700,
 };
