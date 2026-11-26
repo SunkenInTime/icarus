@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/const/routes.dart';
@@ -746,7 +747,8 @@ class _RecordingStrategies extends StrategyProvider {
 
 class _UnsavedStrategies extends _RecordingStrategies {
   @override
-  Future<bool> flushPendingAutosaveBeforeExit() async => false;
+  Future<AutosaveBeforeExit> flushPendingAutosaveBeforeExit() async =>
+      const NotAutosaved(NotAutosavedBecause.autosaveIsOff);
 
   @override
   void cancelPendingSave() {}

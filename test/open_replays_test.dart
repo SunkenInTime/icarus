@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
@@ -37,7 +38,8 @@ class _OpenStrategy extends StrategyProvider {
 
   /// Autosave is off, so leaving has to ask.
   @override
-  Future<bool> flushPendingAutosaveBeforeExit() async => false;
+  Future<AutosaveBeforeExit> flushPendingAutosaveBeforeExit() async =>
+      const NotAutosaved(NotAutosavedBecause.autosaveIsOff);
 
   @override
   void cancelPendingSave() {}

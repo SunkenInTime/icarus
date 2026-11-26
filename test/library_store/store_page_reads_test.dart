@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:hive_ce/src/binary/binary_writer_impl.dart';
+import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
@@ -576,8 +577,8 @@ void main() {
       h.editor.setUnsaved();
       final saved = await h.editor
           .flushPendingAutosaveBeforeExit()
-          .then((left) => left, onError: (Object _) => false);
-      expect(saved, isFalse);
+          .then<Object>((left) => left, onError: (Object _) => false);
+      expect(saved, isNot(isA<NothingLeftUnsaved>()));
       await openEnds();
       expect(agentsSaved(b, 0),
           [for (final agent in b.pages[0].agentData) agent.id]);

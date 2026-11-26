@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
@@ -69,7 +70,8 @@ class _HeldLocalSave extends StrategyProvider {
       );
 
   @override
-  Future<bool> flushPendingAutosaveBeforeExit() async => false;
+  Future<AutosaveBeforeExit> flushPendingAutosaveBeforeExit() async =>
+      const NotAutosaved(NotAutosavedBecause.autosaveIsOff);
 
   @override
   Future<void> forceSaveNow(String id) => held.future;
