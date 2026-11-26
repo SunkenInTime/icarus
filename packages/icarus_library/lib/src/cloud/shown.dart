@@ -483,7 +483,12 @@ PaidBy both(PaidBy held, PaidBy added) {
         rest.add(debt);
     }
   }
-  final combined = {?atOrAfter, ?answer, ...rest};
+  final combined = {
+    if (atOrAfter != ResultAtOrAfter.anyResult) ?atOrAfter,
+    ?answer,
+    ...rest,
+  };
+  if (combined.isEmpty) return ResultAtOrAfter.anyResult;
   return combined.length == 1 ? combined.single : AllOf._(combined);
 }
 

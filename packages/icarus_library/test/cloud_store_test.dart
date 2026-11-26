@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/cloud/codec.dart' show shownToGroups;
 import 'package:icarus_library/src/json.dart' show canonicalJson;
 import 'package:icarus_library/src/store/layout.dart'
     show AttemptName, PendingName;
@@ -59,7 +60,10 @@ void main() {
     expect(after.views['add']!.state, isA<Unanswered>());
     expect(after.queue.nextAttempt, before.queue.nextAttempt);
     expect(after.queue.session.number, before.queue.nextSession);
-    expect(after.queue.shown, before.queue.shown.inNewSession());
+    expect(
+      shownToGroups(after.queue.shown),
+      shownToGroups(before.queue.shown.inNewSession()),
+    );
     expect(
       listOf(store).strategies.single.sync,
       isA<KeptInCloud>().having(

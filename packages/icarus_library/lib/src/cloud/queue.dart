@@ -1472,12 +1472,12 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
             connected: true,
             basis: edit.session.basis,
           );
-        case _:
+        case final held:
           edit.openSession(
             connected: true,
             build: edit.session.build,
             generation: generation,
-            sameLabels: true,
+            sameLabels: held != null,
           );
       }
       return edit.done();
@@ -1566,7 +1566,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       final since = switch (held) {
         ReadOwed(since: final owed) || ReadRefused(since: final owed)
             when !owed.paidBy(refused, null) =>
-          both(owed, ResultAtOrAfter(refused.order)),
+          owed,
         _ => ResultAtOrAfter(refused.order),
       };
       edit.shown = switch (page) {

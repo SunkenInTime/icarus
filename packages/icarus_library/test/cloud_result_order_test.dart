@@ -114,7 +114,7 @@ void main() {
       await addCloud(store, initialRows());
       await recordAll(store, [const AppRestarted(build: build)]);
       final ended = await sessionOf(store);
-      await recordAll(store, [const ConnectionLost(), reconnected()]);
+      await recordAll(store, [const AppRestarted(build: build)]);
       final before = Map.of(storage.contents);
       final recorded = await store.record(testAccount, strategyId, [
         BaseArrived(
