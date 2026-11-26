@@ -433,10 +433,16 @@ final class CloudSender {
     _changes ??= _store.store.changes.listen(
       (change) => switch (change) {
         StrategyEdited(:final strategyPublicId) => edited(strategyPublicId),
+        StrategyRefused(:final strategyPublicId, :final refusal) =>
+          _store.refused(strategyPublicId, refusal),
         _ => wake(),
       },
       onDone: wake,
     );
+    for (final MapEntry(key: strategyId, value: refusal)
+        in _store.store.refusedStrategies.entries) {
+      _store.refused(strategyId, refusal);
+    }
     _running ??= _loop();
   }
 

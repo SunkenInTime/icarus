@@ -24,6 +24,11 @@ Shown fromScratch(Shown shown) => Shown(
     for (final MapEntry(:key, :value) in shown.pages.entries)
       key: _loaded(value),
   },
+  trashed: {
+    for (final MapEntry(:key, :value) in shown.trashed.entries)
+      key: _loaded(value),
+  },
+  tombstones: shown.tombstones,
   settings: {
     for (final MapEntry(:key, :value) in shown.settings.entries)
       key: _loaded(value),
@@ -50,7 +55,7 @@ void expectWhatTheServerSent(Shown shown, ArrivedBase base, String where) {
       final sent = <Row>[...elements, ...lineupGroups];
       expect(
         shown.content[pageId],
-        liveContentOn(sent, pageId),
+        page is TrashedPage ? isNull : liveContentOn(sent, pageId),
         reason: '$where: content of $pageId',
       );
       for (final row in sent) {
@@ -87,33 +92,121 @@ void expectWhatTheServerSent(Shown shown, ArrivedBase base, String where) {
   }
 }
 
-Map<String, int> runSeed(int seed, int steps) {
-  final server = RandomServer(Random(seed));
-  final delivered = <String, int>{};
-  var cached = Shown.nothing;
-  var scratch = Shown.nothing;
-  for (var step = 0; step < steps; step++) {
-    if (server.random.nextBool()) server.change();
-    final result = server.read();
-    cached = cached.take(result.base, started: null);
-    scratch = fromScratch(scratch).take(result.base, started: null);
-    if (cached != scratch) {
-      fail(
-        'seed $seed step $step: taking ${result.base} with this '
-        'run\'s digests differs from taking it from scratch',
+void expectNoRowGoesBack(
+  Shown before,
+  Shown after,
+  ArrivedBase base,
+  String where,
+) {
+  bool mayRemove(String page) => switch (base) {
+    PageRead(page: final read) => read.publicId == page,
+    PageGone(:final pagePublicId) => pagePublicId == page,
+    HeaderRead(:final pages) => !pages.any((row) => row.publicId == page),
+    StrategyGone() => false,
+  };
+  for (final MapEntry(key: target, value: was) in before.rows.entries) {
+    if (!after.rows.containsKey(target)) {
+      expect(
+        mayRemove(was.page),
+        isTrue,
+        reason: '$where: $target left without a result of its page',
       );
     }
-    for (final what in result.cases) {
-      delivered[what] = (delivered[what] ?? 0) + 1;
-    }
-    if (!result.cases.contains('stale read')) {
-      expectWhatTheServerSent(cached, result.base, 'seed $seed step $step');
-    }
-    for (final MapEntry(key: target, value: row) in cached.rows.entries) {
-      expect(row.digestedThisRun, isTrue, reason: 'seed $seed $target');
+    if ((was.version, after.rows[target]?.version) case (
+      final was?,
+      final now?,
+    )) {
+      expect(now < was, isFalse, reason: '$where: $target went back');
     }
   }
-  return delivered;
+}
+
+String? decisionCase(RowDecision decision) => switch (decision) {
+  RowKept(because: KeptBecause.heldIsNewer) => 'kept: the held row is newer',
+  RowKept(because: KeptBecause.leftByANewerResult) =>
+    'kept out: removed by a newer result',
+  ItemLeft() => 'item left',
+  PageLeft() => 'page left',
+  RowUnchanged() => 'unchanged',
+  _ => null,
+};
+
+Map<String, int> runSeed(int seed, int steps) {
+  final observed = Observed();
+  final server = RandomServer(Random(seed));
+  final delivered = <String, int>{};
+  void count(String what) => delivered[what] = (delivered[what] ?? 0) + 1;
+  var cached = Shown.nothing;
+  var scratch = Shown.nothing;
+  var lastPage = 0;
+  var lastList = 0;
+  ReadStart? lastFresh;
+  final firstStart = <int, ReadStart>{};
+  for (var step = 0; step < steps; step++) {
+    final where = 'seed $seed step $step';
+    if (server.random.nextBool()) server.change();
+    final result = server.random.nextInt(6) == 0
+        ? server.pageList()
+        : server.read();
+    final tie =
+        !result.stale && lastFresh != null && server.random.nextInt(5) == 0;
+    final started = firstStart[result.read] ??= tie
+        ? lastFresh
+        : ReadStart(session: 1, sequence: result.read * 2);
+    if (!result.stale) lastFresh = started;
+    if (tie) count('started with the read before it');
+    if (cached.takenFor(result.base) case final mark?
+        when started.isBefore(mark)) {
+      count('dropped as older');
+      continue;
+    }
+    switch (result.base) {
+      case HeaderRead() when result.stale && lastPage > result.read:
+        count('older list after a newer page');
+      case PageRead() when result.stale && lastList > result.read:
+        count('older page after a newer list');
+      case _:
+        break;
+    }
+    switch (result.base) {
+      case HeaderRead():
+        lastList = max(lastList, result.read);
+      case PageRead() || PageGone():
+        lastPage = max(lastPage, result.read);
+      case StrategyGone():
+        break;
+    }
+    final before = cached;
+    final taken = cached.taken(result.base, started: started);
+    final fromNothing = fromScratch(
+      scratch,
+    ).taken(result.base, started: started);
+    if (taken.shown != fromNothing.shown) {
+      fail(
+        '$where: taking ${result.base} with this run\'s digests differs '
+        'from taking it from scratch',
+      );
+    }
+    expect(taken.decisions, fromNothing.decisions, reason: where);
+    cached = taken.shown;
+    scratch = fromNothing.shown;
+    for (final what in result.cases) {
+      count(what);
+    }
+    observed.see(result.base);
+    for (final decision in taken.decisions) {
+      if (decisionCase(decision) case final what?) count(what);
+    }
+    if (result.stale) {
+      expectNoRowGoesBack(before, cached, result.base, where);
+    } else {
+      expectWhatTheServerSent(cached, result.base, where);
+    }
+    for (final MapEntry(key: target, value: row) in cached.rows.entries) {
+      expect(row.digestedThisRun, isTrue, reason: '$where $target');
+    }
+  }
+  return {...delivered, ...observed.counts};
 }
 
 void main() {
@@ -133,8 +226,9 @@ void main() {
       }
     }
     for (final what in const [
-      'payload changed',
-      'moved between pages',
+      'an item seen on another page',
+      'an item seen with another payload on its page in its life',
+      'a trashed page row delivered',
       'deleted',
       'restored',
       'life changed at the same revision',
@@ -144,8 +238,25 @@ void main() {
       'trashed page read',
       'stale read',
       'rows left out of a read',
+      'stale list',
+      'purged',
+      'added',
+      'older list after a newer page',
+      'older page after a newer list',
+      'started with the read before it',
+      'dropped as older',
+      'kept: the held row is newer',
+      'kept out: removed by a newer result',
+      'item left',
+      'page left',
+      'unchanged',
     ]) {
       expect(delivered[what] ?? 0, greaterThan(100), reason: what);
+    }
+    if (environment['SHOWN_MODEL_COUNTS'] == '1') {
+      for (final MapEntry(:key, :value) in delivered.entries) {
+        stdout.writeln('$key: $value');
+      }
     }
   });
 }

@@ -852,10 +852,15 @@ sealed class Step {
 }
 
 final class Stepped extends Step {
-  Stepped(super.queue, List<QueueEffect> effects)
-    : effects = List.unmodifiable(effects);
+  Stepped(
+    super.queue,
+    List<QueueEffect> effects, {
+    List<RowDecision> decisions = const [],
+  }) : effects = List.unmodifiable(effects),
+       decisions = List.unmodifiable(decisions);
 
   final List<QueueEffect> effects;
+  final List<RowDecision> decisions;
 }
 
 final class NotApplicable extends Step {
@@ -1068,6 +1073,7 @@ final class _Edit {
       index = _IndexEdit(original._index);
 
   final CloudQueue original;
+  final decisions = <RowDecision>[];
   final DateTime now;
   final List<QueueEntry> entries;
   final Map<int, AttemptFact> attempts;
@@ -1242,7 +1248,7 @@ final class _Edit {
     );
   }
 
-  Stepped done() => Stepped(build(), effects);
+  Stepped done() => Stepped(build(), effects, decisions: decisions);
 }
 
 CloudQueue recordExpiries(CloudQueue queue, DateTime now) {
@@ -1583,20 +1589,25 @@ Step _arrived(_Edit edit, ArrivedBase base, ResultSource from) {
       final listed = createdAtOf((base as HeaderRead).strategy)!;
       edit.setAsideAll(written, listed);
       final taken = edit.shown;
-      edit.shown = Shown.nothing
-          .take(base, started: started)
-          .fencedAt(edit.readsAfterThis(), after: taken);
+      final adopted = Shown.nothing.taken(base, started: started);
+      edit.decisions.addAll([
+        for (final page in taken.knownPages) PageLeft(page),
+        ...adopted.decisions,
+      ]);
+      edit.shown = adopted.shown.fencedAt(edit.readsAfterThis(), after: taken);
       return edit.done();
     case ResultFit.applies:
       break;
   }
   if (base is StrategyGone) {
     edit.strategy = edit.strategy.copyWith(presence: Presence.gone);
-    edit.shown = edit.shown.take(base, started: started);
+    edit.shown = edit.shown.taken(base, started: started).shown;
     return edit.done();
   }
   final before = edit.shown;
-  edit.shown = edit.shown.take(base, started: started);
+  final taken = edit.shown.taken(base, started: started);
+  edit.decisions.addAll(taken.decisions);
+  edit.shown = taken.shown;
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)

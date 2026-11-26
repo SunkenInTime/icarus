@@ -41,11 +41,9 @@ enum Keeping { here, cloud }
 final class LoadedPage {
   final elements = <String, ElementRow>{};
   final lineupGroups = <String, LineupGroupRow>{};
-  final keptThisRun = <String>{};
   final unknownKinds = <UnknownKindRow>[];
   final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
-
   bool get isEmpty =>
       elements.isEmpty &&
       lineupGroups.isEmpty &&
@@ -78,10 +76,10 @@ final class LoadedStrategy {
     for (final name in names) {
       switch (name) {
         case ElementName(:final page, :final digest):
-          (_elementPages[digest] ??= {}).add(page);
+          _index(false, digest, page);
           _contentPages.add(page);
         case LineupName(:final page, :final digest):
-          (_lineupPages[digest] ??= {}).add(page);
+          _index(true, digest, page);
           _contentPages.add(page);
         case UnknownKindName(:final page):
           _contentPages.add(page);
@@ -170,6 +168,17 @@ final class LoadedStrategy {
   final _settings = <String, PageSettingsRow>{};
   final _elementPages = <String, Set<String>>{};
   final _lineupPages = <String, Set<String>>{};
+  final _itemsOnPage = <String, Set<(bool, String)>>{};
+  void _index(bool lineup, String item, String page) {
+    ((lineup ? _lineupPages : _elementPages)[item] ??= {}).add(page);
+    (_itemsOnPage[page] ??= {}).add((lineup, item));
+  }
+
+  void _unindex(bool lineup, String item, String page) {
+    (lineup ? _lineupPages : _elementPages)[item]?.remove(page);
+    _itemsOnPage[page]?.remove((lineup, item));
+  }
+
   final _contentPages = <String>{};
   final _loaded = <String, LoadedPage>{};
 
@@ -276,8 +285,12 @@ final class LoadedStrategy {
 
   bool isLoaded(String pageDigest) => _loaded.containsKey(pageDigest);
 
-  void addLoadedPage(String pageDigest, LoadedPage page) =>
-      _loaded[pageDigest] = page;
+  static void Function(String strategy, String page)? pageEntered;
+
+  void addLoadedPage(String pageDigest, LoadedPage page) {
+    pageEntered?.call(digest, pageDigest);
+    _loaded[pageDigest] = page;
+  }
 
   Set<String> get pageDigests => {..._pages.keys, ..._contentPages};
 
@@ -399,6 +412,29 @@ final class LoadedStrategy {
     _keep(row);
   }
 
+  void forgetUnplaced(StoreName name) {
+    switch (name) {
+      case ElementName(:final page, :final digest):
+        _loaded[page]?.unplaced.remove(name.name);
+        if (_loaded[page]?.elements.containsKey(digest) != true) {
+          _unindex(false, digest, page);
+        }
+      case LineupName(:final page, :final digest):
+        _loaded[page]?.unplaced.remove(name.name);
+        if (_loaded[page]?.lineupGroups.containsKey(digest) != true) {
+          _unindex(true, digest, page);
+        }
+      case _:
+        unplaced.remove(name.name);
+    }
+  }
+
+  Iterable<String> get loadedPages => _loaded.keys;
+
+  Map<String, Set<String>> get elementIndex => _elementPages;
+
+  Map<String, Set<String>> get lineupIndex => _lineupPages;
+
   void forgetRow(Row row) {
     switch (row) {
       case PageRow(:final publicId):
@@ -416,12 +452,9 @@ final class LoadedStrategy {
     _pages.remove(pageDigest);
     _settings.remove(pageDigest);
     _contentPages.remove(pageDigest);
-    final loaded = _loaded.remove(pageDigest);
-    for (final digest in [...?loaded?.elements.keys]) {
-      _elementPages[digest]?.remove(pageDigest);
-    }
-    for (final digest in [...?loaded?.lineupGroups.keys]) {
-      _lineupPages[digest]?.remove(pageDigest);
+    _loaded.remove(pageDigest);
+    for (final (lineup, item) in [...?_itemsOnPage.remove(pageDigest)]) {
+      (lineup ? _lineupPages : _elementPages)[item]?.remove(pageDigest);
     }
     unplaced.removeWhere((name, _) => name == SettingsName(pageDigest).name);
   }
@@ -431,17 +464,13 @@ final class LoadedStrategy {
       case ElementRow(:final pagePublicId, :final publicId):
         final page = digestOf(pagePublicId);
         final digest = digestOf(publicId);
-        _loaded[page]
-          ?..elements.remove(digest)
-          ..keptThisRun.remove(ElementName(page, digest).name);
-        _elementPages[digest]?.remove(page);
+        _loaded[page]?.elements.remove(digest);
+        _unindex(false, digest, page);
       case LineupGroupRow(:final pagePublicId, :final publicId):
         final page = digestOf(pagePublicId);
         final digest = digestOf(publicId);
-        _loaded[page]
-          ?..lineupGroups.remove(digest)
-          ..keptThisRun.remove(LineupName(page, digest).name);
-        _lineupPages[digest]?.remove(page);
+        _loaded[page]?.lineupGroups.remove(digest);
+        _unindex(true, digest, page);
       case StrategyRow() || FolderRow() || PageRow() || PageSettingsRow():
         throw StateError('$row does not change name');
     }
@@ -458,18 +487,14 @@ final class LoadedStrategy {
       case ElementRow(:final pagePublicId, :final publicId):
         final page = digestOf(pagePublicId);
         final digest = digestOf(publicId);
-        _mustBeLoaded(page)
-          ..elements[digest] = row
-          ..keptThisRun.add(ElementName(page, digest).name);
-        (_elementPages[digest] ??= {}).add(page);
+        _mustBeLoaded(page).elements[digest] = row;
+        _index(false, digest, page);
         _contentPages.add(page);
       case LineupGroupRow(:final pagePublicId, :final publicId):
         final page = digestOf(pagePublicId);
         final digest = digestOf(publicId);
-        _mustBeLoaded(page)
-          ..lineupGroups[digest] = row
-          ..keptThisRun.add(LineupName(page, digest).name);
-        (_lineupPages[digest] ??= {}).add(page);
+        _mustBeLoaded(page).lineupGroups[digest] = row;
+        _index(true, digest, page);
         _contentPages.add(page);
       case FolderRow():
         throw StateError('$row is not written as a row of a strategy');

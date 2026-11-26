@@ -34,12 +34,13 @@ PageRead pageAWith(List<ElementRow> elements) => PageRead(
 );
 
 Shown shownAfter(List<List<ElementRow>> reads) {
-  var shown = Shown.nothing.take(
-    headerReadOf(initialRows()),
-    started: ReadStart.beforeAnyRead,
-  );
+  var shown = Shown.nothing
+      .taken(headerReadOf(initialRows()), started: ReadStart.beforeAnyRead)
+      .shown;
   for (final elements in reads) {
-    shown = shown.take(pageAWith(elements), started: ReadStart.beforeAnyRead);
+    shown = shown
+        .taken(pageAWith(elements), started: ReadStart.beforeAnyRead)
+        .shown;
   }
   return shown;
 }

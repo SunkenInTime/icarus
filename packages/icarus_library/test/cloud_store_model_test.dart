@@ -284,7 +284,9 @@ final class StoreModel {
       throw StateError('after $label the disk holds $got, memory $want');
     }
     final stored = shownFromGroups(disk.groups);
-    if (stored is! ShownRead || stored.shown != memory.shown.inNewSession()) {
+    if (stored is! ShownRead ||
+        stored.shown !=
+            memory.shown.inNewSession().withTrashedPages(const [])) {
       throw StateError(
         'after $label the results on disk differ from memory: '
         '${disk.groups.keys} vs ${memory.shown.content.keys}',
@@ -464,24 +466,43 @@ final class StoreModel {
     if (pages.isEmpty) return;
     faults = false;
     await store.close();
-    final contents = editable(storage.contents);
+    final area = strategyArea(strategyId);
     final page = pick(pages);
-    final id = fresh('damaged');
-    contents[strategyArea(strategyId)]![elementName(page, id)] =
-        '{"broken":true}';
-    contents[strategyArea(
-          strategyId,
-        )]!['content/${digestOf(page)}/z/${digestOf(id)}'] =
+    final contents = editable(storage.contents);
+    contents[area]!['content/${digestOf(page)}/z/${digestOf(fresh('newer'))}'] =
         '{"kind":"from a newer build"}';
+    final undamaged = MemoryStorage(editable(contents));
+    contents[area]![elementName(page, fresh('damaged'))] = '{"broken":true}';
     storage = MemoryStorage(contents);
     await open();
     await restartSession();
-    await listMatchesPages(
-      'a damaged row and an unknown kind arrived',
-      beforeReads: false,
-    );
+    final before = commits;
+    final read = await store.readPage(strategyId, page);
+    if (read case InUnreadableStrategy(
+      listing: UnreadableStrategyListing(refused: StoredRowsDisagree()),
+    )) {
+      count('damaged rows that refused the strategy');
+    } else {
+      throw StateError('a damaged row on $page did not refuse it: $read');
+    }
+    if (commits != before) {
+      throw StateError('refusing the strategy made a commit');
+    }
+    if (await store.record(testAccount, strategyId, const [
+          ConnectionReturned(),
+        ])
+        case Refused(reason: StoredRowsDisagree())) {
+      count('events refused after a refusal');
+    } else {
+      throw StateError('an event was taken by a refused strategy');
+    }
+    await store.close();
+    storage = undamaged;
+    await open();
+    await restartSession();
+    await listMatchesPages('an unknown kind arrived', beforeReads: false);
     faults = true;
-    count('damaged and unknown rows compared against the list');
+    count('unknown rows compared against the list');
   }
 
   Future<void> readerLearnsAgents() async {
@@ -1649,7 +1670,9 @@ void main() {
       'pages gone under a queued move',
       'held queues compared against the list',
       'readers that learned a payload',
-      'damaged and unknown rows compared against the list',
+      'damaged rows that refused the strategy',
+      'events refused after a refusal',
+      'unknown rows compared against the list',
       'unloads that changed nothing',
       'events delivered again after a commit that was not stored',
       'memory checked after a call that was not stored',

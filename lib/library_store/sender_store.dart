@@ -221,6 +221,12 @@ final class UncheckedWithoutBasis extends SenderReport {
   final ClaimedBatch batch;
 }
 
+final class StoredRowsRefused extends SenderReport {
+  const StoredRowsRefused(super.strategyId, this.refusal);
+
+  final StoredRowsDisagree refusal;
+}
+
 final class WriteNotMade extends SenderReport {
   const WriteNotMade(super.strategyId, this.trouble);
 
@@ -269,6 +275,28 @@ base class SenderStore {
   Future<Reading<StrategyContent>> readStrategy(String strategyId) =>
       store.readStrategy(strategyId);
 
+  final _refusalsReported = <String, int>{};
+
+  QueueTroubled _unreadable(
+    String strategyId,
+    UnreadableStrategyListing listing,
+  ) {
+    final refusal = listing.refused;
+    if (refusal is! StoredRowsDisagree) {
+      return const QueueTroubled(
+        StrategyHeld('the store lists it as unreadable'),
+      );
+    }
+    refused(strategyId, refusal);
+    return QueueTroubled(StrategyHeld('$refusal'));
+  }
+
+  void refused(String strategyId, StoredRowsDisagree refusal) {
+    if (_refusalsReported[strategyId] == refusal.serial) return;
+    _refusalsReported[strategyId] = refusal.serial;
+    report(StoredRowsRefused(strategyId, refusal));
+  }
+
   Future<QueueRead> read(String strategyId) async {
     final Reading<StrategyContent> reading;
     try {
@@ -282,9 +310,7 @@ base class SenderStore {
       Found() || NotFound() => const QueueTroubled(
           StrategyHeld('the store holds no cloud queue for it'),
         ),
-      InUnreadableStrategy() => const QueueTroubled(
-          StrategyHeld('the store lists it as unreadable'),
-        ),
+      InUnreadableStrategy(:final listing) => _unreadable(strategyId, listing),
       NotRead(:final failure) =>
         QueueTroubled(_failed(failure, StoreStep.read)),
     };

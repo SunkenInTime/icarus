@@ -96,10 +96,14 @@ final class HeldItem {
 }
 
 final class ServerResult {
-  ServerResult(this.base, this.cases);
+  ServerResult(this.base, this.cases, {required this.read});
 
   final ArrivedBase base;
   final List<String> cases;
+  final int read;
+
+  bool get stale =>
+      cases.contains('stale read') || cases.contains('stale list');
 }
 
 final class RandomServer {
@@ -125,6 +129,8 @@ final class RandomServer {
   final generated = <String, int>{};
   final _itemCases = <String, List<String>>{};
   final _pageCases = <String, List<String>>{};
+  int reads = 0;
+  var _added = 0;
 
   void _generated(String what, {HeldItem? item, String? page}) {
     _made(what);
@@ -133,25 +139,43 @@ final class RandomServer {
   }
 
   void change() {
+    final before = {for (final each in held) each.id: each.page};
+    _change();
+    final after = {for (final each in held) each.id};
+    for (final MapEntry(key: id, value: page) in before.entries) {
+      if (!after.contains(id)) _generated('purged', page: page);
+    }
+  }
+
+  void _change() {
     final row = held[random.nextInt(held.length)];
     switch (random.nextInt(9)) {
       case 0 || 1:
+        final was = row.x;
         row
           ..x = random.nextDouble() * 1000
           ..revision += 1;
-        _generated('payload changed', item: row);
+        if (row.x != was) _generated('payload changed', item: row);
       case 2:
+        final from = row.page;
         row
           ..page = serverPages
               .where((page) => page != row.page)
               .toList()[random.nextInt(2)]
           ..revision += 1;
-        _generated('moved between pages', item: row);
+        if (row.page != from) _generated('moved between pages', item: row);
       case 3:
-        row
-          ..live = !row.live
+        final deleted = [
+          for (final each in held)
+            if (!each.live) each,
+        ];
+        final toggled = deleted.isNotEmpty && random.nextBool()
+            ? deleted[random.nextInt(deleted.length)]
+            : row;
+        toggled
+          ..live = !toggled.live
           ..revision += 1;
-        _generated(row.live ? 'restored' : 'deleted', item: row);
+        _generated(toggled.live ? 'restored' : 'deleted', item: toggled);
       case 4:
         row
           ..life += 1000
@@ -169,6 +193,7 @@ final class RandomServer {
           for (final each in serverPages)
             if (!trashed.contains(each) && each != page) each,
         ]..sort((a, b) => sortIndexOf[a]!.compareTo(sortIndexOf[b]!));
+        revisionOf[page] = revisionOf[page]! + 1;
         if (trashing) {
           trashed.add(page);
         } else {
@@ -182,8 +207,25 @@ final class RandomServer {
           }
         }
         _generated(trashing ? 'page trashed' : 'page restored', page: page);
+      case 7:
+        final deleted = [
+          for (final each in held)
+            if (!each.live) each,
+        ];
+        if (deleted.isEmpty || random.nextInt(3) != 0) break;
+        final purged = deleted[random.nextInt(deleted.length)];
+        held.remove(purged);
+        _itemCases.remove(purged.id);
       case _:
-        break;
+        final id = 'added-${_added++}';
+        final item = HeldItem(
+          id,
+          lineup: random.nextInt(4) == 0,
+          page: serverPages[random.nextInt(serverPages.length)],
+          life: fixtureLife + 100 + _added,
+        );
+        held.add(item);
+        _generated('added', item: item);
     }
   }
 
@@ -193,6 +235,16 @@ final class RandomServer {
   ]..sort((a, b) => sortIndexOf[a]!.compareTo(sortIndexOf[b]!));
 
   LivePage pageRow(String page) => LivePage(
+    publicId: page,
+    strategyPublicId: strategyId,
+    name: page,
+    sortIndex: sortIndexOf[page]!,
+    isAttack: true,
+    revision: revisionOf[page]!,
+    unknownFields: jsonObject(const {'createdAt': fixtureLife}),
+  );
+
+  PendingTrashedPage trashedPageRow(String page) => PendingTrashedPage(
     publicId: page,
     strategyPublicId: strategyId,
     name: page,
@@ -220,44 +272,72 @@ final class RandomServer {
 
   void _made(String what) => generated[what] = (generated[what] ?? 0) + 1;
 
+  ServerResult? _stale(bool Function(ArrivedBase base) kind, String what) {
+    final older = [
+      for (final each in snapshots)
+        if (kind(each.base)) each,
+    ];
+    if (older.isEmpty) return null;
+    final stale = older[random.nextInt(older.length)];
+    _made(what);
+    return ServerResult(stale.base, [what], read: stale.read);
+  }
+
   ServerResult pageList() {
+    if (random.nextInt(4) == 0) {
+      if (_stale((base) => base is HeaderRead, 'stale list')
+          case final stale?) {
+        return stale;
+      }
+    }
     _made('page list');
-    return ServerResult(
+    final result = ServerResult(
       HeaderRead(
         strategy: rows().strategy,
         pages: rows().pages.toList(),
         settings: rows().settings.toList(),
       ),
       ['page list', for (final page in serverPages) ..._deliveredPage(page)],
+      read: ++reads,
     );
+    snapshots.add(result);
+    return result;
   }
 
   ServerResult read() {
-    if (snapshots.isNotEmpty && random.nextInt(6) == 0) {
-      final stale = snapshots[random.nextInt(snapshots.length)];
-      _made('stale read');
-      return ServerResult(stale.base, const ['stale read']);
+    if (random.nextInt(6) == 0) {
+      if (_stale((base) => base is! HeaderRead, 'stale read')
+          case final stale?) {
+        return stale;
+      }
     }
     final page = serverPages[random.nextInt(serverPages.length)];
-    if (trashed.contains(page)) {
+    final trashedRow = trashed.contains(page) && random.nextBool();
+    if (trashed.contains(page) && !trashedRow) {
       _made('trashed page read');
       return ServerResult(PageGone(page), [
         'trashed page read',
         ..._deliveredPage(page),
-      ]);
+      ], read: ++reads);
     }
     final leaving = random.nextInt(5) == 0;
-    final included = [
+    final onPage = [
       for (final each in held)
-        if (each.page == page && !(leaving && random.nextBool())) each,
+        if (each.page == page) each,
     ];
-    if (leaving) {
-      _made('rows left out of a read');
-    }
+    final included = [
+      for (final each in onPage)
+        if (!(leaving && random.nextBool())) each,
+    ];
+    final leftOut = included.length < onPage.length;
+    if (leftOut) _made('rows left out of a read');
+    final pageRowRead = trashedRow ? trashedPageRow(page) : pageRow(page);
+    final readTrashed = pageRowRead is TrashedPage;
+    if (readTrashed) _made('trashed page row read');
     final rows = [for (final item in included) item.row];
     final result = ServerResult(
       PageRead(
-        page: pageRow(page),
+        page: pageRowRead,
         elements: [
           for (final row in rows)
             if (row is ElementRow) row,
@@ -268,12 +348,50 @@ final class RandomServer {
         ],
       ),
       [
-        if (leaving) 'rows left out of a read',
+        if (leftOut) 'rows left out of a read',
+        if (readTrashed) 'trashed page row read',
         ..._deliveredPage(page),
         for (final item in included) ...?_itemCases.remove(item.id),
       ],
+      read: ++reads,
     );
     snapshots.add(result);
     return result;
+  }
+}
+
+final class Observed {
+  final counts = <String, int>{};
+  final _seen = <String, (String, int?, String)>{};
+
+  void _count(String what) => counts[what] = (counts[what] ?? 0) + 1;
+
+  void see(ArrivedBase base) {
+    if (base case PageRead(:final page, :final elements, :final lineupGroups)) {
+      if (page is TrashedPage) _count('a trashed page row delivered');
+      for (final row in <Row>[...elements, ...lineupGroups]) {
+        final (id, pageId, payload) = switch (row) {
+          ElementRow(:final publicId, :final pagePublicId) => (
+            publicId,
+            pagePublicId,
+            '${(row.toJson()! as Map)['payload']}',
+          ),
+          LineupGroupRow(:final publicId, :final pagePublicId) => (
+            publicId,
+            pagePublicId,
+            '${(row.toJson()! as Map)['payload']}',
+          ),
+          _ => throw StateError('not page content'),
+        };
+        final life = createdAtOf(row);
+        if (_seen[id] case (final was, final lived, final before)) {
+          if (was != pageId) _count('an item seen on another page');
+          if (was == pageId && lived == life && before != payload) {
+            _count('an item seen with another payload on its page in its life');
+          }
+        }
+        _seen[id] = (pageId, life, payload);
+      }
+    }
   }
 }
