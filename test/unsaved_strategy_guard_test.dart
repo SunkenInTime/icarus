@@ -43,9 +43,14 @@ import 'opens_now_support.dart';
 bool _adaptersRegistered = false;
 
 class _JoinedStrategies extends StrategyProvider {
-  _JoinedStrategies({required this.autosaveOn, this.saveError});
+  _JoinedStrategies({
+    required this.autosaveOn,
+    this.saveError,
+    this.autosaveFails = false,
+  });
 
   final bool autosaveOn;
+  final bool autosaveFails;
   final Object? saveError;
   Completer<void>? heldSave;
   final _autosave = Completer<void>();
@@ -65,12 +70,17 @@ class _JoinedStrategies extends StrategyProvider {
       );
 
   @override
-  Future<bool> flushPendingAutosaveBeforeExit() async {
+  Future<AutosaveBeforeExit> flushPendingAutosaveBeforeExit() async {
     flushes++;
-    if (!autosaveOn) return false;
+    if (!autosaveOn) {
+      return const NotAutosaved(NotAutosavedBecause.autosaveIsOff);
+    }
     await _autosave.future;
+    if (autosaveFails) {
+      return const NotAutosaved(NotAutosavedBecause.stillUnsaved);
+    }
     ref.read(strategySaveStateProvider.notifier).markPersisted();
-    return true;
+    return const NothingLeftUnsaved();
   }
 
   @override
@@ -1309,6 +1319,7 @@ void main() {
     Future<void> startWithCloudWorkNotKept(
       WidgetTester tester, {
       Object? retryError,
+      bool autosaves = true,
     }) async {
       notifier = _FakeGuardStrategyProvider(
         initialState: const StrategyState(
@@ -1317,7 +1328,7 @@ void main() {
           source: StrategySource.cloud,
           isOpen: true,
         ),
-        flushResult: true,
+        flushResult: autosaves,
         saveError: retryError,
       );
       final opQueue = _GuardOpQueue(
@@ -1392,6 +1403,42 @@ void main() {
       );
       endExitQuestionsWithoutAnEditor();
     });
+
+    for (final takesOver in ['strategy-b', 'cloud-strategy']) {
+      testWidgets(
+          takesOver == 'cloud-strategy'
+              ? "the cloud prompt goes when a local copy with the cloud "
+                  "strategy's id takes over, and a close on that copy gets "
+                  'its own prompt'
+              : 'the cloud prompt goes when another strategy takes over, and '
+                  'a close on that strategy gets its own prompt',
+          (tester) async {
+        await startWithCloudWorkNotKept(tester, autosaves: false);
+        LeaveAnswer? aboutA;
+        unawaited(close().then((answer) => aboutA = answer));
+        await tester.pumpAndSettle();
+        expect(find.text('Cloud sync pending'), findsOneWidget);
+
+        notifier.setFromState(StrategyState(
+          strategyId: takesOver,
+          strategyName: 'Taken over',
+          source: StrategySource.local,
+          isOpen: true,
+        ));
+        container.read(strategySaveStateProvider.notifier).markDirty();
+        await tester.pumpAndSettle();
+        expect(aboutA, isA<Stay>());
+        expect(find.text('Cloud sync pending'), findsNothing);
+
+        final aboutB = close();
+        await tester.pumpAndSettle();
+        expect(find.text('Save changes?'), findsOneWidget);
+        expect(find.text('Cloud sync pending'), findsNothing);
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(await aboutB, isA<Stay>());
+      });
+    }
 
     testWidgets('non-durable cloud work cannot leave', (tester) async {
       notifier = _FakeGuardStrategyProvider(
@@ -1752,11 +1799,13 @@ void main() {
     Future<void> start(
       WidgetTester tester, {
       bool autosaveOn = false,
+      bool autosaveFails = false,
       Object? saveError,
     }) async {
       strategies = _JoinedStrategies(
         autosaveOn: autosaveOn,
         saveError: saveError,
+        autosaveFails: autosaveFails,
       );
       container = ProviderContainer(
         overrides: [strategyProvider.overrideWith(() => strategies)],
@@ -1941,6 +1990,34 @@ void main() {
       expect(await close, isA<Stay>());
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+        'an autosave that fails after another strategy took over shows no '
+        'prompt for the strategy it was about, and a close on the new one '
+        'gets its own', (tester) async {
+      await start(tester, autosaveOn: true, autosaveFails: true);
+      final home = ask();
+      await tester.pump();
+      strategies.setFromState(const StrategyState(
+        strategyId: 'strategy-b',
+        strategyName: 'Strategy B',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ));
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      strategies.finishTheAutosave();
+      await tester.pumpAndSettle();
+
+      expect(await home, isA<Stay>());
+      expect(find.text('Save changes?'), findsNothing);
+      final close = ask(closes: true);
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(await close, isA<Stay>());
     });
 
     testWidgets('Home then a link answered Cancel: neither goes',

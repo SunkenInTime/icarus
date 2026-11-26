@@ -46,6 +46,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 
@@ -1234,6 +1235,31 @@ void main() {
       await leaveEditors(tester, container);
     });
   }
+
+  testWidgets(
+      'an exit question whose editor leaves the screen while its prompt is '
+      'up ends, and everyone waiting on it stays', (tester) async {
+    await tester.runAsync(() => _stored('leaves-the-screen'));
+    await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'leaves-the-screen');
+    LeaveAnswer? answer;
+    unawaited(guardUnsavedStrategyExit(
+      context: tester.element(find.byType(StrategyView)),
+      ref: libraryRef,
+      source: 'editor-test-editor-leaves',
+    ).then((answered) => answer = answered));
+    await tester.pumpAndSettle();
+    expect(find.text('Save changes?'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+
+    expect(answer, isA<Stay>());
+    expect(strategies.closeStrategy(asked: strategies.askedByTheUserNow()),
+        isA<Changed>());
+    await tester.pump(const Duration(seconds: 30));
+    await settleWithDisk(tester);
+  });
 }
 
 CommunityPost _post(String id) => CommunityPost(

@@ -795,9 +795,10 @@ class _HeldSave extends _UnsavedStrategies {
   void release() => _held.complete();
 
   @override
-  Future<void> forceSaveNow(String id) {
+  Future<void> forceSaveNow(String id) async {
     saving.add(id);
-    return _held.future;
+    await _held.future;
+    ref.read(strategySaveStateProvider.notifier).markPersisted();
   }
 }
 
