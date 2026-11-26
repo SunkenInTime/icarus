@@ -221,10 +221,10 @@ final class UncheckedWithoutBasis extends SenderReport {
   final ClaimedBatch batch;
 }
 
-final class StoredRowsRefused extends SenderReport {
-  const StoredRowsRefused(super.strategyId, this.refusal);
+final class BaseNotAgreeing extends SenderReport {
+  const BaseNotAgreeing(super.strategyId, this.base);
 
-  final StoredRowsDisagree refusal;
+  final BaseState base;
 }
 
 final class WriteNotMade extends SenderReport {
@@ -275,27 +275,7 @@ base class SenderStore {
   Future<Reading<StrategyContent>> readStrategy(String strategyId) =>
       store.readStrategy(strategyId);
 
-  final _refusalsReported = <String, String>{};
-
-  QueueTroubled _unreadable(
-    String strategyId,
-    UnreadableStrategyListing listing,
-  ) {
-    final refusal = listing.refused;
-    if (refusal is! StoredRowsDisagree) {
-      return const QueueTroubled(
-        StrategyHeld('the store lists it as unreadable'),
-      );
-    }
-    refused(strategyId, refusal);
-    return QueueTroubled(StrategyHeld('$refusal'));
-  }
-
-  void refused(String strategyId, StoredRowsDisagree refusal) {
-    if (_refusalsReported[strategyId] == refusal.reason) return;
-    _refusalsReported[strategyId] = refusal.reason;
-    report(StoredRowsRefused(strategyId, refusal));
-  }
+  final _bases = <String, BaseState>{};
 
   Future<QueueRead> read(String strategyId) async {
     final Reading<StrategyContent> reading;
@@ -304,13 +284,25 @@ base class SenderStore {
     } catch (error) {
       return QueueTroubled(StoreShut('the store threw: $error'));
     }
+    if (reading
+        case Found(
+          value: StrategyContent(sync: CloudStrategy(:final queue)),
+        )) {
+      final base = queue.strategy.base;
+      if (_bases[strategyId] != base) {
+        _bases[strategyId] = base;
+        if (base is! BaseAgrees) report(BaseNotAgreeing(strategyId, base));
+      }
+    }
     return switch (reading) {
       Found(value: StrategyContent(sync: final CloudStrategy cloud)) =>
         QueueFound(cloud),
       Found() || NotFound() => const QueueTroubled(
           StrategyHeld('the store holds no cloud queue for it'),
         ),
-      InUnreadableStrategy(:final listing) => _unreadable(strategyId, listing),
+      InUnreadableStrategy() => const QueueTroubled(
+          StrategyHeld('the store lists it as unreadable'),
+        ),
       NotRead(:final failure) =>
         QueueTroubled(_failed(failure, StoreStep.read)),
     };

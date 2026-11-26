@@ -44,6 +44,12 @@ final class TakesDiffer extends StateError {
         'item $id is held unchanged by the queue, but the store has no '
         'readable copy of it',
       );
+
+  TakesDiffer.stored(String id)
+    : super(
+        'item $id arrived at the revision and life the store holds, but '
+        'differs from the stored copy',
+      );
 }
 
 final class ShownRow {
@@ -394,6 +400,19 @@ final class RowUnchanged extends RowDecision {
 
   @override
   String toString() => 'unchanged ${row.key}';
+}
+
+final class BaseLeft extends RowDecision {
+  const BaseLeft();
+
+  @override
+  bool operator ==(Object other) => other is BaseLeft;
+
+  @override
+  int get hashCode => (BaseLeft).hashCode;
+
+  @override
+  String toString() => 'every result row held on this device left';
 }
 
 final class UnlistedLeft extends RowDecision {
@@ -890,6 +909,9 @@ final class Shown {
       _with(fresh: fresh.touched(pages, list: list));
 
   Shown owingList(ReadStart since) => _with(list: ReadOwed(since: since));
+
+  Shown setAside(ReadStart fence) =>
+      Shown.nothing.fencedAt(fence, after: this).owingList(fence);
 
   Shown owingListPast(int? life, ReadStart since, {int? named}) => _with(
     list: ReadOwed(unlessLife: life, namedLife: named, since: since),

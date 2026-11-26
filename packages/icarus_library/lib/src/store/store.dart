@@ -268,7 +268,13 @@ final class _RebuildNotRead extends _Rebuilt {
 }
 
 final class LibraryStore {
-  LibraryStore._(StorageLease lease, this._canRead, this._clock, this._build) {
+  LibraryStore._(
+    StorageLease lease,
+    this._canRead,
+    this._clock,
+    this._build,
+    this._tryingBuild,
+  ) {
     storeWork.sessionRecords = () => _sessions.length;
     _lease = _WatchedLease(
       lease,
@@ -281,6 +287,7 @@ final class LibraryStore {
     required CanRead canRead,
     DateTime Function() clock = _now,
     String build = '',
+    int buildNumber = 0,
   }) async {
     switch (await engine.lease()) {
       case HeldByAnotherWriter():
@@ -292,7 +299,13 @@ final class LibraryStore {
           await lease.release();
           return StoreNotOpened(EngineTooSmall(lease.maxKeyLength));
         }
-        final store = LibraryStore._(lease, canRead, clock, build);
+        final store = LibraryStore._(
+          lease,
+          canRead,
+          clock,
+          build,
+          buildNumber == 0 ? build : '$build+$buildNumber',
+        );
         final foreign = <ForeignName>[];
         switch ((await store._readLibrary(foreign), store._settle())) {
           case (Done(value: final origin), Done()):
@@ -325,6 +338,7 @@ final class LibraryStore {
   final CanRead _canRead;
   final DateTime Function() _clock;
   final String _build;
+  final String _tryingBuild;
   CloudResults? _cloudResults;
 
   CloudResults? get cloudResults => _cloudResults;
@@ -348,7 +362,6 @@ final class LibraryStore {
   final _unplaced = <String, UnplacedRow>{};
   final _strategies = <String, LoadedStrategy>{};
   final _queues = <String, _LoadedQueue>{};
-  final _refusedThisSession = <String, String>{};
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
   _NumbersRow _numbersRow = const _NoNumbersRow();
 
@@ -791,30 +804,31 @@ final class LibraryStore {
       case HeaderUnplaced() || HeaderAbsent():
         return _HeaderMissing(StrategyRef(strategy.area));
     }
-    if (strategy.keeping == Keeping.cloud) {
-      switch (await _queueOf(strategy)) {
-        case _QueueLoaded(:final queue):
-          return _cloudRebuilt(strategy, header, queue);
-        case _QueueHeld(:final rows, :final owner):
-          if (await _loadUnchecked(strategy, strategy.pageDigests)
-              case StorageFailed(:final failure)) {
-            return _RebuildNotRead(failure);
-          }
-          return _RebuiltSummary(
-            _summaryOf(
-              strategy,
-              header,
-              const {},
-            ).withSync(_heldSync(owner, rows)),
-          );
-        case _QueueNotRead(:final failure):
-          return _RebuildNotRead(failure);
-      }
-    }
     if (await _loadPages(strategy, strategy.pageDigests) case StorageFailed(
       :final failure,
     )) {
       return _RebuildNotRead(failure);
+    }
+    if (strategy.keeping == Keeping.cloud) {
+      return switch (await _queueOf(strategy)) {
+        _QueueLoaded(:final queue) => switch (await _cloudSummaryAll(
+          strategy,
+          header,
+          queue.owner,
+          queue.current,
+        )) {
+          Done(:final value) => _RebuiltSummary(value),
+          StorageFailed(:final failure) => _RebuildNotRead(failure),
+        },
+        _QueueHeld(:final rows, :final owner) => _RebuiltSummary(
+          _summaryOf(
+            strategy,
+            header,
+            const {},
+          ).withSync(_heldSync(owner, rows)),
+        ),
+        _QueueNotRead(:final failure) => _RebuildNotRead(failure),
+      };
     }
     return _RebuiltSummary(_summaryOf(strategy, header, const {}));
   }
@@ -906,11 +920,9 @@ final class LibraryStore {
       unplaced: unplaced,
       names: names,
     );
-    if (loaded.keeping == Keeping.here) {
-      if (await _loadPages(loaded, loaded.pagesWithoutRow.toList())
-          case StorageFailed(:final failure)) {
-        return NotRead(failure);
-      }
+    if (await _loadPages(loaded, loaded.pagesWithoutRow.toList())
+        case StorageFailed(:final failure)) {
+      return NotRead(failure);
     }
     _strategies[digest] = loaded;
     _refresh(loaded);
@@ -938,37 +950,16 @@ final class LibraryStore {
     LoadedStrategy strategy,
     Iterable<String> pageDigests,
   ) async {
-    if (strategy.keeping == Keeping.cloud) {
-      throw StateError(
-        'the pages of a cloud strategy are loaded only through the check '
-        'against its queue',
-      );
-    }
-    return _loadUnchecked(strategy, pageDigests);
-  }
-
-  Future<Stored<void>> _loadUnchecked(
-    LoadedStrategy strategy,
-    Iterable<String> pageDigests,
-  ) async {
-    for (final digest in pageDigests) {
-      if (strategy.isLoaded(digest)) continue;
-      switch (await _readPage(strategy, digest)) {
-        case StorageFailed(:final failure):
-          return StorageFailed(failure);
-        case Done(value: final page):
-          _addPage(strategy, digest, page);
+    for (final page in pageDigests) {
+      if (strategy.isLoaded(page)) continue;
+      if (await _loadPage(strategy, page) case StorageFailed(:final failure)) {
+        return StorageFailed(failure);
       }
     }
     return done;
   }
 
-  void _addPage(LoadedStrategy strategy, String pageDigest, LoadedPage page) {
-    strategy.addLoadedPage(pageDigest, page);
-    if (!_listedAsLoaded(strategy, pageDigest)) _refresh(strategy);
-  }
-
-  Future<Stored<LoadedPage>> _readPage(
+  Future<Stored<void>> _loadPage(
     LoadedStrategy strategy,
     String pageDigest,
   ) async {
@@ -1027,7 +1018,10 @@ final class LibraryStore {
           }
         }
     }
-    return Done(page);
+    strategy.addLoadedPage(pageDigest, page);
+    strategy.checked(pageDigest);
+    if (!_listedAsLoaded(strategy, pageDigest)) _refresh(strategy);
+    return done;
   }
 
   Future<Reading<StrategyContent>> readStrategy(String strategyPublicId) =>
@@ -1039,7 +1033,17 @@ final class LibraryStore {
         if (found case Found(
           value: final loaded,
         ) when loaded.keeping == Keeping.cloud) {
-          return _cloudReading(loaded, strategyPublicId, _readCloudStrategy);
+          return switch (await _openCloud(strategyPublicId)) {
+            final _CloudReady cloud => await _readCloudStrategy(cloud),
+            final _CloudHeld cloud => await _readCloudStrategy(cloud),
+            _CloudUnread(:final failure) => NotRead(failure),
+            _CloudRefused() => InUnreadableStrategy(
+              UnreadableStrategyListing(
+                ref: StrategyRef(loaded.area),
+                header: loaded.header,
+              ),
+            ),
+          };
         }
         return switch (found) {
           Found(value: final strategy) => Found(
@@ -1079,11 +1083,17 @@ final class LibraryStore {
         return InUnreadableStrategy(listing);
     }
     if (strategy.keeping == Keeping.cloud) {
-      return _cloudReading(
-        strategy,
-        strategyPublicId,
-        (cloud) => _readCloudPage(cloud, pagePublicId),
-      );
+      return switch (await _openCloud(strategyPublicId)) {
+        final _CloudReady cloud => await _readCloudPage(cloud, pagePublicId),
+        final _CloudHeld cloud => await _readCloudPage(cloud, pagePublicId),
+        _CloudUnread(:final failure) => NotRead(failure),
+        _CloudRefused() => InUnreadableStrategy(
+          UnreadableStrategyListing(
+            ref: StrategyRef(strategy.area),
+            header: strategy.header,
+          ),
+        ),
+      };
     }
     final page = strategy.page(pagePublicId);
     if (page == null) return const NotFound();
@@ -1389,7 +1399,7 @@ final class LibraryStore {
           return Refused(refusal);
         }
         return switch (open) {
-          final _CloudReady cloud => await _commitRefusingOnDisagreement(
+          final _CloudReady cloud => await _commitCloud(
             cloud,
             asked,
             madeOn: madeOn,
@@ -1554,13 +1564,13 @@ final class LibraryStore {
           case HeaderPlaced() || HeaderUnplaced() || HeaderAbsent():
             return Refused(StrategyNotReadable(StrategyRef(area)));
         }
-        if (strategy.keeping == Keeping.cloud) {
-          return Refused(KeptInTheCloud(id));
-        }
         if (await _loadPages(strategy, strategy.pageDigests) case StorageFailed(
           :final failure,
         )) {
           return NotSaved(failure);
+        }
+        if (strategy.keeping == Keeping.cloud) {
+          return Refused(KeptInTheCloud(id));
         }
         if (_dropped(strategy) case final refusal?) {
           return Refused(refusal);
