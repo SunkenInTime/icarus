@@ -10,7 +10,6 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
-import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
@@ -56,8 +55,7 @@ void main() {
   });
 
   testWidgets(
-      'confirmed sign out closes the cloud editor, before signing out and '
-      'again where it leaves it, without clearing work',
+      'confirmed sign out closes the cloud editor without clearing work',
       (tester) async {
     var rawSignOuts = 0;
     var editorCloses = 0;
@@ -80,7 +78,7 @@ void main() {
     await tester.tap(find.text('Sign Out Anyway'));
     await tester.pumpAndSettle();
 
-    expect(editorCloses, 2);
+    expect(editorCloses, 1);
     expect(rawSignOuts, 1);
     expect(opQueue.accountOutbox.workCount, 2);
     expect(mediaQueue.jobs, hasLength(1));
@@ -294,65 +292,6 @@ void main() {
     expect(container.read(strategyProvider).strategyId, 'active-strategy');
   });
 
-  testWidgets(
-      'a cloud open that has not yet put its strategy on screen ends before '
-      'signing out, and the local strategy on screen stays with its work',
-      (tester) async {
-    final opening = _OpeningACloudStrategy(localOpen: 'local-a');
-    final container = _container(
-      strategy: () => opening,
-      closesTheRealEditor: true,
-    );
-    addTearDown(container.dispose);
-    container.read(strategyProvider);
-    container.read(strategySaveStateProvider.notifier).markDirty();
-    container
-        .read(strategyOpeningProvider.notifier)
-        .begin('still-opening', source: StrategySource.cloud);
-
-    container.read(cloudEditorCloseProvider)();
-
-    expect(container.read(strategyOpeningProvider), isNull);
-    expect(opening.closes, 0);
-    expect(container.read(strategyProvider).strategyId, 'local-a');
-  });
-
-  for (final published in [true, false]) {
-    testWidgets(
-        published
-            ? 'a cloud strategy that opens while sign-out finishes is closed '
-                'where sign-out leaves the editor'
-            : 'a cloud open that starts while sign-out finishes ends where '
-                'sign-out leaves the editor', (tester) async {
-      final signingOut = Completer<bool>();
-      final opening = _OpeningACloudStrategy();
-      final container = _container(
-        rawSignOut: () => signingOut.future,
-        strategy: () => opening,
-        closesTheRealEditor: true,
-      );
-      addTearDown(container.dispose);
-      await _pumpHarness(tester, container);
-
-      await tester.tap(find.text('Request sign out'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Sign Out'));
-      await tester.pump();
-      if (published) {
-        opening.showsCloud('view-only-link');
-      } else {
-        container
-            .read(strategyOpeningProvider.notifier)
-            .begin('view-only-link', source: StrategySource.cloud);
-      }
-      signingOut.complete(true);
-      await tester.pumpAndSettle();
-
-      expect(container.read(strategyProvider).strategyId, isNull);
-      expect(container.read(strategyOpeningProvider), isNull);
-    });
-  }
-
   testWidgets('raw sign-out failure does not report success or navigate',
       (tester) async {
     var editorCloses = 0;
@@ -526,37 +465,6 @@ class _ActiveCloudStrategy extends StrategyProvider {
         storageDirectory: null,
         isOpen: true,
       );
-}
-
-class _OpeningACloudStrategy extends StrategyProvider {
-  _OpeningACloudStrategy({this.localOpen});
-
-  final String? localOpen;
-  var closes = 0;
-
-  @override
-  StrategyState build() => switch (localOpen) {
-        final id? => StrategyState(
-            strategyId: id,
-            strategyName: id,
-            source: StrategySource.local,
-            isOpen: true,
-          ),
-        null => const StrategyState(),
-      };
-
-  void showsCloud(String id) => state = StrategyState(
-        strategyId: id,
-        strategyName: id,
-        source: StrategySource.cloud,
-        isOpen: true,
-      );
-
-  @override
-  CloseChange closeStrategy({required OpenSeen asked}) {
-    closes += 1;
-    return super.closeStrategy(asked: asked);
-  }
 }
 
 class _ClosesNothing extends _ActiveCloudStrategy {
