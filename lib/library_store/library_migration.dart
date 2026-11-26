@@ -1,7 +1,10 @@
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/canvas_units.dart';
+import 'package:icarus/migrations/hidden_folder_repair.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -99,7 +102,8 @@ Future<LibraryMigration> migrateLibraryIntoStore(
     case LibraryShut(:final failure):
       return MigrationStopped(failure);
   }
-  final stored = {for (final row in list.folders) row.publicId: row};
+  if (await _emptied(store, list) case final notEmptied?) return notEmptied;
+
   final foldersLeft = <LeftBehind>[];
   final folderIds = <String>{};
   for (final folder in folders) {
@@ -107,10 +111,15 @@ Future<LibraryMigration> migrateLibraryIntoStore(
       foldersLeft.add(LeftBehind(folder.id, folder.name, sameIdTwice));
     }
   }
+  final orphanFolders =
+      foldersUnderMissingParents(folders, folderIds.contains).toSet();
   for (final folder
       in foldersParentsFirst(_firstOfEachId(folders, (folder) => folder.id))) {
+    final atItsPlace = orphanFolders.contains(folder)
+        ? _folderAtTopLevel(folder)
+        : folder;
     switch (_put(await store.editLibrary([
-      PutFolder(folderRowOf(folder, stored[folder.id])),
+      PutFolder(folderToRow(atItsPlace)),
     ]))) {
       case _Kept():
         break;
@@ -121,6 +130,8 @@ Future<LibraryMigration> migrateLibraryIntoStore(
     }
   }
 
+  final orphanStrategies =
+      strategiesInMissingFolders(strategies, folderIds.contains).toSet();
   final strategiesLeft = <LeftBehind>[];
   final strategyIds = <String>{};
   for (final strategy in strategies) {
@@ -128,8 +139,10 @@ Future<LibraryMigration> migrateLibraryIntoStore(
       strategiesLeft.add(LeftBehind(strategy.id, strategy.name, sameIdTwice));
       continue;
     }
+    final copy = wholeCopyOf(strategy);
+    if (orphanStrategies.contains(strategy)) copy.folderID = null;
     final StrategyRowSet rows;
-    switch (await _rowsOf(strategy)) {
+    switch (await _rowsOf(copy)) {
       case _Converted(rows: final made):
         rows = made;
       case _NotConverted(:final problem):
@@ -144,11 +157,6 @@ Future<LibraryMigration> migrateLibraryIntoStore(
       case _StoreStopped(:final failure):
         return MigrationStopped(failure);
     }
-  }
-
-  if (await _removeWhatHiveDoesNotHold(store, list, strategies, folders)
-      case final failure?) {
-    return MigrationStopped(failure);
   }
 
   final record = MigrationFinished(
@@ -197,7 +205,7 @@ final class _NotConverted extends _Rows {
 Future<_Rows> _rowsOf(StrategyData strategy) async {
   final StrategyData current;
   try {
-    current = await StrategyMigrator.migrateLegacyData(cloneStrategy(strategy));
+    current = await StrategyMigrator.migrateLegacyData(strategy);
   } on Object catch (error) {
     return _NotConverted('it could not be brought up to date: $error');
   }
@@ -222,55 +230,74 @@ StrategyData pagesInTheirShownOrder(StrategyData strategy) {
   ]);
 }
 
-Future<StorageFailure?> _removeWhatHiveDoesNotHold(
+Future<LibraryMigration?> _emptied(
   LibraryStore store,
-  LibraryList before,
-  List<StrategyData> strategies,
-  List<Folder> folders,
+  LibraryList list,
 ) async {
-  final inHive = {for (final strategy in strategies) strategy.id};
-  for (final summary in before.strategies) {
-    if (summary.sync is! KeptHere || inHive.contains(summary.publicId)) {
-      continue;
-    }
-    switch (await store.editLibrary([RemoveStrategy(summary.publicId)])) {
-      case NotSaved(:final failure) || SaveInDoubt(:final failure):
-        return failure;
-      case Saved() || NothingToSave() || Refused():
-        break;
-    }
-  }
-  final foldersInHive = {for (final folder in folders) folder.id};
-  for (final row in folderRowsChildrenFirst([
-    for (final row in before.folders)
-      if (!foldersInHive.contains(row.publicId)) row,
-  ])) {
-    switch (await store.editLibrary([RemoveFolder(row.publicId)])) {
-      case NotSaved(:final failure) || SaveInDoubt(:final failure):
-        return failure;
-      case Saved() || NothingToSave() || Refused():
-        break;
-    }
-  }
-  return null;
-}
-
-ReadableFolder folderRowOf(Folder folder, FolderRow? stored) {
-  final fromHive = folderToRow(folder);
-  return switch (stored) {
-    ReadableFolder(:final unknownFields) => ReadableFolder(
-        publicId: fromHive.publicId,
-        name: fromHive.name,
-        parentFolderPublicId: fromHive.parentFolderPublicId,
-        iconId: fromHive.iconId,
-        color: fromHive.color,
-        customColorValue: fromHive.customColorValue,
-        createdAt: fromHive.createdAt,
-        unknownFields: unknownFields,
-      ),
-    UnreadableFolder() || null => fromHive,
+  final changes = [
+    for (final summary in list.strategies)
+      if (summary.sync is KeptHere) RemoveStrategy(summary.publicId),
+    for (final row in folderRowsChildrenFirst([
+      for (final row in list.folders)
+        if (row is ReadableFolder) row,
+    ]))
+      RemoveFolder(row.publicId),
+  ];
+  if (changes.isEmpty) return null;
+  return switch (await store.editLibrary(changes)) {
+    Saved() || NothingToSave() => null,
+    Refused(:final reason) =>
+      MigrationNotRun('the store could not be emptied for the copy: $reason'),
+    NotSaved(:final failure) ||
+    SaveInDoubt(:final failure) =>
+      MigrationStopped(failure),
   };
 }
+
+Folder _folderAtTopLevel(Folder folder) => Folder(
+      name: folder.name,
+      id: folder.id,
+      dateCreated: folder.dateCreated,
+      iconId: folder.iconId,
+      color: folder.color,
+      customColor: folder.customColor,
+    );
+
+StrategyData wholeCopyOf(StrategyData strategy) =>
+    cloneStrategy(strategy).copyWith(
+      agentData: [
+        // ignore: deprecated_member_use_from_same_package
+        for (final agent in strategy.agentData)
+          clonePlacedAgentNode(agent) as PlacedAgent,
+      ],
+      abilityData: [
+        // ignore: deprecated_member_use_from_same_package
+        for (final ability in strategy.abilityData)
+          clonePlacedAbility(ability),
+      ],
+      drawingData: [
+        // ignore: deprecated_member_use_from_same_package
+        for (final drawing in strategy.drawingData)
+          cloneDrawingElement(drawing),
+      ],
+      textData: [
+        // ignore: deprecated_member_use_from_same_package
+        for (final text in strategy.textData)
+          clonePlacedText(text),
+      ],
+      imageData: [
+        // ignore: deprecated_member_use_from_same_package
+        for (final image in strategy.imageData)
+          clonePlacedImage(image),
+      ],
+      utilityData: [
+        // ignore: deprecated_member_use_from_same_package
+        for (final utility in strategy.utilityData)
+          clonePlacedUtility(utility),
+      ],
+      // ignore: deprecated_member_use_from_same_package
+      strategySettings: cloneSettings(strategy.strategySettings),
+    );
 
 List<Folder> foldersParentsFirst(List<Folder> folders) {
   final byId = {for (final folder in folders) folder.id: folder};

@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
@@ -11,12 +15,15 @@ import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
+import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:path/path.dart' as path;
 
 import '../library_rows/generated_strategies.dart';
 import 'gated_engine.dart';
+import 'hive_scratch.dart';
 import 'unit_harness.dart';
 
 final _startedAt = DateTime.utc(2026, 11, 26, 9);
@@ -82,6 +89,24 @@ void main() {
     );
   }
 
+  StrategyData legacy(String id) => StrategyData(
+        id: id,
+        name: 'Strategy $id',
+        mapData: MapValue.ascent,
+        versionNumber: 6,
+        lastEdited: DateTime.utc(2024, 3, 1),
+        folderID: null,
+        // ignore: deprecated_member_use_from_same_package
+        abilityData: [
+          PlacedAbility(
+            id: '$id-blaze',
+            data: AgentData.agents[AgentType.pheonix]!.abilities.first,
+            position: const Offset(300, 400),
+            isAlly: true,
+          ),
+        ],
+      );
+
   Future<void> library(List<StrategyData> strategies) async {
     final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
     await folders.put(
@@ -122,6 +147,9 @@ void main() {
       strategy('c', folderId: 'folder-2'),
     ]);
     final before = _hiveBytes();
+    final writes = await HiveWrites.watch(Directory(path.dirname(
+      Hive.box<StrategyData>(HiveBoxNames.strategiesBox).path!,
+    )));
     final store = await _open(MemoryEngine(MemoryStorage()));
     addTearDown(store.close);
 
@@ -149,6 +177,7 @@ void main() {
       {'folder-1': null, 'folder-2': 'folder-1'},
     );
     expect(_hiveBytes(), before);
+    expect(await writes.stop(), isEmpty);
   });
 
   test('a migration that finished runs again never, whatever Hive holds since',
@@ -360,5 +389,192 @@ void main() {
       ],
       ['a'],
     );
+  });
+  test(
+      'a strategy and folder under a folder that is gone are copied where the '
+      'Hive start-up repair puts them, with everything beneath them, and '
+      'nothing is left behind', () async {
+    await library([
+      strategy('in-lost', folderId: 'lost'),
+      strategy('in-lost-child', folderId: 'lost-child'),
+      strategy('in-gone', folderId: 'gone'),
+    ]);
+    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
+    await folders.put(
+      'lost',
+      Folder(
+        name: 'Lost',
+        id: 'lost',
+        dateCreated: DateTime.utc(2026),
+        parentID: 'gone',
+      ),
+    );
+    await folders.put(
+      'lost-child',
+      Folder(
+        name: 'Lost child',
+        id: 'lost-child',
+        dateCreated: DateTime.utc(2026),
+        parentID: 'lost',
+      ),
+    );
+    final store = await _open(MemoryEngine(MemoryStorage()));
+    addTearDown(store.close);
+
+    final migration = await _migrate(store) as MigrationFinishedNow;
+    await moveOrphansToTopLevel(
+      folders,
+      Hive.box<StrategyData>(HiveBoxNames.strategiesBox),
+    );
+
+    expect(migration.record.strategies, isEmpty);
+    expect(migration.record.folders, isEmpty);
+    final list = (store.library as LibraryOpen).list;
+    expect(
+      {
+        for (final row in list.folders.cast<ReadableFolder>())
+          row.publicId: row.parentFolderPublicId,
+      },
+      {for (final folder in _hiveFolders()) folder.id: folder.parentID},
+    );
+    expect(
+      {
+        for (final summary in list.strategies)
+          summary.publicId: summary.folderPublicId,
+      },
+      {
+        for (final strategy in _hiveStrategies()) strategy.id: strategy.folderID
+      },
+    );
+    expect(
+      {
+        for (final summary in list.strategies)
+          summary.publicId: summary.folderPublicId
+      },
+      {'in-lost': 'lost', 'in-lost-child': 'lost-child', 'in-gone': null},
+    );
+  });
+
+  test(
+      'a strategy from before pages leaves its Hive record as it was, and is '
+      'copied as the start-up migration on Hive would bring it up to date, '
+      'its square ability moved once', () async {
+    await library([legacy('old')]);
+    final store = await _open(MemoryEngine(MemoryStorage()));
+    addTearDown(store.close);
+
+    await _migrate(store);
+
+    final hive = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get('old')!;
+    expect(
+      // ignore: deprecated_member_use_from_same_package
+      [for (final ability in hive.abilityData) ability.position],
+      [const Offset(300, 400)],
+    );
+    expect(hive.pages, isEmpty);
+    final onHive = StrategyMigrator.migrateToCurrentVersion(
+      await StrategyMigrator.migrateLegacyData(legacy('old')),
+    );
+    final back = await readBack(store, 'old');
+    expect(back.pages, hasLength(1));
+    expect(
+      [for (final ability in back.pages.single.abilityData) ability.toJson()],
+      [
+        for (final ability in onHive.pages.single.abilityData) ability.toJson(),
+      ],
+    );
+  });
+
+  test(
+      'a copy stopped part way and run again after Hive changed ends as a '
+      'first copy of the changed Hive would', () async {
+    await library([
+      strategy('a'),
+      strategy('b', folderId: 'folder-1'),
+      strategy('c', folderId: 'folder-2'),
+    ]);
+    final counting = CommitGate();
+    final whole =
+        await _open(GatedEngine(MemoryEngine(MemoryStorage()), counting));
+    await _migrate(whole);
+    await whole.close();
+
+    for (var stopAfter = 1; stopAfter < counting.commits; stopAfter++) {
+      await Hive.close();
+      await openUnitHive();
+      await library([
+        strategy('a'),
+        strategy('b', folderId: 'folder-1'),
+        strategy('c', folderId: 'folder-2'),
+      ]);
+      final storage = MemoryStorage();
+      final stopped = await _open(
+        GatedEngine(MemoryEngine(storage), CommitGate()..endAfter = stopAfter),
+      );
+      expect(await _migrate(stopped), isA<MigrationStopped>());
+      await stopped.close();
+
+      final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      await strategies.put(
+        'b',
+        strategy('b', folderId: 'folder-1').copyWith(
+          versionNumber: Settings.versionNumber + 1,
+        ),
+      );
+      await strategies.put('c', strategy('c'));
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).delete('folder-2');
+      final fresh = MemoryStorage();
+      final first = await _open(MemoryEngine(fresh));
+      expect(await _migrate(first), isA<MigrationFinishedNow>());
+      await first.close();
+
+      final again = await _open(MemoryEngine(storage));
+      expect(await _migrate(again), isA<MigrationFinishedNow>());
+      await again.close();
+      expect(
+        _contents.equals(storage.contents, fresh.contents),
+        isTrue,
+        reason: 'stopped after $stopAfter commits',
+      );
+    }
+  });
+
+  test(
+      'a strategy from before pages, copied again after a stop at any commit, '
+      'is in the store once with one page', () async {
+    await library([strategy('a'), legacy('old'), strategy('z')]);
+    final uninterrupted = await _open(MemoryEngine(MemoryStorage()));
+    await _migrate(uninterrupted);
+    final rows = uninterrupted.rowsCountedFor('old');
+    await uninterrupted.close();
+    final counting = CommitGate();
+    final whole =
+        await _open(GatedEngine(MemoryEngine(MemoryStorage()), counting));
+    await _migrate(whole);
+    await whole.close();
+
+    for (var stopAfter = 0; stopAfter < counting.commits; stopAfter++) {
+      final storage = MemoryStorage();
+      final stopped = await _open(
+        GatedEngine(MemoryEngine(storage), CommitGate()..endAfter = stopAfter),
+      );
+      expect(await _migrate(stopped), isA<MigrationStopped>());
+      await stopped.close();
+      final next = await _open(MemoryEngine(storage));
+      expect(await _migrate(next), isA<MigrationFinishedNow>());
+
+      final back = await readBack(next, 'old');
+      expect(back.pages, hasLength(1), reason: 'stopped after $stopAfter');
+      expect(next.rowsCountedFor('old'), rows,
+          reason: 'stopped after $stopAfter');
+      expect(
+        [
+          for (final summary in (next.library as LibraryOpen).list.strategies)
+            summary.publicId,
+        ]..sort(),
+        ['a', 'old', 'z'],
+      );
+      await next.close();
+    }
   });
 }

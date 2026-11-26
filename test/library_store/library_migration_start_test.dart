@@ -11,6 +11,7 @@ import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus_library/icarus_library.dart';
 
 import '../library_rows/generated_strategies.dart';
 import 'hive_scratch.dart';
@@ -88,16 +89,37 @@ void main() {
 
   test(
       'of two Hive records with one id, the one stored under that id is '
-      'copied and the other is left behind, named', () async {
+      'copied, even when the other comes first in Hive, and the other is left '
+      'behind, named', () async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     await box.put(
-      'other-key',
+      '0-alias',
       generatedStrategy(Optionals.unset).copyWith(id: 'b', name: 'B again'),
     );
+    expect(box.keys.first, '0-alias');
 
-    final atStart = await start(LibraryStoreLaunch.storeFlag);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    await moveLibraryIntoStore(
+      container,
+      _launch(LibraryStoreLaunch.storeFlag),
+      hiveDirectory: directory.path,
+      allowsLocalLibrary: true,
+      build: '',
+    );
+    final store = switch (container.read(libraryStoreProvider)) {
+      LibraryStoreReady(:final store) => store,
+      final other => fail('$other'),
+    };
+    final record = (container.read(libraryMigrationProvider)!.migration
+            as MigrationFinishedNow)
+        .record;
+    final names = {
+      for (final summary in (store.library as LibraryOpen).list.strategies)
+        summary.publicId: summary.name,
+    };
+    await container.read(libraryStoreProvider.notifier).close();
 
-    final record = (atStart!.migration as MigrationFinishedNow).record;
     expect(
       [
         for (final left in record.strategies)
@@ -105,5 +127,6 @@ void main() {
       ],
       [('b', 'B again', sameIdTwice)],
     );
+    expect(names, {'a': 'A', 'b': 'B'});
   });
 }

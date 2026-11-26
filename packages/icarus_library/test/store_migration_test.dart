@@ -83,13 +83,37 @@ void main() {
     );
   });
 
-  test('a record this build cannot read is unreadable, not missing', () async {
-    final storage = MemoryStorage({
-      'library': {'migration': '{"state": "half done"}'},
-    });
+  for (final (what, text) in [
+    ('an unknown state', '{"state": "half done"}'),
+    ('text that is not JSON', '{"state": '),
+    (
+      'a time that is not a whole number',
+      '{"state": "copying", "startedAt": "9am"}',
+    ),
+    (
+      'a time outside the dates this build can hold',
+      '{"state": "copying", "startedAt": 8640000000000001000}',
+    ),
+    (
+      'a finish time outside the dates this build can hold',
+      '{"state": "finished", "startedAt": 0, '
+          '"finishedAt": -8640000000000001000, "strategies": [], '
+          '"folders": []}',
+    ),
+    (
+      'a left-behind entry of the wrong shape',
+      '{"state": "finished", "startedAt": 0, "finishedAt": 0, '
+          '"strategies": [{"id": "s-1", "name": 7}], "folders": []}',
+    ),
+  ]) {
+    test('a record with $what is unreadable, not missing', () async {
+      final storage = MemoryStorage({
+        'library': {'migration': text},
+      });
 
-    expect(await afterReopen(storage), isA<MigrationUnreadable>());
-  });
+      expect(await afterReopen(storage), isA<MigrationUnreadable>());
+    });
+  }
 
   test(
     'a store holding the migration record opens with no foreign names',

@@ -21,18 +21,40 @@ Future<({int folders, int strategies})> moveOrphansToTopLevel(
   Box<StrategyData> strategies,
 ) async {
   var movedFolders = 0;
-  for (final folder in folders.values.toList()) {
-    final parentId = folder.parentID;
-    if (parentId == null || folders.containsKey(parentId)) continue;
+  for (final folder in foldersUnderMissingParents(
+      folders.values.toList(), folders.containsKey)) {
     (await const LocalLibrary().moveFolder(folder, null)).orThrow();
     movedFolders++;
   }
   var movedStrategies = 0;
-  for (final strategy in strategies.values.toList()) {
-    final folderId = strategy.folderID;
-    if (folderId == null || folders.containsKey(folderId)) continue;
+  for (final strategy in strategiesInMissingFolders(
+    strategies.values.toList(),
+    folders.containsKey,
+  )) {
     (await const LocalLibrary().moveStrategy(strategy, null)).orThrow();
     movedStrategies++;
   }
   return (folders: movedFolders, strategies: movedStrategies);
 }
+
+Iterable<Folder> foldersUnderMissingParents(
+  Iterable<Folder> folders,
+  bool Function(String id) holdsFolder,
+) =>
+    folders.where(
+      (folder) => switch (folder.parentID) {
+        final parentId? => !holdsFolder(parentId),
+        null => false,
+      },
+    );
+
+Iterable<StrategyData> strategiesInMissingFolders(
+  Iterable<StrategyData> strategies,
+  bool Function(String id) holdsFolder,
+) =>
+    strategies.where(
+      (strategy) => switch (strategy.folderID) {
+        final folderId? => !holdsFolder(folderId),
+        null => false,
+      },
+    );

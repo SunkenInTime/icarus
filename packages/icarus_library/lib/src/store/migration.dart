@@ -100,6 +100,8 @@ Migration migrationFromText(String text) {
     };
   } on FormatException catch (error) {
     return MigrationUnreadable(error.message);
+  } on ArgumentError catch (error) {
+    return MigrationUnreadable('${error.message}');
   }
 }
 

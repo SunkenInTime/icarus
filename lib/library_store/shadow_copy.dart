@@ -1,4 +1,5 @@
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_migration.dart';
@@ -330,7 +331,7 @@ Future<ShadowCopy> mirrorIds(
     }
   }
   for (final folder in foldersParentsFirst(present.values.toList())) {
-    final row = folderRowOf(folder, holds.folders[folder.id]);
+    final row = _folderRow(folder, holds.folders[folder.id]);
     switch (_saving(await store
         .use((store) => store.editLibrary([PutFolder(row)])))) {
       case _Wrote():
@@ -433,7 +434,7 @@ Future<ShadowCopy> _bringUpToDate(
   }
   final storedFolders = {for (final row in list.folders) row.publicId: row};
   for (final folder in foldersParentsFirst(hive.folders)) {
-    final row = folderRowOf(folder, storedFolders[folder.id]);
+    final row = _folderRow(folder, storedFolders[folder.id]);
     switch (_saving(await store
         .use((store) => store.editLibrary([PutFolder(row)])))) {
       case _Wrote():
@@ -513,4 +514,21 @@ Future<ShadowCopy> _bringUpToDate(
     }
   }
   return ShadowCopyFinished(strategies, folders);
+}
+
+ReadableFolder _folderRow(Folder folder, FolderRow? stored) {
+  final fromHive = folderToRow(folder);
+  return switch (stored) {
+    ReadableFolder(:final unknownFields) => ReadableFolder(
+        publicId: fromHive.publicId,
+        name: fromHive.name,
+        parentFolderPublicId: fromHive.parentFolderPublicId,
+        iconId: fromHive.iconId,
+        color: fromHive.color,
+        customColorValue: fromHive.customColorValue,
+        createdAt: fromHive.createdAt,
+        unknownFields: unknownFields,
+      ),
+    UnreadableFolder() || null => fromHive,
+  };
 }

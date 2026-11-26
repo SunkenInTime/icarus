@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -16,6 +17,7 @@ import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
+import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -38,6 +40,8 @@ final class _Totals {
   int tiesBroken = 0;
   int sameFolders = 0;
   int finishedOnSecondStart = 0;
+  int untouchedOnSecondStart = 0;
+  int duplicateIds = 0;
   final leftBehind = <String, int>{};
   final differences = <String, int>{};
   final problems = <String>[];
@@ -55,7 +59,9 @@ final class _Totals {
         'folders the same: $sameFolders',
         'left behind: ${leftBehind.isEmpty ? 'none' : leftBehind}',
         'differences by kind: ${differences.isEmpty ? 'none' : differences}',
-        'finished and untouched on a second start: $finishedOnSecondStart',
+        'Hive records sharing an id with another: $duplicateIds',
+        'finished on a second start: $finishedOnSecondStart, the store '
+            'untouched by it: $untouchedOnSecondStart',
         'problems: ${problems.isEmpty ? 'none' : problems.length}',
         ...problems,
       ].join('\n');
@@ -75,28 +81,81 @@ void _useSupportDirectory(Directory directory) =>
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_pathProvider, (_) async => directory.path);
 
-Future<({Map<String, StrategyData> strategies, Map<String, Folder> folders})>
-    _asTheAppShowsIt(Directory store, Directory root) async {
+Future<
+    ({
+      Map<String, StrategyData> strategies,
+      Map<String, Folder> folders,
+      int duplicateIds,
+    })> _asTheAppShowsIt(Directory store, Directory root) async {
   final scratch = await _scratchCopyOf(store, root);
   try {
     _useSupportDirectory(scratch);
     await openScratchHive(scratch);
     await StrategyMigrator.migrateAllStrategies();
-    return (
+    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
+    await moveOrphansToTopLevel(folders, strategies);
+    final shown = (
       strategies: {
-        for (final strategy
-            in Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values)
+        for (final strategy in strategies.values)
           strategy.id: cloneStrategy(strategy),
       },
-      folders: {
-        for (final folder in Hive.box<Folder>(HiveBoxNames.foldersBox).values)
-          folder.id: folder,
-      },
+      folders: {for (final folder in folders.values) folder.id: folder},
+    );
+    return (
+      strategies: shown.strategies,
+      folders: shown.folders,
+      duplicateIds: strategies.length -
+          shown.strategies.length +
+          folders.length -
+          shown.folders.length,
     );
   } finally {
     await Hive.close();
     await scratch.delete(recursive: true);
   }
+}
+
+Future<String> _storeContents(LibraryStore store) async {
+  final list = switch (store.library) {
+    LibraryOpen(:final list) => list,
+    LibraryShut(:final failure) => throw StateError('$failure'),
+  };
+  return jsonEncode({
+    'migration': switch (store.migration) {
+      final RecordedMigration recorded => migrationToJson(recorded),
+      final other => '$other',
+    },
+    'folders': [
+      for (final row in [
+        ...list.folders
+      ]..sort((a, b) => a.publicId.compareTo(b.publicId)))
+        row.toJson(),
+    ],
+    'strategies': {
+      for (final summary in [
+        ...list.strategies
+      ]..sort((a, b) => a.publicId.compareTo(b.publicId)))
+        summary.publicId: switch (
+            await readStoredRows(store, summary.publicId)) {
+          StoredRowsRead(:final rows) => [
+              for (final row in rows.rows) row.toJson(),
+            ],
+          StoredRowsNot(:final stored) => '$stored',
+        },
+    },
+  });
+}
+
+LibraryStore _storeIn(ProviderContainer container) =>
+    switch (container.read(libraryStoreProvider)) {
+      LibraryStoreReady(:final store) => store,
+      final other => throw StateError('$other'),
+    };
+
+Future<void> _close(ProviderContainer container) async {
+  await container.read(libraryStoreProvider.notifier).close();
+  container.dispose();
 }
 
 String _kindOf(StrategyDifference difference) => '${difference.kind.name} '
@@ -116,128 +175,144 @@ Future<void> _moveOne(Directory store, Directory root, _Totals totals) async {
     _useSupportDirectory(scratch);
     await openScratchHive(scratch);
     final writes = await HiveWrites.watch(scratch);
-    final container = ProviderContainer();
-    await moveLibraryIntoStore(
-      container,
-      launch,
-      hiveDirectory: scratch.path,
-      allowsLocalLibrary: true,
-      build: '',
-    );
-    final atStart = container.read(libraryMigrationProvider)!;
     totals
       ..stores += 1
       ..strategies += shown.strategies.length
       ..pages += shown.strategies.values
           .fold(0, (sum, strategy) => sum + strategy.pages.length)
-      ..folders += shown.folders.length;
+      ..folders += shown.folders.length
+      ..duplicateIds += shown.duplicateIds;
 
-    final MigrationFinished record;
-    switch (atStart.migration) {
-      case MigrationFinishedNow(record: final finished):
-        record = finished;
-      case final other:
-        problem('the move did not finish: $other');
-        return;
-    }
-    final store = switch (container.read(libraryStoreProvider)) {
-      LibraryStoreReady(:final store) => store,
-      final other => throw StateError('$other'),
-    };
-    final left = {for (final entry in record.strategies) entry.publicId};
-    for (final entry in [...record.strategies, ...record.folders]) {
-      totals.count(totals.leftBehind, entry.reason.split(':').first);
-    }
-    for (final MapEntry(key: id, value: expected) in shown.strategies.entries) {
-      if (left.contains(id)) {
-        if (Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-            .values
-            .every((strategy) => strategy.id != id)) {
-          problem('left behind $id and it is not in Hive');
+    final String afterFirst;
+    final container = ProviderContainer();
+    try {
+      await moveLibraryIntoStore(
+        container,
+        launch,
+        hiveDirectory: scratch.path,
+        allowsLocalLibrary: true,
+        build: '',
+      );
+      final MigrationFinished record;
+      switch (container.read(libraryMigrationProvider)!.migration) {
+        case MigrationFinishedNow(record: final finished):
+          record = finished;
+        case final other:
+          problem('the move did not finish: $other');
+          return;
+      }
+      final store = _storeIn(container);
+      for (final entry in [...record.strategies, ...record.folders]) {
+        totals.count(totals.leftBehind, entry.reason.split(':').first);
+      }
+      final left = {for (final entry in record.strategies) entry.publicId};
+      final foldersLeft = {for (final entry in record.folders) entry.publicId};
+      final list = switch (store.library) {
+        LibraryOpen(:final list) => list,
+        LibraryShut(:final failure) => throw StateError('$failure'),
+      };
+      final inStore = {
+        for (final summary in list.strategies)
+          if (summary.sync is KeptHere) summary.publicId,
+      };
+      final expectedIds = {...shown.strategies.keys}..removeAll(left);
+      if (!setEquals(inStore, expectedIds)) {
+        problem('the store holds strategies $inStore, not $expectedIds');
+      }
+      for (final MapEntry(key: id, value: expected)
+          in shown.strategies.entries) {
+        if (left.contains(id)) continue;
+        final StrategyData back;
+        switch (await readStoredRows(store, id)) {
+          case StoredRowsRead(:final rows):
+            switch (strategyOfRows(rows)) {
+              case StoredAsData(:final strategy):
+                back = strategy;
+              case final other:
+                problem('$id reads back as $other');
+                continue;
+            }
+          case StoredRowsNot(:final stored):
+            problem('$id is not in the store: $stored');
+            continue;
         }
-        continue;
+        final inShownOrder = pagesInTheirShownOrder(expected);
+        if (!identical(inShownOrder, expected)) totals.tiesBroken += 1;
+        final differences = strategyDifferences(inShownOrder, back);
+        final real = [
+          for (final difference in differences)
+            if (difference.kind != DifferenceKind.lineupOrder) difference,
+        ];
+        if (differences.isEmpty) {
+          totals.same += 1;
+        } else if (real.isEmpty) {
+          totals.sameAsideFromLineupOrder += 1;
+        }
+        for (final difference in real) {
+          totals.count(totals.differences, _kindOf(difference));
+        }
       }
-      final StrategyData back;
-      switch (await readStoredRows(store, id)) {
-        case StoredRowsRead(:final rows):
-          switch (strategyOfRows(rows)) {
-            case StoredAsData(:final strategy):
-              back = strategy;
-            case final other:
-              problem('$id reads back as $other');
-              continue;
-          }
-        case StoredRowsNot(:final stored):
-          problem('$id is not in the store: $stored');
-          continue;
-      }
-      final inShownOrder = pagesInTheirShownOrder(expected);
-      if (!identical(inShownOrder, expected)) totals.tiesBroken += 1;
-      final differences = strategyDifferences(inShownOrder, back);
-      final real = [
-        for (final difference in differences)
-          if (difference.kind != DifferenceKind.lineupOrder) difference,
-      ];
-      if (differences.isEmpty) {
-        totals.same += 1;
-      } else if (real.isEmpty) {
-        totals.sameAsideFromLineupOrder += 1;
-      }
-      for (final difference in real) {
-        totals.count(totals.differences, _kindOf(difference));
-      }
-    }
 
-    final rows = switch (store.library) {
-      LibraryOpen(:final list) => {
-          for (final row in list.folders) row.publicId: row,
-        },
-      LibraryShut(:final failure) => throw StateError('$failure'),
-    };
-    for (final MapEntry(key: id, value: folder) in shown.folders.entries) {
-      final row = rows[id];
-      final expected = folderToRow(folder);
-      if (row
-          case ReadableFolder(
-            :final name,
-            :final parentFolderPublicId,
-            :final iconId,
-            :final color,
-            :final customColorValue,
-          )
-          when name == expected.name &&
-              parentFolderPublicId == expected.parentFolderPublicId &&
-              iconId == expected.iconId &&
-              color == expected.color &&
-              customColorValue == expected.customColorValue) {
-        totals.sameFolders += 1;
-      } else if (record.folders.every((entry) => entry.publicId != id)) {
-        problem('folder $id reads back as $row');
+      final rows = {for (final row in list.folders) row.publicId: row};
+      final expectedFolders = {...shown.folders.keys}..removeAll(foldersLeft);
+      if (!setEquals(rows.keys.toSet(), expectedFolders)) {
+        problem('the store holds folders ${rows.keys}, not $expectedFolders');
       }
-    }
-
-    await container.read(libraryStoreProvider.notifier).close();
-    container.dispose();
-    for (final write in await writes.stop()) {
-      problem(write);
+      for (final MapEntry(key: id, value: folder) in shown.folders.entries) {
+        if (foldersLeft.contains(id)) continue;
+        final row = rows[id];
+        final expected = folderToRow(folder);
+        if (row
+            case ReadableFolder(
+              :final name,
+              :final parentFolderPublicId,
+              :final iconId,
+              :final color,
+              :final customColorValue,
+              :final createdAt,
+            )
+            when name == expected.name &&
+                parentFolderPublicId == expected.parentFolderPublicId &&
+                iconId == expected.iconId &&
+                color == expected.color &&
+                customColorValue == expected.customColorValue &&
+                createdAt == expected.createdAt) {
+          totals.sameFolders += 1;
+        } else {
+          problem('folder $id reads back as $row');
+        }
+      }
+      afterFirst = await _storeContents(store);
+    } finally {
+      await _close(container);
     }
 
     final again = ProviderContainer();
-    await moveLibraryIntoStore(
-      again,
-      launch,
-      hiveDirectory: scratch.path,
-      allowsLocalLibrary: true,
-      build: '',
-    );
-    if (again.read(libraryMigrationProvider)!.migration
-        is MigrationWasFinished) {
-      totals.finishedOnSecondStart += 1;
-    } else {
-      problem('a second start did not find the move finished');
+    try {
+      await moveLibraryIntoStore(
+        again,
+        launch,
+        hiveDirectory: scratch.path,
+        allowsLocalLibrary: true,
+        build: '',
+      );
+      if (again.read(libraryMigrationProvider)!.migration
+          is MigrationWasFinished) {
+        totals.finishedOnSecondStart += 1;
+      } else {
+        problem('a second start did not find the move finished');
+      }
+      if (await _storeContents(_storeIn(again)) == afterFirst) {
+        totals.untouchedOnSecondStart += 1;
+      } else {
+        problem('a second start changed the store');
+      }
+    } finally {
+      await _close(again);
     }
-    await again.read(libraryStoreProvider.notifier).close();
-    again.dispose();
+    for (final write in await writes.stop()) {
+      problem(write);
+    }
   } finally {
     await Hive.close();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -273,7 +348,10 @@ void main() {
       debugPrint(totals.render());
       expect(totals.problems, isEmpty);
       expect(totals.differences, isEmpty);
+      expect(totals.leftBehind, isEmpty);
+      expect(totals.duplicateIds, 0);
       expect(totals.finishedOnSecondStart, totals.stores);
+      expect(totals.untouchedOnSecondStart, totals.stores);
     },
     skip: corpus == null
         ? 'set $corpusVariable to a folder of Hive stores'
