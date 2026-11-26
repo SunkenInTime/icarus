@@ -12,6 +12,7 @@ import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/stamp_source.dart';
 
 import 'cloud_shadow_test.dart'
     show at, pageList, secondPage, serverRows, servedAccount, strategyId;
@@ -76,6 +77,7 @@ final class ReadCall {
   DateTime? at;
   String? why;
   StoreReadRole? role;
+  ResultPoint? point;
   bool answered = false;
 
   @override
@@ -155,32 +157,27 @@ final class FakeServer {
   DateTime Function()? clock;
   String? Function()? whyNow;
   StoreReadOutcome? Function(ReadCall call)? overrideRead;
-  int client = 1;
-  int _connection = 1;
-  int _applied = 1;
-  var _snapshot = 0;
-  int? _time;
-  int _lag = 0;
-  List<(String, StrategyRowSet)>? _seen;
-  final made = <String, int>{};
+  late final stamps = StampSource(
+    varies,
+    from: const ResultPoint(client: 1, connection: 1, snapshot: 0),
+    now: () => _nowNanos,
+  );
+  int _input = 1;
+  List<(String, StrategyRowSet)>? _state;
 
-  void _count(String what) => made[what] = (made[what] ?? 0) + 1;
+  Map<String, int> get made => stamps.made;
 
-  int get connection => _connection;
+  int get client => stamps.client;
+
+  int get connection => stamps.connection;
 
   set connection(int next) {
-    if (next == _connection) return;
-    _connection = next;
-    final random = varies;
-    if (random == null) return;
-    if (random.nextBool()) _lag = 1 + random.nextInt(2000000000);
-    if (random.nextInt(5) == 0) {
-      client++;
-      _applied = next;
-      _snapshot = 0;
-      _time = null;
-      _seen = null;
-      _count('a second client');
+    if (next == _input) return;
+    _input = next;
+    if (varies case final random?) {
+      random.nextInt(5) == 0 ? stamps.anotherClient() : stamps.reconnect();
+    } else {
+      stamps.reconnectTo(next);
     }
   }
 
@@ -188,63 +185,26 @@ final class FakeServer {
       (clock?.call() ?? DateTime.now()).microsecondsSinceEpoch * 1000 +
       skew * 1000000;
 
-  ResultPoint get current => ResultPoint(
-        client: client,
-        connection: _applied,
-        snapshot: _snapshot,
-        serverTime: _time,
-      );
+  ResultPoint get current => stamps.current;
 
-  bool _unchangedSince(List<(String, StrategyRowSet)>? seen) =>
-      seen != null &&
-      seen.length == rows.length &&
-      seen.every((held) => identical(rows[held.$1], held.$2));
-
-  ResultPoint stamp() {
-    final random = varies;
-    final sameConnection = _applied == _connection;
-    if (random != null &&
-        _time != null &&
-        sameConnection &&
-        _unchangedSince(_seen) &&
-        random.nextInt(3) == 0) {
-      _count('two calls answered at one snapshot');
-      return current;
+  Object get _rowsNow {
+    final held = _state;
+    if (held != null &&
+        held.length == rows.length &&
+        held.every((entry) => identical(rows[entry.$1], entry.$2))) {
+      return held;
     }
-    _seen = [for (final MapEntry(:key, :value) in rows.entries) (key, value)];
-    _snapshot++;
-    _applied = _connection;
-    final before = _time;
-    if (random != null &&
-        sameConnection &&
-        before != null &&
-        random.nextInt(6) == 0) {
-      _count('a new snapshot at the same time');
-    } else {
-      final floor = sameConnection ? before ?? 0 : 0;
-      _time = max(floor, _nowNanos - _lag) + 1 + (random?.nextInt(1000) ?? 0);
-    }
-    _lag ~/= 2;
-    if (!sameConnection && before != null && _time! < before) {
-      _count('time went back on a new connection');
-    }
-    return current;
+    return _state = [
+      for (final MapEntry(:key, :value) in rows.entries) (key, value),
+    ];
   }
 
-  ResultPoint failedOn(ResultPoint applied) {
-    if (varies == null) return applied;
-    _count(
-      applied.serverTime == null
-          ? 'a failure before the client applied any state'
-          : 'a failure on the last snapshot the client applied',
-    );
-    return applied;
-  }
+  ResultPoint stamp() => stamps.at(_rowsNow);
 
-  ResultPoint failed() => varies == null ? stamp() : failedOn(current);
+  ResultPoint failed() => varies == null ? stamp() : stamps.answered;
 
   Future<({int client, int connection})> generation() async =>
-      (client: client, connection: _connection);
+      (client: client, connection: connection);
 
   int get applied => appliedTimes.length;
 
@@ -405,7 +365,7 @@ final class FakeServer {
   static StoreBatchOutcome _answeredAt(
     StoreBatchOutcome outcome,
     ResultPoint at, {
-    required ResultPoint failedAt,
+    required ResultPoint Function() failedAt,
   }) =>
       switch (outcome) {
         StoreBatchAnswered(
@@ -425,15 +385,15 @@ final class FakeServer {
             when point == stampedWhenAnswered =>
           StoreBatchRefusedWhole(
             refusal,
-            point: failedAt,
+            point: failedAt(),
             currentLife: currentLife,
           ),
         StoreBatchOutsideWindow(:final why, :final point)
             when point == stampedWhenAnswered =>
-          StoreBatchOutsideWindow(why, point: failedAt),
+          StoreBatchOutsideWindow(why, point: failedAt()),
         StoreBatchAccountMismatch(:final why, :final point)
             when point == stampedWhenAnswered =>
-          StoreBatchAccountMismatch(why, point: failedAt),
+          StoreBatchAccountMismatch(why, point: failedAt()),
         _ => outcome,
       };
 
@@ -467,13 +427,13 @@ final class FakeServer {
     final queued = _answers[strategyPublicId];
     if (queued != null && queued.isNotEmpty) {
       final answering = queued.removeAt(0)(call);
-      final applied = current;
+      final held = current;
       final point = stamp();
       return answering.then(
         (outcome) => _answeredAt(
           outcome,
           point,
-          failedAt: varies == null ? point : failedOn(applied),
+          failedAt: () => varies == null ? point : stamps.answeredFrom(held),
         ),
       );
     }
@@ -556,7 +516,7 @@ final class FakeServer {
     final queued = _readAnswers[call.strategyId];
     if (queued != null && queued.isNotEmpty) {
       final answering = queued.removeAt(0)(call);
-      final point = stamp();
+      final point = call.point = stamp();
       return answering.then((outcome) => _readAt(outcome, point));
     }
     if (overrideRead?.call(call) case final outcome?) {
@@ -895,8 +855,8 @@ final class World {
     final fake = server ?? FakeServer();
     fake
       ..owners[strategyId] ??= servedAccount
-      ..connection = inputs.connection ?? fake.connection
       ..clock = () => start.add(async.elapsed);
+    if (inputs.connection case final connection?) fake.connection = connection;
     fake.rows[strategyId] ??= serverRows();
     final sender = CloudSender(
       store: SlowSenderStore(store!),

@@ -647,13 +647,9 @@ final class Model {
         server.answerReadNext(
           strategy,
           (call) {
-            final read = Generation(
-              client: server.client,
-              connection: server.connection,
-            );
             final held = world.holds(call.strategyId);
             return Future.microtask(() {
-              if (held) _refusedOn(read);
+              if (held) _refusedOn(call.point!.generation);
               return const StoreReadRefused(
                 StoreReadRefusal.accountMismatch,
                 'another account',
@@ -666,13 +662,9 @@ final class Model {
         server.answerReadNext(
           strategy,
           (call) {
-            final read = Generation(
-              client: server.client,
-              connection: server.connection,
-            );
             final held = world.holds(call.strategyId);
             return Future.microtask(() {
-              if (held) _refusedOn(read);
+              if (held) _refusedOn(call.point!.generation);
               return const StoreReadRefused(
                 StoreReadRefusal.unauthenticated,
                 'signed out',
@@ -1156,12 +1148,15 @@ void main() {
     printOnFailure('$stampsMade');
     if (from == 0 && seeds >= 480) {
       for (final MapEntry(key: shape, value: least) in const {
-        'two calls answered at one snapshot': 800,
-        'a new snapshot at the same time': 750,
-        'a second client': 270,
-        'time went back on a new connection': 65,
-        'a failure on the last snapshot the client applied': 110,
-        'a failure before the client applied any state': 8,
+        'a stamp at the snapshot already held': 1300,
+        'a new snapshot at the same time': 1190,
+        'a second client in one run': 420,
+        'time went back on a new connection': 100,
+        'an answer at the last snapshot the client applied': 130,
+        'an answer before any state was applied': 10,
+        'a stamp at the snapshot held from before a reconnect': 70,
+        'a read before any state was applied': 225,
+        'an answer stamped on the connection before a reconnect': 31,
       }.entries) {
         expect(stampsMade[shape] ?? 0, greaterThan(least), reason: shape);
       }
