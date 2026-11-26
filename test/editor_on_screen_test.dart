@@ -15,6 +15,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/strategy/open_attempt.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/const/routes.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:flutter/foundation.dart';
 import 'package:icarus/widgets/community/open_community_post.dart';
 import 'package:icarus/widgets/community/community_post_view.dart';
 import 'package:icarus/providers/share_link_provider.dart';
@@ -99,6 +105,61 @@ final class _HeldPost implements CommunityRepository {
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
+final class _HeldPages extends StrategyPageSessionNotifier {
+  final held = <String, Completer<void>>{};
+
+  @override
+  Future<void> initializeForStrategy({
+    required String strategyId,
+    required StrategySource source,
+    required bool selectFirstPageIfNeeded,
+    String? preferredPageId,
+    OpenAttempt? attempt,
+  }) async {
+    if (held[strategyId] case final hold?) await hold.future;
+    return super.initializeForStrategy(
+      strategyId: strategyId,
+      source: source,
+      selectFirstPageIfNeeded: selectFirstPageIfNeeded,
+      preferredPageId: preferredPageId,
+      attempt: attempt,
+    );
+  }
+}
+
+final class _ReadsItsHeader extends RemoteEditorSnapshotNotifier {
+  static final held = <String, Completer<void>>{};
+
+  @override
+  Future<RemoteEditorSnapshot?> build() => SynchronousFuture(null);
+
+  @override
+  Future<void> openStrategy(
+    String strategyPublicId, {
+    String? activePagePublicId,
+  }) async {
+    if (held[strategyPublicId] case final hold?) await hold.future;
+    final at = DateTime.utc(2026);
+    state = AsyncData(RemoteEditorSnapshot(
+      shell: RemoteStrategyShell(
+        header: RemoteStrategyHeader(
+          publicId: strategyPublicId,
+          name: strategyPublicId,
+          mapData: Maps.mapNames[MapValue.ascent]!,
+          revision: 1,
+          createdAt: at,
+          updatedAt: at,
+        ),
+        pages: const [],
+      ),
+      activePage: null,
+    ));
+  }
+
+  @override
+  void clear() => state = const AsyncData(null);
+}
+
 Finder _leaveButton() => find.byWidgetPredicate(
     (widget) => widget.runtimeType.toString() == '_LeaveButton');
 
@@ -106,7 +167,10 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final strategies = _HeldSaves();
   final posts = _HeldPost();
+  final pages = _HeldPages();
   final container = ProviderContainer(overrides: [
+    strategyPageSessionProvider.overrideWith(() => pages),
+    remoteEditorSnapshotProvider.overrideWith(_ReadsItsHeader.new),
     communityRepositoryProvider.overrideWithValue(posts),
     authProvider.overrideWith(_SignedOut.new),
     strategyProvider.overrideWith(() => strategies),
@@ -518,6 +582,86 @@ void main() {
     await expectItsEditSaves(tester, 'opened-meanwhile');
     await leaveEditors(tester, container);
   });
+
+  Future<void> untilOpen(WidgetTester tester, String id) async {
+    for (var turn = 0;
+        turn < 40 && container.read(strategyProvider).strategyId != id;
+        turn++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(container.read(strategyProvider).strategyId, id);
+  }
+
+  for (final inPlace in [true, false]) {
+    testWidgets(
+        inPlace
+            ? 'an editor whose first load gives way to an open in its place '
+                'stays and shows that open'
+            : 'an editor whose first load gives way to an open in an editor '
+                'of its own leaves', (tester) async {
+      await tester.runAsync(() async {
+        await _stored('slow-a');
+        await _stored('local-b');
+      });
+      await pumpLibraryWithEditors(tester, container);
+      final slowA = pages.held['slow-a'] = Completer<void>();
+      final b = inPlace ? 'cloud-b' : 'local-b';
+      final heldB = Completer<void>();
+      if (inPlace) {
+        _ReadsItsHeader.held[b] = heldB;
+      } else {
+        pages.held[b] = heldB;
+      }
+      addTearDown(() {
+        pages.held.clear();
+        _ReadsItsHeader.held.clear();
+      });
+      expect(
+        StrategyView.open(
+          appNavigatorKey.currentState!,
+          asked: strategies.askedByTheUserNow(),
+          initialStrategyId: 'slow-a',
+          initialStrategyName: 'slow-a',
+        ),
+        isA<Pushed>(),
+      );
+      await untilOpen(tester, 'slow-a');
+      final editorA = mouseNavigationRouteObserver.topRoute;
+
+      if (inPlace) {
+        container.read(sharedStrategyToOpenProvider.notifier).state = b;
+      } else {
+        expect(
+          StrategyView.open(
+            appNavigatorKey.currentState!,
+            asked: strategies.askedByTheUserNow(),
+            initialStrategyId: b,
+            initialStrategyName: b,
+          ),
+          isA<Pushed>(),
+        );
+      }
+      await settleWithDisk(tester);
+      slowA.complete();
+      await settleWithDisk(tester);
+      heldB.complete();
+      await untilOpen(tester, b);
+      await settleWithDisk(tester);
+
+      expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
+      expect(mouseNavigationRouteObserver.topRoute?.settings.name,
+          Routes.strategyView);
+      if (inPlace) {
+        expect(mouseNavigationRouteObserver.topRoute, same(editorA));
+      } else {
+        expect(mouseNavigationRouteObserver.topRoute, isNot(same(editorA)));
+      }
+      await leaveEditors(tester, container);
+    });
+  }
 }
 
 CommunityPost _post(String id) => CommunityPost(

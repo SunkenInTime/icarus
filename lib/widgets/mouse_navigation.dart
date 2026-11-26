@@ -291,6 +291,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       ref: ref,
       source: 'MouseNavigation.$source',
     );
+    if (!mounted) return null;
     switch (answer) {
       case Stay():
         return null;
@@ -447,7 +448,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       // Nothing was recorded while the walk was under way. One that did not
       // arrive can still end somewhere new: the reader went home, or opened
       // another strategy, while its strategy was loading.
-      if (!arrived) _recordLocationChange();
+      if (!arrived && mounted) _recordLocationChange();
     }
   }
 
@@ -484,6 +485,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             ref: ref,
             source: 'MouseNavigation.navigateToFolder',
           );
+          if (!mounted) return false;
           if (answer is! Leave) return false;
           switch (ref
               .read(strategyProvider.notifier)
@@ -523,13 +525,20 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             ref: ref,
             source: 'MouseNavigation.navigateToStrategy',
           );
+          if (!mounted) return false;
           if (answer is! Leave) return false;
+          final claimed = StrategyView.claimInPlace(
+            editor,
+            ref.read(strategyProvider.notifier),
+            answer.seen,
+          );
+          if (claimed == null) return false;
           final opened = switch (source) {
             StrategySource.local => await ref
                 .read(strategyProvider.notifier)
-                .openLocal(strategyId, asked: answer.seen),
+                .openLocal(strategyId, asked: claimed),
             StrategySource.cloud =>
-              await _openCloudInPlace(strategyId, navigator, answer.seen),
+              await _openCloudInPlace(strategyId, navigator, claimed),
           };
           if (opened is! Changed || !mounted) return false;
           _resetStrategyUiState();

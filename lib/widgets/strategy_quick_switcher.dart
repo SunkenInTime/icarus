@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:icarus/strategy/open_seen.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -97,17 +98,18 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
         ref: ref,
         source: 'StrategyQuickSwitcher.switchStrategy',
       );
+      if (!mounted) return;
+      final strategies = ref.read(strategyProvider.notifier);
+      final interaction = ref.read(interactionStateProvider.notifier);
+      final agentFilter = ref.read(agentFilterProvider.notifier);
       if (answer case Leave(:final seen)) {
-        switch (await ref
-            .read(strategyProvider.notifier)
-            .openLocal(strategyId, asked: seen)) {
+        final claimed =
+            StrategyView.claimInPlace(ModalRoute.of(context), strategies, seen);
+        if (claimed == null) return;
+        switch (await strategies.openLocal(strategyId, asked: claimed)) {
           case Changed():
-            ref
-                .read(interactionStateProvider.notifier)
-                .update(InteractionState.navigation);
-            ref
-                .read(agentFilterProvider.notifier)
-                .updateFilterState(FilterState.all);
+            interaction.update(InteractionState.navigation);
+            agentFilter.updateFilterState(FilterState.all);
           case GaveWay() || Missing():
             break;
         }

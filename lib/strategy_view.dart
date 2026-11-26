@@ -38,7 +38,6 @@ import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/touch_strategy_viewer.dart';
 import 'package:icarus/widgets/turn_phone_notice.dart';
 import 'package:icarus/widgets/map_selector.dart';
-import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/collab/community_models.dart';
@@ -142,13 +141,30 @@ class StrategyView extends ConsumerStatefulWidget {
           .read(strategyProvider.notifier)
           .claimForAnEditor(asked);
 
+  @useResult
+  static OpenSeen? claimInPlace(
+    Route<dynamic>? editor,
+    StrategyProvider strategies,
+    OpenSeen asked,
+  ) {
+    final claimed = strategies.claimForAnEditor(asked);
+    if (claimed == null) return null;
+    if (editor?.settings.arguments case final EditorClaim claim) {
+      claim._by = claimed;
+    }
+    return claimed;
+  }
+
   static PageRoute<void> _communityRoute(
     CommunityPost post, {
     required OpenSeen asked,
     bool expanded = false,
   }) {
     return PageRouteBuilder<void>(
-      settings: const RouteSettings(name: Routes.strategyView),
+      settings: RouteSettings(
+        name: Routes.strategyView,
+        arguments: EditorClaim(asked),
+      ),
       opaque: false,
       barrierColor: const Color(0x99000000),
       transitionDuration: const Duration(milliseconds: 200),
@@ -183,7 +199,10 @@ class StrategyView extends ConsumerStatefulWidget {
     String? backTooltip,
   }) {
     return PageRouteBuilder<void>(
-      settings: const RouteSettings(name: Routes.strategyView),
+      settings: RouteSettings(
+        name: Routes.strategyView,
+        arguments: EditorClaim(asked),
+      ),
       transitionDuration: const Duration(milliseconds: 200),
       reverseTransitionDuration: const Duration(milliseconds: 150),
       pageBuilder: (context, animation, _) => StrategyView(
@@ -228,6 +247,14 @@ class StrategyView extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _StrategyViewState();
+}
+
+final class EditorClaim {
+  EditorClaim(this._by);
+
+  OpenSeen _by;
+
+  bool isHeldBy(OpenSeen asked) => identical(_by, asked);
 }
 
 class _StrategyViewState extends ConsumerState<StrategyView>
@@ -300,9 +327,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       return;
     }
 
-    // What was open before this load: only a strategy opened since then
-    // means this load gave way to another.
-    final openBefore = ref.read(strategyProvider).strategyId;
     try {
       final LocalOpenChange opened;
       switch (source) {
@@ -335,11 +359,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       switch (opened) {
         case Changed():
           _hasInitialLoadCompleted = true;
+        case GaveWay() when _handedOn:
+          _hasInitialLoadCompleted = true;
         case GaveWay():
-          // Giving way is not a failed load.
-          if (!_gaveWayTo(ref.read(strategyProvider).strategyId, openBefore)) {
-            _leaveAfterFailedLoad();
-          }
+          _leaveAfterFailedLoad();
         case Missing():
           throw StateError('Strategy "$strategyId" was not found.');
       }
@@ -357,9 +380,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
-      // Another strategy was opened while this one loaded: nothing failed
-      // that the reader should hear about.
-      if (_gaveWayTo(ref.read(strategyProvider).strategyId, openBefore)) {
+      if (_handedOn) return;
+      if (!widget.asked
+          .isNow(ref.read(strategyProvider.notifier).askedByTheUserNow())) {
+        _leaveAfterFailedLoad();
         return;
       }
       final notKept = ref.read(remoteEditorSnapshotProvider).error
@@ -380,33 +404,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     }
   }
 
-  /// Whether [open], the strategy open now, took this editor's place while
-  /// its own was loading: it is another strategy, opened since the load
-  /// began ([openBefore] is what was open then). If so, this settles where
-  /// it shows.
-  ///
-  /// It shows in an editor of its own above this one when it was opened from
-  /// outside (a share link arriving as this editor starts), and then this
-  /// editor goes. Or it shows in this very editor, when a share link or
-  /// back and forward swapped strategies in place: then this editor stays
-  /// and shows it. Popping here would leave it open with nothing showing it.
-  bool _gaveWayTo(String? open, String? openBefore) {
-    if (open == null ||
-        open == widget.initialStrategyId ||
-        open == openBefore) {
-      return false;
-    }
-    final route = ModalRoute.of(context);
-    final top = mouseNavigationRouteObserver.topRoute;
-    final anotherEditorShowsIt =
-        top != route && top?.settings.name == Routes.strategyView;
-    if (!anotherEditorShowsIt) {
-      _hasInitialLoadCompleted = true;
-    } else if (route != null && route.isActive) {
-      Navigator.of(context).removeRoute(route);
-    }
-    return true;
-  }
+  bool get _handedOn => switch (ModalRoute.of(context)?.settings.arguments) {
+        final EditorClaim claim => !claim.isHeldBy(widget.asked),
+        _ => false,
+      };
 
   /// Takes this editor off the screen after its strategy failed to open.
   /// Another screen may have been pushed over it meanwhile (a share link
