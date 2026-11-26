@@ -1245,6 +1245,8 @@ final class CloudSender {
         when count >= _timing.unresolvedRounds &&
             !_shownRefused(marking, read)) {
       _governor.keep(id, read, _refusedMark(read, why, asked));
+    } else if (asked case (:final point, session: _, requestedAt: _)) {
+      _governor.keep(id, #stamp, ConnectionReturned(point.generation));
     }
     if (await _writeKept(id, owner) case final step?) return step;
     final at = _readAgainAt(id, read, snap);

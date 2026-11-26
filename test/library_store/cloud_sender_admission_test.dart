@@ -8,7 +8,7 @@ import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart' show strategyId;
+import 'cloud_shadow_test.dart' show pageId, strategyId;
 import 'sender_world.dart';
 
 ResultPoint onConnection(World world, int connection) => ResultPoint(
@@ -347,6 +347,29 @@ void main() {
       },
       addStrategy: false,
     );
+  });
+
+  test(
+      'an unreadable read stamped on a later connection brings that '
+      'connection to the queue before the app hears of the reconnect, though '
+      'no refusal is recorded for it', () {
+    inWorld((world) {
+      world.settle();
+      world.server.answerReadNext(strategyId, (call) {
+        world.server.connection = 2;
+        return Future.value(
+          StoreReadUnreadable(
+            'rows this build cannot read',
+            point: onConnection(world, 2),
+          ),
+        );
+      });
+      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
+      world.settle(const Duration(seconds: 1));
+      expect(world.connection, 1);
+      expect(world.written().whereType<ResultRefused>(), isEmpty);
+      expect(world.cloud().queue.session.generation?.connection, 2);
+    });
   });
 
   test(
