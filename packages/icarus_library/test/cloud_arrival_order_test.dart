@@ -149,6 +149,8 @@ final class Scenario {
 
   void deletePage(String page) => write(withoutPage(now.rows, page));
 
+  void restorePage(StrategyRowSet before) => write(before);
+
   void deleteStrategy() => write(now.rows, exists: false);
 
   void reconnect() {
@@ -170,7 +172,7 @@ final class Scenario {
 
   void build() {
     final page = pickPage();
-    switch (seed % 5) {
+    switch (seed % families) {
       case 0:
         teammateWrites(page);
         read(page);
@@ -204,7 +206,7 @@ final class Scenario {
         read(page);
         read(null);
         if (random.nextBool()) read(livePages.first);
-      case _:
+      case 4:
         teammateWrites(page);
         if (random.nextBool()) {
           deletePage(livePages.firstWhere((other) => other != page));
@@ -215,9 +217,25 @@ final class Scenario {
         deleteStrategy();
         read(null);
         read(page);
+      case _:
+        if (random.nextBool()) teammateWrites(page);
+        read(null);
+        final before = now.rows;
+        deletePage(page);
+        if (random.nextBool()) read(null);
+        if (random.nextBool()) read(page);
+        if (random.nextInt(4) == 0) reconnect();
+        if (random.nextInt(4) != 0) {
+          restorePage(before);
+          if (random.nextBool()) teammateWrites(page);
+          read(page);
+          if (random.nextBool()) read(null);
+        }
     }
   }
 }
+
+const families = 6;
 
 final class Reference {
   Reference(ServerState first, this.held)
@@ -273,11 +291,19 @@ final class Reference {
         if (at <= listAt) return;
         listAt = at;
         owedSince = null;
+        bool newerThanList(String page) => (this.pages[page]?.at ?? -1) > at;
         listed = {
           for (final page in pages)
-            if (page is LivePage) page.publicId,
+            if (page is LivePage &&
+                !(newerThanList(page.publicId) &&
+                    this.pages[page.publicId]!.items == null))
+              page.publicId,
+          for (final page in listed)
+            if (newerThanList(page) && this.pages[page]!.items != null) page,
         };
-        this.pages.removeWhere((page, _) => !listed.contains(page));
+        this.pages.removeWhere(
+          (page, held) => !listed.contains(page) && held.at <= at,
+        );
       case StrategyGone():
         if (owedSince case final owed? when at < owed) return;
         if (at <= listAt) return;
@@ -294,6 +320,7 @@ final class Reference {
         pages[id] = (at: at, items: itemsOf(read.state.rows, id));
       case PageGone(:final pagePublicId):
         if (pages[pagePublicId] case final held? when at <= held.at) return;
+        if (listed.contains(pagePublicId) && at < listAt) return;
         pages[pagePublicId] = (at: at, items: null);
         listed = {...listed}..remove(pagePublicId);
     }
@@ -488,7 +515,8 @@ String? disagreement(CloudQueue queue, Reference want) {
 
 void main() {
   final seeds =
-      int.tryParse(Platform.environment['ARRIVAL_ORDER_SEEDS'] ?? '') ?? 400;
+      int.tryParse(Platform.environment['ARRIVAL_ORDER_SEEDS'] ?? '') ??
+      80 * families;
   final one = int.tryParse(Platform.environment['ARRIVAL_ORDER_SEED'] ?? '');
   test('reads delivered in every order end where a model of the server says, '
       'whatever their stamps', () {
