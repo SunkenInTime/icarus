@@ -150,9 +150,15 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   bool get isOpening => ref.read(strategyOpeningProvider) != null;
 
+  /// Closes what an open given [asked] let go of before it threw, which may
+  /// be the strategy it had already put on screen. [GaveWay] when another
+  /// open or a close came since.
   @useResult
-  CloseChange closeAfterFailedOpen({required OpenSeen asked}) =>
-      closeStrategy(asked: OpenSeen(asked.strategyId, asked.opens + 1));
+  CloseChange closeAfterFailedOpen({required OpenSeen asked}) {
+    final now = _seen;
+    if (now.opens != asked.opens + 1) return const GaveWay();
+    return closeStrategy(asked: now);
+  }
 
   @override
   StrategyState build() {
