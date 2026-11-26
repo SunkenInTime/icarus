@@ -1378,12 +1378,13 @@ NotApplicable _inapplicable(
   DateTime now,
 ) {
   final point = switch (event) {
-    BaseArrived(:final point) ||
-    ResultRefused(:final point) ||
-    OpAnswered(:final point) ||
-    BatchRefused(:final point) ||
-    ServerTimeHeld(:final point) ||
-    EditAccessConfirmed(:final point) => point,
+    BaseArrived(:final point, :final session) ||
+    ResultRefused(:final point, :final session) ||
+    ServerTimeHeld(:final point, :final session) ||
+    EditAccessConfirmed(:final point, :final session)
+        when start.session.labels(session) =>
+      point,
+    OpAnswered(:final point) || BatchRefused(:final point) => point,
     _ => null,
   };
   if (point == null) return NotApplicable(start, why);
@@ -1414,9 +1415,9 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final point,
     ):
       final held = edit.session.basis;
-      if (_admitted(edit, point) &&
+      if (edit.session.labels(session) &&
+          _admitted(edit, point) &&
           edit.session.connected &&
-          edit.session.labels(session) &&
           (held == null || serverTime > held.serverTime)) {
         edit.session = edit.session.withConnection(
           connected: true,
@@ -1496,7 +1497,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       );
       return edit.done();
     case EditAccessConfirmed(:final afterAttempt, :final session, :final point):
-      if (!_admitted(edit, point) || !edit.session.labels(session)) {
+      if (!edit.session.labels(session) || !_admitted(edit, point)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       if (afterAttempt < 1 || afterAttempt >= edit.nextAttempt) {
@@ -1548,7 +1549,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final point,
       :final requestedAt,
     ):
-      if (!_admitted(edit, point) || !edit.session.labels(session)) {
+      if (!edit.session.labels(session) || !_admitted(edit, point)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       final refused = Arrival(
@@ -1598,7 +1599,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final point,
       :final requestedAt,
     ):
-      if (!_admitted(edit, point) || !edit.session.labels(session)) {
+      if (!edit.session.labels(session) || !_admitted(edit, point)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       return _arrived(
