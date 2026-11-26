@@ -69,6 +69,7 @@ class _WindowCloseGuardState extends ConsumerState<WindowCloseGuard>
           context: navigator.context,
           ref: ref,
           source: 'WindowCloseGuard',
+          closesWindow: true,
         );
         if (answer is! Leave || !mounted) return;
         if (answer.seen.isNow(strategies.askedByTheUserNow())) {

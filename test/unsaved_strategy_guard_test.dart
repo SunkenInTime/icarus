@@ -36,6 +36,7 @@ import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'opens_now_support.dart';
@@ -283,6 +284,8 @@ void main() {
   setUpAll(() {
     appProviderContainer = ProviderContainer();
   });
+  setUp(() => StrategyView.onScreen.value = 1);
+  tearDown(() => StrategyView.onScreen.value = 0);
 
   tearDownAll(() {
     appProviderContainer.dispose();
@@ -1376,7 +1379,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(await first, isA<Stay>());
       expect(await second, isA<Stay>());
-      endExitQuestionsWithoutAnEditor();
     });
 
     testWidgets(
@@ -1401,7 +1403,6 @@ void main() {
             .length,
         1,
       );
-      endExitQuestionsWithoutAnEditor();
     });
 
     for (final takesOver in ['strategy-b', 'cloud-strategy']) {
@@ -1790,7 +1791,6 @@ void main() {
   });
 
   group('exits asked for while the save prompt is up share its answer', () {
-    tearDown(endExitQuestionsWithoutAnEditor);
     late ProviderContainer container;
     late _JoinedStrategies strategies;
     late BuildContext context;
@@ -1983,13 +1983,14 @@ void main() {
       final home = ask();
       await tester.pumpAndSettle();
       final close = ask(closes: true);
+      expect(find.text('Save changes?'), findsOneWidget);
 
-      endExitQuestionsWithoutAnEditor();
+      StrategyView.onScreen.value = 0;
+      await tester.pumpAndSettle();
 
       expect(await home, isA<Stay>());
       expect(await close, isA<Stay>());
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsNothing);
     });
 
     testWidgets(
@@ -2018,6 +2019,61 @@ void main() {
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(await close, isA<Stay>());
+    });
+
+    testWidgets(
+        'an editor claiming the open while the prompt is up ends the question, '
+        'and a close after it is the only question', (tester) async {
+      await start(tester);
+      LeaveAnswer? home;
+      unawaited(ask().then((answer) => home = answer));
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+
+      expect(strategies.claimForAnEditor(strategies.askedByTheUserNow()),
+          isNotNull);
+      await tester.pumpAndSettle();
+      expect(home, isA<Stay>());
+      expect(find.text('Save changes?'), findsNothing);
+
+      final close = ask(closes: true);
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(await close, isA<Stay>());
+    });
+
+    testWidgets(
+        'a prompt whose strategy stops being the open one before its first '
+        'frame is never drawn', (tester) async {
+      await start(tester);
+      LeaveAnswer? home;
+      unawaited(ask().then((answer) => home = answer));
+      for (var turn = 0; turn < 20; turn++) {
+        await Future<void>.value();
+      }
+      expect(strategies.claimForAnEditor(strategies.askedByTheUserNow()),
+          isNotNull);
+      await tester.pump();
+
+      expect(find.text('Save changes?'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(home, isA<Stay>());
+    });
+
+    testWidgets(
+        'an autosave that fails after the last editor left asks nothing over '
+        'the library, and everyone stays', (tester) async {
+      await start(tester, autosaveOn: true, autosaveFails: true);
+      final home = ask();
+      await tester.pump();
+      StrategyView.onScreen.value = 0;
+      strategies.finishTheAutosave();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Save changes?'), findsNothing);
+      expect(await home, isA<Stay>());
     });
 
     testWidgets('Home then a link answered Cancel: neither goes',

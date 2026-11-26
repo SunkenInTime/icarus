@@ -108,6 +108,12 @@ typedef NewPageGaps = ({
   bool notSaved,
 });
 
+final whatIsOpenProvider = Provider<OpenSeen>((ref) =>
+    _whatIsOpen(ref.watch(strategyProvider), ref.watch(openCountProvider)));
+
+OpenSeen _whatIsOpen(StrategyState open, int opens) =>
+    OpenSeen(open.strategyId, opens, source: open.source);
+
 class StrategyProvider extends Notifier<StrategyState> {
   /// Runs one attempt to open a strategy. Every wait in [steps] goes through
   /// the attempt it is given (see [OpenAttempt]), so an open the reader left,
@@ -138,11 +144,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
-  OpenSeen get _seen => OpenSeen(
-        state.strategyId,
-        ref.read(strategyOpeningProvider.notifier).opens,
-        source: state.source,
-      );
+  OpenSeen get _seen => _whatIsOpen(state, ref.read(openCountProvider));
 
   OpenSeen askedByTheUserNow() => _seen;
 

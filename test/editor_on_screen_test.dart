@@ -1208,10 +1208,9 @@ void main() {
       await tester.runAsync(() => _stored('closing'));
       final windowCalls = await pumpLibraryWithEditors(tester, container);
       await openWithAnEdit(tester, 'closing');
-      final editor = tester.state(find.byType(StrategyView)) as WindowListener;
       void ask(String exit) {
         if (exit == 'close') {
-          editor.onWindowClose();
+          closeTheWindow(tester);
         } else {
           container.read(communityPostToOpenProvider.notifier).state =
               const PostLinkArrived('linked-post');

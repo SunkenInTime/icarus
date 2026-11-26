@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
@@ -427,6 +428,8 @@ String _syncTooltip(WidgetTester tester) {
 final _english = lookupAppLocalizations(const Locale('en'));
 
 void main() {
+  setUp(() => StrategyView.onScreen.value = 1);
+  tearDown(() => StrategyView.onScreen.value = 0);
   test('restored active-strategy media renders as syncing', () {
     final container = _createContainer(
       mediaQueueState: CloudMediaUploadQueueState(

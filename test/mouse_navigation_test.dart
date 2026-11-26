@@ -484,8 +484,13 @@ void main() {
     ) async {
       late BuildContext editor;
       late WidgetRef editorRef;
+      StrategyView.onScreen.value++;
+      addTearDown(() => StrategyView.onScreen.value--);
       unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
-        settings: const RouteSettings(name: Routes.strategyView),
+        settings: RouteSettings(
+          name: Routes.strategyView,
+          arguments: EditorClaim(strategies.askedByTheUserNow()),
+        ),
         builder: (_) => Scaffold(
           body: Consumer(builder: (context, ref, _) {
             editor = context;
