@@ -47,6 +47,7 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/strategy_view_skeleton.dart';
 
@@ -1028,17 +1029,21 @@ void main() {
         () => container.read(shareLinkViewProvider.notifier).state = null);
   }
 
-  Future<void> expectOpenInItsOwnEditor(WidgetTester tester, String id) async {
+  Future<void> expectOpenInItsOwnEditor(
+    WidgetTester tester,
+    String id, {
+    required Route<dynamic> notIn,
+  }) async {
     await untilOpen(tester, id);
     await settleWithDisk(tester);
     expect(container.read(strategyProvider).strategyId, id);
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
-    expect(
-      tester
-          .widget<StrategyView>(find.byType(StrategyView, skipOffstage: false))
-          .communityPost,
-      isNull,
-    );
+    final editor = tester
+        .widget<StrategyView>(find.byType(StrategyView, skipOffstage: false));
+    expect(editor.initialStrategyId, id);
+    expect(editor.communityPost, isNull);
+    expect(mouseNavigationRouteObserver.editorRoute, isNot(same(notIn)));
+    expect(notIn.isActive, isFalse);
   }
 
   testWidgets(
@@ -1057,10 +1062,11 @@ void main() {
       ),
       isA<Pushed>(),
     );
+    final first = mouseNavigationRouteObserver.editorRoute!;
     container.read(sharedStrategyToOpenProvider.notifier).state =
         'linked-cloud';
 
-    await expectOpenInItsOwnEditor(tester, 'linked-cloud');
+    await expectOpenInItsOwnEditor(tester, 'linked-cloud', notIn: first);
     await leaveEditors(tester, container);
   });
 
@@ -1082,13 +1088,14 @@ void main() {
       ),
       isA<Pushed>(),
     );
+    final first = mouseNavigationRouteObserver.editorRoute!;
     await tester.pump();
     container.read(sharedStrategyToOpenProvider.notifier).state =
         'linked-cloud';
     await untilOpen(tester, 'linked-cloud');
     container.read(_cloudReady.notifier).state = false;
 
-    await expectOpenInItsOwnEditor(tester, 'linked-cloud');
+    await expectOpenInItsOwnEditor(tester, 'linked-cloud', notIn: first);
     await leaveEditors(tester, container);
   });
 
@@ -1112,14 +1119,15 @@ void main() {
       ),
       isA<Pushed>(),
     );
+    final post = mouseNavigationRouteObserver.editorRoute!;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     container.read(sharedStrategyToOpenProvider.notifier).state =
         'linked-cloud';
 
-    await expectOpenInItsOwnEditor(tester, 'linked-cloud');
+    await expectOpenInItsOwnEditor(tester, 'linked-cloud', notIn: post);
     header.complete();
-    await expectOpenInItsOwnEditor(tester, 'linked-cloud');
+    await expectOpenInItsOwnEditor(tester, 'linked-cloud', notIn: post);
     await leaveEditors(tester, container);
   });
 
@@ -1470,6 +1478,43 @@ void main() {
     expect(posts.asked, isNot(contains('superseded-post')));
     expect(container.read(strategyProvider).strategyId, 'took-the-link-over');
     expect(mouseNavigationRouteObserver.topRoute, same(editor));
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a cloud editor that opened its strategy is claimed by the next open in '
+      'its place, and no second editor is pushed', (tester) async {
+    container.read(_cloudReady.notifier).state = true;
+    addTearDown(() => container.read(_cloudReady.notifier).state = null);
+    await pumpLibraryWithEditors(tester, container);
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'opened-in-the-cloud',
+        initialStrategyName: 'opened-in-the-cloud',
+        initialStrategySource: StrategySource.cloud,
+      ),
+      isA<Pushed>(),
+    );
+    final editor = mouseNavigationRouteObserver.editorRoute!;
+    await untilOpen(tester, 'opened-in-the-cloud');
+    await settleWithDisk(tester);
+    expect(container.read(strategyOpeningProvider), isNull);
+
+    final claimed = StrategyView.claimInPlace(
+        editor, strategies, strategies.askedByTheUserNow());
+    expect(claimed, isNotNull);
+    expect(
+      await tester
+          .runAsync(() => strategies.openCloud('opened-next', asked: claimed!)),
+      isA<Changed>(),
+    );
+    await settleWithDisk(tester);
+
+    expect(container.read(strategyProvider).strategyId, 'opened-next');
+    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
+    expect(mouseNavigationRouteObserver.editorRoute, same(editor));
     await leaveEditors(tester, container);
   });
 }
