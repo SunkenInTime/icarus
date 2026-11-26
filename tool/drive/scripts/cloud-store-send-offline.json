@@ -30,6 +30,7 @@
   {"waitStoreSent": 180},
   {"storeSyncState": true},
   {"wait": 3},
+  {"storeAnswerLostAndResent": true},
   {"storeSessionOpenings": true},
   {"shot": "{out}/back-online.png"},
   {"exit": 1}

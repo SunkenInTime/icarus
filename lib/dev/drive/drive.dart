@@ -2693,6 +2693,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':
       (await storeSyncStates(c)).forEach(_log);
+    case 'storeAnswerLostAndResent':
+      storeAnswerLostAndResent(c).forEach(_log);
     case 'storeSessionOpenings':
       storeSessionOpenings(
         c,

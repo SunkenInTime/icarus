@@ -126,6 +126,25 @@ void main() {
     );
   });
 
+  test(
+      'a session opened after the reconnect bound one, with no bind of its '
+      'own, still counts', () {
+    expect(
+      () => judged([
+        earlierSession(),
+        lost(),
+        openedByStamp(2),
+        reconnectInOpenSession(),
+        reconnected(2),
+        openedByStamp(3),
+      ]),
+      refusedWith(
+        'opened session 2 by a result\'s stamp, session 3 by a result\'s '
+        'stamp, not that session alone',
+      ),
+    );
+  });
+
   test('a reconnect that bound a session the store never opened fails', () {
     expect(
       () => judged([earlierSession(), lost(), reconnected(1)]),

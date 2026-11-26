@@ -631,8 +631,9 @@ Future<String> waitStoreReading(ProviderContainer c, Duration within) async {
   while (true) {
     if (sender.reads > before) {
       if (sender.reading case final why?) {
-        return 'CLOUDSTORE the sender has a read in flight: $why; sender '
-            '${_senderWords(c)}';
+        return 'CLOUDSTORE the sender had a read in flight when this step '
+            'looked: $why; it may be answered or lost before the network '
+            'returns; sender ${_senderWords(c)}';
       }
     }
     if (DateTime.now().isAfter(until)) {
@@ -683,9 +684,9 @@ String reconnectSessionOpening(
   final first = binds.first.connection;
   final at = binds.indexWhere((bind) => bind.connection != first);
   final cut = binds[at - 1].index;
-  final (reconnect, session) = (binds[at].index, binds[at].session);
+  final session = binds[at].session;
   final opened = [
-    for (final report in reports.sublist(cut + 1, reconnect))
+    for (final report in reports.sublist(cut + 1))
       if (report
           case EventsWritten(
             strategyId: final id,
@@ -705,14 +706,139 @@ String reconnectSessionOpening(
       );
     }
     return 'CLOUDSTORE the reconnect after the cut bound $strategyId to '
-        '${words(only)}, the one session opened since the cut';
+        '${words(only)}, the one session opened from the cut to the end of '
+        'the run';
   }
   throw StateError(
     'the reconnect after the cut bound session $session of $strategyId, and '
-    'since the cut the store opened '
+    'from the cut to the end of the run the store opened '
     '${opened.isEmpty ? 'no session' : opened.map(words).join(', ')}, not '
     'that session alone',
   );
+}
+
+List<String> storeAnswerLostAndResent(ProviderContainer c) => [
+      lostAnswerResent(_sender(c).store.reports, storedCloudStrategy(c)),
+    ];
+
+sealed class _Resend {
+  const _Resend(this.words);
+
+  final String words;
+}
+
+final class _AnsweredAsApplied extends _Resend {
+  const _AnsweredAsApplied(super.words);
+}
+
+final class _NeverReceived extends _Resend {
+  const _NeverReceived(super.words);
+}
+
+final class _ResendWrong extends _Resend {
+  const _ResendWrong(super.words);
+}
+
+String lostAnswerResent(List<SenderReport> reports, String strategyId) {
+  final sent = <int, ClaimedBatch>{
+    for (final report in reports)
+      if (report case BatchSentAs(strategyId: final id, :final batch)
+          when id == strategyId)
+        batch.attempt: batch,
+  };
+  final writes = [
+    for (final report in reports)
+      if (report case EventsWritten(strategyId: final id) when id == strategyId)
+        report,
+  ];
+  final lost = <int, String>{};
+  for (final write in writes) {
+    final admitted = {
+      for (final effect in write.effects)
+        if (effect case AnswerAdmitted(:final attempt)) attempt,
+    };
+    for (final event in write.events) {
+      switch (event) {
+        case TransportFailed(:final attempt, :final failure)
+            when sent.containsKey(attempt):
+          lost[attempt] ??= 'no answer came (${failure.name})';
+        case OpAnswered(:final attempt, :final point) ||
+                BatchRefused(:final attempt, :final point) ||
+                BatchAccountMismatch(:final attempt, :final point)
+            when sent.containsKey(attempt) && !admitted.contains(attempt):
+          lost[attempt] ??= 'its answer came on connection '
+              '${point.connection}, which had ended';
+        case _:
+          break;
+      }
+    }
+  }
+  if (lost.isEmpty) {
+    throw StateError(
+      'did not reach the case: none of the ${sent.length} batches sent for '
+      '$strategyId had its answer closed as lost',
+    );
+  }
+  OpAnswer? admittedAnswer(int attempt, String opId) {
+    for (final write in writes) {
+      if (!write.effects.contains(AnswerAdmitted(attempt, opId: opId))) {
+        continue;
+      }
+      for (final event in write.events) {
+        if (event case OpAnswered(attempt: final at, :final answer)
+            when at == attempt && answer.opId == opId) {
+          return answer;
+        }
+      }
+    }
+    return null;
+  }
+
+  final resends = <_Resend>[];
+  for (final MapEntry(key: attempt, value: how) in lost.entries) {
+    final ops = {for (final op in sent[attempt]!.ops) op.opId};
+    final again = [
+      for (final later in sent.values)
+        if (later.attempt > attempt)
+          for (final op in later.ops)
+            if (ops.contains(op.opId)) (attempt: later.attempt, opId: op.opId),
+    ];
+    if (again.isEmpty) {
+      resends.add(
+        _ResendWrong(
+          'attempt $attempt was closed as lost ($how), and none of its ops '
+          'was sent again',
+        ),
+      );
+    }
+    for (final (attempt: resent, :opId) in again) {
+      final first = 'attempt $attempt was closed as lost ($how); $opId was '
+          'sent again in attempt $resent';
+      resends.add(switch (admittedAnswer(resent, opId)) {
+        NoopAnswer(replay: NoopReplay.appliedWhenFirstReceived) =>
+          _AnsweredAsApplied(
+            '$first, and the server answered it as applied when first '
+            'received',
+          ),
+        AppliedAnswer() => _NeverReceived(
+            '$first, and that send applied it: the server never received '
+            'attempt $attempt',
+          ),
+        null => _ResendWrong('$first, and no answer to it was admitted'),
+        final other => _ResendWrong(
+            '$first, and the server answered ${other.runtimeType}',
+          ),
+      });
+    }
+  }
+  if (resends.whereType<_AnsweredAsApplied>().firstOrNull case final done?) {
+    return 'CLOUDSTORE ${done.words}';
+  }
+  final words = resends.map((resend) => resend.words).join('; ');
+  if (resends.every((resend) => resend is _NeverReceived)) {
+    throw StateError('did not reach the case: $words');
+  }
+  throw StateError(words);
 }
 
 String? _openedBy(List<QueueEvent> events) => switch (events
@@ -1736,6 +1862,8 @@ String _eventWords(QueueEvent event) => switch (event) {
         'attempt $attempt: no answer (${failure.name})',
       BatchRefused(:final attempt, :final refusal) =>
         'attempt $attempt refused whole (${refusal.name})',
+      BatchAccountMismatch(:final attempt) =>
+        'attempt $attempt refused for another account',
       ClaimReleased(:final attempt) => 'attempt $attempt given back unsent',
       UserUsedCloud(:final opId) =>
         'the user took the cloud\'s version of $opId',
