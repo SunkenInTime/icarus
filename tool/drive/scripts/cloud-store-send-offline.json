@@ -30,7 +30,7 @@
   {"waitStoreSent": 180},
   {"storeSyncState": true},
   {"wait": 3},
-  {"storeSessionOpenings": true, "byStamp": "expected"},
+  {"storeSessionOpenings": true},
   {"shot": "{out}/back-online.png"},
   {"exit": 1}
 ]
