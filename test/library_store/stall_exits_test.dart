@@ -125,7 +125,8 @@ final stalls = <StallExit, Stall>{
     adopts: true,
     start: (world) {
       world.server.overrideRead = (call) => call.page == 'p2'
-          ? const StoreReadAnswered(PageGone('nowhere'), point: stampedWhenAnswered)
+          ? const StoreReadAnswered(PageGone('nowhere'),
+              point: stampedWhenAnswered)
           : null;
       world
         ..connection = null
@@ -228,8 +229,9 @@ final stalls = <StallExit, Stall>{
         const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
             point: stampedWhenAnswered),
       );
-      world.server.overrideRead = (call) =>
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+      world.server.overrideRead = (call) => const StoreReadRefused(
+          StoreReadRefusal.forbidden, 'forbidden',
+          point: stampedWhenAnswered);
       world.commitMove(1);
     },
     goAgain: (world) => world
@@ -362,8 +364,8 @@ final stalls = <StallExit, Stall>{
     start: (world) {
       world.server.answerNext(
         strategyId,
-        (call) => Future.value(
-            const StoreBatchOutsideWindow('refused', point: stampedWhenAnswered)),
+        (call) => Future.value(const StoreBatchOutsideWindow('refused',
+            point: stampedWhenAnswered)),
       );
       world.commitMove(1);
     },
@@ -772,8 +774,9 @@ void main() {
           const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
               point: stampedWhenAnswered),
         );
-        world.server.overrideRead = (call) =>
-            const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+        world.server.overrideRead = (call) => const StoreReadRefused(
+            StoreReadRefusal.forbidden, 'forbidden',
+            point: stampedWhenAnswered);
         final before = listReads(world).length;
         world.commitMove(1);
         world.settle(const Duration(hours: 1));

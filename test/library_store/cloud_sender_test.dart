@@ -85,7 +85,7 @@ void main() {
         world.settle();
         expect(world.server.calls, hasLength(1));
         expect(world.queueLength(), 0);
-        final returned = world.written().whereType<ConnectionReturned>();
+        final returned = world.sessionWrites().whereType<ConnectionReturned>();
         expect(returned, hasLength(1));
         expect(
           returned.last.generation,
@@ -182,7 +182,8 @@ void main() {
           ['send move-1', 'list', 'page p1'],
         ),
         'ACCOUNT_MISMATCH': (
-          const StoreBatchAccountMismatch('refused'),
+          const StoreBatchAccountMismatch('refused',
+              point: stampedWhenAnswered),
           ['send move-1'],
         ),
         'UNCHECKED_OUTSIDE_WINDOW': (
@@ -911,7 +912,8 @@ void main() {
       for (final refusal in <StoreBatchOutcome>[
         const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
             point: stampedWhenAnswered),
-        const StoreBatchAccountMismatch('another account'),
+        const StoreBatchAccountMismatch('another account',
+            point: stampedWhenAnswered),
       ]) {
         inWorld((world) {
           world.server.answerWith(strategyId, refusal);
@@ -1145,7 +1147,7 @@ void main() {
         world.authChanges = 2;
         world.commitRename(strategyId, 'after-refresh');
         world.settle();
-        final events = world.written();
+        final events = world.sessionWrites();
         expect(events.whereType<AccountChanged>(), isEmpty);
         expect(events.whereType<ConnectionReturned>(), isEmpty);
         expect(world.server.calls, hasLength(2));
@@ -1154,8 +1156,11 @@ void main() {
           ..connection = 2;
         world.commitAdds(1);
         world.settle();
-        expect(world.written().whereType<AccountChanged>(), isEmpty);
-        expect(world.written().whereType<ConnectionReturned>(), hasLength(1));
+        expect(world.sessionWrites().whereType<AccountChanged>(), isEmpty);
+        expect(
+          world.sessionWrites().whereType<ConnectionReturned>(),
+          hasLength(1),
+        );
         expect(world.server.calls, hasLength(3));
       });
     });
@@ -1493,7 +1498,8 @@ void main() {
         'a connection that changes while the queue is read gets no session '
         'written for it', () {
       inWorld((world) {
-        final before = world.written().whereType<ConnectionReturned>().length;
+        final before =
+            world.sessionWrites().whereType<ConnectionReturned>().length;
         world.sender.hold('held by the test');
         world.connection = 2;
         world.commitMove(1);
@@ -1505,7 +1511,7 @@ void main() {
         world.connection = 3;
         world.settle();
         expect(
-          world.written().whereType<ConnectionReturned>(),
+          world.sessionWrites().whereType<ConnectionReturned>(),
           hasLength(before + 1),
         );
         expect(world.server.calls, hasLength(1));
@@ -1837,7 +1843,8 @@ void main() {
       inWorld((world) {
         world.server.answerReadWith(
           strategyId,
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden',
+              point: stampedWhenAnswered),
         );
         world.commitMove(1);
         world.settle();
@@ -1855,7 +1862,8 @@ void main() {
       inWorld((world) {
         world.server.answerReadWith(
           strategyId,
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden',
+              point: stampedWhenAnswered),
         );
         world.commitMove(1);
         world.settle(const Duration(minutes: 1));
@@ -1875,7 +1883,7 @@ void main() {
         inWorld((world) {
           world.server.answerReadWith(
             strategyId,
-            StoreReadRefused(refusal, '$refusal'),
+            StoreReadRefused(refusal, '$refusal', point: stampedWhenAnswered),
           );
           world.commitMove(1);
           world.settle(const Duration(minutes: 1));
@@ -3378,8 +3386,9 @@ void main() {
     });
 
     test(
-        'a server time answered after the connection changed is not held, '
-        'so the next edit goes checked', () {
+        'a server time answered after the connection changed is not held: '
+        'that answer is lost, its edit is sent again checked, and the next '
+        'edit is judged by a time from the new connection', () {
       inWorld((world) {
         world.commitMerge(1);
         world.settle();
@@ -3393,10 +3402,15 @@ void main() {
         world.async.elapse(const Duration(seconds: 1));
         world.commitMerge(2);
         world.settle();
+        final [sent, again] = callsOf(world, 'merge-2');
+        expect(sent.unchecked, ['merge-2']);
+        expect(again.unchecked, isEmpty);
+        final heldAfter = world.written().whereType<ServerTimeHeld>().last;
+        expect(heldAfter.point.connection, 2);
         world.commitMerge(3);
         world.settle();
         final [third] = callsOf(world, 'merge-3');
-        expect(third.unchecked, isEmpty);
+        expect(third.basis, heldAfter.serverTime);
       });
     });
 
@@ -3535,21 +3549,24 @@ void main() {
         });
         world.commitMerge(2);
         world.settle(const Duration(seconds: 10));
-        final written = world.written();
-        final held = written.whereType<ServerTimeHeld>().last;
+        final held = world.written().whereType<ServerTimeHeld>().last;
         expect(held.session, bound);
-        final claimed = written.lastIndexWhere(
-          (event) => event is BatchClaimed,
-          written.indexOf(held),
+        final writes = [
+          for (final report in world.sender.store.reports)
+            if (report is EventsWritten) report.events,
+        ];
+        final answered = writes.lastIndexWhere(
+          (events) => events.contains(held),
+        );
+        final claimed = writes.lastIndexWhere(
+          (events) => events.any((event) => event is BatchClaimed),
+          answered,
         );
         expect(
-          written.sublist(claimed, written.indexOf(held)).where(
-                (event) =>
-                    event is ConnectionLost ||
-                    event is ConnectionReturned ||
-                    event is AccountChanged ||
-                    event is AppRestarted,
-              ),
+          [
+            for (final events in writes.sublist(claimed, answered))
+              ...events.where(World.isSessionEvent),
+          ],
           isEmpty,
         );
       });
