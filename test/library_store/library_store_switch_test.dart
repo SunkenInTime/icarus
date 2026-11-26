@@ -42,6 +42,22 @@ void main() {
   });
 
   test(
+      'a driver or debug build can ask for the library to run on the store; '
+      'a build that may not stays off and drops the flag', () {
+    expect(
+      LibraryStoreLaunch.parse(const ['--library-store=store'], mayShadow: true)
+          .choice,
+      isA<StoreSwitchStore>(),
+    );
+    final refused = LibraryStoreLaunch.parse(
+      const ['--library-store=store', 'a.ica'],
+      mayShadow: false,
+    );
+    expect(refused.choice, isA<StoreSwitchOff>());
+    expect(refused.otherArgs, ['a.ica']);
+  });
+
+  test(
       'a build that may not shadow stays off when given the flag, and still drops it',
       () {
     final launch = LibraryStoreLaunch.parse(

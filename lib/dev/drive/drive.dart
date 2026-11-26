@@ -1996,6 +1996,12 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'holdLibraryStore':
       _log(holdStore(c));
+    case 'expectMigration':
+      (await _storeLines(Future.sync(() => migrationLines(
+                c,
+                expected: {...?(value as Map<String, dynamic>?)},
+              ))))
+          .forEach(_log);
     case 'checkLibraryStore':
       (await _storeLines(checkStoreAgain(c))).forEach(_log);
     case 'slowStoreCommits':

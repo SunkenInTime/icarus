@@ -48,6 +48,8 @@ import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/library_store/library_migration_start.dart';
+import 'package:icarus/widgets/dialogs/left_behind_dialog.dart';
 import 'package:icarus/library_store/library_store_start.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/onboarding/launch_intro.dart';
@@ -291,6 +293,14 @@ Future<void> main(List<String> args) async {
           null;
       await MapThemeProfilesProvider.bootstrap();
 
+      final movedIntoStore = await moveLibraryIntoStore(
+        appProviderContainer,
+        storeLaunch,
+        hiveDirectory: hiveDirectoryPath,
+        allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
+        build: Settings.versionName,
+      );
+
       await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
       if (PlatformPolicy.current.allowsLocalLibrary) {
         try {
@@ -323,6 +333,7 @@ Future<void> main(List<String> args) async {
         hiveDirectory: hiveDirectoryPath,
         allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
         build: Settings.versionName,
+        alreadyOpening: movedIntoStore,
       );
       final shadowStore =
           switch ((hiveDirectoryPath, stores.opening, storeStart.mode)) {
@@ -426,6 +437,7 @@ Future<void> main(List<String> args) async {
               mode: mode,
             );
       }
+      showWhatWasLeftBehind(appProviderContainer.read(libraryMigrationProvider));
       if (driveBuild) startDrive();
     },
     (error, stackTrace) {

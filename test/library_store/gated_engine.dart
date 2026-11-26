@@ -7,6 +7,7 @@ final class CommitGate {
   var failNext = false;
   var commits = 0;
   var ended = false;
+  int? endAfter;
 
   bool get isHeld => _held != null;
 
@@ -67,6 +68,9 @@ final class _GatedLease implements StorageLease {
   @override
   Future<Committing> commit(List<Change> changes) async {
     gate.commits++;
+    if (gate.endAfter case final last? when gate.commits > last) {
+      gate.ended = true;
+    }
     if (gate._held case final held?) await held.future;
     if (gate.ended) return const CommitRefused(LeaseEnded());
     if (gate.failNext) {

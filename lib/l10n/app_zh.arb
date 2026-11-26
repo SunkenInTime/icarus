@@ -1417,5 +1417,8 @@
   "onboardingSunTitle": "准备好触碰太阳了吗？",
   "onboardingSunBody": "选一张地图，直接进入战术板，所有特工和技能随时可以放置。",
   "onboardingSunBodyLogIn": "登录后选择地图，打开备好全部特工的战术板，并同步你的资料库。",
-  "onboardingSunStart": "选择地图"
+  "onboardingSunStart": "选择地图",
+  "libraryLeftBehindTitle": "部分战术留在了旧资料库中",
+  "libraryLeftBehindBody": "这些内容无法移到新资料库，因此现在不会出现在你的资料库中。它们仍保存在这台电脑上的旧资料库里：{folder}。",
+  "libraryLeftBehindFolder": "文件夹：{name}"
 }

@@ -27,7 +27,7 @@ final class LibraryStoreStart {
     StoreMirror Function() mirror = storeMirror,
   }) {
     switch (choice) {
-      case StoreSwitchOff():
+      case StoreSwitchOff() || StoreSwitchStore():
         return LibraryStoreStart._(choice, null, null);
       case StoreSwitchShadow():
         return LibraryStoreStart._(choice, const ShadowOnly(), null);
@@ -67,7 +67,8 @@ final class LibraryStoreStart {
   final StorePageReads? pageReads;
 
   List<Override> get overrides => [
-        if (mode != null) libraryStoreSwitchProvider.overrideWithValue(choice),
+        if (choice is! StoreSwitchOff)
+          libraryStoreSwitchProvider.overrideWithValue(choice),
         if (listing case final listing?)
           localLibraryListingProvider.overrideWithValue(listing),
         if (pageReads case final reads?)

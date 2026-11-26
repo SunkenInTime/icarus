@@ -237,6 +237,21 @@ It times the open from inside the app, with provider listeners rather than polli
 
 `--kill-after-seconds S` (Linux only) kills the main instance with SIGKILL S seconds after it starts, as a crash would. Start the next run with `--hive-store <that run's out>/store-main` and `scripts/library-store-shadow.json` to see the copy pick up where it stopped.
 
+## The library on the store
+
+`--library-store store` on Linux, `-LibraryStore store` on Windows, starts the app the way it will run once the library lives in the store. At this stage it does one thing more than `off`: before the start-up migrations run, it moves the local library into the store beside the Hive boxes (`library_store/library.sqlite`), once. Each Hive record is brought up to date in memory and converted; the Hive files are only read, so they stay as the last build left them. The store records that the move is copying, then that it finished, with every strategy or folder it could not move and why. A move that stops part way is run again from the top at the next start; a finished one never runs again, whatever Hive holds since. When the move leaves anything behind, a dialog names each one and says where the old library is.
+
+`{"expectMigration": {"state": s, "inStore": n, "foldersInStore": f, "leftBehind": l}}` logs `STORE move at start` with what this start's move did (`finishedNow`, `wasFinished`, `stopped`, `unreadable`, `notRun`, or `none` when the store is not on), how many strategies and folders the store holds, and each one left behind with its reason, and fails when any key given differs.
+
+`ICARUS_LEFT_BEHIND_FIXTURE=<new folder> flutter test test/library_store/drive_fixtures_test.dart` writes a Hive library of a folder and two strategies that move, and one saved by a newer version that stays behind. `scripts/move-into-store-local.json` starts on it and checks the move and the dialog; `scripts/move-into-store-again-local.json` starts again on what that run left and checks the move is not run twice:
+
+```sh
+dart tool/drive/linux.dart run --script tool/drive/scripts/move-into-store-local.json \
+  --library-store store --hive-store <fixture> --out <out>
+dart tool/drive/linux.dart run --script tool/drive/scripts/move-into-store-again-local.json \
+  --library-store store --hive-store <out>/store-main --out <out-2>
+```
+
 ## Editor actions as ops
 
 With `--library-store ops` (`-LibraryStore ops`) the app mirrors as above, and also turns every editor action on a local strategy into the ops that would change its rows, committing each action's ops to the store in one `commitAll`, in the mirror's queue. Hive stays the truth and nothing on screen reads these rows. Only this flag creates the follower that does this; without it the editor's hooks are null and do nothing.

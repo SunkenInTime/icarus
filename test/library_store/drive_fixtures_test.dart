@@ -22,6 +22,7 @@ final _notInStoreOut = Platform.environment['ICARUS_NOT_IN_STORE_FIXTURE'];
 final _storeToAge = Platform.environment['ICARUS_AGE_STORE'];
 final _smallOut = Platform.environment['ICARUS_SMALL_LIBRARY_FIXTURE'];
 final _keptOut = Platform.environment['ICARUS_KEPT_ON_HIVE_FIXTURE'];
+final _leftBehindOut = Platform.environment['ICARUS_LEFT_BEHIND_FIXTURE'];
 
 const unreadableInStoreId = 'fixture-unreadable-in-store';
 const newerBuildId = 'fixture-newer-build';
@@ -100,6 +101,40 @@ Future<void> writeNotInStoreFixture(
   );
 }
 
+Future<void> writeLeftBehindFixture(Directory out) async {
+  final bare = generatedStrategy(Optionals.unset).copyWith(
+    pages: [
+      for (final page in generatedStrategy(Optionals.unset).pages)
+        page.copyWith(drawingData: const []),
+    ],
+  );
+  final folder = Folder(
+    name: 'Retakes',
+    id: 'fixture-folder',
+    dateCreated: DateTime.utc(2026, 2, 1),
+  );
+  final newer = bare.copyWith(
+    id: newerBuildId,
+    name: 'From a newer build',
+    versionNumber: Settings.versionNumber + 1,
+  );
+  await openScratchHive(
+    out,
+    strategies: [
+      bare.copyWith(
+        id: 'fixture-moved-in-folder',
+        name: 'Moved in a folder',
+        folderID: folder.id,
+      ),
+      bare.copyWith(id: 'fixture-moved', name: 'Moved'),
+      newer,
+    ],
+    folders: [folder],
+  );
+  await Hive.close();
+  expect(strategyToRows(strategyAsHiveHoldsIt(newer)), isA<StrategyRowsRefused>());
+}
+
 Future<void> writeKeptOnHiveFixture(Directory out) async {
   final bare = generatedStrategy(Optionals.unset).copyWith(
     pages: [
@@ -163,6 +198,19 @@ void main() {
     },
     skip: _smallOut == null
         ? 'set ICARUS_SMALL_LIBRARY_FIXTURE to a new folder'
+        : false,
+  );
+
+  test(
+    'writes a library of two strategies and a folder that move into the store, '
+    'and one from a newer build that stays behind',
+    () async {
+      final out = Directory(_leftBehindOut!)..createSync(recursive: true);
+      expect(out.listSync(), isEmpty, reason: 'give the fixture a new folder');
+      await writeLeftBehindFixture(out);
+    },
+    skip: _leftBehindOut == null
+        ? 'set ICARUS_LEFT_BEHIND_FIXTURE to a new folder'
         : false,
   );
 

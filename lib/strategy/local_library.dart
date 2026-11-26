@@ -118,6 +118,18 @@ final class LocalLibrary {
 
   Iterable<Folder> get storedFolders => _folders.values;
 
+  Iterable<({Object key, StrategyData strategy})> get storedStrategyRecords => [
+        for (final key in _strategies.keys)
+          if (_strategies.get(key) case final strategy?)
+            (key: key as Object, strategy: strategy),
+      ];
+
+  Iterable<({Object key, Folder folder})> get storedFolderRecords => [
+        for (final key in _folders.keys)
+          if (_folders.get(key) case final folder?)
+            (key: key as Object, folder: folder),
+      ];
+
   Iterable<({Object key, String id})> get storedStrategyNames => [
         for (final key in _strategies.keys)
           if (_strategies.get(key) case final strategy?)

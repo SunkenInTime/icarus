@@ -16,6 +16,8 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/library_listing.dart';
+import 'package:icarus/library_store/library_migration.dart';
+import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
@@ -49,6 +51,7 @@ String switchName(LibraryStoreSwitch choice) => switch (choice) {
       StoreSwitchMirror() => 'mirror',
       StoreSwitchRead() => 'read',
       StoreSwitchOps() => 'ops',
+      StoreSwitchStore() => 'store',
     };
 
 Future<String> firstFrameLine(ProviderContainer c) async {
@@ -1179,4 +1182,49 @@ List<String> pageReadEndLines(ProviderContainer c) {
     for (final load in loads.skip(_pageLoadsLogged)) 'STORE page $load',
     'STORE page loads in the run: ${_countsLine(pageLoadCounts(loads))}',
   ];
+}
+
+List<String> migrationLines(
+  ProviderContainer c, {
+  required Map<String, Object?> expected,
+}) {
+  final atStart = c.read(libraryMigrationProvider);
+  final state = switch (atStart?.migration) {
+    null => 'none',
+    MigrationFinishedNow() => 'finishedNow',
+    MigrationWasFinished() => 'wasFinished',
+    MigrationStopped() => 'stopped',
+    MigrationRecordUnreadable() => 'unreadable',
+    MigrationNotRun() => 'notRun',
+  };
+  final left = switch (atStart?.migration) {
+    MigrationFinishedNow(:final record) || MigrationWasFinished(:final record) =>
+      [for (final entry in [...record.strategies, ...record.folders]) entry],
+    _ => const <LeftBehind>[],
+  };
+  final list = switch (c.read(libraryStoreProvider)) {
+    LibraryStoreReady(store: LibraryStore(library: LibraryOpen(:final list))) =>
+      list,
+    _ => null,
+  };
+  final inStore = list == null ? null : localStrategyIds(list).length;
+  final actual = <String, Object?>{
+    'state': state,
+    'inStore': inStore,
+    'foldersInStore': list?.folders.length,
+    'leftBehind': left.length,
+  };
+  final lines = [
+    'STORE move at start: $state, $inStore strategies and '
+        '${list?.folders.length} folders in the store, '
+        '${left.length} left behind',
+    for (final entry in left)
+      'STORE left behind ${entry.publicId} "${entry.name}": ${entry.reason}',
+  ];
+  final problems = [
+    for (final MapEntry(:key, :value) in expected.entries)
+      if (actual[key] != value) '$key is ${actual[key]}, expected $value',
+  ];
+  if (problems.isNotEmpty) throw StoreStepFailed([...lines, ...problems]);
+  return lines;
 }

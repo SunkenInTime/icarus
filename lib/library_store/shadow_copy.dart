@@ -2,6 +2,7 @@ import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_reads.dart';
+import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/mirror_gate.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
@@ -329,7 +330,7 @@ Future<ShadowCopy> mirrorIds(
         folderResults.add(FolderWaitsForHive(id));
     }
   }
-  for (final folder in _parentsFirst(present.values.toList())) {
+  for (final folder in foldersParentsFirst(present.values.toList())) {
     final row = _folderRow(folder, holds.folders[folder.id]);
     switch (_saving(await store
         .use((store) => store.editLibrary([PutFolder(row)])))) {
@@ -382,7 +383,7 @@ Future<ShadowCopy> mirrorIds(
     for (final id in absent)
       if (holds.folders[id] case final row?) row,
   ];
-  for (final row in _childrenFirst(leaving)) {
+  for (final row in folderRowsChildrenFirst(leaving)) {
     switch (reads.folder(row.publicId)) {
       case NotInHive():
         break;
@@ -432,7 +433,7 @@ Future<ShadowCopy> _bringUpToDate(
       return stopped(StoreDidNotRead(failure));
   }
   final storedFolders = {for (final row in list.folders) row.publicId: row};
-  for (final folder in _parentsFirst(hive.folders)) {
+  for (final folder in foldersParentsFirst(hive.folders)) {
     final row = _folderRow(folder, storedFolders[folder.id]);
     switch (_saving(await store
         .use((store) => store.editLibrary([PutFolder(row)])))) {
@@ -498,7 +499,7 @@ Future<ShadowCopy> _bringUpToDate(
     ...now.foldersWriting,
   };
   final leaving = storedFolders.keys.toSet().difference(hiveFolderIds);
-  for (final row in _childrenFirst([
+  for (final row in folderRowsChildrenFirst([
     for (final row in list.folders)
       if (leaving.contains(row.publicId)) row,
   ])) {
@@ -530,42 +531,4 @@ ReadableFolder _folderRow(Folder folder, FolderRow? stored) {
       ),
     UnreadableFolder() || null => fromHive,
   };
-}
-
-List<Folder> _parentsFirst(List<Folder> folders) {
-  final byId = {for (final folder in folders) folder.id: folder};
-  final ordered = <Folder>[];
-  final placed = <String>{};
-  void place(Folder folder, Set<String> walking) {
-    if (placed.contains(folder.id) || !walking.add(folder.id)) return;
-    if (byId[folder.parentID] case final parent?) place(parent, walking);
-    placed.add(folder.id);
-    ordered.add(folder);
-  }
-
-  for (final folder in folders) {
-    place(folder, <String>{});
-  }
-  return ordered;
-}
-
-List<FolderRow> _childrenFirst(List<FolderRow> folders) {
-  final parents = {
-    for (final row in folders)
-      row.publicId: switch (row) {
-        ReadableFolder(:final parentFolderPublicId) => parentFolderPublicId,
-        UnreadableFolder() => null,
-      },
-  };
-  int depth(String id) {
-    final seen = <String>{};
-    String? at = parents[id];
-    while (at != null && seen.add(at)) {
-      at = parents[at];
-    }
-    return seen.length;
-  }
-
-  return [...folders]
-    ..sort((a, b) => depth(b.publicId).compareTo(depth(a.publicId)));
 }

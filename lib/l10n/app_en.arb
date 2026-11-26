@@ -6657,5 +6657,29 @@
   "onboardingSunStart": "Pick a map",
   "@onboardingSunStart": {
     "description": "Primary button on the first-run screen. Opens the map picker for a new strategy."
+  },
+  "libraryLeftBehindTitle": "Some strategies stayed in your old library",
+  "@libraryLeftBehindTitle": {
+    "description": "Title of the dialog after the library moved into its new storage, when some strategies or folders could not be moved."
+  },
+  "libraryLeftBehindBody": "These couldn't be moved to the new library, so you won't find them in your library now. They're still saved on this computer, in your old library at {folder}.",
+  "@libraryLeftBehindBody": {
+    "description": "Body of that dialog. folder is the path of the folder holding the old library files.",
+    "placeholders": {
+      "folder": {
+        "type": "String",
+        "example": "C:\\Users\\you\\AppData\\Roaming\\icarus"
+      }
+    }
+  },
+  "libraryLeftBehindFolder": "Folder: {name}",
+  "@libraryLeftBehindFolder": {
+    "description": "A folder listed in that dialog, beside the strategies listed by their names.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Retakes"
+      }
+    }
   }
 }
