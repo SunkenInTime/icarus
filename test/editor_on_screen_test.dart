@@ -31,6 +31,7 @@ import 'package:icarus/const/routes.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:flutter/foundation.dart';
 import 'package:icarus/widgets/community/open_community_post.dart';
+import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/widgets/community/community_post_view.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/collab/community_repository.dart';
@@ -557,9 +558,9 @@ void main() {
   }
 
   testWidgets(
-      'a share link whose Save is still running when the Home prompt under '
-      'it is answered and another strategy opens leaves that strategy open '
-      'with its edit, and the edit saves', (tester) async {
+      'a share link that joined the Home prompt, whose Save is still running '
+      'when another strategy opens, leaves that strategy open with its edit, '
+      'and the edit saves', (tester) async {
     await tester.runAsync(() async {
       await _stored('asked-about');
       await _stored('opened-next');
@@ -572,13 +573,10 @@ void main() {
     await tester.pumpAndSettle();
     container.read(sharedStrategyToOpenProvider.notifier).state = 'linked';
     await tester.pumpAndSettle();
-    expect(find.text('Save changes?'), findsNWidgets(2));
-    await tester.tap(find.text('Save').last);
+    expect(find.text('Save changes?'), findsOneWidget);
+    await tester.tap(find.text('Save'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    await tester.tap(find.text("Don't save"));
-    await settleWithDisk(tester);
-    expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
 
     await openWithAnEdit(tester, 'opened-next');
     final cancels = strategies.cancels;
@@ -587,7 +585,6 @@ void main() {
     await settleWithDisk(tester);
 
     expect(strategies.cancels, cancels);
-    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
     await expectItsEditSaves(tester, 'opened-next');
     await leaveEditors(tester, container);
   });
@@ -1198,6 +1195,45 @@ void main() {
     expect(find.text('Could not load strategy.'), findsNothing);
     await leaveEditors(tester, container);
   });
+
+  for (final (name, first, second) in [
+    ('two closes', 'close', 'close'),
+    ('a close, then a link', 'close', 'link'),
+    ('a link, then a close', 'link', 'close'),
+  ]) {
+    testWidgets(
+        "$name answered Don't save close the window once, and open no link",
+        (tester) async {
+      await tester.runAsync(() => _stored('closing'));
+      final windowCalls = await pumpLibraryWithEditors(tester, container);
+      await openWithAnEdit(tester, 'closing');
+      final editor = tester.state(find.byType(StrategyView)) as WindowListener;
+      void ask(String exit) {
+        if (exit == 'close') {
+          editor.onWindowClose();
+        } else {
+          container.read(communityPostToOpenProvider.notifier).state =
+              const PostLinkArrived('linked-post');
+        }
+      }
+
+      ask(first);
+      await tester.pumpAndSettle();
+      ask(second);
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+      windowCalls.clear();
+      await tester.tap(find.text("Don't save"));
+      await settleWithDisk(tester);
+
+      expect(
+        windowCalls.map((call) => call.method),
+        ['setPreventClose', 'close'],
+      );
+      expect(posts.asked, isNot(contains('linked-post')));
+      await leaveEditors(tester, container);
+    });
+  }
 }
 
 CommunityPost _post(String id) => CommunityPost(

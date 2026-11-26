@@ -11,6 +11,7 @@ import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
+import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -36,8 +37,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:icarus/services/unsaved_strategy_guard.dart';
-import 'package:icarus/strategy/open_seen.dart';
+import 'package:toastification/toastification.dart';
 import 'opens_now_support.dart';
 
 bool _adaptersRegistered = false;
@@ -47,6 +47,7 @@ class _JoinedStrategies extends StrategyProvider {
 
   final bool autosaveOn;
   final Object? saveError;
+  Completer<void>? heldSave;
   final _autosave = Completer<void>();
   var flushes = 0;
   var saves = 0;
@@ -76,7 +77,13 @@ class _JoinedStrategies extends StrategyProvider {
   Future<void> forceSaveNow(String id) async {
     saves++;
     if (saveError case final error?) throw error;
-    ref.read(strategySaveStateProvider.notifier).markPersisted();
+    final saveState = ref.read(strategySaveStateProvider.notifier);
+    final snapshot = saveState.dirtyMarks;
+    if (heldSave case final held?) {
+      heldSave = null;
+      await held.future;
+    }
+    saveState.markPersisted(dirtyMarksSaved: snapshot);
   }
 
   @override
@@ -88,12 +95,14 @@ class _FakeGuardStrategyProvider extends StrategyProvider {
     required this.initialState,
     required this.flushResult,
     this.flushError,
+    this.saveError,
     this.holdsCanvas = false,
   });
 
   final StrategyState initialState;
   final bool flushResult;
   final Object? flushError;
+  final Object? saveError;
   final bool holdsCanvas;
 
   int flushCalls = 0;
@@ -117,6 +126,7 @@ class _FakeGuardStrategyProvider extends StrategyProvider {
   @override
   Future<void> forceSaveNow(String id) async {
     forceSaveCalls++;
+    if (saveError case final error?) throw error;
     final saveState = ref.read(strategySaveStateProvider.notifier);
     if (holdsCanvas) {
       saveState.noteCanvasHandover(
@@ -1296,6 +1306,93 @@ void main() {
       expect(opQueue.currentState.pausedByEntityKey, isNotEmpty);
     });
 
+    Future<void> startWithCloudWorkNotKept(
+      WidgetTester tester, {
+      Object? retryError,
+    }) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+        saveError: retryError,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          queuedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          hasDurabilityFailure: true,
+          lastError: 'Cloud work could not be saved to the durable outbox.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+    }
+
+    Future<LeaveAnswer> close() => guardUnsavedStrategyExit(
+          context: context,
+          ref: ref,
+          source: 'guard-test-cloud-close',
+          closesWindow: true,
+        );
+
+    testWidgets(
+        'two closes with cloud work not yet kept show one cloud prompt, and '
+        'Stay here keeps the editor for both', (tester) async {
+      await startWithCloudWorkNotKept(tester);
+      final first = close();
+      await tester.pumpAndSettle();
+      final second = close();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cloud sync pending'), findsOneWidget);
+      await tester.tap(find.text('Stay here'));
+      await tester.pumpAndSettle();
+      expect(await first, isA<Stay>());
+      expect(await second, isA<Stay>());
+      endExitQuestionsWithoutAnEditor();
+    });
+
+    testWidgets(
+        'a Retry sync that throws keeps every close in the editor and reports '
+        'the error once', (tester) async {
+      await startWithCloudWorkNotKept(tester,
+          retryError: StateError('the outbox could not be written'));
+      final first = close();
+      await tester.pumpAndSettle();
+      final second = close();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Retry sync'));
+      await tester.pumpAndSettle();
+      expect(await first, isA<Stay>());
+      expect(await second, isA<Stay>());
+      expect(
+        appProviderContainer
+            .read(inAppDebugProvider)
+            .where((log) =>
+                log.message == 'Failed to save strategy before leaving.')
+            .length,
+        1,
+      );
+      endExitQuestionsWithoutAnEditor();
+    });
+
     testWidgets('non-durable cloud work cannot leave', (tester) async {
       notifier = _FakeGuardStrategyProvider(
         initialState: const StrategyState(
@@ -1646,6 +1743,7 @@ void main() {
   });
 
   group('exits asked for while the save prompt is up share its answer', () {
+    tearDown(endExitQuestionsWithoutAnEditor);
     late ProviderContainer container;
     late _JoinedStrategies strategies;
     late BuildContext context;
@@ -1668,14 +1766,17 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: ShadApp(
-            home: Scaffold(
-              body: Consumer(
-                builder: (buildContext, widgetRef, _) {
-                  context = buildContext;
-                  ref = widgetRef;
-                  return const SizedBox.shrink();
-                },
+          child: ToastificationWrapper(
+            child: ShadApp(
+              navigatorKey: appNavigatorKey,
+              home: Scaffold(
+                body: Consumer(
+                  builder: (buildContext, widgetRef, _) {
+                    context = buildContext;
+                    ref = widgetRef;
+                    return const SizedBox.shrink();
+                  },
+                ),
               ),
             ),
           ),
@@ -1770,7 +1871,76 @@ void main() {
 
       expect(answers.first, isA<Stay>());
       expect(answers.last, isA<Leave>());
-      expect(strategies.cancelled, 1);
+      expect(strategies.cancelled, 0);
+    });
+
+    testWidgets(
+        'a close asked for while the Save writes joins it, and an edit made '
+        'meanwhile is saved by another write before the close goes',
+        (tester) async {
+      await start(tester);
+      final held = strategies.heldSave = Completer<void>();
+      final home = ask();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      final close = ask(closes: true);
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Save changes?'), findsNothing);
+
+      held.complete();
+      await tester.pumpAndSettle();
+
+      expect(await home, isA<Stay>());
+      expect(await close, isA<Leave>());
+      expect(strategies.saves, 2);
+      expect(container.read(strategySaveStateProvider).isDirty, isFalse);
+    });
+
+    testWidgets(
+        'a close asked for while the Save of another strategy writes is a '
+        'question of its own, about the strategy open now', (tester) async {
+      await start(tester);
+      final held = strategies.heldSave = Completer<void>();
+      final home = ask();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      strategies.setFromState(const StrategyState(
+        strategyId: 'strategy-b',
+        strategyName: 'Strategy B',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ));
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      final close = ask(closes: true);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Save changes?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(await close, isA<Stay>());
+      held.complete();
+      await tester.pumpAndSettle();
+      expect(await home, isA<Leave>());
+    });
+
+    testWidgets(
+        'every exit waiting on a question stays once no editor is left on '
+        'screen to answer it', (tester) async {
+      await start(tester);
+      final home = ask();
+      await tester.pumpAndSettle();
+      final close = ask(closes: true);
+
+      endExitQuestionsWithoutAnEditor();
+
+      expect(await home, isA<Stay>());
+      expect(await close, isA<Stay>());
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('Home then a link answered Cancel: neither goes',
@@ -1802,6 +1972,9 @@ void main() {
         appProviderContainer.read(inAppDebugProvider).last.message,
         'Failed to save strategy before leaving.',
       );
+      expect(find.text('Failed to save strategy before leaving.'),
+          findsOneWidget);
+      await tester.pump(const Duration(seconds: 10));
     });
 
     testWidgets(

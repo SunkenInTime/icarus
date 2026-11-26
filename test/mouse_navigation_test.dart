@@ -501,8 +501,8 @@ void main() {
     }
 
     testWidgets(
-        'a link to a removed post, answered with Don\'t save while the save '
-        'dialog of a Home click waits over the editor, ends on the library',
+        'a link to a removed post that arrives while the Home prompt is up '
+        'joins it: one prompt, and Don\'t save ends on the library',
         (tester) async {
       final strategies = _UnsavedStrategies();
       final container = await pumpLibrary(tester, strategies);
@@ -510,30 +510,63 @@ void main() {
       container.read(strategySaveStateProvider.notifier).markDirty();
       await tester.pump();
 
+      var homeWent = false;
       final home = guardThenIgnoringWhatItSaw(
         context: editor,
         ref: editorRef,
         source: 'mouse-navigation-test-home',
-        onContinue: () async {
-          Navigator.pop(editor);
-          await strategies.clearCurrentStrategy();
-        },
+        onContinue: () async => homeWent = true,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Save changes?'), findsOneWidget);
-
       container.read(communityPostToOpenProvider.notifier).state =
           const PostLinkArrived('gone');
       await tester.pumpAndSettle();
-      expect(find.text('Save changes?'), findsNWidgets(2));
-      await tester.tap(find.text("Don't save").last);
+      expect(find.text('Save changes?'), findsOneWidget);
+
+      await tester.tap(find.text("Don't save"));
       await tester.pumpAndSettle();
 
       expect(await home, isFalse);
+      expect(homeWent, isFalse);
       expect(find.text('Save changes?'), findsNothing);
       expect(find.text('editor', skipOffstage: false), findsNothing);
       expect(find.text('library'), findsOneWidget);
       await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets(
+        'a share link that arrives while the Home prompt is up joins it: Save '
+        'saves once, then the link\'s strategy opens in place of the one '
+        'asked about', (tester) async {
+      final strategies = _HeldSave();
+      final container = await pumpLibrary(tester, strategies);
+      final (editor, editorRef) = await openEditor(tester, strategies);
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      await tester.pump();
+
+      var homeWent = false;
+      final home = guardThenIgnoringWhatItSaw(
+        context: editor,
+        ref: editorRef,
+        source: 'mouse-navigation-test-home',
+        onContinue: () async => homeWent = true,
+      );
+      await tester.pumpAndSettle();
+      container.read(sharedStrategyToOpenProvider.notifier).state = 'linked';
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(strategies.saving, ['editor-id']);
+      strategies.release();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 10));
+
+      expect(await home, isFalse);
+      expect(homeWent, isFalse);
+      expect(strategies.opened, ['cloud:linked']);
+      expect(strategies.state.strategyId, 'linked');
     });
 
     for (final tapped in [true, false]) {
@@ -754,6 +787,19 @@ class _UnsavedStrategies extends _RecordingStrategies {
   void cancelPendingSave() {}
 }
 
+
+class _HeldSave extends _UnsavedStrategies {
+  final saving = <String>[];
+  final _held = Completer<void>();
+
+  void release() => _held.complete();
+
+  @override
+  Future<void> forceSaveNow(String id) {
+    saving.add(id);
+    return _held.future;
+  }
+}
 
 CommunityPost _post(String id) => CommunityPost(
       publicId: id,
