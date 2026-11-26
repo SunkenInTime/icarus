@@ -416,6 +416,27 @@ void main() {
       );
       expect(client.queue.landed.single.shownWithout, isTrue);
     });
+
+    test('a page without our added element, at a later snapshot that shares '
+        'the answer\'s time, counts as showing it gone', () {
+      final client = Client();
+      client.edit(elementAdd('add'));
+      final attempt = client.claim(['add']);
+      final answered = tick();
+      client.must(
+        OpAnswered(
+          attempt,
+          const AppliedAnswer('add', revision: 1, life: fixtureLife),
+          point: answered,
+        ),
+      );
+      client.arrive(
+        pageReadOf(initialRows(), 'page-a'),
+        at: at(answered.snapshot + 1, answered.serverTime!),
+        asked: const NotCausal(),
+      );
+      expect(client.queue.landed.single.shownWithout, isTrue);
+    });
   });
 
   group('a result restores freshness only if it pays the mark of the write '
