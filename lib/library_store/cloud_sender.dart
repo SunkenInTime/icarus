@@ -1015,6 +1015,7 @@ final class CloudSender {
     Snapshot snap,
     _Why why,
   ) async {
+    if (_store.shut != null) return const NotYet(null, StallExit.localTrouble);
     sendingUnder = snap;
     reading = why.words;
     try {
@@ -1060,7 +1061,6 @@ final class CloudSender {
             when at.isAfter(_clock())) {
           return _Skipped(row ?? why.row, at);
         }
-        if (_store.shut case final shut?) return _troubled(id, shut);
         final key = '$id $read';
         requestedAt = _unanswered.containsKey(key) &&
                 _unanswered[key] == snap.connection
