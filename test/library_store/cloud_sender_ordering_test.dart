@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/call_governor.dart';
+import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 import 'cloud_shadow_test.dart' show pageId, strategyId;
@@ -135,6 +136,48 @@ void main() {
       expect(world.sender.signInWaitFrom, isNull);
       expect(world.server.calls, hasLength(2));
       expect(world.queueLength(), 0);
+    });
+  });
+
+  test(
+      'an account refusal of a batch stamped on a connection that has ended '
+      'waits for no sign-in, and the edit is sent again', () {
+    inWorld((world) {
+      world.connection = 2;
+      world.settle();
+      world.server.answerNext(
+        strategyId,
+        (call) async => StoreBatchAccountMismatch(
+          'another account',
+          point: onConnection(world, 1),
+        ),
+      );
+      world.commitMove(1);
+      world.settle(const Duration(minutes: 2));
+      expect(world.sender.signInWaitFrom, isNull);
+      expect(world.server.calls, hasLength(2));
+      expect(world.server.calls[1].opIds, world.server.calls[0].opIds);
+      expect(world.queueLength(), 0);
+    });
+  });
+
+  test(
+      'an account refusal of a batch on the current connection gives the '
+      'claim back and waits for the sign-in to change', () {
+    inWorld((world) {
+      world.settle();
+      world.server.answerWith(
+        strategyId,
+        const StoreBatchAccountMismatch(
+          'another account',
+          point: stampedWhenAnswered,
+        ),
+      );
+      world.commitMove(1);
+      world.settle(const Duration(minutes: 2));
+      expect(world.sender.runHold, isA<SignInHold>());
+      expect(world.server.calls, hasLength(1));
+      expect(world.queueLength(), 1);
     });
   });
 
