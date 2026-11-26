@@ -489,7 +489,7 @@ void main() {
       unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
         settings: RouteSettings(
           name: Routes.strategyView,
-          arguments: EditorClaim(strategies.askedByTheUserNow()),
+          arguments: EditorClaim.showing(strategies.askedByTheUserNow()),
         ),
         builder: (_) => Scaffold(
           body: Consumer(builder: (context, ref, _) {

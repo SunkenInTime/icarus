@@ -89,8 +89,9 @@ List<bool> _preventClose(List<MethodCall> calls) => [
           (call.arguments as Map)['isPreventClose'] as bool,
     ];
 
-Future<void> _stored(String id) async {
-  final strategy = generatedStrategy(Optionals.set).copyWith(id: id, name: id);
+Future<void> _stored(String id, {DateTime? lastEdited}) async {
+  final strategy = generatedStrategy(Optionals.set)
+      .copyWith(id: id, name: id, lastEdited: lastEdited);
   await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
       .put(strategy.id, strategy);
 }
@@ -1250,14 +1251,127 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Save changes?'), findsOneWidget);
 
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump();
+    appNavigatorKey.currentState!
+        .removeRoute(mouseNavigationRouteObserver.editorRoute!);
+    await tester.pumpAndSettle();
 
-    expect(answer, isA<Stay>());
-    expect(strategies.closeStrategy(asked: strategies.askedByTheUserNow()),
-        isA<Changed>());
-    await tester.pump(const Duration(seconds: 30));
+    expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
+    expect(find.text('Save changes?'), findsNothing);
+    expect(answer, isA<Superseded>());
+    await leaveEditors(tester, container);
+  });
+
+  Future<Completer<void>> holdTheNextStorageDirectory() async {
+    final held = Completer<void>();
+    var holding = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, (call) async {
+      if (holding) {
+        holding = false;
+        await held.future;
+      }
+      return disk.path;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, (call) async => disk.path));
+    return held;
+  }
+
+  testWidgets(
+      'a window close asked while a quick switch is still opening its '
+      'strategy, whose prompt is answered after that strategy opened, saves '
+      'nothing for the strategy left and asks about the one open now',
+      (tester) async {
+    await tester.runAsync(() async {
+      await _stored('switched-from');
+      await _stored('switched-to', lastEdited: DateTime(2100));
+    });
+    final windowCalls = await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'switched-from');
+    final opening = await holdTheNextStorageDirectory();
+
+    await tester.tap(find.descendant(
+      of: find.byKey(const ValueKey('strategy-quick-switcher-control')),
+      matching: find.byType(ShadIconButton),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('switched-to'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text("Don't save"));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(container.read(strategyProvider).strategyId, 'switched-from');
+    expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+
+    closeTheWindow(tester);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Save changes?'), findsOneWidget);
+    opening.complete();
+    for (var turn = 0;
+        turn < 40 &&
+            container.read(strategyProvider).strategyId != 'switched-to';
+        turn++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      for (var task = 0; task < 20; task++) {
+        await Future<void>.value();
+      }
+    }
+    expect(container.read(strategyProvider).strategyId, 'switched-to');
+    await tester.tap(find.text('Save'), warnIfMissed: false);
     await settleWithDisk(tester);
+
+    expect(strategies.saved, isNot(contains('switched-from')));
+    expect(windowCalls.map((call) => call.method), contains('close'));
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a window close that joined a question another strategy then took over '
+      'is asked again once, about that strategy, and Cancel closes nothing',
+      (tester) async {
+    await tester.runAsync(() async {
+      await _stored('asked-first');
+      await _stored('took-over');
+    });
+    final windowCalls = await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'asked-first');
+    final editor = mouseNavigationRouteObserver.topRoute!;
+
+    await tester.tap(_leaveButton());
+    await tester.pumpAndSettle();
+    closeTheWindow(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('Save changes?'), findsOneWidget);
+
+    final claimed = StrategyView.claimInPlace(
+        editor, strategies, strategies.askedByTheUserNow())!;
+    expect(
+      await tester
+          .runAsync(() => strategies.openLocal('took-over', asked: claimed)),
+      isA<Changed>(),
+    );
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'placed-on-took-over',
+          type: AgentType.jett,
+          position: const Offset(500, 500),
+        ));
+    windowCalls.clear();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save changes?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save changes?'), findsNothing);
+    expect(windowCalls.map((call) => call.method), isNot(contains('close')));
+    expect(container.read(strategyProvider).strategyId, 'took-over');
+    expect(mouseNavigationRouteObserver.topRoute, same(editor));
+    await leaveEditors(tester, container);
   });
 }
 

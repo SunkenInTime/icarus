@@ -1428,7 +1428,7 @@ void main() {
         ));
         container.read(strategySaveStateProvider.notifier).markDirty();
         await tester.pumpAndSettle();
-        expect(aboutA, isA<Stay>());
+        expect(aboutA, isA<Superseded>());
         expect(find.text('Cloud sync pending'), findsNothing);
 
         final aboutB = close();
@@ -1988,8 +1988,8 @@ void main() {
       StrategyView.onScreen.value = 0;
       await tester.pumpAndSettle();
 
-      expect(await home, isA<Stay>());
-      expect(await close, isA<Stay>());
+      expect(await home, isA<Superseded>());
+      expect(await close, isA<Superseded>());
       expect(find.text('Save changes?'), findsNothing);
     });
 
@@ -2011,7 +2011,7 @@ void main() {
       strategies.finishTheAutosave();
       await tester.pumpAndSettle();
 
-      expect(await home, isA<Stay>());
+      expect(await home, isA<Superseded>());
       expect(find.text('Save changes?'), findsNothing);
       final close = ask(closes: true);
       await tester.pumpAndSettle();
@@ -2033,7 +2033,7 @@ void main() {
       expect(strategies.claimForAnEditor(strategies.askedByTheUserNow()),
           isNotNull);
       await tester.pumpAndSettle();
-      expect(home, isA<Stay>());
+      expect(home, isA<Superseded>());
       expect(find.text('Save changes?'), findsNothing);
 
       final close = ask(closes: true);
@@ -2058,8 +2058,9 @@ void main() {
       await tester.pump();
 
       expect(find.text('Save changes?'), findsNothing);
+      expect(appNavigatorKey.currentState!.canPop(), isFalse);
       await tester.pumpAndSettle();
-      expect(home, isA<Stay>());
+      expect(home, isA<Superseded>());
     });
 
     testWidgets(
@@ -2073,7 +2074,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Save changes?'), findsNothing);
-      expect(await home, isA<Stay>());
+      expect(await home, isA<Superseded>());
     });
 
     testWidgets('Home then a link answered Cancel: neither goes',
