@@ -133,8 +133,7 @@ void main() {
     );
   });
 
-  test(
-      'a run whose sender stayed on one connection, or moved twice, fails',
+  test('a run whose sender stayed on one connection, or moved twice, fails',
       () {
     expect(
       () => judged([earlierSession(), openedByStamp(2)]),

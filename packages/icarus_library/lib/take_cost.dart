@@ -520,8 +520,7 @@ ResultPoint nextStamp() => ResultPoint(
   client: 1,
   connection: 1,
   snapshot: ++_snapshots,
-  serverTime:
-      DateTime.now().microsecondsSinceEpoch * 1000 + _snapshots,
+  serverTime: DateTime.now().microsecondsSinceEpoch * 1000 + _snapshots,
 );
 
 final class Bench {

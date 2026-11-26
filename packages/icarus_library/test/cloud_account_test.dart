@@ -907,10 +907,7 @@ void aResultFromBeforeADiscardIsTurnedAway() {
         (lease) => ServingABrokenPendingRow(lease, () => broken),
       ),
     );
-    await recordAll(store, [
-      const AppRestarted(build: build),
-      reconnected(),
-    ]);
+    await recordAll(store, [const AppRestarted(build: build), reconnected()]);
     final late = await arrivalIn(store, headerReadOf(initialRows()));
     broken = true;
     expect(await store.unload(strategyId), isA<Unloaded>());
@@ -935,10 +932,7 @@ void aResultFromBeforeADiscardIsTurnedAway() {
       resultsNeeded((await syncOf(store)).queue, fixedClock()),
       contains(isA<PageListResult>()),
     );
-    await recordAll(store, [
-      const AppRestarted(build: build),
-      reconnected(),
-    ]);
+    await recordAll(store, [const AppRestarted(build: build), reconnected()]);
     await readServer(store, initialRows());
     expect(
       resultsNeeded((await syncOf(store)).queue, fixedClock()),

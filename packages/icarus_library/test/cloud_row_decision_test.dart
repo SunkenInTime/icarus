@@ -132,9 +132,8 @@ LiveElement e1OnB(LiveElement held, {required int revision}) => LiveElement(
   unknownFields: held.unknownFields,
 );
 
-Shown listed() => Shown.nothing
-    .taken(headerReadOf(initialRows()), arrival: null)
-    .shown;
+Shown listed() =>
+    Shown.nothing.taken(headerReadOf(initialRows()), arrival: null).shown;
 
 void main() {
   group('a row carried by more than one kind of result', () {

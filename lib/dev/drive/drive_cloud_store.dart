@@ -665,11 +665,12 @@ String reconnectSessionOpening(
 }) {
   final binds = [
     for (final (index, report) in reports.indexed)
-      if (report case SessionOpenedFor(
-        strategyId: final id,
-        :final session,
-        :final stamp,
-      ) when id == strategyId)
+      if (report
+          case SessionOpenedFor(
+            strategyId: final id,
+            :final session,
+            :final stamp,
+          ) when id == strategyId)
         (index: index, session: session, connection: stamp.connection),
   ];
   final connections = {for (final bind in binds) bind.connection};

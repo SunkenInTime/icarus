@@ -800,7 +800,8 @@ final class CloudSender {
         retiring.next(
             id, cloud, now, _timing.retiring, _boundMemory(id, snap).retired),
       );
-      return _Skipped(_restingOn(id, cloud, reading), _nextDue(id, cloud, snap));
+      return _Skipped(
+          _restingOn(id, cloud, reading), _nextDue(id, cloud, snap));
     }
     switch (await _openSession(id, owner, snap)) {
       case _Open(:final opened):
@@ -1062,10 +1063,10 @@ final class CloudSender {
           return _Skipped(row ?? why.row, at);
         }
         final key = '$id $read';
-        requestedAt = _unanswered.containsKey(key) &&
-                _unanswered[key] == snap.connection
-            ? null
-            : cloud.queue.session.sequence;
+        requestedAt =
+            _unanswered.containsKey(key) && _unanswered[key] == snap.connection
+                ? null
+                : cloud.queue.session.sequence;
         switch (await _issue(id, owner, read, snap, why)) {
           case NotYet(:final at, why: final row):
             return _Skipped(row ?? why.row, at);
@@ -1491,10 +1492,11 @@ final class CloudSender {
           ? [ClaimReleased(batch.attempt)]
           : [
               ...answersOf(batch, outcome, _clock()),
-              if (outcome case StoreBatchAnswered(
-                serverTime: final time?,
-                :final point,
-              ))
+              if (outcome
+                  case StoreBatchAnswered(
+                    serverTime: final time?,
+                    :final point,
+                  ))
                 ServerTimeHeld(
                   time,
                   at: answeredAt,

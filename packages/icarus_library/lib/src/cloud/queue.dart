@@ -65,7 +65,8 @@ final class QueueSession {
 
   QueueSession get stepped => _copy(sequence: sequence + 1, basis: basis);
 
-  bool labels(int label) => label != 0 && label >= labelsFrom && label <= number;
+  bool labels(int label) =>
+      label != 0 && label >= labelsFrom && label <= number;
 
   @override
   bool operator ==(Object other) =>
@@ -79,16 +80,15 @@ final class QueueSession {
       other.basis == basis;
 
   @override
-  int get hashCode =>
-      Object.hash(
-        connected,
-        build,
-        number,
-        labelsFrom,
-        sequence,
-        generation,
-        basis,
-      );
+  int get hashCode => Object.hash(
+    connected,
+    build,
+    number,
+    labelsFrom,
+    sequence,
+    generation,
+    basis,
+  );
 }
 
 final class CloudQueue {
@@ -1572,9 +1572,8 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         null => edit.shown.list,
       };
       final since = switch (held) {
-        ReadOwed(since: final owed) || ReadRefused(since: final owed)
-            when !owed.paidBy(refused, null) =>
-          owed,
+        ReadOwed(since: final owed) ||
+        ReadRefused(since: final owed) when !owed.paidBy(refused, null) => owed,
         _ => ResultAtOrAfter(refused.order),
       };
       edit.shown = switch (page) {
@@ -1734,14 +1733,7 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
   return edit.done();
 }
 
-enum ResultFit {
-  applies,
-  adopts,
-  listFirst,
-  same,
-  older,
-  startedInAnotherLife,
-}
+enum ResultFit { applies, adopts, listFirst, same, older, startedInAnotherLife }
 
 ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   final held = shown.strategy?.life;

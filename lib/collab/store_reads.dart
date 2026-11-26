@@ -94,8 +94,8 @@ StoreReads storeReadsOver(
             strategyPublicId,
             accountSubject: account.subject,
           )) {
-            StampedValue(value: final list, :final stamp) =>
-              switch (pageListRead(list)) {
+            StampedValue(value: final list, :final stamp) => switch (
+                  pageListRead(list)) {
                 RowsRead(:final value) => StoreReadAnswered(
                     value,
                     point: pointOf(stamp),
@@ -129,8 +129,8 @@ StoreReads storeReadsOver(
             pagePublicId: pagePublicId,
             accountSubject: account.subject,
           )) {
-            StampedValue(value: final page, :final stamp) =>
-              switch (pageRead(page, canRead)) {
+            StampedValue(value: final page, :final stamp) => switch (
+                  pageRead(page, canRead)) {
                 RowsRead(:final value) =>
                   StoreReadAnswered(value, point: pointOf(stamp)),
                 RowsUnreadable(:final problem) =>

@@ -38,9 +38,7 @@ Shown shownAfter(List<List<ElementRow>> reads) {
       .taken(headerReadOf(initialRows()), arrival: null)
       .shown;
   for (final elements in reads) {
-    shown = shown
-        .taken(pageAWith(elements), arrival: null)
-        .shown;
+    shown = shown.taken(pageAWith(elements), arrival: null).shown;
   }
   return shown;
 }

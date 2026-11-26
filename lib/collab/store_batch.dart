@@ -270,7 +270,8 @@ StoreBatchOutcome storeBatchOutcomeOfError(
       store.BatchRefusal.editAccessRemoved,
     _ when isTypedConvexNotFoundError(error) =>
       store.BatchRefusal.strategyDeleted,
-    _ when isStrategyReplacedError(error) => store.BatchRefusal.strategyReplaced,
+    _ when isStrategyReplacedError(error) =>
+      store.BatchRefusal.strategyReplaced,
     _ => null,
   };
   if ((refusal, point) case (final refusal?, final point?)) {

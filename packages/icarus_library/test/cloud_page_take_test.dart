@@ -56,9 +56,8 @@ Future<void> takePage(
   LibraryStore store,
   StrategyRowSet server, [
   String page = 'page-a',
-]) async => recordAll(store, [
-  await arrivalIn(store, pageReadOf(server, page)),
-]);
+]) async =>
+    recordAll(store, [await arrivalIn(store, pageReadOf(server, page))]);
 
 Future<Shown> shownIn(LibraryStore store) async =>
     (await syncOf(store)).queue.shown;

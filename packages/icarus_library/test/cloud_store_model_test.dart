@@ -499,9 +499,7 @@ final class StoreModel {
     if (commits != before) {
       throw StateError('refusing the strategy made a commit');
     }
-    if (await store.record(testAccount, strategyId, [
-          reconnected(),
-        ])
+    if (await store.record(testAccount, strategyId, [reconnected()])
         case Refused(reason: StoredRowsDisagree())) {
       count('events refused after a refusal');
     } else {

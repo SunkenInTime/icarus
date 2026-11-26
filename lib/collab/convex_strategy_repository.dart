@@ -1974,6 +1974,7 @@ InvitesCreateArgsRole _shareRole(String value) => switch (value) {
 
 Stamped<T> _mapStamped<V, T>(Stamped<V> stamped, T Function(V) map) =>
     switch (stamped) {
-      StampedValue(:final value, :final stamp) => StampedValue(map(value), stamp),
+      StampedValue(:final value, :final stamp) =>
+        StampedValue(map(value), stamp),
       StampedError(:final error, :final stamp) => StampedError(error, stamp),
     };

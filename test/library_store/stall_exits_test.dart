@@ -125,7 +125,8 @@ final stalls = <StallExit, Stall>{
     adopts: true,
     start: (world) {
       world.server.overrideRead = (call) => call.page == 'p2'
-          ? const StoreReadAnswered(PageGone('nowhere'), point: stampedWhenAnswered)
+          ? const StoreReadAnswered(PageGone('nowhere'),
+              point: stampedWhenAnswered)
           : null;
       world
         ..connection = null
@@ -362,8 +363,8 @@ final stalls = <StallExit, Stall>{
     start: (world) {
       world.server.answerNext(
         strategyId,
-        (call) => Future.value(
-            const StoreBatchOutsideWindow('refused', point: stampedWhenAnswered)),
+        (call) => Future.value(const StoreBatchOutsideWindow('refused',
+            point: stampedWhenAnswered)),
       );
       world.commitMove(1);
     },

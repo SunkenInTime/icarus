@@ -566,7 +566,8 @@ final class ReadOwed extends ReadState {
     (null, _) => 'owed',
     (final refused?, null) =>
       'owed by a list of another life than $refused, paid by $since',
-    (_, final named?) => 'owed by a list of life $named or later, paid by $since',
+    (_, final named?) =>
+      'owed by a list of life $named or later, paid by $since',
   };
 }
 
@@ -1032,53 +1033,51 @@ final class Shown {
         if (gone(value.page)) key: Removed(started, held: value.version),
   };
 
-  Taken taken(ArrivedBase result, {required Arrival? arrival}) =>
-      switch (result) {
-        HeaderRead() => _withList(result, arrival),
-        PageRead(:final page, :final elements, :final lineupGroups) =>
-          _checkedTake(
-            page.publicId,
-            (reuse) => _withPage(
-              page,
-              [...elements, ...lineupGroups],
-              paid: paidBy(pageRead(page.publicId), arrival, result),
-              arrival: arrival,
-              reuse: reuse,
-            ),
-          ),
-        PageGone(:final pagePublicId) => Taken(
-          _with(
-            pagesTaken: {...pagesTaken, pagePublicId: ?arrival?.order},
-            fresh: fresh.afterPage(pagePublicId, gone: true, arrival: arrival),
-            pageReads: {...pageReads}..remove(pagePublicId),
-            goneThisSession: {...goneThisSession, pagePublicId},
-            pages: {...pages}..remove(pagePublicId),
-            trashed: {...trashed}..remove(pagePublicId),
-            settings: {...settings}..remove(pagePublicId),
-            content: {...content}..remove(pagePublicId),
-            tombstones: _removedOn((page) => page == pagePublicId, arrival?.order),
-            rows: {
-              for (final MapEntry(:key, :value) in rows.entries)
-                if (value.page != pagePublicId) key: value,
-            },
-          ),
-          [PageLeft(pagePublicId)],
-        ),
-        StrategyGone() => Taken(
-          _with(
-            listTaken: arrival?.order,
-            list: paidBy(list, arrival, result)
-                ? const ReadThisSession()
-                : list,
-            pageReads: {
-              for (final MapEntry(:key, :value) in pageReads.entries)
-                if (!isDebt(value) || !paidBy(value, arrival, result))
-                  key: value,
-            },
-          ),
-          const [],
-        ),
-      };
+  Taken taken(
+    ArrivedBase result, {
+    required Arrival? arrival,
+  }) => switch (result) {
+    HeaderRead() => _withList(result, arrival),
+    PageRead(:final page, :final elements, :final lineupGroups) => _checkedTake(
+      page.publicId,
+      (reuse) => _withPage(
+        page,
+        [...elements, ...lineupGroups],
+        paid: paidBy(pageRead(page.publicId), arrival, result),
+        arrival: arrival,
+        reuse: reuse,
+      ),
+    ),
+    PageGone(:final pagePublicId) => Taken(
+      _with(
+        pagesTaken: {...pagesTaken, pagePublicId: ?arrival?.order},
+        fresh: fresh.afterPage(pagePublicId, gone: true, arrival: arrival),
+        pageReads: {...pageReads}..remove(pagePublicId),
+        goneThisSession: {...goneThisSession, pagePublicId},
+        pages: {...pages}..remove(pagePublicId),
+        trashed: {...trashed}..remove(pagePublicId),
+        settings: {...settings}..remove(pagePublicId),
+        content: {...content}..remove(pagePublicId),
+        tombstones: _removedOn((page) => page == pagePublicId, arrival?.order),
+        rows: {
+          for (final MapEntry(:key, :value) in rows.entries)
+            if (value.page != pagePublicId) key: value,
+        },
+      ),
+      [PageLeft(pagePublicId)],
+    ),
+    StrategyGone() => Taken(
+      _with(
+        listTaken: arrival?.order,
+        list: paidBy(list, arrival, result) ? const ReadThisSession() : list,
+        pageReads: {
+          for (final MapEntry(:key, :value) in pageReads.entries)
+            if (!isDebt(value) || !paidBy(value, arrival, result)) key: value,
+        },
+      ),
+      const [],
+    ),
+  };
 
   Taken _withList(HeaderRead result, Arrival? arrival) {
     final HeaderRead(strategy: strategyRow, pages: listed, :settings) = result;

@@ -675,8 +675,8 @@ final class Model {
           final late = Completer<StoreReadOutcome>();
           Timer(
             const Duration(seconds: 60),
-            () => late.complete(
-                const StoreReadAnswered(StrategyGone(), point: stampedWhenAnswered)),
+            () => late.complete(const StoreReadAnswered(StrategyGone(),
+                point: stampedWhenAnswered)),
           );
           return late.future;
         });
@@ -698,7 +698,8 @@ final class Model {
               );
               world.account = account;
           }
-          return const StoreReadAnswered(StrategyGone(), point: stampedWhenAnswered);
+          return const StoreReadAnswered(StrategyGone(),
+              point: stampedWhenAnswered);
         });
     }
   }

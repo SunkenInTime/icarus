@@ -170,16 +170,12 @@ final class ServingAStrayItem extends ForwardingLease {
 }
 
 Future<void> arrive(LibraryStore store, ArrivedBase base) async {
-  final recorded = await recordAll(store, [
-    await arrivalIn(store, base),
-  ]);
+  final recorded = await recordAll(store, [await arrivalIn(store, base)]);
   expect(recorded.outcomes.single, isA<ReportApplied>());
 }
 
 Future<RecordResult> arriving(LibraryStore store, ArrivedBase base) async =>
-    store.record(testAccount, strategyId, [
-      await arrivalIn(store, base),
-    ]);
+    store.record(testAccount, strategyId, [await arrivalIn(store, base)]);
 
 Future<void> readEveryPage(LibraryStore store) async {
   for (final page in ['page-a', 'page-b']) {
@@ -366,8 +362,7 @@ void main() {
         seed(disk);
         final before = editable(disk);
         final storage = MemoryStorage(disk);
-        final opened = await Opened.over(
-          storage);
+        final opened = await Opened.over(storage);
         await readEveryPage(opened.store);
         await expectRefused(opened.store, reason);
         expect(
@@ -419,7 +414,6 @@ void main() {
     await expectRefused(opened.store, 'holds other contents here');
     expect(await opened.refusalsReported(), hasLength(1));
   });
-
 
   test('work the user queued stays on disk as it was and is not sent, and '
       'new work is refused', () async {
@@ -775,9 +769,7 @@ void main() {
       void Function(Contents disk) damage,
       List<ArrivedBase> results,
     ) async {
-      final healthy = await Opened.over(
-        MemoryStorage(await addedOnDisk()),
-      );
+      final healthy = await Opened.over(MemoryStorage(await addedOnDisk()));
       await recordAll(healthy.store, [const AppRestarted(build: build)]);
       final session = await sessionOf(healthy.store);
       expect(
@@ -792,8 +784,7 @@ void main() {
       damage(disk);
       final before = editable(disk);
       final storage = MemoryStorage(disk);
-      final damaged = await Opened.over(
-        storage);
+      final damaged = await Opened.over(storage);
       expect(
         await damaged.store.record(testAccount, strategyId, [
           const AppRestarted(build: build),
@@ -851,9 +842,7 @@ void main() {
       counts.commits,
     );
     expect(
-      await opened.store.record(testAccount, strategyId, [
-        reconnected(),
-      ]),
+      await opened.store.record(testAccount, strategyId, [reconnected()]),
       isA<Refused<Recorded, CommitRefusal>>(),
     );
     expect((
@@ -1264,9 +1253,7 @@ void main() {
     );
     disk[area]!['pending/999'] = 'not a queue row';
     final storage = MemoryStorage(disk);
-    final store = await openCloudStore(
-      MemoryEngine(storage),
-    );
+    final store = await openCloudStore(MemoryEngine(storage));
     final page = await store.readPage(strategyId, 'page-a');
     expect(
       page,
