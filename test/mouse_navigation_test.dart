@@ -211,6 +211,14 @@ void main() {
         await tester.pump();
         strategies.show('other-id', then);
         await tester.pump();
+        unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+          settings: RouteSettings(
+            name: Routes.strategyView,
+            arguments: EditorClaim(strategies.askedByTheUserNow()),
+          ),
+          builder: (_) => const Scaffold(body: Text('editor')),
+        )));
+        await tester.pumpAndSettle();
 
         await tester.sendEventToBinding(
           const PointerDownEvent(
