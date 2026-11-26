@@ -402,6 +402,25 @@ String _cloudSyncBlockedMessage({
   return l10n.unsavedGuardStayAndRetry(base);
 }
 
+Future<bool> _writeUntilItHoldsEditsMadeMeanwhile(
+  WidgetRef ref,
+  OpenSeen asked,
+  Future<bool> Function() write,
+) async {
+  final saveState = ref.read(strategySaveStateProvider.notifier);
+  bool editedDuring(int marks) =>
+      saveState.dirtyMarks != marks &&
+      ref.read(strategySaveStateProvider).isDirty &&
+      asked.isNow(ref.read(strategyProvider.notifier).askedByTheUserNow());
+  int marks;
+  bool written;
+  do {
+    marks = saveState.dirtyMarks;
+    written = await write();
+  } while (written && editedDuring(marks));
+  return written;
+}
+
 @useResult
 Future<LeaveAnswer> guardUnsavedStrategyExit({
   required BuildContext context,
@@ -427,9 +446,11 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
   }
 
   try {
-    final canContinueSilently = await ref
-        .read(strategyProvider.notifier)
-        .flushPendingAutosaveBeforeExit();
+    final canContinueSilently = await _writeUntilItHoldsEditsMadeMeanwhile(
+      ref,
+      asked,
+      ref.read(strategyProvider.notifier).flushPendingAutosaveBeforeExit,
+    );
     if (canContinueSilently) {
       return Leave(asked);
     }
@@ -457,7 +478,10 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
         if (strategyId == null) {
           return const Stay();
         }
-        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+        await _writeUntilItHoldsEditsMadeMeanwhile(ref, asked, () async {
+          await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+          return true;
+        });
       } catch (error, stackTrace) {
         AppErrorReporter.reportError(
           l10n.unsavedGuardSaveFailed,

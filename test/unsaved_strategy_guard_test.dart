@@ -31,6 +31,8 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/services/unsaved_strategy_guard.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'opens_now_support.dart';
 
 bool _adaptersRegistered = false;
@@ -82,6 +84,42 @@ class _FakeGuardStrategyProvider extends StrategyProvider {
   void cancelPendingSave() {
     cancelPendingSaveCalls++;
   }
+}
+
+class _SavesWhatItSnapshots extends StrategyProvider {
+  _SavesWhatItSnapshots({required this.autosaves});
+
+  final bool autosaves;
+  final firstWrite = Completer<void>();
+  var writes = 0;
+
+  @override
+  StrategyState build() => const StrategyState(
+        strategyId: 'strategy-written',
+        strategyName: 'Strategy written',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      );
+
+  Future<void> _write() async {
+    final saveState = ref.read(strategySaveStateProvider.notifier);
+    final snapshot = saveState.dirtyMarks;
+    writes += 1;
+    if (writes == 1) await firstWrite.future;
+    saveState.markPersisted(dirtyMarksSaved: snapshot);
+  }
+
+  @override
+  Future<bool> flushPendingAutosaveBeforeExit() async {
+    if (!ref.read(strategySaveStateProvider).isDirty) return true;
+    if (!autosaves) return false;
+    await _write();
+    return true;
+  }
+
+  @override
+  Future<void> forceSaveNow(String id) => _write();
 }
 
 class _ThrowingSaveStrategyProvider extends StrategyProvider {
@@ -350,6 +388,55 @@ void main() {
   });
 
   group('guardUnsavedStrategyExit', () {
+    for (final autosaves in [false, true]) {
+      testWidgets(
+          autosaves
+              ? 'an edit made while the autosave before leaving writes is '
+                  'saved too before the exit goes'
+              : 'an edit made while the Save of the prompt writes is saved '
+                  'too before the exit goes', (tester) async {
+        final strategies = _SavesWhatItSnapshots(autosaves: autosaves);
+        final container = ProviderContainer(
+          overrides: [strategyProvider.overrideWith(() => strategies)],
+        );
+        addTearDown(container.dispose);
+        container.read(strategySaveStateProvider.notifier).markDirty();
+        late BuildContext context;
+        late WidgetRef ref;
+        await tester.pumpWidget(UncontrolledProviderScope(
+          container: container,
+          child: ShadApp(
+            home: Scaffold(
+              body: Consumer(builder: (buildContext, widgetRef, _) {
+                context = buildContext;
+                ref = widgetRef;
+                return const SizedBox.shrink();
+              }),
+            ),
+          ),
+        ));
+
+        final leaving = guardUnsavedStrategyExit(
+          context: context,
+          ref: ref,
+          source: 'guard-test-edit-during-the-write',
+        );
+        await tester.pumpAndSettle();
+        if (!autosaves) {
+          await tester.tap(find.text('Save'));
+          await tester.pump();
+        }
+        expect(strategies.writes, 1);
+        container.read(strategySaveStateProvider.notifier).markDirty();
+        strategies.firstWrite.complete();
+        await tester.pumpAndSettle();
+
+        expect(await leaving, isA<Leave>());
+        expect(strategies.writes, 2);
+        expect(container.read(strategySaveStateProvider).isDirty, isFalse);
+      });
+    }
+
     late ProviderContainer container;
     late _FakeGuardStrategyProvider notifier;
     late BuildContext context;
