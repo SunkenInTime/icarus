@@ -1755,7 +1755,14 @@ void main() {
         );
         client.read(server.rows);
         final before = client.view('drop').state;
-        client.must(const ResultRefused(page: 'page-b', problem: 'unreadable'));
+        client.must(
+          ResultRefused(
+            page: 'page-b',
+            problem: 'unreadable',
+            session: client.queue.session.number,
+            point: tick(),
+          ),
+        );
         final queue = client.queue;
         final afresh = CloudQueue(
           entries: queue.entries,
