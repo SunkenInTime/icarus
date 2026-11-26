@@ -182,7 +182,7 @@ Future<void> main(List<String> args) async {
       case 'build':
         exit(await _build(parseOptions(rest, {'out', 'mode', 'convex'})));
       case 'run':
-        exit(await _run(parseOptions(rest, {
+        exit(await runScripts(parseOptions(rest, {
           'exe',
           'script',
           'account',
@@ -275,7 +275,33 @@ class _Instance {
   final exited = Completer<int>();
 }
 
-Future<int> _run(Map<String, String> options) async {
+List<String> storeArgs(Map<String, String> options) {
+  final libraryStore = options['library-store'];
+  if (libraryStore != null &&
+      !const {'off', 'shadow', 'mirror', 'read', 'ops'}
+          .contains(libraryStore)) {
+    throw UsageError(
+      '--library-store is off, shadow, mirror, read or ops, not "$libraryStore"',
+    );
+  }
+  final cloudStore = options['cloud-store'];
+  if (cloudStore == 'shadow') {
+    throw UsageError(
+      'the cloud shadow is off until the store takes its live results with '
+      'stamps (slice 3, PR 5); use --cloud-store send',
+    );
+  }
+  if (cloudStore != null && cloudStore != 'send') {
+    throw UsageError('--cloud-store is send, not "$cloudStore"');
+  }
+  return [
+    if (libraryStore != null) '--library-store=$libraryStore',
+    if (cloudStore != null) '--cloud-store=$cloudStore',
+  ];
+}
+
+Future<int> runScripts(Map<String, String> options) async {
+  final appArgs = storeArgs(options);
   final scriptPath =
       options['script'] ?? (throw UsageError('run needs --script; see --help'));
   final timeout = int.tryParse(options['timeout-seconds'] ?? '900') ??
@@ -377,23 +403,6 @@ Future<int> _run(Map<String, String> options) async {
     throw UsageError('${out.path} is not empty; give each run a new --out');
   }
   Directory('${out.path}/signals').createSync();
-  final libraryStore = options['library-store'];
-  if (libraryStore != null &&
-      !const {'off', 'shadow', 'mirror', 'read', 'ops'}.contains(libraryStore)) {
-    throw UsageError(
-      '--library-store is off, shadow, mirror, read or ops, not "$libraryStore"',
-    );
-  }
-  final cloudStore = options['cloud-store'];
-  if (cloudStore == 'shadow') {
-    throw UsageError(
-      'the cloud shadow is off until the store takes its live results with '
-      'stamps (slice 3, PR 5); use --cloud-store send',
-    );
-  }
-  if (cloudStore != null && cloudStore != 'send') {
-    throw UsageError('--cloud-store is send, not "$cloudStore"');
-  }
   if (options['hive-store'] case final String seed) {
     if (!Directory(seed).existsSync()) {
       throw UsageError('No Hive store at $seed');
@@ -435,10 +444,7 @@ Future<int> _run(Map<String, String> options) async {
         run,
         display,
         passwords,
-        [
-          if (libraryStore != null) '--library-store=$libraryStore',
-          if (cloudStore != null) '--cloud-store=$cloudStore',
-        ],
+        appArgs,
         scope: instance.name == 'main' ? options['main-scope'] : null,
       );
     }
