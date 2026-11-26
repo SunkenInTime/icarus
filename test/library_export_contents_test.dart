@@ -15,6 +15,9 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/services/image_file_name.dart';
+import 'package:icarus/library_store/library_store_start.dart';
+import 'package:icarus/library_store/library_store_switch.dart';
+import 'package:icarus/strategy/export_strategy_reads.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
@@ -34,24 +37,24 @@ final _expectedFile = File(
 
 const _writeExpected = 'ICARUS_WRITE_EXPORT_EXPECTED';
 
-final _folders = [
-  Folder(
-    name: 'Retakes',
-    id: 'folder-1',
-    dateCreated: DateTime.utc(2026, 1, 2),
-  ),
-  Folder(
-    name: 'B site',
-    id: 'folder-2',
-    dateCreated: DateTime.utc(2026, 1, 3),
-    parentID: 'folder-1',
-  ),
-  Folder(
-    name: 'Empty',
-    id: 'folder-3',
-    dateCreated: DateTime.utc(2026, 1, 4),
-  ),
-];
+List<Folder> _folders() => [
+      Folder(
+        name: 'Retakes',
+        id: 'folder-1',
+        dateCreated: DateTime.utc(2026, 1, 2),
+      ),
+      Folder(
+        name: 'B site',
+        id: 'folder-2',
+        dateCreated: DateTime.utc(2026, 1, 3),
+        parentID: 'folder-1',
+      ),
+      Folder(
+        name: 'Empty',
+        id: 'folder-3',
+        dateCreated: DateTime.utc(2026, 1, 4),
+      ),
+    ];
 
 List<StrategyData> _strategies() => [
       generatedStrategy(Optionals.set),
@@ -141,7 +144,7 @@ void main() {
     await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
     await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
     await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
-    for (final folder in _folders) {
+    for (final folder in _folders()) {
       await folders.put(folder.id, folder);
     }
     for (final strategy in _strategies()) {
@@ -167,8 +170,8 @@ void main() {
     await temp.delete(recursive: true);
   });
 
-  Future<Map<String, Object?>> exported() async {
-    final service = StrategyImportExportService(container);
+  Future<Map<String, Object?>> exported([ProviderContainer? reading]) async {
+    final service = StrategyImportExportService(reading ?? container);
     final library = await service.buildLibraryExportDirectoryForTest();
     final folder = await service.buildFolderExportDirectoryForTest('folder-1');
     final single = File(path.join(temp.path, 'single.ica'));
@@ -200,4 +203,51 @@ void main() {
       jsonDecode(await _expectedFile.readAsString()),
     );
   });
+
+  test('with the store switched off, exports read strategies from Hive', () {
+    final start = LibraryStoreStart.of(
+      const StoreSwitchOff(),
+      clock: () => Duration.zero,
+    );
+    final off = ProviderContainer(overrides: start.overrides);
+    addTearDown(off.dispose);
+
+    expect(off.read(exportStrategyReadsProvider), isA<HiveExportReads>());
+  });
+
+  test(
+      'a backup, a folder export and a single .ica read each strategy they '
+      'write through the export reader, once', () async {
+    final reads = _CountedReads();
+    final reading = ProviderContainer(overrides: [
+      authProvider.overrideWith(_SignedOut.new),
+      exportStrategyReadsProvider.overrideWithValue(reads),
+    ]);
+    addTearDown(reading.dispose);
+
+    final written = await exported(reading);
+
+    expect(reads.ids..sort(), [
+      'strategy-deep',
+      'strategy-deep',
+      'strategy-set',
+      'strategy-set',
+      'strategy-set',
+      'strategy-unset',
+    ]);
+    expect(
+      jsonDecode(jsonEncode(written)),
+      jsonDecode(await _expectedFile.readAsString()),
+    );
+  });
+}
+
+final class _CountedReads implements ExportStrategyReads {
+  final ids = <String>[];
+
+  @override
+  Future<StrategyData?> read(String strategyId) {
+    ids.add(strategyId);
+    return const HiveExportReads().read(strategyId);
+  }
 }
