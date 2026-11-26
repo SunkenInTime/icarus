@@ -16,7 +16,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 typedef CloudSignOutPreparation = Future<void> Function();
-typedef CloudEditorClose = Future<void> Function();
+typedef CloudEditorClose = void Function();
 typedef RawSignOut = Future<bool> Function();
 
 final cloudSignOutPreparationProvider = Provider<CloudSignOutPreparation>(
@@ -39,9 +39,8 @@ final cloudSignOutPreparationProvider = Provider<CloudSignOutPreparation>(
 );
 
 final cloudEditorCloseProvider = Provider<CloudEditorClose>(
-  (ref) => () async {
-    if (ref.read(strategyProvider).source == StrategySource.cloud ||
-        ref.read(strategyOpeningProvider)?.source == StrategySource.cloud) {
+  (ref) => () {
+    if (ref.read(strategyProvider).source == StrategySource.cloud) {
       final strategies = ref.read(strategyProvider.notifier);
       final signingOut = strategies.askedByTheUserNow();
       switch (strategies.closeStrategy(asked: signingOut)) {
@@ -52,6 +51,9 @@ final cloudEditorCloseProvider = Provider<CloudEditorClose>(
             'The open cloud strategy was not closed before signing out.',
           );
       }
+    } else if (ref.read(strategyOpeningProvider)?.source ==
+        StrategySource.cloud) {
+      ref.read(strategyOpeningProvider.notifier).endAll();
     }
   },
 );
@@ -145,7 +147,7 @@ Future<bool> _requestCloudSafeSignOut(
   if (!confirmed) return false;
 
   try {
-    await ref.read(cloudEditorCloseProvider)();
+    ref.read(cloudEditorCloseProvider)();
   } catch (_) {
     if (context.mounted) await _showPersistenceBlocked(context);
     return false;
@@ -160,6 +162,7 @@ Future<bool> _requestCloudSafeSignOut(
     }
     return false;
   }
+  ref.read(cloudEditorCloseProvider)();
   if (context.mounted) {
     Navigator.of(context).popUntil((route) => route.isFirst);
   }

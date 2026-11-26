@@ -294,8 +294,8 @@ Future<void> pickMapAndOpenNewStrategy({
     context: context,
     builder: (context) => const CreateStrategyDialog(),
   );
-  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
   if (map == null || !context.mounted) return;
+  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
   await _createStrategyAndOpen(map, ref: ref, context: context, asked: asked);
 }
 
