@@ -704,7 +704,10 @@ String renderTable() {
       'page. No decision is ever made from unchecked rows. A strategy whose '
       'queue cannot be read makes no decisions at all: no result is taken and '
       'no work is committed, and its rows are shown unchecked and marked '
-      'held, as before this check.',
+      'held, as before this check. The only writes made in that state are '
+      'the ones the user explicitly chooses: discarding the unreadable queue, '
+      'which removes the base rows and owes the page list, and removing the '
+      'strategy.',
     )
     ..writeln()
     ..writeln(
@@ -727,7 +730,11 @@ String renderTable() {
       'refused again as soon as that page loads, whether a reader, a '
       'result or the summary loads it first. Each refusal the store makes '
       'carries a serial that only grows for the life of the store instance '
-      'and is never stored; the sender reports each serial once.',
+      'and is never stored; the sender reports each serial once, and a sender '
+      'that starts later asks the store for the refusals standing then. A '
+      'queue load can refresh the sync tally shown in memory before a page '
+      'check refuses the strategy, so the summary shown can change although '
+      'its saved bytes do not.',
     )
     ..writeln()
     ..writeln(

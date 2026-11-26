@@ -2573,6 +2573,103 @@ void main() {
     });
 
     test(
+        'a discard made through the sender\'s own store leaves the page list '
+        'owed, so a sender with no other reason to look reads the list and '
+        'every page', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents[strategyArea(strategyId)]!['pending/999'] = 'not a queue row';
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          final before = server.readCalls.length;
+          Saving<StrategySummary, CommitRefusal>? discarded;
+          world.store
+              .discardUnreadableQueue(
+                servedAccount,
+                strategyId,
+                const DiscardsUnsentWork(),
+              )
+              .then((result) => discarded = result);
+          world.settle(const Duration(hours: 1));
+          expect(discarded, isA<Saved<StrategySummary, CommitRefusal>>());
+          final reads = readsAfter(world, before);
+          expect(reads, contains('list'));
+          expect(
+              reads,
+              containsAll([
+                for (final page in server.rows[strategyId]!.pages)
+                  'page ${page.publicId}',
+              ]));
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'after a discard, the strategy the sender is shown says a read is '
+        'owed, so a sender with no other reason to look still looks', () async {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents[strategyArea(strategyId)]!['pending/999'] = 'not a queue row';
+      final store = await openStore(MemoryStorage(contents));
+      expect(
+        await store.discardUnreadableQueue(
+          servedAccount,
+          strategyId,
+          const DiscardsUnsentWork(),
+        ),
+        isA<Saved<StrategySummary, CommitRefusal>>(),
+      );
+      expect(SenderStore(store).strategies().single.needsReading, isTrue);
+      await store.close();
+    });
+
+    test(
+        'a refusal the store made at open, before the sender started, is '
+        'reported once when the sender starts, and nothing is read', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents['library']!['summary/${digestOf(strategyId)}'] =
+          '{"broken":true}';
+      contents[area]!.remove(
+        contents[area]!.keys.firstWhere((key) => key.startsWith('settings/')),
+      );
+      inWorld(
+        (world) {
+          final before = server.readCalls.length;
+          world.settle(const Duration(hours: 1));
+          expect(readsAfter(world, before), isEmpty);
+          expect(
+            world.sender.store.reports.whereType<StoredRowsRefused>(),
+            hasLength(1),
+          );
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
         'a disagreement the sender meets when it reads the strategy is '
         'reported once, though the store also announces it', () {
       final storage = MemoryStorage();

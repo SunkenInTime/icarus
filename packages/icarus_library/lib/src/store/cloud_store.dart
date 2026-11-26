@@ -726,10 +726,15 @@ extension _CloudStore on LibraryStore {
   }
 
   StoredRowsDisagree _refuse(LoadedStrategy strategy, String reason) {
+    if (strategy.digest == _addingCloud) return StoredRowsDisagree(reason);
     final held = _refusedThisSession[strategy.digest];
     final refusal = held != null && held.reason == reason
         ? held
-        : StoredRowsDisagree(reason, serial: ++_refusalsMade);
+        : StoredRowsDisagree(
+            reason,
+            serial: ++_refusalsMade,
+            strategyPublicId: strategy.strategyId,
+          );
     _refusedThisSession[strategy.digest] = refusal;
     _forgetCloud(strategy.digest);
     if (strategy.strategyId case final id? when !identical(held, refusal)) {
@@ -1029,12 +1034,6 @@ extension _CloudStore on LibraryStore {
           checked.add(items.of(page));
         case PageLeft(:final page):
           leaving.add(items.of(page));
-        case UnlistedLeft(:final listed):
-          final kept = {for (final page in listed) digestOf(page)};
-          leaving.addAll([
-            for (final digest in strategy.pageDigests)
-              if (!kept.contains(digest)) digest,
-          ]);
         case RowTaken() || RowKept() || RowUnchanged() || SettingsLeft():
           break;
       }
@@ -1168,17 +1167,6 @@ extension _CloudStore on LibraryStore {
           }
         case PageLeft(:final page):
           dropPageAt(digestOf(page));
-        case UnlistedLeft(:final listed):
-          final kept = {for (final page in listed) digestOf(page)};
-          for (final digest in [...strategy.pageDigests]) {
-            if (!kept.contains(digest)) dropPageAt(digest);
-          }
-          for (final name in [...strategy.unplaced.keys]) {
-            final digest = name.split('/').last;
-            if (kept.contains(digest)) continue;
-            gone.add(name);
-            strategy.unplaced.remove(name);
-          }
         case SettingsLeft(:final page):
           drop(SettingsName(items.of(page)));
         case UnreadableLeft(:final page):
@@ -2138,10 +2126,19 @@ extension _CloudStore on LibraryStore {
       account,
     );
     _queues[digest] = loaded;
-    final result = await _recordOn(
-      _CloudReady(strategy, strategyRow, loaded),
-      events,
-    );
+    final RecordResult result;
+    _addingCloud = digest;
+    try {
+      result = await _recordOn(
+        _CloudReady(strategy, strategyRow, loaded),
+        events,
+      );
+    } on _RowsDisagree catch (disagreement) {
+      _forgetCloud(digest);
+      return Refused(disagreement.refusal);
+    } finally {
+      _addingCloud = null;
+    }
     switch (result) {
       case Saved():
         _unreadable.remove(digest);
@@ -2214,25 +2211,34 @@ extension _CloudStore on LibraryStore {
             return Refused(OwnerNotRead(strategyPublicId));
         }
     }
+    final reset = CloudQueue(
+      entries: const [],
+      attempts: const {},
+      landed: const [],
+      nextAttempt: _numbers.nextAttempt,
+      nextSession: _numbers.nextSession,
+      shown: Shown.nothing.owingList(ReadStart.beforeAnyRead),
+      strategy: StrategyFacts.fresh,
+      session: QueueSession(
+        connected: false,
+        build: _build,
+        number: 0,
+        sequence: 0,
+      ),
+    );
     final summary =
         StrategySummary.of(
           strategy: header,
           pages: const [],
           settings: const [],
           tallies: const {},
-          elsewhere: strategy.elsewhere,
+          elsewhere: PageTally.empty,
         ).withSync(switch (_numbersHold) {
           final row? => _heldSync(OwnedBy(account), [row]),
-          null => _syncOf(
-            account,
-            CloudQueue.start(build: _build),
-            _cloudNow(),
-          ),
+          null => _syncOf(account, reset, _cloudNow()),
         });
     final storeArea = StrategyArea(digest);
-    final listOwed = _groupText(
-      shownToGroups(Shown.nothing.owingList(ReadStart.beforeAnyRead))[null]!,
-    );
+    final listOwed = _groupText(shownToGroups(reset.shown)[null]!);
     final result = await _commit<StrategySummary, CommitRefusal>(
       [
         for (final key in keys)

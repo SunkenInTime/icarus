@@ -402,24 +402,6 @@ final class RowUnchanged extends RowDecision {
   String toString() => 'unchanged ${row.key}';
 }
 
-final class UnlistedLeft extends RowDecision {
-  UnlistedLeft(Iterable<String> listed) : listed = Set.unmodifiable(listed);
-
-  final Set<String> listed;
-
-  @override
-  bool operator ==(Object other) =>
-      other is UnlistedLeft &&
-      other.listed.length == listed.length &&
-      other.listed.containsAll(listed);
-
-  @override
-  int get hashCode => Object.hash(UnlistedLeft, listed.length);
-
-  @override
-  String toString() => 'every stored page but $listed left';
-}
-
 final class ItemLeft extends RowDecision {
   const ItemLeft(this.target, {required this.page});
 
@@ -795,7 +777,6 @@ final class Shown {
     final decisions = <RowDecision>[
       for (final page in knownPages)
         if (!listedIds.contains(page)) PageLeft(page),
-      UnlistedLeft(listedIds),
       RowTaken(strategyRow),
     ];
     final nextPages = <String, ShownRow>{};

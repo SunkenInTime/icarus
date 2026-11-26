@@ -363,6 +363,12 @@ final class LibraryStore {
   final _queues = <String, _LoadedQueue>{};
   final _refusedThisSession = <String, StoredRowsDisagree>{};
   var _refusalsMade = 0;
+  String? _addingCloud;
+
+  Map<String, StoredRowsDisagree> get refusedStrategies => {
+    for (final refusal in _refusedThisSession.values)
+      ?refusal.strategyPublicId: refusal,
+  };
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
   _NumbersRow _numbersRow = const _NoNumbersRow();
 
@@ -1156,6 +1162,7 @@ final class LibraryStore {
     final listed = <String>{};
     final rebuilt = <String, StrategySummary>{};
     final unreadable = <String, LoadedStrategy>{};
+    final refused = <String>[];
     for (final area in areas) {
       final digest = switch (strategyAreaNamed(area)) {
         StrategyArea(:final digest) => digest,
@@ -1177,6 +1184,7 @@ final class LibraryStore {
           }
         case _RebuildRefused(:final refusal, :final header):
           _listRefused(digest, header, refusal);
+          refused.add(digest);
         case _NoStrategyThere():
           break;
       }
@@ -1195,7 +1203,7 @@ final class LibraryStore {
     return StrategiesFound(
       rebuilt: rebuilt.values.toList(),
       unreadable: [
-        for (final digest in [...unreadable.keys, ...gone])
+        for (final digest in [...unreadable.keys, ...refused, ...gone])
           _unreadable[digest]!,
       ],
     );

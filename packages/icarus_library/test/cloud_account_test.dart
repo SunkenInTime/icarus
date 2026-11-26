@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/store/summary.dart' show PageTally;
 import 'package:test/test.dart';
 
 import 'cloud_store_support.dart';
@@ -85,6 +86,8 @@ String describe(StoreChange change) => switch (change) {
 };
 
 void main() {
+  discardSavesWhatItLeaves();
+
   discardLeavesTheStrategyToBeReadAgain();
 
   test('a cloud strategy keeps the account its work belongs to, across a '
@@ -811,6 +814,15 @@ void discardLeavesTheStrategyToBeReadAgain() {
       ),
     );
     expect(held.contents[area]!['from-a-newer-build'], 'kept');
+    final listed = listOf(reopened).strategies.single;
+    expect(
+      listed.sync,
+      isA<KeptInCloud>().having(
+        (sync) => sync.tally.readsNeeded,
+        'reads needed',
+        greaterThan(0),
+      ),
+    );
     expect([
       for (final key in held.contents[area]!.keys)
         if (key.startsWith('content/') ||
@@ -839,5 +851,31 @@ void discardLeavesTheStrategyToBeReadAgain() {
         row.publicId,
     ], containsAll(['e1', 'e2']));
     await expectAgree(reopened);
+  });
+}
+
+void discardSavesWhatItLeaves() {
+  test('discarding an unreadable queue saves no damage count for the rows it '
+      'deleted', () async {
+    final (store, storage) = await withWork();
+    await store.close();
+    final contents = editable(storage.contents);
+    final area = strategyArea(strategyId);
+    contents[area]!['pending/999'] = 'not a queue row';
+    contents[area]![settingsName('page-b')] = '{"broken":true}';
+    final held = MemoryStorage(contents);
+    var reopened = await openCloudStore(MemoryEngine(held));
+    final saved = savedValue(
+      await reopened.discardUnreadableQueue(
+        testAccount,
+        strategyId,
+        const DiscardsUnsentWork(),
+      ),
+    );
+    expect(saved.readability, isA<AllReadable>());
+    expect(saved.elsewhere, PageTally.empty);
+    await reopened.close();
+    reopened = await openCloudStore(MemoryEngine(held));
+    expect(listOf(reopened).strategies.single.readability, isA<AllReadable>());
   });
 }

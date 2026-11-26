@@ -764,32 +764,6 @@ void main() {
     expect(storage.contents[area]!.containsKey(key), isFalse);
   });
 
-  test('a page list leaving out a page the queue holds emits UnlistedLeft '
-      'with exactly the pages it lists', () {
-    final shown = Shown.nothing
-        .taken(headerReadOf(initialRows()), started: ReadStart.beforeAnyRead)
-        .shown;
-    final taken = shown.taken(
-      headerReadOf(
-        StrategyRowSet(
-          strategy: initialRows().strategy,
-          pages: [initialRows().page('page-a')!],
-          settings: [
-            for (final row in initialRows().settings)
-              if (row.pagePublicId == 'page-a') row,
-          ],
-        ),
-      ),
-      started: ReadStart.beforeAnyRead,
-    );
-    expect(
-      taken.decisions.whereType<UnlistedLeft>().map((left) => left.listed),
-      [
-        {'page-a'},
-      ],
-    );
-  });
-
   group('damaged rows main tolerated are now refused, and stay on disk', () {
     Future<(Opened, MemoryStorage, Contents)> withDamaged(
       void Function(Contents disk) damage,
@@ -905,6 +879,60 @@ void main() {
       counts.entryListings.length,
       counts.commits,
     ), touched);
+  });
+
+  test('a search that finds a refused strategy with no summary lists it in '
+      'its own answer, carrying the refusal', () async {
+    final disk = await addedOnDisk();
+    disk[area]!.remove(settingsName('page-a'));
+    disk['library']!.remove(summaryName(strategyId));
+    final store = await openCloudStore(MemoryEngine(MemoryStorage(disk)));
+    final found = await store.findStrategies();
+    expect(
+      found,
+      isA<StrategiesFound>().having(
+        (found) => [
+          for (final listing in found.unreadable)
+            if (listing.refused case StoredRowsDisagree(:final reason)) reason,
+        ],
+        'refusals listed',
+        ['the settings held here are not the ones the queue holds'],
+      ),
+    );
+    expect(store.refusedStrategies.keys, [strategyId]);
+  });
+
+  test('an add whose results disagree with themselves is refused and '
+      'remembers nothing for the strategy it did not save', () async {
+    final storage = MemoryStorage();
+    final store = await openCloudStore(MemoryEngine(storage));
+    final other = initialRows().withRows([
+      element('e1', fields: const {'dx': 5}),
+    ]);
+    expect(
+      await store.addCloudStrategy(testAccount, headerReadOf(initialRows()), [
+        pageReadOf(initialRows(), 'page-a') as PageRead,
+        pageReadOf(other, 'page-a') as PageRead,
+      ]),
+      isA<Refused<StrategySummary, LibraryRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<StoredRowsDisagree>(),
+      ),
+    );
+    expect(storage.contents[area], isNull);
+    expect(store.refusedStrategies, isEmpty);
+    expect(
+      await store.record(testAccount, strategyId, const [ConnectionReturned()]),
+      isA<Refused<Recorded, CommitRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<NoSuchStrategy>(),
+      ),
+    );
+    await addCloud(store, initialRows());
+    await readEveryPage(store);
+    expect(await refusedFor(store), isNull);
   });
 
   group('the store\'s own guards', () {

@@ -439,6 +439,10 @@ final class CloudSender {
       },
       onDone: wake,
     );
+    for (final MapEntry(key: strategyId, value: refusal)
+        in _store.store.refusedStrategies.entries) {
+      _store.refused(strategyId, refusal);
+    }
     _running ??= _loop();
   }
 

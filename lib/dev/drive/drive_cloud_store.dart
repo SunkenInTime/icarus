@@ -395,8 +395,14 @@ Future<List<(String, CloudStrategy)>> _cloudQueues(LibraryStore store) async =>
 Future<({List<(String, CloudStrategy)> queues, List<String> refused})>
     _cloudQueuesAndRefusals(LibraryStore store) async {
   final queues = <(String, CloudStrategy)>[];
-  final refused = <String>[];
+  final refused = [
+    for (final MapEntry(key: strategyId, value: refusal)
+        in store.refusedStrategies.entries)
+      '$strategyId is refused by the store, so its work is not sent: '
+          '${refusal.reason}',
+  ];
   for (final strategyId in _storedCloudStrategies(store)) {
+    if (store.refusedStrategies.containsKey(strategyId)) continue;
     switch (await store.readStrategy(strategyId)) {
       case Found(value: StrategyContent(sync: final CloudStrategy cloud)):
         queues.add((strategyId, cloud));

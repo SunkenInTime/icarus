@@ -102,10 +102,15 @@ final class UnreadableRowInTheWay implements CommitRefusal, LibraryRefusal {
 }
 
 final class StoredRowsDisagree implements CommitRefusal, LibraryRefusal {
-  const StoredRowsDisagree(this.reason, {this.serial = 0});
+  const StoredRowsDisagree(
+    this.reason, {
+    this.serial = 0,
+    this.strategyPublicId,
+  });
 
   final String reason;
   final int serial;
+  final String? strategyPublicId;
 
   @override
   String toString() =>
