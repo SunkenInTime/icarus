@@ -121,7 +121,8 @@ void main() {
       ),
     );
     expect(client.queue.landed, isEmpty);
-    expect(client.view('rename').sendable, isFalse);
+    expect(stateIn(client, 'rename'), isNot(isA<NeedsUser>()));
+    expect(client.view('rename').holds, contains(isA<AwaitingResult>()));
     client.must(
       arrivalAt(
         client,
