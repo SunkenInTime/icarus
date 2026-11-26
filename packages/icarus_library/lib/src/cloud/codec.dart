@@ -81,7 +81,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     if (entry.behindOwn) 'behindOwn': true,
     if (entry.basis case final basis?)
       'basis': {
-        'serverTime': basis.serverTime,
+        'serverTime': _timeToJson(basis.serverTime),
         'heldAtMicros': basis.heldAt.inMicroseconds,
       },
     'strategyLife': ?entry.strategyLife,
@@ -279,10 +279,14 @@ Decoded<QueueEntry> decodeEntry(
       final basis = switch (fields.json['basis']) {
         null => null,
         {
-          'serverTime': final int serverTime,
+          'serverTime': final Object serverTime,
           'heldAtMicros': final int heldAt,
-        } =>
-          ServerTimeBasis(serverTime, heldAt: Duration(microseconds: heldAt)),
+        }
+            when _timeFrom(serverTime) != null =>
+          ServerTimeBasis(
+            _timeFrom(serverTime)!,
+            heldAt: Duration(microseconds: heldAt),
+          ),
         _ => () {
           fields.reject('an unreadable basis');
           return null;
@@ -1089,19 +1093,29 @@ Map<String, Object?> _startToJson(ResultOrder start) => {
 bool _countable(Object? value) =>
     value is num && isSafeWhole(value) && value >= 0;
 
+Object _timeToJson(int time) => '$time';
+
+int? _timeFrom(Object? raw) => switch (raw) {
+  final String text when RegExp(r'^(0|[1-9][0-9]{0,18})$').hasMatch(text) =>
+    int.tryParse(text),
+  final num time when isSafeWhole(time) && time >= 0 => time.toInt(),
+  _ => null,
+};
+
 Map<String, Object?> _answerToJson(AfterAnswer answer) => {
   ..._startToJson(answer.order),
-  'time': ?answer.serverTime,
+  if (answer.serverTime case final time?) 'time': _timeToJson(time),
 };
 
 AfterAnswer? _answerFrom(Object? raw) => switch (raw) {
-  {'time': final num time} when isSafeWhole(time) => switch (_startFrom({
-    for (final MapEntry(:key, :value) in raw.entries)
-      if (key != 'time') key: value,
-  })) {
-    final order? => AfterAnswer(order, serverTime: time.toInt()),
-    null => null,
-  },
+  {'time': final Object? time} when _timeFrom(time) != null =>
+    switch (_startFrom({
+      for (final MapEntry(:key, :value) in raw.entries)
+        if (key != 'time') key: value,
+    })) {
+      final order? => AfterAnswer(order, serverTime: _timeFrom(time)),
+      null => null,
+    },
   {'time': _} => null,
   _ => switch (_startFrom(raw)) {
     final order? => AfterAnswer(order),
@@ -1118,7 +1132,7 @@ Object? _debtToJson(PaidBy debt) => switch (debt) {
       'client': point.client,
       'connection': point.connection,
       'snapshot': point.snapshot,
-      'time': ?point.serverTime,
+      if (point.serverTime case final time?) 'time': _timeToJson(time),
       'step': step,
       'evidence': ?switch (evidence) {
         RowAtLeast(:final target, :final life, :final revision) => {
@@ -1165,7 +1179,7 @@ AfterRefusal? _refusalFrom(Map<Object?, Object?> raw) => switch (raw) {
   }
       when [session, client, connection, snapshot, step].every(_countable) &&
           raw.keys.every(_refusalKeys.contains) &&
-          _optionalWhole(raw['time']) &&
+          (raw['time'] == null || _timeFrom(raw['time']) != null) &&
           (!raw.containsKey('evidence') ||
               _evidenceFrom(raw['evidence']) != null) =>
     AfterRefusal(
@@ -1174,7 +1188,7 @@ AfterRefusal? _refusalFrom(Map<Object?, Object?> raw) => switch (raw) {
         client: client.toInt(),
         connection: connection.toInt(),
         snapshot: snapshot.toInt(),
-        serverTime: (raw['time'] as num?)?.toInt(),
+        serverTime: _timeFrom(raw['time']),
       ),
       step: step.toInt(),
       evidence: raw.containsKey('evidence')

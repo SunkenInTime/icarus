@@ -8,6 +8,7 @@ import 'cloud_life_forward_test.dart' show strategyLife;
 import 'cloud_set_aside_test.dart' show laterLife, replaced, setAsideIds;
 import 'cloud_store_support.dart';
 import 'cloud_support.dart';
+import 'store_support.dart';
 import 'support.dart';
 
 ResultPoint onNextConnection() {
@@ -345,6 +346,137 @@ void main() {
         at: at(answered.snapshot + 2, answered.serverTime! + 1),
       );
       expect(client.queue.landed.single.shownWithout, isTrue);
+    });
+  });
+
+  group('stamps on disk', () {
+    const nanos = 1795435204780123456;
+    const answered = AfterAnswer(
+      ResultOrder(session: 4, client: 2, snapshot: 17),
+      serverTime: nanos,
+    );
+
+    test('a landed answer keeps its order and its time in nanoseconds '
+        'through a write and a read, and the time is written as text', () {
+      final work = LandedWork(
+        attempt: 3,
+        position: 0,
+        op: movePatch('move', x: 40),
+        revision: 2,
+        life: fixtureLife,
+        shape: LandedShape.whole,
+        own: true,
+        firstSentAt: asStored(now),
+        answeredAt: answered,
+      );
+      final json = landedToJson(work);
+      expect((json['answeredAt']! as Map)['time'], '$nanos');
+      expect(
+        landedFromText(3, 0, jsonEncode(json)),
+        isA<CloudRowRead<LandedWork>>().having(
+          (read) => read.value,
+          'value',
+          work,
+        ),
+      );
+      final asNumber = {
+        ...json,
+        'answeredAt': {...json['answeredAt']! as Map, 'time': 1700},
+      };
+      expect(
+        landedFromText(3, 0, jsonEncode(asNumber)),
+        isA<CloudRowRead<LandedWork>>().having(
+          (read) => read.value.answeredAt,
+          'answered at',
+          const AfterAnswer(
+            ResultOrder(session: 4, client: 2, snapshot: 17),
+            serverTime: 1700,
+          ),
+        ),
+      );
+      for (final unreadable in ['-1', '1e3', '0x10', '99999999999999999999']) {
+        final broken = {
+          ...json,
+          'answeredAt': {...json['answeredAt']! as Map, 'time': unreadable},
+        };
+        expect(
+          landedFromText(3, 0, jsonEncode(broken)),
+          isNot(isA<CloudRowRead<LandedWork>>()),
+          reason: unreadable,
+        );
+      }
+    });
+
+    test(
+      'a refusal debt keeps a nanosecond time through a write and a read',
+      () {
+        final refusal = AfterRefusal(
+          session: 4,
+          point: const ResultPoint(
+            client: 2,
+            connection: 3,
+            snapshot: 17,
+            serverTime: nanos,
+          ),
+          step: 5,
+        );
+        expect(readBack(ReadOwed(since: refusal)), ReadOwed(since: refusal));
+      },
+    );
+
+    test(
+      'a store reopened over a list owed in the shape earlier builds '
+      'wrote reads it as owed, and a result of the new session pays it',
+      () async {
+        final storage = MemoryStorage();
+        var store = await openCloudStore(MemoryEngine(storage));
+        await addCloud(store, initialRows());
+        await store.close();
+        final contents = editable(storage.contents);
+        final area = strategyArea(strategyId);
+        final key = contents[area]!.keys.singleWhere(
+          (String key) => key.startsWith('read/') && key.endsWith('header'),
+        );
+        contents[area]![key] = jsonEncode({
+          ...jsonDecode(contents[area]![key]!) as Map<String, Object?>,
+          'read': {
+            'owedSince': {'session': 1, 'step': 7},
+          },
+        });
+        store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+        await recordAll(store, [const AppRestarted(build: build)]);
+        expect(
+          (await syncOf(store)).queue.shown.list,
+          const ReadOwed(
+            since: ResultAtOrAfter(
+              ResultOrder(session: 1, client: 0, snapshot: 0),
+            ),
+          ),
+        );
+        await recordAll(store, [
+          await arrivalIn(store, headerReadOf(initialRows())),
+        ]);
+        expect((await syncOf(store)).queue.shown.list, const ReadThisSession());
+      },
+    );
+  });
+
+  group('debts as stored now', () {
+    ShownReading readWithList(Object? read) {
+      final groups = shownToGroups(Shown.nothing);
+      return shownFromGroups({
+        for (final MapEntry(:key, :value) in groups.entries)
+          key: jsonEncode(key == null ? {...value, 'read': read} : value),
+      });
+    }
+
+    test('an owed order without its snapshot is unreadable', () {
+      expect(
+        readWithList({
+          'owedSince': {'session': 3, 'client': 1},
+        }),
+        isA<ShownUnreadable>(),
+      );
     });
   });
 
