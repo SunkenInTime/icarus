@@ -435,6 +435,7 @@ final class CloudSender {
         StrategyEdited(:final strategyPublicId) => edited(strategyPublicId),
         StrategyRefused(:final strategyPublicId, :final refusal) =>
           _store.refused(strategyPublicId, refusal),
+        LibraryEdited(:final summaries) => _libraryEdited(summaries),
         _ => wake(),
       },
       onDone: wake,
@@ -463,6 +464,16 @@ final class CloudSender {
     _firstEdit[strategyId] ??= now;
     _checkedClean.remove(strategyId);
     retiring.active(strategyId, now);
+    wake();
+  }
+
+  void _libraryEdited(List<StrategySummary> summaries) {
+    for (final summary in summaries) {
+      if (_waits[summary.publicId] == StallExit.localTrouble) {
+        _governor.newEvidence(summary.publicId);
+        notBefore.remove(summary.publicId);
+      }
+    }
     wake();
   }
 
@@ -640,6 +651,11 @@ final class CloudSender {
       return _Skipped(StallExit.localTrouble, at);
     }
     if (_inputs != snap) return const _Restart();
+    if (_store.store.refusedStrategies[id] case final refusal?) {
+      _store.refused(id, refusal);
+      _note(id, 'held: $refusal');
+      return const _Skipped(StallExit.localTrouble);
+    }
     const read = ReadOfList();
     final under = readsUnder(snap);
     final StoreReadOutcome outcome;

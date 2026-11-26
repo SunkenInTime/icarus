@@ -1,0 +1,14 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 6},
+  {"storeExpect": "held"},
+  {"storeDiscardUnreadable": true},
+  {"wait": 12},
+  {"waitStoreSent": 120},
+  {"storeSyncState": true},
+  {"wait": 3},
+  {"shot": "{out}/after-discard.png"},
+  {"exit": 1}
+]

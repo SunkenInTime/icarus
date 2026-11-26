@@ -170,6 +170,7 @@ Its steps:
 - `{"waitStoreRefusedLate": seconds}` waits until the queue records a batch the server refused as arriving too late for its basis.
 - `{"waitStoreHeld": seconds}` waits until the store's one cloud strategy is held for lost edit access with work unsent, and the sender's page-list read for that loss said the account can only view it; it fails if that does not happen in time.
 - `{"storeSyncState": true}` logs each cloud strategy's sync state for the account signed in, whose work it is, and the sender's state.
+- `{"storeDiscardUnreadable": true}` discards the unreadable queue of the one cloud strategy in the store, as the user would after acknowledging it, and fails if the store does not take the discard. `cloud-store-discard-after.json` runs it over a store whose queue cannot be read, then waits for the strategy to be read again.
 - `{"killNow": true}` ends the app at once, the way a crash does.
 - `{"signOut": true}` signs out through the app's own confirmation; `{"signIn": "second"}` signs in to `--second-account` (Linux).
 

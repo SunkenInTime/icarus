@@ -2625,6 +2625,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(await storeDeletePage(c, value));
     case 'setMemberRole':
       _log(await setMemberRole(c, value as String));
+    case 'storeDiscardUnreadable':
+      _log(await storeDiscardUnreadable(c));
     case 'waitStoreSent':
       _log(
         await waitStoreSent(

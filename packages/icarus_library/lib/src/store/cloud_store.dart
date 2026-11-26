@@ -2100,7 +2100,7 @@ extension _CloudStore on LibraryStore {
       settings: const {},
       unplaced: const {},
       names: const [CloudName()],
-    );
+    )..entering = (page) => pageEnteringMemory?.call(digest, page);
     var queue = CloudQueue.start(build: _build).raisedTo(
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
@@ -2269,6 +2269,7 @@ extension _CloudStore on LibraryStore {
         _summaries[digest] = summary;
         _unsaved.remove(digest);
         _refusedThisSession.remove(digest);
+        _sessions.remove(digest);
         return summary;
       },
     );

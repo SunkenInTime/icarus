@@ -364,9 +364,12 @@ final class LibraryStore {
   String? _addingCloud;
 
   Map<String, StoredRowsDisagree> get refusedStrategies => {
-    for (final refusal in _refusedThisSession.values)
-      ?refusal.strategyPublicId: refusal,
+    for (final MapEntry(key: digest, value: refusal)
+        in _refusedThisSession.entries)
+      refusal.strategyPublicId ?? digest: refusal,
   };
+
+  void Function(String strategy, String page)? pageEnteringMemory;
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
   _NumbersRow _numbersRow = const _NoNumbersRow();
 
@@ -940,7 +943,7 @@ final class LibraryStore {
       settings: settings,
       unplaced: unplaced,
       names: names,
-    );
+    )..entering = (page) => pageEnteringMemory?.call(digest, page);
     if (loaded.keeping == Keeping.here) {
       if (await _loadPages(loaded, loaded.pagesWithoutRow.toList())
           case StorageFailed(:final failure)) {
@@ -1188,7 +1191,7 @@ final class LibraryStore {
       }
     }
     final gone = [
-      for (final digest in _summaries.keys)
+      for (final digest in {..._summaries.keys, ..._refusedThisSession.keys})
         if (!listed.contains(digest)) digest,
     ];
     for (final MapEntry(key: digest, value: summary) in rebuilt.entries) {

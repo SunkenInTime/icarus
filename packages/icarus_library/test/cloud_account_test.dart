@@ -86,6 +86,8 @@ String describe(StoreChange change) => switch (change) {
 };
 
 void main() {
+  aResultFromBeforeADiscardIsTurnedAway();
+
   discardSavesWhatItLeaves();
 
   discardLeavesTheStrategyToBeReadAgain();
@@ -877,5 +879,82 @@ void discardSavesWhatItLeaves() {
     await reopened.close();
     reopened = await openCloudStore(MemoryEngine(held));
     expect(listOf(reopened).strategies.single.readability, isA<AllReadable>());
+  });
+}
+
+final class ServingABrokenPendingRow extends ForwardingLease {
+  ServingABrokenPendingRow(super.inner, this.broken);
+
+  final bool Function() broken;
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      switch (await super.entries(area, prefix)) {
+        Done(:final value) when broken() && prefix == 'pending/' => Done([
+          ...value,
+          (key: 'pending/999', value: 'not a queue row'),
+        ]),
+        final other => other,
+      };
+}
+
+void aResultFromBeforeADiscardIsTurnedAway() {
+  test('a result stamped with the session from before a discard is turned '
+      'away after it, the page list stays owed, and a fresh session pays '
+      'it', () async {
+    final (first, storage) = await withWork();
+    await first.close();
+    var broken = false;
+    final store = await openCloudStore(
+      WrappingEngine(
+        MemoryEngine(storage),
+        (lease) => ServingABrokenPendingRow(lease, () => broken),
+      ),
+    );
+    await recordAll(store, const [
+      AppRestarted(build: build),
+      ConnectionReturned(),
+    ]);
+    final oldSession = await sessionOf(store);
+    final oldRead = await beganIn(store);
+    broken = true;
+    expect(await store.unload(strategyId), isA<Unloaded>());
+    savedValue(
+      await store.discardUnreadableQueue(
+        testAccount,
+        strategyId,
+        const DiscardsUnsentWork(),
+      ),
+    );
+    broken = false;
+    final late = await recordAll(store, [
+      BaseArrived(
+        headerReadOf(initialRows()),
+        session: oldSession,
+        from: oldRead,
+      ),
+    ]);
+    expect(
+      late.outcomes.single,
+      isA<ReportNotApplicable>().having(
+        (outcome) => outcome.why,
+        'why',
+        isA<FromAnEndedSession>(),
+      ),
+    );
+    expect(
+      resultsNeeded((await syncOf(store)).queue, fixedClock()),
+      contains(isA<PageListResult>()),
+    );
+    await recordAll(store, const [
+      AppRestarted(build: build),
+      ConnectionReturned(),
+    ]);
+    await readServer(store, initialRows());
+    expect(
+      resultsNeeded((await syncOf(store)).queue, fixedClock()),
+      isNot(contains(isA<PageListResult>())),
+    );
+    await expectAgree(store);
   });
 }
