@@ -123,6 +123,19 @@ void main() {
     }
   }
 
+  Future<void> addPastedProfile(WidgetTester tester, String name) =>
+      tester.runAsync(() async {
+        await tester.tap(find.text('Add profile'));
+        final patience = Stopwatch()..start();
+        while (patience.elapsed < const Duration(seconds: 20) &&
+            !container
+                .read(mapThemeProfilesProvider)
+                .profiles
+                .any((profile) => profile.name == name)) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
+
   Future<void> finishToasts(WidgetTester tester) async {
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
@@ -156,10 +169,7 @@ void main() {
     expect(find.text('Pasted from your clipboard.'), findsOneWidget);
     expect(find.text('Haven Dusk'), findsOneWidget);
 
-    await tester.runAsync(() async {
-      await tester.tap(find.text('Add profile'));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
+    await addPastedProfile(tester, 'Haven Dusk');
     await settle(tester);
 
     final added = Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
@@ -198,10 +208,7 @@ void main() {
 
     await tester.tap(find.text('Import profile code'));
     await settle(tester);
-    await tester.runAsync(() async {
-      await tester.tap(find.text('Add profile'));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
+    await addPastedProfile(tester, 'Haven Dusk');
     await settle(tester);
 
     showSection.value = false;
@@ -251,10 +258,7 @@ void main() {
 
     await tester.tap(find.text('Import profile code'));
     await settle(tester);
-    await tester.runAsync(() async {
-      await tester.tap(find.text('Add profile'));
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-    });
+    await addPastedProfile(tester, 'Haven Dusk');
     await settle(tester);
 
     final added = container
