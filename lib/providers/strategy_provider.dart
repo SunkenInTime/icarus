@@ -135,6 +135,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   @override
   StrategyState build() {
+    ref.onDispose(cancelPendingSave);
     _registerPersistenceTrackingListeners();
     ref.listen<AppAuthState>(authProvider, (previous, next) {
       final strategyId = state.strategyId;
