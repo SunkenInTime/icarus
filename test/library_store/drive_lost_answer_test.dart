@@ -64,13 +64,38 @@ OpAnswer appliedBefore(String opId) => NoopAnswer(
       life: 1,
     );
 
-String judged(List<SenderReport> reports) =>
-    lostAnswerResent(reports, strategy);
+SenderReport boundOn(int connection, int session) => SessionOpenedFor(
+      strategy,
+      session,
+      (account: account, connection: connection, signIns: 1, signOuts: 0),
+    );
+
+String judged(List<SenderReport> reports) => lostAnswerResent(
+      [boundOn(1, 1), ...reports, boundOn(2, 2)],
+      strategy,
+    );
 
 Matcher refusedWith(String words) => throwsA(
     isA<StateError>().having((e) => e.message, 'message', contains(words)));
 
 void main() {
+  test(
+      'a lost answer and its resend from before the cut did not reach the '
+      'case', () {
+    expect(
+      () => lostAnswerResent([
+        boundOn(1, 1),
+        sent(1, ['op-1']),
+        timedOut(1, ['op-1']),
+        sent(2, ['op-1']),
+        answered(2, appliedBefore('op-1')),
+        boundOn(1, 2),
+        boundOn(2, 3),
+      ], strategy),
+      refusedWith('did not reach the case'),
+    );
+  });
+
   test(
       'a lost answer, a resend under the same op id and the server '
       'answering it as already applied pass', () {

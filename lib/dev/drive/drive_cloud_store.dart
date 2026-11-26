@@ -659,11 +659,7 @@ List<String> storeSessionOpenings(
       ),
     ];
 
-String reconnectSessionOpening(
-  List<SenderReport> reports,
-  String strategyId, {
-  required bool stampExpected,
-}) {
+({int cut, int session}) _cutIn(List<SenderReport> reports, String strategyId) {
   final binds = [
     for (final (index, report) in reports.indexed)
       if (report
@@ -683,8 +679,15 @@ String reconnectSessionOpening(
   }
   final first = binds.first.connection;
   final at = binds.indexWhere((bind) => bind.connection != first);
-  final cut = binds[at - 1].index;
-  final session = binds[at].session;
+  return (cut: binds[at - 1].index, session: binds[at].session);
+}
+
+String reconnectSessionOpening(
+  List<SenderReport> reports,
+  String strategyId, {
+  required bool stampExpected,
+}) {
+  final (:cut, :session) = _cutIn(reports, strategyId);
   final opened = [
     for (final report in reports.sublist(cut + 1))
       if (report
@@ -751,8 +754,13 @@ String lostAnswerResent(List<SenderReport> reports, String strategyId) {
       if (report case EventsWritten(strategyId: final id) when id == strategyId)
         report,
   ];
+  final (:cut, session: _) = _cutIn(reports, strategyId);
   final lost = <int, String>{};
-  for (final write in writes) {
+  for (final write in [
+    for (final report in reports.sublist(cut + 1))
+      if (report case EventsWritten(strategyId: final id) when id == strategyId)
+        report,
+  ]) {
     final admitted = {
       for (final effect in write.effects)
         if (effect case AnswerAdmitted(:final attempt)) attempt,
@@ -776,7 +784,7 @@ String lostAnswerResent(List<SenderReport> reports, String strategyId) {
   if (lost.isEmpty) {
     throw StateError(
       'did not reach the case: none of the ${sent.length} batches sent for '
-      '$strategyId had its answer closed as lost',
+      '$strategyId had its answer closed as lost after the cut',
     );
   }
   OpAnswer? admittedAnswer(int attempt, String opId) {
