@@ -933,6 +933,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     _isClosingWindow = true;
     if (storeCatchUpBeforeClose() case final catchingUp?) {
       await catchingUp;
+      if (!answer.seen.isNow(strategies.askedByTheUserNow())) {
+        _isClosingWindow = false;
+        unawaited(windowManager.close());
+        return;
+      }
     }
     await windowManager.setPreventClose(false);
     await windowManager.close();
