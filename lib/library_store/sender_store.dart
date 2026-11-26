@@ -275,7 +275,7 @@ base class SenderStore {
   Future<Reading<StrategyContent>> readStrategy(String strategyId) =>
       store.readStrategy(strategyId);
 
-  final _refusalsReported = <String, String>{};
+  final _refusalsReported = <String, int>{};
 
   QueueTroubled _unreadable(
     String strategyId,
@@ -292,8 +292,8 @@ base class SenderStore {
   }
 
   void refused(String strategyId, StoredRowsDisagree refusal) {
-    if (_refusalsReported[strategyId] == refusal.reason) return;
-    _refusalsReported[strategyId] = refusal.reason;
+    if (_refusalsReported[strategyId] == refusal.serial) return;
+    _refusalsReported[strategyId] = refusal.serial;
     report(StoredRowsRefused(strategyId, refusal));
   }
 

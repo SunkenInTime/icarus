@@ -526,24 +526,20 @@ void main() {
       });
     }
 
-    test('by a summary rebuild lists it held, counting nothing it did not '
-        'check', () async {
+    test('by an explicit summary rebuild is refused, the saved summary is '
+        'not rewritten, and it is reported once', () async {
       final (opened, storage) = await damagedOnA();
       final before = editable(storage.contents);
-      await opened.store.rebuildSummary(strategyId);
-      final listed = listOf(opened.store).strategies.single;
-      expect(listed.sync, isA<KeptInCloud>());
-      expect(await refusedFor(opened.store), contains('page-a'));
       expect(
-        [
-          for (final key in storage.contents[area]!.keys)
-            if (!key.startsWith('summary')) key,
-        ],
-        [
-          for (final key in before[area]!.keys)
-            if (!key.startsWith('summary')) key,
-        ],
+        await opened.store.rebuildSummary(strategyId),
+        isA<Refused<StrategySummary, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<StoredRowsDisagree>(),
+        ),
       );
+      expect(storage.contents, before);
+      expect(await opened.refusalsReported(), hasLength(1));
     });
   });
 
@@ -584,6 +580,147 @@ void main() {
       'a row on page page-a is damaged here',
     );
     expect(await again.refusalsReported(), hasLength(1));
+  });
+
+  test('a fault found at queue load refuses an explicit summary rebuild, '
+      'rewrites nothing and is reported once', () async {
+    final disk = await addedOnDisk();
+    disk[area]!.remove(settingsName('page-a'));
+    final storage = MemoryStorage(disk);
+    final opened = await Opened.over(storage);
+    final before = editable(storage.contents);
+    expect(
+      await opened.store.rebuildSummary(strategyId),
+      isA<Refused<StrategySummary, CommitRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<StoredRowsDisagree>(),
+      ),
+    );
+    expect(storage.contents, before);
+    expect(await opened.refusalsReported(), hasLength(1));
+  });
+
+  test('a strategy refused, removed, added again and refused again for the '
+      'same reason is reported again', () async {
+    final odd = initialRows().withRows([
+      LiveElement(
+        publicId: 'e2',
+        pagePublicId: 'page-a',
+        payload: agentPayload('e2', const {}),
+        sortIndex: 0,
+        revision: 1,
+        unknownFields: jsonObject(const {
+          'createdAt': fixtureLife,
+          'note': 'not what the store holds',
+        }),
+      ),
+    ]);
+    final opened = await Opened.over(MemoryStorage());
+    for (var round = 0; round < 2; round++) {
+      await addCloud(opened.store, initialRows());
+      await recordAll(opened.store, [const AppRestarted(build: build)]);
+      expect(
+        await arriving(opened.store, pageReadOf(odd, 'page-a')),
+        isA<Refused<Recorded, CommitRefusal>>(),
+      );
+      savedValue(
+        await opened.store.editLibrary([const RemoveStrategy(strategyId)]),
+      );
+    }
+    final reasons = await opened.refusalsReported();
+    expect(reasons, hasLength(2));
+    expect(reasons.toSet(), hasLength(1));
+  });
+
+  test('a strategy whose queue cannot be read shows its rows unchecked and '
+      'held, and makes no decision: no result is taken and no work is '
+      'committed', () async {
+    final disk = await addedOnDisk();
+    disk[area]![elementName('page-a', 'e1')] = revised(
+      disk[area]![elementName('page-a', 'e1')]!,
+      4,
+    );
+    disk[area]!['pending/999'] = 'not a queue row';
+    final storage = MemoryStorage(disk);
+    final store = await openCloudStore(MemoryEngine(storage));
+    final page = await store.readPage(strategyId, 'page-a');
+    expect(
+      page,
+      isA<Found<PageContent>>().having(
+        (found) => found.value.sync,
+        'sync',
+        isA<CloudHeld>(),
+      ),
+    );
+    final seen = await seenIn(store);
+    final before = editable(storage.contents);
+    expect(
+      await store.record(testAccount, strategyId, [
+        BaseArrived(
+          pageReadOf(initialRows(), 'page-a'),
+          session: 1,
+          from: const LiveResult(),
+        ),
+      ]),
+      isA<Refused<Recorded, CommitRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<QueueHeld>(),
+      ),
+    );
+    expect(
+      await store.commitAs(
+        testAccount,
+        strategyId,
+        movePatch('held', x: 10),
+        seen: seen,
+      ),
+      isA<Refused<Committed, CommitRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<QueueHeld>(),
+      ),
+    );
+    expect(storage.contents, before);
+  });
+
+  test('in checked builds, a result whose item differs at the same version '
+      'from what this run digested refuses the strategy instead of throwing, '
+      'and nothing is written', () async {
+    final storage = MemoryStorage();
+    final opened = await Opened.over(storage);
+    await addCloud(opened.store, initialRows());
+    await recordAll(opened.store, [const AppRestarted(build: build)]);
+    final session = await sessionOf(opened.store);
+    final from = await beganIn(opened.store);
+    final before = editable(storage.contents);
+    final odd = initialRows().withRows([
+      LiveElement(
+        publicId: 'e2',
+        pagePublicId: 'page-a',
+        payload: agentPayload('e2', const {
+          'position': {'dx': 7, 'dy': 0},
+        }),
+        sortIndex: 0,
+        revision: (initialRows().element('e2')! as LiveElement).revision,
+        unknownFields: jsonObject(const {'createdAt': fixtureLife}),
+      ),
+    ]);
+    expect(
+      await opened.store.record(testAccount, strategyId, [
+        BaseArrived(pageReadOf(odd, 'page-a'), session: session, from: from),
+      ]),
+      isA<Refused<Recorded, CommitRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<StoredRowsDisagree>(),
+      ),
+    );
+    expect(storage.contents, before);
+    expect(await opened.refusalsReported(), [
+      contains('carries other contents than this run digested'),
+    ]);
   });
 
   test('a strategy refused this session, removed and added again is not '

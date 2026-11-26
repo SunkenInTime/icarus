@@ -389,21 +389,29 @@ Future<String> setMemberRole(ProviderContainer c, String role) async {
   return 'CLOUDSTORE set the teammate\'s role on $strategyId to $role';
 }
 
-Future<List<(String, CloudStrategy)>> _cloudQueues(LibraryStore store) async {
+Future<List<(String, CloudStrategy)>> _cloudQueues(LibraryStore store) async =>
+    (await _cloudQueuesAndRefusals(store)).queues;
+
+Future<({List<(String, CloudStrategy)> queues, List<String> refused})>
+    _cloudQueuesAndRefusals(LibraryStore store) async {
   final queues = <(String, CloudStrategy)>[];
+  final refused = <String>[];
   for (final strategyId in _storedCloudStrategies(store)) {
     switch (await store.readStrategy(strategyId)) {
       case Found(value: StrategyContent(sync: final CloudStrategy cloud)):
         queues.add((strategyId, cloud));
       case InUnreadableStrategy(
-          listing: UnreadableStrategyListing(refused: StoredRowsDisagree()),
+          listing: UnreadableStrategyListing(
+            refused: StoredRowsDisagree(:final reason),
+          ),
         ):
-        break;
+        refused.add('$strategyId is refused by the store, so its work is not '
+            'sent: $reason');
       case final other:
         throw StateError('the queue of $strategyId could not be read: $other');
     }
   }
-  return queues;
+  return (queues: queues, refused: refused);
 }
 
 Future<String> waitStoreSent(
@@ -414,7 +422,8 @@ Future<String> waitStoreSent(
   final store = _storeOf(c);
   final until = DateTime.now().add(within);
   while (true) {
-    final queues = await _cloudQueues(store);
+    final (:queues, :refused) = await _cloudQueuesAndRefusals(store);
+    if (refused.isNotEmpty) throw StateError(refused.join('; '));
     if (queues.isEmpty) {
       throw StateError('the store lists no cloud queue to wait on');
     }

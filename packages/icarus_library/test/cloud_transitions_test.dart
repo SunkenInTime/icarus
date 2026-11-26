@@ -695,9 +695,16 @@ String renderTable() {
       'of its rows is used: each item\'s page and version, and in checked '
       'builds its contents against a digest this run computed. Two rows agree '
       'when their name, page and version match, whether or not this build can '
-      'read their contents. A damaged row never agrees. Rows of a kind this '
-      'build does not know are left out. A cloud strategy\'s pages enter '
-      'memory only through that check.',
+      'read their contents. A damaged row (one that does not parse as a '
+      'placed row) never agrees. Rows of a kind this build does not know are '
+      'left out. After a restart two differences pass the page check: '
+      'contents changed at the same version, found only when a result for '
+      'that row arrives (and refused there in checked builds), and a damaged '
+      'payload in a row that still parses as placed, counted as damaged on its '
+      'page. No decision is ever made from unchecked rows. A strategy whose '
+      'queue cannot be read makes no decisions at all: no result is taken and '
+      'no work is committed, and its rows are shown unchecked and marked '
+      'held, as before this check.',
     )
     ..writeln()
     ..writeln(

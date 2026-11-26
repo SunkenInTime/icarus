@@ -275,8 +275,8 @@ void main() {
     });
   });
 
-  test('a page whose rows changed without a new revision fails the take '
-      'loudly while takes are checked', () async {
+  test('a page whose rows changed without a new revision refuses the '
+      'strategy while takes are checked', () async {
     shownTakesChecked = true;
     final store = await openCloudStore(MemoryEngine(MemoryStorage()));
     await addCloud(store, dense());
@@ -290,7 +290,20 @@ void main() {
         },
       ),
     ]);
-    await expectLater(takePage(store, rewritten), throwsA(isA<TakesDiffer>()));
+    expect(
+      await store.record(testAccount, strategyId, [
+        BaseArrived(
+          pageReadOf(rewritten, 'page-a'),
+          session: await sessionOf(store),
+          from: await readStartOf(store),
+        ),
+      ]),
+      isA<Refused<Recorded, CommitRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<StoredRowsDisagree>(),
+      ),
+    );
   });
 
   group('stored results in an older shape', () {

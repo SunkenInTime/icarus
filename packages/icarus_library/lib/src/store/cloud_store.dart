@@ -145,9 +145,9 @@ final class _CloudRefused extends _CloudOpen {
 }
 
 final class _RowsDisagree implements Exception {
-  const _RowsDisagree(this.reason);
+  const _RowsDisagree(this.refusal);
 
-  final String reason;
+  final StoredRowsDisagree refusal;
 }
 
 final class _CloudUnread extends _CloudOpen {
@@ -703,14 +703,12 @@ extension _CloudStore on LibraryStore {
     if (strategy.keeping == Keeping.here) {
       return _CloudRefused(NotACloudStrategy(strategyPublicId));
     }
-    if (_refusedThisSession[strategy.digest] case final reason?) {
-      return _CloudRefused(StoredRowsDisagree(reason));
+    if (_refusedThisSession[strategy.digest] case final refusal?) {
+      return _CloudRefused(refusal);
     }
     return switch (await _queueOf(strategy)) {
       _QueueLoaded() when _refusedThisSession.containsKey(strategy.digest) =>
-        _CloudRefused(
-          StoredRowsDisagree(_refusedThisSession[strategy.digest]!),
-        ),
+        _CloudRefused(_refusedThisSession[strategy.digest]!),
       _QueueLoaded(:final queue) => _CloudReady(strategy, header, queue),
       _QueueHeld(:final rows, :final owner) => _CloudHeld(
         strategy,
@@ -727,17 +725,17 @@ extension _CloudStore on LibraryStore {
     _queues.remove(digest);
   }
 
-  void _refuse(LoadedStrategy strategy, String reason) {
-    _refusedThisSession[strategy.digest] = reason;
+  StoredRowsDisagree _refuse(LoadedStrategy strategy, String reason) {
+    final held = _refusedThisSession[strategy.digest];
+    final refusal = held != null && held.reason == reason
+        ? held
+        : StoredRowsDisagree(reason, serial: ++_refusalsMade);
+    _refusedThisSession[strategy.digest] = refusal;
     _forgetCloud(strategy.digest);
-    if (strategy.strategyId case final id?) {
-      _emit(
-        StrategyRefused(
-          strategyPublicId: id,
-          refusal: StoredRowsDisagree(reason),
-        ),
-      );
+    if (strategy.strategyId case final id? when !identical(held, refusal)) {
+      _emit(StrategyRefused(strategyPublicId: id, refusal: refusal));
     }
+    return refusal;
   }
 
   Future<Stored<void>> _checkedPages(
@@ -760,8 +758,7 @@ extension _CloudStore on LibraryStore {
                 queue.current.shown,
               )
               case final reason?) {
-            _refuse(strategy, reason);
-            throw _RowsDisagree(reason);
+            throw _RowsDisagree(_refuse(strategy, reason));
           }
           _addPage(strategy, digest, page);
       }
@@ -1162,8 +1159,7 @@ extension _CloudStore on LibraryStore {
               final reason =
                   '${row.key} holds other contents here than a result the '
                   'queue found unchanged';
-              _refuse(strategy, reason);
-              throw _RowsDisagree(reason);
+              throw _RowsDisagree(_refuse(strategy, reason));
             case HeldRow():
               break;
             case HeldNothing() || HeldUnplaced():
@@ -1641,7 +1637,7 @@ extension _CloudStore on LibraryStore {
     try {
       return await _recordOn(cloud, events);
     } on _RowsDisagree catch (disagreement) {
-      return Refused(StoredRowsDisagree(disagreement.reason));
+      return Refused(disagreement.refusal);
     }
   }
 
@@ -1653,7 +1649,7 @@ extension _CloudStore on LibraryStore {
     try {
       return await _commitCloud(cloud, asked, madeOn: madeOn);
     } on _RowsDisagree catch (disagreement) {
-      return Refused(StoredRowsDisagree(disagreement.reason));
+      return Refused(disagreement.refusal);
     }
   }
 
@@ -1662,16 +1658,9 @@ extension _CloudStore on LibraryStore {
     ReadableStrategy header,
     _LoadedQueue queue,
   ) async {
-    _RebuiltSummary refused() => _RebuiltSummary(
-      StrategySummary.of(
-        strategy: header,
-        pages: strategy.pages,
-        settings: strategy.allSettings,
-        tallies: _summaries[strategy.digest]?.tallies ?? const {},
-        elsewhere: strategy.elsewhere,
-      ).withSync(_heldSync(OwnedBy(queue.owner), const [])),
-    );
-    if (_refusedThisSession.containsKey(strategy.digest)) return refused();
+    if (_refusedThisSession[strategy.digest] case final refusal?) {
+      return _RebuildRefused(refusal, strategy.header);
+    }
     try {
       return switch (await _cloudSummaryAll(
         strategy,
@@ -1682,8 +1671,8 @@ extension _CloudStore on LibraryStore {
         Done(:final value) => _RebuiltSummary(value),
         StorageFailed(:final failure) => _RebuildNotRead(failure),
       };
-    } on _RowsDisagree {
-      return refused();
+    } on _RowsDisagree catch (disagreement) {
+      return _RebuildRefused(disagreement.refusal, strategy.header);
     }
   }
 
@@ -1716,7 +1705,17 @@ extension _CloudStore on LibraryStore {
         outcomes.add(ReportNotApplicable(NotThisModesResults(_cloudResults)));
         continue;
       }
-      final step = transition(queue, event, now: now);
+      final Step step;
+      try {
+        step = transition(queue, event, now: now);
+      } on TakesDiffer catch (differs) {
+        final page = differs.differingPage;
+        if (page == null) rethrow;
+        final reason =
+            'a result for page $page carries other contents than this run '
+            'digested at the same version';
+        throw _RowsDisagree(_refuse(cloud.strategy, reason));
+      }
       queue = step.queue;
       switch (step) {
         case NotApplicable(:final why):
@@ -1902,7 +1901,7 @@ extension _CloudStore on LibraryStore {
         _CloudRefused(:final refusal) => refused(refusal),
       };
     } on _RowsDisagree catch (disagreement) {
-      return refused(StoredRowsDisagree(disagreement.reason));
+      return refused(disagreement.refusal);
     }
   }
 
@@ -2229,12 +2228,25 @@ extension _CloudStore on LibraryStore {
             _cloudNow(),
           ),
         });
+    final storeArea = StrategyArea(digest);
+    final listOwed = _groupText(
+      shownToGroups(Shown.nothing.owingList(ReadStart.beforeAnyRead))[null]!,
+    );
     final result = await _commit<StrategySummary, CommitRefusal>(
       [
         for (final key in keys)
-          if (key != const HeaderName().name && key != const CloudName().name)
+          if (switch (readName(storeArea, key)) {
+            CloudName() || HeaderReadName() => false,
+            PageName() ||
+            SettingsName() ||
+            ElementName() ||
+            LineupName() ||
+            UnknownKindName() => true,
+            _ => _queueName(key),
+          })
             _DeleteName(area, key),
         _PutFacts(area, account, StrategyFacts.fresh),
+        _PutGroup(area, null, listOwed),
         _PutSummary(digest, summary),
       ],
       () {

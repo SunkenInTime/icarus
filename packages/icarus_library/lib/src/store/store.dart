@@ -261,6 +261,13 @@ final class _NoStrategyThere extends _Rebuilt {
   const _NoStrategyThere();
 }
 
+final class _RebuildRefused extends _Rebuilt {
+  const _RebuildRefused(this.refusal, this.header);
+
+  final StoredRowsDisagree refusal;
+  final StrategyHeader header;
+}
+
 final class _RebuildNotRead extends _Rebuilt {
   const _RebuildNotRead(this.failure);
 
@@ -348,7 +355,8 @@ final class LibraryStore {
   final _unplaced = <String, UnplacedRow>{};
   final _strategies = <String, LoadedStrategy>{};
   final _queues = <String, _LoadedQueue>{};
-  final _refusedThisSession = <String, String>{};
+  final _refusedThisSession = <String, StoredRowsDisagree>{};
+  var _refusalsMade = 0;
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
   _NumbersRow _numbersRow = const _NoNumbersRow();
 
@@ -690,9 +698,25 @@ final class LibraryStore {
         );
       case _HeaderUnreadable() || _HeaderMissing():
         if (_strategies[digest] case final strategy?) _listUnreadable(strategy);
+      case _RebuildRefused(:final refusal, :final header):
+        _listRefused(digest, header, refusal);
       case _NoStrategyThere():
         _listGone(digest);
     }
+  }
+
+  void _listRefused(
+    String digest,
+    StrategyHeader header,
+    StoredRowsDisagree refusal,
+  ) {
+    _summaries.remove(digest);
+    _unsaved.remove(digest);
+    _unreadable[digest] = UnreadableStrategyListing(
+      ref: StrategyRef(StrategyArea(digest).name),
+      header: header,
+      refused: refusal,
+    );
   }
 
   void _listGone(String digest) {
@@ -1145,6 +1169,8 @@ final class LibraryStore {
           if (_strategies[digest] case final strategy?) {
             unreadable[digest] = strategy;
           }
+        case _RebuildRefused(:final refusal, :final header):
+          _listRefused(digest, header, refusal);
         case _NoStrategyThere():
           break;
       }
@@ -1417,6 +1443,8 @@ final class LibraryStore {
           return Refused(UnreadableRowInTheWay(row));
         case _HeaderMissing(:final ref):
           return Refused(StrategyNotReadable(ref));
+        case _RebuildRefused(:final refusal):
+          return Refused(refusal);
         case _RebuildNotRead(:final failure):
           return NotSaved(failure);
         case _NoStrategyThere():
@@ -1728,6 +1756,8 @@ final class LibraryStore {
             return Refused(UnreadableRowInTheWay(row));
           case _HeaderMissing(:final ref):
             return Refused(StrategyNotReadable(ref));
+          case _RebuildRefused(:final refusal):
+            return Refused(refusal);
           case _RebuildNotRead(:final failure):
             return NotSaved(failure);
           case _NoStrategyThere():
@@ -2162,6 +2192,8 @@ final class _LibraryEdit {
             return _Stop(Refused(UnreadableRowInTheWay(row)));
           case _HeaderMissing(:final ref):
             return _Stop(Refused(StrategyNotReadable(ref)));
+          case _RebuildRefused(:final refusal):
+            return _Stop(Refused(refusal));
           case _RebuildNotRead(:final failure):
             return _Stop(NotSaved(failure));
           case _NoStrategyThere():

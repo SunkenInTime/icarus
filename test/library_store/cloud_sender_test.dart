@@ -1474,6 +1474,22 @@ void main() {
     });
 
     test(
+        'each refusal the store makes is reported once, however often the '
+        'sender meets it, and a later refusal for the same reason is reported '
+        'again', () {
+      inWorld((world) {
+        final store = SenderStore(world.store);
+        const reason = 'a row on page p1 is damaged here';
+        store
+          ..refused(strategyId, const StoredRowsDisagree(reason, serial: 1))
+          ..refused(strategyId, const StoredRowsDisagree(reason, serial: 1))
+          ..refused(strategyId, const StoredRowsDisagree(reason, serial: 2))
+          ..refused(strategyId, const StoredRowsDisagree(reason, serial: 2));
+        expect(store.reports.whereType<StoredRowsRefused>(), hasLength(2));
+      });
+    });
+
+    test(
         'the sender keeps its last thousand reports, and tests and the driver '
         'can keep them all', () {
       inWorld((world) {
@@ -2483,6 +2499,87 @@ void main() {
                 .whereType<StoredRowsRefused>()
                 .map((report) => report.strategyId),
             [strategyId],
+          );
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'a disagreement the sender meets when it reads the strategy is '
+        'reported once, though the store also announces it', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      final settings = contents[area]!.keys.firstWhere(
+            (key) => key.startsWith('settings/'),
+          );
+      contents[area]!.remove(settings);
+      inWorld(
+        (world) {
+          world.sender.retryNow(strategyId);
+          world.settle(const Duration(hours: 1));
+          expect(
+            world.sender.store.reports.whereType<StoredRowsRefused>(),
+            hasLength(1),
+          );
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'after an unreadable queue is discarded, the sender reads the page '
+        'list and every page again, and the pages come back', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents[strategyArea(strategyId)]!['pending/999'] = 'not a queue row';
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          final before = server.readCalls.length;
+          Saving<StrategySummary, CommitRefusal>? discarded;
+          world.store
+              .discardUnreadableQueue(
+                servedAccount,
+                strategyId,
+                const DiscardsUnsentWork(),
+              )
+              .then((result) => discarded = result);
+          world.settle(const Duration(minutes: 5));
+          expect(discarded, isA<Saved<StrategySummary, CommitRefusal>>());
+          final pages = [
+            for (final page in server.rows[strategyId]!.pages) page.publicId,
+          ];
+          final reads = readsAfter(world, before);
+          expect(reads, contains('list'));
+          expect(reads, containsAll([for (final page in pages) 'page $page']));
+          Reading<PageContent>? read;
+          world.store
+              .readPage(strategyId, pages.first)
+              .then((result) => read = result);
+          world.settle();
+          expect(
+            read,
+            isA<Found<PageContent>>().having(
+              (found) => found.value.elements,
+              'elements',
+              isNotEmpty,
+            ),
           );
         },
         storage: MemoryStorage(contents),

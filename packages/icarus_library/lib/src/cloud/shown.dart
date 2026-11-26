@@ -25,25 +25,31 @@ final shownWork = ShownWork();
 
 final class TakesDiffer extends StateError {
   TakesDiffer(String page)
-    : super(
+    : differingPage = page,
+      super(
         'page $page taken with digests of this run differs from the same '
         'result taken from scratch',
       );
 
   TakesDiffer.group(String? page)
-    : super(
+    : differingPage = null,
+      super(
         'the stored results of ${page ?? 'the page list'} kept from before '
         'differ from encoding them again',
       );
 
   TakesDiffer.copies(String id)
-    : super('the store holds $id on more than one page');
+    : differingPage = null,
+      super('the store holds $id on more than one page');
 
   TakesDiffer.missing(String id)
-    : super(
+    : differingPage = null,
+      super(
         'item $id is held unchanged by the queue, but the store has no '
         'readable copy of it',
       );
+
+  final String? differingPage;
 }
 
 final class ShownRow {
