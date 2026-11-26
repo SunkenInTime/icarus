@@ -22,6 +22,7 @@ import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
@@ -267,8 +268,6 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
 
   /// Keeps the map's canvas mounted when a quick look opens out.
   final _communityCanvasKey = GlobalKey(debugLabel: 'community-canvas');
-  bool _isInitialLoadPending = false;
-  bool _hasInitialLoadCompleted = false;
 
   /// Set when the reader leaves for the library. The editor stays mounted
   /// while it animates out, so being mounted does not mean still wanted.
@@ -287,7 +286,6 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
   void initState() {
     super.initState();
     if (widget.initialStrategyId != null) {
-      _isInitialLoadPending = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_loadInitialStrategy());
       });
@@ -308,12 +306,7 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
   Future<void> _loadInitialStrategy() async {
     final strategyId = widget.initialStrategyId;
     final source = widget.initialStrategySource;
-    if (strategyId == null) {
-      if (mounted) {
-        setState(() => _isInitialLoadPending = false);
-      }
-      return;
-    }
+    if (strategyId == null) return;
     if (!widget.asked
         .isNow(ref.read(strategyProvider.notifier).askedByTheUserNow())) {
       _leaveAfterFailedLoad();
@@ -351,9 +344,9 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
       }
       switch (opened) {
         case Changed():
-          _hasInitialLoadCompleted = true;
+          break;
         case GaveWay() when _handedOn:
-          _hasInitialLoadCompleted = true;
+          break;
         case GaveWay():
           _leaveAfterFailedLoad();
         case Missing():
@@ -396,10 +389,6 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
             : Settings.tacticalVioletTheme.destructive,
       );
       _leaveAfterFailedLoad();
-    } finally {
-      if (mounted) {
-        setState(() => _isInitialLoadPending = false);
-      }
     }
   }
 
@@ -407,6 +396,15 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
         final EditorClaim claim => !claim.isHeldBy(widget.asked),
         _ => false,
       };
+
+  bool _showsItsOpenLoading(StrategyOpening? opening, OpenSeen now) {
+    if (widget.initialStrategyId == null || _handedOn) return false;
+    return switch (now.opens - widget.asked.opens) {
+      0 => true,
+      1 => opening != null || now.strategyId != widget.initialStrategyId,
+      _ => false,
+    };
+  }
 
   /// Takes this editor off the screen after its strategy failed to open.
   /// Another screen may have been pushed over it meanwhile (a share link
@@ -519,14 +517,12 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
         );
       }
     });
-    final strategyState = ref.watch(strategyProvider);
+    ref.watch(strategyProvider);
     final viewOnly = ref.watch(isViewOnlyStrategyProvider);
-    final initialStrategyId = widget.initialStrategyId;
-    final showSkeleton = _isInitialLoadPending ||
-        (!_hasInitialLoadCompleted &&
-            initialStrategyId != null &&
-            (!strategyState.isOpen ||
-                strategyState.strategyId != initialStrategyId));
+    final showSkeleton = _showsItsOpenLoading(
+      ref.watch(strategyOpeningProvider),
+      ref.read(strategyProvider.notifier).askedByTheUserNow(),
+    );
 
     final formFactor = FormFactor.of(context);
     final touch = formFactor.isTouch;

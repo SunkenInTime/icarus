@@ -45,6 +45,7 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/strategy_view_skeleton.dart';
 
 import 'editor_on_screen_support.dart';
 import 'replay_test_support.dart';
@@ -971,6 +972,44 @@ void main() {
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
     expect(mouseNavigationRouteObserver.topRoute?.settings.name,
         Routes.strategyView);
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'an editor whose first load throws after a newer open took it in place '
+      'shows that open, not its loading screen', (tester) async {
+    await tester.runAsync(() => _stored('throws-a'));
+    await pumpLibraryWithEditors(tester, container);
+    final readA = pages.held['throws-a'] = Completer<void>();
+    pages.fails.add('throws-a');
+    final readB = _ReadsItsHeader.held['cloud-b'] = Completer<void>();
+    addTearDown(() {
+      pages.held.clear();
+      pages.fails.clear();
+      _ReadsItsHeader.held.clear();
+    });
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'throws-a',
+        initialStrategyName: 'throws-a',
+      ),
+      isA<Pushed>(),
+    );
+    await untilOpen(tester, 'throws-a');
+    final editor = mouseNavigationRouteObserver.topRoute;
+
+    container.read(sharedStrategyToOpenProvider.notifier).state = 'cloud-b';
+    await settleWithDisk(tester);
+    readA.complete();
+    await settleWithDisk(tester);
+    readB.complete();
+    await untilOpen(tester, 'cloud-b');
+    await settleWithDisk(tester);
+
+    expect(mouseNavigationRouteObserver.topRoute, same(editor));
+    expect(find.byType(StrategyViewSkeleton), findsNothing);
     await leaveEditors(tester, container);
   });
 }
