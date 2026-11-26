@@ -38,17 +38,6 @@ final class TakesDiffer extends StateError {
         'differ from encoding them again',
       );
 
-  TakesDiffer.copies(String id)
-    : differingPage = null,
-      super('the store holds $id on more than one page');
-
-  TakesDiffer.missing(String id)
-    : differingPage = null,
-      super(
-        'item $id is held unchanged by the queue, but the store has no '
-        'readable copy of it',
-      );
-
   final String? differingPage;
 }
 

@@ -1163,7 +1163,13 @@ extension _CloudStore on LibraryStore {
             case HeldRow():
               break;
             case HeldNothing() || HeldUnplaced():
-              throw TakesDiffer.missing('${row.key}');
+              throw _RowsDisagree(
+                _refuse(
+                  strategy,
+                  '${row.key} is held unchanged by the queue, but no readable '
+                  'copy is stored here',
+                ),
+              );
           }
         case PageLeft(:final page):
           dropPageAt(digestOf(page));
@@ -1190,7 +1196,11 @@ extension _CloudStore on LibraryStore {
           ),
           _ => const <String>[],
         };
-        if (copies.length > 1) throw TakesDiffer.copies('$target');
+        if (copies.length > 1) {
+          throw _RowsDisagree(
+            _refuse(strategy, '$target is held on more than one page here'),
+          );
+        }
       }
     }
     final writes = <_Write>[

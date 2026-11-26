@@ -92,9 +92,12 @@ final class Opened {
     });
   }
 
-  static Future<Opened> over(MemoryStorage storage) async {
+  static Future<Opened> over(
+    MemoryStorage storage, {
+    CloudResults results = CloudResults.thisDevicesReads,
+  }) async {
     final (engine, counts) = counting(MemoryEngine(storage));
-    return Opened._(await openCloudStore(engine), counts);
+    return Opened._(await openCloudStore(engine, results: results), counts);
   }
 
   final LibraryStore store;
@@ -340,7 +343,10 @@ void main() {
         seed(disk);
         final before = editable(disk);
         final storage = MemoryStorage(disk);
-        final opened = await Opened.over(storage);
+        final opened = await Opened.over(
+          storage,
+          results: CloudResults.liveQueries,
+        );
         await readEveryPage(opened.store);
         await expectRefused(opened.store, reason);
         expect(
@@ -772,7 +778,11 @@ void main() {
       damage(disk);
       final before = editable(disk);
       final storage = MemoryStorage(disk);
-      return (await Opened.over(storage), storage, before);
+      return (
+        await Opened.over(storage, results: CloudResults.liveQueries),
+        storage,
+        before,
+      );
     }
 
     LiveElement repairedE9() => LiveElement(
@@ -933,6 +943,29 @@ void main() {
     await addCloud(store, initialRows());
     await readEveryPage(store);
     expect(await refusedFor(store), isNull);
+  });
+
+  test('a store that main\'s discard of an unreadable queue left behind, its '
+      'base rows kept and its queue cleared, is refused until #822 brings it '
+      'back', () async {
+    final disk = await addedOnDisk();
+    disk[area]!.removeWhere(
+      (key, _) =>
+          key.startsWith('read/') ||
+          key.startsWith('pending/') ||
+          key.startsWith('attempt/') ||
+          key.startsWith('landed/'),
+    );
+    final before = editable(disk);
+    final storage = MemoryStorage(disk);
+    final opened = await Opened.over(storage);
+    await readEveryPage(opened.store);
+    expect(
+      await refusedFor(opened.store),
+      contains('is live here and not in the queue'),
+    );
+    expect(opened.counts.commits, 0);
+    expect(storage.contents, before);
   });
 
   group('the store\'s own guards', () {
@@ -1116,7 +1149,10 @@ void main() {
     );
     disk[area]!['pending/999'] = 'not a queue row';
     final storage = MemoryStorage(disk);
-    final store = await openCloudStore(MemoryEngine(storage));
+    final store = await openCloudStore(
+      MemoryEngine(storage),
+      results: CloudResults.liveQueries,
+    );
     final page = await store.readPage(strategyId, 'page-a');
     expect(
       page,
