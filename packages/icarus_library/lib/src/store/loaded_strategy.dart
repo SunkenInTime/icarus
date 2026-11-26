@@ -285,8 +285,12 @@ final class LoadedStrategy {
 
   bool isLoaded(String pageDigest) => _loaded.containsKey(pageDigest);
 
-  void addLoadedPage(String pageDigest, LoadedPage page) =>
-      _loaded[pageDigest] = page;
+  static void Function(String strategy, String page)? pageEntered;
+
+  void addLoadedPage(String pageDigest, LoadedPage page) {
+    pageEntered?.call(digest, pageDigest);
+    _loaded[pageDigest] = page;
+  }
 
   Set<String> get pageDigests => {..._pages.keys, ..._contentPages};
 

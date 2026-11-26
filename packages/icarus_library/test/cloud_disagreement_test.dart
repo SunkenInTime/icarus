@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/src/store/loaded_strategy.dart'
+    show LoadedStrategy;
 import 'package:icarus_library/src/store/store.dart' show storeWork;
 import 'package:test/test.dart';
 
@@ -118,6 +120,30 @@ final class Opened {
   Future<void> close() async {
     await _changes.cancel();
     await store.close();
+  }
+}
+
+final class HidingTheArea extends ForwardingLease {
+  HidingTheArea(super.inner, this.hidden);
+
+  final bool Function() hidden;
+
+  @override
+  Future<Stored<List<String>>> keys(String area, String prefix) async =>
+      hidden() ? const Done([]) : await super.keys(area, prefix);
+}
+
+final class ThrowingOnContent extends ForwardingLease {
+  ThrowingOnContent(super.inner, this.failing);
+
+  final bool Function() failing;
+
+  @override
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) {
+    if (failing() && prefix.startsWith('content/')) {
+      throw JsonUnsupportedObjectError(prefix);
+    }
+    return super.entries(area, prefix);
   }
 }
 
@@ -770,21 +796,9 @@ void main() {
     expect(storage.contents[area]!.containsKey(key), isFalse);
   });
 
-  group('damaged rows main tolerated are now refused, and stay on disk', () {
-    Future<(Opened, MemoryStorage, Contents)> withDamaged(
-      void Function(Contents disk) damage,
-    ) async {
-      final disk = await addedOnDisk();
-      damage(disk);
-      final before = editable(disk);
-      final storage = MemoryStorage(disk);
-      return (
-        await Opened.over(storage, results: CloudResults.liveQueries),
-        storage,
-        before,
-      );
-    }
-
+  group('damaged rows main tolerated are now refused when the queue loads, '
+      'before the result reaches them, and stay on disk; the same results '
+      'are taken by a store without the damage', () {
     LiveElement repairedE9() => LiveElement(
       publicId: 'e9',
       pagePublicId: 'page-a',
@@ -794,24 +808,37 @@ void main() {
       unknownFields: jsonObject({'createdAt': fixtureLife}),
     );
 
-    test('a damaged extra item, repaired and then removed by two results in '
-        'one call', () async {
-      final key = elementName('page-a', 'e9');
-      final (opened, storage, before) = await withDamaged(
-        (disk) => disk[area]![key] = '{"broken":true}',
+    Future<void> refusedHereTakenThere(
+      void Function(Contents disk) damage,
+      List<ArrivedBase> results,
+    ) async {
+      final healthy = await Opened.over(
+        MemoryStorage(await addedOnDisk()),
+        results: CloudResults.liveQueries,
+      );
+      await recordAll(healthy.store, [const AppRestarted(build: build)]);
+      final session = await sessionOf(healthy.store);
+      expect(
+        (await recordAll(healthy.store, [
+          for (final result in results)
+            BaseArrived(result, session: session, from: const LiveResult()),
+        ])).outcomes,
+        everyElement(isA<ReportApplied>()),
+      );
+
+      final disk = await addedOnDisk();
+      damage(disk);
+      final before = editable(disk);
+      final storage = MemoryStorage(disk);
+      final damaged = await Opened.over(
+        storage,
+        results: CloudResults.liveQueries,
       );
       expect(
-        await opened.store.record(testAccount, strategyId, [
-          BaseArrived(
-            pageReadOf(initialRows().withRows([repairedE9()]), 'page-a'),
-            session: 1,
-            from: const LiveResult(),
-          ),
-          BaseArrived(
-            pageReadOf(initialRows(), 'page-a'),
-            session: 1,
-            from: const LiveResult(),
-          ),
+        await damaged.store.record(testAccount, strategyId, [
+          const AppRestarted(build: build),
+          for (final result in results)
+            BaseArrived(result, session: session, from: const LiveResult()),
         ]),
         isA<Refused<Recorded, CommitRefusal>>().having(
           (refused) => refused.reason,
@@ -819,47 +846,33 @@ void main() {
           isA<StoredRowsDisagree>(),
         ),
       );
-      expect(opened.counts.commits, 0);
+      expect(damaged.counts.commits, 0);
       expect(storage.contents, before);
-      expect(storage.contents[area]![key], '{"broken":true}');
+    }
+
+    test('a damaged extra item, repaired and then removed by two results in '
+        'one call', () async {
+      await refusedHereTakenThere(
+        (disk) => disk[area]![elementName('page-a', 'e9')] = '{"broken":true}',
+        [
+          pageReadOf(initialRows().withRows([repairedE9()]), 'page-a'),
+          pageReadOf(initialRows(), 'page-a'),
+        ],
+      );
     });
 
     test('a damaged extra item that a full page result leaves out', () async {
-      final key = elementName('page-a', 'e9');
-      final (opened, storage, before) = await withDamaged(
-        (disk) => disk[area]![key] = '{"broken":true}',
+      await refusedHereTakenThere(
+        (disk) => disk[area]![elementName('page-a', 'e9')] = '{"broken":true}',
+        [pageReadOf(initialRows(), 'page-a')],
       );
-      expect(
-        await opened.store.record(testAccount, strategyId, [
-          BaseArrived(
-            pageReadOf(initialRows(), 'page-a'),
-            session: 1,
-            from: const LiveResult(),
-          ),
-        ]),
-        isA<Refused<Recorded, CommitRefusal>>(),
-      );
-      expect(opened.counts.commits, 0);
-      expect(storage.contents, before);
     });
 
     test('a page that goes, with an unreadable settings row', () async {
-      final key = settingsName('page-b');
-      final (opened, storage, before) = await withDamaged(
-        (disk) => disk[area]![key] = '{"broken":true}',
+      await refusedHereTakenThere(
+        (disk) => disk[area]![settingsName('page-b')] = '{"broken":true}',
+        [const PageGone('page-b')],
       );
-      expect(
-        await opened.store.record(testAccount, strategyId, [
-          const BaseArrived(PageGone('page-b'), session: 1, from: LiveResult()),
-        ]),
-        isA<Refused<Recorded, CommitRefusal>>(),
-      );
-      expect(
-        await refusedFor(opened.store),
-        'a page or settings row is damaged here',
-      );
-      expect(opened.counts.commits, 0);
-      expect(storage.contents, before);
     });
   });
 
@@ -968,21 +981,61 @@ void main() {
     expect(storage.contents, before);
   });
 
+  test('right after a refused strategy is removed, a record for its id is '
+      'NoSuchStrategy, not the old refusal', () async {
+    final disk = await addedOnDisk();
+    disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+    final store = await openCloudStore(MemoryEngine(MemoryStorage(disk)));
+    await readEveryPage(store);
+    expect(await refusedFor(store), isNotNull);
+    savedValue(await store.editLibrary([const RemoveStrategy(strategyId)]));
+    expect(
+      await store.record(testAccount, strategyId, const [ConnectionReturned()]),
+      isA<Refused<Recorded, CommitRefusal>>().having(
+        (refused) => refused.reason,
+        'reason',
+        isA<NoSuchStrategy>(),
+      ),
+    );
+  });
+
+  test('a refused strategy whose stored area went away without the store '
+      'being told, then added afresh, is not refused', () async {
+    final disk = await addedOnDisk();
+    disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+    var hidden = false;
+    final store = await openCloudStore(
+      WrappingEngine(
+        MemoryEngine(MemoryStorage(disk)),
+        (lease) => HidingTheArea(lease, () => hidden),
+      ),
+    );
+    await readEveryPage(store);
+    expect(await refusedFor(store), isNotNull);
+    hidden = true;
+    await addCloud(store, initialRows());
+    hidden = false;
+    await readEveryPage(store);
+    expect(await refusedFor(store), isNull);
+  });
+
   group('the store\'s own guards', () {
-    test('a damaged page is never admitted to memory; the strategy and its '
-        'queue leave memory when a batch fails part way', () async {
+    test('a damaged page never enters the loaded-page map, and the strategy '
+        'and its queue leave memory when a batch fails part way', () async {
       final disk = await addedOnDisk();
       disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
       final store = await openCloudStore(MemoryEngine(MemoryStorage(disk)));
+      final entered = <(String, String)>[];
+      LoadedStrategy.pageEntered = (strategy, page) =>
+          entered.add((strategy, page));
+      addTearDown(() => LoadedStrategy.pageEntered = null);
       await recordAll(store, [const AppRestarted(build: build)]);
       final session = await sessionOf(store);
       final from = await beganIn(store);
-      storeWork.reset();
       expect(
         await store.readPage(strategyId, 'page-b'),
         isA<Found<PageContent>>(),
       );
-      expect(storeWork.cloudPagesAdmitted, 1);
       expect(storeWork.strategiesInMemory(), contains(digestOf(strategyId)));
       expect(
         await store.record(testAccount, strategyId, [
@@ -1004,12 +1057,93 @@ void main() {
         ]),
         isA<Refused<Recorded, CommitRefusal>>(),
       );
-      expect(storeWork.cloudPagesAdmitted, 1);
+      expect(entered, contains((digestOf(strategyId), digestOf('page-b'))));
+      expect(
+        entered,
+        isNot(contains((digestOf(strategyId), digestOf('page-a')))),
+      );
       expect(
         storeWork.strategiesInMemory(),
         isNot(contains(digestOf(strategyId))),
       );
       expect(storeWork.queuesInMemory(), isNot(contains(digestOf(strategyId))));
+    });
+
+    test('a refusal found while a result is being applied, after a changed '
+        'row was applied, leaves neither the strategy nor its queue in '
+        'memory, and nothing is written', () async {
+      final disk = await addedOnDisk();
+      disk[area]![elementName('page-a', 'e1')] = jsonEncode({
+        ...json(disk[area]![elementName('page-a', 'e1')]!),
+        'sortIndex': 99,
+      });
+      final storage = MemoryStorage(disk);
+      final opened = await Opened.over(storage);
+      await recordAll(opened.store, [const AppRestarted(build: build)]);
+      final session = await sessionOf(opened.store);
+      final from = await beganIn(opened.store);
+      final before = editable(storage.contents);
+      final commits = opened.counts.commits;
+      final rows = initialRows();
+      expect(
+        await opened.store.record(testAccount, strategyId, [
+          BaseArrived(
+            PageRead(
+              page: rows.page('page-a')!,
+              elements: [
+                element('e2', revision: 2, sortIndex: 4),
+                rows.element('e1')!,
+              ],
+              lineupGroups: const [],
+            ),
+            session: session,
+            from: from,
+          ),
+        ]),
+        isA<Refused<Recorded, CommitRefusal>>().having(
+          (refused) => refused.reason,
+          'reason',
+          isA<StoredRowsDisagree>(),
+        ),
+      );
+      expect(
+        storeWork.strategiesInMemory(),
+        isNot(contains(digestOf(strategyId))),
+      );
+      expect(storeWork.queuesInMemory(), isNot(contains(digestOf(strategyId))));
+      expect(opened.counts.commits, commits);
+      expect(storage.contents, before);
+    });
+
+    test('an unrelated error while a result loads its page escapes as itself: '
+        'no refusal, nothing written', () async {
+      final disk = await addedOnDisk();
+      final storage = MemoryStorage(disk);
+      var failing = false;
+      final store = await openCloudStore(
+        WrappingEngine(
+          MemoryEngine(storage),
+          (lease) => ThrowingOnContent(lease, () => failing),
+        ),
+      );
+      await recordAll(store, [const AppRestarted(build: build)]);
+      final session = await sessionOf(store);
+      final from = await beganIn(store);
+      final before = editable(storage.contents);
+      failing = true;
+      await expectLater(
+        store.record(testAccount, strategyId, [
+          BaseArrived(
+            pageReadOf(initialRows(), 'page-a'),
+            session: session,
+            from: from,
+          ),
+        ]),
+        throwsA(isA<JsonUnsupportedObjectError>()),
+      );
+      failing = false;
+      expect(store.refusedStrategies, isEmpty);
+      expect(storage.contents, before);
     });
 
     test('a refusal remembered for a page does not skip the queue-load '

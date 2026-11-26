@@ -424,8 +424,20 @@ Future<String> waitStoreSent(
   ProviderContainer c,
   Duration within, {
   bool landedMayWait = false,
+}) =>
+    waitStoreSentIn(
+      _storeOf(c),
+      within,
+      landedMayWait: landedMayWait,
+      senderWords: () => _senderWords(c),
+    );
+
+Future<String> waitStoreSentIn(
+  LibraryStore store,
+  Duration within, {
+  bool landedMayWait = false,
+  required String Function() senderWords,
 }) async {
-  final store = _storeOf(c);
   final until = DateTime.now().add(within);
   while (true) {
     final (:queues, :refused) = await _cloudQueuesAndRefusals(store);
@@ -448,12 +460,12 @@ Future<String> waitStoreSent(
       ];
       return 'CLOUDSTORE every queue is empty and '
           '${landed.isEmpty ? 'no landed work waits for a result' : '${landed.join(', ')} wait for a result'}'
-          '; sender ${_senderWords(c)}';
+          '; sender ${senderWords()}';
     }
     if (DateTime.now().isAfter(until)) {
       throw StateError(
         'work left after ${within.inSeconds} s: ${left.join('; ')}; sender '
-        '${_senderWords(c)}',
+        '${senderWords()}',
       );
     }
     await Future<void>.delayed(const Duration(milliseconds: 250));

@@ -35,7 +35,6 @@ final class StoreWork {
   int resultGroupsEncoded = 0;
   int rowsEncoded = 0;
   int rowsCompared = 0;
-  int cloudPagesAdmitted = 0;
   int Function() sessionRecords = () => 0;
   Set<String> Function() strategiesInMemory = () => const {};
   Set<String> Function() queuesInMemory = () => const {};
@@ -45,7 +44,6 @@ final class StoreWork {
     resultGroupsEncoded = 0;
     rowsEncoded = 0;
     rowsCompared = 0;
-    cloudPagesAdmitted = 0;
   }
 }
 

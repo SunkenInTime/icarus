@@ -765,7 +765,6 @@ extension _CloudStore on LibraryStore {
               case final reason?) {
             throw _RowsDisagree(_refuse(strategy, reason));
           }
-          storeWork.cloudPagesAdmitted++;
           _addPage(strategy, digest, page);
       }
     }

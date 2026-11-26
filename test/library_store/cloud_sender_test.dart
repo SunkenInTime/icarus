@@ -6,7 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
-import 'package:icarus/dev/drive/drive_cloud_store.dart' show useCloudAs;
+import 'package:icarus/dev/drive/drive_cloud_store.dart'
+    show useCloudAs, waitStoreSentIn;
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/stall_exits.dart';
@@ -2500,6 +2501,124 @@ void main() {
                 .map((report) => report.strategyId),
             [strategyId],
           );
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'the driver\'s wait fails, naming the strategy and its reason, when a '
+        'strategy the store refused at open is listed only among the '
+        'unreadable ones and another strategy\'s queue is empty', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents['library']!['summary/${digestOf(strategyId)}'] =
+          '{"broken":true}';
+      contents[area]!.remove(
+        contents[area]!.keys.firstWhere((key) => key.startsWith('settings/')),
+      );
+      inWorld(
+        (world) {
+          world.addOtherStrategy();
+          world.settle();
+          final listed = switch (world.store.library) {
+            LibraryOpen(:final list) => list,
+            LibraryShut() => fail('the store is shut'),
+          };
+          expect(
+            [for (final summary in listed.strategies) summary.publicId],
+            isNot(contains(strategyId)),
+          );
+          Object? failed;
+          String? passed;
+          waitStoreSentIn(
+            world.store,
+            Duration.zero,
+            senderWords: () => '',
+          ).then<void>(
+            (value) => passed = value,
+            onError: (Object error) => failed = error,
+          );
+          world.settle(const Duration(seconds: 1));
+          expect(passed, isNull);
+          expect(
+            '$failed',
+            allOf(
+              contains(strategyId),
+              contains('the settings held here are not the ones the queue '
+                  'holds'),
+            ),
+          );
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'the sender saw a healthy queue with sendable work, and the strategy '
+        'is refused while its claim waits: nothing is submitted', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+          world.signIn(null);
+          world.settle();
+          final first = world.firstElement();
+          world.commit([
+            ElementAddOp(
+              opId: 'add-on-the-second-page',
+              elementPublicId: 'added-on-the-second-page',
+              pagePublicId: server.rows[strategyId]!.pages.last.publicId,
+              payload: first.payload,
+              sortIndex: 100,
+            ),
+          ]);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      final damaged = contents[area]!.keys.firstWhere(
+            (key) => key.contains('/e/'),
+          );
+      contents[area]![damaged] = '{"broken":true}';
+      inWorld(
+        (world) {
+          final batches = server.calls.length;
+          world.slowStore.claimWaits = const Duration(minutes: 1);
+          world.settle(const Duration(seconds: 5));
+          expect(world.slowStore.claimWaits, Duration.zero);
+          expect(
+            world.sender.store.reports.whereType<StoredRowsRefused>(),
+            isEmpty,
+          );
+          expect(server.calls.length, batches);
+          for (final page in server.rows[strategyId]!.pages) {
+            world.store.readPage(strategyId, page.publicId);
+          }
+          world.settle(Duration.zero);
+          expect(world.store.refusedStrategies.keys, [strategyId]);
+          world.settle(const Duration(hours: 1));
+          expect(server.calls.length, batches);
         },
         storage: MemoryStorage(contents),
         server: server,
