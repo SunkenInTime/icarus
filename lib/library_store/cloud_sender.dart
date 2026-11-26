@@ -85,7 +85,7 @@ final class SignInHold extends RunHold {
   String toString() => 'waiting for the sign-in to change from count $from';
 }
 
-typedef _Asked = ({int session, ResultPoint point, int requestedAt});
+typedef _Asked = ({int session, ResultPoint point, int? requestedAt});
 
 typedef Bound = ({
   int connection,
@@ -269,6 +269,7 @@ final class CloudSender {
   String? ended;
   var disposed = false;
   final bound = <String, Bound>{};
+  final _unanswered = <String, int?>{};
   final restarted = <String>{};
   final notBefore = <String, DateTime>{};
   final _failures = <String, int>{};
@@ -804,10 +805,8 @@ final class CloudSender {
         _earliest(retryAt, readDue),
       );
     }
-    final int session;
     switch (await _openSession(id, owner, snap)) {
-      case _Open(:final opened, :final number):
-        session = number;
+      case _Open(:final opened):
         if (opened) {
           switch (await _store.read(id)) {
             case QueueFound(cloud: final fresh):
@@ -824,6 +823,7 @@ final class CloudSender {
     }
     if (disposed) return const _Ended();
     if (held != null || _inputs != snap) return const _Restart();
+    final session = cloud.queue.session.number;
     final open = openAttempts(cloud);
     if (open.isNotEmpty) {
       final at = _clock();
@@ -1039,7 +1039,7 @@ final class CloudSender {
       _Why.need || _Why.adopt => cloud,
       _Why.access || _Why.retire => null,
     };
-    final int requestedAt;
+    final int? requestedAt;
     final StoreReadOutcome outcome;
     final DateTime started;
     final kept = _governor.heldFor(id, read, under);
@@ -1060,7 +1060,11 @@ final class CloudSender {
             when at.isAfter(_clock())) {
           return _Skipped(row ?? why.row, at);
         }
-        requestedAt = cloud.queue.session.sequence;
+        final key = '$id $read';
+        requestedAt =
+            _unanswered.containsKey(key) && _unanswered[key] == snap.connection
+                ? null
+                : cloud.queue.session.sequence;
         switch (await _issue(id, owner, read, snap, why)) {
           case NotYet(:final at, why: final row):
             return _Skipped(row ?? why.row, at);
@@ -1070,6 +1074,14 @@ final class CloudSender {
         }
     }
     if (disposed) return const _Ended();
+    switch (outcome) {
+      case StoreReadLost(failure: TransportFailure.timeout):
+        _unanswered['$id $read'] = snap.connection;
+      case StoreReadAnswered() || StoreReadRefused() || StoreReadUnreadable():
+        _unanswered.remove('$id $read');
+      case StoreReadLost():
+        break;
+    }
     if (_inputs != snap) {
       _note(
           id,
@@ -1316,7 +1328,7 @@ final class CloudSender {
     Snapshot snap, {
     required bool held,
     CloudStrategy? marking,
-    ({int session, int requestedAt})? request,
+    ({int session, int? requestedAt})? request,
     CloudStrategy? planned,
   }) async {
     switch (outcome) {
