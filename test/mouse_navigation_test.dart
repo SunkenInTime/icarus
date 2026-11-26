@@ -499,7 +499,7 @@ void main() {
       container.read(strategySaveStateProvider.notifier).markDirty();
       await tester.pump();
 
-      final home = guardThen(
+      final home = guardThenIgnoringWhatItSaw(
         context: editor,
         ref: editorRef,
         source: 'mouse-navigation-test-home',
@@ -535,7 +535,7 @@ void main() {
       container.read(strategySaveStateProvider.notifier).markDirty();
       await tester.pump();
 
-      unawaited(guardThen(
+      unawaited(guardThenIgnoringWhatItSaw(
         context: editor,
         ref: editorRef,
         source: 'mouse-navigation-test-home',

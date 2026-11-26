@@ -4,7 +4,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy/open_seen.dart';
 
-extension OpensNow on StrategyProvider {
+extension OpensWithAnAnswerTakenNow on StrategyProvider {
   Future<bool> loadFromHive(String id, {String? pageId}) async {
     final change =
         await openLocal(id, pageId: pageId, asked: askedByTheUserNow());
@@ -23,7 +23,7 @@ extension OpensNow on StrategyProvider {
   }
 }
 
-Future<bool> guardThen({
+Future<bool> guardThenIgnoringWhatItSaw({
   required BuildContext context,
   required WidgetRef ref,
   required String source,
