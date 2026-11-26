@@ -110,8 +110,8 @@ Future<String> storeAdd(
     payload: payload,
     sortIndex: 1000 + Random().nextInt(1000),
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: add $kind $itemId to page $page of '
       '$strategyId at (${at.$1}, ${at.$2})';
@@ -131,8 +131,8 @@ Future<String> storeAddPage(ProviderContainer c) async {
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: add page ${op.pagePublicId} to '
       '$strategyId with no editor open';
@@ -284,8 +284,8 @@ Future<String> storeDelete(ProviderContainer c, String itemId) async {
     pagePublicId: element.pagePublicId,
     expectedElementRevision: element.revision,
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: delete $itemId of $strategyId over '
       'revision ${element.revision}';
@@ -312,8 +312,8 @@ Future<String> storeSetField(
     ),
     merge: FieldMerge(fields: [field]),
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: seen);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: $field of $itemId of $strategyId '
       'set to $value as a field merge over revision ${element.revision}';
@@ -362,8 +362,8 @@ Future<String> storeDeletePage(ProviderContainer c, int index) async {
     expectedStrategyRevision:
         (read.value.strategy.toJson()! as Map)['revision']! as int,
   );
-  final saved = await store
-      .commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
+  final saved =
+      await store.commitAllAs(_signedIn(c), strategyId, [op], seen: read.value);
   if (saved is! Saved) throw StateError('the store did not take it: $saved');
   return 'CLOUDSTORE committed ${op.opId}: delete page $page of $strategyId '
       'with no editor open';
@@ -624,29 +624,221 @@ Future<String> waitStoreHeld(ProviderContainer c, Duration within) async {
   }
 }
 
+Future<String> waitStoreReading(ProviderContainer c, Duration within) async {
+  final sender = _sender(c);
+  final before = sender.reads;
+  final until = DateTime.now().add(within);
+  while (true) {
+    if (sender.reads > before) {
+      if (sender.reading case final why?) {
+        return 'CLOUDSTORE the sender had a read in flight when this step '
+            'looked: $why; it may be answered or lost before the network '
+            'returns; sender ${_senderWords(c)}';
+      }
+    }
+    if (DateTime.now().isAfter(until)) {
+      throw StateError(
+        'the sender had no read in flight that it began within '
+        '${within.inSeconds} s; ${sender.reads - before} began and ended; '
+        'sender ${_senderWords(c)}',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
+
 List<String> storeSessionOpenings(
   ProviderContainer c, {
   required bool stampExpected,
+}) =>
+    [
+      reconnectSessionOpening(
+        _sender(c).store.reports,
+        storedCloudStrategy(c),
+        stampExpected: stampExpected,
+      ),
+    ];
+
+String reconnectSessionOpening(
+  List<SenderReport> reports,
+  String strategyId, {
+  required bool stampExpected,
 }) {
-  final openings = [
-    for (final report in _sender(c).store.reports)
+  final binds = [
+    for (final (index, report) in reports.indexed)
       if (report
-          case EventsWritten(:final strategyId, :final events, :final effects))
-        for (final opened in effects.whereType<SessionOpened>())
-          (strategyId, opened.session, _openedBy(events)),
+          case SessionOpenedFor(
+            strategyId: final id,
+            :final session,
+            :final stamp,
+          ) when id == strategyId)
+        (index: index, session: session, connection: stamp.connection),
   ];
-  final byStamp = openings.where((opening) => opening.$3 == null).length;
-  if (stampExpected && byStamp == 0) {
+  final connections = {for (final bind in binds) bind.connection};
+  if (binds.isEmpty || connections.length != 2) {
     throw StateError(
-      'no session was opened by a result\'s stamp; openings: '
-      '${[for (final (id, session, by) in openings) '$id $session by $by']}',
+      'the sender bound $strategyId on ${connections.length} connections, '
+      'not two, so the cut cannot be told apart',
     );
   }
-  return [
-    for (final (id, session, by) in openings)
-      'CLOUDSTORE session $session of $id opened by '
-          '${by ?? 'a result\'s stamp'}',
+  final first = binds.first.connection;
+  final at = binds.indexWhere((bind) => bind.connection != first);
+  final cut = binds[at - 1].index;
+  final session = binds[at].session;
+  final opened = [
+    for (final report in reports.sublist(cut + 1))
+      if (report
+          case EventsWritten(
+            strategyId: final id,
+            :final events,
+            :final effects
+          ) when id == strategyId)
+        for (final opening in effects.whereType<SessionOpened>())
+          (session: opening.session, by: _openedBy(events)),
   ];
+  String words(({int session, String? by}) opening) =>
+      'session ${opening.session} by ${opening.by ?? 'a result\'s stamp'}';
+  if (opened case [final only] when only.session == session) {
+    if (stampExpected && only.by != null) {
+      throw StateError(
+        'the reconnect after the cut bound $strategyId to ${words(only)}, '
+        'not by a result\'s stamp',
+      );
+    }
+    return 'CLOUDSTORE the reconnect after the cut bound $strategyId to '
+        '${words(only)}, the one session opened from the cut to the end of '
+        'the run';
+  }
+  throw StateError(
+    'the reconnect after the cut bound session $session of $strategyId, and '
+    'from the cut to the end of the run the store opened '
+    '${opened.isEmpty ? 'no session' : opened.map(words).join(', ')}, not '
+    'that session alone',
+  );
+}
+
+List<String> storeAnswerLostAndResent(ProviderContainer c) => [
+      lostAnswerResent(_sender(c).store.reports, storedCloudStrategy(c)),
+    ];
+
+sealed class _Resend {
+  const _Resend(this.words);
+
+  final String words;
+}
+
+final class _AnsweredAsApplied extends _Resend {
+  const _AnsweredAsApplied(super.words);
+}
+
+final class _NeverReceived extends _Resend {
+  const _NeverReceived(super.words);
+}
+
+final class _ResendWrong extends _Resend {
+  const _ResendWrong(super.words);
+}
+
+String lostAnswerResent(List<SenderReport> reports, String strategyId) {
+  final sent = <int, ClaimedBatch>{
+    for (final report in reports)
+      if (report case BatchSentAs(strategyId: final id, :final batch)
+          when id == strategyId)
+        batch.attempt: batch,
+  };
+  final writes = [
+    for (final report in reports)
+      if (report case EventsWritten(strategyId: final id) when id == strategyId)
+        report,
+  ];
+  final lost = <int, String>{};
+  for (final write in writes) {
+    final admitted = {
+      for (final effect in write.effects)
+        if (effect case AnswerAdmitted(:final attempt)) attempt,
+    };
+    for (final event in write.events) {
+      switch (event) {
+        case TransportFailed(:final attempt, :final failure)
+            when sent.containsKey(attempt):
+          lost[attempt] ??= 'no answer came (${failure.name})';
+        case OpAnswered(:final attempt, :final point) ||
+                BatchRefused(:final attempt, :final point) ||
+                BatchAccountMismatch(:final attempt, :final point)
+            when sent.containsKey(attempt) && !admitted.contains(attempt):
+          lost[attempt] ??= 'its answer came on connection '
+              '${point.connection}, which had ended';
+        case _:
+          break;
+      }
+    }
+  }
+  if (lost.isEmpty) {
+    throw StateError(
+      'did not reach the case: none of the ${sent.length} batches sent for '
+      '$strategyId had its answer closed as lost',
+    );
+  }
+  OpAnswer? admittedAnswer(int attempt, String opId) {
+    for (final write in writes) {
+      if (!write.effects.contains(AnswerAdmitted(attempt, opId: opId))) {
+        continue;
+      }
+      for (final event in write.events) {
+        if (event case OpAnswered(attempt: final at, :final answer)
+            when at == attempt && answer.opId == opId) {
+          return answer;
+        }
+      }
+    }
+    return null;
+  }
+
+  final resends = <_Resend>[];
+  for (final MapEntry(key: attempt, value: how) in lost.entries) {
+    final ops = {for (final op in sent[attempt]!.ops) op.opId};
+    final again = [
+      for (final later in sent.values)
+        if (later.attempt > attempt)
+          for (final op in later.ops)
+            if (ops.contains(op.opId)) (attempt: later.attempt, opId: op.opId),
+    ];
+    if (again.isEmpty) {
+      resends.add(
+        _ResendWrong(
+          'attempt $attempt was closed as lost ($how), and none of its ops '
+          'was sent again',
+        ),
+      );
+    }
+    for (final (attempt: resent, :opId) in again) {
+      final first = 'attempt $attempt was closed as lost ($how); $opId was '
+          'sent again in attempt $resent';
+      resends.add(switch (admittedAnswer(resent, opId)) {
+        NoopAnswer(replay: NoopReplay.appliedWhenFirstReceived) =>
+          _AnsweredAsApplied(
+            '$first, and the server answered it as applied when first '
+            'received',
+          ),
+        AppliedAnswer() => _NeverReceived(
+            '$first, and that send applied it: the server never received '
+            'attempt $attempt',
+          ),
+        null => _ResendWrong('$first, and no answer to it was admitted'),
+        final other => _ResendWrong(
+            '$first, and the server answered ${other.runtimeType}',
+          ),
+      });
+    }
+  }
+  if (resends.whereType<_AnsweredAsApplied>().firstOrNull case final done?) {
+    return 'CLOUDSTORE ${done.words}';
+  }
+  final words = resends.map((resend) => resend.words).join('; ');
+  if (resends.every((resend) => resend is _NeverReceived)) {
+    throw StateError('did not reach the case: $words');
+  }
+  throw StateError(words);
 }
 
 String? _openedBy(List<QueueEvent> events) => switch (events
@@ -1670,6 +1862,8 @@ String _eventWords(QueueEvent event) => switch (event) {
         'attempt $attempt: no answer (${failure.name})',
       BatchRefused(:final attempt, :final refusal) =>
         'attempt $attempt refused whole (${refusal.name})',
+      BatchAccountMismatch(:final attempt) =>
+        'attempt $attempt refused for another account',
       ClaimReleased(:final attempt) => 'attempt $attempt given back unsent',
       UserUsedCloud(:final opId) =>
         'the user took the cloud\'s version of $opId',
