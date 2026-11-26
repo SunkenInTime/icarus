@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
+import 'package:icarus/strategy/local_library_view.dart';
+import 'package:flutter/gestures.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -41,6 +45,7 @@ final class _SignedOut extends AuthProvider {
 final class _HeldSaves extends StrategyProvider {
   Completer<void>? held;
   var cancels = 0;
+  final saved = <String>[];
 
   @override
   void cancelPendingSave() {
@@ -53,6 +58,7 @@ final class _HeldSaves extends StrategyProvider {
 
   @override
   Future<void> forceSaveNow(String id) async {
+    saved.add(id);
     if (held case final held?) return held.future;
     return super.forceSaveNow(id);
   }
@@ -91,6 +97,8 @@ final class _HeldPost implements CommunityRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+
 Finder _leaveButton() => find.byWidgetPredicate(
     (widget) => widget.runtimeType.toString() == '_LeaveButton');
 
@@ -106,7 +114,8 @@ void main() {
   ]);
   appProviderContainer = container;
   container.read(strategyProvider);
-  setUpAll(openUnitHive);
+  late Directory disk;
+  setUpAll(() async => disk = await openUnitHive());
   tearDown(() => strategies.held = null);
   tearDownAll(Hive.close);
 
@@ -450,6 +459,61 @@ void main() {
 
     expect(mouseNavigationRouteObserver.topRoute, same(editorRoute));
     expect(container.read(communityPostViewProvider), isNull);
+    expect(strategies.cancels, cancels);
+    await expectItsEditSaves(tester, 'opened-meanwhile');
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      "a tile's Export whose open gives way to a strategy opened meanwhile "
+      'exports nothing and leaves that strategy with its edit, which saves',
+      (tester) async {
+    await tester.runAsync(() async {
+      await _stored('tile-strategy');
+      await _stored('opened-meanwhile');
+    });
+    final summary =
+        container.read(localLibraryViewProvider).strategy('tile-strategy')!;
+    await pumpLibraryWithEditors(
+      tester,
+      container,
+      library: SizedBox(
+        width: 400,
+        height: 300,
+        child: StrategyTile.local(localStrategy: summary),
+      ),
+    );
+    final reached = Completer<void>();
+    final held = Completer<void>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, (call) async {
+      if (!reached.isCompleted) {
+        reached.complete();
+        await held.future;
+      }
+      return disk.path;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_pathProvider, (call) async => disk.path));
+
+    await tester.tap(find.byType(StrategyTile), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Export'));
+    for (var turn = 0; turn < 20 && !reached.isCompleted; turn++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(reached.isCompleted, isTrue);
+
+    await openWithAnEdit(tester, 'opened-meanwhile');
+    final cancels = strategies.cancels;
+    held.complete();
+    await settleWithDisk(tester);
+
+    expect(strategies.saved, isNot(contains('tile-strategy')));
     expect(strategies.cancels, cancels);
     await expectItsEditSaves(tester, 'opened-meanwhile');
     await leaveEditors(tester, container);

@@ -31,8 +31,9 @@ late WidgetRef libraryRef;
 
 Future<List<MethodCall>> pumpLibraryWithEditors(
   WidgetTester tester,
-  ProviderContainer container,
-) async {
+  ProviderContainer container, {
+  Widget library = const Text('library'),
+}) async {
   final windowCalls = <MethodCall>[];
   tester.view.physicalSize = const Size(2560, 1440);
   tester.view.devicePixelRatio = 1;
@@ -60,7 +61,7 @@ Future<List<MethodCall>> pumpLibraryWithEditors(
         body: Consumer(builder: (context, ref, _) {
           libraryContext = context;
           libraryRef = ref;
-          return const Text('library');
+          return library;
         }),
       ),
     )),
