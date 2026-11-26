@@ -157,7 +157,7 @@ Map<String, int> runSeed(int seed, int steps) {
     if (!result.stale) lastFresh = started;
     if (tie) count('started with the read before it');
     if (cached.takenFor(result.base) case final mark?
-        when started.order.isBefore(mark)) {
+        when started.order.isBefore(mark.order)) {
       count('dropped as older');
       continue;
     }

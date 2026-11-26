@@ -88,7 +88,7 @@ final class Model {
     heldGeneration = lastPoint.generation;
     final shown = client.queue.shown;
     for (final subject in [null, ...shown.pagesTaken.keys]) {
-      if (shown.takenOf(subject) case final order?) {
+      if (shown.takenOf(subject)?.order case final order?) {
         final key = (0, order.client, order.snapshot);
         mirrorTaken[subject] = key;
         ordersOf[(subject, key)] = order;
@@ -1125,12 +1125,12 @@ final class Model {
 
   void deliverRead(BaseArrived read, String label, {required bool late}) {
     final subject = subjectOf(read.base);
-    final before = client.queue.shown.takenOf(subject);
+    final before = client.queue.shown.takenOf(subject)?.order;
     final result = apply(read, label);
     final kind = subject == null ? 'list' : 'page';
     final mine = mirrorTaken[subject];
     final order = mirrorRead(read);
-    final now = client.queue.shown.takenOf(subject);
+    final now = client.queue.shown.takenOf(subject)?.order;
     final taken = order != null && now == order && now != before;
     if (now != before && (now != order || mirrorTaken[subject] == mine)) {
       throw StateError(
@@ -1247,7 +1247,7 @@ final class Model {
       ...shown.pagesTaken.keys,
       ...mirrorTaken.keys,
     }) {
-      final taken = shown.takenOf(subject);
+      final taken = shown.takenOf(subject)?.order;
       final mine = switch (mirrorTaken[subject]) {
         final key? => ordersOf[(subject, key)],
         null => null,

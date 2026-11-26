@@ -191,7 +191,7 @@ void main() {
           ),
         );
         expect(client.queue.session.number, greaterThan(before));
-        expect(client.queue.shown.pagesTaken['page-a']?.client, 2);
+        expect(client.queue.shown.pagesTaken['page-a']?.order.client, 2);
       },
     );
   });
