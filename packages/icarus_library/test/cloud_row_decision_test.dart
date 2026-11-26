@@ -467,8 +467,9 @@ void main() {
     );
   }
 
-  test('a damaged copy left on a page an item moved away from refuses the '
-      'strategy when its queue loads', () async {
+  test('a damaged copy left on a page an item moved away from sets the base '
+      'aside when the store opens, and reading the list and pages again ends '
+      'with the store and the queue agreeing', () async {
     final storage = MemoryStorage();
     var store = await openCloudStore(MemoryEngine(storage));
     await addCloud(store, initialRows());
@@ -479,15 +480,23 @@ void main() {
     contents[strategyArea(strategyId)]![elementName('page-a', 'e1')] =
         '{"broken":true}';
     store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+    await recordAll(store, [const AppRestarted(build: build)]);
+    expect((await syncOf(store)).queue.strategy.base, isA<BaseRereading>());
     expect(
-      await store.readPage(strategyId, 'page-a'),
-      isA<InUnreadableStrategy<PageContent>>(),
+      (await store.readPage(strategyId, 'page-a') as Found<PageContent>)
+          .value
+          .unplaced,
+      isEmpty,
     );
-    expect(
-      await refusedFor(store),
-      'an item is held here on another page than in the queue, or on more '
-      'than one',
-    );
+
+    await arriveIn(store, headerReadOf(moved), await beganIn(store));
+    for (final page in ['page-a', 'page-b']) {
+      await arriveIn(store, pageReadOf(moved, page), await beganIn(store));
+    }
+    expect((await syncOf(store)).queue.strategy.base, isA<BaseAgrees>());
+    expect(await itemsOn(store, 'page-a'), isNot(contains('e1')));
+    expect(await itemsOn(store, 'page-b'), contains('e1'));
+    await expectAgree(store);
   });
 
   test('a trashed page the page list carried is held in Shown from its page '

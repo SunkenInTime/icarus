@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:icarus/config/drive_build.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/slowed_engine.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -17,7 +18,12 @@ Future<LibraryStoreOpened> openLibraryStore(
   }
   final engine = SqliteEngine(file.path);
   final StorageEngine opened = driveBuild ? SlowedEngine(engine) : engine;
-  switch (await LibraryStore.open(opened, canRead: appCanRead, build: build)) {
+  switch (await LibraryStore.open(
+    opened,
+    canRead: appCanRead,
+    build: build,
+    buildNumber: build.isEmpty ? 0 : Settings.versionNumber,
+  )) {
     case StoreOpened(:final store, :final origin, :final foreignNames):
       return LibraryStoreReady(file, store, origin, foreignNames, engine.close);
     case StoreNotOpened(:final problem):

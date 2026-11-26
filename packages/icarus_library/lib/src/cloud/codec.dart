@@ -655,6 +655,15 @@ Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
           ],
         },
     ],
+  if (facts.base case BaseDisagreed(:final reason, :final tried))
+    'base': {
+      'state': switch (facts.base) {
+        BaseRereading() => 'rereading',
+        _ => 'held',
+      },
+      'reason': reason,
+      'tried': tried,
+    },
 };
 
 CloudOwner ownerFromText(String text) => switch (admit(text)) {
@@ -696,6 +705,22 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
       final Object raw => _setAside(raw),
     };
     if (setAside == null) fields.reject('an unreadable set-aside record');
+    final BaseState? base = switch (fields.json['base']) {
+      null => const BaseAgrees(),
+      {
+        'state': final String state,
+        'reason': final String reason,
+        'tried': final List<Object?> tried,
+      }
+          when tried.isNotEmpty && tried.every((build) => build is String) =>
+        switch (state) {
+          'rereading' => BaseRereading(reason, tried: tried.cast()),
+          'held' => BaseHeld(reason, tried: tried.cast()),
+          _ => null,
+        },
+      _ => null,
+    };
+    if (base == null) fields.reject('an unreadable base state');
     return () => CloudFacts(
       Account(account),
       StrategyFacts(
@@ -704,6 +729,7 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
         accessConfirmedAt: confirmed,
         upgradeTold: upgrade,
         setAside: setAside!,
+        base: base!,
       ),
     );
   }),

@@ -44,6 +44,12 @@ final class LoadedPage {
   final unknownKinds = <UnknownKindRow>[];
   final unplaced = <String, UnplacedRow>{};
   final foreignNames = <ForeignName>[];
+  bool _checked = false;
+
+  bool get checked => _checked;
+
+  void markChecked() => _checked = true;
+
   bool get isEmpty =>
       elements.isEmpty &&
       lineupGroups.isEmpty &&
@@ -169,6 +175,19 @@ final class LoadedStrategy {
   final _elementPages = <String, Set<String>>{};
   final _lineupPages = <String, Set<String>>{};
   final _itemsOnPage = <String, Set<(bool, String)>>{};
+  bool membershipChecked = false;
+  String? Function(String pageDigest)? checkLoadedPage;
+  String? disagreement;
+
+  void checked(String pageDigest) {
+    final page = _loaded[pageDigest];
+    if (page == null || page.checked || checkLoadedPage == null) return;
+    page.markChecked();
+    if (checkLoadedPage?.call(pageDigest) case final reason?) {
+      disagreement ??= reason;
+    }
+  }
+
   void _index(bool lineup, String item, String page) {
     ((lineup ? _lineupPages : _elementPages)[item] ??= {}).add(page);
     (_itemsOnPage[page] ??= {}).add((lineup, item));
@@ -441,6 +460,17 @@ final class LoadedStrategy {
         _forget(row);
       case StrategyRow() || FolderRow():
         throw StateError('$row is never forgotten alone');
+    }
+  }
+
+  void forgetContent(String pageDigest) {
+    _contentPages.remove(pageDigest);
+    _loaded.remove(pageDigest);
+    for (final (lineup, item) in [...?_itemsOnPage.remove(pageDigest)]) {
+      (lineup ? _lineupPages : _elementPages)[item]?.remove(pageDigest);
+    }
+    if (_pages.containsKey(pageDigest)) {
+      _loaded[pageDigest] = LoadedPage()..markChecked();
     }
   }
 
