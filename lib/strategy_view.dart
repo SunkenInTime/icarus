@@ -266,7 +266,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     }
     if (!kIsWeb) {
       windowManager.addListener(this);
-      _enableWindowCloseGuard();
+      if (_editorsOnScreen++ == 0) {
+        unawaited(windowManager.setPreventClose(true));
+      }
     }
   }
 
@@ -274,14 +276,14 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   void dispose() {
     if (!kIsWeb) {
       windowManager.removeListener(this);
-      windowManager.setPreventClose(false);
+      if (--_editorsOnScreen == 0) {
+        unawaited(windowManager.setPreventClose(false));
+      }
     }
     super.dispose();
   }
 
-  Future<void> _enableWindowCloseGuard() async {
-    await windowManager.setPreventClose(true);
-  }
+  static var _editorsOnScreen = 0;
 
   Future<void> _loadInitialStrategy() async {
     final strategyId = widget.initialStrategyId;

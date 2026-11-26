@@ -17,10 +17,11 @@ const _reportsOfTheTestFontAndTeardown = [
 
 FlutterExceptionHandler? _reportedBeforeTheEditor;
 
-Future<void> pumpLibraryWithEditors(
+Future<List<bool>> pumpLibraryWithEditors(
   WidgetTester tester,
   ProviderContainer container,
 ) async {
+  final preventClose = <bool>[];
   tester.view.physicalSize = const Size(2560, 1440);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -34,7 +35,12 @@ Future<void> pumpLibraryWithEditors(
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
     const MethodChannel('window_manager'),
-    (call) async => null,
+    (call) async {
+      if (call.method == 'setPreventClose') {
+        preventClose.add((call.arguments as Map)['isPreventClose'] as bool);
+      }
+      return null;
+    },
   );
   await tester.pumpWidget(UncontrolledProviderScope(
     container: container,
@@ -44,6 +50,7 @@ Future<void> pumpLibraryWithEditors(
       home: const Scaffold(body: Text('library')),
     ),
   ));
+  return preventClose;
 }
 
 Future<void> settleWithDisk(WidgetTester tester) async {
