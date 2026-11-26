@@ -1,0 +1,18 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"newLocal": "ascent", "name": "Dense open"},
+  {"wait": 4},
+  {"tapText": "Dense open"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"fillPage": 3000},
+  {"wait": 2},
+  {"keyCombo": ["controlLeft", "keyS"]},
+  {"wait": 4},
+  {"tapIcon": "house300"},
+  {"wait": 4},
+  {"openFirstFrame": "Dense open", "runs": 12},
+  {"exit": 1}
+]

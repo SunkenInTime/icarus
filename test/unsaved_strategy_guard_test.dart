@@ -28,10 +28,10 @@ import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'opens_now_support.dart';
 
 bool _adaptersRegistered = false;
 
@@ -424,7 +424,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final result = await guardUnsavedStrategyExit(
+      final result = await guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-autosave',
@@ -464,7 +464,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final result = await guardUnsavedStrategyExit(
+      final result = await guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-local-draft',
@@ -503,7 +503,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-manual-save',
@@ -547,7 +547,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-strategy-changed',
@@ -597,7 +597,7 @@ void main() {
         container.read(strategySaveStateProvider.notifier).markDirty();
         await pumpLibraryUnderEditor(tester);
 
-        final guardFuture = guardUnsavedStrategyExit(
+        final guardFuture = guardThenIgnoringWhatItSaw(
           context: context,
           ref: ref,
           source: 'guard-test-leave-to-library',
@@ -648,7 +648,7 @@ void main() {
       await pumpLibraryUnderEditor(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-covered',
@@ -682,7 +682,7 @@ void main() {
     });
 
     testWidgets(
-        'dirty autosave-disabled exit keeps dont-save branch behavior intact',
+        "Don't save leaves the pending save alone until the exit goes ahead",
         (tester) async {
       notifier = _FakeGuardStrategyProvider(
         initialState: const StrategyState(
@@ -704,7 +704,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-dont-save',
@@ -721,7 +721,7 @@ void main() {
       final result = await guardFuture;
       expect(result, isTrue);
       expect(continueCalls, 1);
-      expect(notifier.cancelPendingSaveCalls, 1);
+      expect(notifier.cancelPendingSaveCalls, 0);
       expect(notifier.forceSaveCalls, 0);
     });
 
@@ -749,7 +749,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-error',
@@ -803,7 +803,7 @@ void main() {
       addTearDown(container.dispose);
       await pumpHarness(tester);
 
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-cloud-refused',
@@ -854,7 +854,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-cloud-offline',
@@ -915,7 +915,7 @@ void main() {
       container.read(strategySaveStateProvider.notifier).markDirty();
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-canvas-held',
@@ -967,7 +967,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-leave-recheck',
@@ -1023,7 +1023,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-cloud-viewer',
@@ -1075,7 +1075,7 @@ void main() {
       addTearDown(container.dispose);
       await pumpHarness(tester);
 
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-cloud-nondurable',
@@ -1134,7 +1134,7 @@ void main() {
         addTearDown(container.dispose);
         await pumpHarness(tester);
         var continued = false;
-        final guarded = guardUnsavedStrategyExit(
+        final guarded = guardThenIgnoringWhatItSaw(
           context: context,
           ref: ref,
           source: 'mixed-durability-test',
@@ -1206,7 +1206,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-unreliable-media',
@@ -1273,7 +1273,7 @@ void main() {
       addTearDown(container.dispose);
       await pumpHarness(tester);
 
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-staged-media',
@@ -1323,7 +1323,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final result = await guardUnsavedStrategyExit(
+      final result = await guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-cloud-draft',
@@ -1373,7 +1373,7 @@ void main() {
       await pumpHarness(tester);
 
       var continueCalls = 0;
-      final guardFuture = guardUnsavedStrategyExit(
+      final guardFuture = guardThenIgnoringWhatItSaw(
         context: context,
         ref: ref,
         source: 'guard-test-cloud-flush',

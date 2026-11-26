@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/maps.dart';
@@ -294,43 +295,80 @@ Future<void> pickMapAndOpenNewStrategy({
     builder: (context) => const CreateStrategyDialog(),
   );
   if (map == null || !context.mounted) return;
-  await _createStrategyAndOpen(map, ref: ref, context: context);
+  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
+  await _createStrategyAndOpen(map, ref: ref, context: context, asked: asked);
 }
 
 /// A local strategy paints on the chosen map at once and loads inside the
-/// view; a cloud strategy is already open once the server has created it.
+/// view; a cloud strategy opens once the server has created it.
 Future<void> _createStrategyAndOpen(
   MapValue map, {
   required WidgetRef ref,
   required BuildContext context,
+  required OpenSeen asked,
 }) async {
   final isCloud = ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
+  final l10n = ref.read(l10nProvider);
+  final strategies = ref.read(strategyProvider.notifier);
   final StrategyData strategy;
   try {
-    strategy =
-        await ref.read(strategyProvider.notifier).createNewStrategy(map: map);
+    strategy = await strategies.createNewStrategy(map: map);
   } catch (_) {
     Settings.showToast(
       message: isCloud
-          ? ref.read(l10nProvider).libraryCreateCloudStrategyFailed
-          : ref.read(l10nProvider).libraryCreateStrategyFailed,
+          ? l10n.libraryCreateCloudStrategyFailed
+          : l10n.libraryCreateStrategyFailed,
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     return;
   }
   if (!context.mounted) return;
 
-  Navigator.push(
-    context,
-    isCloud
-        ? StrategyView.route()
-        : StrategyView.route(
-            initialStrategyId: strategy.id,
-            initialStrategyName: strategy.name,
-            initialStrategySource: StrategySource.local,
-            initialMapValue: strategy.mapData,
-          ),
-  );
+  final EditorPush push;
+  if (isCloud) {
+    final OpenChange opened;
+    try {
+      opened = await strategies.openCloud(strategy.id, asked: asked);
+    } catch (error, stackTrace) {
+      switch (strategies.closeAfterFailedOpen(asked: asked)) {
+        case Changed() || GaveWay():
+          break;
+      }
+      AppErrorReporter.reportWarning(
+        'Created a cloud strategy but could not open it.',
+        source: 'FolderNavigator.createStrategyAndOpen',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      Settings.showToast(
+        message: l10n.strategyMsgCreatedNotOpened,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    switch (opened) {
+      case GaveWay():
+        return;
+      case Changed(:final after):
+        if (!context.mounted) return;
+        push = StrategyView.open(Navigator.of(context), asked: after);
+    }
+  } else {
+    push = StrategyView.open(
+      Navigator.of(context),
+      asked: asked,
+      initialStrategyId: strategy.id,
+      initialStrategyName: strategy.name,
+      initialStrategySource: StrategySource.local,
+      initialMapValue: strategy.mapData,
+    );
+  }
+  switch (push) {
+    case Pushed(:final closed):
+      await closed;
+    case Refused():
+      break;
+  }
 }
 
 /// Something the user can drag around the library grid.

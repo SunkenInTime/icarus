@@ -11,6 +11,7 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/services/cloud_sign_out_coordinator.dart';
@@ -266,6 +267,31 @@ void main() {
     expect(find.textContaining('account-b'), findsNothing);
   });
 
+  testWidgets(
+      'a close of the open cloud strategy that gives way blocks sign out on '
+      'screen, keeps the editor, and never signs out', (tester) async {
+    var rawSignOuts = 0;
+    final container = _container(
+      rawSignOut: () async {
+        rawSignOuts += 1;
+        return true;
+      },
+      strategy: _ClosesNothing.new,
+      closesTheRealEditor: true,
+    );
+    addTearDown(container.dispose);
+    await _pumpHarness(tester, container);
+
+    await tester.tap(find.text('Request sign out'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sign Out'));
+    await tester.pumpAndSettle();
+
+    expect(find.text("Can't sign out yet"), findsOneWidget);
+    expect(rawSignOuts, 0);
+    expect(container.read(strategyProvider).strategyId, 'active-strategy');
+  });
+
   testWidgets('raw sign-out failure does not report success or navigate',
       (tester) async {
     var editorCloses = 0;
@@ -347,12 +373,14 @@ ProviderContainer _container({
   CloudSignOutPreparation? preparation,
   RawSignOut? rawSignOut,
   CloudEditorClose? closeEditor,
+  StrategyProvider Function() strategy = _ActiveCloudStrategy.new,
+  bool closesTheRealEditor = false,
   ReplayCaptureQueueState captures = const ReplayCaptureQueueState(),
 }) {
   return ProviderContainer(overrides: [
     replayCaptureQueueProvider.overrideWith(() => _FixedCaptures(captures)),
     authProvider.overrideWith(_SignedInAuth.new),
-    strategyProvider.overrideWith(_ActiveCloudStrategy.new),
+    strategyProvider.overrideWith(strategy),
     strategySaveStateProvider.overrideWith(_CleanSaveState.new),
     strategyOpQueueProvider.overrideWith(() => _FixedOpQueue(opQueue)),
     cloudMediaUploadQueueProvider.overrideWith(
@@ -362,7 +390,8 @@ ProviderContainer _container({
       preparation ?? () async {},
     ),
     rawSignOutProvider.overrideWithValue(rawSignOut ?? () async => true),
-    cloudEditorCloseProvider.overrideWithValue(closeEditor ?? () async {}),
+    if (!closesTheRealEditor)
+      cloudEditorCloseProvider.overrideWithValue(closeEditor ?? () async {}),
     cloudStrategyNamesProvider.overrideWithValue(const {
       'active-strategy': 'Active strategy',
       'closed-strategy': 'Bind retake',
@@ -436,6 +465,11 @@ class _ActiveCloudStrategy extends StrategyProvider {
         storageDirectory: null,
         isOpen: true,
       );
+}
+
+class _ClosesNothing extends _ActiveCloudStrategy {
+  @override
+  CloseChange closeStrategy({required OpenSeen asked}) => const GaveWay();
 }
 
 class _PreparingCloudStrategy extends _ActiveCloudStrategy {

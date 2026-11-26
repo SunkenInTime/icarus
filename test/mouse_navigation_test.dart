@@ -4,8 +4,8 @@ import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
-import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/widgets/community/community_link.dart';
+import 'package:icarus/widgets/community/community_post_view.dart';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -20,11 +20,18 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
+import 'package:icarus/strategy/open_seen.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
+import 'opens_now_support.dart';
+
+import 'library_rows/generated_strategies.dart';
 
 void main() {
   testWidgets('mouse back does not navigate under an open Shad popover',
@@ -204,6 +211,14 @@ void main() {
         await tester.pump();
         strategies.show('other-id', then);
         await tester.pump();
+        unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+          settings: RouteSettings(
+            name: Routes.strategyView,
+            arguments: EditorClaim.showing(strategies.askedByTheUserNow()),
+          ),
+          builder: (_) => const Scaffold(body: Text('editor')),
+        )));
+        await tester.pumpAndSettle();
 
         await tester.sendEventToBinding(
           const PointerDownEvent(
@@ -251,9 +266,11 @@ void main() {
       expect(container.read(strategyProvider).strategyId, 'shared-id');
     });
 
-    testWidgets('a back whose open gave way does not count as having moved',
-        (tester) async {
+    testWidgets(
+        'a back whose open gave way does not count as having moved, and '
+        "leaves the editor's tool as it was", (tester) async {
       final strategies = _RecordingStrategies()..givesWay.add('shared-id');
+      late ProviderContainer container;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -264,7 +281,10 @@ void main() {
           child: ShadApp(
             navigatorKey: appNavigatorKey,
             navigatorObservers: [mouseNavigationRouteObserver],
-            builder: (_, child) => MouseNavigation(child: child!),
+            builder: (context, child) {
+              container = ProviderScope.containerOf(context);
+              return MouseNavigation(child: child!);
+            },
             home: const Scaffold(body: Text('library')),
           ),
         ),
@@ -273,6 +293,9 @@ void main() {
       await tester.pump();
       strategies.show('other-id', StrategySource.local);
       await tester.pump();
+      container
+          .read(interactionStateProvider.notifier)
+          .update(InteractionState.drawing);
 
       Future<void> back(int pointer) async {
         await tester.sendEventToBinding(
@@ -288,6 +311,7 @@ void main() {
 
       await back(1);
       expect(strategies.state.strategyId, 'other-id');
+      expect(container.read(interactionStateProvider), InteractionState.drawing);
       // Still one step back from where the reader is: back tries it again.
       await back(2);
       expect(strategies.opened, ['local:shared-id', 'local:shared-id']);
@@ -416,6 +440,43 @@ void main() {
       return container;
     }
 
+    Future<(ProviderContainer, WidgetRef)> pumpLibraryReading(
+      WidgetTester tester,
+      _UnsavedStrategies strategies,
+      CommunityRepository posts,
+    ) async {
+      late WidgetRef libraryRef;
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+            isCloudWorkspaceAvailableProvider.overrideWithValue(true),
+            strategyProvider.overrideWith(() => strategies),
+            authProvider.overrideWith(_SignedOut.new),
+            communityRepositoryProvider.overrideWithValue(posts),
+          ],
+          child: ToastificationWrapper(
+            child: ShadApp(
+              navigatorKey: appNavigatorKey,
+              navigatorObservers: [mouseNavigationRouteObserver],
+              builder: (context, child) {
+                container = ProviderScope.containerOf(context);
+                return MouseNavigation(child: child!);
+              },
+              home: Scaffold(
+                body: Consumer(builder: (context, ref, _) {
+                  libraryRef = ref;
+                  return const Text('library');
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      return (container, libraryRef);
+    }
+
     Future<(BuildContext, WidgetRef)> openEditor(
       WidgetTester tester,
       _UnsavedStrategies strategies,
@@ -448,7 +509,7 @@ void main() {
       container.read(strategySaveStateProvider.notifier).markDirty();
       await tester.pump();
 
-      final home = guardUnsavedStrategyExit(
+      final home = guardThenIgnoringWhatItSaw(
         context: editor,
         ref: editorRef,
         source: 'mouse-navigation-test-home',
@@ -460,7 +521,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Save changes?'), findsOneWidget);
 
-      container.read(communityPostToOpenProvider.notifier).state = 'gone';
+      container.read(communityPostToOpenProvider.notifier).state =
+          const PostLinkArrived('gone');
       await tester.pumpAndSettle();
       expect(find.text('Save changes?'), findsNWidgets(2));
       await tester.tap(find.text("Don't save").last);
@@ -470,6 +532,114 @@ void main() {
       expect(find.text('Save changes?'), findsNothing);
       expect(find.text('editor', skipOffstage: false), findsNothing);
       expect(find.text('library'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 10));
+    });
+
+    for (final tapped in [true, false]) {
+      testWidgets(
+          tapped
+              ? 'a post tapped in the app whose read comes back after a '
+                  'strategy opened gives way to that strategy'
+              : 'a post linked from outside whose read comes back after a '
+                  'strategy opened leaves that strategy for the post',
+          (tester) async {
+        final strategies = _UnsavedStrategies();
+        final posts = _HeldPost();
+        final (container, _) =
+            await pumpLibraryReading(tester, strategies, posts);
+
+        container.read(communityPostToOpenProvider.notifier).state = tapped
+            ? PostTapped('linked-post', strategies.askedByTheUserNow())
+            : const PostLinkArrived('linked-post');
+        await tester.pump();
+        expect(posts.asked, ['linked-post']);
+        await openEditor(tester, strategies);
+        final editorRoute = mouseNavigationRouteObserver.topRoute;
+
+        posts.release();
+        await tester.pump();
+        await tester.pump();
+
+        if (tapped) {
+          expect(mouseNavigationRouteObserver.topRoute, same(editorRoute));
+          expect(strategies.state.strategyId, 'editor-id');
+          expect(container.read(communityPostViewProvider), isNull);
+        } else {
+          expect(strategies.state.strategyId, isNot('editor-id'));
+          expect(container.read(communityPostViewProvider)?.publicId,
+              'linked-post');
+          final top = mouseNavigationRouteObserver.topRoute;
+          expect(top, isNot(same(editorRoute)));
+          expect(top?.settings.name, Routes.strategyView);
+          expect(
+            tester
+                .widget<StrategyView>(
+                    find.byType(StrategyView, skipOffstage: false))
+                .communityPost
+                ?.publicId,
+            'linked-post',
+          );
+        }
+      });
+    }
+
+    testWidgets(
+        'a Back to a post whose read comes back after another strategy '
+        'opened is not recorded as a move, and the next Back goes from that '
+        'strategy to the one before it', (tester) async {
+      await tester.runAsync(() async {
+        if (!Hive.isAdapterRegistered(20)) registerIcarusAdapters(Hive);
+        final stored = await Hive.openBox<StrategyData>(
+          HiveBoxNames.strategiesBox,
+        );
+        await stored.put(
+          'strategy-a',
+          generatedStrategy(Optionals.set)
+              .copyWith(id: 'strategy-a', name: 'strategy-a'),
+        );
+      });
+      final strategies = _UnsavedStrategies();
+      final posts = _HeldPost();
+      final (container, _) =
+          await pumpLibraryReading(tester, strategies, posts);
+      final post = _post('history-post');
+      container.read(communityPostViewProvider.notifier).state = post;
+      strategies.show(post.strategyPublicId, StrategySource.cloud);
+      await tester.pump();
+      container.read(communityPostViewProvider.notifier).state = null;
+      strategies.show('strategy-a', StrategySource.local);
+      await tester.pump();
+
+      Future<void> back(int pointer) async {
+        await tester.sendEventToBinding(PointerDownEvent(
+          pointer: pointer,
+          kind: PointerDeviceKind.mouse,
+          buttons: kBackMouseButton,
+          position: const Offset(400, 300),
+        ));
+        await tester.pump();
+        await tester.pump();
+      }
+
+      await back(1);
+      expect(posts.asked, ['history-post']);
+      strategies.show('strategy-b', StrategySource.local);
+      unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: Routes.strategyView,
+          arguments: EditorClaim.showing(strategies.askedByTheUserNow()),
+        ),
+        builder: (_) => const Scaffold(body: Text('strategy-b')),
+      )));
+      await tester.pump();
+      posts.release();
+      await tester.pumpAndSettle();
+      expect(strategies.state.strategyId, 'strategy-b');
+
+      await back(2);
+      await tester.pumpAndSettle();
+      expect(strategies.state.strategyId, 'strategy-a');
+      expect(strategies.opened.last, 'local:strategy-a');
       await tester.pump(const Duration(seconds: 10));
     });
 
@@ -489,7 +659,7 @@ void main() {
 
       ProviderScope.containerOf(editor)
           .read(communityPostToOpenProvider.notifier)
-          .state = 'gone';
+          .state = const PostLinkArrived('gone');
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 10));
 
@@ -516,12 +686,18 @@ class _RecordingStrategies extends StrategyProvider {
   Future<void> Function()? whileOpening;
 
   @override
-  Future<void> clearCurrentStrategy() async => state = const StrategyState();
+  CloseChange closeStrategy({required OpenSeen asked}) {
+    if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
+    ref.read(strategyOpeningProvider.notifier).endAll();
+    state = const StrategyState();
+    return Changed(askedByTheUserNow());
+  }
 
   @override
   StrategyState build() => const StrategyState();
 
   void show(String id, StrategySource source) {
+    ref.read(strategyOpeningProvider.notifier).endAll();
     state = StrategyState(
       strategyId: id,
       strategyName: id,
@@ -531,23 +707,40 @@ class _RecordingStrategies extends StrategyProvider {
   }
 
   @override
-  Future<bool> loadFromHive(String id, {String? pageId}) async {
+  Future<OpenChange> openLocal(
+    String id, {
+    String? pageId,
+    required OpenSeen asked,
+    void Function()? whenShown,
+  }) async {
+    if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     opened.add('local:$id');
     if (givesWay.contains(id)) {
       await whileOpening?.call();
-      return false;
+      return const GaveWay();
     }
     show(id, StrategySource.local);
-    return true;
+    return Changed(askedByTheUserNow());
   }
 
   @override
-  Future<bool> openCloudStrategy(String id, {String? pageId}) async {
+  Future<OpenChange> openCloud(
+    String id, {
+    String? pageId,
+    required OpenSeen asked,
+    void Function()? whenShown,
+  }) async {
+    if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     opened.add('cloud:$id');
-    if (fails.contains(id)) throw StateError('could not read $id');
-    if (givesWay.contains(id)) return false;
+    if (fails.contains(id)) {
+      ref
+          .read(strategyOpeningProvider.notifier)
+          .begin(id, source: StrategySource.cloud);
+      throw StateError('could not read $id');
+    }
+    if (givesWay.contains(id)) return const GaveWay();
     show(id, StrategySource.cloud);
-    return true;
+    return Changed(askedByTheUserNow());
   }
 }
 
@@ -557,6 +750,42 @@ class _UnsavedStrategies extends _RecordingStrategies {
 
   @override
   void cancelPendingSave() {}
+}
+
+
+CommunityPost _post(String id) => CommunityPost(
+      publicId: id,
+      title: id,
+      map: MapValue.ascent,
+      side: CommunitySide.attack,
+      agents: const [],
+      authorName: null,
+      authorAvatarUrl: null,
+      starCount: 0,
+      pageCount: 1,
+      lineupCount: 0,
+      publishedAt: DateTime.utc(2026, 1, 1),
+      strategyPublicId: '$id-strategy',
+      shareToken: '$id-token',
+    );
+
+final class _HeldPost implements CommunityRepository {
+  final asked = <String>[];
+  final _held = Completer<void>();
+
+  void release() => _held.complete();
+
+  @override
+  Future<({CommunityPost post, CommunityPostStatus status})?> fetchPost(
+    String postPublicId,
+  ) async {
+    asked.add(postPublicId);
+    await _held.future;
+    return (post: _post(postPublicId), status: CommunityPostStatus.listed);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 final class _SignedOut extends AuthProvider {

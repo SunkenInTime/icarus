@@ -21,6 +21,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus_library/icarus_library.dart' hide UserAction;
+import '../opens_now_support.dart';
 
 final class UnitHarness {
   UnitHarness._(

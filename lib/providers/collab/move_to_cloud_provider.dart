@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
@@ -479,8 +480,18 @@ class MoveToCloudNotifier extends Notifier<void> {
       if (editor.strategyId == localId &&
           editor.source == StrategySource.local) {
         final strategies = ref.read(strategyProvider.notifier);
+        final moving = strategies.askedByTheUserNow();
         await strategies.forceSaveNow(localId);
-        await strategies.clearCurrentStrategy();
+        final open = ref.read(strategyProvider);
+        if (open.strategyId == localId &&
+            open.source == StrategySource.local) {
+          switch (strategies.closeStrategy(asked: moving)) {
+            case Changed():
+              break;
+            case GaveWay():
+              return _Outcome.notMoved;
+          }
+        }
       }
       final found = const LocalLibrary().storedStrategy(localId);
       if (found == null) return _Outcome.notMoved;

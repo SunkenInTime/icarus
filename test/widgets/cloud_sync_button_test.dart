@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -52,6 +54,25 @@ class _SavingStrategyProvider extends _CloudStrategyProvider {
   Future<void> forceSaveNow(String id) async {
     saves += 1;
   }
+}
+
+class _HeldLocalSave extends StrategyProvider {
+  final held = Completer<void>();
+
+  @override
+  StrategyState build() => const StrategyState(
+        strategyId: 'asked-about',
+        strategyName: 'Asked about',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      );
+
+  @override
+  Future<bool> flushPendingAutosaveBeforeExit() async => false;
+
+  @override
+  Future<void> forceSaveNow(String id) => held.future;
 }
 
 class _ProtocolRepository extends Fake implements ConvexStrategyRepository {
@@ -896,7 +917,7 @@ void main() {
     ProviderContainer upgradeContainer({
       bool updateWaiting = false,
       StrategyOpQueueState? queue,
-      _SavingStrategyProvider? strategy,
+      StrategyProvider? strategy,
       _ProtocolRepository? repository,
       void Function()? onUpdateCheck,
     }) {
@@ -1090,6 +1111,46 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(reloads, 1);
+    });
+
+    testWidgets(
+        'a reload whose Save ends after another strategy opened asks again '
+        'instead of reloading over it', (tester) async {
+      final strategy = _HeldLocalSave();
+      final container = upgradeContainer(strategy: strategy);
+      addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      var reloads = 0;
+
+      await pump(
+        tester,
+        container,
+        ClientUpgradeNotice(
+          isWeb: true,
+          onReload: () => reloads += 1,
+          builder: (context, message, action) =>
+              Column(children: [Text(message), action!]),
+        ),
+      );
+      await tester.tap(find.text('Reload'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      strategy.setFromState(const StrategyState(
+        strategyId: 'opened-since',
+        strategyName: 'Opened since',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ));
+      strategy.held.complete();
+      await tester.pumpAndSettle();
+
+      expect(reloads, 0);
+      expect(find.text('Save changes?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(reloads, 0);
     });
 
     testWidgets('reload asks first while the outbox is uncertain',

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/share/current_share_origin.dart';
 import 'package:icarus/share/share_link_format.dart';
+import 'package:icarus/strategy/open_seen.dart';
 
 /// A Community post's link, e.g. `https://icarusstrats.com/community/<id>`.
 /// It opens in the browser for anyone, account or not.
@@ -47,9 +50,27 @@ String? communityPostIdFromUri(Uri uri, {required Uri currentOrigin}) {
       : null;
 }
 
-/// A post a link asked to open. The navigation layer (MouseNavigation)
-/// opens it and clears this back to null.
-final communityPostToOpenProvider = StateProvider<String?>((ref) => null);
+/// A post asked to open. The navigation layer (MouseNavigation) opens it
+/// and clears this back to null.
+final communityPostToOpenProvider = StateProvider<PostToOpen?>((ref) => null);
+
+sealed class PostToOpen {
+  const PostToOpen(this.postPublicId);
+
+  final String postPublicId;
+}
+
+final class PostLinkArrived extends PostToOpen {
+  const PostLinkArrived(super.postPublicId, {this.opened});
+
+  final Completer<bool>? opened;
+}
+
+final class PostTapped extends PostToOpen {
+  const PostTapped(super.postPublicId, this.asked);
+
+  final OpenSeen asked;
+}
 
 Future<void> copyCommunityPostLink(
   BuildContext context,

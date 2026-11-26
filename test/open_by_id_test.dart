@@ -14,6 +14,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 
 import 'library_rows/generated_strategies.dart';
+import 'opens_now_support.dart';
 
 StrategyData named(String id, String name) =>
     StrategyMigrator.migrateToCurrentVersion(

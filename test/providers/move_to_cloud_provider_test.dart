@@ -40,6 +40,8 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
@@ -50,6 +52,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
 import '../collab/strategy_copy_fixtures.dart';
+import '../opens_now_support.dart';
 
 var _adaptersRegistered = false;
 
@@ -630,6 +633,44 @@ void main() {
     expect(messages.single.$2, isFalse);
   });
 
+  test(
+      'a strategy the reader opens while the move saves the one it moves '
+      'stays open, and the move goes on', () async {
+    await putStrategy('s1');
+    final editor = _HeldStrategy(
+      's1',
+      whileSaving: (editor) => editor.opensAnother('s2'),
+    );
+    open(editor: () => editor);
+
+    await mover().moveStrategy('s1');
+
+    expect(editor.saved, isTrue);
+    expect(container.read(strategyProvider).strategyId, 's2');
+    expect(strategies().containsKey('s1'), isFalse);
+    expect(cloud.strategies.values.single.unfinished, isFalse);
+  });
+
+  test(
+      'a strategy the reader starts opening while the move saves the one it '
+      'moves goes on opening, and the move stops with that one kept here',
+      () async {
+    await putStrategy('s1');
+    final editor = _HeldStrategy(
+      's1',
+      whileSaving: (editor) => editor.startsOpening('s2'),
+    );
+    open(editor: () => editor);
+
+    await mover().moveStrategy('s1');
+
+    expect(editor.saved, isTrue);
+    expect(container.read(strategyOpeningProvider)?.strategyId, 's2');
+    expect(strategies().containsKey('s1'), isTrue);
+    expect(cloud.strategies, isEmpty);
+    expect(messages.single.$2, isTrue);
+  });
+
   test('an editor that holds it again keeps the original here', () async {
     await putStrategy('s1');
     // A load that began before the move finishes after it started.
@@ -1092,11 +1133,26 @@ class _ClosedStrategy extends StrategyProvider {
 
 /// An editor that has a local strategy loaded, as after an export.
 class _HeldStrategy extends StrategyProvider {
-  _HeldStrategy(this.id, {this.letsGo = true});
+  _HeldStrategy(this.id, {this.letsGo = true, this.whileSaving});
 
   final String id;
   final bool letsGo;
+  final void Function(_HeldStrategy editor)? whileSaving;
   bool saved = false;
+
+  void startsOpening(String otherId) => ref
+      .read(strategyOpeningProvider.notifier)
+      .begin(otherId, source: StrategySource.local);
+
+  void opensAnother(String otherId) {
+    ref.read(strategyOpeningProvider.notifier).endAll();
+    state = StrategyState(
+      strategyId: otherId,
+      strategyName: 'Strategy $otherId',
+      source: StrategySource.local,
+      isOpen: true,
+    );
+  }
 
   @override
   StrategyState build() => StrategyState(
@@ -1107,17 +1163,23 @@ class _HeldStrategy extends StrategyProvider {
       );
 
   @override
-  Future<void> forceSaveNow(String id) async => saved = true;
+  Future<void> forceSaveNow(String id) async {
+    saved = true;
+    whileSaving?.call(this);
+  }
 
   @override
-  Future<void> clearCurrentStrategy() async {
-    if (!letsGo) return;
+  CloseChange closeStrategy({required OpenSeen asked}) {
+    if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
+    if (!letsGo) return Changed(askedByTheUserNow());
+    ref.read(strategyOpeningProvider.notifier).endAll();
     state = const StrategyState(
       strategyId: null,
       strategyName: null,
       source: null,
       isOpen: false,
     );
+    return Changed(askedByTheUserNow());
   }
 }
 

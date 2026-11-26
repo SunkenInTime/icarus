@@ -16,6 +16,7 @@ import 'package:icarus/strategy/local_page_reads.dart';
 
 import 'library_rows/generated_strategies.dart';
 import 'library_store/unit_harness.dart';
+import 'opens_now_support.dart';
 
 final class _SignedOut extends AuthProvider {
   @override

@@ -29,6 +29,7 @@ import 'package:icarus_library/icarus_library.dart' hide UserAction;
 
 import '../library_rows/generated_strategies.dart';
 import 'unit_harness.dart';
+import '../opens_now_support.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -91,20 +93,27 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     setState(() => _isSwitching = true);
 
     try {
-      await guardUnsavedStrategyExit(
+      final answer = await guardUnsavedStrategyExit(
         context: context,
         ref: ref,
         source: 'StrategyQuickSwitcher.switchStrategy',
-        onContinue: () async {
-          ref
-              .read(interactionStateProvider.notifier)
-              .update(InteractionState.navigation);
-          ref
-              .read(agentFilterProvider.notifier)
-              .updateFilterState(FilterState.all);
-          await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
-        },
       );
+      if (!mounted) return;
+      final strategies = ref.read(strategyProvider.notifier);
+      final interaction = ref.read(interactionStateProvider.notifier);
+      final agentFilter = ref.read(agentFilterProvider.notifier);
+      final editor = ModalRoute.of(context);
+      if (answer case Leave(:final seen) when editor != null) {
+        final claimed = StrategyView.claimInPlace(editor, strategies, seen);
+        if (claimed == null) return;
+        switch (await strategies.openLocal(strategyId, asked: claimed)) {
+          case Changed():
+            interaction.update(InteractionState.navigation);
+            agentFilter.updateFilterState(FilterState.all);
+          case GaveWay() || Missing():
+            break;
+        }
+      }
     } finally {
       if (mounted) {
         setState(() => _isSwitching = false);

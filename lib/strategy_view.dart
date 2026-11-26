@@ -22,11 +22,11 @@ import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/canvas_paste.dart';
 import 'package:icarus/widgets/delete_capture.dart';
@@ -38,7 +38,6 @@ import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/touch_strategy_viewer.dart';
 import 'package:icarus/widgets/turn_phone_notice.dart';
 import 'package:icarus/widgets/map_selector.dart';
-import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/collab/community_models.dart';
@@ -50,7 +49,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 import 'package:icarus/widgets/window_chrome.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:icarus/strategy/open_seen.dart';
+import 'package:meta/meta.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/eased_route_transition.dart';
 import 'package:icarus/widgets/editor_input_gate.dart';
@@ -67,7 +67,10 @@ class StrategyView extends ConsumerStatefulWidget {
     this.backTooltip,
     this.communityPost,
     this.startExpanded = false,
+    required this.asked,
   });
+
+  final OpenSeen asked;
 
   final String? initialStrategyId;
   final String? initialStrategyName;
@@ -93,12 +96,81 @@ class StrategyView extends ConsumerStatefulWidget {
 
   /// A Community post over the tab it was opened from: a sheet first, that
   /// opens out to the full view-only editor in place.
-  static PageRoute<void> communityRoute(
+  @useResult
+  static EditorPush openPost(
+    NavigatorState navigator,
     CommunityPost post, {
+    required OpenSeen asked,
+    bool expanded = false,
+  }) {
+    final claimed = _claim(navigator, asked);
+    if (claimed == null) return const Refused();
+    return Pushed(navigator
+        .push(_communityRoute(post, asked: claimed, expanded: expanded)));
+  }
+
+  @useResult
+  static EditorPush open(
+    NavigatorState navigator, {
+    required OpenSeen asked,
+    String? initialStrategyId,
+    String? initialStrategyName,
+    StrategySource initialStrategySource = StrategySource.local,
+    MapValue? initialMapValue,
+    bool initialIsAttack = true,
+    String? initialPageId,
+    String? backTooltip,
+  }) {
+    final claimed = _claim(navigator, asked);
+    if (claimed == null) return const Refused();
+    return Pushed(navigator.push(_route(
+      asked: claimed,
+      initialStrategyId: initialStrategyId,
+      initialStrategyName: initialStrategyName,
+      initialStrategySource: initialStrategySource,
+      initialMapValue: initialMapValue,
+      initialIsAttack: initialIsAttack,
+      initialPageId: initialPageId,
+      backTooltip: backTooltip,
+    )));
+  }
+
+  static final onScreen = ValueNotifier<int>(0);
+
+  static OpenSeen? _claim(NavigatorState navigator, OpenSeen asked) =>
+      ProviderScope.containerOf(navigator.context)
+          .read(strategyProvider.notifier)
+          .claimForAnEditor(asked);
+
+  static EditorClaim? claimOf(Route<dynamic> editor) =>
+      switch (editor.settings.arguments) {
+        final EditorClaim claim => claim,
+        _ => null,
+      };
+
+  @useResult
+  static OpenSeen? claimInPlace(
+    Route<dynamic> editor,
+    StrategyProvider strategies,
+    OpenSeen asked,
+  ) {
+    final claim = claimOf(editor);
+    if (claim == null || !claim.takesAnOpenInPlace) return null;
+    final claimed = strategies.claimForAnEditor(asked);
+    if (claimed != null) claim._by = claimed;
+    return claimed;
+  }
+
+  static PageRoute<void> _communityRoute(
+    CommunityPost post, {
+    required OpenSeen asked,
     bool expanded = false,
   }) {
     return PageRouteBuilder<void>(
-      settings: const RouteSettings(name: Routes.strategyView),
+      settings: RouteSettings(
+        name: Routes.strategyView,
+        arguments: EditorClaim.post(asked),
+      ),
       opaque: false,
       barrierColor: const Color(0x99000000),
       transitionDuration: const Duration(milliseconds: 200),
@@ -111,6 +183,7 @@ class StrategyView extends ConsumerStatefulWidget {
         initialIsAttack: post.side != CommunitySide.defense,
         communityPost: post,
         startExpanded: expanded,
+        asked: asked,
       ),
       transitionsBuilder: (context, animation, _, child) =>
           EasedRouteTransition(
@@ -121,7 +194,8 @@ class StrategyView extends ConsumerStatefulWidget {
     );
   }
 
-  static PageRoute<void> route({
+  static PageRoute<void> _route({
+    required OpenSeen asked,
     String? initialStrategyId,
     String? initialStrategyName,
     StrategySource initialStrategySource = StrategySource.local,
@@ -131,7 +205,12 @@ class StrategyView extends ConsumerStatefulWidget {
     String? backTooltip,
   }) {
     return PageRouteBuilder<void>(
-      settings: const RouteSettings(name: Routes.strategyView),
+      settings: RouteSettings(
+        name: Routes.strategyView,
+        arguments: initialStrategyId == null
+            ? EditorClaim.showing(asked)
+            : EditorClaim.opening(asked),
+      ),
       transitionDuration: const Duration(milliseconds: 200),
       reverseTransitionDuration: const Duration(milliseconds: 150),
       pageBuilder: (context, animation, _) => StrategyView(
@@ -142,6 +221,7 @@ class StrategyView extends ConsumerStatefulWidget {
         initialIsAttack: initialIsAttack,
         initialPageId: initialPageId,
         backTooltip: backTooltip,
+        asked: asked,
       ),
       transitionsBuilder: (context, animation, _, child) =>
           EasedRouteTransition(
@@ -161,31 +241,49 @@ class StrategyView extends ConsumerStatefulWidget {
   static PageRoute<void>? restoredRoute({
     required String? openCloudStrategyId,
     required bool allowsLocalLibrary,
+    required OpenSeen asked,
   }) {
     if (openCloudStrategyId != null) {
-      return route(
+      return _route(
+        asked: asked,
         initialStrategyId: openCloudStrategyId,
         initialStrategySource: StrategySource.cloud,
       );
     }
-    return allowsLocalLibrary ? route() : null;
+    return allowsLocalLibrary ? _route(asked: asked) : null;
   }
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _StrategyViewState();
 }
 
-class _StrategyViewState extends ConsumerState<StrategyView>
-    with WindowListener {
-  bool _isClosingWindow = false;
+final class EditorClaim {
+  EditorClaim.opening(this._by)
+      : isPost = false,
+        _shown = false;
+  EditorClaim.showing(this._by)
+      : isPost = false,
+        _shown = true;
+  EditorClaim.post(this._by)
+      : isPost = true,
+        _shown = false;
+
+  OpenSeen _by;
+  final bool isPost;
+  bool _shown;
+
+  bool get takesAnOpenInPlace => _shown && !isPost;
+
+  bool isHeldBy(OpenSeen asked) => identical(_by, asked);
+}
+
+class _StrategyViewState extends ConsumerState<StrategyView> {
   late bool _expanded = widget.startExpanded;
   ToastificationItem? _unshownItemsNotice;
   ToastificationItem? _unshownSettingsNotice;
 
   /// Keeps the map's canvas mounted when a quick look opens out.
   final _communityCanvasKey = GlobalKey(debugLabel: 'community-canvas');
-  bool _isInitialLoadPending = false;
-  bool _hasInitialLoadCompleted = false;
 
   /// Set when the reader leaves for the library. The editor stays mounted
   /// while it animates out, so being mounted does not mean still wanted.
@@ -204,50 +302,41 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   void initState() {
     super.initState();
     if (widget.initialStrategyId != null) {
-      _isInitialLoadPending = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_loadInitialStrategy());
       });
     }
-    if (!kIsWeb) {
-      windowManager.addListener(this);
-      _enableWindowCloseGuard();
-    }
+    StrategyView.onScreen.value++;
   }
 
   @override
   void dispose() {
-    if (!kIsWeb) {
-      windowManager.removeListener(this);
-      windowManager.setPreventClose(false);
-    }
+    StrategyView.onScreen.value--;
     super.dispose();
-  }
-
-  Future<void> _enableWindowCloseGuard() async {
-    await windowManager.setPreventClose(true);
   }
 
   Future<void> _loadInitialStrategy() async {
     final strategyId = widget.initialStrategyId;
     final source = widget.initialStrategySource;
-    if (strategyId == null) {
-      if (mounted) {
-        setState(() => _isInitialLoadPending = false);
-      }
+    if (strategyId == null) return;
+    final claim = _claim;
+    if (!widget.asked
+        .isNow(ref.read(strategyProvider.notifier).askedByTheUserNow())) {
+      _leaveAfterFailedLoad();
       return;
     }
 
-    // What was open before this load: only a strategy opened since then
-    // means this load gave way to another.
-    final openBefore = ref.read(strategyProvider).strategyId;
     try {
+      final LocalOpenChange opened;
       switch (source) {
         case StrategySource.local:
-          await _unlessLeft(
-            ref
-                .read(strategyProvider.notifier)
-                .loadFromHive(strategyId, pageId: widget.initialPageId),
+          opened = await _unlessLeft(
+            ref.read(strategyProvider.notifier).openLocal(
+                  strategyId,
+                  pageId: widget.initialPageId,
+                  asked: widget.asked,
+                  whenShown: () => claim?._shown = true,
+                ),
           );
         case StrategySource.cloud:
           final viewingThroughLink =
@@ -259,21 +348,23 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             _leaveAfterFailedLoad();
             return;
           }
-          await _unlessLeft(
-            ref.read(strategyProvider.notifier).openCloudStrategy(
+          opened = await _unlessLeft(
+            ref.read(strategyProvider.notifier).openCloud(
                   strategyId,
                   pageId: widget.initialPageId,
+                  asked: widget.asked,
+                  whenShown: () => claim?._shown = true,
                 ),
           );
       }
-      final loadedStrategy = ref.read(strategyProvider);
-      if (loadedStrategy.strategyId != strategyId ||
-          loadedStrategy.strategyName == null) {
-        // Giving way to another strategy is not a failed load.
-        if (_gaveWayTo(loadedStrategy.strategyId, openBefore)) return;
-        throw StateError('Strategy "$strategyId" was not found.');
+      switch (opened) {
+        case Changed():
+          break;
+        case GaveWay():
+          _leaveAfterFailedLoad();
+        case Missing():
+          throw StateError('Strategy "$strategyId" was not found.');
       }
-      _hasInitialLoadCompleted = true;
     } on _LeftWhileLoading {
       // The home button works from the first frame; the load went with the
       // editor.
@@ -284,17 +375,22 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         error: error,
         stackTrace: stackTrace,
       );
-      if (_hasLeft || !mounted) return;
+      if (!mounted || !_ownsItsRoute) return;
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
-      // Another strategy was opened while this one loaded: nothing failed
-      // that the reader should hear about.
-      if (_gaveWayTo(ref.read(strategyProvider).strategyId, openBefore)) {
-        return;
-      }
       final notKept = ref.read(remoteEditorSnapshotProvider).error
           is StrategyNotKeptOffline;
+      final strategies = ref.read(strategyProvider.notifier);
+      switch (strategies.closeAfterFailedOpen(asked: widget.asked)) {
+        case Changed():
+          break;
+        case GaveWay() when !widget.asked.isNow(strategies.askedByTheUserNow()):
+          _leaveAfterFailedLoad();
+          return;
+        case GaveWay():
+          break;
+      }
       Settings.showToast(
         message: notKept
             ? context.l10n.syncStatusStrategyNeedsConnection
@@ -304,39 +400,24 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             : Settings.tacticalVioletTheme.destructive,
       );
       _leaveAfterFailedLoad();
-    } finally {
-      if (mounted) {
-        setState(() => _isInitialLoadPending = false);
-      }
     }
   }
 
-  /// Whether [open], the strategy open now, took this editor's place while
-  /// its own was loading: it is another strategy, opened since the load
-  /// began ([openBefore] is what was open then). If so, this settles where
-  /// it shows.
-  ///
-  /// It shows in an editor of its own above this one when it was opened from
-  /// outside (a share link arriving as this editor starts), and then this
-  /// editor goes. Or it shows in this very editor, when a share link or
-  /// back and forward swapped strategies in place: then this editor stays
-  /// and shows it. Popping here would leave it open with nothing showing it.
-  bool _gaveWayTo(String? open, String? openBefore) {
-    if (open == null ||
-        open == widget.initialStrategyId ||
-        open == openBefore) {
-      return false;
-    }
-    final route = ModalRoute.of(context);
-    final top = mouseNavigationRouteObserver.topRoute;
-    final anotherEditorShowsIt =
-        top != route && top?.settings.name == Routes.strategyView;
-    if (!anotherEditorShowsIt) {
-      _hasInitialLoadCompleted = true;
-    } else if (route != null && route.isActive) {
-      Navigator.of(context).removeRoute(route);
-    }
-    return true;
+  EditorClaim? get _claim => switch (ModalRoute.of(context)) {
+        final route? => StrategyView.claimOf(route),
+        null => null,
+      };
+
+  bool get _ownsItsRoute =>
+      mounted && !_hasLeft && (_claim?.isHeldBy(widget.asked) ?? true);
+
+  bool _showsItsOpenLoading(StrategyOpening? opening, OpenSeen now) {
+    if (widget.initialStrategyId == null) return false;
+    return switch (now.opens - widget.asked.opens) {
+      0 => true,
+      1 => opening != null || now.strategyId != widget.initialStrategyId,
+      _ => false,
+    };
   }
 
   /// Takes this editor off the screen after its strategy failed to open.
@@ -344,6 +425,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   /// opening its own editor), and a plain pop would close that one and
   /// leave this one behind it, showing its loading screen for good.
   void _leaveAfterFailedLoad() {
+    if (!_ownsItsRoute) return;
     final route = ModalRoute.of(context);
     if (route == null || route.isCurrent) {
       Navigator.maybePop(context);
@@ -376,26 +458,28 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   }
 
   Future<void> _leaveToLibrary() async {
-    await guardUnsavedStrategyExit(
+    final answer = await guardUnsavedStrategyExit(
       context: context,
       ref: ref,
       source: 'StrategyView.leaveToLibrary',
-      onContinue: () async {
-        ref
-            .read(interactionStateProvider.notifier)
-            .update(InteractionState.navigation);
-        ref
-            .read(agentFilterProvider.notifier)
-            .updateFilterState(FilterState.all);
-        ref.read(deleteMenuProvider.notifier).requestClose();
-        _hasLeft = true;
-        if (mounted) {
-          Navigator.pop(context);
-        }
-        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
-        forgetCommunityPost(ref, widget.communityPost?.strategyPublicId);
-      },
     );
+    if (answer case Leave(:final seen)) {
+      switch (ref.read(strategyProvider.notifier).closeStrategy(asked: seen)) {
+        case Changed():
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.navigation);
+          ref
+              .read(agentFilterProvider.notifier)
+              .updateFilterState(FilterState.all);
+          ref.read(deleteMenuProvider.notifier).requestClose();
+          _hasLeft = true;
+          if (mounted) Navigator.pop(context);
+          forgetCommunityPost(ref, widget.communityPost?.strategyPublicId);
+        case GaveWay():
+          break;
+      }
+    }
   }
 
   @override
@@ -448,14 +532,12 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         );
       }
     });
-    final strategyState = ref.watch(strategyProvider);
+    ref.watch(strategyProvider);
     final viewOnly = ref.watch(isViewOnlyStrategyProvider);
-    final initialStrategyId = widget.initialStrategyId;
-    final showSkeleton = _isInitialLoadPending ||
-        (!_hasInitialLoadCompleted &&
-            initialStrategyId != null &&
-            (!strategyState.isOpen ||
-                strategyState.strategyId != initialStrategyId));
+    final showSkeleton = _showsItsOpenLoading(
+      ref.watch(strategyOpeningProvider),
+      ref.read(strategyProvider.notifier).askedByTheUserNow(),
+    );
 
     final formFactor = FormFactor.of(context);
     final touch = formFactor.isTouch;
@@ -835,30 +917,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           ),
         ),
       ),
-    );
-  }
-
-  @override
-  void onWindowClose() async {
-    if (kIsWeb) {
-      return;
-    }
-    if (_isClosingWindow) {
-      return;
-    }
-
-    await guardUnsavedStrategyExit(
-      context: context,
-      ref: ref,
-      source: 'StrategyView.onWindowClose',
-      onContinue: () async {
-        _isClosingWindow = true;
-        if (storeCatchUpBeforeClose() case final catchingUp?) {
-          await catchingUp;
-        }
-        await windowManager.setPreventClose(false);
-        await windowManager.close();
-      },
     );
   }
 }

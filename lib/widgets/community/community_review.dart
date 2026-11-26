@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/const/settings.dart';
@@ -14,6 +15,7 @@ import 'package:icarus/widgets/dialogs/community/report_post_dialog.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/loading_spinner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/strategy/open_seen.dart';
 
 final _reportsProvider = FutureProvider.autoDispose
     .family<List<CommunityReportGroup>, String>((ref, postPublicId) {
@@ -338,13 +340,20 @@ class _CommunityReviewButtonState extends ConsumerState<CommunityReviewButton> {
                           ),
                           item: item,
                           onTap: () {
+                            final asked = ref
+                                .read(strategyProvider.notifier)
+                                .askedByTheUserNow();
                             _popover.hide();
-                            openCommunityPost(
+                            switch (openCommunityPost(
                               ref,
                               item.post,
+                              asked: asked,
                               underReview: true,
                               stillUp: !item.hidden,
-                            );
+                            )) {
+                              case Pushed() || Refused():
+                                break;
+                            }
                           },
                         ),
                     ],

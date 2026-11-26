@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/l10n/cloud_sync_error_text.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/browser_url.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
@@ -90,12 +92,20 @@ class _ReloadButtonState extends ConsumerState<_ReloadButton> {
 
   Future<void> _reload() async {
     setState(() => _leaving = true);
-    await guardUnsavedStrategyExit(
-      context: context,
-      ref: ref,
-      onContinue: () async => widget.onReload(),
-      source: 'client_upgrade.reload',
-    );
+    final strategies = ref.read(strategyProvider.notifier);
+    while (mounted) {
+      final answer = await guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'client_upgrade.reload',
+      );
+      if (answer is! Leave) break;
+      if (answer.seen.isNow(strategies.askedByTheUserNow())) {
+        strategies.cancelPendingSave();
+        widget.onReload();
+        break;
+      }
+    }
     if (mounted) setState(() => _leaving = false);
   }
 

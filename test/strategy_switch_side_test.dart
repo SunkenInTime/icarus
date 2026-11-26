@@ -17,6 +17,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'opens_now_support.dart';
 
 // The provider's initial state carries this id, so a strategy stored under it
 // can be activated without going through the file-backed load path.

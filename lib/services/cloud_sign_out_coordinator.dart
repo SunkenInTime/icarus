@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -39,7 +40,16 @@ final cloudSignOutPreparationProvider = Provider<CloudSignOutPreparation>(
 final cloudEditorCloseProvider = Provider<CloudEditorClose>(
   (ref) => () async {
     if (ref.read(strategyProvider).source == StrategySource.cloud) {
-      await ref.read(strategyProvider.notifier).clearCurrentStrategy();
+      final strategies = ref.read(strategyProvider.notifier);
+      final signingOut = strategies.askedByTheUserNow();
+      switch (strategies.closeStrategy(asked: signingOut)) {
+        case Changed():
+          break;
+        case GaveWay():
+          throw StateError(
+            'The open cloud strategy was not closed before signing out.',
+          );
+      }
     }
   },
 );

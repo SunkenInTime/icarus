@@ -11,6 +11,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
+import 'opens_now_support.dart';
 
 /// Where the platform policy hides the on-device library, nothing may read
 /// or rewrite it: its records wait, untouched, for local access to return.

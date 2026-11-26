@@ -87,6 +87,7 @@ import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
+import 'package:icarus/widgets/window_close_guard.dart';
 import 'package:icarus/widgets/replay/open_replays.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/services/product_metrics.dart';
@@ -747,7 +748,8 @@ class _MyAppState extends ConsumerState<MyApp> {
           communityPostIdFromUri(uri, currentOrigin: currentShareOrigin());
       if (postPublicId != null) {
         // MouseNavigation opens it, behind the unsaved-changes guard.
-        ref.read(communityPostToOpenProvider.notifier).state = postPublicId;
+        ref.read(communityPostToOpenProvider.notifier).state =
+            PostLinkArrived(postPublicId);
         if (kIsWeb) replaceBrowserUrl(Uri.base.replace(path: '/', query: ''));
         return;
       }
@@ -1083,18 +1085,21 @@ class _MyAppState extends ConsumerState<MyApp> {
                     ref.read(openCloudStrategyStoreProvider).read(),
                 allowsLocalLibrary:
                     ref.read(platformPolicyProvider).allowsLocalLibrary,
+                asked: ref.read(strategyProvider.notifier).askedByTheUserNow(),
               )
             : null,
         builder: (context, child) {
           return GlobalShortcuts(
             child: EditorOperationScope(
-              child: MouseNavigation(
-                child: ReplayWindowDropTarget(
-                  // Every Shad button presses (DESIGN.md, Motion).
-                  child: ShadButtonWrapper(
-                    wrap: _pressScaleButton,
-                    child: LaunchIntroHost(
-                      child: child ?? const SizedBox.shrink(),
+              child: WindowCloseGuard(
+                child: MouseNavigation(
+                  child: ReplayWindowDropTarget(
+                    // Every Shad button presses (DESIGN.md, Motion).
+                    child: ShadButtonWrapper(
+                      wrap: _pressScaleButton,
+                      child: LaunchIntroHost(
+                        child: child ?? const SizedBox.shrink(),
+                      ),
                     ),
                   ),
                 ),

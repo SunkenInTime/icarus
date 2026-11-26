@@ -11,9 +11,11 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus/strategy/open_seen.dart';
 
 import 'library_rows/generated_strategies.dart';
 import 'library_store/unit_harness.dart';
+import 'opens_now_support.dart';
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
@@ -114,5 +116,26 @@ void main() {
     expect(container.read(strategyProvider).strategyId, b.id);
     expect(container.read(strategyPageSessionProvider).activePageId,
         b.pages[0].id);
+  });
+
+  test(
+      'a close asked about A while B was opening gives way once B is open, '
+      'though the count of opens is the same', () async {
+    final a = stored('window-a');
+    final b = stored('window-b');
+    final editor = container.read(strategyProvider.notifier);
+    expect(await editor.loadFromHive(a.id), isTrue);
+
+    final held = gate.holdNext();
+    final opening = editor.openLocal(b.id, asked: editor.askedByTheUserNow());
+    await held;
+    final askedWhileAShows = editor.askedByTheUserNow();
+    expect(askedWhileAShows.strategyId, a.id);
+    gate.release();
+    expect(await opening, isA<Changed>());
+    expect(editor.askedByTheUserNow().opens, askedWhileAShows.opens);
+
+    expect(editor.closeStrategy(asked: askedWhileAShows), isA<GaveWay>());
+    expect(container.read(strategyProvider).strategyId, b.id);
   });
 }

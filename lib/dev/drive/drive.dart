@@ -173,6 +173,7 @@ import 'package:icarus/dev/drive/drive_frames.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
 import 'package:icarus/library_store/slowed_engine.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
@@ -216,6 +217,9 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/providers/community_provider.dart';
+import 'package:icarus/share/current_share_origin.dart';
+import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart'
     hide PageTransitionState;
 import 'package:icarus/providers/strategy_provider.dart';
@@ -293,6 +297,8 @@ final _entries = <String>[];
 final _rememberedPages = <String, String>{};
 var _flutterErrors = 0;
 var _failedSteps = 0;
+final _delayedLinks = <Future<void>>[];
+final _linksOpening = <Future<void>>[];
 var _steps = 0;
 final _misplaced = <String>{};
 final _cloudStore = CloudStoreLog();
@@ -393,6 +399,8 @@ Future<void> _play(String script) async {
   final cloudEnd =
       _cloudStore.end(appProviderContainer, lastStep: DateTime.now());
   await Future.wait(_pictureWatches);
+  await Future.wait(_delayedLinks);
+  await Future.wait(_linksOpening);
   _logCloudStore(await cloudEnd);
   _log(_runFrames.stop());
   _log(buildsLine());
@@ -602,8 +610,12 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
   Future<String> serverMap(String id) async =>
       (await repository.fetchShell(id)).header.mapData;
   Future<void> openAndSettle(String id) async {
-    if (!await strategies.openCloudStrategy(id)) {
-      throw StateError('$id did not open');
+    switch (await strategies.openCloud(id,
+        asked: strategies.askedByTheUserNow())) {
+      case Changed():
+        break;
+      case GaveWay():
+        throw StateError('$id did not open');
     }
     await _waitFor(
       () => !c.read(strategyPageSessionProvider).isApplyingPage,
@@ -669,7 +681,8 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
     if (byBackButton) {
       _pressMouse(restAt, buttons: kBackMouseButton);
     } else {
-      unawaited(strategies.openCloudStrategy(opened));
+      unawaited(
+          strategies.openCloud(opened, asked: strategies.askedByTheUserNow()));
     }
     await _waitFor(
       () =>
@@ -738,8 +751,12 @@ Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
   final left = idOf(leftName)!;
   listing.close();
   Future<void> openAndSettle(String id) async {
-    if (!await strategies.openCloudStrategy(id)) {
-      throw StateError('$id did not open');
+    switch (await strategies.openCloud(id,
+        asked: strategies.askedByTheUserNow())) {
+      case Changed():
+        break;
+      case GaveWay():
+        throw StateError('$id did not open');
     }
     await _waitFor(
       () => !c.read(strategyPageSessionProvider).isApplyingPage,
@@ -909,7 +926,11 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
   final painted = <int>[];
   for (var run = 1; run <= runs; run++) {
     if (c.read(strategyProvider).strategyId != null) {
-      await c.read(strategyProvider.notifier).clearCurrentStrategy();
+      final strategies = c.read(strategyProvider.notifier);
+      switch (strategies.closeStrategy(asked: strategies.askedByTheUserNow())) {
+        case Changed() || GaveWay():
+          break;
+      }
       appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
       await _seconds(1);
       await _frames();
@@ -947,7 +968,9 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
       ),
     );
     if (ahead != null) {
-      unawaited(c.read(strategyProvider.notifier).loadFromHive(ahead.id));
+      final strategies = c.read(strategyProvider.notifier);
+      unawaited(strategies.openLocal(ahead.id,
+          asked: strategies.askedByTheUserNow()));
     }
     await Future<void>.delayed(const Duration(milliseconds: 60));
     frameNumber = null;
@@ -1385,8 +1408,13 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
   for (var run = 1; run <= runs; run++) {
     final original =
         cloneStrategy(const LocalLibrary().storedStrategy(left.id)!);
-    if (!await c.read(strategyProvider.notifier).loadFromHive(left.id)) {
-      throw StateError('$leftName did not open');
+    final strategies = c.read(strategyProvider.notifier);
+    switch (await strategies.openLocal(left.id,
+        asked: strategies.askedByTheUserNow())) {
+      case Changed():
+        break;
+      case GaveWay() || Missing():
+        throw StateError('$leftName did not open');
     }
     await _frames();
     if (undoes) {
@@ -2068,6 +2096,29 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'backButton':
       _pressMouse(_point(step, name), buttons: kBackMouseButton);
       await _frames();
+    case 'closeWindow':
+      await windowManager.close();
+      await _frames();
+    case 'openTwice':
+      for (final name in (value as List).cast<String>()) {
+        final strategy = const LocalLibrary()
+            .storedStrategies
+            .firstWhere((stored) => stored.name == name);
+        switch (StrategyView.open(
+          appNavigatorKey.currentState!,
+          asked: c.read(strategyProvider.notifier).askedByTheUserNow(),
+          initialStrategyId: strategy.id,
+          initialStrategyName: strategy.name,
+          initialStrategySource: StrategySource.local,
+          initialMapValue: strategy.mapData,
+        )) {
+          case Pushed():
+            break;
+          case Refused():
+            throw StateError('the editor for $name was refused');
+        }
+      }
+      await _frames();
     case 'hoverAt':
       await _hover(_point(step, name));
     case 'tapWords':
@@ -2412,11 +2463,11 @@ Future<void> _run(Map<String, dynamic> step) async {
         stepsPerLeg: ((step['steps'] ?? 30) as num).toInt(),
         shotWhileHeld: step['held'] as String?,
       );
-    case 'hoverAgent':
+    case 'hoverAgent' || 'tapAgent':
       final id = value as String;
-      await _hover(
-        _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id)),
-      );
+      final at =
+          _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id));
+      await (name == 'hoverAgent' ? _hover(at) : _tap(at));
     case 'signOut':
       final signingOut = c.read(guardedSignOutRequestProvider)(
         appNavigatorKey.currentContext!,
@@ -2536,14 +2587,15 @@ Future<void> _run(Map<String, dynamic> step) async {
       )))
           .forEach(_log);
     case 'openStoredCloudStrategy':
-      unawaited(
-        Navigator.of(appNavigatorKey.currentContext!).push(
-          StrategyView.route(
-            initialStrategyId: storedCloudStrategy(c),
-            initialStrategySource: StrategySource.cloud,
-          ),
-        ),
-      );
+      switch (StrategyView.open(
+        Navigator.of(appNavigatorKey.currentContext!),
+        asked: c.read(strategyProvider.notifier).askedByTheUserNow(),
+        initialStrategyId: storedCloudStrategy(c),
+        initialStrategySource: StrategySource.cloud,
+      )) {
+        case Pushed() || Refused():
+          break;
+      }
     case 'breakConvexSignIn':
       _log(await breakConvexSignIn());
     case 'restoreConvexSignIn':
@@ -2678,6 +2730,49 @@ Future<void> _run(Map<String, dynamic> step) async {
           (step['version'] as num).toInt(),
         ),
       );
+    case 'openLink':
+      final uri = Uri.parse(switch (step['post']) {
+        final String title => buildCommunityPostLink(c
+            .read(communityFeedProvider)
+            .posts
+            .firstWhere((post) => post.title == title)
+            .publicId),
+        _ => value as String,
+      });
+      Future<void> deliver() async {
+        final postPublicId =
+            communityPostIdFromUri(uri, currentOrigin: currentShareOrigin());
+        if (postPublicId != null) {
+          final opened = Completer<bool>();
+          _linksOpening.add(opened.future
+              .timeout(const Duration(seconds: 60))
+              .then<void>((_) {}, onError: (Object error) {
+            _failedSteps++;
+            _log('FAIL the link to $postPublicId had not opened or been '
+                'refused 60 s after it arrived: $error');
+          }));
+          c.read(communityPostToOpenProvider.notifier).state =
+              PostLinkArrived(postPublicId, opened: opened);
+        } else {
+          await c
+              .read(shareLinkControllerProvider.notifier)
+              .handleIncomingUri(uri, source: 'drive');
+        }
+      }
+
+      switch (step['afterMs']) {
+        case final num after:
+          _delayedLinks.add(Future<void>.delayed(
+            Duration(milliseconds: after.toInt()),
+            deliver,
+          ).catchError((Object error) {
+            _failedSteps++;
+            _log('FAIL the link opened ${after.toInt()} ms after its step: '
+                '$error');
+          }));
+        case _:
+          await deliver();
+      }
     case 'openShareLink':
       final code = (await File(value as String).readAsString()).trim();
       await c.read(shareLinkControllerProvider.notifier).handleIncomingUri(
@@ -2975,6 +3070,11 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectOpened':
       if (!listEquals(_openedLinks, (value as List).cast<String>())) {
         throw StateError('opened $_openedLinks, expected $value');
+      }
+    case 'expectStrategy':
+      final open = c.read(strategyProvider).strategyName;
+      if (open != value) {
+        throw StateError('the open strategy is $open, expected $value');
       }
     case 'expectEditing':
       if (_editing() != value) {

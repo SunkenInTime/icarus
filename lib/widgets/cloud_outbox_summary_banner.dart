@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/settings.dart';
@@ -16,6 +17,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/client_upgrade_button.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/strategy/open_seen.dart';
 
 class CloudOutboxSummaryBanner extends ConsumerWidget {
   const CloudOutboxSummaryBanner({super.key, this.onOpenStrategy});
@@ -144,7 +146,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         for (final strategyId in attentionIds)
           ShadButton.secondary(
             size: ShadButtonSize.sm,
-            onPressed: () => _openStrategy(context, strategyId),
+            onPressed: () => _openStrategy(context, ref, strategyId),
             child: Flexible(
               child: Text(
                 _attentionLabel(
@@ -305,18 +307,21 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         .clearJobsForStrategy(strategyId);
   }
 
-  void _openStrategy(BuildContext context, String strategyId) {
+  void _openStrategy(BuildContext context, WidgetRef ref, String strategyId) {
     final callback = onOpenStrategy;
     if (callback != null) {
       callback(strategyId);
       return;
     }
-    Navigator.of(context).push(
-      StrategyView.route(
-        initialStrategyId: strategyId,
-        initialStrategySource: StrategySource.cloud,
-      ),
-    );
+    switch (StrategyView.open(
+      Navigator.of(context),
+      asked: ref.read(strategyProvider.notifier).askedByTheUserNow(),
+      initialStrategyId: strategyId,
+      initialStrategySource: StrategySource.cloud,
+    )) {
+      case Pushed() || Refused():
+        break;
+    }
   }
 
   String _attentionLabel(

@@ -24,6 +24,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
+import 'opens_now_support.dart';
 
 const _recordedAt = 'eea7b52d';
 const _fixture = 'test/fixtures/local_library_bytes/session_at_$_recordedAt.json';

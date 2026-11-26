@@ -18,11 +18,13 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 
 import 'library_rows/generated_strategies.dart';
 import 'library_store/unit_harness.dart';
+import 'opens_now_support.dart';
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
@@ -276,26 +278,40 @@ void main() {
   });
 
   test(
-      'an open that gives way to an open of a missing strategy leaves the '
-      'strategy left open and usable', () async {
+      'an open of a missing strategy during another open changes nothing, '
+      'and the other open still opens its strategy, usable', () async {
     final a = stored('superseded-a');
     final b = stored('superseded-b');
     expect(await editor().loadFromHive(a.id), isTrue);
-    final before = agentsSaved(a.id, a.pages[0].id);
 
     final hold = gate.holdNext();
     final opening = editor().loadFromHive(b.id);
     await hold.reached.future;
     expect(await editor().loadFromHive('not-in-the-library'), isFalse);
     hold.released.complete();
-    expect(await opening, isFalse);
+    expect(await opening, isTrue);
 
-    expect(container.read(strategyProvider).strategyId, a.id);
-    expectShows(a.id, a.pages[0].id, 'the superseded open');
-    expect(agentsOnCanvas(), before);
+    expect(container.read(strategyProvider).strategyId, b.id);
+    expectShows(b.id, b.pages[0].id, 'the open that went on');
     expect(editor().isOpening, isFalse);
-    await editor().selectPage(a.pages[1].id);
-    expect(activePage(), a.pages[1].id);
+    await editor().selectPage(b.pages[1].id);
+    expect(activePage(), b.pages[1].id);
+  });
+
+  test(
+      'an open replaced while it waited on the disk gives way, even when that '
+      'wait then fails', () async {
+    final a = stored('replaced-a');
+    final b = stored('replaced-b');
+    final hold = gate.holdNext(fails: true);
+    final opening =
+        editor().openLocal(a.id, asked: editor().askedByTheUserNow());
+    await hold.reached.future;
+    expect(await editor().loadFromHive(b.id), isTrue);
+    hold.released.complete();
+
+    expect(await opening, isA<GaveWay>());
+    expect(container.read(strategyProvider).strategyId, b.id);
   });
 
   test(
