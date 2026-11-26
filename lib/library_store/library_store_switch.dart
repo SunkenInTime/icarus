@@ -4,6 +4,9 @@ import 'package:icarus/config/drive_build.dart';
 
 const shadowReachable = !kIsWeb && (driveBuild || kDebugMode);
 
+const cloudShadowOff = 'The cloud shadow is off until the store takes its '
+    'live results with stamps (slice 3, PR 5); use --cloud-store=send.';
+
 sealed class LibraryStoreSwitch {
   const LibraryStoreSwitch();
 }
@@ -78,8 +81,10 @@ final class LibraryStoreLaunch {
           choice = mayShadow ? const StoreSwitchOps() : const StoreSwitchOff();
         case offFlag:
           choice = const StoreSwitchOff();
+        case cloudShadowFlag when mayShadow:
+          throw ArgumentError.value(argument, 'args', cloudShadowOff);
         case cloudShadowFlag:
-          cloud = mayShadow ? const CloudStoreShadow() : const CloudStoreOff();
+          cloud = const CloudStoreOff();
         case cloudSendFlag:
           cloud = mayShadow
               ? const CloudStoreShadow(sends: true)

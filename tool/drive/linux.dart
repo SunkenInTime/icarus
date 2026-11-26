@@ -36,10 +36,10 @@ run     Runs --script, and --companion beside it when given, against the
         also draws the library list and folders from the store, and ops
         also commits each editor action's ops to the store as it happens
         and checks the store against the canvas after every turn.
-        --cloud-store shadow passes --cloud-store=shadow to every instance:
-        the open cloud strategy's results go into the store too, and the
-        driver compares the open page with them. --cloud-store send also
-        sends the store's queue to the server.
+        --cloud-store send passes --cloud-store=send to every instance: the
+        store reads the open cloud strategy and sends its queue to the
+        server. --cloud-store shadow is refused with exit 2 until the store
+        takes its live results with stamps (slice 3, PR 5).
         --second-account gives the main instance a second account, which a
         {"signIn": "second"} step signs in to.
         --kill-after-seconds kills the main instance with SIGKILL S seconds
@@ -385,8 +385,14 @@ Future<int> _run(Map<String, String> options) async {
     );
   }
   final cloudStore = options['cloud-store'];
-  if (cloudStore != null && cloudStore != 'shadow' && cloudStore != 'send') {
-    throw UsageError('--cloud-store is shadow or send, not "$cloudStore"');
+  if (cloudStore == 'shadow') {
+    throw UsageError(
+      'the cloud shadow is off until the store takes its live results with '
+      'stamps (slice 3, PR 5); use --cloud-store send',
+    );
+  }
+  if (cloudStore != null && cloudStore != 'send') {
+    throw UsageError('--cloud-store is send, not "$cloudStore"');
   }
   if (options['hive-store'] case final String seed) {
     if (!Directory(seed).existsSync()) {

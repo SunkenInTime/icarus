@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/convex_error_codes.dart';
-import 'package:icarus/collab/generated/icarus_convex_api.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
@@ -11,14 +10,27 @@ import 'package:icarus_library/icarus_library.dart';
 
 import 'strategy_copy_fixtures.dart';
 
-final class _Reading implements ConvexTransport {
+const _stamp =
+    ResultStamp(client: 2, connection: 3, snapshot: 41, serverTime: 4100);
+
+final class _Reading implements StampedConvexTransport {
   final queries = <(String, Map<String, Object?>)>[];
   Object? Function(String name)? answer;
 
   @override
-  Future<ConvexValue> query(String name, ConvexObject args) async {
+  Future<Stamped<ConvexValue>> queryStamped(
+    String name,
+    ConvexObject args,
+  ) async {
     queries.add((name, args.toDart()));
-    return ConvexValue.fromDart(answer!(name));
+    try {
+      return StampedValue(ConvexValue.fromDart(answer!(name)), _stamp);
+    } on ConvexFunctionException catch (error) {
+      return StampedError(
+        ConvexTransportError(rawCode: error.rawCode, message: error.message),
+        _stamp,
+      );
+    }
   }
 
   @override
@@ -63,7 +75,7 @@ void main() {
   setUp(() {
     transport = _Reading();
     reads = storeReadsOver(
-      ConvexStrategyRepository(IcarusConvexApi(transport)),
+      ConvexStrategyRepository.stamped(transport),
       canRead: appCanRead,
     );
   });
@@ -82,6 +94,7 @@ void main() {
     expect(args['strategyPublicId'], strategy);
     expect(args['clientProtocolVersion'], isNotNull);
     final answered = outcome as StoreReadAnswered;
+    expect(answered.point, pointOf(_stamp));
     expect(answered.role, StoreReadRole.owner);
     expect(answered.role!.edits, isTrue);
     final header = answered.base as HeaderRead;
@@ -166,7 +179,8 @@ void main() {
     Matcher lost(TransportFailure failure) => isA<StoreReadLost>()
         .having((outcome) => outcome.failure, 'failure', failure);
     Matcher gone(Matcher base) => isA<StoreReadAnswered>()
-        .having((outcome) => outcome.base, 'base', base);
+        .having((outcome) => outcome.base, 'base', base)
+        .having((outcome) => outcome.point, 'point', pointOf(_stamp));
 
     expect(
       await list('ACCOUNT_MISMATCH'),
@@ -193,6 +207,7 @@ void main() {
       storeReadOutcomeOfError(
         TimeoutException('slow'),
         gone: const StrategyGone(),
+        point: null,
       ),
       lost(TransportFailure.timeout),
     );
@@ -200,6 +215,7 @@ void main() {
       storeReadOutcomeOfError(
         const FormatException('bad'),
         gone: const StrategyGone(),
+        point: null,
       ),
       lost(TransportFailure.malformedAnswer),
     );

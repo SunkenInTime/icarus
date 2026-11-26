@@ -415,7 +415,7 @@ base class SenderStore {
   Future<Written> add(
     Account owner,
     String strategyId,
-    HeaderRead header,
+    StampedRead<HeaderRead> header,
   ) async {
     final Saving<StrategySummary, LibraryRefusal> result;
     try {

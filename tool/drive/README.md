@@ -123,6 +123,8 @@ Each run logs where the change landed, how long after the tap its patch was queu
 
 ## The cloud store in shadow
 
+**Off until slice 3's PR 5.** The store now orders every result by its stamp, and the shadow's live results come from the editor's unstamped watches. `--cloud-store shadow` on Linux and `-CloudStore shadow` on Windows stop with exit 2 before starting anything, and the app refuses `--cloud-store=shadow` at launch. Use `--cloud-store send`. What follows describes the shadow as it ran before.
+
 `--cloud-store shadow` on Linux, `-CloudStore shadow` on Windows, starts the app with the cloud store in shadow. It uses the same SQLite file as the library store, and either flag works without the other.
 
 The shadow hears of every page the repository hands to the editor, the slices' fallback to the saved whole page included, after the editor has it (`ConvexStrategyRepository.tap`): as the server sent it, before the editor upgrades or merges anything, with the connection the app was on when the page was handed over. Nothing the shadow does can delay, change or stop what the editor gets. For the strategy the editor has open, it also watches the page list (`strategy:getPageList`), naming the account it serves (`accountSubject`), so the server refuses the watch rather than answer it as anyone else; settings are taken only from the page list, by the store's rule. The first result on a newer connection opens a session in the store before it is recorded. Nothing is sent from the store, no edit goes into it, and nothing on screen reads it. Its work runs one job at a time between frames, the way the library mirror does.

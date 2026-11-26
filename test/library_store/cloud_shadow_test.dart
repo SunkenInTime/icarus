@@ -1,3 +1,6 @@
+@Skip(cloudShadowOff)
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -15,6 +18,8 @@ import 'package:icarus_library/icarus_library.dart';
 
 import 'hive_scratch.dart';
 import 'shadow_copy_test.dart' show handBuilt;
+import 'package:icarus/library_store/library_store_switch.dart'
+    show cloudShadowOff;
 
 const strategyId = 'hand-1';
 const pageId = 'p1';

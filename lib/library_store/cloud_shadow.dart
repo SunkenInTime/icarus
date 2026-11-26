@@ -3,6 +3,8 @@ import 'dart:collection';
 
 import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/library_store/library_store_switch.dart'
+    show cloudShadowOff;
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -215,8 +217,13 @@ final class CloudShadow {
     required this.canRead,
     required Future<void> Function() breathe,
   }) : _breathe = breathe {
-    store.takeCloudResultsFrom(CloudResults.liveQueries);
+    throw UnsupportedError(cloudShadowOff);
   }
+
+  static ResultPoint _noPoint() => throw UnsupportedError(cloudShadowOff);
+
+  static Generation _noGeneration() =>
+      throw UnsupportedError(cloudShadowOff);
 
   final LibraryStore store;
   final String build;
@@ -443,7 +450,7 @@ final class CloudShadow {
       state,
       connection,
       'the connection came back',
-      [const ConnectionReturned()],
+      [ConnectionReturned(_noGeneration())],
     );
   }
 
@@ -488,7 +495,11 @@ final class CloudShadow {
         _openedThisRun.add(strategyId);
         state.newest = connection;
         final added = await _write(
-          () => store.addCloudStrategy(_serving(), header, const []),
+          () => store.addCloudStrategy(
+            _serving(),
+            StampedRead(header, _noPoint()),
+            const [],
+          ),
         );
         switch (added) {
           case Saved():
@@ -530,7 +541,7 @@ final class CloudShadow {
           restarted ? 'the app started' : 'the strategy was opened again',
           [
             if (restarted) AppRestarted(build: build),
-            const ConnectionReturned(),
+            ConnectionReturned(_noGeneration()),
           ],
         )) {
           return;
@@ -547,7 +558,7 @@ final class CloudShadow {
     final session = await _sessionOf(entry);
     if (session == null) return false;
     final recorded = await _record(entry.strategyId, entry, [
-      BaseArrived(base, session: session, from: const LiveResult()),
+      BaseArrived(base, session: session, point: _noPoint()),
     ]);
     if (recorded == null) return false;
     for (final outcome in recorded.outcomes) {
