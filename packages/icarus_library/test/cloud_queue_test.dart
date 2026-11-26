@@ -772,10 +772,7 @@ void main() {
                 RetryAfter(retryTimeAfter(at, n), failedAt: at),
               ),
         );
-        expect(
-          Tally.of(client.queue, at).waiting,
-          {Underway.unsent: 1},
-        );
+        expect(Tally.of(client.queue, at).waiting, {Underway.unsent: 1});
       }
       final last = client.claim(['move']);
       client.must(
@@ -785,10 +782,7 @@ void main() {
           at: asStored(now).add(const Duration(hours: 1)),
         ),
       );
-      expect(
-        stateOf(client, 'move'),
-        const NeedsUser(RetriesExhausted()),
-      );
+      expect(stateOf(client, 'move'), const NeedsUser(RetriesExhausted()));
       final stored = attemptFromText(
         last,
         jsonEncode(attemptToJson(client.queue.attempts[last]!)),
@@ -1652,6 +1646,48 @@ void main() {
       );
       expect(source.elementsOn('page-a').map((r) => r.publicId), ['e2']);
     });
+
+    test(
+      'an edit whose row was moved to another page is derived again when '
+      'that page\'s read changes, so its view matches one derived afresh',
+      () {
+        final server = Server();
+        final client = online();
+        client.edit(
+          movePatch('drag', x: 40, merge: FieldMerge(fields: ['position'])),
+        );
+        sendAndAnswer(client, server, ['drag']);
+        client.edit(onVisible(client.visible, movePatch('drop', x: 70)));
+        final row = server.rows.element('e1')! as LiveElement;
+        server.rows = withOp(
+          server.rows,
+          ElementPatchOp(
+            opId: 'away',
+            elementPublicId: 'e1',
+            expectedElementRevision: revisionOfRowForTest(row)!,
+            pagePublicId: 'page-b',
+            payload: agentPayload('e1', {'rotation': 45}),
+            sortIndex: 1,
+          ),
+        );
+        client.read(server.rows);
+        final before = client.view('drop').state;
+        client.must(const ResultRefused(page: 'page-b', problem: 'unreadable'));
+        final queue = client.queue;
+        final afresh = CloudQueue(
+          entries: queue.entries,
+          attempts: queue.attempts,
+          landed: queue.landed,
+          nextAttempt: queue.nextAttempt,
+          nextSession: queue.nextSession,
+          shown: queue.shown,
+          strategy: queue.strategy,
+          session: queue.session,
+        );
+        expect(entryViews(afresh, now)['drop']!.state, isNot(before));
+        expect(entryViews(queue, now), entryViews(afresh, now));
+      },
+    );
 
     test('a whole write waiting on a row that a result of its page no longer '
         'holds needs the user', () {
