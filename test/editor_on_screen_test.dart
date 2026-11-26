@@ -15,6 +15,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/widgets/replay/replay_match_card.dart';
+import 'package:icarus/replay/replay_playback.dart';
+import 'package:icarus/replay/replay_map_projection.dart';
+import 'package:icarus/replay/replay_drawing.dart';
+import 'package:icarus/replay/replay_document.dart';
+import 'package:icarus/replay/replay_capture.dart';
+import 'package:icarus/providers/collab/replay_capture_queue_provider.dart';
+import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -40,6 +48,7 @@ import 'package:icarus/strategy_view.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'editor_on_screen_support.dart';
+import 'replay_test_support.dart';
 import 'library_rows/generated_strategies.dart';
 import 'library_store/unit_harness.dart';
 
@@ -104,6 +113,66 @@ final class _HeldPost implements CommunityRepository {
 }
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+
+final class _CloudCaptures implements ReplayCaptureStore {
+  static const captured = (
+    id: 'captured-cloud',
+    name: 'Captured',
+    map: MapValue.ascent,
+    source: StrategySource.cloud,
+    pageCount: 1,
+    lastPageId: 'captured-page',
+    lastPageIsAttack: true,
+  );
+
+  @override
+  Future<CapturedStrategy> create(
+    MapValue map,
+    String name,
+    CapturedPage page,
+  ) async =>
+      captured;
+
+  @override
+  Future<CapturedStrategy?> append(
+    CapturedStrategy strategy,
+    CapturedPage page,
+  ) async =>
+      captured;
+
+  @override
+  Future<CapturedStrategy?> find(CapturedStrategy strategy) async => captured;
+}
+
+final class _LandingCaptures extends ReplayCaptureQueue {
+  @override
+  ReplayCaptureQueueState build() => const ReplayCaptureQueueState();
+
+  void waitFor(String strategyId, String pageId) =>
+      state = ReplayCaptureQueueState(captures: [
+        ReplayCaptureRecord(
+          id: 'capture',
+          accountId: 'account-a',
+          strategyId: strategyId,
+          clientId: 'client',
+          strategyName: 'Captured',
+          mapData: 'ascent',
+          folderId: null,
+          themeProfileId: null,
+          index: 0,
+          createsStrategy: true,
+          createdAt: DateTime(2026, 11, 26),
+          pageId: pageId,
+          pageName: 'Round 1',
+          isAttack: true,
+          settings: const {},
+          pageOpId: 'op',
+          items: const [],
+        ),
+      ]);
+
+  void land() => state = const ReplayCaptureQueueState();
+}
 
 final class _HeldPages extends StrategyPageSessionNotifier {
   final held = <String, Completer<void>>{};
@@ -172,7 +241,10 @@ void main() {
   final strategies = _HeldSaves();
   final posts = _HeldPost();
   final pages = _HeldPages();
+  final captures = _LandingCaptures();
   final container = ProviderContainer(overrides: [
+    replayCaptureStoreProvider.overrideWithValue(_CloudCaptures.new),
+    replayCaptureQueueProvider.overrideWith(() => captures),
     strategyPageSessionProvider.overrideWith(() => pages),
     remoteEditorSnapshotProvider.overrideWith(_ReadsItsHeader.new),
     communityRepositoryProvider.overrideWithValue(posts),
@@ -766,6 +838,53 @@ void main() {
     expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
     expect(find.text('Could not load strategy.'), findsOneWidget);
     expect(container.read(strategyProvider).strategyId, isNull);
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      "a replay card's Open whose captured page lands after another strategy "
+      'opened gives way to it: that strategy keeps its edit, which saves, and '
+      'the replay keeps playing', (tester) async {
+    await tester.runAsync(() => _stored('opened-meanwhile'));
+    final document = ReplayDocument.fromBytes(icrp(sampleJson()));
+    final playback = ReplayPlayback(
+      document: document,
+      projection: ReplayMapProjection.forMapPath(document.match.mapPath)!,
+      perspective: ReplayTeam.red,
+    );
+    addTearDown(playback.dispose);
+    await pumpLibraryWithEditors(
+      tester,
+      container,
+      library: SizedBox(
+        width: 420,
+        height: 700,
+        child: ReplayMatchCard(
+          playback: playback,
+          drawing: ReplayDrawing(playback),
+          map: MapValue.ascent,
+          onReturnFromEditor: () {},
+        ),
+      ),
+    );
+    await tester.tap(find.text('Capture'));
+    await settleWithDisk(tester);
+    captures.waitFor('captured-cloud', 'captured-page');
+    await tester.pump();
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+
+    playback.play();
+    await openWithAnEdit(tester, 'opened-meanwhile');
+    final cancels = strategies.cancels;
+    captures.land();
+    await settleWithDisk(tester);
+
+    expect(playback.playing, isTrue);
+    expect(strategies.cancels, cancels);
+    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
+    await expectItsEditSaves(tester, 'opened-meanwhile');
+    playback.pause();
     await leaveEditors(tester, container);
   });
 }
