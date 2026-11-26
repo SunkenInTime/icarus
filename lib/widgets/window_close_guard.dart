@@ -50,6 +50,7 @@ class _WindowCloseGuardState extends ConsumerState<WindowCloseGuard>
     final prevents = StrategyView.onScreen.value > 0;
     if (prevents == _preventsClose) return;
     _preventsClose = prevents;
+    if (prevents && _closing == _Closing.sent) _closing = _Closing.no;
     unawaited(windowManager.setPreventClose(prevents));
   }
 
