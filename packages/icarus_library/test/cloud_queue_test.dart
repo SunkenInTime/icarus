@@ -821,7 +821,13 @@ void main() {
             point: tick(),
           ),
         );
-        client.must(EditAccessConfirmed(afterAttempt: attempt));
+        client.must(
+          EditAccessConfirmed(
+            afterAttempt: attempt,
+            session: client.queue.session.number,
+            point: tick(),
+          ),
+        );
         expect(
           stateOf(client, 'move'),
           isA<RefusedAgain>()
@@ -866,7 +872,13 @@ void main() {
       final first = client.claim(['a']);
       client.must(TransportFailed(first, TransportFailure.network, at: now));
       final second = client.claim(['b']);
-      client.must(EditAccessConfirmed(afterAttempt: second));
+      client.must(
+        EditAccessConfirmed(
+          afterAttempt: second,
+          session: client.queue.session.number,
+          point: tick(),
+        ),
+      );
       client.must(
         BatchRefused(first, BatchRefusal.editAccessRemoved, point: tick()),
       );
@@ -874,7 +886,13 @@ void main() {
       client.must(
         BatchRefused(second, BatchRefusal.strategyDeleted, point: tick()),
       );
-      client.must(EditAccessConfirmed(afterAttempt: second));
+      client.must(
+        EditAccessConfirmed(
+          afterAttempt: second,
+          session: client.queue.session.number,
+          point: tick(),
+        ),
+      );
       expect(standingOf(client.queue), Standing.deletedOnServer);
     });
 
@@ -909,7 +927,13 @@ void main() {
         'clears it', () {
       final client = online();
       client.edit(movePatch('waiting'));
-      final told = client.step(const ReadRefusedForUpgrade(build: build));
+      final told = client.step(
+        ReadRefusedForUpgrade(
+          build: build,
+          session: client.queue.session.number,
+          point: tick(),
+        ),
+      );
       expect(
         told,
         isA<Stepped>().having(
@@ -963,7 +987,13 @@ void main() {
           point: tick(),
         ),
       );
-      client.must(const ReadRefusedForUpgrade(build: build));
+      client.must(
+        ReadRefusedForUpgrade(
+          build: build,
+          session: client.queue.session.number,
+          point: tick(),
+        ),
+      );
       expect(
         syncStateOf(
           OwnedBy(testAccount),
@@ -1117,7 +1147,9 @@ void main() {
         'applicable', () {
       expect(
         notApplicable(
-          Client().step(const EditAccessConfirmed(afterAttempt: 7)),
+          Client().step(
+            EditAccessConfirmed(afterAttempt: 7, session: 1, point: tick()),
+          ),
         ),
         isA<NoSuchAttempt>(),
       );

@@ -268,7 +268,11 @@ final class Scenario {
           );
           facts.add(
             EventFact(
-              EditAccessConfirmed(afterAttempt: sent.$1),
+              EditAccessConfirmed(
+                afterAttempt: sent.$1,
+                session: client.queue.session.number,
+                point: tick(),
+              ),
               'access confirmed after ${sent.$1}',
             ),
           );

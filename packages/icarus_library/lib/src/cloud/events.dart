@@ -166,11 +166,13 @@ final class ServerTimeHeld extends QueueEvent {
     this.serverTime, {
     required this.at,
     required this.session,
+    required this.point,
   });
 
   final int serverTime;
   final Duration at;
   final int session;
+  final ResultPoint point;
 }
 
 final class ClaimReleased extends QueueEvent {
@@ -288,9 +290,15 @@ final class AccountChanged extends QueueEvent {
 }
 
 final class EditAccessConfirmed extends QueueEvent {
-  const EditAccessConfirmed({required this.afterAttempt});
+  const EditAccessConfirmed({
+    required this.afterAttempt,
+    required this.session,
+    required this.point,
+  });
 
   final int afterAttempt;
+  final int session;
+  final ResultPoint point;
 }
 
 sealed class UserAction extends QueueEvent {
@@ -371,9 +379,36 @@ final class EditOfAnotherLife extends QueueEvent {
 }
 
 final class ReadRefusedForUpgrade extends QueueEvent {
-  const ReadRefusedForUpgrade({required this.build});
+  const ReadRefusedForUpgrade({
+    required this.build,
+    required this.session,
+    required this.point,
+  });
 
   final String build;
+  final int session;
+  final ResultPoint point;
+}
+
+enum SignInRefusal { unauthenticated, accountMismatch }
+
+final class ReadRefusedForSignIn extends QueueEvent {
+  const ReadRefusedForSignIn(
+    this.refusal, {
+    required this.session,
+    required this.point,
+  });
+
+  final SignInRefusal refusal;
+  final int session;
+  final ResultPoint point;
+}
+
+final class BatchAccountMismatch extends QueueEvent {
+  const BatchAccountMismatch(this.attempt, {required this.point});
+
+  final int attempt;
+  final ResultPoint point;
 }
 
 sealed class OpAnswer {

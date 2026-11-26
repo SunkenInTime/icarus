@@ -23,12 +23,22 @@ ResultPoint? pointOf(QueueEvent event) => switch (event) {
   BaseArrived(:final point) ||
   ResultRefused(:final point) ||
   OpAnswered(:final point) ||
-  BatchRefused(:final point) => point,
+  BatchRefused(:final point) ||
+  ServerTimeHeld(:final point) ||
+  EditAccessConfirmed(:final point) ||
+  ReadRefusedForUpgrade(:final point) ||
+  ReadRefusedForSignIn(:final point) ||
+  BatchAccountMismatch(:final point) => point,
   _ => null,
 };
 
 int? labelOf(QueueEvent event) => switch (event) {
-  BaseArrived(:final session) || ResultRefused(:final session) => session,
+  BaseArrived(:final session) ||
+  ResultRefused(:final session) ||
+  ServerTimeHeld(:final session) ||
+  EditAccessConfirmed(:final session) ||
+  ReadRefusedForUpgrade(:final session) ||
+  ReadRefusedForSignIn(:final session) => session,
   _ => null,
 };
 
@@ -1070,7 +1080,12 @@ final class Model {
       }
     }
     apply(
-      ServerTimeHeld(serverNow, at: elapsed, session: session),
+      ServerTimeHeld(
+        serverNow,
+        at: elapsed,
+        session: session,
+        point: stamps.current,
+      ),
       'server time $serverNow from session $session',
     );
   }
@@ -1478,7 +1493,11 @@ final class Model {
     switch (standingOf(client.queue)) {
       case Standing.editAccessLost:
         must(
-          EditAccessConfirmed(afterAttempt: client.queue.nextAttempt - 1),
+          EditAccessConfirmed(
+            afterAttempt: client.queue.nextAttempt - 1,
+            session: client.queue.session.number,
+            point: stamps.at(serverState),
+          ),
           'access confirmed',
         );
       case Standing.upgradeRequired:

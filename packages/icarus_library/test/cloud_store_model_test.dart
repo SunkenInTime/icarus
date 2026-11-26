@@ -498,9 +498,7 @@ final class StoreModel {
     if (commits != before) {
       throw StateError('refusing the strategy made a commit');
     }
-    if (await store.record(testAccount, strategyId, [
-          reconnected(),
-        ])
+    if (await store.record(testAccount, strategyId, [reconnected()])
         case Refused(reason: StoredRowsDisagree())) {
       count('events refused after a refusal');
     } else {
@@ -888,7 +886,11 @@ final class StoreModel {
     switch (standingOf(cloud.queue)) {
       case Standing.editAccessLost:
         await record([
-          EditAccessConfirmed(afterAttempt: cloud.queue.nextAttempt - 1),
+          EditAccessConfirmed(
+            afterAttempt: cloud.queue.nextAttempt - 1,
+            session: cloud.queue.session.number,
+            point: tick(),
+          ),
         ], 'access confirmed');
       case Standing.upgradeRequired:
         build = 'build-up-${restarts++}';
