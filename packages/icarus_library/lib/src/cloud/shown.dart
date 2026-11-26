@@ -171,6 +171,17 @@ final class Freshness {
     },
   );
 
+  Freshness get inNewSession => Freshness._(
+    listSinceTouch: false,
+    listed: const {},
+    touchedSinceList: const {},
+    pagesSinceTouch: const {},
+    goneByResult: const {},
+    listMark: listMark,
+    allPagesMark: allPagesMark,
+    pageMarks: pageMarks,
+  );
+
   bool listFreshFor(String page) =>
       listSinceTouch && !touchedSinceList.contains(page);
 
@@ -1232,6 +1243,7 @@ final class Shown {
   );
 
   Shown inNewSession() => Shown(
+    fresh: fresh.inNewSession,
     list: list.inNewSession,
     pageReads: {
       for (final MapEntry(:key, :value) in pageReads.entries)

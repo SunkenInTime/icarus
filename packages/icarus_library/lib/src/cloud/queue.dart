@@ -2427,8 +2427,12 @@ _Verdict _wholeBehindOwn(
         (work) => targetOf(work.op) == row && work.shownWithout,
       );
       final pageCurrent = switch (row) {
-        PageTarget() || SettingsTarget() => shown.headerThisSession,
-        _ => page != null && shown.pageReadThisSession(page),
+        PageTarget() || SettingsTarget() =>
+          shown.headerThisSession && shown.fresh.listFreshFor(page!),
+        _ =>
+          page != null &&
+              shown.pageReadThisSession(page) &&
+              shown.fresh.pageFreshFor(page),
       };
       if (left ||
           (pageCurrent &&
