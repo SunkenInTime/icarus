@@ -886,8 +886,8 @@ void main() {
   });
 
   testWidgets(
-      'an editor that leaves while the close question is up sends no close '
-      'and leaves the window free to close on the next one', (tester) async {
+      "an editor that leaves while the close question's Save writes ends "
+      'with the window closed once, with no second press', (tester) async {
     await tester.runAsync(() => _stored('leaves-during-close'));
     final windowCalls = await pumpLibraryWithEditors(tester, container);
     await openWithAnEdit(tester, 'leaves-during-close');
@@ -907,8 +907,7 @@ void main() {
     strategies.held = null;
     await settleWithDisk(tester);
 
-    expect(_preventClose(windowCalls), [true, false]);
-    expect(windowCalls.map((call) => call.method), isNot(contains('close')));
+    expect(windowCalls.where((call) => call.method == 'close'), hasLength(1));
     await leaveEditors(tester, container);
   });
 
@@ -1370,6 +1369,106 @@ void main() {
     expect(find.text('Save changes?'), findsNothing);
     expect(windowCalls.map((call) => call.method), isNot(contains('close')));
     expect(container.read(strategyProvider).strategyId, 'took-over');
+    expect(mouseNavigationRouteObserver.topRoute, same(editor));
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a window close whose Save ends after a quick switch opened another '
+      'strategy and the user went Home closes the window once, with no second '
+      'press', (tester) async {
+    await tester.runAsync(() async {
+      await _stored('saved-on-close');
+      await _stored('went-home-from', lastEdited: DateTime(2100));
+    });
+    final windowCalls = await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'saved-on-close');
+    final opening = await holdTheNextStorageDirectory();
+
+    await tester.tap(find.descendant(
+      of: find.byKey(const ValueKey('strategy-quick-switcher-control')),
+      matching: find.byType(ShadIconButton),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('went-home-from'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text("Don't save"));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final saving = strategies.held = Completer<void>();
+    closeTheWindow(tester);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    opening.complete();
+    await untilOpen(tester, 'went-home-from');
+    await settleWithDisk(tester);
+    await tester.tap(_leaveButton());
+    await settleWithDisk(tester);
+    expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
+    expect(windowCalls.map((call) => call.method), isNot(contains('close')));
+
+    saving.complete();
+    strategies.held = null;
+    await settleWithDisk(tester);
+
+    expect(strategies.saved, contains('saved-on-close'));
+    expect(windowCalls.where((call) => call.method == 'close'), hasLength(1));
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a window close whose prompt is up when the last editor leaves closes '
+      'the window once, with no second press', (tester) async {
+    await tester.runAsync(() => _stored('last-editor-leaves'));
+    final windowCalls = await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'last-editor-leaves');
+    closeTheWindow(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('Save changes?'), findsOneWidget);
+
+    appNavigatorKey.currentState!
+        .removeRoute(mouseNavigationRouteObserver.editorRoute!);
+    await settleWithDisk(tester);
+
+    expect(StrategyView.onScreen.value, 0);
+    expect(find.text('Save changes?'), findsNothing);
+    expect(windowCalls.where((call) => call.method == 'close'), hasLength(1));
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      "a Community link whose question another strategy took over gives way: "
+      "the link's post is not read or opened", (tester) async {
+    await tester.runAsync(() async {
+      await _stored('asked-for-the-link');
+      await _stored('took-the-link-over');
+    });
+    await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'asked-for-the-link');
+    final editor = mouseNavigationRouteObserver.topRoute!;
+    container.read(communityPostToOpenProvider.notifier).state =
+        const PostLinkArrived('superseded-post');
+    await tester.pumpAndSettle();
+    expect(find.text('Save changes?'), findsOneWidget);
+
+    final claimed = StrategyView.claimInPlace(
+        editor, strategies, strategies.askedByTheUserNow())!;
+    expect(
+      await tester.runAsync(
+          () => strategies.openLocal('took-the-link-over', asked: claimed)),
+      isA<Changed>(),
+    );
+    await settleWithDisk(tester);
+
+    expect(find.text('Save changes?'), findsNothing);
+    expect(posts.asked, isNot(contains('superseded-post')));
+    expect(container.read(strategyProvider).strategyId, 'took-the-link-over');
     expect(mouseNavigationRouteObserver.topRoute, same(editor));
     await leaveEditors(tester, container);
   });

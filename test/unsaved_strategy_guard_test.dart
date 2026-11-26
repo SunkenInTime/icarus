@@ -36,6 +36,7 @@ import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
@@ -2061,6 +2062,75 @@ void main() {
       expect(appNavigatorKey.currentState!.canPop(), isFalse);
       await tester.pumpAndSettle();
       expect(home, isA<Superseded>());
+    });
+
+    bool questionListens() =>
+        container.getAllProviderElements().any((element) =>
+            (element.origin == strategyProvider ||
+                element.origin == openCountProvider) &&
+            element.hasListeners) ||
+        (StrategyView.onScreen as dynamic).hasListeners as bool;
+
+    final waysOut = <String, Future<void> Function(WidgetTester tester)>{
+      'answered': (tester) async {
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+      },
+      'superseded': (tester) async {
+        expect(strategies.claimForAnEditor(strategies.askedByTheUserNow()),
+            isNotNull);
+        await tester.pumpAndSettle();
+      },
+      'dismissed from outside': (tester) async {
+        appNavigatorKey.currentState!.pop();
+        await tester.pumpAndSettle();
+      },
+      'left by the last editor': (tester) async {
+        StrategyView.onScreen.value = 0;
+        await tester.pumpAndSettle();
+      },
+    };
+    for (final MapEntry(key: wayOut, value: leave) in waysOut.entries) {
+      testWidgets(
+          'a question listens to what is open only while it asks, and stops '
+          'once it is $wayOut', (tester) async {
+        await start(tester);
+        expect(questionListens(), isFalse);
+        unawaited(ask());
+        await tester.pumpAndSettle();
+        expect(find.text('Save changes?'), findsOneWidget);
+        expect(questionListens(), isTrue);
+
+        await leave(tester);
+
+        expect(find.text('Save changes?'), findsNothing);
+        expect(questionListens(), isFalse);
+      });
+    }
+
+    testWidgets(
+        'a Save pressed in the same step another open is counted, before the '
+        "question has heard of it, saves nothing", (tester) async {
+      await start(tester);
+      void Function()? pressSave;
+      final pressing = container.listen(openCountProvider, (_, __) {
+        pressSave?.call();
+      });
+      addTearDown(pressing.close);
+      LeaveAnswer? home;
+      unawaited(ask().then((answer) => home = answer));
+      await tester.pumpAndSettle();
+      pressSave = tester
+          .widget<ShadButton>(find.widgetWithText(ShadButton, 'Save'))
+          .onPressed;
+
+      expect(strategies.claimForAnEditor(strategies.askedByTheUserNow()),
+          isNotNull);
+      await tester.pumpAndSettle();
+
+      expect(strategies.saves, 0);
+      expect(home, isA<Superseded>());
+      expect(find.text('Save changes?'), findsNothing);
     });
 
     testWidgets(
