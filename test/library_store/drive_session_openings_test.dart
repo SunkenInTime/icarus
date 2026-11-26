@@ -109,7 +109,14 @@ void main() {
         lost(),
         EventsWritten(
           strategy,
-          const [ServerTimeHeld(1, at: Duration.zero, session: 1)],
+          const [
+            ServerTimeHeld(
+              1,
+              at: Duration.zero,
+              session: 1,
+              point: ResultPoint(client: 1, connection: 1, snapshot: 1),
+            ),
+          ],
           effects: const [SessionOpened(2)],
         ),
         openedByReconnect(3),
