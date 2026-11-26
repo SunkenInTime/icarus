@@ -23,6 +23,7 @@ import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/open_attempt.dart';
+import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -356,25 +357,32 @@ class StrategyProvider extends Notifier<StrategyState> {
     });
   }
 
-  Future<bool> flushPendingAutosaveBeforeExit() async {
+  Future<AutosaveBeforeExit> flushPendingAutosaveBeforeExit() async {
     final strategyId = state.strategyId;
     if (strategyId == null || state.strategyName == null) {
-      return true;
+      return const NothingLeftUnsaved();
     }
 
     final hasTextDrafts = ref.read(textDraftProvider).isNotEmpty;
     final saveState = ref.read(strategySaveStateProvider);
     if (!saveState.isDirty && !hasTextDrafts) {
-      return true;
+      return const NothingLeftUnsaved();
     }
 
     if (!_currentStrategyIsCloud() &&
         !ref.read(appPreferencesProvider).autosaveEnabled) {
-      return false;
+      return const NotAutosaved(NotAutosavedBecause.autosaveIsOff);
     }
 
+    final edits = ref.read(strategySaveStateProvider.notifier);
+    final marks = edits.dirtyMarks;
     await forceSaveNow(strategyId);
-    return !ref.read(strategySaveStateProvider).isDirty;
+    if (!ref.read(strategySaveStateProvider).isDirty) {
+      return const NothingLeftUnsaved();
+    }
+    return edits.dirtyMarks != marks
+        ? const EditedDuringTheAutosave()
+        : const NotAutosaved(NotAutosavedBecause.stillUnsaved);
   }
 
   bool _currentStrategyIsCloud() {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:flutter/gestures.dart';
@@ -69,7 +70,8 @@ final class _HeldSaves extends StrategyProvider {
   }
 
   @override
-  Future<bool> flushPendingAutosaveBeforeExit() async => false;
+  Future<AutosaveBeforeExit> flushPendingAutosaveBeforeExit() async =>
+      const NotAutosaved(NotAutosavedBecause.autosaveIsOff);
 
   @override
   Future<void> forceSaveNow(String id) async {

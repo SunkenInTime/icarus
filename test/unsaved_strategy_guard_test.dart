@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -31,6 +34,8 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/services/unsaved_strategy_guard.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'opens_now_support.dart';
 
 bool _adaptersRegistered = false;
@@ -56,12 +61,14 @@ class _FakeGuardStrategyProvider extends StrategyProvider {
   StrategyState build() => initialState;
 
   @override
-  Future<bool> flushPendingAutosaveBeforeExit() async {
+  Future<AutosaveBeforeExit> flushPendingAutosaveBeforeExit() async {
     flushCalls++;
     if (flushError != null) {
       throw flushError!;
     }
-    return flushResult;
+    return flushResult
+        ? const NothingLeftUnsaved()
+        : const NotAutosaved(NotAutosavedBecause.autosaveIsOff);
   }
 
   @override
@@ -82,6 +89,52 @@ class _FakeGuardStrategyProvider extends StrategyProvider {
   void cancelPendingSave() {
     cancelPendingSaveCalls++;
   }
+}
+
+class _SavesWhatItSnapshots extends StrategyProvider {
+  _SavesWhatItSnapshots({required this.autosaves});
+
+  final bool autosaves;
+  final firstWrite = Completer<void>();
+  var writes = 0;
+
+  @override
+  StrategyState build() => const StrategyState(
+        strategyId: 'strategy-written',
+        strategyName: 'Strategy written',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      );
+
+  Future<void> _write() async {
+    final saveState = ref.read(strategySaveStateProvider.notifier);
+    final snapshot = saveState.dirtyMarks;
+    writes += 1;
+    if (writes == 1) await firstWrite.future;
+    saveState.markPersisted(dirtyMarksSaved: snapshot);
+  }
+
+  @override
+  Future<AutosaveBeforeExit> flushPendingAutosaveBeforeExit() async {
+    if (!ref.read(strategySaveStateProvider).isDirty) {
+      return const NothingLeftUnsaved();
+    }
+    if (!autosaves) {
+      return const NotAutosaved(NotAutosavedBecause.autosaveIsOff);
+    }
+    final marks = ref.read(strategySaveStateProvider.notifier).dirtyMarks;
+    await _write();
+    if (!ref.read(strategySaveStateProvider).isDirty) {
+      return const NothingLeftUnsaved();
+    }
+    return ref.read(strategySaveStateProvider.notifier).dirtyMarks != marks
+        ? const EditedDuringTheAutosave()
+        : const NotAutosaved(NotAutosavedBecause.stillUnsaved);
+  }
+
+  @override
+  Future<void> forceSaveNow(String id) => _write();
 }
 
 class _ThrowingSaveStrategyProvider extends StrategyProvider {
@@ -230,7 +283,7 @@ void main() {
 
       final result = await notifier.flushPendingAutosaveBeforeExit();
 
-      expect(result, isTrue);
+      expect(result, isA<NothingLeftUnsaved>());
       expect(container.read(strategySaveStateProvider).isDirty, isFalse);
       final saved =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategy.id);
@@ -267,7 +320,7 @@ void main() {
 
       final result = await notifier.flushPendingAutosaveBeforeExit();
 
-      expect(result, isFalse);
+      expect(result, isA<NotAutosaved>());
       expect(container.read(strategySaveStateProvider).isDirty, isTrue);
       final saved =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategy.id);
@@ -304,7 +357,7 @@ void main() {
 
       final result = await notifier.flushPendingAutosaveBeforeExit();
 
-      expect(result, isTrue);
+      expect(result, isA<NothingLeftUnsaved>());
       final saved =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategy.id);
       expect(saved, isNotNull);
@@ -317,7 +370,7 @@ void main() {
 
       final result = await notifier.flushPendingAutosaveBeforeExit();
 
-      expect(result, isTrue);
+      expect(result, isA<NothingLeftUnsaved>());
     });
 
     test('save failure throws to the caller', () async {
@@ -347,9 +400,126 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+
+    testWidgets(
+        'an edit made while the autosave before leaving writes is saved by '
+        'another write before the exit goes', (tester) async {
+      late StrategyData strategy;
+      await tester.runAsync(() async {
+        await _setAutosaveEnabled(true);
+        strategy = await _storeStrategyWithText(
+          id: 'strategy-edited-during',
+          name: 'Edited during',
+          text: 'before',
+        );
+      });
+      container
+          .read(textProvider.notifier)
+          .fromHive(strategy.pages.single.textData);
+      container.read(strategyProvider.notifier).setFromState(
+            StrategyState(
+              strategyId: strategy.id,
+              strategyName: strategy.name,
+              source: StrategySource.local,
+              storageDirectory: null,
+              isOpen: true,
+            ),
+          );
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      late BuildContext context;
+      late WidgetRef ref;
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          home: Scaffold(
+            body: Consumer(builder: (buildContext, widgetRef, _) {
+              context = buildContext;
+              ref = widgetRef;
+              return const SizedBox.shrink();
+            }),
+          ),
+        ),
+      ));
+
+      final answer = await tester.runAsync(() {
+        final leaving = guardUnsavedStrategyExit(
+          context: context,
+          ref: ref,
+          source: 'guard-test-edit-during-the-autosave',
+        );
+        container.read(agentProvider.notifier).addAgent(PlacedAgent(
+              id: 'placed-during-the-autosave',
+              type: AgentType.jett,
+              position: const Offset(300, 300),
+            ));
+        container.read(strategySaveStateProvider.notifier).markDirty();
+        return leaving.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => const Stay(),
+        );
+      });
+
+      expect(answer, isA<Leave>());
+      expect(container.read(strategySaveStateProvider).isDirty, isFalse);
+      expect(
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+            .get(strategy.id)!
+            .pages
+            .single
+            .agentData
+            .map((agent) => agent.id),
+        contains('placed-during-the-autosave'),
+      );
+    });
   });
 
   group('guardUnsavedStrategyExit', () {
+    for (final autosaves in [false]) {
+      testWidgets(
+          'an edit made while the Save of the prompt writes is saved too '
+          'before the exit goes', (tester) async {
+        final strategies = _SavesWhatItSnapshots(autosaves: autosaves);
+        final container = ProviderContainer(
+          overrides: [strategyProvider.overrideWith(() => strategies)],
+        );
+        addTearDown(container.dispose);
+        container.read(strategySaveStateProvider.notifier).markDirty();
+        late BuildContext context;
+        late WidgetRef ref;
+        await tester.pumpWidget(UncontrolledProviderScope(
+          container: container,
+          child: ShadApp(
+            home: Scaffold(
+              body: Consumer(builder: (buildContext, widgetRef, _) {
+                context = buildContext;
+                ref = widgetRef;
+                return const SizedBox.shrink();
+              }),
+            ),
+          ),
+        ));
+
+        final leaving = guardUnsavedStrategyExit(
+          context: context,
+          ref: ref,
+          source: 'guard-test-edit-during-the-write',
+        );
+        await tester.pumpAndSettle();
+        if (!autosaves) {
+          await tester.tap(find.text('Save'));
+          await tester.pump();
+        }
+        expect(strategies.writes, 1);
+        container.read(strategySaveStateProvider.notifier).markDirty();
+        strategies.firstWrite.complete();
+        await tester.pumpAndSettle();
+
+        expect(await leaving, isA<Leave>());
+        expect(strategies.writes, 2);
+        expect(container.read(strategySaveStateProvider).isDirty, isFalse);
+      });
+    }
+
     late ProviderContainer container;
     late _FakeGuardStrategyProvider notifier;
     late BuildContext context;
@@ -438,6 +608,47 @@ void main() {
       expect(continueCalls, 1);
       expect(notifier.flushCalls, 1);
       expect(find.text('Save changes?'), findsNothing);
+    });
+
+    testWidgets(
+        'a Save that returns but leaves the strategy unsaved keeps the user '
+        'in the editor and says the save failed', (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'strategy-held',
+          strategyName: 'Strategy held',
+          source: StrategySource.local,
+          storageDirectory: null,
+          isOpen: true,
+        ),
+        flushResult: false,
+        holdsCanvas: true,
+      );
+      container = ProviderContainer(
+        overrides: [strategyProvider.overrideWith(() => notifier)],
+      );
+      addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final leaving = guardThenIgnoringWhatItSaw(
+        context: context,
+        ref: ref,
+        source: 'guard-test-save-left-unsaved',
+        onContinue: () async => continueCalls++,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(await leaving, isFalse);
+      expect(continueCalls, 0);
+      expect(notifier.forceSaveCalls, 1);
+      expect(
+        appProviderContainer.read(inAppDebugProvider).last.message,
+        'Failed to save strategy before leaving.',
+      );
     });
 
     testWidgets('clean local state still flushes an active text draft',

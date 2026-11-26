@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
@@ -402,6 +403,34 @@ String _cloudSyncBlockedMessage({
   return l10n.unsavedGuardStayAndRetry(base);
 }
 
+Future<AutosaveBeforeExit> _autosaveUntilItHoldsEditsMadeMeanwhile(
+  StrategyProvider strategies,
+  OpenSeen asked,
+) async {
+  var autosave = await strategies.flushPendingAutosaveBeforeExit();
+  while (autosave is EditedDuringTheAutosave &&
+      asked.isNow(strategies.askedByTheUserNow())) {
+    autosave = await strategies.flushPendingAutosaveBeforeExit();
+  }
+  return autosave;
+}
+
+Future<void> _saveUntilItHoldsEditsMadeMeanwhile(
+  WidgetRef ref,
+  String strategyId,
+  OpenSeen asked,
+) async {
+  final strategies = ref.read(strategyProvider.notifier);
+  final edits = ref.read(strategySaveStateProvider.notifier);
+  int marks;
+  do {
+    marks = edits.dirtyMarks;
+    await strategies.forceSaveNow(strategyId);
+  } while (edits.dirtyMarks != marks &&
+      ref.read(strategySaveStateProvider).isDirty &&
+      asked.isNow(strategies.askedByTheUserNow()));
+}
+
 @useResult
 Future<LeaveAnswer> guardUnsavedStrategyExit({
   required BuildContext context,
@@ -427,11 +456,14 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
   }
 
   try {
-    final canContinueSilently = await ref
-        .read(strategyProvider.notifier)
-        .flushPendingAutosaveBeforeExit();
-    if (canContinueSilently) {
-      return Leave(asked);
+    switch (await _autosaveUntilItHoldsEditsMadeMeanwhile(
+      ref.read(strategyProvider.notifier),
+      asked,
+    )) {
+      case NothingLeftUnsaved() || EditedDuringTheAutosave():
+        return Leave(asked);
+      case NotAutosaved():
+        break;
     }
   } catch (error, stackTrace) {
     AppErrorReporter.reportError(
@@ -457,7 +489,7 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
         if (strategyId == null) {
           return const Stay();
         }
-        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+        await _saveUntilItHoldsEditsMadeMeanwhile(ref, strategyId, asked);
       } catch (error, stackTrace) {
         AppErrorReporter.reportError(
           l10n.unsavedGuardSaveFailed,
@@ -465,6 +497,13 @@ Future<LeaveAnswer> guardUnsavedStrategyExit({
           stackTrace: stackTrace,
           source: source,
         );
+        return const Stay();
+      }
+      if (asked
+              .isNow(ref.read(strategyProvider.notifier).askedByTheUserNow()) &&
+          ref.read(strategySaveStateProvider).isDirty) {
+        AppErrorReporter.reportError(l10n.unsavedGuardSaveFailed,
+            source: source);
         return const Stay();
       }
       return Leave(asked);
