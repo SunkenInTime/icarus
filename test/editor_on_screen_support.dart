@@ -55,6 +55,7 @@ Future<List<MethodCall>> pumpLibraryWithEditors(
         child: ShadApp(
       navigatorKey: appNavigatorKey,
       navigatorObservers: [mouseNavigationRouteObserver],
+      builder: (context, child) => MouseNavigation(child: child!),
       home: Scaffold(
         body: Consumer(builder: (context, ref, _) {
           libraryContext = context;

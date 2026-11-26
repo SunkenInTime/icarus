@@ -11,6 +11,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/widgets/community/open_community_post.dart';
+import 'package:icarus/widgets/community/community_post_view.dart';
+import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/collab/community_models.dart';
@@ -36,6 +40,13 @@ final class _SignedOut extends AuthProvider {
 
 final class _HeldSaves extends StrategyProvider {
   Completer<void>? held;
+  var cancels = 0;
+
+  @override
+  void cancelPendingSave() {
+    cancels += 1;
+    super.cancelPendingSave();
+  }
 
   @override
   Future<bool> flushPendingAutosaveBeforeExit() async => false;
@@ -61,10 +72,34 @@ Future<void> _stored(String id) async {
 
 final _cloudReady = StateProvider<bool?>((ref) => null);
 
+final class _HeldPost implements CommunityRepository {
+  final asked = <String>[];
+  final _held = Completer<void>();
+
+  void release() => _held.complete();
+
+  @override
+  Future<({CommunityPost post, CommunityPostStatus status})?> fetchPost(
+    String postPublicId,
+  ) async {
+    asked.add(postPublicId);
+    await _held.future;
+    return (post: _post(postPublicId), status: CommunityPostStatus.listed);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+Finder _leaveButton() => find.byWidgetPredicate(
+    (widget) => widget.runtimeType.toString() == '_LeaveButton');
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final strategies = _HeldSaves();
+  final posts = _HeldPost();
   final container = ProviderContainer(overrides: [
+    communityRepositoryProvider.overrideWithValue(posts),
     authProvider.overrideWith(_SignedOut.new),
     strategyProvider.overrideWith(() => strategies),
     cloudWorkspaceOutcomeProvider.overrideWith((ref) => ref.watch(_cloudReady)),
@@ -72,6 +107,7 @@ void main() {
   appProviderContainer = container;
   container.read(strategyProvider);
   setUpAll(openUnitHive);
+  tearDown(() => strategies.held = null);
   tearDownAll(Hive.close);
 
   testWidgets(
@@ -322,6 +358,100 @@ void main() {
     expect(mouseNavigationRouteObserver.topRoute, same(top));
 
     await tester.pump();
+    await leaveEditors(tester, container);
+  });
+
+  Future<void> openWithAnEdit(WidgetTester tester, String id) async {
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: id,
+        initialStrategyName: id,
+      ),
+      isA<Pushed>(),
+    );
+    await settleWithDisk(tester);
+    expect(container.read(strategyProvider).strategyId, id);
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'placed-on-$id',
+          type: AgentType.jett,
+          position: const Offset(500, 500),
+        ));
+  }
+
+  Future<void> expectItsEditSaves(WidgetTester tester, String id) async {
+    expect(container.read(strategyProvider).strategyId, id);
+    expect(container.read(agentProvider).map((agent) => agent.id),
+        contains('placed-on-$id'));
+    await tester.runAsync(() => strategies.forceSaveNow(id));
+    expect(
+      Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .get(id)!
+          .pages
+          .expand((page) => page.agentData)
+          .map((agent) => agent.id),
+      contains('placed-on-$id'),
+    );
+  }
+
+  testWidgets(
+      'a share link whose Save is still running when the Home prompt under '
+      'it is answered and another strategy opens leaves that strategy open '
+      'with its edit, and the edit saves', (tester) async {
+    await tester.runAsync(() async {
+      await _stored('asked-about');
+      await _stored('opened-next');
+    });
+    await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'asked-about');
+    final held = strategies.held = Completer<void>();
+
+    await tester.tap(_leaveButton());
+    await tester.pumpAndSettle();
+    container.read(sharedStrategyToOpenProvider.notifier).state = 'linked';
+    await tester.pumpAndSettle();
+    expect(find.text('Save changes?'), findsNWidgets(2));
+    await tester.tap(find.text('Save').last);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text("Don't save"));
+    await settleWithDisk(tester);
+    expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
+
+    await openWithAnEdit(tester, 'opened-next');
+    final cancels = strategies.cancels;
+    held.complete();
+    strategies.held = null;
+    await settleWithDisk(tester);
+
+    expect(strategies.cancels, cancels);
+    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
+    await expectItsEditSaves(tester, 'opened-next');
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a post whose card was tapped before another strategy opened does not '
+      'open over that strategy when its read comes back, and the strategy '
+      'keeps its edit, which saves', (tester) async {
+    await tester.runAsync(() => _stored('opened-meanwhile'));
+    await pumpLibraryWithEditors(tester, container);
+
+    unawaited(openCommunityPostFromCard(libraryRef, _post('card-post')));
+    await tester.pump();
+    expect(posts.asked, ['card-post']);
+    await openWithAnEdit(tester, 'opened-meanwhile');
+    final editorRoute = mouseNavigationRouteObserver.topRoute;
+    final cancels = strategies.cancels;
+
+    posts.release();
+    await settleWithDisk(tester);
+
+    expect(mouseNavigationRouteObserver.topRoute, same(editorRoute));
+    expect(container.read(communityPostViewProvider), isNull);
+    expect(strategies.cancels, cancels);
+    await expectItsEditSaves(tester, 'opened-meanwhile');
     await leaveEditors(tester, container);
   });
 }

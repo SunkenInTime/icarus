@@ -6,7 +6,6 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/widgets/community/community_post_view.dart';
-import 'package:icarus/widgets/community/open_community_post.dart';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -525,78 +524,6 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
     });
 
-    testWidgets(
-        'a share link whose Save is still running when the Home prompt under '
-        'it is answered and another strategy opens leaves that strategy open',
-        (tester) async {
-      final strategies = _HeldSave();
-      final container = await pumpLibrary(tester, strategies);
-      final (editor, editorRef) = await openEditor(tester, strategies);
-      container.read(strategySaveStateProvider.notifier).markDirty();
-      await tester.pump();
-
-      unawaited(guardThenIgnoringWhatItSaw(
-        context: editor,
-        ref: editorRef,
-        source: 'mouse-navigation-test-home',
-        onContinue: () async {
-          Navigator.pop(editor);
-          await strategies.clearCurrentStrategy();
-        },
-      ));
-      await tester.pumpAndSettle();
-      container.read(sharedStrategyToOpenProvider.notifier).state = 'linked';
-      await tester.pumpAndSettle();
-      expect(find.text('Save changes?'), findsNWidgets(2));
-
-      await tester.tap(find.text('Save').last);
-      await tester.pumpAndSettle();
-      expect(strategies.saving, ['editor-id']);
-      await tester.tap(find.text("Don't save"));
-      await tester.pumpAndSettle();
-      expect(find.text('library'), findsOneWidget);
-
-      await openEditor(tester, strategies);
-      strategies.show('opened-next', StrategySource.local);
-      container.read(strategySaveStateProvider.notifier).markDirty();
-      await tester.pump();
-
-      strategies.release();
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 10));
-
-      expect(strategies.opened, isNot(contains('cloud:linked')));
-      expect(strategies.state.strategyId, 'opened-next');
-    });
-
-    testWidgets(
-        'a post whose card was tapped before another strategy opened does not '
-        'open over that strategy when its read comes back', (tester) async {
-      final strategies = _UnsavedStrategies();
-      final posts = _HeldPost();
-      final (container, cardRef) =
-          await pumpLibraryReading(tester, strategies, posts);
-
-      unawaited(openCommunityPostFromCard(cardRef, _post('card-post')));
-      await tester.pump();
-      expect(posts.asked, ['card-post']);
-
-      final (_, _) = await openEditor(tester, strategies);
-      strategies.show('opened-meanwhile', StrategySource.local);
-      container.read(strategySaveStateProvider.notifier).markDirty();
-      await tester.pump();
-      final editorRoute = mouseNavigationRouteObserver.topRoute;
-
-      posts.release();
-      await tester.pump();
-      final shown = container.read(communityPostViewProvider);
-      final top = mouseNavigationRouteObserver.topRoute;
-
-      expect(top, same(editorRoute));
-      expect(shown?.publicId, isNot('card-post'));
-      expect(strategies.state.strategyId, 'opened-meanwhile');
-    });
-
     for (final tapped in [true, false]) {
       testWidgets(
           tapped
@@ -741,18 +668,6 @@ class _UnsavedStrategies extends _RecordingStrategies {
   void cancelPendingSave() {}
 }
 
-class _HeldSave extends _UnsavedStrategies {
-  final saving = <String>[];
-  final _held = Completer<void>();
-
-  void release() => _held.complete();
-
-  @override
-  Future<void> forceSaveNow(String id) {
-    saving.add(id);
-    return _held.future;
-  }
-}
 
 CommunityPost _post(String id) => CommunityPost(
       publicId: id,
