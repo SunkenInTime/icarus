@@ -459,7 +459,7 @@
   "lib/widgets/map_svg_color_mapper.dart": 10,
   "lib/widgets/map_theme_settings_section.dart": 16,
   "lib/widgets/map_tile.dart": 15,
-  "lib/widgets/mouse_navigation.dart": 48,
+  "lib/widgets/mouse_navigation.dart": 47,
   "lib/widgets/mouse_watch.dart": 10,
   "lib/widgets/new_page_copy_toast.dart": 2,
   "lib/widgets/numeric_drag_input.dart": 10,

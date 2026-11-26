@@ -58,14 +58,10 @@ sealed class PostToOpen {
   final String postPublicId;
 }
 
-/// A link from outside the app: it asks about what is open once its post
-/// is ready.
 final class PostLinkArrived extends PostToOpen {
   const PostLinkArrived(super.postPublicId);
 }
 
-/// A tap in the app: it carries what was open when the user tapped, and
-/// gives way once that is no longer open, like a Community card.
 final class PostTapped extends PostToOpen {
   const PostTapped(super.postPublicId, this.asked);
 
