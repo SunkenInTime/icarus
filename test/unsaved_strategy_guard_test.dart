@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/strategy/open_seen.dart';
+import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/strategy/autosave_before_exit.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
@@ -39,6 +41,47 @@ import 'package:icarus/strategy/open_seen.dart';
 import 'opens_now_support.dart';
 
 bool _adaptersRegistered = false;
+
+class _JoinedStrategies extends StrategyProvider {
+  _JoinedStrategies({required this.autosaveOn, this.saveError});
+
+  final bool autosaveOn;
+  final Object? saveError;
+  final _autosave = Completer<void>();
+  var flushes = 0;
+  var saves = 0;
+  var cancelled = 0;
+
+  void finishTheAutosave() => _autosave.complete();
+
+  @override
+  StrategyState build() => const StrategyState(
+        strategyId: 'strategy-a',
+        strategyName: 'Strategy A',
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      );
+
+  @override
+  Future<bool> flushPendingAutosaveBeforeExit() async {
+    flushes++;
+    if (!autosaveOn) return false;
+    await _autosave.future;
+    ref.read(strategySaveStateProvider.notifier).markPersisted();
+    return true;
+  }
+
+  @override
+  Future<void> forceSaveNow(String id) async {
+    saves++;
+    if (saveError case final error?) throw error;
+    ref.read(strategySaveStateProvider.notifier).markPersisted();
+  }
+
+  @override
+  void cancelPendingSave() => cancelled++;
+}
 
 class _FakeGuardStrategyProvider extends StrategyProvider {
   _FakeGuardStrategyProvider({
@@ -1599,6 +1642,191 @@ void main() {
       expect(await guardFuture, isTrue);
       expect(continueCalls, 1);
       expect(find.text('Cloud sync pending'), findsNothing);
+    });
+  });
+
+  group('exits asked for while the save prompt is up share its answer', () {
+    late ProviderContainer container;
+    late _JoinedStrategies strategies;
+    late BuildContext context;
+    late WidgetRef ref;
+
+    Future<void> start(
+      WidgetTester tester, {
+      bool autosaveOn = false,
+      Object? saveError,
+    }) async {
+      strategies = _JoinedStrategies(
+        autosaveOn: autosaveOn,
+        saveError: saveError,
+      );
+      container = ProviderContainer(
+        overrides: [strategyProvider.overrideWith(() => strategies)],
+      );
+      addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: ShadApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (buildContext, widgetRef, _) {
+                  context = buildContext;
+                  ref = widgetRef;
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      appProviderContainer.read(inAppDebugProvider.notifier).clearLogs();
+    }
+
+    Future<LeaveAnswer> ask({bool closes = false}) => guardUnsavedStrategyExit(
+          context: context,
+          ref: ref,
+          source: 'joined-exit-test',
+          closesWindow: closes,
+        );
+
+    Future<List<LeaveAnswer>> answer(
+      WidgetTester tester,
+      String choice,
+      List<Future<LeaveAnswer>> asked,
+    ) async {
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsOneWidget);
+      await tester.tap(find.text(choice));
+      await tester.pumpAndSettle();
+      expect(find.text('Save changes?'), findsNothing);
+      return Future.wait(asked);
+    }
+
+    testWidgets('two closes ask once, and Cancel keeps the editor for both',
+        (tester) async {
+      await start(tester);
+      final first = ask(closes: true);
+      await tester.pumpAndSettle();
+      final second = ask(closes: true);
+
+      final answers = await answer(tester, 'Cancel', [first, second]);
+
+      expect(answers, everyElement(isA<Stay>()));
+      expect(strategies.cancelled, 0);
+    });
+
+    testWidgets('two closes answered Don\'t save close the window once',
+        (tester) async {
+      await start(tester);
+      final first = ask(closes: true);
+      await tester.pumpAndSettle();
+      final second = ask(closes: true);
+
+      final answers = await answer(tester, "Don't save", [first, second]);
+
+      expect(answers.whereType<Leave>(), hasLength(1));
+      expect(answers.last, isA<Leave>());
+    });
+
+    testWidgets('a close then a link: Save saves once and only the close goes',
+        (tester) async {
+      await start(tester);
+      final close = ask(closes: true);
+      await tester.pumpAndSettle();
+      final link = ask();
+
+      final answers = await answer(tester, 'Save', [close, link]);
+
+      expect(answers.first, isA<Leave>());
+      expect(answers.last, isA<Stay>());
+      expect(strategies.saves, 1);
+    });
+
+    testWidgets('a link then a close: the close goes, whatever the order',
+        (tester) async {
+      await start(tester);
+      final link = ask();
+      await tester.pumpAndSettle();
+      final close = ask(closes: true);
+
+      final answers = await answer(tester, "Don't save", [link, close]);
+
+      expect(answers.first, isA<Stay>());
+      expect(answers.last, isA<Leave>());
+    });
+
+    testWidgets(
+        'Home then a link to another strategy: Don\'t save lets the last '
+        'request go, and only that one', (tester) async {
+      await start(tester);
+      final home = ask();
+      await tester.pumpAndSettle();
+      final link = ask();
+
+      final answers = await answer(tester, "Don't save", [home, link]);
+
+      expect(answers.first, isA<Stay>());
+      expect(answers.last, isA<Leave>());
+      expect(strategies.cancelled, 1);
+    });
+
+    testWidgets('Home then a link answered Cancel: neither goes',
+        (tester) async {
+      await start(tester);
+      final home = ask();
+      await tester.pumpAndSettle();
+      final link = ask();
+
+      final answers = await answer(tester, 'Cancel', [home, link]);
+
+      expect(answers, everyElement(isA<Stay>()));
+    });
+
+    testWidgets(
+        'a Save that fails is a Cancel for every request: the error is shown '
+        'and the editor keeps the strategy and its work', (tester) async {
+      await start(tester, saveError: StateError('the disk is full'));
+      final home = ask();
+      await tester.pumpAndSettle();
+      final link = ask();
+
+      final answers = await answer(tester, 'Save', [home, link]);
+
+      expect(answers, everyElement(isA<Stay>()));
+      expect(container.read(strategyProvider).strategyId, 'strategy-a');
+      expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+      expect(
+        appProviderContainer.read(inAppDebugProvider).last.message,
+        'Failed to save strategy before leaving.',
+      );
+    });
+
+    testWidgets(
+        'with autosave on, a link that comes while the save runs joins it: '
+        'no prompt, one save, and the link goes', (tester) async {
+      await start(tester, autosaveOn: true);
+      final home = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'joined-exit-test',
+      );
+      final link = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'joined-exit-test',
+      );
+      await tester.pump();
+      expect(find.text('Save changes?'), findsNothing);
+      strategies.finishTheAutosave();
+      await tester.pumpAndSettle();
+
+      expect(await home, isA<Stay>());
+      expect(await link, isA<Leave>());
+      expect(strategies.flushes, 1);
+      expect(find.text('Save changes?'), findsNothing);
     });
   });
 }
