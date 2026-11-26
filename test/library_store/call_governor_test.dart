@@ -12,7 +12,7 @@ import 'package:icarus_library/icarus_library.dart';
 import 'cloud_shadow_test.dart' show servedAccount, strategyId;
 import 'sender_world.dart';
 
-const _point = ResultPoint(client: 1, connection: 1, snapshot: 1);
+const _point = stampedWhenAnswered;
 
 const pageId = 'p1';
 
