@@ -36,6 +36,14 @@ void main() {
         contains('sealed class FixtureAllNodesResult'),
       );
       expect(first['icarus_convex_api.dart'], contains('ConvexQuery<'));
+      expect(
+        first['icarus_convex_api.dart'],
+        contains('ConvexMutation<Null> renameMutation({'),
+      );
+      expect(
+        first['icarus_convex_api.dart'],
+        contains('}) => renameMutation(name: name, note: note).run();'),
+      );
     },
   );
 

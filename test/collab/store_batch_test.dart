@@ -116,6 +116,36 @@ void main() {
       expect(args['includeWasApplied'], true);
     });
 
+    test('the shipped applyBatch sends the arguments released builds send',
+        () async {
+      await repository.applyBatch(
+        strategyPublicId: strategy,
+        clientId: 'client-1',
+        ops: [shippedRename('op-1')],
+        accountSubject: 'account-a',
+      );
+      final (name, args) = transport.mutations.single;
+      expect(name, 'ops:applyBatch');
+      expect(args, {
+        'acceptsPictureIds': true,
+        'accountSubject': 'account-a',
+        'checkTrashedPageDeletes': true,
+        'clientId': 'client-1',
+        'clientProtocolVersion': app.currentCloudProtocolVersion.toDouble(),
+        'elementFieldLevel': app.currentElementFieldLevel.toDouble(),
+        'includeWasApplied': true,
+        'ops': [
+          {
+            'type': 'strategy.patch',
+            'expectedStrategyRevision': 2.0,
+            'opId': 'op-1',
+            'payload': {'name': 'Renamed'},
+          },
+        ],
+        'strategyPublicId': strategy,
+      });
+    });
+
     test('both paths send the same arguments besides the opt-in', () async {
       await repository.applyBatch(
         strategyPublicId: strategy,

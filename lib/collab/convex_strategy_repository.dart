@@ -754,13 +754,13 @@ class ConvexStrategyRepository {
       throw StateError('Cloud operation batch exceeds the payload policy.');
     }
 
-    return _applyBatch(
-      strategyPublicId,
-      clientId,
-      _typedOps(ops),
-      accountSubject,
-      readsAccountMismatch: false,
-    );
+    final result = await _batch(
+      strategyPublicId: strategyPublicId,
+      clientId: clientId,
+      ops: _typedOps(ops),
+      accountSubject: accountSubject,
+    ).run();
+    return result.results.map(_opAck).toList(growable: false);
   }
 
   Future<Stamped<({List<OpAck> acks, double? serverTime})>>
@@ -774,82 +774,54 @@ class ConvexStrategyRepository {
     required int? strategyLife,
   }) async =>
           _mapStamped(
-            await _stampedTransport.mutationStamped(
-              'ops:applyBatch',
-              encodeOpsApplyBatchArgs(
-                strategyPublicId: strategyPublicId,
-                clientId: clientId,
-                clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-                ops: _typedWire(ops),
-                accountSubject: ConvexOptional.present(accountSubject),
-                checkTrashedPageDeletes: _checksTrashedPageDeletes,
-                acceptsPictureIds: _acceptsPictureIds,
-                elementFieldLevel: _elementFieldLevel,
-                includeWasApplied: _includesWasApplied,
-                readsAccountMismatch: const ConvexOptional.present(true),
-                sendsLiveBasis: sendsLiveBasis
-                    ? const ConvexOptional.present(true)
-                    : const ConvexOptional.absent(),
-                liveBasis: _optional(liveBasis),
-                sendsLives: const ConvexOptional.present(true),
-                strategyLife: _optional(strategyLife?.toDouble()),
-              ),
+            await _batch(
+              strategyPublicId: strategyPublicId,
+              clientId: clientId,
+              ops: _typedWire(ops),
+              accountSubject: accountSubject,
+              readsAccountMismatch: true,
+              sendsLiveBasis: sendsLiveBasis,
+              liveBasis: liveBasis,
+              sendsLives: true,
+              strategyLife: strategyLife,
+            ).stampedOn(_stampedTransport).run(),
+            (result) => (
+              acks: result.results.map(_opAck).toList(growable: false),
+              serverTime:
+                  result.serverTime.isPresent ? result.serverTime.value : null,
             ),
-            (value) {
-              final result = decodeOpsApplyBatchResult(value);
-              return (
-                acks: result.results.map(_opAck).toList(growable: false),
-                serverTime:
-                    result.serverTime.isPresent ? result.serverTime.value : null,
-              );
-            },
           );
 
-  Future<List<OpAck>> _applyBatch(
-    String strategyPublicId,
-    String clientId,
-    List<OpsApplyBatchArgsOpsItem> ops,
-    String? accountSubject, {
-    required bool readsAccountMismatch,
-  }) async {
-    final result = await _applyBatchResult(
-      strategyPublicId,
-      clientId,
-      ops,
-      accountSubject,
-      readsAccountMismatch: readsAccountMismatch,
-    );
-    return result.results.map(_opAck).toList(growable: false);
-  }
-
-  Future<OpsApplyBatchResult> _applyBatchResult(
-    String strategyPublicId,
-    String clientId,
-    List<OpsApplyBatchArgsOpsItem> ops,
-    String? accountSubject, {
-    required bool readsAccountMismatch,
+  ConvexMutation<OpsApplyBatchResult> _batch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<OpsApplyBatchArgsOpsItem> ops,
+    required String? accountSubject,
+    bool readsAccountMismatch = false,
     bool sendsLiveBasis = false,
     double? liveBasis,
-  }) {
-    return _api.ops.applyBatch(
-      strategyPublicId: strategyPublicId,
-      clientId: clientId,
-      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-      ops: ops,
-      accountSubject: _optional(accountSubject),
-      checkTrashedPageDeletes: _checksTrashedPageDeletes,
-      acceptsPictureIds: _acceptsPictureIds,
-      elementFieldLevel: _elementFieldLevel,
-      includeWasApplied: _includesWasApplied,
-      readsAccountMismatch: readsAccountMismatch
-          ? const ConvexOptional.present(true)
-          : const ConvexOptional.absent(),
-      sendsLiveBasis: sendsLiveBasis
-          ? const ConvexOptional.present(true)
-          : const ConvexOptional.absent(),
-      liveBasis: _optional(liveBasis),
-    );
-  }
+    bool sendsLives = false,
+    int? strategyLife,
+  }) =>
+      _api.ops.applyBatchMutation(
+        strategyPublicId: strategyPublicId,
+        clientId: clientId,
+        clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+        ops: ops,
+        accountSubject: _optional(accountSubject),
+        checkTrashedPageDeletes: _checksTrashedPageDeletes,
+        acceptsPictureIds: _acceptsPictureIds,
+        elementFieldLevel: _elementFieldLevel,
+        includeWasApplied: _includesWasApplied,
+        readsAccountMismatch: _presentWhen(readsAccountMismatch),
+        sendsLiveBasis: _presentWhen(sendsLiveBasis),
+        liveBasis: _optional(liveBasis),
+        sendsLives: _presentWhen(sendsLives),
+        strategyLife: _optional(strategyLife?.toDouble()),
+      );
+
+  static ConvexOptional<bool> _presentWhen(bool flag) =>
+      flag ? const ConvexOptional.present(true) : const ConvexOptional.absent();
 
   Future<void> sendEmptyBatch({
     required String strategyPublicId,
