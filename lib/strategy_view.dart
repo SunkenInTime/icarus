@@ -926,7 +926,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       source: 'StrategyView.onWindowClose',
     );
     if (answer is! Leave) return;
-    if (!answer.seen.isNow(strategies.askedByTheUserNow())) {
+    bool stillAsAnswered() =>
+        answer.seen.isNow(strategies.askedByTheUserNow());
+    if (!stillAsAnswered()) {
       unawaited(windowManager.close());
       return;
     }
@@ -934,13 +936,19 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     _isClosingWindow = true;
     if (storeCatchUpBeforeClose() case final catchingUp?) {
       await catchingUp;
-      if (!answer.seen.isNow(strategies.askedByTheUserNow())) {
+      if (!stillAsAnswered()) {
         _isClosingWindow = false;
         unawaited(windowManager.close());
         return;
       }
     }
     await windowManager.setPreventClose(false);
+    if (!stillAsAnswered()) {
+      await windowManager.setPreventClose(true);
+      _isClosingWindow = false;
+      unawaited(windowManager.close());
+      return;
+    }
     await windowManager.close();
   }
 }

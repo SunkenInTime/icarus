@@ -95,6 +95,27 @@ void main() {
     expect(container.read(strategyOpeningProvider), isNull);
   });
 
+  test(
+      'an answer about the cloud copy of a strategy does not hold once a '
+      'local copy with the same id is the one open', () {
+    strategies.setFromState(const StrategyState(
+      strategyId: 'same-id',
+      strategyName: 'same',
+      source: StrategySource.cloud,
+      isOpen: true,
+    ));
+    final aboutTheCloudCopy = strategies.askedByTheUserNow();
+    strategies.setFromState(const StrategyState(
+      strategyId: 'same-id',
+      strategyName: 'same',
+      source: StrategySource.local,
+      isOpen: true,
+    ));
+
+    expect(strategies.closeStrategy(asked: aboutTheCloudCopy), isA<GaveWay>());
+    expect(container.read(strategyProvider).source, StrategySource.local);
+  });
+
   group('an open or close asked about what is no longer open', () {
     Future<OpenSeen> openedWithUnsavedWork(String id) async {
       await _stored(id);

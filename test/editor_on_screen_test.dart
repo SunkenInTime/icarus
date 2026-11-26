@@ -662,6 +662,59 @@ void main() {
       await leaveEditors(tester, container);
     });
   }
+
+  testWidgets(
+      'a window close already answered asks again when an edit comes while '
+      'it waits for the platform, and Cancel then keeps the window open',
+      (tester) async {
+    await tester.runAsync(() => _stored('closing-edit'));
+    await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'closing-edit');
+    final calls = <String>[];
+    final platformReplies = Completer<void>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('window_manager'),
+            (call) async {
+      final allows = call.method == 'setPreventClose' &&
+          (call.arguments as Map)['isPreventClose'] == false;
+      calls.add(allows
+          ? 'allow close'
+          : call.method == 'setPreventClose'
+              ? 'prevent close'
+              : call.method);
+      if (allows && !platformReplies.isCompleted) {
+        await platformReplies.future;
+      }
+      return null;
+    });
+    final editor = tester.state(find.byType(StrategyView)) as WindowListener;
+
+    editor.onWindowClose();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("Don't save"));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(calls, ['allow close']);
+    container.read(agentProvider.notifier).addAgent(PlacedAgent(
+          id: 'placed-while-closing',
+          type: AgentType.jett,
+          position: const Offset(400, 400),
+        ));
+    platformReplies.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(calls, ['allow close', 'prevent close', 'close']);
+    editor.onWindowClose();
+    await tester.pumpAndSettle();
+    expect(find.text('Save changes?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(calls, ['allow close', 'prevent close', 'close']);
+    expect(container.read(agentProvider).map((agent) => agent.id),
+        contains('placed-while-closing'));
+    await leaveEditors(tester, container);
+  });
 }
 
 CommunityPost _post(String id) => CommunityPost(

@@ -1,11 +1,22 @@
+import 'package:icarus/strategy/strategy_page_models.dart';
+
 final class OpenSeen {
-  const OpenSeen(this.strategyId, this.opens);
+  const OpenSeen(this.strategyId, this.opens, {this.source, this.edits = 0});
 
   final String? strategyId;
+  final StrategySource? source;
   final int opens;
+  final int edits;
 
-  bool isNow(OpenSeen now) =>
-      opens == now.opens && strategyId == now.strategyId;
+  bool isNow(OpenSeen now) => isTheSameOpen(now) && edits == now.edits;
+
+  bool isTheSameOpen(OpenSeen now) =>
+      opens == now.opens &&
+      strategyId == now.strategyId &&
+      source == now.source;
+
+  OpenSeen withEdits(int edits) =>
+      OpenSeen(strategyId, opens, source: source, edits: edits);
 }
 
 sealed class LeaveAnswer {
