@@ -2509,6 +2509,50 @@ void main() {
     });
 
     test(
+        'the driver\'s wait fails when a strategy is refused while the wait is '
+        'part way through its scan', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      final damaged = contents[area]!.keys.firstWhere(
+            (key) => key.contains('/e/'),
+          );
+      contents[area]![damaged] = '{"broken":true}';
+      inWorld(
+        (world) {
+          world.addOtherStrategy();
+          world.settle();
+          expect(world.store.refusedStrategies, isEmpty);
+          Object? failed;
+          String? passed;
+          waitStoreSentIn(
+            world.store,
+            Duration.zero,
+            senderWords: () => '',
+          ).then<void>(
+            (value) => passed = value,
+            onError: (Object error) => failed = error,
+          );
+          for (final page in server.rows[strategyId]!.pages) {
+            world.store.readPage(strategyId, page.publicId);
+          }
+          world.settle(const Duration(seconds: 1));
+          expect(world.store.refusedStrategies.keys, [strategyId]);
+          expect(passed, isNull);
+          expect('$failed', contains(strategyId));
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
         'the driver\'s wait fails, naming the strategy and its reason, when a '
         'strategy the store refused at open is listed only among the '
         'unreadable ones and another strategy\'s queue is empty', () {
@@ -2754,6 +2798,40 @@ void main() {
       );
       expect(SenderStore(store).strategies().single.needsReading, isTrue);
       await store.close();
+    });
+
+    test(
+        'asking the sender to adopt a strategy the store refused at open, '
+        'listed only among the unreadable ones, reads nothing', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents['library']!['summary/${digestOf(strategyId)}'] =
+          '{"broken":true}';
+      contents[area]!.remove(
+        contents[area]!.keys.firstWhere((key) => key.startsWith('settings/')),
+      );
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          final before = server.readCalls.length;
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(hours: 1));
+          expect(readsAfter(world, before), isEmpty);
+          expect(
+            world.sender.store.reports.whereType<StoredRowsRefused>(),
+            hasLength(1),
+          );
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
     });
 
     test(

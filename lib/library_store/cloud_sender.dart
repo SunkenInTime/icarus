@@ -640,6 +640,11 @@ final class CloudSender {
       return _Skipped(StallExit.localTrouble, at);
     }
     if (_inputs != snap) return const _Restart();
+    if (_store.store.refusedStrategies[id] case final refusal?) {
+      _store.refused(id, refusal);
+      _note(id, 'held: $refusal');
+      return const _Skipped(StallExit.localTrouble);
+    }
     const read = ReadOfList();
     final under = readsUnder(snap);
     final StoreReadOutcome outcome;

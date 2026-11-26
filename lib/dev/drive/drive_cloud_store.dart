@@ -367,6 +367,19 @@ Future<String> storeDeletePage(ProviderContainer c, int index) async {
       'with no editor open';
 }
 
+Future<String> storeDiscardUnreadable(ProviderContainer c) async {
+  final strategyId = storedCloudStrategy(c);
+  final discarded = await _storeOf(c).discardUnreadableQueue(
+    _signedIn(c),
+    strategyId,
+    const DiscardsUnsentWork(),
+  );
+  if (discarded is! Saved) {
+    throw StateError('the store did not discard the queue: $discarded');
+  }
+  return 'CLOUDSTORE discarded the unreadable queue of $strategyId';
+}
+
 Future<String> setMemberRole(ProviderContainer c, String role) async {
   final strategyId =
       c.read(remoteEditorSnapshotProvider).valueOrNull?.shell.header.publicId;
@@ -395,29 +408,31 @@ Future<List<(String, CloudStrategy)>> _cloudQueues(LibraryStore store) async =>
 Future<({List<(String, CloudStrategy)> queues, List<String> refused})>
     _cloudQueuesAndRefusals(LibraryStore store) async {
   final queues = <(String, CloudStrategy)>[];
-  final refused = [
-    for (final MapEntry(key: strategyId, value: refusal)
-        in store.refusedStrategies.entries)
-      '$strategyId is refused by the store, so its work is not sent: '
-          '${refusal.reason}',
-  ];
   for (final strategyId in _storedCloudStrategies(store)) {
     if (store.refusedStrategies.containsKey(strategyId)) continue;
     switch (await store.readStrategy(strategyId)) {
       case Found(value: StrategyContent(sync: final CloudStrategy cloud)):
         queues.add((strategyId, cloud));
       case InUnreadableStrategy(
-          listing: UnreadableStrategyListing(
-            refused: StoredRowsDisagree(:final reason),
-          ),
+          listing: UnreadableStrategyListing(refused: StoredRowsDisagree()),
         ):
-        refused.add('$strategyId is refused by the store, so its work is not '
-            'sent: $reason');
+        break;
       case final other:
         throw StateError('the queue of $strategyId could not be read: $other');
     }
   }
-  return (queues: queues, refused: refused);
+  final refused = store.refusedStrategies;
+  return (
+    queues: [
+      for (final queue in queues)
+        if (!refused.containsKey(queue.$1)) queue,
+    ],
+    refused: [
+      for (final MapEntry(key: strategyId, value: refusal) in refused.entries)
+        '$strategyId is refused by the store, so its work is not sent: '
+            '${refusal.reason}',
+    ],
+  );
 }
 
 Future<String> waitStoreSent(

@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:icarus_library/icarus_library.dart';
-import 'package:icarus_library/src/store/loaded_strategy.dart'
-    show LoadedStrategy;
 import 'package:icarus_library/src/store/store.dart' show storeWork;
 import 'package:test/test.dart';
 
@@ -121,6 +119,16 @@ final class Opened {
     await _changes.cancel();
     await store.close();
   }
+}
+
+final class HidingTheAreas extends ForwardingLease {
+  HidingTheAreas(super.inner, this.hidden);
+
+  final bool Function() hidden;
+
+  @override
+  Future<Stored<List<String>>> areas(String prefix) async =>
+      hidden() ? const Done([]) : await super.areas(prefix);
 }
 
 final class HidingTheArea extends ForwardingLease {
@@ -1019,6 +1027,24 @@ void main() {
     expect(await refusedFor(store), isNull);
   });
 
+  test('a refusal for a strategy whose stored area has gone is dropped when '
+      'a search finds the area gone', () async {
+    final disk = await addedOnDisk();
+    disk[area]!.remove(settingsName('page-a'));
+    disk['library']![summaryName(strategyId)] = '{"broken":true}';
+    var gone = false;
+    final store = await openCloudStore(
+      WrappingEngine(
+        MemoryEngine(MemoryStorage(disk)),
+        (lease) => HidingTheAreas(lease, () => gone),
+      ),
+    );
+    expect(store.refusedStrategies.keys, [strategyId]);
+    gone = true;
+    expect(await store.findStrategies(), isA<StrategiesFound>());
+    expect(store.refusedStrategies, isEmpty);
+  });
+
   group('the store\'s own guards', () {
     test('a damaged page never enters the loaded-page map, and the strategy '
         'and its queue leave memory when a batch fails part way', () async {
@@ -1026,9 +1052,8 @@ void main() {
       disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
       final store = await openCloudStore(MemoryEngine(MemoryStorage(disk)));
       final entered = <(String, String)>[];
-      LoadedStrategy.pageEntered = (strategy, page) =>
+      store.pageEnteringMemory = (strategy, page) =>
           entered.add((strategy, page));
-      addTearDown(() => LoadedStrategy.pageEntered = null);
       await recordAll(store, [const AppRestarted(build: build)]);
       final session = await sessionOf(store);
       final from = await beganIn(store);
