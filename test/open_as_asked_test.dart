@@ -1,9 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -28,6 +34,23 @@ final class _CountingStrategies extends StrategyProvider {
   }
 }
 
+final class _CountingRemote extends RemoteEditorSnapshotNotifier {
+  var reads = 0;
+
+  @override
+  Future<RemoteEditorSnapshot?> build() => SynchronousFuture(null);
+
+  @override
+  Future<void> openStrategy(
+    String strategyPublicId, {
+    String? activePagePublicId,
+  }) async =>
+      reads += 1;
+
+  @override
+  void clear() {}
+}
+
 Future<StrategyData> _stored(String id) async {
   final strategy = generatedStrategy(Optionals.set).copyWith(id: id, name: id);
   await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
@@ -39,11 +62,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late ProviderContainer container;
   late _CountingStrategies strategies;
+  final remote = _CountingRemote();
   setUpAll(() {
     final counting = _CountingStrategies();
     container = ProviderContainer(overrides: [
       authProvider.overrideWith(_SignedOut.new),
       strategyProvider.overrideWith(() => counting),
+      remoteEditorSnapshotProvider.overrideWith(() => remote),
     ]);
     appProviderContainer = container;
     container.read(strategyProvider);
@@ -131,6 +156,40 @@ void main() {
       expect(container.read(strategySaveStateProvider).isDirty, isTrue);
       expect(strategies.cancels, cancels);
       expect(now.isNow(strategies.askedByTheUserNow()), isTrue);
+    });
+
+    test(
+        'a cloud open gives way before it reads anything, and the strategy '
+        'open now keeps its edit, its pending save and the count of opens, '
+        'and the edit saves', () async {
+      final askedEarlier = strategies.askedByTheUserNow();
+      await openedWithUnsavedWork('opened-since');
+      container.read(agentProvider.notifier).addAgent(PlacedAgent(
+            id: 'placed-since',
+            type: AgentType.jett,
+            position: const Offset(500, 500),
+          ));
+      final now = strategies.askedByTheUserNow();
+      final cancels = strategies.cancels;
+
+      expect(
+        await strategies.openCloud('cloud-late', asked: askedEarlier),
+        isA<GaveWay>(),
+      );
+
+      expect(remote.reads, 0);
+      expect(strategies.cancels, cancels);
+      expect(now.isNow(strategies.askedByTheUserNow()), isTrue);
+      expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+      await strategies.forceSaveNow('opened-since');
+      expect(
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+            .get('opened-since')!
+            .pages
+            .expand((page) => page.agentData)
+            .map((agent) => agent.id),
+        contains('placed-since'),
+      );
     });
 
     test('the open the user asked for still opens after a late one gave way',
