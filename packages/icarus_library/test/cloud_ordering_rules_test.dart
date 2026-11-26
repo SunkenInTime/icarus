@@ -268,6 +268,36 @@ void main() {
       }
     });
 
+    test('a repeat that does not pay the debt held for its subject is not '
+        'applicable and leaves the debt as it was, for a list, a page read '
+        'and a page gone', () {
+      for (final (read, page) in <(ArrivedBase, String?)>[
+        (headerReadOf(initialRows()), null),
+        (pageA(), 'page-a'),
+        (const PageGone('page-a'), 'page-a'),
+      ]) {
+        final client = connectedOn();
+        client.must(arrivalAt(client, read, pointAt(22)));
+        client.must(refusalAt(client, page, pointAt(23)));
+        final owed = page == null
+            ? client.queue.shown.list
+            : client.queue.shown.pageRead(page);
+        expect(owed, isA<ReadRefused>(), reason: '$read');
+        expect(
+          notApplicable(client.step(arrivalAt(client, read, pointAt(22)))),
+          isA<Inapplicable>(),
+          reason: '$read',
+        );
+        expect(
+          page == null
+              ? client.queue.shown.list
+              : client.queue.shown.pageRead(page),
+          owed,
+          reason: '$read',
+        );
+      }
+    });
+
     test('a repeat that pays a debt pays it, and still takes nothing and '
         'decides no row', () {
       final client = connectedOn();

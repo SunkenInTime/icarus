@@ -1732,13 +1732,14 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   if (shown.fence case final fence? when arrival.order.isBefore(fence)) {
     return ResultFit.startedInAnotherLife;
   }
-  if (shown.takenFor(base) case final taken?
-      when !taken.isBefore(arrival.order)) {
-    return taken == arrival.order ? ResultFit.same : ResultFit.older;
+  final taken = shown.takenFor(base);
+  if (taken case final taken? when arrival.order.isBefore(taken)) {
+    return ResultFit.older;
   }
   if (shown.owedBy(base) case final owed? when !owed.paidBy(arrival, base)) {
     return ResultFit.older;
   }
+  if (taken == arrival.order) return ResultFit.same;
   return switch (base) {
     HeaderRead(:final strategy) => switch ((held, createdAtOf(strategy))) {
       (_, final listed?) when listed == _refusedLife(shown.list) =>
