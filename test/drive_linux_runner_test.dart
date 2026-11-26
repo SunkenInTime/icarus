@@ -101,6 +101,29 @@ void main() {
     );
   });
 
+  test(
+      'a cloud shadow run is refused before the run makes a folder or looks '
+      'for the build', () async {
+    final folder = Directory.systemTemp.createTempSync('shadow_refused');
+    addTearDown(() => folder.deleteSync(recursive: true));
+    await expectLater(
+      runScripts({
+        'script': '${folder.path}/no-script.json',
+        'exe': '${folder.path}/no-build',
+        'out': '${folder.path}/out',
+        'cloud-store': 'shadow',
+      }),
+      throwsA(
+        isA<UsageError>().having(
+          (error) => error.message,
+          'message',
+          startsWith('the cloud shadow is off'),
+        ),
+      ),
+    );
+    expect(folder.listSync(), isEmpty);
+  });
+
   test('only MP4 export needs ffmpeg', () {
     expect(exportsMp4('{"waitFile": "{out}/saved/a.mp4"}'), isTrue);
     expect(exportsMp4('{"waitFile": "{out}/saved/a.mov"}'), isFalse);

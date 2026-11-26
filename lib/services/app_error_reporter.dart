@@ -100,7 +100,6 @@ class AppErrorReporter {
 
   static String? get persistedLogPath => _persistedLogFile?.path;
 
-  @visibleForTesting
   static Future<void> flushPersistedLog() => _persistedLogWriteQueue;
 
   static void reportInfo(
