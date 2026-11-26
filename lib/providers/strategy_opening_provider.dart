@@ -32,8 +32,6 @@ final class StrategyOpeningNotifier extends Notifier<StrategyOpening?> {
 
   int get opens => _attempt;
 
-  void editorPushed() => endAll();
-
   bool isLatest(int attempt) => attempt == _attempt;
 
   void settle(int attempt) {

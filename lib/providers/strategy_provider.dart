@@ -144,7 +144,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   @useResult
   OpenSeen? claimForAnEditor(OpenSeen asked) {
     if (!asked.isNow(_seen)) return null;
-    ref.read(strategyOpeningProvider.notifier).editorPushed();
+    ref.read(strategyOpeningProvider.notifier).endAll();
     return _seen;
   }
 

@@ -6,6 +6,8 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
 
 import 'library_rows/generated_strategies.dart';
@@ -54,6 +56,20 @@ void main() {
     await Hive.close();
   });
 
+  test(
+      'an editor that claimed the open ends the busy state of the open it '
+      'replaced, even when it leaves before it starts its own', () {
+    final opens = container.read(strategyOpeningProvider.notifier);
+    final replaced = opens.begin('loading', source: StrategySource.local);
+    expect(container.read(strategyOpeningProvider), isNotNull);
+
+    expect(
+        strategies.claimForAnEditor(strategies.askedByTheUserNow()), isNotNull);
+    opens.settle(replaced);
+
+    expect(container.read(strategyOpeningProvider), isNull);
+  });
+
   group('an open or close asked about what is no longer open', () {
     Future<OpenSeen> openedWithUnsavedWork(String id) async {
       await _stored(id);
@@ -94,6 +110,24 @@ void main() {
       expect(strategies.closeStrategy(asked: askedEarlier), isA<GaveWay>());
 
       expect(container.read(strategyProvider).strategyId, 'opened-since');
+      expect(container.read(strategySaveStateProvider).isDirty, isTrue);
+      expect(strategies.cancels, cancels);
+      expect(now.isNow(strategies.askedByTheUserNow()), isTrue);
+    });
+
+    test(
+        'a local open of a strategy that is not stored is Missing, and leaves '
+        'the strategy open now, its unsaved work, its pending save and the '
+        'count of opens as they were', () async {
+      final now = await openedWithUnsavedWork('open-now');
+      final cancels = strategies.cancels;
+
+      expect(
+        await strategies.openLocal('never-stored', asked: now),
+        isA<Missing>(),
+      );
+
+      expect(container.read(strategyProvider).strategyId, 'open-now');
       expect(container.read(strategySaveStateProvider).isDirty, isTrue);
       expect(strategies.cancels, cancels);
       expect(now.isNow(strategies.askedByTheUserNow()), isTrue);
