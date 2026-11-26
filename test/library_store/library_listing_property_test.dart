@@ -26,6 +26,8 @@ import 'gated_engine.dart';
 import 'hive_scratch.dart';
 import 'tile_parity.dart';
 
+const _listedAt = ResultPoint(client: 1, connection: 1, snapshot: 1);
+
 String _tile(LocalStrategySummary strategy) => [
       strategy.id,
       strategy.name,
@@ -214,8 +216,7 @@ void main() {
         GatedEngine(MemoryEngine(MemoryStorage()), gate),
         canRead: appCanRead,
       )) {
-        StoreOpened(:final store) => store
-          ..takeCloudResultsFrom(CloudResults.thisDevicesReads),
+        StoreOpened(:final store) => store,
         StoreNotOpened(:final problem) => fail('$problem'),
       };
       for (final id in ['s$seed-shared', 's$seed-cloud-only']) {
@@ -227,15 +228,18 @@ void main() {
         expect(
           await store.addCloudStrategy(
             Account('account-a'),
-            HeaderRead(
-              strategy: rows.strategy,
-              pages: [
-                for (final page in rows.pages) bornIn(page, 1) as PageRow,
-              ],
-              settings: [
-                for (final row in rows.settings)
-                  bornIn(row, 1) as PageSettingsRow,
-              ],
+            StampedRead(
+              HeaderRead(
+                strategy: rows.strategy,
+                pages: [
+                  for (final page in rows.pages) bornIn(page, 1) as PageRow,
+                ],
+                settings: [
+                  for (final row in rows.settings)
+                    bornIn(row, 1) as PageSettingsRow,
+                ],
+              ),
+              _listedAt,
             ),
             const [],
           ),

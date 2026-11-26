@@ -12,6 +12,8 @@ import 'package:icarus_library/icarus_library.dart';
 import 'cloud_shadow_test.dart' show servedAccount, strategyId;
 import 'sender_world.dart';
 
+const _point = ResultPoint(client: 1, connection: 1, snapshot: 1);
+
 const pageId = 'p1';
 
 List<Duration> readTimes(World world, String? page, {Duration? after}) => [
@@ -34,6 +36,7 @@ Future<StoreBatchOutcome> rowReplaced(ServerCall call) => Future.value(
                 op, RejectionReason.rowReplaced, const NoServerCopy()),
         ],
         complete: true,
+        point: _point,
       ),
     );
 
@@ -45,6 +48,7 @@ StoreReadAnswered laterLifePage(World world, String page) {
       elements: const [],
       lineupGroups: const [],
     ),
+    point: _point,
   );
 }
 
@@ -61,8 +65,9 @@ void stallPageTwo(World world) {
   world.pagesOnServer(['p2']);
   world.sender.adopt(strategyId);
   world.settle(const Duration(minutes: 1));
-  world.server.overrideRead = (call) =>
-      call.page == 'p2' ? const StoreReadAnswered(PageGone('nowhere')) : null;
+  world.server.overrideRead = (call) => call.page == 'p2'
+      ? const StoreReadAnswered(PageGone('nowhere'), point: _point)
+      : null;
   world
     ..connection = null
     ..connection = 2;
@@ -109,7 +114,8 @@ void main() {
         for (var n = 0; n < 40; n++) {
           world.server.answerWith(
             strategyId,
-            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+            const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+                point: _point),
           );
         }
         world.commitMove(1);
@@ -142,7 +148,8 @@ void main() {
         for (var n = 0; n < 200; n++) {
           world.server.answerNext(
             strategyId,
-            (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+            (call) =>
+                Future.value(const StoreBatchOutsideWindow('refused', point: _point)),
           );
         }
         world.commitMove(1);
@@ -203,7 +210,7 @@ void main() {
       inWorld((world) {
         world.server.answerWith(
           strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved, point: _point),
         );
         world.server.overrideRead = (call) =>
             const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
@@ -225,7 +232,7 @@ void main() {
       inWorld((world) {
         world.server.answerWith(
           strategyId,
-          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved),
+          const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved, point: _point),
         );
         world.server.overrideRead = (call) =>
             const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
@@ -298,7 +305,7 @@ void main() {
       world.settle(const Duration(seconds: 10));
       world.server.answerWith(
         strategyId,
-        const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted),
+        const StoreBatchRefusedWhole(BatchRefusal.strategyDeleted, point: _point),
       );
       world.commitRename(strategyId, 'rename-1');
       world.settle(const Duration(seconds: 10));
@@ -374,7 +381,8 @@ void main() {
       for (var n = 0; n < 40; n++) {
         world.server.answerNext(
           strategyId,
-          (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+          (call) =>
+              Future.value(const StoreBatchOutsideWindow('refused', point: _point)),
         );
       }
       world.commitMove(1);
@@ -412,7 +420,8 @@ void main() {
       for (var n = 0; n < 40; n++) {
         world.server.answerNext(
           strategyId,
-          (call) => Future.value(const StoreBatchOutsideWindow('refused')),
+          (call) =>
+              Future.value(const StoreBatchOutsideWindow('refused', point: _point)),
         );
       }
       world.commitMove(1);

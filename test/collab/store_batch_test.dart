@@ -4,22 +4,49 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart' as app;
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/convex_error_codes.dart';
-import 'package:icarus/collab/generated/icarus_convex_api.dart';
 import 'package:icarus/collab/src/convex_client_types.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-final class _Recording implements ConvexTransport {
+const _stamp =
+    ResultStamp(client: 2, connection: 3, snapshot: 41, serverTime: 4100);
+
+const _point =
+    ResultPoint(client: 2, connection: 3, snapshot: 41, serverTime: 4100);
+
+final class _Recording implements StampedConvexTransport {
   final mutations = <(String, Map<String, Object?>)>[];
   Object? Function()? answer;
 
   @override
   Future<ConvexValue> mutation(String name, ConvexObject args) async {
     mutations.add((name, args.toDart()));
-    final reply = answer?.call() ??
-        {'results': <Object?>[], 'strategyPublicId': strategy};
-    return ConvexValue.fromDart(reply);
+    return ConvexValue.fromDart(
+      answer?.call() ?? {'results': <Object?>[], 'strategyPublicId': strategy},
+    );
+  }
+
+  @override
+  Future<Stamped<ConvexValue>> mutationStamped(
+    String name,
+    ConvexObject args,
+  ) async {
+    mutations.add((name, args.toDart()));
+    try {
+      final reply = answer?.call() ??
+          {'results': <Object?>[], 'strategyPublicId': strategy};
+      return StampedValue(ConvexValue.fromDart(reply), _stamp);
+    } on ConvexFunctionException catch (error) {
+      return StampedError(
+        ConvexTransportError(
+          rawCode: error.rawCode,
+          message: error.message,
+          data: error.data,
+        ),
+        _stamp,
+      );
+    }
   }
 
   @override
@@ -47,7 +74,7 @@ void main() {
 
     setUp(() {
       transport = _Recording();
-      repository = ConvexStrategyRepository(IcarusConvexApi(transport));
+      repository = ConvexStrategyRepository.stamped(transport);
     });
 
     test(
@@ -96,15 +123,20 @@ void main() {
         ops: [shippedRename('op-1')],
         accountSubject: 'account-a',
       );
-      await repository.applyWireBatch(
+      await storeBatchSenderOver(repository)(
         strategyPublicId: strategy,
         clientId: 'client-1',
-        ops: [rename('op-1').toJson()],
-        accountSubject: 'account-a',
+        ops: [rename('op-1')],
+        lives: const {},
+        strategyLife: null,
+        account: owner,
+        serverTime: const ServerTimeNotAsked(),
       );
-      final [(_, shipped), (_, wire)] = transport.mutations;
+      final [(_, shipped), (_, store)] = transport.mutations;
       expect(
-        {...wire}..remove('readsAccountMismatch'),
+        {...store}
+          ..remove('readsAccountMismatch')
+          ..remove('sendsLives'),
         shipped,
       );
     });
@@ -220,7 +252,7 @@ void main() {
     });
 
     test('a thrown refusal is read as the queue\'s verdict', () async {
-      transport.answer = () => throw ConvexFunctionException(
+      transport.answer = () => throw const ConvexFunctionException(
             code: ConvexErrorCode.accountMismatch,
             rawCode: 'ACCOUNT_MISMATCH',
             message: 'Forbidden: signed in as a different account',
@@ -302,12 +334,18 @@ void main() {
       );
     });
 
-    test('an empty batch makes no call', () async {
-      await repository.applyWireBatch(
-        strategyPublicId: strategy,
-        clientId: 'client-1',
-        ops: const [],
-        accountSubject: 'account-a',
+    test('an empty batch is refused before any call', () async {
+      await expectLater(
+        storeBatchSenderOver(repository)(
+          strategyPublicId: strategy,
+          clientId: 'client-1',
+          ops: const [],
+          lives: const {},
+          strategyLife: null,
+          account: owner,
+          serverTime: const ServerTimeNotAsked(),
+        ),
+        throwsArgumentError,
       );
       expect(transport.mutations, isEmpty);
     });
@@ -349,6 +387,7 @@ void main() {
           const app.AppliedOpAck(opId: 'a', revision: 4),
           const app.AppliedOpAck(opId: 'b', revision: 3, life: life),
         ],
+        point: _point,
       );
       expect(
         (outcome as StoreBatchAnswered).answers,
@@ -434,9 +473,12 @@ void main() {
         () {
       final sent = [rename('a'), rename('b')];
       expect(
-        storeBatchOutcomeOf(sent, const [
-          app.AppliedOpAck(opId: 'a', revision: 2, life: life),
-        ]),
+        storeBatchOutcomeOf(
+            sent,
+            const [
+              app.AppliedOpAck(opId: 'a', revision: 2, life: life),
+            ],
+            point: _point),
         isA<StoreBatchAnswered>().having(
           (outcome) => outcome.complete,
           'complete',
@@ -444,9 +486,12 @@ void main() {
         ),
       );
       expect(
-        storeBatchOutcomeOf(sent, const [
-          app.AppliedOpAck(opId: 'z', revision: 2, life: life),
-        ]),
+        storeBatchOutcomeOf(
+            sent,
+            const [
+              app.AppliedOpAck(opId: 'z', revision: 2, life: life),
+            ],
+            point: _point),
         isA<StoreBatchLost>().having(
           (outcome) => outcome.failure,
           'failure',
@@ -460,7 +505,8 @@ void main() {
         'desktop and the web clients, and none when an older server sends '
         'none', () {
       const life = 1795176055837;
-      int? named(Object error) => switch (storeBatchOutcomeOfError(error)) {
+      int? named(Object error) =>
+          switch (storeBatchOutcomeOfError(error, point: _point)) {
             StoreBatchRefusedWhole(
               refusal: BatchRefusal.strategyReplaced,
               :final currentLife,
@@ -577,6 +623,7 @@ void main() {
               rawCode: code,
               message: 'refused',
             ),
+            point: _point,
           );
       Matcher refused(BatchRefusal refusal) =>
           isA<StoreBatchRefusedWhole>().having((o) => o.refusal, 'r', refusal);
@@ -599,7 +646,7 @@ void main() {
         ),
       );
       expect(
-        storeBatchOutcomeOfError(TimeoutException('slow')),
+        storeBatchOutcomeOfError(TimeoutException('slow'), point: null),
         isA<StoreBatchLost>().having(
           (o) => o.failure,
           'failure',
@@ -607,7 +654,7 @@ void main() {
         ),
       );
       expect(
-        storeBatchOutcomeOfError(const FormatException('bad')),
+        storeBatchOutcomeOfError(const FormatException('bad'), point: null),
         isA<StoreBatchLost>().having(
           (o) => o.failure,
           'failure',

@@ -55,9 +55,10 @@ final class StoreBatchAccountMismatch extends StoreBatchOutcome {
 }
 
 final class StoreBatchOutsideWindow extends StoreBatchOutcome {
-  const StoreBatchOutsideWindow(this.why);
+  const StoreBatchOutsideWindow(this.why, {required this.point});
 
   final String why;
+  final store.ResultPoint point;
 }
 
 sealed class ServerTimeAsk {
@@ -257,8 +258,8 @@ StoreBatchOutcome storeBatchOutcomeOfError(
   if (isAccountMismatchError(error)) {
     return StoreBatchAccountMismatch('$error');
   }
-  if (isUncheckedOutsideWindowError(error)) {
-    return StoreBatchOutsideWindow('$error');
+  if (point != null && isUncheckedOutsideWindowError(error)) {
+    return StoreBatchOutsideWindow('$error', point: point);
   }
   final refusal = switch (error) {
     _ when isClientUpgradeRequiredError(error) =>

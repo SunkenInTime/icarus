@@ -85,6 +85,8 @@ final class SignInHold extends RunHold {
   String toString() => 'waiting for the sign-in to change from count $from';
 }
 
+typedef _Asked = ({int session, ResultPoint point, int requestedAt});
+
 typedef Bound = ({
   int connection,
   Account account,
@@ -214,6 +216,7 @@ final class CloudSender {
     required SenderStore store,
     required StoreBatchSend send,
     required StoreReads reads,
+    required Future<({int client, int connection})> Function() generation,
     required this.build,
     required this.clientId,
     Snapshot inputs = (
@@ -239,9 +242,10 @@ final class CloudSender {
         _timing = timing,
         _clock = clock ?? DateTime.now,
         _elapsed = elapsed ?? _monotonic(),
-        _recordsLost = recordsConnectionLost ?? (() => true) {
-    store.store.takeCloudResultsFrom(CloudResults.thisDevicesReads);
-  }
+        _generation = generation,
+        _recordsLost = recordsConnectionLost ?? (() => true);
+
+  final Future<({int client, int connection})> Function() _generation;
 
   final SenderStore _store;
   final CallGovernor _governor;
@@ -683,13 +687,21 @@ final class CloudSender {
       return const _Restart();
     }
     switch (outcome) {
-      case StoreReadAnswered(base: final HeaderRead header, :final role):
+      case StoreReadAnswered(
+          base: final HeaderRead header,
+          :final point,
+          :final role
+        ):
         if (role == null || !role.edits) {
           _wanted.remove(id);
           _note(id, 'not adopted: this account can only view it');
           return const _Skipped(StallExit.viewerOnTakeUp);
         }
-        final written = await _store.add(account, id, header);
+        final written = await _store.add(
+          account,
+          id,
+          StampedRead(header, point),
+        );
         if (disposed) return const _Ended();
         switch (written) {
           case WriteTroubled(:final trouble):
@@ -1027,7 +1039,7 @@ final class CloudSender {
       _Why.need || _Why.adopt => cloud,
       _Why.access || _Why.retire => null,
     };
-    final ResultSource from;
+    final int requestedAt;
     final StoreReadOutcome outcome;
     final DateTime started;
     final kept = _governor.heldFor(id, read, under);
@@ -1036,10 +1048,10 @@ final class CloudSender {
             outcome: final kept,
             started: final at,
             under: _,
-            read: (from: final source, session: final heldIn)
+            read: (requestedAt: final asked, session: final heldIn)
           )
           when heldIn == session:
-        from = source;
+        requestedAt = asked;
         outcome = kept;
         started = at;
       case _:
@@ -1048,17 +1060,7 @@ final class CloudSender {
             when at.isAfter(_clock())) {
           return _Skipped(row ?? why.row, at);
         }
-        switch (await _store.write(owner, id, const [ReadBegun()])) {
-          case WrittenWith(:final effects)
-              when effects.whereType<ReadStartIssued>().isNotEmpty:
-            from = effects.whereType<ReadStartIssued>().single.source;
-          case WrittenWith(:final notApplied):
-            _note(id, 'no read start was issued: ${notApplied.join('; ')}');
-            return const _Restart();
-          case WriteTroubled(:final trouble):
-            return _troubled(id, trouble);
-        }
-        if (disposed) return const _Ended();
+        requestedAt = cloud.queue.session.sequence;
         switch (await _issue(id, owner, read, snap, why)) {
           case NotYet(:final at, why: final row):
             return _Skipped(row ?? why.row, at);
@@ -1076,17 +1078,27 @@ final class CloudSender {
       return const _Restart();
     }
     switch (outcome) {
-      case StoreReadAnswered(:final base, :final role):
+      case StoreReadAnswered(:final base, :final point, :final role):
         final confirms = why == _Why.access && (role?.edits ?? false);
+        final asked = (
+          session: session,
+          point: point,
+          requestedAt: requestedAt,
+        );
         final written = await _store.write(owner, id, [
-          BaseArrived(base, session: session, from: from),
+          BaseArrived(
+            base,
+            session: session,
+            point: point,
+            requestedAt: requestedAt,
+          ),
           if (confirms) EditAccessConfirmed(afterAttempt: _accessLostAt(cloud)),
         ]);
         if (disposed) return const _Ended();
         switch (written) {
           case WriteTroubled(trouble: ResultNotStored(:final why)):
             _governor.written(id, read, late: kept != null);
-            _governor.keep(id, read, _refusedMark(read, why));
+            _governor.keep(id, read, _refusedMark(read, why, asked));
             return _unsettled(
               id,
               owner,
@@ -1094,13 +1106,14 @@ final class CloudSender {
               snap,
               'the store would not keep $read: $why',
               row: StallExit.unreadableRead,
+              planned: cloud,
             );
           case WriteTroubled(:final trouble):
             _governor.hold(id, read, (
               outcome: outcome,
               started: started,
               under: under,
-              read: (from: from, session: session),
+              read: (requestedAt: requestedAt, session: session),
             ));
             return _troubled(id, trouble);
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
@@ -1112,7 +1125,9 @@ final class CloudSender {
               snap,
               'the queue did not take $read: ${notApplied.join('; ')}',
               row: StallExit.refusedResult,
-              marking: cloud,
+              marking: marking,
+              asked: asked,
+              planned: cloud,
             );
           case WrittenWith(:final effects):
             _governor.written(id, read, late: kept != null);
@@ -1129,7 +1144,9 @@ final class CloudSender {
                 'the page list and page $page keep disagreeing about which '
                 'life the page is in',
                 row: StallExit.pageAheadOfList,
-                marking: cloud,
+                marking: marking,
+                asked: asked,
+                planned: cloud,
               );
             }
         }
@@ -1155,6 +1172,8 @@ final class CloudSender {
           snap,
           held: true,
           marking: marking,
+          request: (session: session, requestedAt: requestedAt),
+          planned: cloud,
         );
     }
   }
@@ -1198,27 +1217,42 @@ final class CloudSender {
     String why, {
     required StallExit row,
     CloudStrategy? marking,
+    _Asked? asked,
+    CloudStrategy? planned,
   }) async {
     final climbed = _boundMemory(id, snap).climbed('$read', _clock(), row);
     final count = climbed.settle['$read']!.count;
     _governor.remember(id, climbed);
-    if (marking != null &&
-        count >= _timing.unresolvedRounds &&
-        !_shownRefused(marking, read)) {
-      _governor.keep(id, read, _refusedMark(read, why));
+    if ((marking, asked) case (final marking?, final asked?)
+        when count >= _timing.unresolvedRounds &&
+            !_shownRefused(marking, read)) {
+      _governor.keep(id, read, _refusedMark(read, why, asked));
     }
     if (await _writeKept(id, owner) case final step?) return step;
     final at = _readAgainAt(id, read, snap);
     _note(id, '$why ($count in a row); reading $read again at $at');
-    return _Skipped(row, at);
+    return _Skipped(row, _earliest(at, _nextReadDue(id, planned, snap)));
   }
 
-  static QueueEvent _refusedMark(ReadOf read, String problem) => ResultRefused(
+  DateTime? _nextReadDue(String id, CloudStrategy? cloud, Snapshot snap) {
+    if (cloud == null) return null;
+    final now = _clock();
+    return switch (_plan(id, cloud, now, snap)) {
+      (planned: _?, due: _, why: _) => now,
+      (planned: null, :final due, why: _) => due,
+    };
+  }
+
+  static QueueEvent _refusedMark(ReadOf read, String problem, _Asked asked) =>
+      ResultRefused(
         page: switch (read) {
           ReadOfPage(:final page) => page,
           ReadOfList() => null,
         },
         problem: problem,
+        session: asked.session,
+        point: asked.point,
+        requestedAt: asked.requestedAt,
       );
 
   Future<_Step?> _writeKept(
@@ -1282,6 +1316,8 @@ final class CloudSender {
     Snapshot snap, {
     required bool held,
     CloudStrategy? marking,
+    ({int session, int requestedAt})? request,
+    CloudStrategy? planned,
   }) async {
     switch (outcome) {
       case StoreReadRefused(
@@ -1312,7 +1348,7 @@ final class CloudSender {
               : '$cannot; reading again at $at',
         );
         return _Skipped(StallExit.forbidden, at);
-      case StoreReadUnreadable(:final problem):
+      case StoreReadUnreadable(:final problem, :final point):
         return _unsettled(
           id,
           owner,
@@ -1321,6 +1357,15 @@ final class CloudSender {
           'the read came back in rows this build cannot read ($problem)',
           row: StallExit.unreadableRead,
           marking: marking,
+          planned: planned,
+          asked: switch (request) {
+            (:final session, :final requestedAt) => (
+                session: session,
+                point: point,
+                requestedAt: requestedAt,
+              ),
+            null => null,
+          },
         );
       case StoreReadLost(:final why):
         return _unsettled(
@@ -1330,6 +1375,7 @@ final class CloudSender {
           snap,
           'the read was lost ($why)',
           row: StallExit.lostRead,
+          planned: planned,
         );
       case StoreReadAnswered():
         return const _Acted();
@@ -1495,10 +1541,28 @@ final class CloudSender {
         'session was opened',
       );
     }
+    final ({int client, int connection}) on;
+    try {
+      on = await _generation();
+    } catch (error) {
+      return _Troubled(
+        NotWrittenNow('the client did not say which connection it is on: '
+            '$error'),
+      );
+    }
+    if (disposed) return const _Stale('the sender was disposed');
+    if (snap != _inputs) {
+      return const _Stale(
+        'the connection, the account or the sign-in changed while the client '
+        'said which connection it is on',
+      );
+    }
     final events = [
       if (!restarted.contains(id)) AppRestarted(build: build),
       if (last != null && last.account != account) const AccountChanged(),
-      const ConnectionReturned(),
+      ConnectionReturned(
+        Generation(client: on.client, connection: on.connection),
+      ),
     ];
     final written = await _store.write(owner, id, events, readSession: true);
     if (disposed) return const _Stale('the sender was disposed');
@@ -1639,8 +1703,9 @@ List<QueueEvent> answersOf(
   DateTime at,
 ) =>
     switch (outcome) {
-      StoreBatchAnswered(:final answers, :final complete) => [
-          for (final answer in answers) OpAnswered(batch.attempt, answer),
+      StoreBatchAnswered(:final answers, :final complete, :final point) => [
+          for (final answer in answers)
+            OpAnswered(batch.attempt, answer, point: point),
           if (!complete)
             TransportFailed(
               batch.attempt,
@@ -1648,10 +1713,16 @@ List<QueueEvent> answersOf(
               at: at,
             ),
         ],
-      StoreBatchRefusedWhole(:final refusal, :final currentLife) => [
+      StoreBatchRefusedWhole(
+        :final refusal,
+        :final currentLife,
+        :final point
+      ) =>
+        [
           BatchRefused(
             batch.attempt,
             refusal,
+            point: point,
             at: at,
             currentLife: currentLife,
           ),
@@ -1660,7 +1731,12 @@ List<QueueEvent> answersOf(
           TransportFailed(batch.attempt, failure, at: at),
         ],
       StoreBatchAccountMismatch() => [ClaimReleased(batch.attempt)],
-      StoreBatchOutsideWindow() => [
-          BatchRefused(batch.attempt, BatchRefusal.uncheckedTooLate, at: at),
+      StoreBatchOutsideWindow(:final point) => [
+          BatchRefused(
+            batch.attempt,
+            BatchRefusal.uncheckedTooLate,
+            point: point,
+            at: at,
+          ),
         ],
     };
