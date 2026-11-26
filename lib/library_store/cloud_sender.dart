@@ -1364,14 +1364,27 @@ final class CloudSender {
         };
         final session = request?.session;
         if (session == null) {
+          if (await _onCurrentConnection(point)) {
+            switch (refusal) {
+              case StoreReadRefusal.upgradeRequired:
+                upgradeAsked = true;
+                _note(id, 'the read to adopt it asks for a newer build');
+              case _:
+                signInWaitFrom = snap.signIns;
+                _note(
+                    id,
+                    'the read to adopt it was refused for the sign-in: '
+                    '$why');
+            }
+            return const _Acted();
+          }
           return _unsettled(
             id,
             owner,
             read,
             snap,
-            'the read to adopt it was refused ($why); only a stored queue '
-            'can say whether the refusal is from the current connection, so '
-            'it is read again',
+            'the read to adopt it was refused ($why) on a connection that has '
+            'ended, so it is read again',
             row: row,
             planned: planned,
           );
@@ -1646,6 +1659,15 @@ final class CloudSender {
         NoopWithoutRevision() =>
           false,
       };
+
+  Future<bool> _onCurrentConnection(ResultPoint point) async {
+    try {
+      final now = await _generation();
+      return point.client == now.client && point.connection == now.connection;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<List<QueueEvent>?> _onTheCurrentConnection(
     List<QueueEvent> events,

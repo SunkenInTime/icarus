@@ -299,6 +299,57 @@ void main() {
   });
 
   test(
+      'a read to adopt a strategy refused for an upgrade on the current '
+      'connection asks for the upgrade, as main does; one refused for the '
+      'sign-in waits for the sign-in', () {
+    for (final refusal in [
+      StoreReadRefusal.upgradeRequired,
+      StoreReadRefusal.accountMismatch,
+    ]) {
+      inWorld(
+        (world) {
+          world.server.answerReadNext(
+            strategyId,
+            (call) async => StoreReadRefused(refusal, 'refused',
+                point: onConnection(world, 1)),
+          );
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(seconds: 1));
+          if (refusal == StoreReadRefusal.upgradeRequired) {
+            expect(world.sender.upgradeAsked, isTrue);
+          } else {
+            expect(world.sender.signInWaitFrom, isNotNull);
+          }
+        },
+        addStrategy: false,
+      );
+    }
+  });
+
+  test(
+      'a read to adopt a strategy refused for an upgrade on a connection the '
+      'native client has already left, before the app hears of it, asks for '
+      'nothing and is read again', () {
+    inWorld(
+      (world) {
+        world.server.answerReadNext(strategyId, (call) async {
+          world.server.connection = 2;
+          return StoreReadRefused(
+            StoreReadRefusal.upgradeRequired,
+            'refused',
+            point: onConnection(world, 1),
+          );
+        });
+        world.sender.adopt(strategyId);
+        world.settle(const Duration(minutes: 1));
+        expect(world.sender.upgradeAsked, isFalse);
+        expect(world.server.readCalls.length, greaterThan(1));
+      },
+      addStrategy: false,
+    );
+  });
+
+  test(
       'a strategy the store refuses after the sender loaded its queue, while '
       'its session is bound, gets no read', () {
     final storage = MemoryStorage();
