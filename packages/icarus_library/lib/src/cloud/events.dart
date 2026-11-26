@@ -166,11 +166,13 @@ final class ServerTimeHeld extends QueueEvent {
     this.serverTime, {
     required this.at,
     required this.session,
+    required this.point,
   });
 
   final int serverTime;
   final Duration at;
   final int session;
+  final ResultPoint point;
 }
 
 final class ClaimReleased extends QueueEvent {

@@ -394,6 +394,7 @@ final events = <String, QueueEvent Function(Client)>{
     1764000000000,
     at: Duration.zero,
     session: c.queue.session.number,
+    point: lastPoint,
   ),
   'account changed': (c) => const AccountChanged(),
   'edit access confirmed after attempt 5': (c) => EditAccessConfirmed(

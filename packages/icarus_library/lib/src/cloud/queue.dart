@@ -1374,6 +1374,7 @@ NotApplicable _inapplicable(
     ResultRefused(:final point) ||
     OpAnswered(:final point) ||
     BatchRefused(:final point) ||
+    ServerTimeHeld(:final point) ||
     EditAccessConfirmed(:final point) => point,
     _ => null,
   };
@@ -1398,10 +1399,16 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       return _userEdited(edit, change, now);
     case BatchClaimed(:final clientId, :final opIds, :final at, :final elapsed):
       return _claim(edit, clientId, opIds, at, elapsed?.call(), now);
-    case ServerTimeHeld(:final serverTime, :final at, :final session):
+    case ServerTimeHeld(
+      :final serverTime,
+      :final at,
+      :final session,
+      :final point,
+    ):
       final held = edit.session.basis;
-      if (edit.session.connected &&
-          session == edit.session.number &&
+      if (_admitted(edit, point) &&
+          edit.session.connected &&
+          edit.session.labels(session) &&
           (held == null || serverTime > held.serverTime)) {
         edit.session = edit.session.withConnection(
           connected: true,

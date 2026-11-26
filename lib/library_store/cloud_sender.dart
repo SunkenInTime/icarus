@@ -799,15 +799,10 @@ final class CloudSender {
         retiring.next(
             id, cloud, now, _timing.retiring, _boundMemory(id, snap).retired),
       );
-      return _Skipped(
-        _restingOn(id, cloud, reading),
-        _earliest(retryAt, readDue),
-      );
+      return _Skipped(_restingOn(id, cloud, reading), _nextDue(id, cloud, snap));
     }
-    final int session;
     switch (await _openSession(id, owner, snap)) {
-      case _Open(:final opened, :final number):
-        session = number;
+      case _Open(:final opened):
         if (opened) {
           switch (await _store.read(id)) {
             case QueueFound(cloud: final fresh):
@@ -824,6 +819,7 @@ final class CloudSender {
     }
     if (disposed) return const _Ended();
     if (held != null || _inputs != snap) return const _Restart();
+    final session = cloud.queue.session.number;
     final open = openAttempts(cloud);
     if (open.isNotEmpty) {
       final at = _clock();
@@ -844,7 +840,10 @@ final class CloudSender {
           return _readStep(id, owner, snap, session, cloud, next);
         }
         _note(id, 'held: ${standingOf(cloud.queue).name}');
-        return _Skipped(_restingOn(id, cloud, fresh.why), fresh.due);
+        return _Skipped(
+          _restingOn(id, cloud, fresh.why),
+          _nextDue(id, cloud, snap),
+        );
       case NothingSendable(:final why, :final retryAt):
         if (fresh.planned case final next?) {
           return _readStep(id, owner, snap, session, cloud, next);
@@ -852,7 +851,7 @@ final class CloudSender {
         _note(id, why);
         return _Skipped(
           _restingOn(id, cloud, fresh.why),
-          _earliest(retryAt, fresh.due),
+          _nextDue(id, cloud, snap),
         );
     }
   }
@@ -1236,16 +1235,23 @@ final class CloudSender {
     if (await _writeKept(id, owner) case final step?) return step;
     final at = _readAgainAt(id, read, snap);
     _note(id, '$why ($count in a row); reading $read again at $at');
-    return _Skipped(row, _earliest(at, _nextReadDue(id, planned, snap)));
+    return _Skipped(row, _earliest(at, _nextDue(id, planned, snap)));
   }
 
-  DateTime? _nextReadDue(String id, CloudStrategy? cloud, Snapshot snap) {
+  DateTime? _nextDue(String id, CloudStrategy? cloud, Snapshot snap) {
     if (cloud == null) return null;
     final now = _clock();
-    return switch (_plan(id, cloud, now, snap)) {
+    final read = switch (_plan(id, cloud, now, snap)) {
       (planned: _?, due: _, why: _) => now,
       (planned: null, :final due, why: _) => due,
     };
+    final send = switch (pick(cloud, clientId)) {
+      Picked() when _sendable(cloud) =>
+        _governor.sendAt(id) ?? _settledAt(id) ?? now,
+      Picked() => null,
+      NothingSendable(:final retryAt) => retryAt,
+    };
+    return _earliest(read, send);
   }
 
   static QueueEvent _refusedMark(ReadOf read, String problem, _Asked asked) =>
@@ -1352,7 +1358,10 @@ final class CloudSender {
                   'app starts again'
               : '$cannot; reading again at $at',
         );
-        return _Skipped(StallExit.forbidden, at);
+        return _Skipped(
+          StallExit.forbidden,
+          _earliest(at, _nextDue(id, planned, snap)),
+        );
       case StoreReadUnreadable(:final problem, :final point):
         return _unsettled(
           id,
@@ -1445,15 +1454,7 @@ final class CloudSender {
         batch.unchecked.isNotEmpty) {
       _store.report(UncheckedWithoutBasis(id, batch));
     }
-    switch (outcome) {
-      case StoreBatchRefusedWhole(refusal: BatchRefusal.unauthenticated) ||
-            StoreBatchAccountMismatch():
-        signInWaitFrom = snap.signIns;
-      case StoreBatchRefusedWhole(refusal: BatchRefusal.upgradeRequired):
-        upgradeAsked = true;
-      case _:
-        break;
-    }
+    if (outcome is StoreBatchAccountMismatch) signInWaitFrom = snap.signIns;
     final written = await _store.write(
       owner,
       id,
@@ -1461,8 +1462,16 @@ final class CloudSender {
           ? [ClaimReleased(batch.attempt)]
           : [
               ...answersOf(batch, outcome, _clock()),
-              if (outcome case StoreBatchAnswered(serverTime: final time?))
-                ServerTimeHeld(time, at: answeredAt, session: batch.session),
+              if (outcome case StoreBatchAnswered(
+                serverTime: final time?,
+                :final point,
+              ))
+                ServerTimeHeld(
+                  time,
+                  at: answeredAt,
+                  session: batch.session,
+                  point: point,
+                ),
             ],
       batch: batch,
     );

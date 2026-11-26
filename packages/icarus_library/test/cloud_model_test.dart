@@ -891,7 +891,12 @@ final class Model {
       }
     }
     apply(
-      ServerTimeHeld(serverNow, at: elapsed, session: session),
+      ServerTimeHeld(
+        serverNow,
+        at: elapsed,
+        session: session,
+        point: lastPoint,
+      ),
       'server time $serverNow from session $session',
     );
   }
