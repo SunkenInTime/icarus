@@ -72,8 +72,8 @@ void main() {
     const editor = 'lib/strategy_view.dart';
 
     for (final (path, signature, through) in [
-      (provider, 'Future<bool> openCloudStrategy(', 'opening.wait('),
-      (provider, 'Future<bool> loadFromHive(', 'opening.wait('),
+      (provider, 'Future<OpenChange> openCloud(', 'opening.wait('),
+      (provider, 'Future<OpenChange> openLocal(', 'opening.wait('),
       (session, 'Future<void> initializeForStrategy(', 'opening.wait('),
       (session, 'Future<void> _rehydrateActivePageFromSource(', 'opening.wait('),
       (session, 'Future<String?> _applyLoadedPageData(', 'opening.wait('),
@@ -102,8 +102,8 @@ void main() {
 
     test('the page step of both opens is given the attempt', () {
       for (final signature in [
-        'Future<bool> openCloudStrategy(',
-        'Future<bool> loadFromHive(',
+        'Future<OpenChange> openCloud(',
+        'Future<OpenChange> openLocal(',
       ]) {
         final body = _bodyOf(provider, signature);
         expect(body, contains('initializeForStrategy('));

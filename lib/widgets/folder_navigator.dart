@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/maps.dart';
@@ -289,20 +290,22 @@ Future<void> pickMapAndOpenNewStrategy({
   required BuildContext context,
 }) async {
   if (_refusedCloudChangeOffline(ref)) return;
+  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
   final map = await showDialog<MapValue>(
     context: context,
     builder: (context) => const CreateStrategyDialog(),
   );
   if (map == null || !context.mounted) return;
-  await _createStrategyAndOpen(map, ref: ref, context: context);
+  await _createStrategyAndOpen(map, ref: ref, context: context, asked: asked);
 }
 
 /// A local strategy paints on the chosen map at once and loads inside the
-/// view; a cloud strategy is already open once the server has created it.
+/// view; a cloud strategy opens once the server has created it.
 Future<void> _createStrategyAndOpen(
   MapValue map, {
   required WidgetRef ref,
   required BuildContext context,
+  required OpenSeen asked,
 }) async {
   final isCloud = ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
   final StrategyData strategy;
@@ -320,16 +323,41 @@ Future<void> _createStrategyAndOpen(
   }
   if (!context.mounted) return;
 
-  Navigator.push(
-    context,
-    isCloud
-        ? StrategyView.route()
-        : StrategyView.route(
-            initialStrategyId: strategy.id,
-            initialStrategyName: strategy.name,
-            initialStrategySource: StrategySource.local,
-            initialMapValue: strategy.mapData,
-          ),
+  if (isCloud) {
+    final OpenChange opened;
+    try {
+      opened = await ref
+          .read(strategyProvider.notifier)
+          .openCloud(strategy.id, asked: asked);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportWarning(
+        'Created a cloud strategy but could not open it.',
+        source: 'FolderNavigator.createStrategyAndOpen',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      Settings.showToast(
+        message: ref.read(l10nProvider).strategyMsgCreatedNotOpened,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    switch (opened) {
+      case GaveWay():
+        return;
+      case Changed(:final after):
+        if (!context.mounted) return;
+        await StrategyView.open(Navigator.of(context), asked: after);
+    }
+    return;
+  }
+  await StrategyView.open(
+    Navigator.of(context),
+    asked: asked,
+    initialStrategyId: strategy.id,
+    initialStrategyName: strategy.name,
+    initialStrategySource: StrategySource.local,
+    initialMapValue: strategy.mapData,
   );
 }
 

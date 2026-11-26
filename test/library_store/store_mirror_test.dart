@@ -35,6 +35,7 @@ import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 import 'hive_scratch.dart';
+import '../opens_now_support.dart';
 
 Future<void> _still() async {}
 

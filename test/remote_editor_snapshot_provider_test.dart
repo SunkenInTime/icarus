@@ -36,6 +36,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'library_rows/generated_strategies.dart';
 import 'library_store/unit_harness.dart';
+import 'opens_now_support.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -1083,6 +1083,7 @@ class _MyAppState extends ConsumerState<MyApp> {
                     ref.read(openCloudStrategyStoreProvider).read(),
                 allowsLocalLibrary:
                     ref.read(platformPolicyProvider).allowsLocalLibrary,
+                asked: ref.read(strategyProvider.notifier).askedByTheUserNow(),
               )
             : null,
         builder: (context, child) {

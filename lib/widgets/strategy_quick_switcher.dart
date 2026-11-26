@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -91,20 +92,25 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     setState(() => _isSwitching = true);
 
     try {
-      await guardUnsavedStrategyExit(
+      final answer = await guardUnsavedStrategyExit(
         context: context,
         ref: ref,
         source: 'StrategyQuickSwitcher.switchStrategy',
-        onContinue: () async {
-          ref
-              .read(interactionStateProvider.notifier)
-              .update(InteractionState.navigation);
-          ref
-              .read(agentFilterProvider.notifier)
-              .updateFilterState(FilterState.all);
-          await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
-        },
       );
+      if (answer case Leave(:final seen)) {
+        ref
+            .read(interactionStateProvider.notifier)
+            .update(InteractionState.navigation);
+        ref
+            .read(agentFilterProvider.notifier)
+            .updateFilterState(FilterState.all);
+        switch (await ref
+            .read(strategyProvider.notifier)
+            .openLocal(strategyId, asked: seen)) {
+          case Changed() || GaveWay():
+            break;
+        }
+      }
     } finally {
       if (mounted) {
         setState(() => _isSwitching = false);

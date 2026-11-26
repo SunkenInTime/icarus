@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/l10n/cloud_sync_error_text.dart';
@@ -90,12 +91,12 @@ class _ReloadButtonState extends ConsumerState<_ReloadButton> {
 
   Future<void> _reload() async {
     setState(() => _leaving = true);
-    await guardUnsavedStrategyExit(
+    final answer = await guardUnsavedStrategyExit(
       context: context,
       ref: ref,
-      onContinue: () async => widget.onReload(),
       source: 'client_upgrade.reload',
     );
+    if (answer is Leave) widget.onReload();
     if (mounted) setState(() => _leaving = false);
   }
 

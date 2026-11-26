@@ -14,6 +14,7 @@ import 'package:icarus/strategy/local_library.dart';
 
 import 'library_rows/generated_strategies.dart';
 import 'library_store/unit_harness.dart';
+import 'opens_now_support.dart';
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 

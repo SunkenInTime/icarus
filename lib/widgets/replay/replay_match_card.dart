@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -61,6 +63,7 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
 
   /// The page Open waits for, while its capture is on its way.
   String? _awaitingPageId;
+  OpenSeen? _awaitingAsked;
 
   String _dateLabel(DateTime? date) =>
       MaterialLocalizations.of(context).formatShortDate(date ?? DateTime.now());
@@ -99,10 +102,11 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
   /// has to get there first: Open waits for it, and a second press stops
   /// waiting.
   Future<void> _openStrategy() async {
+    final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
     final strategy = _capture.strategy;
     if (strategy == null) return;
     if (strategy.source == StrategySource.local) {
-      return _openEditor(strategy, strategy.lastPageId);
+      return _openEditor(strategy, strategy.lastPageId, asked);
     }
     if (_awaitingPageId != null) {
       setState(() => _awaitingPageId = null);
@@ -117,10 +121,13 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
       return;
     }
     if (waiting.any((capture) => capture.pageId == target)) {
-      setState(() => _awaitingPageId = target);
+      setState(() {
+        _awaitingPageId = target;
+        _awaitingAsked = asked;
+      });
       return;
     }
-    await _openEditor(strategy, target);
+    await _openEditor(strategy, target, asked);
   }
 
   void _cantOpen(
@@ -152,25 +159,28 @@ class _ReplayMatchCardState extends ConsumerState<ReplayMatchCard> {
       _cantOpen(queue, waiting);
     } else if (!waiting.any((capture) => capture.pageId == target)) {
       setState(() => _awaitingPageId = null);
-      unawaited(_openEditor(strategy, target));
+      unawaited(_openEditor(strategy, target, _awaitingAsked!));
     }
   }
 
-  Future<void> _openEditor(CapturedStrategy strategy, String pageId) async {
+  Future<void> _openEditor(
+    CapturedStrategy strategy,
+    String pageId,
+    OpenSeen asked,
+  ) async {
     widget.playback.pause();
-    await Navigator.push(
-      context,
-      StrategyView.route(
-        initialStrategyId: strategy.id,
-        initialStrategyName: strategy.name,
-        initialStrategySource: strategy.source,
-        initialMapValue: strategy.map,
-        initialIsAttack: strategy.lastPageIsAttack,
-        initialPageId: pageId,
-        backTooltip: context.l10n.replayMatchBackToReplay,
-      ),
+    final opened = await StrategyView.open(
+      Navigator.of(context),
+      asked: asked,
+      initialStrategyId: strategy.id,
+      initialStrategyName: strategy.name,
+      initialStrategySource: strategy.source,
+      initialMapValue: strategy.map,
+      initialIsAttack: strategy.lastPageIsAttack,
+      initialPageId: pageId,
+      backTooltip: context.l10n.replayMatchBackToReplay,
     );
-    if (!mounted) return;
+    if (!opened || !mounted) return;
     widget.onReturnFromEditor();
     // The editor may have removed pages, or the whole strategy.
     try {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/const/settings.dart';
@@ -338,10 +339,14 @@ class _CommunityReviewButtonState extends ConsumerState<CommunityReviewButton> {
                           ),
                           item: item,
                           onTap: () {
+                            final asked = ref
+                                .read(strategyProvider.notifier)
+                                .askedByTheUserNow();
                             _popover.hide();
                             openCommunityPost(
                               ref,
                               item.post,
+                              asked: asked,
                               underReview: true,
                               stillUp: !item.hidden,
                             );

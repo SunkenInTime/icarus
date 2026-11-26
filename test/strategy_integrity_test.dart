@@ -31,6 +31,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:path/path.dart' as path;
+import 'opens_now_support.dart';
 
 class _IcaFixture {
   const _IcaFixture({

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
@@ -590,6 +591,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       !ref.watch(strategyKeptOfflineProvider(_strategyId));
 
   Future<void> _openStrategy(BuildContext context) async {
+    final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
     if (_isLoading) {
       return;
     }
@@ -608,16 +610,15 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
     try {
       if (!context.mounted) return;
-      await Navigator.push(
-        context,
-        StrategyView.route(
-          initialStrategyId: _strategyId,
-          initialStrategyName: _strategyName,
-          initialStrategySource:
-              _isCloud ? StrategySource.cloud : StrategySource.local,
-          initialMapValue: _mapValue,
-          initialIsAttack: _isAttack,
-        ),
+      await StrategyView.open(
+        Navigator.of(context),
+        asked: asked,
+        initialStrategyId: _strategyId,
+        initialStrategyName: _strategyName,
+        initialStrategySource:
+            _isCloud ? StrategySource.cloud : StrategySource.local,
+        initialMapValue: _mapValue,
+        initialIsAttack: _isAttack,
       );
     } finally {
       if (mounted) {
@@ -643,9 +644,15 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
     // The export saves the open canvas first, so it must be this
     // strategy's: not one the reader opened while this one loaded.
-    final opened =
-        await ref.read(strategyProvider.notifier).loadFromHive(_strategyId);
-    if (!opened) return;
+    final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
+    switch (await ref
+        .read(strategyProvider.notifier)
+        .openLocal(_strategyId, asked: asked)) {
+      case GaveWay():
+        return;
+      case Changed():
+        break;
+    }
     await StrategyImportExportService(ref).exportFile(_strategyId);
   }
 

@@ -50,6 +50,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 import 'package:icarus/widgets/window_chrome.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/eased_route_transition.dart';
@@ -67,7 +68,10 @@ class StrategyView extends ConsumerStatefulWidget {
     this.backTooltip,
     this.communityPost,
     this.startExpanded = false,
+    required this.asked,
   });
+
+  final OpenSeen asked;
 
   final String? initialStrategyId;
   final String? initialStrategyName;
@@ -93,8 +97,53 @@ class StrategyView extends ConsumerStatefulWidget {
 
   /// A Community post over the tab it was opened from: a sheet first, that
   /// opens out to the full view-only editor in place.
-  static PageRoute<void> communityRoute(
+  static Future<bool> openPost(
+    NavigatorState navigator,
     CommunityPost post, {
+    required OpenSeen asked,
+    bool expanded = false,
+  }) async {
+    final claimed = _claim(navigator, asked);
+    if (claimed == null) return false;
+    await navigator
+        .push(_communityRoute(post, asked: claimed, expanded: expanded));
+    return true;
+  }
+
+  static Future<bool> open(
+    NavigatorState navigator, {
+    required OpenSeen asked,
+    String? initialStrategyId,
+    String? initialStrategyName,
+    StrategySource initialStrategySource = StrategySource.local,
+    MapValue? initialMapValue,
+    bool initialIsAttack = true,
+    String? initialPageId,
+    String? backTooltip,
+  }) async {
+    final claimed = _claim(navigator, asked);
+    if (claimed == null) return false;
+    await navigator.push(_route(
+      asked: claimed,
+      initialStrategyId: initialStrategyId,
+      initialStrategyName: initialStrategyName,
+      initialStrategySource: initialStrategySource,
+      initialMapValue: initialMapValue,
+      initialIsAttack: initialIsAttack,
+      initialPageId: initialPageId,
+      backTooltip: backTooltip,
+    ));
+    return true;
+  }
+
+  static OpenSeen? _claim(NavigatorState navigator, OpenSeen asked) =>
+      ProviderScope.containerOf(navigator.context)
+          .read(strategyProvider.notifier)
+          .claimForAnEditor(asked);
+
+  static PageRoute<void> _communityRoute(
+    CommunityPost post, {
+    required OpenSeen asked,
     bool expanded = false,
   }) {
     return PageRouteBuilder<void>(
@@ -111,6 +160,7 @@ class StrategyView extends ConsumerStatefulWidget {
         initialIsAttack: post.side != CommunitySide.defense,
         communityPost: post,
         startExpanded: expanded,
+        asked: asked,
       ),
       transitionsBuilder: (context, animation, _, child) =>
           EasedRouteTransition(
@@ -121,7 +171,8 @@ class StrategyView extends ConsumerStatefulWidget {
     );
   }
 
-  static PageRoute<void> route({
+  static PageRoute<void> _route({
+    required OpenSeen asked,
     String? initialStrategyId,
     String? initialStrategyName,
     StrategySource initialStrategySource = StrategySource.local,
@@ -142,6 +193,7 @@ class StrategyView extends ConsumerStatefulWidget {
         initialIsAttack: initialIsAttack,
         initialPageId: initialPageId,
         backTooltip: backTooltip,
+        asked: asked,
       ),
       transitionsBuilder: (context, animation, _, child) =>
           EasedRouteTransition(
@@ -161,14 +213,16 @@ class StrategyView extends ConsumerStatefulWidget {
   static PageRoute<void>? restoredRoute({
     required String? openCloudStrategyId,
     required bool allowsLocalLibrary,
+    required OpenSeen asked,
   }) {
     if (openCloudStrategyId != null) {
-      return route(
+      return _route(
+        asked: asked,
         initialStrategyId: openCloudStrategyId,
         initialStrategySource: StrategySource.cloud,
       );
     }
-    return allowsLocalLibrary ? route() : null;
+    return allowsLocalLibrary ? _route(asked: asked) : null;
   }
 
   @override
@@ -237,6 +291,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       }
       return;
     }
+    if (!widget.asked
+        .isNow(ref.read(strategyProvider.notifier).askedByTheUserNow())) {
+      _leaveAfterFailedLoad();
+      return;
+    }
 
     // What was open before this load: only a strategy opened since then
     // means this load gave way to another.
@@ -245,9 +304,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       switch (source) {
         case StrategySource.local:
           await _unlessLeft(
-            ref
-                .read(strategyProvider.notifier)
-                .loadFromHive(strategyId, pageId: widget.initialPageId),
+            ref.read(strategyProvider.notifier).openLocal(
+                  strategyId,
+                  pageId: widget.initialPageId,
+                  asked: widget.asked,
+                ),
           );
         case StrategySource.cloud:
           final viewingThroughLink =
@@ -260,9 +321,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             return;
           }
           await _unlessLeft(
-            ref.read(strategyProvider.notifier).openCloudStrategy(
+            ref.read(strategyProvider.notifier).openCloud(
                   strategyId,
                   pageId: widget.initialPageId,
+                  asked: widget.asked,
                 ),
           );
       }
@@ -376,26 +438,28 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   }
 
   Future<void> _leaveToLibrary() async {
-    await guardUnsavedStrategyExit(
+    final answer = await guardUnsavedStrategyExit(
       context: context,
       ref: ref,
       source: 'StrategyView.leaveToLibrary',
-      onContinue: () async {
-        ref
-            .read(interactionStateProvider.notifier)
-            .update(InteractionState.navigation);
-        ref
-            .read(agentFilterProvider.notifier)
-            .updateFilterState(FilterState.all);
-        ref.read(deleteMenuProvider.notifier).requestClose();
-        _hasLeft = true;
-        if (mounted) {
-          Navigator.pop(context);
-        }
-        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
-        forgetCommunityPost(ref, widget.communityPost?.strategyPublicId);
-      },
     );
+    if (answer case Leave(:final seen)) {
+      switch (ref.read(strategyProvider.notifier).closeStrategy(asked: seen)) {
+        case Changed():
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.navigation);
+          ref
+              .read(agentFilterProvider.notifier)
+              .updateFilterState(FilterState.all);
+          ref.read(deleteMenuProvider.notifier).requestClose();
+          _hasLeft = true;
+          if (mounted) Navigator.pop(context);
+          forgetCommunityPost(ref, widget.communityPost?.strategyPublicId);
+        case GaveWay():
+          break;
+      }
+    }
   }
 
   @override
@@ -847,19 +911,18 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       return;
     }
 
-    await guardUnsavedStrategyExit(
+    final answer = await guardUnsavedStrategyExit(
       context: context,
       ref: ref,
       source: 'StrategyView.onWindowClose',
-      onContinue: () async {
-        _isClosingWindow = true;
-        if (storeCatchUpBeforeClose() case final catchingUp?) {
-          await catchingUp;
-        }
-        await windowManager.setPreventClose(false);
-        await windowManager.close();
-      },
     );
+    if (answer is! Leave) return;
+    _isClosingWindow = true;
+    if (storeCatchUpBeforeClose() case final catchingUp?) {
+      await catchingUp;
+    }
+    await windowManager.setPreventClose(false);
+    await windowManager.close();
   }
 }
 

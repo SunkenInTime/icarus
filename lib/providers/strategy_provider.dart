@@ -23,6 +23,7 @@ import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/open_attempt.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -111,10 +112,10 @@ class StrategyProvider extends Notifier<StrategyState> {
   /// the attempt it is given (see [OpenAttempt]), so an open the reader left,
   /// or replaced by opening another strategy, stops at that wait and changes
   /// nothing after it. Giving way is not a failure, so nothing is thrown:
-  /// the answer is whether the strategy opened. False means something else
-  /// is open now (or nothing), and a caller that goes on to act on "its"
-  /// strategy must look first.
-  Future<bool> _open(
+  /// the answer is whether the strategy opened. [GaveWay] means something
+  /// else is open now (or nothing), and a caller that goes on to act on
+  /// "its" strategy must look first.
+  Future<OpenChange> _open(
     String strategyId,
     StrategySource source,
     Future<bool> Function(OpenAttempt opening) steps,
@@ -122,13 +123,28 @@ class StrategyProvider extends Notifier<StrategyState> {
     final opens = ref.read(strategyOpeningProvider.notifier);
     final attempt = opens.begin(strategyId, source: source);
     try {
-      return await steps(OpenAttempt(() => opens.isLatest(attempt)));
+      return await steps(OpenAttempt(() => opens.isLatest(attempt)))
+          ? Changed(_seen)
+          : const GaveWay();
     } on OpenGaveWay {
       // The newer open, or the close, owns the outcome.
-      return false;
+      return const GaveWay();
     } finally {
       opens.settle(attempt);
     }
+  }
+
+  OpenSeen get _seen => OpenSeen(
+        state.strategyId,
+        ref.read(strategyOpeningProvider.notifier).opens,
+      );
+
+  OpenSeen askedByTheUserNow() => _seen;
+
+  OpenSeen? claimForAnEditor(OpenSeen asked) {
+    if (!asked.isNow(_seen)) return null;
+    ref.read(strategyOpeningProvider.notifier).editorPushed();
+    return _seen;
   }
 
   bool get isOpening => ref.read(strategyOpeningProvider) != null;
@@ -405,14 +421,16 @@ class StrategyProvider extends Notifier<StrategyState> {
     return true;
   }
 
-  Future<void> openStrategy(String strategyID) async {
-    await openCloudStrategy(strategyID);
-  }
-
   /// Opens the cloud strategy [strategyID] in the editor, on [pageId] when
-  /// it has that page. False when it gave way to a newer open or a close
-  /// before it finished (see [_open]); throws when it could not be read.
-  Future<bool> openCloudStrategy(String strategyID, {String? pageId}) async {
+  /// it has that page. [GaveWay] when what is open is not what [asked] saw,
+  /// or when it gave way to a newer open or a close before it finished (see
+  /// [_open]); throws when it could not be read.
+  Future<OpenChange> openCloud(
+    String strategyID, {
+    String? pageId,
+    required OpenSeen asked,
+  }) async {
+    if (!asked.isNow(_seen)) return const GaveWay();
     // A cloud copy still being built by a move from this device is the
     // mover's: an edit made in it would be lost if the move fails.
     if (ref.read(movingToCloudProvider).contains(strategyID)) {
@@ -926,7 +944,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     state = opened;
   }
 
-  Future<void> clearCurrentStrategy() async {
+  OpenChange closeStrategy({required OpenSeen asked}) {
+    if (!asked.isNow(_seen)) return const GaveWay();
     ref.read(strategyOpeningProvider.notifier).endAll();
     cancelPendingSave();
     ref.read(canvasShowsProvider.notifier).emptied();
@@ -944,6 +963,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(null),
     );
+    return Changed(_seen);
   }
 
   Future<void> setActivePage(String pageID) async {
@@ -2258,7 +2278,12 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   /// Opens strategy [id] on its first page, or on [pageId] when given.
-  Future<bool> loadFromHive(String id, {String? pageId}) async {
+  Future<OpenChange> openLocal(
+    String id, {
+    String? pageId,
+    required OpenSeen asked,
+  }) async {
+    if (!asked.isNow(_seen)) return const GaveWay();
     _requireLocalLibrary('open');
     // Edits made while a strategy moves to the cloud would go with the
     // local original the move deletes.
@@ -2453,24 +2478,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       ref.invalidate(cloudStrategiesProvider);
       ref.invalidate(cloudFolderTreeProvider);
-      try {
-        await openCloudStrategy(newID);
-      } catch (error, stackTrace) {
-        // The strategy exists on the server but couldn't be opened — don't
-        // rethrow, or the caller would falsely report that creation failed.
-        // Creation succeeded; opening is what failed (the editor's own load
-        // path surfaces that and backs out).
-        log(
-          'Created cloud strategy $newID but failed to open it: $error',
-          name: 'strategy',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        Settings.showToast(
-          message: ref.read(l10nProvider).strategyMsgCreatedNotOpened,
-          backgroundColor: Settings.tacticalVioletTheme.destructive,
-        );
-      }
       unawaited(AnalyticsService.instance.capture('strategy_created'));
       return newStrategy;
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/l10n/cloud_sync_error_text.dart';
 import 'package:icarus/l10n/l10n.dart';
@@ -175,10 +176,10 @@ Future<bool> _waitForCloudSync(
   return false;
 }
 
-Future<bool> _guardCloudStrategyExit({
+Future<LeaveAnswer> _guardCloudStrategyExit({
   required BuildContext context,
   required WidgetRef ref,
-  required Future<void> Function() onContinue,
+  required OpenSeen asked,
 }) async {
   final l10n = context.l10n;
   final openingStrategy = ref.read(strategyProvider);
@@ -197,7 +198,7 @@ Future<bool> _guardCloudStrategyExit({
         stackTrace: stackTrace,
         source: 'cloud_media.exit_guard',
       );
-      return false;
+      return const Stay();
     }
   }
 
@@ -249,9 +250,8 @@ Future<bool> _guardCloudStrategyExit({
     if (leaveIfDurable) {
       leaveIfDurable = false;
       if (canLeaveWithDurableWork) {
-        if (!context.mounted) return false;
-        await onContinue();
-        return true;
+        if (!context.mounted) return const Stay();
+        return Leave(asked);
       }
     }
     final isConnected = ref.read(convexConnectionSnapshotProvider);
@@ -279,14 +279,13 @@ Future<bool> _guardCloudStrategyExit({
     // edit made during the wait would still be unstaged.
     if (!hasPendingSync && cloudError == null && !hasUnstagedWork) {
       if (!context.mounted) {
-        return false;
+        return const Stay();
       }
       AppErrorReporter.reportInfo(
         'Cloud exit guard allowing leave: strategy=${strategyState.strategyId}',
         source: 'cloud_media.exit_guard',
       );
-      await onContinue();
-      return true;
+      return Leave(asked);
     }
 
     if ((queueState.isFlushing || mediaQueueState.isProcessing) &&
@@ -311,7 +310,7 @@ Future<bool> _guardCloudStrategyExit({
     }
 
     if (!context.mounted) {
-      return false;
+      return const Stay();
     }
 
     final decision = await _showCloudSyncBlockedDialog(
@@ -336,7 +335,7 @@ Future<bool> _guardCloudStrategyExit({
           'Cloud exit guard user chose stay.',
           source: 'cloud_media.exit_guard',
         );
-        return false;
+        return const Stay();
       case CloudExitDecision.retryAuth:
         AppErrorReporter.reportInfo(
           'Cloud exit guard retrying auth.',
@@ -360,7 +359,7 @@ Future<bool> _guardCloudStrategyExit({
         );
         final strategyId = strategyState.strategyId;
         if (strategyId == null) {
-          return false;
+          return const Stay();
         }
         await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
         break;
@@ -402,12 +401,12 @@ String _cloudSyncBlockedMessage({
   return l10n.unsavedGuardStayAndRetry(base);
 }
 
-Future<bool> guardUnsavedStrategyExit({
+Future<LeaveAnswer> guardUnsavedStrategyExit({
   required BuildContext context,
   required WidgetRef ref,
-  required Future<void> Function() onContinue,
   required String source,
 }) async {
+  final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
   final l10n = context.l10n;
   final strategyState = ref.read(strategyProvider);
   final saveState = ref.read(strategySaveStateProvider);
@@ -415,15 +414,14 @@ Future<bool> guardUnsavedStrategyExit({
     return _guardCloudStrategyExit(
       context: context,
       ref: ref,
-      onContinue: onContinue,
+      asked: asked,
     );
   }
 
   final hasTextDrafts = ref.read(textDraftProvider).isNotEmpty;
   if (strategyState.strategyName == null ||
       (!saveState.isDirty && !hasTextDrafts)) {
-    await onContinue();
-    return true;
+    return Leave(asked);
   }
 
   try {
@@ -431,8 +429,7 @@ Future<bool> guardUnsavedStrategyExit({
         .read(strategyProvider.notifier)
         .flushPendingAutosaveBeforeExit();
     if (canContinueSilently) {
-      await onContinue();
-      return true;
+      return Leave(asked);
     }
   } catch (error, stackTrace) {
     AppErrorReporter.reportError(
@@ -444,7 +441,7 @@ Future<bool> guardUnsavedStrategyExit({
   }
 
   if (!context.mounted) {
-    return false;
+    return const Stay();
   }
 
   final decision = await showUnsavedStrategyDialog(
@@ -456,7 +453,7 @@ Future<bool> guardUnsavedStrategyExit({
       try {
         final strategyId = strategyState.strategyId;
         if (strategyId == null) {
-          return false;
+          return const Stay();
         }
         await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
       } catch (error, stackTrace) {
@@ -466,15 +463,13 @@ Future<bool> guardUnsavedStrategyExit({
           stackTrace: stackTrace,
           source: source,
         );
-        return false;
+        return const Stay();
       }
-      await onContinue();
-      return true;
+      return Leave(asked);
     case UnsavedStrategyDecision.dontSave:
       ref.read(strategyProvider.notifier).cancelPendingSave();
-      await onContinue();
-      return true;
+      return Leave(asked);
     case UnsavedStrategyDecision.cancel:
-      return false;
+      return const Stay();
   }
 }

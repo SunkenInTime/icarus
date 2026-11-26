@@ -13,6 +13,8 @@ import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/replay_library_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/replay/replay_decoder.dart';
 import 'package:icarus/replay/replay_files.dart';
@@ -41,7 +43,12 @@ class _OpenStrategy extends StrategyProvider {
   void cancelPendingSave() {}
 
   @override
-  Future<void> clearCurrentStrategy() async => state = _noStrategy;
+  OpenChange closeStrategy({required OpenSeen asked}) {
+    if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
+    ref.read(strategyOpeningProvider.notifier).endAll();
+    state = _noStrategy;
+    return Changed(askedByTheUserNow());
+  }
 }
 
 const _noStrategy = StrategyState(

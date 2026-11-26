@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/config/platform_policy.dart';
 import 'package:icarus/const/app_navigator.dart';
@@ -87,11 +88,17 @@ Future<void> _openReplays(WidgetRef ref, List<String> paths) async {
       mouseNavigationRouteObserver.topRoute?.settings.name ==
           Routes.strategyView;
   if (inEditor) {
-    final left = await guardUnsavedStrategyExit(
+    final answer = await guardUnsavedStrategyExit(
       context: navigator.context,
       ref: ref,
       source: 'openReplays',
-      onContinue: () async {
+    );
+    if (answer is! Leave) return;
+    switch (
+        ref.read(strategyProvider.notifier).closeStrategy(asked: answer.seen)) {
+      case GaveWay():
+        return;
+      case Changed():
         ref
             .read(interactionStateProvider.notifier)
             .update(InteractionState.navigation);
@@ -99,10 +106,8 @@ Future<void> _openReplays(WidgetRef ref, List<String> paths) async {
             .read(agentFilterProvider.notifier)
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
-        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
-      },
-    );
-    if (!left || !navigator.mounted) return;
+    }
+    if (!navigator.mounted) return;
   }
 
   navigator.popUntil((route) => route.isFirst);

@@ -30,6 +30,7 @@ import 'package:path/path.dart' as path;
 
 import '../library_rows/library_sources.dart';
 import 'hive_scratch.dart';
+import '../opens_now_support.dart';
 
 const corpusVariable = 'ICARUS_LIBRARY_CORPUS';
 const scratchVariable = 'ICARUS_LIBRARY_SCRATCH';

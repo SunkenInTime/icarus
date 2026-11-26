@@ -34,6 +34,7 @@ import 'package:icarus_library/icarus_library.dart';
 import '../library_rows/generated_strategies.dart';
 import 'gated_engine.dart';
 import 'unit_harness.dart';
+import '../opens_now_support.dart';
 
 final class _SignedOut extends AuthProvider {
   @override

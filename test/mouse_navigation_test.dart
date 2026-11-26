@@ -4,7 +4,6 @@ import 'package:icarus/collab/community_repository.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
-import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/widgets/community/community_post_view.dart';
 import 'package:icarus/widgets/community/open_community_post.dart';
@@ -23,10 +22,13 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_opening_provider.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
+import 'opens_now_support.dart';
 
 void main() {
   testWidgets('mouse back does not navigate under an open Shad popover',
@@ -450,7 +452,7 @@ void main() {
       container.read(strategySaveStateProvider.notifier).markDirty();
       await tester.pump();
 
-      final home = guardUnsavedStrategyExit(
+      final home = guardThen(
         context: editor,
         ref: editorRef,
         source: 'mouse-navigation-test-home',
@@ -485,7 +487,7 @@ void main() {
       container.read(strategySaveStateProvider.notifier).markDirty();
       await tester.pump();
 
-      unawaited(guardUnsavedStrategyExit(
+      unawaited(guardThen(
         context: editor,
         ref: editorRef,
         source: 'mouse-navigation-test-home',
@@ -618,12 +620,18 @@ class _RecordingStrategies extends StrategyProvider {
   Future<void> Function()? whileOpening;
 
   @override
-  Future<void> clearCurrentStrategy() async => state = const StrategyState();
+  OpenChange closeStrategy({required OpenSeen asked}) {
+    if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
+    ref.read(strategyOpeningProvider.notifier).endAll();
+    state = const StrategyState();
+    return Changed(askedByTheUserNow());
+  }
 
   @override
   StrategyState build() => const StrategyState();
 
   void show(String id, StrategySource source) {
+    ref.read(strategyOpeningProvider.notifier).endAll();
     state = StrategyState(
       strategyId: id,
       strategyName: id,
@@ -633,23 +641,38 @@ class _RecordingStrategies extends StrategyProvider {
   }
 
   @override
-  Future<bool> loadFromHive(String id, {String? pageId}) async {
+  Future<OpenChange> openLocal(
+    String id, {
+    String? pageId,
+    required OpenSeen asked,
+  }) async {
+    if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     opened.add('local:$id');
     if (givesWay.contains(id)) {
       await whileOpening?.call();
-      return false;
+      return const GaveWay();
     }
     show(id, StrategySource.local);
-    return true;
+    return Changed(askedByTheUserNow());
   }
 
   @override
-  Future<bool> openCloudStrategy(String id, {String? pageId}) async {
+  Future<OpenChange> openCloud(
+    String id, {
+    String? pageId,
+    required OpenSeen asked,
+  }) async {
+    if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     opened.add('cloud:$id');
-    if (fails.contains(id)) throw StateError('could not read $id');
-    if (givesWay.contains(id)) return false;
+    if (fails.contains(id)) {
+      ref
+          .read(strategyOpeningProvider.notifier)
+          .begin(id, source: StrategySource.cloud);
+      throw StateError('could not read $id');
+    }
+    if (givesWay.contains(id)) return const GaveWay();
     show(id, StrategySource.cloud);
-    return true;
+    return Changed(askedByTheUserNow());
   }
 }
 

@@ -20,6 +20,7 @@ import '../library_rows/generated_strategies.dart';
 import 'package:icarus/strategy/local_library.dart';
 
 import 'unit_harness.dart';
+import '../opens_now_support.dart';
 
 LineUpGraph _threeGroups(String prefix) {
   final shape = sharedSpotLineups(prefix);

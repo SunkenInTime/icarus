@@ -27,6 +27,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/community/community_link.dart';
 import 'package:icarus/widgets/community/community_post_view.dart';
@@ -206,11 +207,12 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   /// Opens the post a link names over the Community tab. False when it
   /// didn't open: the user stayed where they were, or the post is gone.
   Future<bool> _openCommunityPostLink(String postPublicId) async {
+    final arrived = ref.read(strategyProvider.notifier).askedByTheUserNow();
     final navigator = appNavigatorKey.currentState;
     if (navigator == null || !mounted) return false;
-    if (!await _leaveOpenStrategy(navigator, 'openCommunityPost')) {
-      return false;
-    }
+    final left =
+        await _leaveOpenStrategy(navigator, 'openCommunityPost', arrived);
+    if (left == null) return false;
     ref.read(libraryNavigationProvider).showCommunity();
     // A reviewer sees a hidden post only once the server knows who they
     // are, so a link the app opened with waits for sign-in to settle.
@@ -244,14 +246,15 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     }
     // A strategy opened during the waits above is left the same way, so the
     // post never opens over work that isn't saved.
-    if (!await _leaveOpenStrategy(navigator, 'openCommunityPost')) {
-      return false;
-    }
+    final leftAgain =
+        await _leaveOpenStrategy(navigator, 'openCommunityPost', left);
+    if (leftAgain == null) return false;
     // Not waited for: it ends when the post is closed.
     unawaited(
       openCommunityPost(
         ref,
         found.post,
+        asked: leftAgain,
         underReview: found.status == CommunityPostStatus.hidden,
       ),
     );
@@ -259,26 +262,35 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   }
 
   /// Leaves the strategy or Community post that is open, if one is, asking
-  /// first when it has unsaved work. False when the user stays in it.
-  Future<bool> _leaveOpenStrategy(
+  /// first when it has unsaved work. Null when the user stays in it.
+  Future<OpenSeen?> _leaveOpenStrategy(
     NavigatorState navigator,
     String source,
+    OpenSeen asked,
   ) async {
     final editor = mouseNavigationRouteObserver.editorRoute;
     final bool strategyOpen = ref.read(strategyProvider).stratName != null;
-    if (!strategyOpen && editor == null) return mounted;
-    final bool left = await guardUnsavedStrategyExit(
+    if (!strategyOpen && editor == null) return mounted ? asked : null;
+    final answer = await guardUnsavedStrategyExit(
       context: navigator.context,
       ref: ref,
       source: 'MouseNavigation.$source',
-      onContinue: () async {
-        _resetStrategyUiState();
-        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
-        _closeEditor(navigator, editor);
-        forgetCommunityPost(ref, null);
-      },
     );
-    return left && mounted;
+    switch (answer) {
+      case Stay():
+        return null;
+      case Leave(:final seen):
+        switch (
+            ref.read(strategyProvider.notifier).closeStrategy(asked: seen)) {
+          case GaveWay():
+            return null;
+          case Changed(:final after):
+            _resetStrategyUiState();
+            _closeEditor(navigator, editor);
+            forgetCommunityPost(ref, null);
+            return mounted ? after : null;
+        }
+    }
   }
 
   void _closeEditor(NavigatorState navigator, Route<dynamic>? editor) {
@@ -442,6 +454,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   }
 
   Future<bool> _navigateTo(_NavLocation target) async {
+    final asked = ref.read(strategyProvider.notifier).askedByTheUserNow();
     final navigator = appNavigatorKey.currentState;
     if (navigator == null || !mounted) return false;
 
@@ -451,17 +464,22 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     switch (target) {
       case _FolderLocation(:final folderId):
         if (strategyOpen || editor != null) {
-          final bool left = await guardUnsavedStrategyExit(
+          final answer = await guardUnsavedStrategyExit(
             context: navigator.context,
             ref: ref,
             source: 'MouseNavigation.navigateToFolder',
-            onContinue: () async {
-              _resetStrategyUiState();
-              await ref.read(strategyProvider.notifier).clearCurrentStrategy();
-              _closeEditor(navigator, editor);
-            },
           );
-          if (!left || !mounted) return false;
+          if (answer is! Leave) return false;
+          switch (ref
+              .read(strategyProvider.notifier)
+              .closeStrategy(asked: answer.seen)) {
+            case GaveWay():
+              return false;
+            case Changed():
+              _resetStrategyUiState();
+              _closeEditor(navigator, editor);
+          }
+          if (!mounted) return false;
         }
         ref.read(folderProvider.notifier).updateID(folderId);
         return true;
@@ -473,45 +491,45 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       case _StrategyLocation(:final strategyId, :final source):
         // A Community post's view is the post's own, so a strategy never
         // swaps into it: the post closes and the strategy opens in its own.
+        var over = asked;
         if (_openPost() != null) {
-          if (!await _leaveOpenStrategy(navigator, 'navigateToStrategy')) {
-            return false;
-          }
+          final left =
+              await _leaveOpenStrategy(navigator, 'navigateToStrategy', asked);
+          if (left == null) return false;
+          over = left;
         } else if (strategyOpen) {
           // Already in the strategy view; swap strategies in place, exactly
           // like the quick switcher does.
           // An open that gave way to a newer one (or to a close) did not
           // move here, and history must not record that it did.
-          var opened = false;
-          final bool switched = await guardUnsavedStrategyExit(
+          final answer = await guardUnsavedStrategyExit(
             context: navigator.context,
             ref: ref,
             source: 'MouseNavigation.navigateToStrategy',
-            onContinue: () async {
-              _resetStrategyUiState();
-              final strategies = ref.read(strategyProvider.notifier);
-              opened = switch (source) {
-                StrategySource.local =>
-                  await strategies.loadFromHive(strategyId),
-                StrategySource.cloud =>
-                  await _openCloudInPlace(strategyId, navigator),
-              };
-            },
           );
-          return switched && opened && mounted;
+          if (answer is! Leave) return false;
+          _resetStrategyUiState();
+          final opened = switch (source) {
+            StrategySource.local => await ref
+                .read(strategyProvider.notifier)
+                .openLocal(strategyId, asked: answer.seen),
+            StrategySource.cloud =>
+              await _openCloudInPlace(strategyId, navigator, answer.seen),
+          };
+          return opened is Changed && mounted;
         }
 
         if (source == StrategySource.cloud) {
           final look = strategyLookFor(ref, strategyId, StrategySource.cloud);
           unawaited(
-            navigator.push(
-              StrategyView.route(
-                initialStrategyId: strategyId,
-                initialStrategyName: look.name,
-                initialStrategySource: StrategySource.cloud,
-                initialMapValue: look.map,
-                initialIsAttack: look.isAttack,
-              ),
+            StrategyView.open(
+              navigator,
+              asked: over,
+              initialStrategyId: strategyId,
+              initialStrategyName: look.name,
+              initialStrategySource: StrategySource.cloud,
+              initialMapValue: look.map,
+              initialIsAttack: look.isAttack,
             ),
           );
           return true;
@@ -520,14 +538,14 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             ref.read(localLibraryViewProvider).strategy(strategyId);
         if (strategy == null) return false;
         unawaited(
-          navigator.push(
-            StrategyView.route(
-              initialStrategyId: strategy.id,
-              initialStrategyName: strategy.name,
-              initialStrategySource: StrategySource.local,
-              initialMapValue: strategy.mapData,
-              initialIsAttack: strategy.opensOnAttack,
-            ),
+          StrategyView.open(
+            navigator,
+            asked: over,
+            initialStrategyId: strategy.id,
+            initialStrategyName: strategy.name,
+            initialStrategySource: StrategySource.local,
+            initialMapValue: strategy.mapData,
+            initialIsAttack: strategy.opensOnAttack,
           ),
         );
         return true;
@@ -538,27 +556,30 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   /// open lets go of the one on screen before it reads the new one, so when
   /// that read fails there is nothing to stay on: the reader is told and
   /// goes back to the library, as when a strategy fails to open from there.
-  Future<bool> _openCloudInPlace(
+  Future<OpenChange> _openCloudInPlace(
     String strategyId,
     NavigatorState navigator,
+    OpenSeen asked,
   ) async {
     final strategies = ref.read(strategyProvider.notifier);
     try {
-      return await strategies.openCloudStrategy(strategyId);
+      return await strategies.openCloud(strategyId, asked: asked);
     } catch (error, stackTrace) {
+      final now = strategies.askedByTheUserNow();
+      final onlyThisOpenSince = now.opens == asked.opens + 1;
       AppErrorReporter.reportWarning(
         'Opening a cloud strategy over the open one failed.',
         source: 'MouseNavigation.openCloudInPlace',
         error: error,
         stackTrace: stackTrace,
       );
-      if (!mounted) return false;
+      if (!mounted) return const GaveWay();
       // Access taken away, or a share link disabled: the editor says which
       // and leads out itself (see StrategyAccessWatcher and StrategyView).
       final failure = ref.read(remoteEditorSnapshotProvider).error;
       if (ref.read(strategyAccessLostProvider) ||
           (failure != null && isShareLinkRevokedError(failure))) {
-        return false;
+        return const GaveWay();
       }
       final notKept = failure is StrategyNotKeptOffline;
       Settings.showToast(
@@ -569,13 +590,18 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
             ? Settings.tacticalVioletTheme.secondary
             : Settings.tacticalVioletTheme.destructive,
       );
-      await strategies.clearCurrentStrategy();
-      if (navigator.mounted &&
-          mouseNavigationRouteObserver.topRoute?.settings.name ==
-              Routes.strategyView) {
-        navigator.pop();
+      if (!onlyThisOpenSince) return const GaveWay();
+      switch (strategies.closeStrategy(asked: now)) {
+        case GaveWay():
+          break;
+        case Changed():
+          if (navigator.mounted &&
+              mouseNavigationRouteObserver.topRoute?.settings.name ==
+                  Routes.strategyView) {
+            navigator.pop();
+          }
       }
-      return false;
+      return const GaveWay();
     }
   }
 

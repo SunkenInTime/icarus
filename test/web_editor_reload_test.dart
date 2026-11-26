@@ -11,6 +11,7 @@ import 'package:icarus/services/open_cloud_strategy_store.dart';
 import 'package:icarus/share/pending_share_code_store.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/editor_toolbar.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -23,6 +24,7 @@ void main() {
       final route = StrategyView.restoredRoute(
         openCloudStrategyId: 'cloud-strategy',
         allowsLocalLibrary: false,
+        asked: const OpenSeen(null, 0),
       )! as PageRouteBuilder<void>;
 
       await tester.pumpWidget(const SizedBox());
@@ -42,6 +44,7 @@ void main() {
         StrategyView.restoredRoute(
           openCloudStrategyId: null,
           allowsLocalLibrary: true,
+          asked: const OpenSeen(null, 0),
         ),
         isNotNull,
       );
@@ -49,6 +52,7 @@ void main() {
         StrategyView.restoredRoute(
           openCloudStrategyId: null,
           allowsLocalLibrary: false,
+          asked: const OpenSeen(null, 0),
         ),
         isNull,
       );
@@ -63,6 +67,7 @@ void main() {
             ? StrategyView.restoredRoute(
                 openCloudStrategyId: null,
                 allowsLocalLibrary: PlatformPolicy.webBeta.allowsLocalLibrary,
+                asked: const OpenSeen(null, 0),
               )
             : null,
       ));

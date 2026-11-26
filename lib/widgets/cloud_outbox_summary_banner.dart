@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
 import 'package:icarus/collab/replay_capture_record.dart';
 import 'package:icarus/const/settings.dart';
@@ -144,7 +145,7 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         for (final strategyId in attentionIds)
           ShadButton.secondary(
             size: ShadButtonSize.sm,
-            onPressed: () => _openStrategy(context, strategyId),
+            onPressed: () => _openStrategy(context, ref, strategyId),
             child: Flexible(
               child: Text(
                 _attentionLabel(
@@ -305,17 +306,17 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
         .clearJobsForStrategy(strategyId);
   }
 
-  void _openStrategy(BuildContext context, String strategyId) {
+  void _openStrategy(BuildContext context, WidgetRef ref, String strategyId) {
     final callback = onOpenStrategy;
     if (callback != null) {
       callback(strategyId);
       return;
     }
-    Navigator.of(context).push(
-      StrategyView.route(
-        initialStrategyId: strategyId,
-        initialStrategySource: StrategySource.cloud,
-      ),
+    StrategyView.open(
+      Navigator.of(context),
+      asked: ref.read(strategyProvider.notifier).askedByTheUserNow(),
+      initialStrategyId: strategyId,
+      initialStrategySource: StrategySource.cloud,
     );
   }
 
