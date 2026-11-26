@@ -8,9 +8,11 @@ import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -48,12 +50,15 @@ Future<void> _stored(String id) async {
       .put(strategy.id, strategy);
 }
 
+final _cloudReady = StateProvider<bool?>((ref) => null);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final strategies = _HeldSaves();
   final container = ProviderContainer(overrides: [
     authProvider.overrideWith(_SignedOut.new),
     strategyProvider.overrideWith(() => strategies),
+    cloudWorkspaceOutcomeProvider.overrideWith((ref) => ref.watch(_cloudReady)),
   ]);
   appProviderContainer = container;
   container.read(strategyProvider);
@@ -180,4 +185,41 @@ void main() {
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
     await leaveEditors(tester, container);
   });
+
+  for (final staleBeforeItsFirstFrame in [true, false]) {
+    testWidgets(
+        staleBeforeItsFirstFrame
+            ? 'a cloud editor whose answer went stale before its first frame '
+                'leaves at once, while the cloud is not ready yet'
+            : 'a cloud editor whose answer went stale while it waited for the '
+                'cloud leaves without saying the strategy failed to load',
+        (tester) async {
+      container.read(_cloudReady.notifier).state = null;
+      await pumpLibraryWithEditors(tester, container);
+      expect(
+        StrategyView.open(
+          appNavigatorKey.currentState!,
+          asked: strategies.askedByTheUserNow(),
+          initialStrategyId: 'cloud-strategy',
+          initialStrategyName: 'cloud-strategy',
+          initialStrategySource: StrategySource.cloud,
+        ),
+        isA<Pushed>(),
+      );
+      if (!staleBeforeItsFirstFrame) await tester.pump();
+      expect(strategies.closeStrategy(asked: strategies.askedByTheUserNow()),
+          isA<Changed>());
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      if (!staleBeforeItsFirstFrame) {
+        container.read(_cloudReady.notifier).state = true;
+        await settleWithDisk(tester);
+      }
+
+      expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
+      expect(find.text('Could not load strategy.'), findsNothing);
+      container.read(_cloudReady.notifier).state = null;
+      await leaveEditors(tester, container);
+    });
+  }
 }

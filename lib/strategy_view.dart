@@ -304,9 +304,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     // means this load gave way to another.
     final openBefore = ref.read(strategyProvider).strategyId;
     try {
+      final LocalOpenChange opened;
       switch (source) {
         case StrategySource.local:
-          await _unlessLeft(
+          opened = await _unlessLeft(
             ref.read(strategyProvider.notifier).openLocal(
                   strategyId,
                   pageId: widget.initialPageId,
@@ -323,7 +324,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             _leaveAfterFailedLoad();
             return;
           }
-          await _unlessLeft(
+          opened = await _unlessLeft(
             ref.read(strategyProvider.notifier).openCloud(
                   strategyId,
                   pageId: widget.initialPageId,
@@ -331,14 +332,17 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 ),
           );
       }
-      final loadedStrategy = ref.read(strategyProvider);
-      if (loadedStrategy.strategyId != strategyId ||
-          loadedStrategy.strategyName == null) {
-        // Giving way to another strategy is not a failed load.
-        if (_gaveWayTo(loadedStrategy.strategyId, openBefore)) return;
-        throw StateError('Strategy "$strategyId" was not found.');
+      switch (opened) {
+        case Changed():
+          _hasInitialLoadCompleted = true;
+        case GaveWay():
+          // Giving way is not a failed load.
+          if (!_gaveWayTo(ref.read(strategyProvider).strategyId, openBefore)) {
+            _leaveAfterFailedLoad();
+          }
+        case Missing():
+          throw StateError('Strategy "$strategyId" was not found.');
       }
-      _hasInitialLoadCompleted = true;
     } on _LeftWhileLoading {
       // The home button works from the first frame; the load went with the
       // editor.

@@ -8,6 +8,7 @@ import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 import 'package:icarus/strategy/open_seen.dart';
 
 const _reportsOfTheTestFontAndTeardown = [
@@ -45,7 +46,8 @@ Future<List<MethodCall>> pumpLibraryWithEditors(
   );
   await tester.pumpWidget(UncontrolledProviderScope(
     container: container,
-    child: ShadApp(
+    child: ToastificationWrapper(
+        child: ShadApp(
       navigatorKey: appNavigatorKey,
       navigatorObservers: [mouseNavigationRouteObserver],
       home: Scaffold(
@@ -55,7 +57,7 @@ Future<List<MethodCall>> pumpLibraryWithEditors(
           return const Text('library');
         }),
       ),
-    ),
+    )),
   ));
   return windowCalls;
 }
