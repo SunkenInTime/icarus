@@ -520,7 +520,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
               await _leaveOpenStrategy(navigator, 'navigateToStrategy', asked);
           if (left == null) return false;
           over = left;
-        } else if (strategyOpen) {
+        } else if (editor != null) {
           // Already in the strategy view; swap strategies in place, exactly
           // like the quick switcher does.
           // An open that gave way to a newer one (or to a close) did not

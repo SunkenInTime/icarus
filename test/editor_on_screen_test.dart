@@ -941,6 +941,38 @@ void main() {
     expect(container.read(strategyProvider).strategyId, 'closed-twice');
     await leaveEditors(tester, container);
   });
+
+  testWidgets(
+      'a share link that arrives while a cloud open with no editor holds its '
+      'first page opens in an editor of its own', (tester) async {
+    await pumpLibraryWithEditors(tester, container);
+    container.read(_cloudReady.notifier).state = true;
+    final firstPage = pages.held['header-shown'] = Completer<void>();
+    addTearDown(() {
+      pages.held.clear();
+      container.read(_cloudReady.notifier).state = null;
+    });
+    OpenChange? headerOpened;
+    unawaited(strategies
+        .openCloud('header-shown', asked: strategies.askedByTheUserNow())
+        .then((change) => headerOpened = change));
+    await untilOpen(tester, 'header-shown');
+    expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
+
+    container.read(sharedStrategyToOpenProvider.notifier).state =
+        'linked-cloud';
+    await settleWithDisk(tester);
+    firstPage.complete();
+    await untilOpen(tester, 'linked-cloud');
+    await settleWithDisk(tester);
+    expect(headerOpened, isA<GaveWay>());
+    await settleWithDisk(tester);
+
+    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
+    expect(mouseNavigationRouteObserver.topRoute?.settings.name,
+        Routes.strategyView);
+    await leaveEditors(tester, container);
+  });
 }
 
 CommunityPost _post(String id) => CommunityPost(

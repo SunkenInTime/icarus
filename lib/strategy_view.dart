@@ -146,16 +146,16 @@ class StrategyView extends ConsumerStatefulWidget {
 
   @useResult
   static OpenSeen? claimInPlace(
-    Route<dynamic>? editor,
+    Route<dynamic> editor,
     StrategyProvider strategies,
     OpenSeen asked,
   ) {
-    final claimed = strategies.claimForAnEditor(asked);
-    if (claimed == null) return null;
-    if (editor?.settings.arguments case final EditorClaim claim) {
-      claim._by = claimed;
+    if (editor.settings.arguments case final EditorClaim claim) {
+      final claimed = strategies.claimForAnEditor(asked);
+      if (claimed != null) claim._by = claimed;
+      return claimed;
     }
-    return claimed;
+    return null;
   }
 
   static PageRoute<void> _communityRoute(

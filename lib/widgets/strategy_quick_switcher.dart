@@ -102,9 +102,9 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
       final strategies = ref.read(strategyProvider.notifier);
       final interaction = ref.read(interactionStateProvider.notifier);
       final agentFilter = ref.read(agentFilterProvider.notifier);
-      if (answer case Leave(:final seen)) {
-        final claimed =
-            StrategyView.claimInPlace(ModalRoute.of(context), strategies, seen);
+      final editor = ModalRoute.of(context);
+      if (answer case Leave(:final seen) when editor != null) {
+        final claimed = StrategyView.claimInPlace(editor, strategies, seen);
         if (claimed == null) return;
         switch (await strategies.openLocal(strategyId, asked: claimed)) {
           case Changed():
