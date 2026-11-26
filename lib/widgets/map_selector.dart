@@ -46,16 +46,23 @@ class _MapSelectorState extends ConsumerState<MapSelector>
   // The list drops in and fades in at full size; closing runs the same
   // motion back, faster, starting fast (DESIGN.md: reverse curves take
   // easeOut.flipped).
-  late final AnimationController _drop = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 200),
-    reverseDuration: const Duration(milliseconds: 150),
-  );
-  late final Animation<double> _shown = CurvedAnimation(
-    parent: _drop,
-    curve: Settings.easeOut,
-    reverseCurve: Settings.easeOut.flipped,
-  );
+  late final AnimationController _drop;
+  late final Animation<double> _shown;
+
+  @override
+  void initState() {
+    super.initState();
+    _drop = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+      reverseDuration: const Duration(milliseconds: 150),
+    );
+    _shown = CurvedAnimation(
+      parent: _drop,
+      curve: Settings.easeOut,
+      reverseCurve: Settings.easeOut.flipped,
+    );
+  }
 
   @override
   void dispose() {
