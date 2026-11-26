@@ -45,6 +45,9 @@ final class MigrationNotRun extends LibraryMigration {
 
 const sameIdTwice = 'another one in this library has the same id';
 
+const storeHoldsALibrary =
+    'the store already holds a library and has no record of a copy';
+
 sealed class _Put {
   const _Put();
 }
@@ -81,20 +84,17 @@ Future<LibraryMigration> migrateLibraryIntoStore(
   required List<Folder> folders,
   DateTime Function() clock = _now,
 }) async {
+  final bool resuming;
   switch (store.migration) {
     case final MigrationFinished record:
       return MigrationWasFinished(record);
     case MigrationUnreadable(:final problem):
       return MigrationRecordUnreadable(problem);
-    case MigrationNotStarted() || MigrationCopying():
-      break;
+    case MigrationCopying():
+      resuming = true;
+    case MigrationNotStarted():
+      resuming = false;
   }
-  final startedAt = clock();
-  if (_stopped(await store.recordMigration(MigrationCopying(startedAt)))
-      case final failure?) {
-    return MigrationStopped(failure);
-  }
-
   final LibraryList list;
   switch (store.library) {
     case LibraryOpen(list: final open):
@@ -102,7 +102,17 @@ Future<LibraryMigration> migrateLibraryIntoStore(
     case LibraryShut(:final failure):
       return MigrationStopped(failure);
   }
-  if (await _emptied(store, list) case final notEmptied?) return notEmptied;
+  if (!resuming && _holdsALibrary(list)) {
+    return const MigrationNotRun(storeHoldsALibrary);
+  }
+  final startedAt = clock();
+  if (_stopped(await store.recordMigration(MigrationCopying(startedAt)))
+      case final failure?) {
+    return MigrationStopped(failure);
+  }
+  if (resuming) {
+    if (await _emptied(store, list) case final notEmptied?) return notEmptied;
+  }
 
   final foldersLeft = <LeftBehind>[];
   final folderIds = <String>{};
@@ -229,6 +239,11 @@ StrategyData pagesInTheirShownOrder(StrategyData strategy) {
       page.copyWith(sortIndex: position),
   ]);
 }
+
+bool _holdsALibrary(LibraryList list) =>
+    list.strategies.any((summary) => summary.sync is KeptHere) ||
+    list.unreadableStrategies.isNotEmpty ||
+    list.folders.isNotEmpty;
 
 Future<LibraryMigration?> _emptied(
   LibraryStore store,

@@ -171,10 +171,11 @@ Future<void> _moveOne(Directory store, Directory root, _Totals totals) async {
     const [LibraryStoreLaunch.storeFlag],
     mayShadow: true,
   );
+  HiveWrites? writes;
   try {
     _useSupportDirectory(scratch);
     await openScratchHive(scratch);
-    final writes = await HiveWrites.watch(scratch);
+    writes = await HiveWrites.watch(scratch);
     totals
       ..stores += 1
       ..strategies += shown.strategies.length
@@ -310,10 +311,10 @@ Future<void> _moveOne(Directory store, Directory root, _Totals totals) async {
     } finally {
       await _close(again);
     }
-    for (final write in await writes.stop()) {
+  } finally {
+    for (final write in await writes?.stop() ?? const <String>[]) {
       problem(write);
     }
-  } finally {
     await Hive.close();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_pathProvider, null);

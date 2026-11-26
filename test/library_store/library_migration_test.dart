@@ -10,6 +10,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
+import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_store/library_migration.dart';
@@ -368,28 +369,56 @@ void main() {
     expect(_contents.equals(storage.contents, before), isTrue);
   });
 
-  test(
-      'a local strategy the store holds and Hive does not, from an earlier '
-      'mirror, is removed so the store holds what Hive holds', () async {
-    await library([strategy('a')]);
-    final storage = MemoryStorage();
-    final earlier = await _open(MemoryEngine(storage));
-    final stale = (strategyToRows(strategy('stale')) as StrategyRowsMade).rows;
-    expect(await earlier.putStrategy(stale), isA<Saved>());
-    await earlier.close();
-    final store = await _open(MemoryEngine(storage));
-    addTearDown(store.close);
+  for (final (what, held) in [
+    (
+      'a local strategy',
+      (LibraryStore store) async {
+        final rows =
+            (strategyToRows(strategy('held')) as StrategyRowsMade).rows;
+        expect(await store.putStrategy(rows), isA<Saved>());
+      }
+    ),
+    (
+      'a folder',
+      (LibraryStore store) async {
+        expect(
+          await store.editLibrary([
+            PutFolder(folderToRow(Folder(
+              name: 'Held',
+              id: 'held-folder',
+              dateCreated: DateTime.utc(2026),
+            ))),
+          ]),
+          isA<Saved>(),
+        );
+      }
+    ),
+  ]) {
+    test(
+        'a store that already holds $what and has no record of a copy is '
+        'left exactly as it was, and the move is not run', () async {
+      await library([strategy('a')]);
+      final hive = _hiveBytes();
+      final storage = MemoryStorage();
+      final earlier = await _open(MemoryEngine(storage));
+      await held(earlier);
+      await earlier.close();
+      final before = storage.contents;
+      final store = await _open(MemoryEngine(storage));
 
-    await _migrate(store);
+      final migration = await _migrate(store);
+      await store.close();
 
-    expect(
-      [
-        for (final summary in (store.library as LibraryOpen).list.strategies)
-          summary.publicId,
-      ],
-      ['a'],
-    );
-  });
+      expect(
+        migration,
+        isA<MigrationNotRun>()
+            .having((notRun) => notRun.why, 'why', storeHoldsALibrary),
+      );
+      expect(_contents.equals(storage.contents, before), isTrue);
+      expect(_hiveBytes(), hive);
+    });
+  }
+
   test(
       'a strategy and folder under a folder that is gone are copied where the '
       'Hive start-up repair puts them, with everything beneath them, and '
