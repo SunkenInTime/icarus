@@ -791,7 +791,7 @@ final class World {
     ).then(
       (opened) => store = switch (opened) {
         StoreOpened(:final store) => store,
-        StoreNotOpened(:final problem) => throw StateError('$problem'),
+        StoreNotOpened(:final problem) => throw StateError(problem.toString()),
       },
     );
     async.flushMicrotasks();
@@ -852,7 +852,7 @@ final class World {
     );
     final header = switch (pageListRead(list)) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError('$problem'),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[id] = StrategyRowSet(
       strategy: header.strategy as ReadableStrategy,
@@ -939,7 +939,7 @@ final class World {
       pageList(serverRows(), more: [secondPage()]),
     )) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError('$problem'),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[strategyId] = server.rows[strategyId]!
         .withRows([...header.pages, ...header.settings]);
@@ -968,7 +968,7 @@ final class World {
       ),
     )) {
       RowsRead(:final value) => value,
-      RowsUnreadable(:final problem) => throw StateError(problem),
+      RowsUnreadable(:final problem) => throw StateError(problem.toString()),
     };
     server.rows[strategyId] = server.rows[strategyId]!
         .withRows([...header.pages, ...header.settings]);
