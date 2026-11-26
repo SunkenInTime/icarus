@@ -714,9 +714,21 @@ String renderTable() {
       'item on it, damaged ones included.',
     )
     ..writeln(
-      '- `taken` is never given a result older than one already taken for the '
-      'same page or the same list. `resultFit` in `lib/src/cloud/queue.dart` '
-      'drops those as `OlderResult` before any row is compared.',
+      '- Every result carries a stamp: the client, the connection, the '
+      'snapshot and the server time. Its order is the session, then the '
+      'client, then the snapshot. `taken` is never given a result older than '
+      'one already taken for the same page or the same list. `resultFit` in '
+      '`lib/src/cloud/queue.dart` drops those as `OlderResult` before any row '
+      'is compared.',
+    )
+    ..writeln(
+      '- A mark advances only with the content applied for its subject; a '
+      'refusal, a dropped result, or a result about another subject moves '
+      'none. A read refusal keeps its own order for its subject: it is '
+      'dropped when it is not newer than the content taken there or is older '
+      'than the last refusal taken, and the first result at a refused point '
+      'is taken. A read refusal replaces only an order owed, and only with '
+      'its own order; any other debt stays as it was.',
     )
     ..writeln()
     ..writeln('## When the stored base disagrees with the queue')
