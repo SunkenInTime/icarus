@@ -1823,7 +1823,6 @@ void _resultsStale(
   _Edit edit,
   PendingOp entry,
   StrategyOp sent,
-  AfterAnswer answeredAt,
 ) {
   final row = targetOf(sent);
   final pages = {
@@ -1838,7 +1837,7 @@ void _resultsStale(
       row is PageTarget ||
       row is SettingsTarget ||
       renumbersPages(sent);
-  edit.shown = edit.shown.touched(pages, list: list, mark: answeredAt);
+  edit.shown = edit.shown.touched(pages, list: list);
   edit.change.lives.addAll({
     ...pages,
     if (list) ...{...edit.shown.pages.keys, ...edit.shown.fresh.listed},
@@ -2516,7 +2515,7 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer, ResultPoint point) {
     edit.orderOf(point),
     serverTime: point.serverTime,
   );
-  _resultsStale(edit, entry, sent.op, answeredAt);
+  _resultsStale(edit, entry, sent.op);
   void landed(int revision, {required int? life, required bool ours}) =>
       _landed(
         edit,
