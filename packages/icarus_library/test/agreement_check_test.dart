@@ -157,6 +157,8 @@ void main() {
       fresh: both.fresh,
       listTaken: both.listTaken,
       pagesTaken: both.pagesTaken,
+      listSaid: both.listSaid,
+      pageSaid: both.pageSaid,
       fence: both.fence,
     );
     expect(

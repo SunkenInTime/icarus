@@ -46,6 +46,8 @@ Shown fromScratch(Shown shown) => Shown(
   fresh: shown.fresh,
   listTaken: shown.listTaken,
   pagesTaken: shown.pagesTaken,
+  listSaid: shown.listSaid,
+  pageSaid: shown.pageSaid,
   fence: shown.fence,
 );
 
