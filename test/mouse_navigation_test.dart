@@ -31,6 +31,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'opens_now_support.dart';
 
+import 'library_rows/generated_strategies.dart';
+
 void main() {
   testWidgets('mouse back does not navigate under an open Shad popover',
       (tester) async {
@@ -572,6 +574,59 @@ void main() {
         }
       });
     }
+
+    testWidgets(
+        'a Back to a post whose read comes back after another strategy '
+        'opened is not recorded as a move, and the next Back goes from that '
+        'strategy to the one before it', (tester) async {
+      await tester.runAsync(() async {
+        if (!Hive.isAdapterRegistered(20)) registerIcarusAdapters(Hive);
+        final stored = await Hive.openBox<StrategyData>(
+          HiveBoxNames.strategiesBox,
+        );
+        await stored.put(
+          'strategy-a',
+          generatedStrategy(Optionals.set)
+              .copyWith(id: 'strategy-a', name: 'strategy-a'),
+        );
+      });
+      final strategies = _UnsavedStrategies();
+      final posts = _HeldPost();
+      final (container, _) =
+          await pumpLibraryReading(tester, strategies, posts);
+      final post = _post('history-post');
+      container.read(communityPostViewProvider.notifier).state = post;
+      strategies.show(post.strategyPublicId, StrategySource.cloud);
+      await tester.pump();
+      container.read(communityPostViewProvider.notifier).state = null;
+      strategies.show('strategy-a', StrategySource.local);
+      await tester.pump();
+
+      Future<void> back(int pointer) async {
+        await tester.sendEventToBinding(PointerDownEvent(
+          pointer: pointer,
+          kind: PointerDeviceKind.mouse,
+          buttons: kBackMouseButton,
+          position: const Offset(400, 300),
+        ));
+        await tester.pump();
+        await tester.pump();
+      }
+
+      await back(1);
+      expect(posts.asked, ['history-post']);
+      strategies.show('strategy-b', StrategySource.local);
+      await tester.pump();
+      posts.release();
+      await tester.pumpAndSettle();
+      expect(strategies.state.strategyId, 'strategy-b');
+
+      await back(2);
+      await tester.pumpAndSettle();
+      expect(strategies.state.strategyId, 'strategy-a');
+      expect(strategies.opened.last, 'local:strategy-a');
+      await tester.pump(const Duration(seconds: 10));
+    });
 
     testWidgets(
         'a link to a removed post that arrives while a dialog is open over '
