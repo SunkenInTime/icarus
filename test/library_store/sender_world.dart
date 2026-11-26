@@ -231,6 +231,18 @@ final class FakeServer {
     return current;
   }
 
+  ResultPoint failedOn(ResultPoint applied) {
+    if (varies == null) return applied;
+    _count(
+      applied.serverTime == null
+          ? 'a failure before the client applied any state'
+          : 'a failure on the last snapshot the client applied',
+    );
+    return applied;
+  }
+
+  ResultPoint failed() => varies == null ? stamp() : failedOn(current);
+
   Future<({int client, int connection})> generation() async =>
       (client: client, connection: _connection);
 
@@ -340,7 +352,7 @@ final class FakeServer {
             (createdAtOf(held.strategy) ?? firstLife) != call.strategyLife) {
       return StoreBatchRefusedWhole(
         BatchRefusal.strategyReplaced,
-        point: stamp(),
+        point: failed(),
         currentLife: createdAtOf(held.strategy) ?? firstLife,
       );
     }
@@ -350,12 +362,12 @@ final class FakeServer {
       case null when asked && call.unchecked.isNotEmpty:
         return StoreBatchOutsideWindow(
           'An unchecked change needs a live basis',
-          point: stamp(),
+          point: failed(),
         );
       case final basis? when basis > now || now - basis > 30000:
         return StoreBatchOutsideWindow(
           'The batch arrived too long after its live basis',
-          point: stamp(),
+          point: failed(),
         );
       case _:
         break;
@@ -392,8 +404,9 @@ final class FakeServer {
 
   static StoreBatchOutcome _answeredAt(
     StoreBatchOutcome outcome,
-    ResultPoint at,
-  ) =>
+    ResultPoint at, {
+    required ResultPoint failedAt,
+  }) =>
       switch (outcome) {
         StoreBatchAnswered(
           :final answers,
@@ -412,15 +425,15 @@ final class FakeServer {
             when point == stampedWhenAnswered =>
           StoreBatchRefusedWhole(
             refusal,
-            point: at,
+            point: failedAt,
             currentLife: currentLife,
           ),
         StoreBatchOutsideWindow(:final why, :final point)
             when point == stampedWhenAnswered =>
-          StoreBatchOutsideWindow(why, point: at),
+          StoreBatchOutsideWindow(why, point: failedAt),
         StoreBatchAccountMismatch(:final why, :final point)
             when point == stampedWhenAnswered =>
-          StoreBatchAccountMismatch(why, point: at),
+          StoreBatchAccountMismatch(why, point: failedAt),
         _ => outcome,
       };
 
@@ -454,8 +467,15 @@ final class FakeServer {
     final queued = _answers[strategyPublicId];
     if (queued != null && queued.isNotEmpty) {
       final answering = queued.removeAt(0)(call);
+      final applied = current;
       final point = stamp();
-      return answering.then((outcome) => _answeredAt(outcome, point));
+      return answering.then(
+        (outcome) => _answeredAt(
+          outcome,
+          point,
+          failedAt: varies == null ? point : failedOn(applied),
+        ),
+      );
     }
     return Future.value(applyAll(call));
   }

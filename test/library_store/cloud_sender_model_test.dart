@@ -116,6 +116,12 @@ final class Model {
     }
   }
 
+  void _refusedOn(Generation stamped) {
+    final now =
+        Generation(client: server.client, connection: server.connection);
+    if (connection != null && !stamped.isBefore(now)) refusedAt = signIns;
+  }
+
   void restart() {
     _readReports();
     world.sender.dispose();
@@ -579,20 +585,26 @@ final class Model {
       case 4:
         server.answerNext(
           strategy,
-          (_) => Future.microtask(() {
-            refusedAt = signIns;
-            return const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
-                point: stampedWhenAnswered);
-          }),
+          (_) {
+            final applied = server.current.generation;
+            return Future.microtask(() {
+              _refusedOn(applied);
+              return const StoreBatchRefusedWhole(BatchRefusal.unauthenticated,
+                  point: stampedWhenAnswered);
+            });
+          },
         );
       case 5:
         server.answerNext(
           strategy,
-          (_) => Future.microtask(() {
-            refusedAt = signIns;
-            return const StoreBatchAccountMismatch('another account',
-                point: stampedWhenAnswered);
-          }),
+          (_) {
+            final applied = server.current.generation;
+            return Future.microtask(() {
+              _refusedOn(applied);
+              return const StoreBatchAccountMismatch('another account',
+                  point: stampedWhenAnswered);
+            });
+          },
         );
       case _:
         final answer = Completer<StoreBatchOutcome>();
@@ -634,26 +646,40 @@ final class Model {
       case 0:
         server.answerReadNext(
           strategy,
-          (_) => Future.microtask(() {
-            refusedAt = signIns;
-            return const StoreReadRefused(
-              StoreReadRefusal.accountMismatch,
-              'another account',
-              point: stampedWhenAnswered,
+          (call) {
+            final read = Generation(
+              client: server.client,
+              connection: server.connection,
             );
-          }),
+            final held = world.holds(call.strategyId);
+            return Future.microtask(() {
+              if (held) _refusedOn(read);
+              return const StoreReadRefused(
+                StoreReadRefusal.accountMismatch,
+                'another account',
+                point: stampedWhenAnswered,
+              );
+            });
+          },
         );
       case 1:
         server.answerReadNext(
           strategy,
-          (_) => Future.microtask(() {
-            refusedAt = signIns;
-            return const StoreReadRefused(
-              StoreReadRefusal.unauthenticated,
-              'signed out',
-              point: stampedWhenAnswered,
+          (call) {
+            final read = Generation(
+              client: server.client,
+              connection: server.connection,
             );
-          }),
+            final held = world.holds(call.strategyId);
+            return Future.microtask(() {
+              if (held) _refusedOn(read);
+              return const StoreReadRefused(
+                StoreReadRefusal.unauthenticated,
+                'signed out',
+                point: stampedWhenAnswered,
+              );
+            });
+          },
         );
       case 2:
         server.answerReadWith(
@@ -1134,6 +1160,8 @@ void main() {
         'a new snapshot at the same time': 750,
         'a second client': 270,
         'time went back on a new connection': 65,
+        'a failure on the last snapshot the client applied': 110,
+        'a failure before the client applied any state': 8,
       }.entries) {
         expect(stampsMade[shape] ?? 0, greaterThan(least), reason: shape);
       }
