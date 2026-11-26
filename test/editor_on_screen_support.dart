@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,12 +12,19 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'package:icarus/strategy/open_seen.dart';
 
-const _reportsOfTheTestFontAndTeardown = [
-  'overflowed',
-  'Cannot get renderObject of inactive element',
-];
+var _appFontsLoaded = false;
 
-FlutterExceptionHandler? _reportedBeforeTheEditor;
+Future<void> _loadAppFonts() async {
+  final manifest =
+      jsonDecode(await rootBundle.loadString('FontManifest.json')) as List;
+  for (final family in manifest.cast<Map<String, dynamic>>()) {
+    final loader = FontLoader(family['family'] as String);
+    for (final font in (family['fonts'] as List).cast<Map<String, dynamic>>()) {
+      loader.addFont(rootBundle.load(font['asset'] as String));
+    }
+    await loader.load();
+  }
+}
 
 late BuildContext libraryContext;
 late WidgetRef libraryRef;
@@ -29,13 +37,10 @@ Future<List<MethodCall>> pumpLibraryWithEditors(
   tester.view.physicalSize = const Size(2560, 1440);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final reported = FlutterError.onError;
-  _reportedBeforeTheEditor = reported;
-  FlutterError.onError = (details) {
-    final text = details.exceptionAsString();
-    if (_reportsOfTheTestFontAndTeardown.any(text.contains)) return;
-    reported?.call(details);
-  };
+  if (!_appFontsLoaded) {
+    await tester.runAsync(_loadAppFonts);
+    _appFontsLoaded = true;
+  }
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
     const MethodChannel('window_manager'),
@@ -85,7 +90,6 @@ Future<void> leaveEditors(
   await tester.pumpWidget(const SizedBox());
   await tester.pump(const Duration(seconds: 30));
   await settleWithDisk(tester);
-  FlutterError.onError = _reportedBeforeTheEditor;
 }
 
 Future<void> closeHive(WidgetTester tester) async {
