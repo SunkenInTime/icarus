@@ -81,22 +81,24 @@ void main() {
       final store = await openCloudStore(engine);
       await recordAll(store, [const AppRestarted(build: build)]);
       final listStart = await beganIn(store);
+      final listSession = await sessionOf(store);
       counts.reset();
       await recordAll(store, [
         BaseArrived(
           headerReadOf(twentyPages()),
-          session: await sessionOf(store),
+          session: listSession,
           from: listStart,
         ),
       ]);
       expect(contentListed(counts), isEmpty);
       expect(counts.commits, 0);
       final pageStart = await beganIn(store);
+      final pageSession = await sessionOf(store);
       counts.reset();
       await recordAll(store, [
         BaseArrived(
           pageReadOf(twentyPages(), 'page-7'),
-          session: await sessionOf(store),
+          session: pageSession,
           from: pageStart,
         ),
       ]);

@@ -359,6 +359,39 @@ void main() {
     expect(await opened.refusalsReported(), hasLength(1));
   });
 
+  test('a result from a source this mode does not take loads no page, even '
+      'one that would disagree', () async {
+    final disk = await addedOnDisk();
+    disk[area]![elementName('page-a', 'e1')] = '{"broken":true}';
+    final opened = await Opened.over(MemoryStorage(disk));
+    await recordAll(opened.store, [const AppRestarted(build: build)]);
+    final session = await sessionOf(opened.store);
+    final listingsBefore = [...opened.counts.entryListings];
+    final recorded = await opened.store.record(testAccount, strategyId, [
+      BaseArrived(
+        pageReadOf(initialRows(), 'page-a'),
+        session: session,
+        from: const LiveResult(),
+      ),
+    ]);
+    final contentListed = [
+      for (final (_, prefix) in opened.counts.entryListings.skip(
+        listingsBefore.length,
+      ))
+        if (prefix.startsWith('content/')) prefix,
+    ];
+    expect(contentListed, isEmpty);
+    expect(
+      savedValue(recorded).outcomes.single,
+      isA<ReportNotApplicable>().having(
+        (outcome) => outcome.why,
+        'why',
+        isA<NotThisModesResults>(),
+      ),
+    );
+    expect(await opened.refusalsReported(), isEmpty);
+  });
+
   test('work the user queued stays on disk as it was and is not sent, and '
       'new work is refused', () async {
     final storage = MemoryStorage();
