@@ -2717,7 +2717,8 @@ Future<void> _run(Map<String, dynamic> step) async {
         final postPublicId =
             communityPostIdFromUri(uri, currentOrigin: currentShareOrigin());
         if (postPublicId != null) {
-          c.read(communityPostToOpenProvider.notifier).state = postPublicId;
+          c.read(communityPostToOpenProvider.notifier).state =
+              PostLinkArrived(postPublicId);
         } else {
           await c
               .read(shareLinkControllerProvider.notifier)

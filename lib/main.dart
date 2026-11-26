@@ -747,7 +747,8 @@ class _MyAppState extends ConsumerState<MyApp> {
           communityPostIdFromUri(uri, currentOrigin: currentShareOrigin());
       if (postPublicId != null) {
         // MouseNavigation opens it, behind the unsaved-changes guard.
-        ref.read(communityPostToOpenProvider.notifier).state = postPublicId;
+        ref.read(communityPostToOpenProvider.notifier).state =
+            PostLinkArrived(postPublicId);
         if (kIsWeb) replaceBrowserUrl(Uri.base.replace(path: '/', query: ''));
         return;
       }

@@ -156,7 +156,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   ProviderSubscription<String?>? _folderSub;
   ProviderSubscription<StrategyState>? _strategySub;
   ProviderSubscription<String?>? _sharedStrategySub;
-  ProviderSubscription<String?>? _communityPostSub;
+  ProviderSubscription<PostToOpen?>? _communityPostSub;
 
   @override
   void initState() {
@@ -183,10 +183,10 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     );
     _communityPostSub = ref.listenManual(
       communityPostToOpenProvider,
-      (_, postPublicId) {
-        if (postPublicId == null) return;
+      (_, post) {
+        if (post == null) return;
         ref.read(communityPostToOpenProvider.notifier).state = null;
-        unawaited(_openCommunityPostLink(postPublicId));
+        unawaited(_openCommunityPostLink(post));
       },
       fireImmediately: true,
     );
@@ -206,12 +206,19 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
 
   /// Opens the post a link names over the Community tab. False when it
   /// didn't open: the user stayed where they were, or the post is gone.
-  Future<bool> _openCommunityPostLink(String postPublicId) async {
-    final arrived = ref.read(strategyProvider.notifier).askedByTheUserNow();
+  Future<bool> _openCommunityPostLink(PostToOpen request) async {
+    final postPublicId = request.postPublicId;
+    final strategies = ref.read(strategyProvider.notifier);
     final navigator = appNavigatorKey.currentState;
     if (navigator == null || !mounted) return false;
-    final left =
-        await _leaveOpenStrategy(navigator, 'openCommunityPost', arrived);
+    final left = await _leaveOpenStrategy(
+      navigator,
+      'openCommunityPost',
+      switch (request) {
+        PostTapped(:final asked) => asked,
+        PostLinkArrived() => strategies.askedByTheUserNow(),
+      },
+    );
     if (left == null) return false;
     ref.read(libraryNavigationProvider).showCommunity();
     // A reviewer sees a hidden post only once the server knows who they
@@ -244,10 +251,16 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       );
       return false;
     }
-    // A strategy opened during the waits above is left the same way, so the
-    // post never opens over work that isn't saved.
-    final leftAgain =
-        await _leaveOpenStrategy(navigator, 'openCommunityPost', left);
+    // A strategy opened during the waits above: a tap gives way to it, and a
+    // link from outside leaves it the same way, asking first about its work.
+    final leftAgain = await _leaveOpenStrategy(
+      navigator,
+      'openCommunityPost',
+      switch (request) {
+        PostTapped() => left,
+        PostLinkArrived() => strategies.askedByTheUserNow(),
+      },
+    );
     if (leftAgain == null) return false;
     return switch (openCommunityPost(
       ref,
@@ -267,6 +280,9 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     String source,
     OpenSeen asked,
   ) async {
+    if (!asked.isNow(ref.read(strategyProvider.notifier).askedByTheUserNow())) {
+      return null;
+    }
     final editor = mouseNavigationRouteObserver.editorRoute;
     final bool strategyOpen = ref.read(strategyProvider).stratName != null;
     if (!strategyOpen && editor == null) return mounted ? asked : null;
@@ -485,7 +501,8 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
 
       case _PostLocation(:final postPublicId):
         // Read again, like a link to it: it may have been taken down since.
-        return await _openCommunityPostLink(postPublicId) && mounted;
+        return await _openCommunityPostLink(PostTapped(postPublicId, asked)) &&
+            mounted;
 
       case _StrategyLocation(:final strategyId, :final source):
         // A Community post's view is the post's own, so a strategy never

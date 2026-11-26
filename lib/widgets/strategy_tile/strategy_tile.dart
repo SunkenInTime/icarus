@@ -536,7 +536,10 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
           child: Text(l10n.communityOpenThePost),
           onPressed: () {
             _closeMenus();
-            ref.read(communityPostToOpenProvider.notifier).state = postPublicId;
+            ref.read(communityPostToOpenProvider.notifier).state = PostTapped(
+              postPublicId,
+              ref.read(strategyProvider.notifier).askedByTheUserNow(),
+            );
           },
         ),
       if (_canShare)

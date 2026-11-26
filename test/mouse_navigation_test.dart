@@ -420,6 +420,43 @@ void main() {
       return container;
     }
 
+    Future<(ProviderContainer, WidgetRef)> pumpLibraryReading(
+      WidgetTester tester,
+      _UnsavedStrategies strategies,
+      CommunityRepository posts,
+    ) async {
+      late WidgetRef libraryRef;
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
+            isCloudWorkspaceAvailableProvider.overrideWithValue(true),
+            strategyProvider.overrideWith(() => strategies),
+            authProvider.overrideWith(_SignedOut.new),
+            communityRepositoryProvider.overrideWithValue(posts),
+          ],
+          child: ToastificationWrapper(
+            child: ShadApp(
+              navigatorKey: appNavigatorKey,
+              navigatorObservers: [mouseNavigationRouteObserver],
+              builder: (context, child) {
+                container = ProviderScope.containerOf(context);
+                return MouseNavigation(child: child!);
+              },
+              home: Scaffold(
+                body: Consumer(builder: (context, ref, _) {
+                  libraryRef = ref;
+                  return const Text('library');
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      return (container, libraryRef);
+    }
+
     Future<(BuildContext, WidgetRef)> openEditor(
       WidgetTester tester,
       _UnsavedStrategies strategies,
@@ -464,7 +501,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Save changes?'), findsOneWidget);
 
-      container.read(communityPostToOpenProvider.notifier).state = 'gone';
+      container.read(communityPostToOpenProvider.notifier).state =
+          const PostLinkArrived('gone');
       await tester.pumpAndSettle();
       expect(find.text('Save changes?'), findsNWidgets(2));
       await tester.tap(find.text("Don't save").last);
@@ -526,35 +564,8 @@ void main() {
         'open over that strategy when its read comes back', (tester) async {
       final strategies = _UnsavedStrategies();
       final posts = _HeldPost();
-      late WidgetRef cardRef;
-      late ProviderContainer container;
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            platformPolicyProvider.overrideWithValue(PlatformPolicy.desktop),
-            isCloudWorkspaceAvailableProvider.overrideWithValue(true),
-            strategyProvider.overrideWith(() => strategies),
-            authProvider.overrideWith(_SignedOut.new),
-            communityRepositoryProvider.overrideWithValue(posts),
-          ],
-          child: ToastificationWrapper(
-            child: ShadApp(
-              navigatorKey: appNavigatorKey,
-              navigatorObservers: [mouseNavigationRouteObserver],
-              builder: (context, child) {
-                container = ProviderScope.containerOf(context);
-                return MouseNavigation(child: child!);
-              },
-              home: Scaffold(
-                body: Consumer(builder: (context, ref, _) {
-                  cardRef = ref;
-                  return const Text('library');
-                }),
-              ),
-            ),
-          ),
-        ),
-      );
+      final (container, cardRef) =
+          await pumpLibraryReading(tester, strategies, posts);
 
       unawaited(openCommunityPostFromCard(cardRef, _post('card-post')));
       await tester.pump();
@@ -570,12 +581,48 @@ void main() {
       await tester.pump();
       final shown = container.read(communityPostViewProvider);
       final top = mouseNavigationRouteObserver.topRoute;
-      while (tester.takeException() != null) {}
 
       expect(top, same(editorRoute));
       expect(shown?.publicId, isNot('card-post'));
       expect(strategies.state.strategyId, 'opened-meanwhile');
     });
+
+    for (final tapped in [true, false]) {
+      testWidgets(
+          tapped
+              ? 'a post tapped in the app whose read comes back after a '
+                  'strategy opened gives way to that strategy'
+              : 'a post linked from outside whose read comes back after a '
+                  'strategy opened leaves that strategy for the post',
+          (tester) async {
+        final strategies = _UnsavedStrategies();
+        final posts = _HeldPost();
+        final (container, _) =
+            await pumpLibraryReading(tester, strategies, posts);
+
+        container.read(communityPostToOpenProvider.notifier).state = tapped
+            ? PostTapped('linked-post', strategies.askedByTheUserNow())
+            : const PostLinkArrived('linked-post');
+        await tester.pump();
+        expect(posts.asked, ['linked-post']);
+        await openEditor(tester, strategies);
+        final editorRoute = mouseNavigationRouteObserver.topRoute;
+
+        posts.release();
+        await tester.pump();
+        await tester.pump();
+
+        if (tapped) {
+          expect(mouseNavigationRouteObserver.topRoute, same(editorRoute));
+          expect(strategies.state.strategyId, 'editor-id');
+          expect(container.read(communityPostViewProvider), isNull);
+        } else {
+          expect(strategies.state.strategyId, isNot('editor-id'));
+          expect(container.read(communityPostViewProvider)?.publicId,
+              'linked-post');
+        }
+      });
+    }
 
     testWidgets(
         'a link to a removed post that arrives while a dialog is open over '
@@ -593,7 +640,7 @@ void main() {
 
       ProviderScope.containerOf(editor)
           .read(communityPostToOpenProvider.notifier)
-          .state = 'gone';
+          .state = const PostLinkArrived('gone');
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 10));
 
