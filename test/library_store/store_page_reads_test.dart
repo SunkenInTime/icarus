@@ -26,6 +26,7 @@ import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/strategy/open_seen.dart' show Missing;
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/local_page_reads.dart';
@@ -913,14 +914,17 @@ void main() {
     ]);
   });
 
-  test('an open of a strategy Hive does not hold records that it failed',
+  test('an open of a strategy Hive does not hold is Missing and reads nothing',
       () async {
     final h = await reading([strategy()]);
 
-    expect(await h.editor.loadFromHive('not-in-hive'), isFalse);
-
     expect(
-        h.loads, ['open failed: Bad state: Strategy not-in-hive not found.']);
+      await h.editor.openLocal('not-in-hive',
+          asked: h.editor.askedByTheUserNow()),
+      isA<Missing>(),
+    );
+
+    expect(h.loads, isEmpty);
   });
 
   test('an open closed before its page is read is recorded as never shown',

@@ -277,26 +277,24 @@ void main() {
   });
 
   test(
-      'an open that gives way to an open of a missing strategy leaves the '
-      'strategy left open and usable', () async {
+      'an open of a missing strategy during another open changes nothing, '
+      'and the other open still opens its strategy, usable', () async {
     final a = stored('superseded-a');
     final b = stored('superseded-b');
     expect(await editor().loadFromHive(a.id), isTrue);
-    final before = agentsSaved(a.id, a.pages[0].id);
 
     final hold = gate.holdNext();
     final opening = editor().loadFromHive(b.id);
     await hold.reached.future;
     expect(await editor().loadFromHive('not-in-the-library'), isFalse);
     hold.released.complete();
-    expect(await opening, isFalse);
+    expect(await opening, isTrue);
 
-    expect(container.read(strategyProvider).strategyId, a.id);
-    expectShows(a.id, a.pages[0].id, 'the superseded open');
-    expect(agentsOnCanvas(), before);
+    expect(container.read(strategyProvider).strategyId, b.id);
+    expectShows(b.id, b.pages[0].id, 'the open that went on');
     expect(editor().isOpening, isFalse);
-    await editor().selectPage(a.pages[1].id);
-    expect(activePage(), a.pages[1].id);
+    await editor().selectPage(b.pages[1].id);
+    expect(activePage(), b.pages[1].id);
   });
 
   test(

@@ -2097,6 +2097,26 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'closeWindow':
       await windowManager.close();
       await _frames();
+    case 'openTwice':
+      for (final name in (value as List).cast<String>()) {
+        final strategy = const LocalLibrary()
+            .storedStrategies
+            .firstWhere((stored) => stored.name == name);
+        switch (StrategyView.open(
+          appNavigatorKey.currentState!,
+          asked: c.read(strategyProvider.notifier).askedByTheUserNow(),
+          initialStrategyId: strategy.id,
+          initialStrategyName: strategy.name,
+          initialStrategySource: StrategySource.local,
+          initialMapValue: strategy.mapData,
+        )) {
+          case Pushed():
+            break;
+          case Refused():
+            throw StateError('the editor for $name was refused');
+        }
+      }
+      await _frames();
     case 'hoverAt':
       await _hover(_point(step, name));
     case 'tapWords':
