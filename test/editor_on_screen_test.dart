@@ -11,6 +11,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/widgets/mouse_navigation.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/collab/community_models.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -296,4 +299,45 @@ void main() {
     );
     await leaveEditors(tester, container);
   });
+
+  testWidgets(
+      'a Community post push moves the count at once, and a second post '
+      'asked about what was open before it is refused and adds no route',
+      (tester) async {
+    container.read(_cloudReady.notifier).state = null;
+    await pumpLibraryWithEditors(tester, container);
+    final navigator = appNavigatorKey.currentState!;
+    final asked = strategies.askedByTheUserNow();
+
+    expect(
+      StrategyView.openPost(navigator, _post('first-post'), asked: asked),
+      isA<Pushed>(),
+    );
+    expect(asked.isNow(strategies.askedByTheUserNow()), isFalse);
+    final top = mouseNavigationRouteObserver.topRoute;
+    expect(
+      StrategyView.openPost(navigator, _post('second-post'), asked: asked),
+      isA<Refused>(),
+    );
+    expect(mouseNavigationRouteObserver.topRoute, same(top));
+
+    await tester.pump();
+    await leaveEditors(tester, container);
+  });
 }
+
+CommunityPost _post(String id) => CommunityPost(
+      publicId: id,
+      title: id,
+      map: MapValue.ascent,
+      side: CommunitySide.attack,
+      agents: const [],
+      authorName: null,
+      authorAvatarUrl: null,
+      starCount: 0,
+      pageCount: 1,
+      lineupCount: 0,
+      publishedAt: DateTime.utc(2026, 1, 1),
+      strategyPublicId: '$id-strategy',
+      shareToken: '$id-token',
+    );
