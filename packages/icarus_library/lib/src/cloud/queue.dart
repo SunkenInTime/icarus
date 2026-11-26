@@ -1029,6 +1029,13 @@ final class OlderResult extends Inapplicable {
       'a result read before one already taken, or of an earlier life';
 }
 
+final class SameResult extends Inapplicable {
+  const SameResult();
+
+  @override
+  String toString() => 'a refusal at the point of the result already taken';
+}
+
 final class NothingSetAsideToDiscard extends Inapplicable {
   const NothingSetAsideToDiscard();
 
@@ -1516,17 +1523,43 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         requestedAt: requestedAt,
         requestedIn: session,
       );
+      if (edit.shown.fence case final fence?
+          when refused.order.isBefore(fence)) {
+        return NotApplicable(queue, const StartedInAnotherLife());
+      }
+      if (edit.shown.contentTakenOf(page) case final taken?
+          when !taken.isBefore(refused.order)) {
+        return NotApplicable(
+          queue,
+          taken == refused.order ? const SameResult() : const OlderResult(),
+        );
+      }
+      if (edit.shown.refusedAtOf(page) case final earlier?
+          when refused.order.isBefore(earlier)) {
+        return NotApplicable(queue, const OlderResult());
+      }
       final since = switch (switch (page) {
         final page? => edit.shown.pageRead(page),
         null => edit.shown.list,
       }) {
-        ReadOwed(since: final owed) ||
-        ReadRefused(since: final owed) when !owed.paidBy(refused, null) => owed,
-        _ => ResultAtOrAfter(refused.order),
+        ReadOwed(since: ResultAtOrAfter() && final owed) ||
+        ReadRefused(
+          since: ResultAtOrAfter() && final owed,
+        ) when !owed.paidBy(refused, null) => owed,
+        ReadOwed(since: ResultAtOrAfter()) ||
+        ReadRefused(since: ResultAtOrAfter()) ||
+        NotReadThisSession() ||
+        ReadThisSession() => ResultAtOrAfter(refused.order),
+        ReadOwed(since: final owed) || ReadRefused(since: final owed) => owed,
       };
       edit.shown = switch (page) {
-        final page? => edit.shown.pageRefused(page, problem, since),
-        null => edit.shown.listRefused(problem, since),
+        final page? => edit.shown.pageRefused(
+          page,
+          problem,
+          since,
+          at: refused.order,
+        ),
+        null => edit.shown.listRefused(problem, since, at: refused.order),
       };
       return edit.done();
     case EditOfAnotherLife(edit: final change, :final madeOn):

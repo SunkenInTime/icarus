@@ -711,9 +711,12 @@ final class Shown {
     Freshness? fresh,
     this.listTaken,
     Map<String, ResultOrder> pagesTaken = const {},
+    this.listRefusedAt,
+    Map<String, ResultOrder> pagesRefusedAt = const {},
     this.fence,
   }) : fresh = fresh ?? Freshness.none,
        pagesTaken = Map.unmodifiable(pagesTaken),
+       pagesRefusedAt = Map.unmodifiable(pagesRefusedAt),
        pageReads = Map.unmodifiable({
          for (final MapEntry(:key, :value) in pageReads.entries)
            if (value is! NotReadThisSession) key: value,
@@ -798,6 +801,8 @@ final class Shown {
   final Map<String, ReadState> pageReads;
   final ResultOrder? listTaken;
   final Map<String, ResultOrder> pagesTaken;
+  final ResultOrder? listRefusedAt;
+  final Map<String, ResultOrder> pagesRefusedAt;
   final ResultOrder? fence;
 
   PaidBy? owedBy(ArrivedBase result) => switch (switch (result) {
@@ -824,6 +829,8 @@ final class Shown {
     fresh: fresh,
     listTaken: listTaken ?? after.listTaken,
     pagesTaken: {...after.pagesTaken, ...pagesTaken},
+    listRefusedAt: listRefusedAt ?? after.listRefusedAt,
+    pagesRefusedAt: {...after.pagesRefusedAt, ...pagesRefusedAt},
     fence: fence,
   );
 
@@ -832,6 +839,12 @@ final class Shown {
     PageRead(:final page) => pagesTaken[page.publicId],
     PageGone(:final pagePublicId) => pagesTaken[pagePublicId],
   };
+
+  ResultOrder? contentTakenOf(String? page) =>
+      page == null ? listTaken : pagesTaken[page];
+
+  ResultOrder? refusedAtOf(String? page) =>
+      page == null ? listRefusedAt : pagesRefusedAt[page];
 
   int? get strategyRevision => strategy?.revision;
 
@@ -901,10 +914,14 @@ final class Shown {
     Map<Target, ShownRow>? rows,
     ResultOrder? listTaken,
     Map<String, ResultOrder>? pagesTaken,
+    ResultOrder? listRefusedAt,
+    Map<String, ResultOrder>? pagesRefusedAt,
     ShownRow? strategy,
   }) => Shown(
     listTaken: listTaken ?? this.listTaken,
     pagesTaken: pagesTaken ?? this.pagesTaken,
+    listRefusedAt: listRefusedAt ?? this.listRefusedAt,
+    pagesRefusedAt: pagesRefusedAt ?? this.pagesRefusedAt,
     fence: fence,
     fresh: fresh ?? this.fresh,
     list: list ?? this.list,
@@ -1015,6 +1032,8 @@ final class Shown {
           for (final MapEntry(:key, :value) in pagesTaken.entries)
             if (listedIds.contains(key)) key: value,
         },
+        listRefusedAt: listRefusedAt,
+        pagesRefusedAt: pagesRefusedAt,
         fresh: fresh.afterList(live),
         list: switch ((list, createdAtOf(strategyRow))) {
           (final owed, _) when !paidBy(owed, arrival, result) => owed,
@@ -1099,20 +1118,28 @@ final class Shown {
     },
   );
 
-  Shown listRefused(String problem, PaidBy since) => _with(
-    list: ReadRefused(
-      problem,
-      unlessLife: switch (list) {
-        ReadOwed(:final unlessLife) ||
-        ReadRefused(:final unlessLife) => unlessLife,
-        NotReadThisSession() || ReadThisSession() => null,
-      },
-      namedLife: namedLifeOf(list),
-      since: since,
-    ),
-  );
+  Shown listRefused(String problem, PaidBy since, {required ResultOrder at}) =>
+      _with(
+        listRefusedAt: at,
+        list: ReadRefused(
+          problem,
+          unlessLife: switch (list) {
+            ReadOwed(:final unlessLife) ||
+            ReadRefused(:final unlessLife) => unlessLife,
+            NotReadThisSession() || ReadThisSession() => null,
+          },
+          namedLife: namedLifeOf(list),
+          since: since,
+        ),
+      );
 
-  Shown pageRefused(String page, String problem, PaidBy since) => _with(
+  Shown pageRefused(
+    String page,
+    String problem,
+    PaidBy since, {
+    required ResultOrder at,
+  }) => _with(
+    pagesRefusedAt: {...pagesRefusedAt, page: at},
     pageReads: {
       ...pageReads,
       page: ReadRefused(problem, since: since),
@@ -1255,10 +1282,15 @@ final class Shown {
       other.fresh == fresh &&
       other.list == list &&
       other.listTaken == listTaken &&
+      other.listRefusedAt == listRefusedAt &&
       other.fence == fence &&
       const MapEquality<String, ResultOrder>().equals(
         other.pagesTaken,
         pagesTaken,
+      ) &&
+      const MapEquality<String, ResultOrder>().equals(
+        other.pagesRefusedAt,
+        pagesRefusedAt,
       ) &&
       const MapEquality<String, ReadState>().equals(
         other.pageReads,

@@ -294,8 +294,8 @@ void main() {
       expect(client.queue.shown.strategy?.life, laterLife);
     });
 
-    test('a refused read that would not have paid the debt leaves it as it '
-        'was', () {
+    test('a refused read leaves a refusal debt as it was, whether or not it '
+        'would have paid it', () {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
@@ -315,10 +315,7 @@ void main() {
       );
       expect((client.queue.shown.list as ReadRefused).since, owed);
       client.must(client.readRefused(null, 'unreadable'));
-      expect(
-        (client.queue.shown.list as ReadRefused).since,
-        isA<ResultAtOrAfter>(),
-      );
+      expect((client.queue.shown.list as ReadRefused).since, owed);
     });
   });
 
