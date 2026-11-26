@@ -165,6 +165,8 @@ final class Scenario {
 
   void deletePage(String page) => write(withoutPage(now.rows, page));
 
+  void restorePage(StrategyRowSet before) => write(before);
+
   void deleteStrategy() => write(now.rows, exists: false);
 
   void reconnect() {
@@ -220,7 +222,7 @@ final class Scenario {
         read(page);
         read(null);
         if (random.nextBool()) read(livePages.first);
-      case _:
+      case 4:
         teammateWrites(page);
         if (random.nextBool()) {
           deletePage(livePages.firstWhere((other) => other != page));
@@ -231,11 +233,23 @@ final class Scenario {
         deleteStrategy();
         read(null);
         read(page);
+      case _:
+        if (random.nextBool()) teammateWrites(page);
+        read(null);
+        final before = now.rows;
+        deletePage(page);
+        if (random.nextBool()) read(null);
+        read(page);
+        if (random.nextInt(4) == 0) reconnect();
+        restorePage(before);
+        if (random.nextBool()) teammateWrites(page);
+        read(page);
+        read(null);
     }
   }
 }
 
-const families = 5;
+const families = 6;
 
 final class Reference {
   Reference(ServerState first, this.held)
@@ -325,7 +339,6 @@ final class Reference {
     listOwedFrom = null;
     listed = livePagesOf(read.state.rows);
     content.removeWhere((page, _) => !listed.contains(page));
-    pageTakenAt.removeWhere((page, _) => !listed.contains(page));
     listFreshSinceSession = true;
   }
 
@@ -412,6 +425,30 @@ void countCases(List<Fact> order) {
           count('a newer page-gone before a delayed older live page read');
         case (StrategyGone(), HeaderRead()):
           count('a newer strategy-gone before a delayed older live list');
+        case _:
+          break;
+      }
+    }
+  }
+  bool lists(ReadFact read, String page) => switch (read.base) {
+    HeaderRead(:final pages) => pages.any(
+      (row) => row is LivePage && row.publicId == page,
+    ),
+    _ => false,
+  };
+  for (var i = 0; i < reads.length; i++) {
+    for (var j = i + 1; j < reads.length; j++) {
+      final (first, late) = (reads[i], reads[j]);
+      if (first.run != late.run || late.state.index >= first.state.index) {
+        continue;
+      }
+      switch ((first.base, late.base)) {
+        case (PageRead(:final page), HeaderRead())
+            when !lists(late, page.publicId):
+          count('an older list leaving a page out after a newer read of it');
+        case (HeaderRead(), PageGone(:final pagePublicId))
+            when lists(first, pagePublicId):
+          count('an older page-gone after a newer list showing the page');
         case _:
           break;
       }
@@ -546,8 +583,9 @@ void main() {
   );
   test('reads delivered in every order end where a model of the server says: '
       'per-subject order and sessions, the newest list decides which pages '
-      'exist, a page read the list does not show owes the list, and a page '
-      'gone not older than its page removes it', () {
+      'exist without touching any page\'s own order, a page read the list '
+      'does not show owes the list, and a page gone not older than its page '
+      'removes it', () {
     var checked = 0;
     for (final seed
         in one == null
@@ -590,13 +628,15 @@ void main() {
 }
 
 const floors = {
-  'a late older read after a newer one': 6500,
-  'a newer page-gone before a delayed older live page read': 2200,
+  'a late older read after a newer one': 25000,
+  'a newer page-gone before a delayed older live page read': 2000,
   'a newer strategy-gone before a delayed older live list': 770,
-  'a read from before a restart delivered after it': 1200,
-  'a stamp from a later connection before its reconnect event': 2450,
-  'a read from an earlier connection after a reconnect event': 1450,
-  'orders with a page gone': 4450,
+  'a read from before a restart delivered after it': 1100,
+  'a stamp from a later connection before its reconnect event': 7000,
+  'a read from an earlier connection after a reconnect event': 6500,
+  'orders with a page gone': 14000,
   'orders with the strategy gone': 1500,
-  'orders with two reads of one snapshot': 5250,
+  'orders with two reads of one snapshot': 10500,
+  'an older list leaving a page out after a newer read of it': 4300,
+  'an older page-gone after a newer list showing the page': 5000,
 };

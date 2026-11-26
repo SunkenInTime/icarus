@@ -783,6 +783,22 @@ final class SessionOpened extends QueueEffect {
   String toString() => 'SessionOpened($session)';
 }
 
+final class ReportSameOrderDiffers extends QueueEffect {
+  const ReportSameOrderDiffers(this.page);
+
+  final String? page;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReportSameOrderDiffers && other.page == page;
+
+  @override
+  int get hashCode => Object.hash(ReportSameOrderDiffers, page);
+
+  @override
+  String toString() => 'ReportSameOrderDiffers(${page ?? 'the page list'})';
+}
+
 final class ReportReplacedWithoutLife extends QueueEffect {
   const ReportReplacedWithoutLife(this.attempt);
 
@@ -1033,7 +1049,7 @@ final class SameResult extends Inapplicable {
   const SameResult();
 
   @override
-  String toString() => 'a refusal at the point of the result already taken';
+  String toString() => 'a result at the point of one already taken';
 }
 
 final class NothingSetAsideToDiscard extends Inapplicable {
@@ -1709,7 +1725,7 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
   return edit.done();
 }
 
-enum ResultFit { applies, adopts, listFirst, older, startedInAnotherLife }
+enum ResultFit { applies, adopts, listFirst, same, older, startedInAnotherLife }
 
 ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   final held = shown.strategy?.life;
@@ -1717,8 +1733,8 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
     return ResultFit.startedInAnotherLife;
   }
   if (shown.takenFor(base) case final taken?
-      when arrival.order.isBefore(taken)) {
-    return ResultFit.older;
+      when !taken.isBefore(arrival.order)) {
+    return taken == arrival.order ? ResultFit.same : ResultFit.older;
   }
   if (shown.owedBy(base) case final owed? when !owed.paidBy(arrival, base)) {
     return ResultFit.older;
@@ -1752,6 +1768,12 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   };
 }
 
+String? _subjectOf(ArrivedBase base) => switch (base) {
+  HeaderRead() || StrategyGone() => null,
+  PageRead(:final page) => page.publicId,
+  PageGone(:final pagePublicId) => pagePublicId,
+};
+
 int? _refusedLife(ReadState list) => switch (list) {
   ReadOwed(:final unlessLife) || ReadRefused(:final unlessLife) => unlessLife,
   NotReadThisSession() || ReadThisSession() => null,
@@ -1761,6 +1783,18 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   switch (resultFit(edit.shown, base, arrival)) {
     case ResultFit.older:
       return NotApplicable(edit.original, const OlderResult());
+    case ResultFit.same:
+      final again = edit.shown.taken(base, arrival: arrival).shown;
+      if (!again.sameContentAs(edit.shown)) {
+        edit.effects.add(ReportSameOrderDiffers(_subjectOf(base)));
+        return edit.done();
+      }
+      final paid = edit.shown.paidAgain(again);
+      if (paid == edit.shown) {
+        return NotApplicable(edit.original, const SameResult());
+      }
+      edit.shown = paid;
+      return edit.done();
     case ResultFit.startedInAnotherLife:
       return NotApplicable(edit.original, const StartedInAnotherLife());
     case ResultFit.listFirst:

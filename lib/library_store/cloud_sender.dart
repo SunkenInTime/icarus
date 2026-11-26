@@ -1074,13 +1074,8 @@ final class CloudSender {
         }
     }
     if (disposed) return const _Ended();
-    switch (outcome) {
-      case StoreReadLost(failure: TransportFailure.timeout):
-        _unanswered['$id $read'] = snap.connection;
-      case StoreReadAnswered() || StoreReadRefused() || StoreReadUnreadable():
-        _unanswered.remove('$id $read');
-      case StoreReadLost():
-        break;
+    if (outcome case StoreReadLost(failure: TransportFailure.timeout)) {
+      _unanswered['$id $read'] = snap.connection;
     }
     if (_inputs != snap) {
       _note(

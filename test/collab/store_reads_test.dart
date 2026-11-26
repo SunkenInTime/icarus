@@ -10,8 +10,19 @@ import 'package:icarus_library/icarus_library.dart';
 
 import 'strategy_copy_fixtures.dart';
 
-const _stamp =
-    ResultStamp(client: 2, connection: 3, snapshot: 41, serverTime: 4100);
+const _stamp = ResultStamp(
+  client: 2,
+  connection: 3,
+  snapshot: 41,
+  serverTime: 1795435204780123456,
+);
+
+const _point = ResultPoint(
+  client: 2,
+  connection: 3,
+  snapshot: 41,
+  serverTime: 1795435204780123456,
+);
 
 final class _Reading implements StampedConvexTransport {
   final queries = <(String, Map<String, Object?>)>[];
@@ -94,7 +105,7 @@ void main() {
     expect(args['strategyPublicId'], strategy);
     expect(args['clientProtocolVersion'], isNotNull);
     final answered = outcome as StoreReadAnswered;
-    expect(answered.point, pointOf(_stamp));
+    expect(answered.point, _point);
     expect(answered.role, StoreReadRole.owner);
     expect(answered.role!.edits, isTrue);
     final header = answered.base as HeaderRead;
@@ -180,7 +191,7 @@ void main() {
         .having((outcome) => outcome.failure, 'failure', failure);
     Matcher gone(Matcher base) => isA<StoreReadAnswered>()
         .having((outcome) => outcome.base, 'base', base)
-        .having((outcome) => outcome.point, 'point', pointOf(_stamp));
+        .having((outcome) => outcome.point, 'point', _point);
 
     expect(
       await list('ACCOUNT_MISMATCH'),

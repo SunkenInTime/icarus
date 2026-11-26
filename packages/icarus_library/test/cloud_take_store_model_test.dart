@@ -106,28 +106,55 @@ Future<Counts> runSeed(int seed, int steps) async {
   }
   void count(String what) => applied[what] = (applied[what] ?? 0) + 1;
   final sources = <int, ReadAsked>{};
+  final withheld = <(ServerResult, ReadAsked)>[];
   ReadAsked? lastFresh;
+  String? lastSubject;
   var lastPage = 0;
   var lastList = 0;
+  String? subjectOf(ArrivedBase base) => switch (base) {
+    PageRead(:final page) => page.publicId,
+    PageGone(:final pagePublicId) => pagePublicId,
+    HeaderRead() || StrategyGone() => null,
+  };
   for (var step = 0; step < steps; step++) {
-    if (server.random.nextBool()) server.change();
-    final result = server.random.nextInt(6) == 0
-        ? server.pageList()
-        : server.read();
-    final tie =
-        !result.stale && lastFresh != null && server.random.nextInt(5) == 0;
+    final changed = server.random.nextBool();
+    if (changed) server.change();
+    final ServerResult result;
     final ReadAsked asked;
-    if (result.stale) {
-      asked = sources[result.read]!;
-    } else if (tie) {
-      asked = lastFresh;
-      count('started with the read before it');
+    final bool late;
+    if (withheld.isNotEmpty && server.random.nextInt(3) == 0) {
+      (result, asked) = withheld.removeAt(
+        server.random.nextInt(withheld.length),
+      );
+      late = true;
     } else {
-      asked = await askedIn(stores.first);
-    }
-    if (!result.stale) {
-      lastFresh = asked;
-      sources[result.read] = asked;
+      result = server.random.nextInt(6) == 0
+          ? server.pageList()
+          : server.read();
+      late = false;
+      final tie =
+          !result.stale &&
+          !changed &&
+          lastFresh != null &&
+          subjectOf(result.base) != lastSubject &&
+          server.random.nextInt(5) == 0;
+      if (result.stale) {
+        asked = sources[result.read]!;
+      } else if (tie) {
+        asked = lastFresh;
+        count('started with the read before it');
+      } else {
+        asked = await askedIn(stores.first);
+      }
+      if (!result.stale) {
+        lastFresh = asked;
+        lastSubject = subjectOf(result.base);
+        sources[result.read] = asked;
+        if (server.random.nextInt(5) == 0) {
+          withheld.add((result, asked));
+          continue;
+        }
+      }
     }
     final from = [asked, asked];
     final queue = (await syncOf(stores.first)).queue;
@@ -154,15 +181,19 @@ Future<Counts> runSeed(int seed, int steps) async {
     );
     expect(kept, scratch, reason: 'seed $seed step $step');
     if (fits == ResultFit.older) count('dropped as older');
+    if (fits == ResultFit.same) count('the same result again');
     if (fits == ResultFit.applies || fits == ResultFit.adopts) {
       for (final what in result.cases) {
         count(what);
       }
+      if (late) {
+        count(result.base is HeaderRead ? 'late list' : 'late read');
+      }
       observed.see(result.base);
       switch (result.base) {
-        case HeaderRead() when result.stale && lastPage > result.read:
+        case HeaderRead() when late && lastPage > result.read:
           count('older list after a newer page');
-        case PageRead() when result.stale && lastList > result.read:
+        case PageRead() when late && lastList > result.read:
           count('older page after a newer list');
         case _:
           break;
@@ -175,7 +206,7 @@ Future<Counts> runSeed(int seed, int steps) async {
         case StrategyGone():
           break;
       }
-      if (!result.stale) {
+      if (!result.stale && !late) {
         await expectWhatTheServerSent(
           stores.first,
           result.base,
@@ -252,9 +283,10 @@ void main() {
       'page trashed',
       'page restored',
       'trashed page read',
-      'stale read',
+      'late read',
       'rows left out of a read',
-      'stale list',
+      'late list',
+      'the same result again',
       'purged',
       'added',
       'older list after a newer page',

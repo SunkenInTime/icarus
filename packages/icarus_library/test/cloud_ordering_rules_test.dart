@@ -98,6 +98,18 @@ ResultOrder orderAt(int snapshot, {int session = 3, int client = 1}) =>
 PageRead pageA([StrategyRowSet? rows]) =>
     pageReadOf(rows ?? initialRows(), 'page-a') as PageRead;
 
+HeaderRead listWithout(StrategyRowSet rows, String page) => HeaderRead(
+  strategy: rows.strategy,
+  pages: [
+    for (final row in rows.pages)
+      if (row.publicId != page) row,
+  ],
+  settings: [
+    for (final row in rows.settings)
+      if (row.pagePublicId != page) row,
+  ],
+);
+
 void main() {
   group('a session opened by a stamp survives', () {
     test('an answer for no attempt still opens the session its later '
@@ -116,13 +128,39 @@ void main() {
       expect(client.queue.session.generation, pointAt(5, later: 1).generation);
     });
 
-    test('a result older than one taken still opens the session of its '
-        'later connection', () {
+    test('a result on a later connection opens that connection\'s session '
+        'and is taken there', () {
       final client = connectedOn();
       client.must(arrivalAt(client, pageA(), pointAt(20)));
       final before = client.queue.session.number;
       client.must(arrivalAt(client, pageA(), pointAt(30, later: 1)));
       expect(client.queue.session.number, greaterThan(before));
+      expect(
+        client.queue.shown.pagesTaken['page-a'],
+        client.queue.session.orderOf(pointAt(30, later: 1)),
+      );
+    });
+
+    test('client 0 on a reconnect is no connection: it opens nothing, and a '
+        'real reconnect after it does', () {
+      final client = connectedOn();
+      client.must(const AppRestarted(build: build));
+      expect(client.queue.session.generation, isNull);
+      final session = client.queue.session;
+      client.effects.clear();
+      expect(
+        notApplicable(
+          client.step(
+            const ConnectionReturned(Generation(client: 0, connection: 4)),
+          ),
+        ),
+        isA<ConnectionAlreadyEnded>(),
+      );
+      expect(client.queue.session, session);
+      expect(client.effects.whereType<SessionOpened>(), isEmpty);
+      client.must(ConnectionReturned(pointAt(1, later: 1).generation));
+      expect(client.queue.session.number, greaterThan(session.number));
+      expect(client.effects.whereType<SessionOpened>(), hasLength(1));
     });
 
     test('every page of an add is taken when the pages come from a later '
@@ -191,6 +229,132 @@ void main() {
         expect(client.queue.shown.pagesTaken['page-a']?.client, 2);
       },
     );
+  });
+
+  group('a page keeps its own order whatever lists do', () {
+    test('a list that leaves the page out keeps its taken order, so a later '
+        'list restoring it does not let an older page-gone remove it', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(10)));
+      client.must(arrivalAt(client, pageA(), pointAt(30)));
+      client.must(
+        arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(20)),
+      );
+      expect(client.queue.shown.pagesTaken['page-a'], isNotNull);
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(31)));
+      expect(
+        notApplicable(
+          client.step(arrivalAt(client, const PageGone('page-a'), pointAt(21))),
+        ),
+        isA<OlderResult>(),
+      );
+      expect(client.queue.shown.pages.keys, contains('page-a'));
+    });
+  });
+
+  group('equal order is the same answer', () {
+    test('a repeat of the same stamped payload takes nothing and decides no '
+        'row, for a page and for the list', () {
+      for (final read in [pageA(), headerReadOf(initialRows())]) {
+        final client = connectedOn();
+        client.must(arrivalAt(client, read, pointAt(22)));
+        final before = client.queue;
+        expect(
+          notApplicable(client.step(arrivalAt(client, read, pointAt(22)))),
+          isA<SameResult>(),
+          reason: '$read',
+        );
+        expect(client.queue, same(before), reason: '$read');
+      }
+    });
+
+    test('a repeat that pays a debt pays it, and still takes nothing and '
+        'decides no row', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, pageA(), pointAt(12)));
+      client.edit(movePatch('move', x: 40));
+      final attempt = client.claim(['move']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'move',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+          point: pointAt(12),
+        ),
+      );
+      final owed =
+          (client.queue.shown.pageRead('page-a') as ReadOwed).since
+              as AfterRefusal;
+      final step = client.step(
+        arrivalAt(client, pageA(), pointAt(12), requestedAt: owed.step),
+      );
+      expect(
+        step,
+        isA<Stepped>()
+            .having((step) => step.tookResult, 'took a result', isFalse)
+            .having((step) => step.decisions, 'decisions', isEmpty),
+      );
+      expect(step.queue.shown.pageRead('page-a'), const ReadThisSession());
+    });
+
+    test('a result at the point of one taken that holds other content is '
+        'reported and changes nothing, for a page and for the list', () {
+      final moved = withOp(initialRows(), movePatch('t', x: 9));
+      final renamed = withOp(
+        initialRows(),
+        const StrategyPatchOp(
+          opId: 't',
+          expectedStrategyRevision: 1,
+          name: 'Theirs',
+        ),
+      );
+      for (final (first, second, subject) in [
+        (pageA(), pageA(moved), 'page-a'),
+        (headerReadOf(initialRows()), headerReadOf(renamed), null),
+      ]) {
+        final client = connectedOn();
+        client.must(arrivalAt(client, first, pointAt(22)));
+        final before = client.queue.shown;
+        client.effects.clear();
+        client.must(arrivalAt(client, second, pointAt(22)));
+        expect(
+          client.effects,
+          contains(ReportSameOrderDiffers(subject)),
+          reason: '$subject',
+        );
+        expect(client.queue.shown, before, reason: '$subject');
+      }
+    });
+
+    test('a causal repeat at the taken order pays the refusal debt it would '
+        'have paid', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, pageA(), pointAt(12)));
+      client.edit(movePatch('move', x: 40));
+      final attempt = client.claim(['move']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'move',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+          point: pointAt(12),
+        ),
+      );
+      final owed =
+          (client.queue.shown.pageRead('page-a') as ReadOwed).since
+              as AfterRefusal;
+      client.must(
+        arrivalAt(client, pageA(), pointAt(12), requestedAt: owed.step),
+      );
+      expect(client.queue.shown.pageRead('page-a'), const ReadThisSession());
+      expect(stateIn(client, 'move'), isA<NeedsUser>());
+    });
   });
 
   group('a refusal is ordered like a result', () {

@@ -1028,10 +1028,7 @@ final class Shown {
       Shown(
         fence: fence,
         listTaken: arrival?.order ?? listTaken,
-        pagesTaken: {
-          for (final MapEntry(:key, :value) in pagesTaken.entries)
-            if (listedIds.contains(key)) key: value,
-        },
+        pagesTaken: pagesTaken,
         listRefusedAt: listRefusedAt,
         pagesRefusedAt: pagesRefusedAt,
         fresh: fresh.afterList(live),
@@ -1145,6 +1142,17 @@ final class Shown {
       page: ReadRefused(problem, since: since),
     },
   );
+
+  bool sameContentAs(Shown other) =>
+      other.strategy == strategy &&
+      sameMap(other.pages, pages) &&
+      sameMap(other.trashed, trashed) &&
+      sameMap(other.settings, settings) &&
+      const DeepCollectionEquality().equals(other.content, content) &&
+      sameMap(other.rows, rows);
+
+  Shown paidAgain(Shown again) =>
+      _with(list: again.list, pageReads: again.pageReads, fresh: again.fresh);
 
   Shown inNewSession() => Shown(
     list: list.inNewSession,

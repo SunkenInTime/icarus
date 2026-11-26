@@ -561,6 +561,9 @@ String outcome(Client before, Step result) {
             SessionOpened(:final session) => 'opens session $session',
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
+            ReportSameOrderDiffers(:final page) =>
+              'reports two results at one point that differ for '
+                  '${page ?? 'the page list'}',
             StrategySetAside(:final count) => 'sets $count aside',
             ReportReplacedWithoutLife(:final attempt) =>
               'reports attempt $attempt replaced without a life',
@@ -719,7 +722,12 @@ String renderTable() {
       'client, then the snapshot. `taken` is never given a result older than '
       'one already taken for the same page or the same list. `resultFit` in '
       '`lib/src/cloud/queue.dart` drops those as `OlderResult` before any row '
-      'is compared.',
+      'is compared. A result at the order already taken is the same answer: it '
+      'pays what it would have paid and changes no content, and one whose '
+      'content differs is reported (`ReportSameOrderDiffers`) and changes '
+      'nothing. A page\'s taken order is about the results seen for that '
+      'page: a list that removes the page leaves it as it was, and only a new '
+      'session drops it.',
     )
     ..writeln(
       '- A mark advances only with the content applied for its subject; a '

@@ -59,7 +59,8 @@ void main() {
   test(
       'a page read asked for after a refusal, while an earlier read of the '
       'page timed out unanswered on this connection, does not pay the '
-      'refusal; the read after it does', () {
+      'refusal, nor does any later read on that connection, since the native '
+      'read may still be running; a read on the next connection does', () {
     inWorld((world) {
       world.settle();
       world.server.answerReadNext(
@@ -85,6 +86,19 @@ void main() {
       );
       expect(world.cloud().queue.shown.pageRead(pageId), isA<ReadOwed>());
       expect(world.written().whereType<BaseArrived>().last.requestedAt, isNull);
+      final asked = world.written().whereType<BaseArrived>().length;
+      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
+      world.settle(const Duration(seconds: 10));
+      final later = world.written().whereType<BaseArrived>().skip(asked);
+      expect(later, isNotEmpty);
+      expect(
+          [for (final read in later) read.requestedAt], everyElement(isNull));
+      expect(isDebt(world.cloud().queue.shown.pageRead(pageId)), isTrue);
+      world
+        ..connection = null
+        ..connection = 2;
+      world.server.connection = 2;
+      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
       world.settle(const Duration(seconds: 10));
       expect(
         world.cloud().queue.shown.pageRead(pageId),
