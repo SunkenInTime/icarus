@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,7 +61,9 @@ sealed class PostToOpen {
 }
 
 final class PostLinkArrived extends PostToOpen {
-  const PostLinkArrived(super.postPublicId);
+  const PostLinkArrived(super.postPublicId, {this.opened});
+
+  final Completer<bool>? opened;
 }
 
 final class PostTapped extends PostToOpen {

@@ -313,7 +313,7 @@
   "lib/strategy/strategy_migrator.dart": 5,
   "lib/strategy/strategy_page_apply.dart": 7,
   "lib/strategy/strategy_page_source.dart": 10,
-  "lib/strategy_view.dart": 81,
+  "lib/strategy_view.dart": 66,
   "lib/view_cone/cone_coverage.dart": 77,
   "lib/view_cone/map_door_walls.dart": 7,
   "lib/view_cone/navigation_catalog.dart": 4,

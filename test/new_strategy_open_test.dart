@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
@@ -38,14 +40,20 @@ void main() {
     expect(strategies.closeStrategy(asked: strategies.askedByTheUserNow()),
         isA<Changed>());
 
+    final before = {...Hive.box<StrategyData>(HiveBoxNames.strategiesBox).keys};
     await tester.tap(find
         .byWidgetPredicate(
             (widget) => '${widget.key}'.contains('create-strategy-map-'))
         .first);
     await settleWithDisk(tester);
 
+    final made = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .keys
+        .where((id) => !before.contains(id))
+        .toList();
+    expect(made, hasLength(1));
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
-    expect(container.read(strategyProvider).strategyName, isNotNull);
+    expect(container.read(strategyProvider).strategyId, made.single);
     await leaveEditors(tester, container);
     await closeHive(tester);
   });

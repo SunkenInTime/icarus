@@ -24,6 +24,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_opening_provider.dart';
 import 'package:icarus/strategy/open_seen.dart';
+import 'package:icarus/strategy_view.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -557,6 +558,17 @@ void main() {
           expect(strategies.state.strategyId, isNot('editor-id'));
           expect(container.read(communityPostViewProvider)?.publicId,
               'linked-post');
+          final top = mouseNavigationRouteObserver.topRoute;
+          expect(top, isNot(same(editorRoute)));
+          expect(top?.settings.name, Routes.strategyView);
+          expect(
+            tester
+                .widget<StrategyView>(
+                    find.byType(StrategyView, skipOffstage: false))
+                .communityPost
+                ?.publicId,
+            'linked-post',
+          );
         }
       });
     }

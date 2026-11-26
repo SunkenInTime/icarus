@@ -186,7 +186,12 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
       (_, post) {
         if (post == null) return;
         ref.read(communityPostToOpenProvider.notifier).state = null;
-        unawaited(_openCommunityPostLink(post));
+        final opening = _openCommunityPostLink(post);
+        if (post case PostLinkArrived(:final opened?)) {
+          unawaited(opening.then(opened.complete, onError: opened.completeError));
+        } else {
+          unawaited(opening);
+        }
       },
       fireImmediately: true,
     );
