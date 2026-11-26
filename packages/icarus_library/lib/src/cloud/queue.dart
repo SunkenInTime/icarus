@@ -1381,9 +1381,10 @@ NotApplicable _inapplicable(
     BaseArrived(:final point, :final session) ||
     ResultRefused(:final point, :final session) ||
     ServerTimeHeld(:final point, :final session) ||
-    EditAccessConfirmed(:final point, :final session)
-        when start.session.labels(session) =>
-      point,
+    EditAccessConfirmed(
+      :final point,
+      :final session,
+    ) when start.session.labels(session) => point,
     OpAnswered(:final point) || BatchRefused(:final point) => point,
     _ => null,
   };
@@ -1473,6 +1474,9 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       edit.session = edit.session.withConnection(connected: false, basis: null);
       return edit.done();
     case ConnectionReturned(:final generation):
+      if (generation.client < 1) {
+        return NotApplicable(queue, ConnectionAlreadyEnded(generation));
+      }
       switch (edit.session.generation) {
         case final held? when generation.isBefore(held):
           return NotApplicable(queue, ConnectionAlreadyEnded(generation));
@@ -1556,13 +1560,15 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         order: edit.orderOf(point),
         point: point,
         requestedAt: requestedAt,
+        requestedIn: session,
       );
       if (edit.shown.fence case final fence?
           when refused.order.isBefore(fence)) {
         return NotApplicable(queue, const StartedInAnotherLife());
       }
-      if (edit.shown.takenOf(page) case final taken?
-          when !taken.isBefore(refused.order)) {
+      if (edit.shown.takenOf(page) case Arrival(
+        order: final taken,
+      ) when !taken.isBefore(refused.order)) {
         return NotApplicable(
           queue,
           taken == refused.order ? const SameResult() : const OlderResult(),
@@ -1582,9 +1588,9 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
           page,
           problem,
           since,
-          at: refused.order,
+          at: refused,
         ),
-        null => edit.shown.listRefused(problem, since, at: refused.order),
+        null => edit.shown.listRefused(problem, since, at: refused),
       };
       return edit.done();
     case EditOfAnotherLife(edit: final change, :final madeOn):
@@ -1609,6 +1615,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
           order: edit.orderOf(point),
           point: point,
           requestedAt: requestedAt,
+          requestedIn: session,
         ),
       );
   }
@@ -1741,8 +1748,9 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   if (shown.fence case final fence? when arrival.order.isBefore(fence)) {
     return ResultFit.startedInAnotherLife;
   }
-  if (shown.takenFor(base) case final taken?
-      when !taken.isBefore(arrival.order)) {
+  if (shown.takenFor(base) case Arrival(
+    order: final taken,
+  ) when !taken.isBefore(arrival.order)) {
     return taken == arrival.order ? ResultFit.same : ResultFit.older;
   }
   if (shown.owedBy(base) case final owed? when !owed.paidBy(arrival, base)) {
@@ -1773,6 +1781,10 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
         _ => ResultFit.applies,
       },
     },
+    PageGone(:final pagePublicId)
+        when shown.pages.containsKey(pagePublicId) &&
+            (shown.listTaken?.order.isBefore(arrival.order) == false) =>
+      ResultFit.older,
     PageGone() || StrategyGone() => ResultFit.applies,
   };
 }
@@ -1787,7 +1799,12 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
     case ResultFit.older:
       return NotApplicable(edit.original, const OlderResult());
     case ResultFit.same:
-      return NotApplicable(edit.original, const SameResult());
+      final paid = edit.shown.paidAgain(base, arrival);
+      if (paid == edit.shown) {
+        return NotApplicable(edit.original, const SameResult());
+      }
+      edit.shown = paid;
+      return edit.done();
     case ResultFit.startedInAnotherLife:
       return NotApplicable(edit.original, const StartedInAnotherLife());
     case ResultFit.listFirst:
@@ -1939,12 +1956,22 @@ void _resultsStale(
     if (row case PageTarget(:final pagePublicId)) pagePublicId,
     if (row case SettingsTarget(:final pagePublicId)) pagePublicId,
   };
+  bool shows(String? subject) => switch (edit.shown.takenOf(subject)) {
+    final taken? => answeredAt.reachedBy(taken),
+    null => false,
+  };
   final list =
-      row is StrategyTarget ||
-      row is PageTarget ||
-      row is SettingsTarget ||
-      renumbersPages(sent);
-  edit.shown = edit.shown.touched(pages, list: list, mark: answeredAt);
+      (row is StrategyTarget ||
+          row is PageTarget ||
+          row is SettingsTarget ||
+          renumbersPages(sent)) &&
+      !shows(null);
+  final stale = {
+    for (final page in pages)
+      if (!shows(page)) page,
+  };
+  if (stale.isEmpty && !list) return;
+  edit.shown = edit.shown.touched(stale, list: list, mark: answeredAt);
   edit.change.lives.addAll({
     ...pages,
     if (list) ...{...edit.shown.pages.keys, ...edit.shown.fresh.listed},
@@ -2241,8 +2268,9 @@ _Known? _knownRow(CloudQueue queue, Target row) {
   final shown = queue.shown;
   final result = _shownRow(shown, row);
   final current = switch (row) {
-    PageTarget() || SettingsTarget() => shown.headerThisSession,
-    _ => result != null && shown.pageReadThisSession(result.page),
+    PageTarget(:final pagePublicId) ||
+    SettingsTarget(:final pagePublicId) => shown.listCurrentFor(pagePublicId),
+    _ => result != null && shown.pageCurrent(result.page),
   };
   _Known? best = switch ((row, result)) {
     (StrategyTarget(), _) => switch (shown.strategy) {
@@ -2251,7 +2279,7 @@ _Known? _knownRow(CloudQueue queue, Target row) {
           null,
           revision,
           digest,
-          current: shown.headerThisSession,
+          current: shown.listCurrent,
           life: life,
         ),
       _ => null,
@@ -2383,7 +2411,7 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
 
 bool _pageGone(Shown shown, String page) =>
     shown.goneThisSession.contains(page) ||
-    (shown.headerThisSession &&
+    (shown.listCurrentFor(page) &&
         !shown.pages.containsKey(page) &&
         shown.highest.containsKey(PageTarget(page)));
 
@@ -2435,12 +2463,8 @@ _Verdict _wholeBehindOwn(
         (work) => targetOf(work.op) == row && work.shownWithout,
       );
       final pageCurrent = switch (row) {
-        PageTarget() || SettingsTarget() =>
-          shown.headerThisSession && shown.fresh.listFreshFor(page!),
-        _ =>
-          page != null &&
-              shown.pageReadThisSession(page) &&
-              shown.fresh.pageFreshFor(page),
+        PageTarget() || SettingsTarget() => shown.listCurrentFor(page!),
+        _ => page != null && shown.pageCurrent(page),
       };
       if (left ||
           (pageCurrent &&
@@ -2742,6 +2766,11 @@ void _oweTheRowsRead(
         PageTarget(),
       ) ||
       (
+        ServerSnapshot(target: SnapshotTarget.pageContent) &&
+            final ServerSnapshot snapshot,
+        SettingsTarget(),
+      ) ||
+      (
         ServerSnapshot(target: SnapshotTarget.element) &&
             final ServerSnapshot snapshot,
         ElementTarget(),
@@ -2750,11 +2779,9 @@ void _oweTheRowsRead(
         ServerSnapshot(target: SnapshotTarget.lineup) &&
             final ServerSnapshot snapshot,
         LineupTarget(),
-      ) => RowAtLeast(
-        checked,
-        life: snapshot.life,
-        revision: snapshot.revision,
-      ),
+      )
+          when snapshot.life != null =>
+        RowAtLeast(checked, life: snapshot.life, revision: snapshot.revision),
       _ => null,
     },
   );
