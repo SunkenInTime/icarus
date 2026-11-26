@@ -359,3 +359,36 @@ final class RandomServer {
     return result;
   }
 }
+
+final class Observed {
+  final counts = <String, int>{};
+  final _seen = <String, (String, String)>{};
+
+  void _count(String what) => counts[what] = (counts[what] ?? 0) + 1;
+
+  void see(ArrivedBase base) {
+    if (base case PageRead(:final page, :final elements, :final lineupGroups)) {
+      if (page is TrashedPage) _count('a trashed page row delivered');
+      for (final row in <Row>[...elements, ...lineupGroups]) {
+        final (id, pageId, payload) = switch (row) {
+          ElementRow(:final publicId, :final pagePublicId) => (
+            publicId,
+            pagePublicId,
+            '${(row.toJson()! as Map)['payload']}',
+          ),
+          LineupGroupRow(:final publicId, :final pagePublicId) => (
+            publicId,
+            pagePublicId,
+            '${(row.toJson()! as Map)['payload']}',
+          ),
+          _ => throw StateError('not page content'),
+        };
+        if (_seen[id] case (final was, final before)) {
+          if (was != pageId) _count('an item seen on another page');
+          if (before != payload) _count('an item seen with another payload');
+        }
+        _seen[id] = (pageId, payload);
+      }
+    }
+  }
+}

@@ -278,6 +278,29 @@ void main() {
       );
       expect(itemsTaken(lowerWithLife), isEmpty);
       expect(lowerWithLife.shown.rows[const ElementTarget('e1')]?.revision, 3);
+
+      final lowerWithoutLife = LiveElement(
+        publicId: 'e1',
+        pagePublicId: 'page-a',
+        payload: agentPayload('e1', const {}),
+        sortIndex: 0,
+        revision: 2,
+      );
+      final heldLower = pageAWith(listed(), lowerWithoutLife);
+      final higherWithLife = pageAWith(
+        heldLower.shown,
+        e1At(revision: 3, life: fixtureLife),
+      );
+      expect(itemsTaken(higherWithLife), hasLength(1));
+      expect(higherWithLife.shown.rows[const ElementTarget('e1')]?.revision, 3);
+
+      final heldHigher = pageAWith(
+        listed(),
+        e1At(revision: 3, life: fixtureLife),
+      );
+      final lowerAgain = pageAWith(heldHigher.shown, lowerWithoutLife);
+      expect(itemsTaken(lowerAgain), isEmpty);
+      expect(lowerAgain.shown.rows[const ElementTarget('e1')]?.revision, 3);
     });
 
     test('a row under a newer life replaces the held one even at a lower '

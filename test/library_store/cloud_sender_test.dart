@@ -2454,6 +2454,47 @@ void main() {
         );
 
     test(
+        'a reader that finds the stored rows disagreeing with the queue wakes '
+        'the sender, which reads the list and every page again and reports '
+        'it, with no other event', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      final damaged = contents[area]!.keys.firstWhere(
+            (key) => key.contains('/e/'),
+          );
+      contents[area]![damaged] = '{"broken":true}';
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          final pages = [
+            for (final page in server.rows[strategyId]!.pages) page.publicId,
+          ];
+          final before = server.readCalls.length;
+          for (final page in pages) {
+            world.store.readPage(strategyId, page);
+          }
+          world.settle(const Duration(minutes: 1));
+          final reads = readsAfter(world, before);
+          expect(reads, contains('list'));
+          expect(reads, containsAll([for (final page in pages) 'page $page']));
+          expect(
+            world.sender.store.reports.whereType<BaseNotAgreeing>(),
+            isNotEmpty,
+          );
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
         'asking to adopt a strategy the store holds reads nothing and leaves '
         'nothing pending, even when the server has deleted it', () {
       inWorld((world) {

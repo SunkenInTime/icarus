@@ -655,14 +655,14 @@ Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
           ],
         },
     ],
-  if (facts.base case BaseDisagreed(:final reason, :final build))
+  if (facts.base case BaseDisagreed(:final reason, :final tried))
     'base': {
       'state': switch (facts.base) {
         BaseRereading() => 'rereading',
-        _ => 'disagreesAfterRereading',
+        _ => 'held',
       },
       'reason': reason,
-      'build': build,
+      'tried': tried,
     },
 };
 
@@ -708,17 +708,16 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
     final BaseState? base = switch (fields.json['base']) {
       null => const BaseAgrees(),
       {
-        'state': 'rereading',
+        'state': final String state,
         'reason': final String reason,
-        'build': final String build,
-      } =>
-        BaseRereading(reason, build: build),
-      {
-        'state': 'disagreesAfterRereading',
-        'reason': final String reason,
-        'build': final String build,
-      } =>
-        BaseDisagreesAfterRereading(reason, build: build),
+        'tried': final List<Object?> tried,
+      }
+          when tried.isNotEmpty && tried.every((build) => build is String) =>
+        switch (state) {
+          'rereading' => BaseRereading(reason, tried: tried.cast()),
+          'held' => BaseHeld(reason, tried: tried.cast()),
+          _ => null,
+        },
       _ => null,
     };
     if (base == null) fields.reject('an unreadable base state');

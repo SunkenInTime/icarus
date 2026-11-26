@@ -685,28 +685,115 @@ String renderTable() {
       'same page or the same list. `resultFit` in `lib/src/cloud/queue.dart` '
       'drops those as `OlderResult` before any row is compared.',
     )
+    ..writeln()
+    ..writeln('## When the stored base disagrees with the queue')
+    ..writeln()
     ..writeln(
-      '- The queue\'s record and the stored rows must agree. They are checked '
-      'when a strategy\'s queue loads (the strategy, page and settings rows, '
-      'and which items are stored on which page) and when a page is first '
-      'loaded, before any decision is made from it (each item\'s version). Two '
-      'rows agree when their name, page and version match, whether or not '
-      'this build can read their contents; a damaged row never agrees; rows '
-      'of a kind this build does not know are left out. When they disagree, '
-      'the strategy\'s base is set aside and read again (ADR 0012): every '
-      'item and damaged row the base holds leaves, the strategy, page and '
-      'settings rows stay until the next page list replaces them, the queue\'s '
-      'record starts again with the page list owed and earlier reads fenced '
-      'off, and its base state, being read again with the reason and the '
-      'build, is written in the same commit. Queued work is kept and sends '
-      'once the page list has landed. While a base is being read again, or '
-      'still disagrees after it was read, its pages read as not shown yet and '
-      'cannot be copied. When the page list and every listed page have been '
-      'read, the base agrees again, or it is held as still disagreeing: '
-      'results are still taken and queued work still sends, the same build '
-      'never reads it again, and a different build reads it again once. A '
-      'page list also removes every stored page it does not list, whether or '
-      'not the queue knows that page.',
+      'The queue\'s record (`Shown`) and the stored rows must agree: the '
+      'strategy, page and settings rows and which items are stored on which '
+      'page when a strategy\'s queue loads, and each item\'s version when a '
+      'page is first loaded. Two rows agree when their name, page and version '
+      'match, whether or not this build can read their contents. A damaged '
+      'row never agrees. Rows of a kind this build does not know are left out. '
+      'Rows are only ever read from a checked page. When they disagree, the '
+      'base is read again (ADR 0012). The state is part of the cloud facts row '
+      'and is written in the commit of the event that changes it; the read '
+      'again phase is derived from the stored list debt and the stored page '
+      'content.',
+    )
+    ..writeln()
+    ..writeln(
+      '- **Agreeing**: `BaseAgrees`.\n'
+      '- **List owed**: `BaseRereading`, and the page list is owed.\n'
+      '- **Pages owed**: `BaseRereading`, the list has landed, and a page '
+      'it names has no content yet.\n'
+      '- **Held**: `BaseHeld`. The base is absent and stays absent in the '
+      'builds that tried.\n'
+      '\n'
+      'A **set-aside** removes every base row but the strategy row, restarts '
+      '`Shown` with nothing known (its strategy row included) and the list '
+      'owed behind a fence, adds this build to the builds that tried, and '
+      'wakes the sender. **Complete** means the list debt is paid and every '
+      'page the current list names has content; the event that completes it '
+      'checks every page and writes `BaseAgrees`, or `BaseHeld` when they '
+      'still disagree, in its own commit.',
+    )
+    ..writeln()
+    ..writeln('| Event | Agreeing | List owed | Pages owed | Held |')
+    ..writeln('|---|---|---|---|---|')
+    ..writeln(
+      '| a disagreement found by a check (queue load, a result\'s pages, a '
+      'reader, the summary rebuild, a removal) | set-aside, list owed, '
+      'reported | held: the base rows leave again, no fence, no reads, '
+      'reported | held, as list owed | cannot happen: no base rows are held |',
+    )
+    ..writeln(
+      '| the page list lands past the fence | taken | taken whatever life '
+      'it names; queued work written for another life is set aside as an '
+      'adoption sets it aside; pages owed, or complete | taken; a page it no '
+      'longer lists leaves with its content; may complete | not taken |',
+    )
+    ..writeln(
+      '| a page result lands past the fence | taken | not taken; the page is '
+      'read after the list | taken; may complete | not taken |',
+    )
+    ..writeln(
+      '| `PageGone` | taken | taken | taken: the page leaves; may complete '
+      '| not taken |',
+    )
+    ..writeln(
+      '| `StrategyGone` | taken: the strategy is gone | the page and '
+      'settings rows leave, agreeing, gone | as list owed | as list owed |',
+    )
+    ..writeln(
+      '| a result read before the fence | dropped, once a re-read has set a '
+      'fence | dropped | dropped | not taken |',
+    )
+    ..writeln(
+      '| the app restarts | agreeing, checked again at load | list owed | '
+      'pages owed | held |',
+    )
+    ..writeln(
+      '| a build that has not tried opens it | agreeing | list owed; the '
+      'build is added to those that tried | pages owed; the build is added | '
+      'set-aside, list owed, reported |',
+    )
+    ..writeln(
+      '| a build that has tried opens it | agreeing | list owed | pages owed '
+      '| held, reported |',
+    )
+    ..writeln(
+      '| the event\'s write is refused | unchanged; the loaded strategy is '
+      'dropped and checked again on the next load | unchanged | unchanged | '
+      'unchanged |',
+    )
+    ..writeln(
+      '| the event\'s write outcome is unknown | the store shuts; the next '
+      'open derives the state from what landed | as agreeing | as agreeing '
+      '| as agreeing |',
+    )
+    ..writeln()
+    ..writeln(
+      '- **Queued work.** Agreeing and pages owed: the usual rules. List '
+      'owed: it waits for the list (no life is known to judge it against), '
+      'then work written for the list\'s life goes on and the rest is set '
+      'aside. Held: work that needs no evidence from the base (adds, field '
+      'merges that stay on their page) sends; work that needs it waits, and '
+      'the sender reports why.\n'
+      '- **Landed work while held.** Work that sends and lands while the '
+      'base is held stays recorded as landed, as far as the user and the '
+      'server are concerned it is done, and nothing counts it as unsent or '
+      'waits on it. No result is taken to bring it into the base until a build '
+      'that has not tried reads the base again.\n'
+      '- **What the reader shows.** In the agreeing state, as before: a page '
+      'never read still draws this device\'s own queued work. In the other '
+      'states a page is shown only once the base agrees again; until then it '
+      'returns no rows and cannot be copied, and the list counts nothing on '
+      'it.\n'
+      '- **What the sender reads.** List owed: the list. Pages owed: every '
+      'page the list names that has no content. Held: nothing. Each state '
+      'other than agreeing is reported from the stored state whenever the '
+      'strategy is read, and every set-aside wakes the sender.',
     )
     ..writeln(
       '- When a page result leaves out an item the device held there, the '

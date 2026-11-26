@@ -132,6 +132,7 @@ String? decisionCase(RowDecision decision) => switch (decision) {
 };
 
 Map<String, int> runSeed(int seed, int steps) {
+  final observed = Observed();
   final server = RandomServer(Random(seed));
   final delivered = <String, int>{};
   void count(String what) => delivered[what] = (delivered[what] ?? 0) + 1;
@@ -192,6 +193,7 @@ Map<String, int> runSeed(int seed, int steps) {
     for (final what in result.cases) {
       count(what);
     }
+    observed.see(result.base);
     for (final decision in taken.decisions) {
       if (decisionCase(decision) case final what?) count(what);
     }
@@ -204,7 +206,7 @@ Map<String, int> runSeed(int seed, int steps) {
       expect(row.digestedThisRun, isTrue, reason: '$where $target');
     }
   }
-  return delivered;
+  return {...delivered, ...observed.counts};
 }
 
 void main() {
@@ -224,8 +226,9 @@ void main() {
       }
     }
     for (final what in const [
-      'payload changed',
-      'moved between pages',
+      'an item seen on another page',
+      'an item seen with another payload',
+      'a trashed page row delivered',
       'deleted',
       'restored',
       'life changed at the same revision',
@@ -238,7 +241,6 @@ void main() {
       'stale list',
       'purged',
       'added',
-      'trashed page row read',
       'older list after a newer page',
       'older page after a newer list',
       'started with the read before it',

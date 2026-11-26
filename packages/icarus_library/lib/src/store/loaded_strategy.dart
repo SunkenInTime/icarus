@@ -176,6 +176,17 @@ final class LoadedStrategy {
   final _lineupPages = <String, Set<String>>{};
   final _itemsOnPage = <String, Set<(bool, String)>>{};
   bool membershipChecked = false;
+  String? Function(String pageDigest)? checkLoadedPage;
+  String? disagreement;
+
+  void checked(String pageDigest) {
+    final page = _loaded[pageDigest];
+    if (page == null || page.checked || checkLoadedPage == null) return;
+    page.markChecked();
+    if (checkLoadedPage?.call(pageDigest) case final reason?) {
+      disagreement ??= reason;
+    }
+  }
 
   void _index(bool lineup, String item, String page) {
     ((lineup ? _lineupPages : _elementPages)[item] ??= {}).add(page);

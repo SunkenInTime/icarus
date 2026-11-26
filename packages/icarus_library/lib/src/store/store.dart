@@ -268,7 +268,13 @@ final class _RebuildNotRead extends _Rebuilt {
 }
 
 final class LibraryStore {
-  LibraryStore._(StorageLease lease, this._canRead, this._clock, this._build) {
+  LibraryStore._(
+    StorageLease lease,
+    this._canRead,
+    this._clock,
+    this._build,
+    this._tryingBuild,
+  ) {
     storeWork.sessionRecords = () => _sessions.length;
     _lease = _WatchedLease(
       lease,
@@ -281,6 +287,7 @@ final class LibraryStore {
     required CanRead canRead,
     DateTime Function() clock = _now,
     String build = '',
+    int buildNumber = 0,
   }) async {
     switch (await engine.lease()) {
       case HeldByAnotherWriter():
@@ -292,7 +299,13 @@ final class LibraryStore {
           await lease.release();
           return StoreNotOpened(EngineTooSmall(lease.maxKeyLength));
         }
-        final store = LibraryStore._(lease, canRead, clock, build);
+        final store = LibraryStore._(
+          lease,
+          canRead,
+          clock,
+          build,
+          buildNumber == 0 ? build : '$build+$buildNumber',
+        );
         final foreign = <ForeignName>[];
         switch ((await store._readLibrary(foreign), store._settle())) {
           case (Done(value: final origin), Done()):
@@ -325,6 +338,7 @@ final class LibraryStore {
   final CanRead _canRead;
   final DateTime Function() _clock;
   final String _build;
+  final String _tryingBuild;
   CloudResults? _cloudResults;
 
   CloudResults? get cloudResults => _cloudResults;
@@ -1005,6 +1019,7 @@ final class LibraryStore {
         }
     }
     strategy.addLoadedPage(pageDigest, page);
+    strategy.checked(pageDigest);
     if (!_listedAsLoaded(strategy, pageDigest)) _refresh(strategy);
     return done;
   }

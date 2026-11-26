@@ -9,6 +9,7 @@ import 'support.dart';
 Future<LibraryStore> openCloudStore(
   StorageEngine engine, {
   String build = build,
+  int buildNumber = 0,
   DateTime Function() clock = fixedClock,
   CloudResults results = CloudResults.thisDevicesReads,
 }) async => switch (await LibraryStore.open(
@@ -16,6 +17,7 @@ Future<LibraryStore> openCloudStore(
   canRead: readsKnownKinds,
   clock: clock,
   build: build,
+  buildNumber: buildNumber,
 )) {
   StoreOpened(:final store) => store..takeCloudResultsFrom(results),
   StoreNotOpened(:final problem) => fail('store did not open: $problem'),

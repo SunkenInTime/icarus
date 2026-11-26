@@ -284,9 +284,10 @@ base class SenderStore {
     } catch (error) {
       return QueueTroubled(StoreShut('the store threw: $error'));
     }
-    if (reading case Found(
-      value: StrategyContent(sync: CloudStrategy(:final queue)),
-    )) {
+    if (reading
+        case Found(
+          value: StrategyContent(sync: CloudStrategy(:final queue)),
+        )) {
       final base = queue.strategy.base;
       if (_bases[strategyId] != base) {
         _bases[strategyId] = base;

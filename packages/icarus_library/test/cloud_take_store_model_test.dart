@@ -92,6 +92,7 @@ String differences(Contents left, Contents right) => [
 typedef Counts = ({Map<String, int> applied, Map<String, int> generated});
 
 Future<Counts> runSeed(int seed, int steps) async {
+  final observed = Observed();
   final server = RandomServer(Random(seed));
   final applied = <String, int>{};
   final reusing = MemoryStorage();
@@ -150,6 +151,7 @@ Future<Counts> runSeed(int seed, int steps) async {
       for (final what in result.cases) {
         count(what);
       }
+      observed.see(result.base);
       switch (result.base) {
         case HeaderRead() when result.stale && lastPage > result.read:
           count('older list after a newer page');
@@ -193,7 +195,10 @@ Future<Counts> runSeed(int seed, int steps) async {
   for (final store in stores) {
     await store.close();
   }
-  return (applied: applied, generated: server.generated);
+  return (
+    applied: {...applied, ...observed.counts},
+    generated: server.generated,
+  );
 }
 
 void main() {
@@ -228,8 +233,9 @@ void main() {
       }
     }
     for (final what in const [
-      'payload changed',
-      'moved between pages',
+      'an item seen on another page',
+      'an item seen with another payload',
+      'a trashed page row delivered',
       'deleted',
       'restored',
       'life changed at the same revision',
@@ -242,7 +248,6 @@ void main() {
       'stale list',
       'purged',
       'added',
-      'trashed page row read',
       'older list after a newer page',
       'older page after a newer list',
       'started with the read before it',

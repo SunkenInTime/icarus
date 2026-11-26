@@ -316,6 +316,8 @@ int? namedLifeOf(ReadState state) => switch (state) {
 
 bool isDebt(ReadState state) => state is ReadOwed || state is ReadRefused;
 
+bool _isTrashed(PageRow page) => lifeOfRow(page) == Life.gone;
+
 bool replaces(ShownRow? held, Row incoming) =>
     held == null || !_outranks(held.version, versionOfRow(incoming));
 
@@ -562,7 +564,7 @@ final class Shown {
     final read = {...readPages};
     var fresh = Freshness.none.afterList([
       for (final page in rows.pages)
-        if (page is! TrashedPage) page.publicId,
+        if (!_isTrashed(page)) page.publicId,
     ]);
     for (final page in read) {
       fresh = fresh.afterPage(page, gone: false);
@@ -574,11 +576,11 @@ final class Shown {
       strategy: _strategyRow(rows.strategy, rows.pages),
       pages: {
         for (final page in rows.pages)
-          if (page is! TrashedPage) page.publicId: _rowOf(page, page),
+          if (!_isTrashed(page)) page.publicId: _rowOf(page, page),
       },
       trashed: {
         for (final page in rows.pages)
-          if (page is TrashedPage) page.publicId: _rowOf(page, page),
+          if (_isTrashed(page)) page.publicId: _rowOf(page, page),
       },
       settings: {
         for (final row in rows.settings)
@@ -602,8 +604,7 @@ final class Shown {
       highest: {
         const StrategyTarget(): ?versionOfRow(rows.strategy),
         for (final page in rows.pages)
-          if (page is! TrashedPage)
-            PageTarget(page.publicId): ?versionOfRow(page),
+          if (!_isTrashed(page)) PageTarget(page.publicId): ?versionOfRow(page),
         for (final row in rows.settings)
           SettingsTarget(row.pagePublicId): ?versionOfRow(row),
         for (final page in read) ...{
@@ -707,7 +708,7 @@ final class Shown {
   Shown withTrashedPages(Iterable<PageRow> held) => _with(
     trashed: {
       for (final page in held)
-        if (page is TrashedPage) page.publicId: _rowOf(page, page),
+        if (_isTrashed(page)) page.publicId: _rowOf(page, page),
     },
   );
 
@@ -818,10 +819,7 @@ final class Shown {
       final held = heldLive ?? trashed[id];
       if (replaces(held, page)) {
         decisions.add(RowTaken(page));
-        (page is TrashedPage ? nextTrashed : nextPages)[id] = _rowOf(
-          page,
-          page,
-        );
+        (_isTrashed(page) ? nextTrashed : nextPages)[id] = _rowOf(page, page);
       } else {
         decisions.add(RowKept(page, KeptBecause.heldIsNewer));
         (heldLive != null ? nextPages : nextTrashed)[id] = held!;
@@ -869,7 +867,7 @@ final class Shown {
         highest: _raised(highest, {
           const StrategyTarget(): ?versionOfRow(strategyRow),
           for (final page in listed)
-            if (page is! TrashedPage)
+            if (!_isTrashed(page))
               PageTarget(page.publicId): ?versionOfRow(page),
           for (final row in settings)
             SettingsTarget(row.pagePublicId): ?versionOfRow(row),
@@ -912,10 +910,8 @@ final class Shown {
 
   Shown owingList(ReadStart since) => _with(list: ReadOwed(since: since));
 
-  Shown setAside(ReadStart fence) => Shown.nothing
-      ._with(strategy: strategy)
-      .fencedAt(fence, after: this)
-      .owingList(fence);
+  Shown setAside(ReadStart fence) =>
+      Shown.nothing.fencedAt(fence, after: this).owingList(fence);
 
   Shown owingListPast(int? life, ReadStart since, {int? named}) => _with(
     list: ReadOwed(unlessLife: life, namedLife: named, since: since),
@@ -984,7 +980,7 @@ final class Shown {
       pageTaken ? RowTaken(pageRow) : RowKept(pageRow, KeptBecause.heldIsNewer),
     ];
     final trashedNow = pageTaken
-        ? pageRow is TrashedPage
+        ? _isTrashed(pageRow)
         : heldLive == null && heldPage != null;
     final next = {...rows};
     final nextTombstones = {...tombstones};

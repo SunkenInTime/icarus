@@ -217,20 +217,28 @@ Future<String> _measured(StrategyRowSet rows, String label) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final corpus = Platform.environment[corpusVariable];
+  final measuring = Platform.environment['ICARUS_MEASURE'] == '1'
+      ? false
+      : 'a measuring tool, not a test: set ICARUS_MEASURE=1 to time opens';
   if (Platform.environment['CLOUD_OPEN_CHECKED'] == '0') {
     final checked = shownTakesChecked;
     setUp(() => shownTakesChecked = false);
     tearDown(() => shownTakesChecked = checked);
   }
 
-  test('opening a cloud strategy of 20 pages of 300 items', () async {
+  test('opening a cloud strategy of 20 pages of 300 items', skip: measuring,
+      () async {
     // ignore: avoid_print
     print(await _measured(_twentyPages(), '20 pages of 300 items'));
   }, timeout: const Timeout(Duration(minutes: 10)));
 
   test(
     'opening the corpus strategy with the most items as a cloud strategy',
-    skip: corpus == null ? 'set $corpusVariable to a corpus folder' : false,
+    skip: measuring is String
+        ? measuring
+        : corpus == null
+            ? 'set $corpusVariable to a corpus folder'
+            : false,
     () async {
       StrategyData? largest;
       for (final store in hiveStoresUnder(Directory(corpus!))) {

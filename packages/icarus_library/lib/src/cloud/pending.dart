@@ -1027,34 +1027,36 @@ final class BaseAgrees extends BaseState {
 }
 
 sealed class BaseDisagreed extends BaseState {
-  const BaseDisagreed(this.reason, {required this.build});
+  BaseDisagreed(this.reason, {required Iterable<String> tried})
+    : tried = List.unmodifiable(tried);
 
   final String reason;
-  final String build;
+  final List<String> tried;
 
   @override
   bool operator ==(Object other) =>
       other.runtimeType == runtimeType &&
       other is BaseDisagreed &&
       other.reason == reason &&
-      other.build == build;
+      const ListEquality<String>().equals(other.tried, tried);
 
   @override
-  int get hashCode => Object.hash(runtimeType, reason, build);
+  int get hashCode => Object.hash(runtimeType, reason, Object.hashAll(tried));
 }
 
 final class BaseRereading extends BaseDisagreed {
-  const BaseRereading(super.reason, {required super.build});
+  BaseRereading(super.reason, {required super.tried});
 
   @override
-  String toString() => 'read again by $build because $reason';
+  String toString() => 'read again by ${tried.last} because $reason';
 }
 
-final class BaseDisagreesAfterRereading extends BaseDisagreed {
-  const BaseDisagreesAfterRereading(super.reason, {required super.build});
+final class BaseHeld extends BaseDisagreed {
+  BaseHeld(super.reason, {required super.tried});
 
   @override
-  String toString() => 'still disagrees after $build read it again: $reason';
+  String toString() =>
+      'held: ${tried.join(', ')} read it again and it still disagrees: $reason';
 }
 
 sealed class SetAsideRecord {

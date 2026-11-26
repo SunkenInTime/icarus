@@ -291,12 +291,12 @@ final class StoredBaseDisagrees extends QueueEvent {
 }
 
 final class StoredBaseReadAgain extends QueueEvent {
-  const StoredBaseReadAgain({
-    required this.stillDisagrees,
-    required this.build,
-  });
+  const StoredBaseReadAgain();
+}
 
-  final String? stillDisagrees;
+final class StoredBaseCarriedOn extends QueueEvent {
+  const StoredBaseCarriedOn({required this.build});
+
   final String build;
 }
 
