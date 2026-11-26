@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
@@ -49,6 +51,82 @@ void main() {
           ['move-1'],
         ],
       );
+      expect(world.queueLength(), 0);
+    });
+  });
+
+  void laterConnectionSeenFirst(World world) {
+    world.settle();
+    world.server.answerReadNext(strategyId, (call) {
+      world.server.connection = 2;
+      return Future.value(world.server.answerNow(call));
+    });
+    world.sender.owesFreshRead(strategyId, const ReadOfList());
+    world.settle(const Duration(seconds: 10));
+    expect(world.cloud().queue.session.generation?.connection, 2);
+    expect(world.connection, 1);
+  }
+
+  test(
+      'a strategy-deleted refusal of a batch stamped on connection 1, after '
+      'a stamp from connection 2 reached the queue and before the app heard '
+      'of the reconnect, does not mark the strategy deleted: the edit is sent '
+      'again', () {
+    inWorld((world) {
+      laterConnectionSeenFirst(world);
+      world.server.answerNext(
+        strategyId,
+        (call) async => StoreBatchRefusedWhole(
+          BatchRefusal.strategyDeleted,
+          point: onConnection(world, 1),
+        ),
+      );
+      final before = world.written().whereType<BatchRefused>().length;
+      world.commitMove(1);
+      while (world.written().whereType<BatchRefused>().length == before) {
+        world.settle(const Duration(milliseconds: 10));
+      }
+      expect(standingOf(world.cloud().queue), isNot(Standing.deletedOnServer));
+      world.settle(const Duration(minutes: 2));
+      expect(
+        [for (final call in world.server.calls) call.opIds],
+        [
+          ['move-1'],
+          ['move-1'],
+        ],
+      );
+      expect(world.queueLength(), 0);
+    });
+  });
+
+  test(
+      'a page list read answered strategy-gone on connection 1, after a '
+      'stamp from connection 2 reached the queue and before the app heard of '
+      'the reconnect, does not mark the strategy deleted, and the next edit '
+      'is sent', () {
+    inWorld((world) {
+      laterConnectionSeenFirst(world);
+      world.server.answerReadNext(
+        strategyId,
+        (call) => Future.value(
+          StoreReadAnswered(
+            const StrategyGone(),
+            point: onConnection(world, 1),
+          ),
+        ),
+      );
+      final before = world.written().whereType<BaseArrived>().length;
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+      while (world.written().whereType<BaseArrived>().length == before) {
+        world.settle(const Duration(milliseconds: 10));
+      }
+      expect(
+        world.written().whereType<BaseArrived>().last.base,
+        isA<StrategyGone>(),
+      );
+      expect(standingOf(world.cloud().queue), isNot(Standing.deletedOnServer));
+      world.commitMove(1);
+      world.settle(const Duration(minutes: 1));
       expect(world.queueLength(), 0);
     });
   });
