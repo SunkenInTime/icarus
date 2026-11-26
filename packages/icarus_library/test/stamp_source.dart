@@ -52,6 +52,11 @@ final class StampSource {
   }
 
   ResultPoint at(Object state) {
+    if (time == null && applied == connection && random.nextInt(4) == 0) {
+      _count('a read before any state was applied');
+      _seen = state;
+      return current;
+    }
     if (identical(state, _seen) &&
         time != null &&
         applied == connection &&

@@ -1811,6 +1811,7 @@ const minimums = {
   'a stamp at the snapshot already held': 3000,
   'a new snapshot at the same time': 1500,
   'an answer before any state was applied': 150,
+  'a read before any state was applied': 240,
   'an answer stamped on the connection before a reconnect': 80,
   'time went back on a new connection': 8,
   'a second client in one run': 200,
