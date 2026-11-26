@@ -1,0 +1,18 @@
+{
+  "functions": [
+    {
+      "args": { "type": "object", "value": {} },
+      "functionType": "Mutation",
+      "identifier": "fixture.js:rename",
+      "returns": { "type": "null" },
+      "visibility": { "kind": "public" }
+    },
+    {
+      "args": { "type": "object", "value": {} },
+      "functionType": "Query",
+      "identifier": "fixture.js:renameMutation",
+      "returns": { "type": "null" },
+      "visibility": { "kind": "public" }
+    }
+  ]
+}

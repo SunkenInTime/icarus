@@ -28,6 +28,31 @@
         ]
       },
       "visibility": { "kind": "public" }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "name": { "fieldType": { "type": "string" }, "optional": false },
+          "note": { "fieldType": { "type": "string" }, "optional": true }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "fixture.js:rename",
+      "returns": { "type": "null" },
+      "visibility": { "kind": "public" }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "retitleMutation": { "fieldType": { "type": "string" }, "optional": false }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "fixture.js:retitle",
+      "returns": { "type": "null" },
+      "visibility": { "kind": "public" }
     }
   ]
 }
