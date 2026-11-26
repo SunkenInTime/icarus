@@ -387,6 +387,20 @@ final events = <String, QueueEvent Function(Client)>{
   for (final refusal in BatchRefusal.values)
     'attempt 1 refused whole: ${refusal.name}': (c) =>
         BatchRefused(1, refusal, point: tick()),
+  'attempt 1 refused for another account': (c) =>
+      BatchAccountMismatch(1, point: tick()),
+  for (final refusal in SignInRefusal.values)
+    'read refused for the sign-in: ${refusal.name}': (c) =>
+        ReadRefusedForSignIn(
+          refusal,
+          session: c.queue.session.number,
+          point: tick(),
+        ),
+  'read refused for an upgrade': (c) => ReadRefusedForUpgrade(
+    build: build,
+    session: c.queue.session.number,
+    point: tick(),
+  ),
   'app restarted, same build': (c) => const AppRestarted(build: build),
   'app restarted, new build': (c) => const AppRestarted(build: 'build-2'),
   'connection lost': (c) => const ConnectionLost(),
@@ -452,11 +466,8 @@ final events = <String, QueueEvent Function(Client)>{
     point: tick(),
     requestedAt: c.queue.session.sequence,
   ),
-  'result: page list the store would not keep': (c) => c.readRefused(
-    null,
-    'ResultWithoutLife(page-a)',
-    asked: c.askedNow,
-  ),
+  'result: page list the store would not keep': (c) =>
+      c.readRefused(null, 'ResultWithoutLife(page-a)', asked: c.askedNow),
   'user: discard what was set aside': (c) => const UserDiscardedReplaced(),
   'result: page-a of another life': (c) => BaseArrived(
     PageRead(
@@ -569,6 +580,10 @@ String outcome(Client before, Step result) {
             SessionOpened(:final session) => 'opens session $session',
             ReportUnauthenticated() => 'reports unauthenticated',
             HoldSendingForUpgrade() => 'holds sending until upgrade',
+            ReportAccountMismatch() => 'reports another account',
+            AnswerAdmitted(:final attempt, :final opId) =>
+              'admits attempt $attempt\'s answer'
+                  '${opId == null ? '' : ' for $opId'}',
             StrategySetAside(:final count) => 'sets $count aside',
             ReportReplacedWithoutLife(:final attempt) =>
               'reports attempt $attempt replaced without a life',

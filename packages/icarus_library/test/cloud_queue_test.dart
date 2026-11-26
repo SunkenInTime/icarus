@@ -907,7 +907,13 @@ void main() {
         'clears it', () {
       final client = online();
       client.edit(movePatch('waiting'));
-      final told = client.step(const ReadRefusedForUpgrade(build: build));
+      final told = client.step(
+        ReadRefusedForUpgrade(
+          build: build,
+          session: client.queue.session.number,
+          point: tick(),
+        ),
+      );
       expect(
         told,
         isA<Stepped>().having(
@@ -961,7 +967,13 @@ void main() {
           point: tick(),
         ),
       );
-      client.must(const ReadRefusedForUpgrade(build: build));
+      client.must(
+        ReadRefusedForUpgrade(
+          build: build,
+          session: client.queue.session.number,
+          point: tick(),
+        ),
+      );
       expect(
         syncStateOf(
           OwnedBy(testAccount),

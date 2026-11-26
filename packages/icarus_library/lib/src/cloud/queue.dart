@@ -853,6 +853,31 @@ final class HoldSendingForUpgrade extends QueueEffect {
   String toString() => 'HoldSendingForUpgrade';
 }
 
+final class ReportAccountMismatch extends QueueEffect {
+  const ReportAccountMismatch();
+
+  @override
+  String toString() => 'ReportAccountMismatch';
+}
+
+final class AnswerAdmitted extends QueueEffect {
+  const AnswerAdmitted(this.attempt, {this.opId});
+
+  final int attempt;
+  final String? opId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AnswerAdmitted && other.attempt == attempt && other.opId == opId;
+
+  @override
+  int get hashCode => Object.hash(AnswerAdmitted, attempt, opId);
+
+  @override
+  String toString() =>
+      'AnswerAdmitted($attempt${opId == null ? '' : ', $opId'})';
+}
+
 sealed class RemovalCause {
   const RemovalCause();
 }
@@ -1414,12 +1439,16 @@ NotApplicable _inapplicable(
   final point = switch (event) {
     BaseArrived(:final point, :final session) ||
     ResultRefused(:final point, :final session) ||
+    ReadRefusedForSignIn(:final point, :final session) ||
+    ReadRefusedForUpgrade(:final point, :final session) ||
     ServerTimeHeld(:final point, :final session) ||
     EditAccessConfirmed(
       :final point,
       :final session,
     ) when start.session.labels(session) => point,
-    OpAnswered(:final point) || BatchRefused(:final point) => point,
+    OpAnswered(:final point) ||
+    BatchRefused(:final point) ||
+    BatchAccountMismatch(:final point) => point,
     _ => null,
   };
   if (point == null) return NotApplicable(start, why);
@@ -1478,8 +1507,29 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       if (!_admitted(edit, point)) {
         return _lostToAnEndedConnection(edit, attempt);
       }
+      edit.effects.add(AnswerAdmitted(attempt));
       return _batchRefused(edit, attempt, refusal, at, currentLife, point);
-    case ReadRefusedForUpgrade(:final build):
+    case BatchAccountMismatch(:final attempt, :final point):
+      if (!_admitted(edit, point)) {
+        return _lostToAnEndedConnection(edit, attempt);
+      }
+      edit.effects
+        ..add(AnswerAdmitted(attempt))
+        ..add(const ReportAccountMismatch());
+      return _closeAttempt(edit, attempt, const AttemptReleased());
+    case ReadRefusedForSignIn(:final refusal, :final session, :final point):
+      if (_refusalOfAnEndedCall(edit, session, point) case final why?) {
+        return NotApplicable(queue, why);
+      }
+      edit.effects.add(switch (refusal) {
+        SignInRefusal.unauthenticated => const ReportUnauthenticated(),
+        SignInRefusal.accountMismatch => const ReportAccountMismatch(),
+      });
+      return edit.done();
+    case ReadRefusedForUpgrade(:final build, :final session, :final point):
+      if (_refusalOfAnEndedCall(edit, session, point) case final why?) {
+        return NotApplicable(queue, why);
+      }
       edit.strategy = edit.strategy.copyWith(
         upgradeTold: UpgradeToldTo(build, attempt: edit.nextAttempt - 1),
       );
@@ -1491,6 +1541,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       if (!_admitted(edit, point)) {
         return _lostToAnEndedConnection(edit, attempt);
       }
+      edit.effects.add(AnswerAdmitted(attempt, opId: answer.opId));
       return _answered(edit, attempt, answer, point);
     case AppRestarted(:final build):
       for (final attempt in [...edit.attempts.values]) {
@@ -1674,6 +1725,16 @@ bool _admitted(_Edit edit, ResultPoint point) {
       break;
   }
   return true;
+}
+
+Inapplicable? _refusalOfAnEndedCall(
+  _Edit edit,
+  int session,
+  ResultPoint point,
+) {
+  if (!edit.session.labels(session)) return FromAnEndedSession(session);
+  if (!_admitted(edit, point)) return ConnectionAlreadyEnded(point.generation);
+  return null;
 }
 
 Step _lostToAnEndedConnection(_Edit edit, int attempt) => _closeAttempt(
