@@ -40,10 +40,11 @@ final class StoreReadAnswered extends StoreReadOutcome {
 }
 
 final class StoreReadRefused extends StoreReadOutcome {
-  const StoreReadRefused(this.refusal, this.why);
+  const StoreReadRefused(this.refusal, this.why, {required this.point});
 
   final StoreReadRefusal refusal;
   final String why;
+  final store.ResultPoint point;
 }
 
 final class StoreReadUnreadable extends StoreReadOutcome {
@@ -93,8 +94,8 @@ StoreReads storeReadsOver(
             strategyPublicId,
             accountSubject: account.subject,
           )) {
-            StampedValue(value: final list, :final stamp) =>
-              switch (pageListRead(list)) {
+            StampedValue(value: final list, :final stamp) => switch (
+                  pageListRead(list)) {
                 RowsRead(:final value) => StoreReadAnswered(
                     value,
                     point: pointOf(stamp),
@@ -128,8 +129,8 @@ StoreReads storeReadsOver(
             pagePublicId: pagePublicId,
             accountSubject: account.subject,
           )) {
-            StampedValue(value: final page, :final stamp) =>
-              switch (pageRead(page, canRead)) {
+            StampedValue(value: final page, :final stamp) => switch (
+                  pageRead(page, canRead)) {
                 RowsRead(:final value) =>
                   StoreReadAnswered(value, point: pointOf(stamp)),
                 RowsUnreadable(:final problem) =>
@@ -156,17 +157,17 @@ StoreReadOutcome storeReadOutcomeOfError(
   required store.ArrivedBase gone,
   required store.ResultPoint? point,
 }) {
-  if (isClientUpgradeRequiredError(error)) {
-    return StoreReadRefused(StoreReadRefusal.upgradeRequired, '$error');
-  }
-  if (isTypedConvexUnauthenticatedError(error)) {
-    return StoreReadRefused(StoreReadRefusal.unauthenticated, '$error');
-  }
-  if (isAccountMismatchError(error)) {
-    return StoreReadRefused(StoreReadRefusal.accountMismatch, '$error');
-  }
-  if (isTypedConvexForbiddenError(error)) {
-    return StoreReadRefused(StoreReadRefusal.forbidden, '$error');
+  final refusal = switch (error) {
+    _ when isClientUpgradeRequiredError(error) =>
+      StoreReadRefusal.upgradeRequired,
+    _ when isTypedConvexUnauthenticatedError(error) =>
+      StoreReadRefusal.unauthenticated,
+    _ when isAccountMismatchError(error) => StoreReadRefusal.accountMismatch,
+    _ when isTypedConvexForbiddenError(error) => StoreReadRefusal.forbidden,
+    _ => null,
+  };
+  if ((refusal, point) case (final refusal?, final point?)) {
+    return StoreReadRefused(refusal, '$error', point: point);
   }
   if (point != null &&
       (isTypedConvexNotFoundError(error) || _isPageElsewhere(error))) {
