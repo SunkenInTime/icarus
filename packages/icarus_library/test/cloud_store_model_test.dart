@@ -295,8 +295,10 @@ final class StoreModel {
     }
     final stored = shownFromGroups(disk.groups);
     if (stored is! ShownRead ||
-        stored.shown !=
-            memory.shown.inNewSession().withTrashedPages(const [])) {
+        !const DeepCollectionEquality().equals(
+          shownToGroups(stored.shown),
+          shownToGroups(memory.shown.inNewSession().withTrashedPages(const [])),
+        )) {
       throw StateError(
         'after $label the results on disk differ from memory: '
         '${disk.groups.keys} vs ${memory.shown.content.keys}',

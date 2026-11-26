@@ -1247,6 +1247,8 @@ final class Shown {
     },
   );
 
+  Shown asStored() => inNewSession()._with(fresh: Freshness.none);
+
   Shown inNewSession() => Shown(
     fresh: fresh.inNewSession,
     list: list.inNewSession,

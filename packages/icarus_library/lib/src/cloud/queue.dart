@@ -1295,6 +1295,14 @@ final class _Edit {
   CloudQueue build() {
     _pruneAttempts(this);
     if (shown.list != original.shown.list) change.everything = true;
+    final (was, now) = (original.shown.fresh, shown.fresh);
+    if (was.listSinceTouch != now.listSinceTouch) change.everything = true;
+    change.pages.addAll({
+      ...was.pagesSinceTouch.difference(now.pagesSinceTouch),
+      ...now.pagesSinceTouch.difference(was.pagesSinceTouch),
+      ...was.touchedSinceList.difference(now.touchedSinceList),
+      ...now.touchedSinceList.difference(was.touchedSinceList),
+    });
     for (final page in {
       ...shown.pageReads.keys,
       ...original.shown.pageReads.keys,
