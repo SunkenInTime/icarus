@@ -191,7 +191,8 @@ void main() {
         world,
         const ReadOfPage(pageId),
         'page $pageId',
-        const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+        const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden',
+            point: stampedWhenAnswered),
       );
       expect(world.sender.cannotRead(strategyId), isNotNull);
       final resend = sendRetryAt(world);

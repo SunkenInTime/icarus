@@ -49,9 +49,10 @@ final class StoreBatchLost extends StoreBatchOutcome {
 }
 
 final class StoreBatchAccountMismatch extends StoreBatchOutcome {
-  const StoreBatchAccountMismatch(this.why);
+  const StoreBatchAccountMismatch(this.why, {required this.point});
 
   final String why;
+  final store.ResultPoint point;
 }
 
 final class StoreBatchOutsideWindow extends StoreBatchOutcome {
@@ -255,8 +256,8 @@ StoreBatchOutcome storeBatchOutcomeOfError(
   Object error, {
   required store.ResultPoint? point,
 }) {
-  if (isAccountMismatchError(error)) {
-    return StoreBatchAccountMismatch('$error');
+  if (point != null && isAccountMismatchError(error)) {
+    return StoreBatchAccountMismatch('$error', point: point);
   }
   if (point != null && isUncheckedOutsideWindowError(error)) {
     return StoreBatchOutsideWindow('$error', point: point);

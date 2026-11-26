@@ -384,6 +384,9 @@ final class FakeServer {
         StoreReadUnreadable(:final problem, :final point)
             when point == stampedWhenAnswered =>
           StoreReadUnreadable(problem, point: at),
+        StoreReadRefused(:final refusal, :final why, :final point)
+            when point == stampedWhenAnswered =>
+          StoreReadRefused(refusal, why, point: at),
         _ => outcome,
       };
 
@@ -415,6 +418,9 @@ final class FakeServer {
         StoreBatchOutsideWindow(:final why, :final point)
             when point == stampedWhenAnswered =>
           StoreBatchOutsideWindow(why, point: at),
+        StoreBatchAccountMismatch(:final why, :final point)
+            when point == stampedWhenAnswered =>
+          StoreBatchAccountMismatch(why, point: at),
         _ => outcome,
       };
 
@@ -1249,6 +1255,19 @@ final class World {
         for (final report in sender.store.reports)
           if (report case EventsWritten(:final strategyId, :final events)
               when strategyId == strategy)
+            ...events,
+      ];
+
+  static bool isSessionEvent(QueueEvent event) =>
+      event is AppRestarted ||
+      event is AccountChanged ||
+      event is ConnectionReturned ||
+      event is ConnectionLost;
+
+  List<QueueEvent> sessionWrites([String strategy = strategyId]) => [
+        for (final report in sender.store.reports)
+          if (report case EventsWritten(:final strategyId, :final events)
+              when strategyId == strategy && events.every(isSessionEvent))
             ...events,
       ];
 

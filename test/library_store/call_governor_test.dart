@@ -206,6 +206,7 @@ void main() {
       world.server.overrideRead = (call) => const StoreReadRefused(
             StoreReadRefusal.upgradeRequired,
             'upgrade',
+            point: stampedWhenAnswered,
           );
       world.settle(const Duration(minutes: 1));
       expect(world.face(), Face.upgradeRequired);
@@ -249,8 +250,9 @@ void main() {
           const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
               point: stampedWhenAnswered),
         );
-        world.server.overrideRead = (call) =>
-            const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+        world.server.overrideRead = (call) => const StoreReadRefused(
+            StoreReadRefusal.forbidden, 'forbidden',
+            point: stampedWhenAnswered);
         world.editorShows = strategyId;
         world.commitMove(1);
         world.settle(const Duration(hours: 2));
@@ -272,8 +274,9 @@ void main() {
           const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
               point: stampedWhenAnswered),
         );
-        world.server.overrideRead = (call) =>
-            const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+        world.server.overrideRead = (call) => const StoreReadRefused(
+            StoreReadRefusal.forbidden, 'forbidden',
+            point: stampedWhenAnswered);
         world.commitMove(1);
         world.settle(const Duration(hours: 2));
         expect(world.sender.accessCheckStopped(strategyId), isTrue);
@@ -389,6 +392,7 @@ void main() {
         world.server.overrideRead = (call) => const StoreReadRefused(
               StoreReadRefusal.upgradeRequired,
               'upgrade',
+              point: stampedWhenAnswered,
             );
         world.settle(const Duration(minutes: 1));
         final sends = world.server.calls.length;

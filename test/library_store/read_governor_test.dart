@@ -25,8 +25,9 @@ void forbidEveryRead(World world) {
     const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
         point: stampedWhenAnswered),
   );
-  world.server.overrideRead =
-      (call) => const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+  world.server.overrideRead = (call) => const StoreReadRefused(
+      StoreReadRefusal.forbidden, 'forbidden',
+      point: stampedWhenAnswered);
 }
 
 void main() {
@@ -242,6 +243,7 @@ void main() {
               : const StoreReadRefused(
                   StoreReadRefusal.upgradeRequired,
                   'upgrade',
+                  point: stampedWhenAnswered,
                 );
           world.sender.adopt(strategyId);
           world.settle(const Duration(minutes: 10));
@@ -275,6 +277,7 @@ void main() {
         world.server.overrideRead = (call) => const StoreReadRefused(
               StoreReadRefusal.unauthenticated,
               'signed out',
+              point: stampedWhenAnswered,
             );
         world.commitMove(1);
         world.settle(const Duration(seconds: 5));

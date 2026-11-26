@@ -590,7 +590,8 @@ final class Model {
           strategy,
           (_) => Future.microtask(() {
             refusedAt = signIns;
-            return const StoreBatchAccountMismatch('another account');
+            return const StoreBatchAccountMismatch('another account',
+                point: stampedWhenAnswered);
           }),
         );
       case _:
@@ -638,6 +639,7 @@ final class Model {
             return const StoreReadRefused(
               StoreReadRefusal.accountMismatch,
               'another account',
+              point: stampedWhenAnswered,
             );
           }),
         );
@@ -649,13 +651,15 @@ final class Model {
             return const StoreReadRefused(
               StoreReadRefusal.unauthenticated,
               'signed out',
+              point: stampedWhenAnswered,
             );
           }),
         );
       case 2:
         server.answerReadWith(
           strategy,
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden'),
+          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden',
+              point: stampedWhenAnswered),
         );
       case 3:
         server.answerReadWith(

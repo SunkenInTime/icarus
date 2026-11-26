@@ -17,8 +17,9 @@ void main() {
         const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
             point: stampedWhenAnswered),
       );
-      world.server.overrideRead = (call) =>
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+      world.server.overrideRead = (call) => const StoreReadRefused(
+          StoreReadRefusal.forbidden, 'forbidden',
+          point: stampedWhenAnswered);
       world.commitMove(1);
       world.settle(const Duration(hours: 1));
       expect(world.face(), Face.editAccessLost);

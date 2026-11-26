@@ -229,8 +229,9 @@ final stalls = <StallExit, Stall>{
         const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
             point: stampedWhenAnswered),
       );
-      world.server.overrideRead = (call) =>
-          const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+      world.server.overrideRead = (call) => const StoreReadRefused(
+          StoreReadRefusal.forbidden, 'forbidden',
+          point: stampedWhenAnswered);
       world.commitMove(1);
     },
     goAgain: (world) => world
@@ -773,8 +774,9 @@ void main() {
           const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
               point: stampedWhenAnswered),
         );
-        world.server.overrideRead = (call) =>
-            const StoreReadRefused(StoreReadRefusal.forbidden, 'forbidden');
+        world.server.overrideRead = (call) => const StoreReadRefused(
+            StoreReadRefusal.forbidden, 'forbidden',
+            point: stampedWhenAnswered);
         final before = listReads(world).length;
         world.commitMove(1);
         world.settle(const Duration(hours: 1));
