@@ -214,7 +214,7 @@ void main() {
         unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
           settings: RouteSettings(
             name: Routes.strategyView,
-            arguments: EditorClaim(strategies.askedByTheUserNow()),
+            arguments: EditorClaim.showing(strategies.askedByTheUserNow()),
           ),
           builder: (_) => const Scaffold(body: Text('editor')),
         )));
@@ -624,6 +624,13 @@ void main() {
       await back(1);
       expect(posts.asked, ['history-post']);
       strategies.show('strategy-b', StrategySource.local);
+      unawaited(appNavigatorKey.currentState!.push(MaterialPageRoute<void>(
+        settings: RouteSettings(
+          name: Routes.strategyView,
+          arguments: EditorClaim.showing(strategies.askedByTheUserNow()),
+        ),
+        builder: (_) => const Scaffold(body: Text('strategy-b')),
+      )));
       await tester.pump();
       posts.release();
       await tester.pumpAndSettle();
@@ -704,6 +711,7 @@ class _RecordingStrategies extends StrategyProvider {
     String id, {
     String? pageId,
     required OpenSeen asked,
+    void Function()? whenShown,
   }) async {
     if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     opened.add('local:$id');
@@ -720,6 +728,7 @@ class _RecordingStrategies extends StrategyProvider {
     String id, {
     String? pageId,
     required OpenSeen asked,
+    void Function()? whenShown,
   }) async {
     if (!asked.isNow(askedByTheUserNow())) return const GaveWay();
     opened.add('cloud:$id');

@@ -188,7 +188,8 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         ref.read(communityPostToOpenProvider.notifier).state = null;
         final opening = _openCommunityPostLink(post);
         if (post case PostLinkArrived(:final opened?)) {
-          unawaited(opening.then(opened.complete, onError: opened.completeError));
+          unawaited(
+              opening.then(opened.complete, onError: opened.completeError));
         } else {
           unawaited(opening);
         }
@@ -515,12 +516,15 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
         // A Community post's view is the post's own, so a strategy never
         // swaps into it: the post closes and the strategy opens in its own.
         var over = asked;
-        if (_openPost() != null) {
+        final claim = editor == null ? null : StrategyView.claimOf(editor);
+        if (claim != null && claim.isPost) {
           final left =
               await _leaveOpenStrategy(navigator, 'navigateToStrategy', asked);
           if (left == null) return false;
           over = left;
-        } else if (editor != null) {
+        } else if (editor != null &&
+            claim != null &&
+            claim.takesAnOpenInPlace) {
           // Already in the strategy view; swap strategies in place, exactly
           // like the quick switcher does.
           // An open that gave way to a newer one (or to a close) did not

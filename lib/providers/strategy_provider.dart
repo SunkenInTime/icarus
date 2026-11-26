@@ -442,6 +442,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     String strategyID, {
     String? pageId,
     required OpenSeen asked,
+    void Function()? whenShown,
   }) async {
     if (!asked.isNow(_seen)) return const GaveWay();
     // A cloud copy still being built by a move from this device is the
@@ -484,6 +485,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         storageDirectory: storageDirectory,
         isOpen: true,
       ));
+      whenShown?.call();
 
       await opening.wait(
         ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
@@ -2297,6 +2299,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     String id, {
     String? pageId,
     required OpenSeen asked,
+    void Function()? whenShown,
   }) async {
     if (!asked.isNow(_seen)) return const GaveWay();
     _requireLocalLibrary('open');
@@ -2358,6 +2361,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           storageDirectory: newDir?.path,
           isOpen: true,
         ));
+        whenShown?.call();
         ref.read(strategySaveStateProvider.notifier).reset();
         if (open != null) {
           reads?.reading(open, migrated: migratedStrategy != newStrat);

@@ -142,18 +142,23 @@ class StrategyView extends ConsumerStatefulWidget {
           .read(strategyProvider.notifier)
           .claimForAnEditor(asked);
 
+  static EditorClaim? claimOf(Route<dynamic> editor) =>
+      switch (editor.settings.arguments) {
+        final EditorClaim claim => claim,
+        _ => null,
+      };
+
   @useResult
   static OpenSeen? claimInPlace(
     Route<dynamic> editor,
     StrategyProvider strategies,
     OpenSeen asked,
   ) {
-    if (editor.settings.arguments case final EditorClaim claim) {
-      final claimed = strategies.claimForAnEditor(asked);
-      if (claimed != null) claim._by = claimed;
-      return claimed;
-    }
-    return null;
+    final claim = claimOf(editor);
+    if (claim == null || !claim.takesAnOpenInPlace) return null;
+    final claimed = strategies.claimForAnEditor(asked);
+    if (claimed != null) claim._by = claimed;
+    return claimed;
   }
 
   static PageRoute<void> _communityRoute(
@@ -164,7 +169,7 @@ class StrategyView extends ConsumerStatefulWidget {
     return PageRouteBuilder<void>(
       settings: RouteSettings(
         name: Routes.strategyView,
-        arguments: EditorClaim(asked),
+        arguments: EditorClaim.post(asked),
       ),
       opaque: false,
       barrierColor: const Color(0x99000000),
@@ -202,7 +207,9 @@ class StrategyView extends ConsumerStatefulWidget {
     return PageRouteBuilder<void>(
       settings: RouteSettings(
         name: Routes.strategyView,
-        arguments: EditorClaim(asked),
+        arguments: initialStrategyId == null
+            ? EditorClaim.showing(asked)
+            : EditorClaim.opening(asked),
       ),
       transitionDuration: const Duration(milliseconds: 200),
       reverseTransitionDuration: const Duration(milliseconds: 150),
@@ -251,9 +258,21 @@ class StrategyView extends ConsumerStatefulWidget {
 }
 
 final class EditorClaim {
-  EditorClaim(this._by);
+  EditorClaim.opening(this._by)
+      : isPost = false,
+        _shown = false;
+  EditorClaim.showing(this._by)
+      : isPost = false,
+        _shown = true;
+  EditorClaim.post(this._by)
+      : isPost = true,
+        _shown = false;
 
   OpenSeen _by;
+  final bool isPost;
+  bool _shown;
+
+  bool get takesAnOpenInPlace => _shown && !isPost;
 
   bool isHeldBy(OpenSeen asked) => identical(_by, asked);
 }
@@ -300,6 +319,7 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
     final strategyId = widget.initialStrategyId;
     final source = widget.initialStrategySource;
     if (strategyId == null) return;
+    final claim = _claim;
     if (!widget.asked
         .isNow(ref.read(strategyProvider.notifier).askedByTheUserNow())) {
       _leaveAfterFailedLoad();
@@ -315,6 +335,7 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
                   strategyId,
                   pageId: widget.initialPageId,
                   asked: widget.asked,
+                  whenShown: () => claim?._shown = true,
                 ),
           );
         case StrategySource.cloud:
@@ -332,13 +353,12 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
                   strategyId,
                   pageId: widget.initialPageId,
                   asked: widget.asked,
+                  whenShown: () => claim?._shown = true,
                 ),
           );
       }
       switch (opened) {
         case Changed():
-          break;
-        case GaveWay() when _handedOn:
           break;
         case GaveWay():
           _leaveAfterFailedLoad();
@@ -355,24 +375,22 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
         error: error,
         stackTrace: stackTrace,
       );
-      if (_hasLeft || !mounted) return;
+      if (!mounted || !_ownsItsRoute) return;
       // Refused: the access-lost dialog says so over the skeleton, and
       // leads out (see StrategyAccessWatcher).
       if (ref.read(strategyAccessLostProvider)) return;
-      if (_handedOn) return;
+      final notKept = ref.read(remoteEditorSnapshotProvider).error
+          is StrategyNotKeptOffline;
       final strategies = ref.read(strategyProvider.notifier);
       switch (strategies.closeAfterFailedOpen(asked: widget.asked)) {
         case Changed():
           break;
-        case GaveWay()
-            when !widget.asked.isNow(strategies.askedByTheUserNow()):
+        case GaveWay() when !widget.asked.isNow(strategies.askedByTheUserNow()):
           _leaveAfterFailedLoad();
           return;
         case GaveWay():
           break;
       }
-      final notKept = ref.read(remoteEditorSnapshotProvider).error
-          is StrategyNotKeptOffline;
       Settings.showToast(
         message: notKept
             ? context.l10n.syncStatusStrategyNeedsConnection
@@ -385,13 +403,16 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
     }
   }
 
-  bool get _handedOn => switch (ModalRoute.of(context)?.settings.arguments) {
-        final EditorClaim claim => !claim.isHeldBy(widget.asked),
-        _ => false,
+  EditorClaim? get _claim => switch (ModalRoute.of(context)) {
+        final route? => StrategyView.claimOf(route),
+        null => null,
       };
 
+  bool get _ownsItsRoute =>
+      mounted && !_hasLeft && (_claim?.isHeldBy(widget.asked) ?? true);
+
   bool _showsItsOpenLoading(StrategyOpening? opening, OpenSeen now) {
-    if (widget.initialStrategyId == null || _handedOn) return false;
+    if (widget.initialStrategyId == null) return false;
     return switch (now.opens - widget.asked.opens) {
       0 => true,
       1 => opening != null || now.strategyId != widget.initialStrategyId,
@@ -404,6 +425,7 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
   /// opening its own editor), and a plain pop would close that one and
   /// leave this one behind it, showing its loading screen for good.
   void _leaveAfterFailedLoad() {
+    if (!_ownsItsRoute) return;
     final route = ModalRoute.of(context);
     if (route == null || route.isCurrent) {
       Navigator.maybePop(context);

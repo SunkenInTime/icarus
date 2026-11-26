@@ -202,6 +202,7 @@ final class _HeldPages extends StrategyPageSessionNotifier {
 
 final class _ReadsItsHeader extends RemoteEditorSnapshotNotifier {
   static final held = <String, Completer<void>>{};
+  static final notKept = <String>{};
 
   @override
   Future<RemoteEditorSnapshot?> build() => SynchronousFuture(null);
@@ -212,6 +213,13 @@ final class _ReadsItsHeader extends RemoteEditorSnapshotNotifier {
     String? activePagePublicId,
   }) async {
     if (held[strategyPublicId] case final hold?) await hold.future;
+    if (notKept.contains(strategyPublicId)) {
+      state = AsyncError(
+        StrategyNotKeptOffline(strategyPublicId),
+        StackTrace.current,
+      );
+      return;
+    }
     final at = DateTime.utc(2026);
     state = AsyncData(RemoteEditorSnapshot(
       shell: RemoteStrategyShell(
@@ -1010,6 +1018,182 @@ void main() {
 
     expect(mouseNavigationRouteObserver.topRoute, same(editor));
     expect(find.byType(StrategyViewSkeleton), findsNothing);
+    await leaveEditors(tester, container);
+  });
+
+  void viewThroughALink(String strategyId) {
+    container.read(shareLinkViewProvider.notifier).state =
+        (strategyPublicId: strategyId, token: '$strategyId-token');
+    addTearDown(
+        () => container.read(shareLinkViewProvider.notifier).state = null);
+  }
+
+  Future<void> expectOpenInItsOwnEditor(WidgetTester tester, String id) async {
+    await untilOpen(tester, id);
+    await settleWithDisk(tester);
+    expect(container.read(strategyProvider).strategyId, id);
+    expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
+    expect(
+      tester
+          .widget<StrategyView>(find.byType(StrategyView, skipOffstage: false))
+          .communityPost,
+      isNull,
+    );
+  }
+
+  testWidgets(
+      'a share link that arrives before a pushed editor drew its first frame '
+      'opens in an editor of its own, and the pushed one leaves',
+      (tester) async {
+    await tester.runAsync(() => _stored('pushed-first'));
+    await pumpLibraryWithEditors(tester, container);
+    viewThroughALink('linked-cloud');
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'pushed-first',
+        initialStrategyName: 'pushed-first',
+      ),
+      isA<Pushed>(),
+    );
+    container.read(sharedStrategyToOpenProvider.notifier).state =
+        'linked-cloud';
+
+    await expectOpenInItsOwnEditor(tester, 'linked-cloud');
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a share link that arrives while a cloud editor waits for the cloud '
+      'opens in an editor of its own, which stays when that wait ends '
+      'without the cloud', (tester) async {
+    container.read(_cloudReady.notifier).state = null;
+    addTearDown(() => container.read(_cloudReady.notifier).state = null);
+    await pumpLibraryWithEditors(tester, container);
+    viewThroughALink('linked-cloud');
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'waits-for-cloud',
+        initialStrategyName: 'waits-for-cloud',
+        initialStrategySource: StrategySource.cloud,
+      ),
+      isA<Pushed>(),
+    );
+    await tester.pump();
+    container.read(sharedStrategyToOpenProvider.notifier).state =
+        'linked-cloud';
+    await untilOpen(tester, 'linked-cloud');
+    container.read(_cloudReady.notifier).state = false;
+
+    await expectOpenInItsOwnEditor(tester, 'linked-cloud');
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      "a share link that arrives while a Community post's header is still "
+      'being read opens in a plain editor, never in the post', (tester) async {
+    container.read(_cloudReady.notifier).state = true;
+    final header =
+        _ReadsItsHeader.held['held-post-strategy'] = Completer<void>();
+    addTearDown(() {
+      _ReadsItsHeader.held.clear();
+      container.read(_cloudReady.notifier).state = null;
+    });
+    await pumpLibraryWithEditors(tester, container);
+    viewThroughALink('linked-cloud');
+    expect(
+      StrategyView.openPost(
+        appNavigatorKey.currentState!,
+        _post('held-post'),
+        asked: strategies.askedByTheUserNow(),
+      ),
+      isA<Pushed>(),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    container.read(sharedStrategyToOpenProvider.notifier).state =
+        'linked-cloud';
+
+    await expectOpenInItsOwnEditor(tester, 'linked-cloud');
+    header.complete();
+    await expectOpenInItsOwnEditor(tester, 'linked-cloud');
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets('a route with no editor claim is never claimed in place',
+      (tester) async {
+    await pumpLibraryWithEditors(tester, container);
+    final asked = strategies.askedByTheUserNow();
+
+    expect(
+      StrategyView.claimInPlace(
+          ModalRoute.of(libraryContext)!, strategies, asked),
+      isNull,
+    );
+    expect(asked.isNow(strategies.askedByTheUserNow()), isTrue);
+  });
+
+  testWidgets(
+      'a window close sent while the app stays open leaves the next close '
+      'free to ask, once an editor is on screen again', (tester) async {
+    await tester.runAsync(() async {
+      await _stored('closed-once');
+      await _stored('opened-after');
+    });
+    final windowCalls = await pumpLibraryWithEditors(tester, container);
+    await openWithAnEdit(tester, 'closed-once');
+    closeTheWindow(tester);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text("Don't save"));
+    await tester.pumpAndSettle();
+    expect(windowCalls.map((call) => call.method), contains('close'));
+    expect(strategies.closeStrategy(asked: strategies.askedByTheUserNow()),
+        isA<Changed>());
+    appNavigatorKey.currentState!.popUntil((route) => route.isFirst);
+    await settleWithDisk(tester);
+    expect(StrategyView.onScreen.value, 0);
+
+    await openWithAnEdit(tester, 'opened-after');
+    closeTheWindow(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save changes?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await leaveEditors(tester, container);
+  });
+
+  testWidgets(
+      'a cloud editor whose strategy is not kept on this device says it needs '
+      'a connection, not that it failed to load', (tester) async {
+    container.read(_cloudReady.notifier).state = true;
+    _ReadsItsHeader.notKept.add('not-kept');
+    addTearDown(() {
+      _ReadsItsHeader.notKept.clear();
+      container.read(_cloudReady.notifier).state = null;
+    });
+    await pumpLibraryWithEditors(tester, container);
+    expect(
+      StrategyView.open(
+        appNavigatorKey.currentState!,
+        asked: strategies.askedByTheUserNow(),
+        initialStrategyId: 'not-kept',
+        initialStrategyName: 'not-kept',
+        initialStrategySource: StrategySource.cloud,
+      ),
+      isA<Pushed>(),
+    );
+    await settleWithDisk(tester);
+
+    expect(find.byType(StrategyView, skipOffstage: false), findsNothing);
+    expect(
+      find.text('This strategy needs a connection the first time you open it.'),
+      findsOneWidget,
+    );
+    expect(find.text('Could not load strategy.'), findsNothing);
     await leaveEditors(tester, container);
   });
 }
