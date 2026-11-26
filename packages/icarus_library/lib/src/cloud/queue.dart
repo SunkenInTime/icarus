@@ -1322,11 +1322,19 @@ final class _Edit {
     final (was, now) = (original.shown.fresh, shown.fresh);
     if (was != now) {
       if (was.listSinceTouch != now.listSinceTouch) change.everything = true;
-      change.pages.addAll({
+      final moved = {
         for (final page in {...was.subjects, ...now.subjects})
           if (was.listFreshFor(page) != now.listFreshFor(page) ||
               was.pageFreshFor(page) != now.pageFreshFor(page))
             page,
+      };
+      change.pages.addAll(moved);
+      change.targets.addAll({
+        for (final MapEntry(:key, :value) in {
+          ...original.shown.rows,
+          ...shown.rows,
+        }.entries)
+          if (moved.contains(value.page)) key,
       });
     }
     for (final page in {
