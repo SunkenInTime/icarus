@@ -95,7 +95,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -125,7 +125,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -155,7 +155,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -185,7 +185,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -215,7 +215,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -245,7 +245,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -275,7 +275,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -305,7 +305,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -335,7 +335,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -365,7 +365,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -395,7 +395,7 @@
         },
         "queryReruns": {
           "today": 50,
-          "budget": 60
+          "budget": 50
         },
         "listReruns": {
           "today": 0,
@@ -405,7 +405,7 @@
     },
     "drawingMove": {
       "title": "Move a 2,000-point freehand drawing",
-      "about": "One live element.patch moving a freehand drawing of 2,000 points on a 60-item page the editor already watches in slices. A move shifts every point, so its fields are listOfPoints and boundingBox and the patch carries the whole drawing: sending only changed fields would send the same points.",
+      "about": "One live element.patch moving a freehand drawing of 2,000 points on a 60-item page the editor already watches in slices. A move shifts every point, so its fields are listOfPoints and boundingBox and the patch carries the whole drawing: sending only changed fields would send the same points. The one query re-run is the slice that holds the drawing.",
       "metrics": {
         "functionCalls": {
           "today": 2,
@@ -429,7 +429,7 @@
         },
         "queryReruns": {
           "today": 1,
-          "budget": 3
+          "budget": 1
         }
       }
     },
@@ -459,7 +459,7 @@
         },
         "queryReruns": {
           "today": 20,
-          "budget": 24
+          "budget": 20
         }
       }
     },
@@ -485,7 +485,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -533,7 +533,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -563,7 +563,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -593,7 +593,7 @@
         },
         "queryReruns": {
           "today": 50,
-          "budget": 60
+          "budget": 50
         },
         "listReruns": {
           "today": 0,
@@ -635,7 +635,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -665,7 +665,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         }
       }
     },
@@ -695,7 +695,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         },
         "applyBatchCalls": {
           "today": 50,
@@ -733,7 +733,7 @@
         },
         "queryReruns": {
           "today": 0,
-          "budget": 2
+          "budget": 0
         },
         "applyBatchCalls": {
           "today": 12,
@@ -789,7 +789,7 @@
         },
         "queryReruns": {
           "today": 20,
-          "budget": 24
+          "budget": 20
         },
         "applyBatchCalls": {
           "today": 20,

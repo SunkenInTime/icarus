@@ -69,7 +69,7 @@ const METRICS = {
   writeBytes: { label: "bytes written in all", unit: "B", headroom: 0.25 },
   sentBytes: { label: "bytes of call arguments the client sent", unit: "B", headroom: 0.25 },
   returnBytes: { label: "bytes the functions returned, cached answers included", unit: "B", headroom: 0.25 },
-  queryReruns: { label: "query re-runs", unit: "", headroom: 0.2 },
+  queryReruns: { label: "query re-runs", unit: "", headroom: 0 },
   callsPerHour: { label: "function calls an hour", unit: "", headroom: 0.2 },
   readBytesPerHour: { label: "bytes read an hour", unit: "B", headroom: 0.25 },
   writeBytesPerHour: { label: "bytes written an hour", unit: "B", headroom: 0.25 },
