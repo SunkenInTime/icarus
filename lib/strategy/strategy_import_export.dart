@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/strategy/export_strategy_reads.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
@@ -2852,7 +2853,7 @@ class StrategyImportExportService {
     String? outputFilePath,
   }) async {
     final StrategyData? strategy =
-        await ref.read(localLibraryViewProvider).readStrategy(id);
+        await ref.read(exportStrategyReadsProvider).read(id);
     if (strategy == null) {
       log("Couldn't find strategy to export");
       throw StateError("Couldn't find strategy to export");
