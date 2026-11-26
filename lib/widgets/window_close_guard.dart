@@ -25,16 +25,32 @@ class _WindowCloseGuardState extends ConsumerState<WindowCloseGuard>
     with WindowListener {
   var _closing = _Closing.no;
 
+  var _preventsClose = false;
+
   @override
   void initState() {
     super.initState();
-    if (!kIsWeb) windowManager.addListener(this);
+    if (kIsWeb) return;
+    windowManager.addListener(this);
+    StrategyView.onScreen.addListener(_preventCloseWhileAnEditorIsOnScreen);
+    _preventCloseWhileAnEditorIsOnScreen();
   }
 
   @override
   void dispose() {
-    if (!kIsWeb) windowManager.removeListener(this);
+    if (!kIsWeb) {
+      windowManager.removeListener(this);
+      StrategyView.onScreen
+          .removeListener(_preventCloseWhileAnEditorIsOnScreen);
+    }
     super.dispose();
+  }
+
+  void _preventCloseWhileAnEditorIsOnScreen() {
+    final prevents = StrategyView.onScreen.value > 0;
+    if (prevents == _preventsClose) return;
+    _preventsClose = prevents;
+    unawaited(windowManager.setPreventClose(prevents));
   }
 
   @override
@@ -45,7 +61,7 @@ class _WindowCloseGuardState extends ConsumerState<WindowCloseGuard>
     _closing = _Closing.asking;
     try {
       final strategies = ref.read(strategyProvider.notifier);
-      while (StrategyView.isOnScreen && mounted) {
+      while (StrategyView.onScreen.value > 0 && mounted) {
         final navigator = appNavigatorKey.currentState;
         if (navigator == null) return;
         final answer = await guardUnsavedStrategyExit(
@@ -57,6 +73,7 @@ class _WindowCloseGuardState extends ConsumerState<WindowCloseGuard>
         if (answer.seen.isNow(strategies.askedByTheUserNow())) {
           strategies.cancelPendingSave();
           _closing = _Closing.sent;
+          _preventsClose = false;
           unawaited(windowManager.setPreventClose(false));
           unawaited(windowManager.close());
           return;

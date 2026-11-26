@@ -51,7 +51,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:icarus/widgets/window_chrome.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:meta/meta.dart';
-import 'package:window_manager/window_manager.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/eased_route_transition.dart';
 import 'package:icarus/widgets/editor_input_gate.dart';
@@ -136,9 +135,7 @@ class StrategyView extends ConsumerStatefulWidget {
     )));
   }
 
-  static var _onScreen = 0;
-
-  static bool get isOnScreen => _onScreen > 0;
+  static final onScreen = ValueNotifier<int>(0);
 
   static OpenSeen? _claim(NavigatorState navigator, OpenSeen asked) =>
       ProviderScope.containerOf(navigator.context)
@@ -290,16 +287,12 @@ class _StrategyViewState extends ConsumerState<StrategyView> {
         unawaited(_loadInitialStrategy());
       });
     }
-    if (!kIsWeb && StrategyView._onScreen++ == 0) {
-      unawaited(windowManager.setPreventClose(true));
-    }
+    StrategyView.onScreen.value++;
   }
 
   @override
   void dispose() {
-    if (!kIsWeb && --StrategyView._onScreen == 0) {
-      unawaited(windowManager.setPreventClose(false));
-    }
+    StrategyView.onScreen.value--;
     super.dispose();
   }
 
