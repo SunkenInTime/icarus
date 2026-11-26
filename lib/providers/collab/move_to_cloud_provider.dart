@@ -480,11 +480,11 @@ class MoveToCloudNotifier extends Notifier<void> {
       if (editor.strategyId == localId &&
           editor.source == StrategySource.local) {
         final strategies = ref.read(strategyProvider.notifier);
+        final moving = strategies.askedByTheUserNow();
         await strategies.forceSaveNow(localId);
         final open = ref.read(strategyProvider);
         if (open.strategyId == localId &&
             open.source == StrategySource.local) {
-          final moving = strategies.askedByTheUserNow();
           switch (strategies.closeStrategy(asked: moving)) {
             case Changed():
               break;

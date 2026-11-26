@@ -651,6 +651,26 @@ void main() {
     expect(cloud.strategies.values.single.unfinished, isFalse);
   });
 
+  test(
+      'a strategy the reader starts opening while the move saves the one it '
+      'moves goes on opening, and the move stops with that one kept here',
+      () async {
+    await putStrategy('s1');
+    final editor = _HeldStrategy(
+      's1',
+      whileSaving: (editor) => editor.startsOpening('s2'),
+    );
+    open(editor: () => editor);
+
+    await mover().moveStrategy('s1');
+
+    expect(editor.saved, isTrue);
+    expect(container.read(strategyOpeningProvider)?.strategyId, 's2');
+    expect(strategies().containsKey('s1'), isTrue);
+    expect(cloud.strategies, isEmpty);
+    expect(messages.single.$2, isTrue);
+  });
+
   test('an editor that holds it again keeps the original here', () async {
     await putStrategy('s1');
     // A load that began before the move finishes after it started.
@@ -1119,6 +1139,10 @@ class _HeldStrategy extends StrategyProvider {
   final bool letsGo;
   final void Function(_HeldStrategy editor)? whileSaving;
   bool saved = false;
+
+  void startsOpening(String otherId) => ref
+      .read(strategyOpeningProvider.notifier)
+      .begin(otherId, source: StrategySource.local);
 
   void opensAnother(String otherId) {
     ref.read(strategyOpeningProvider.notifier).endAll();
