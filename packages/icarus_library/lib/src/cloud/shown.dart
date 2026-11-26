@@ -673,6 +673,27 @@ final class Removed {
   String toString() => 'removed at $order, last held at $held';
 }
 
+enum PageSays { live, trashed, gone }
+
+enum PageDecider { list, page, disagree }
+
+PageDecider pageDecider({
+  required Arrival? list,
+  required PageSays listSays,
+  required Arrival? page,
+  required PageSays? pageSays,
+}) => switch ((list, page, pageSays)) {
+  (_, null, _) || (_, _, null) => PageDecider.list,
+  (null, _, _) => PageDecider.page,
+  (final list?, final page?, final says?) when list.order == page.order =>
+    says == listSays ? PageDecider.list : PageDecider.disagree,
+  (final list?, final page?, _) =>
+    list.order.isBefore(page.order) ? PageDecider.page : PageDecider.list,
+};
+
+PageSays pageSaysOf(PageRow row) =>
+    _isTrashed(row) ? PageSays.trashed : PageSays.live;
+
 sealed class RowDecision {
   const RowDecision();
 }
@@ -829,9 +850,13 @@ final class Shown {
     Freshness? fresh,
     this.listTaken,
     Map<String, Arrival> pagesTaken = const {},
+    Map<String, PageSays> listSaid = const {},
+    Map<String, PageSays> pageSaid = const {},
     this.fence,
   }) : fresh = fresh ?? Freshness.none,
        pagesTaken = Map.unmodifiable(pagesTaken),
+       listSaid = Map.unmodifiable(listSaid),
+       pageSaid = Map.unmodifiable(pageSaid),
        pageReads = Map.unmodifiable({
          for (final MapEntry(:key, :value) in pageReads.entries)
            if (value is! NotReadThisSession) key: value,
@@ -916,6 +941,34 @@ final class Shown {
   final Map<String, ReadState> pageReads;
   final Arrival? listTaken;
   final Map<String, Arrival> pagesTaken;
+  final Map<String, PageSays> listSaid;
+  final Map<String, PageSays> pageSaid;
+
+  PageDecider decidesPage(String page, Arrival arrival, PageSays says) =>
+      pageDecider(
+        list: listTaken,
+        listSays: listSaid[page] ?? PageSays.gone,
+        page: arrival,
+        pageSays: says,
+      );
+
+  Set<String> disagreeingPages(HeaderRead result, Arrival? arrival) => {
+    for (final page in {...knownPages, ...pageSaid.keys})
+      if (pageDecider(
+            list: arrival,
+            listSays: _listSays(result, page),
+            page: pagesTaken[page],
+            pageSays: pageSaid[page],
+          ) ==
+          PageDecider.disagree)
+        page,
+  };
+
+  static PageSays _listSays(HeaderRead result, String page) =>
+      switch (result.pages.where((row) => row.publicId == page).firstOrNull) {
+        final row? => pageSaysOf(row),
+        null => PageSays.gone,
+      };
   final ResultOrder? fence;
 
   PaidBy? owedBy(ArrivedBase result) => switch (switch (result) {
@@ -942,6 +995,8 @@ final class Shown {
     fresh: fresh,
     listTaken: listTaken ?? after.listTaken,
     pagesTaken: {...after.pagesTaken, ...pagesTaken},
+    listSaid: listTaken == null ? after.listSaid : listSaid,
+    pageSaid: {...after.pageSaid, ...pageSaid},
     fence: fence,
   );
 
@@ -1029,10 +1084,14 @@ final class Shown {
     Map<Target, ShownRow>? rows,
     Arrival? listTaken,
     Map<String, Arrival>? pagesTaken,
+    Map<String, PageSays>? listSaid,
+    Map<String, PageSays>? pageSaid,
     ShownRow? strategy,
   }) => Shown(
     listTaken: listTaken ?? this.listTaken,
     pagesTaken: pagesTaken ?? this.pagesTaken,
+    listSaid: listSaid ?? this.listSaid,
+    pageSaid: pageSaid ?? this.pageSaid,
     fence: fence,
     fresh: fresh ?? this.fresh,
     list: list ?? this.list,
@@ -1078,6 +1137,10 @@ final class Shown {
     PageGone(:final pagePublicId) => Taken(
       _with(
         pagesTaken: {...pagesTaken, pagePublicId: ?arrival},
+        pageSaid: {
+          ...pageSaid,
+          if (arrival != null) pagePublicId: PageSays.gone,
+        },
         fresh: fresh.afterPage(pagePublicId, gone: true, arrival: arrival),
         pageReads: {...pageReads}..remove(pagePublicId),
         goneThisSession: {...goneThisSession, pagePublicId},
@@ -1096,6 +1159,7 @@ final class Shown {
     StrategyGone() => Taken(
       _with(
         listTaken: arrival,
+        listSaid: const {},
         list: paidBy(list, arrival, result) ? const ReadThisSession() : list,
         pageReads: {
           for (final MapEntry(:key, :value) in pageReads.entries)
@@ -1109,16 +1173,24 @@ final class Shown {
   Taken _withList(HeaderRead result, Arrival? arrival) {
     final HeaderRead(strategy: strategyRow, pages: listed, :settings) = result;
     final listedIds = {for (final page in listed) page.publicId};
-    final readLater = {
-      for (final page in knownPages)
-        if (!listedIds.contains(page))
-          if ((pagesTaken[page], arrival) case (
-            final taken?,
-            final arrival?,
-          ) when arrival.order.isBefore(taken.order))
-            page,
+    final pageDecides = {
+      for (final page in {...knownPages, ...listedIds, ...pageSaid.keys})
+        if (arrival != null &&
+            pageDecider(
+                  list: arrival,
+                  listSays: _listSays(result, page),
+                  page: pagesTaken[page],
+                  pageSays: pageSaid[page],
+                ) !=
+                PageDecider.list)
+          page,
     };
-    final kept = {...listedIds, ...readLater};
+    final readLater = {
+      for (final page in pageDecides)
+        if (pages.containsKey(page) || trashed.containsKey(page)) page,
+    };
+    final listDecides = listedIds.difference(pageDecides);
+    final kept = {...listDecides, ...readLater};
     final decisions = <RowDecision>[
       for (final page in knownPages)
         if (!kept.contains(page)) PageLeft(page),
@@ -1132,6 +1204,10 @@ final class Shown {
     };
     for (final page in listed) {
       final id = page.publicId;
+      if (pageDecides.contains(id)) {
+        decisions.add(RowKept(page, KeptBecause.leftByANewerResult));
+        continue;
+      }
       final heldLive = pages[id];
       final held = heldLive ?? trashed[id];
       if (replaces(held, page)) {
@@ -1147,9 +1223,13 @@ final class Shown {
       ...readLater,
     };
     decisions.addAll([
-      for (final page in listedIds)
+      for (final page in listDecides)
         if (!withSettings.contains(page)) SettingsLeft(page),
-      for (final row in settings) RowTaken(row),
+      for (final row in settings)
+        if (pageDecides.contains(row.pagePublicId))
+          RowKept(row, KeptBecause.leftByANewerResult)
+        else
+          RowTaken(row),
     ]);
     final live = nextPages.keys.toSet();
     return Taken(
@@ -1158,7 +1238,12 @@ final class Shown {
         listTaken: arrival ?? listTaken,
         pagesTaken: {
           for (final MapEntry(:key, :value) in pagesTaken.entries)
-            if (kept.contains(key)) key: value,
+            if (kept.contains(key) || pageDecides.contains(key)) key: value,
+        },
+        listSaid: {for (final page in listed) page.publicId: pageSaysOf(page)},
+        pageSaid: {
+          for (final MapEntry(:key, :value) in pageSaid.entries)
+            if (kept.contains(key) || pageDecides.contains(key)) key: value,
         },
         fresh: fresh.afterList(live.difference(readLater), arrival),
         list: switch ((list, createdAtOf(strategyRow))) {
@@ -1199,7 +1284,8 @@ final class Shown {
         settings: {
           for (final page in readLater) page: ?this.settings[page],
           for (final row in settings)
-            row.pagePublicId: _rowOf(row, row.pagePublicId),
+            if (!pageDecides.contains(row.pagePublicId))
+              row.pagePublicId: _rowOf(row, row.pagePublicId),
         },
         content: {
           for (final MapEntry(:key, :value) in content.entries)
@@ -1397,6 +1483,7 @@ final class Shown {
     return Taken(
       _with(
         pagesTaken: {...pagesTaken, page: ?arrival},
+        pageSaid: {...pageSaid, if (arrival != null) page: pageSaysOf(pageRow)},
         fresh: fresh.afterPage(page, gone: trashedNow, arrival: arrival),
         pageReads: {
           ...pageReads,

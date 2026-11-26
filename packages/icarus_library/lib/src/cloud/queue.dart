@@ -785,6 +785,28 @@ final class SessionOpened extends QueueEffect {
   String toString() => 'SessionOpened($session)';
 }
 
+final class ReportResultsDisagree extends QueueEffect {
+  const ReportResultsDisagree(this.page);
+
+  final String? page;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ReportResultsDisagree && other.page == page;
+
+  @override
+  int get hashCode => Object.hash(ReportResultsDisagree, page);
+
+  @override
+  String toString() => 'ReportResultsDisagree($page)';
+}
+
+String? _subjectOfResult(ArrivedBase base) => switch (base) {
+  PageRead(:final page) => page.publicId,
+  PageGone(:final pagePublicId) => pagePublicId,
+  HeaderRead() || StrategyGone() => null,
+};
+
 final class ReportReplacedWithoutEvidence extends QueueEffect {
   const ReportReplacedWithoutEvidence(this.opId);
 
@@ -1749,7 +1771,15 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
   return edit.done();
 }
 
-enum ResultFit { applies, adopts, listFirst, same, older, startedInAnotherLife }
+enum ResultFit {
+  applies,
+  adopts,
+  listFirst,
+  same,
+  disagrees,
+  older,
+  startedInAnotherLife,
+}
 
 ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   final held = shown.strategy?.life;
@@ -1780,6 +1810,16 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
       (final held?, final listed?) when listed < held => ResultFit.older,
       _ => ResultFit.applies,
     },
+    PageRead(:final page)
+        when shown.decidesPage(page.publicId, arrival, pageSaysOf(page)) ==
+            PageDecider.disagree =>
+      ResultFit.disagrees,
+    PageRead(:final page)
+        when shown.listTaken != null &&
+            !shown.listSaid.containsKey(page.publicId) &&
+            shown.decidesPage(page.publicId, arrival, pageSaysOf(page)) ==
+                PageDecider.list =>
+      ResultFit.older,
     PageRead(:final page) => switch (shown.pages[page.publicId]) {
       null when page is TrashedPage => ResultFit.applies,
       null => ResultFit.listFirst,
@@ -1789,11 +1829,15 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
         _ => ResultFit.applies,
       },
     },
-    PageGone(:final pagePublicId)
-        when shown.pages.containsKey(pagePublicId) &&
-            (shown.listTaken != null &&
-                arrival.order.isBefore(shown.listTaken!.order)) =>
-      ResultFit.older,
+    PageGone(:final pagePublicId) => switch (shown.decidesPage(
+      pagePublicId,
+      arrival,
+      PageSays.gone,
+    )) {
+      PageDecider.disagree => ResultFit.disagrees,
+      PageDecider.list when shown.listTaken != null => ResultFit.older,
+      _ => ResultFit.applies,
+    },
     PageGone() || StrategyGone() => ResultFit.applies,
   };
 }
@@ -1807,6 +1851,9 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   switch (resultFit(edit.shown, base, arrival)) {
     case ResultFit.older:
       return NotApplicable(edit.original, const OlderResult());
+    case ResultFit.disagrees:
+      edit.effects.add(ReportResultsDisagree(_subjectOfResult(base)));
+      return edit.done();
     case ResultFit.same:
       final paid = edit.shown.paidAgain(base, arrival);
       if (paid == edit.shown) {
@@ -1844,6 +1891,11 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
     return edit.done();
   }
   final before = edit.shown;
+  if (base case HeaderRead()) {
+    for (final page in before.disagreeingPages(base, arrival)) {
+      edit.effects.add(ReportResultsDisagree(page));
+    }
+  }
   final taken = edit.shown.taken(base, arrival: arrival);
   edit.decisions.addAll(taken.decisions);
   edit.shown = taken.shown;

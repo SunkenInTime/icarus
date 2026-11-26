@@ -572,6 +572,8 @@ String outcome(Client before, Step result) {
             StrategySetAside(:final count) => 'sets $count aside',
             ReportReplacedWithoutLife(:final attempt) =>
               'reports attempt $attempt replaced without a life',
+            ReportResultsDisagree(:final page) =>
+              'reports results for ${page ?? 'the page list'} that disagree',
             ReportReplacedWithoutEvidence(:final opId) =>
               'reports $opId replaced without the server\'s row',
             PageResultDeferred(:final page) => 'defers $page for the page list',
