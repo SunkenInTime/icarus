@@ -686,7 +686,7 @@ PageDecider pageDecider({
   (_, null, _) || (_, _, null) => PageDecider.list,
   (null, _, _) => PageDecider.page,
   (final list?, final page?, final says?) when list.order == page.order =>
-    says == listSays ? PageDecider.list : PageDecider.disagree,
+    says == listSays ? PageDecider.page : PageDecider.disagree,
   (final list?, final page?, _) =>
     list.order.isBefore(page.order) ? PageDecider.page : PageDecider.list,
 };

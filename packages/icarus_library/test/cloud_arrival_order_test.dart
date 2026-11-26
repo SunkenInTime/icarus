@@ -314,6 +314,7 @@ final class Reference {
         final id = page.publicId;
         if (pages[id] case final held? when at <= held.at) return;
         if (!listed.contains(id)) {
+          if (at < listAt) return;
           owedSince = max(owedSince ?? at, at);
           return;
         }
