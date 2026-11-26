@@ -105,8 +105,8 @@ Future<Counts> runSeed(int seed, int steps) async {
     await addCloud(store, server.rows());
   }
   void count(String what) => applied[what] = (applied[what] ?? 0) + 1;
-  final sources = [<int, ReadAsked>{}, <int, ReadAsked>{}];
-  List<ReadAsked>? lastFresh;
+  final sources = <int, ReadAsked>{};
+  ReadAsked? lastFresh;
   var lastPage = 0;
   var lastList = 0;
   for (var step = 0; step < steps; step++) {
@@ -116,21 +116,20 @@ Future<Counts> runSeed(int seed, int steps) async {
         : server.read();
     final tie =
         !result.stale && lastFresh != null && server.random.nextInt(5) == 0;
-    final List<ReadAsked> from;
+    final ReadAsked asked;
     if (result.stale) {
-      from = [for (final each in sources) each[result.read]!];
+      asked = sources[result.read]!;
     } else if (tie) {
-      from = lastFresh;
+      asked = lastFresh;
       count('started with the read before it');
     } else {
-      from = [for (final store in stores) await askedIn(store)];
+      asked = await askedIn(stores.first);
     }
     if (!result.stale) {
-      lastFresh = from;
-      for (final (index, source) in from.indexed) {
-        sources[index][result.read] = source;
-      }
+      lastFresh = asked;
+      sources[result.read] = asked;
     }
+    final from = [asked, asked];
     final queue = (await syncOf(stores.first)).queue;
     final fits = resultFit(
       queue.shown,

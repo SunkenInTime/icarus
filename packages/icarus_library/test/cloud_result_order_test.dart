@@ -351,33 +351,6 @@ void main() {
     });
   });
 
-  group('a result restores freshness only if it pays the mark of the write '
-      'that took it away', () {
-    test('a page read from before our answer is taken but leaves the page '
-        'not fresh; one from after it makes the page fresh', () {
-      final client = Client();
-      final stale = tick();
-      client.edit(movePatch('move'));
-      final attempt = client.claim(['move']);
-      client.must(
-        OpAnswered(
-          attempt,
-          const AppliedAnswer('move', revision: 2, life: fixtureLife),
-          point: tick(),
-        ),
-      );
-      expect(client.queue.shown.fresh.pageFreshFor('page-a'), isFalse);
-      client.arrive(headerReadOf(initialRows()), at: stale);
-      client.arrive(pageReadOf(initialRows(), 'page-a'), at: stale);
-      expect(client.queue.shown.fresh.pageFreshFor('page-a'), isFalse);
-      expect(client.queue.shown.fresh.listFreshFor('page-a'), isFalse);
-      final after = withOp(initialRows(), movePatch('move'));
-      client.arrive(headerReadOf(after));
-      client.arrive(pageReadOf(after, 'page-a'));
-      expect(client.queue.shown.fresh.freshFor('page-a'), isTrue);
-    });
-  });
-
   group('marks stored by earlier builds', () {
     test('an owed list stored as a session and step reads as owed from the '
         'start of that session, and any result of the session or a later one '

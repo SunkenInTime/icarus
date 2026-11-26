@@ -1712,8 +1712,8 @@ extension _CloudStore on LibraryStore {
       }
       queue = step.queue;
       switch (step) {
-        case NotApplicable(:final why):
-          outcomes.add(ReportNotApplicable(why));
+        case NotApplicable(:final why, :final effects):
+          outcomes.add(ReportNotApplicable(why, effects: effects));
         case Stepped(:final effects, decisions: final taken):
           decisions.addAll(taken);
           outcomes.add(ReportApplied(effects));

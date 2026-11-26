@@ -21,13 +21,15 @@ final class QueueSession {
     required this.build,
     required this.number,
     required this.sequence,
+    int? labelsFrom,
     this.generation,
     this.basis,
-  });
+  }) : labelsFrom = labelsFrom ?? number;
 
   final bool connected;
   final String build;
   final int number;
+  final int labelsFrom;
   final int sequence;
   final Generation? generation;
   final ServerTimeBasis? basis;
@@ -47,6 +49,7 @@ final class QueueSession {
     connected: connected ?? this.connected,
     build: build,
     number: number,
+    labelsFrom: labelsFrom,
     sequence: sequence ?? this.sequence,
     generation: generation ?? this.generation,
     basis: basis,
@@ -62,19 +65,30 @@ final class QueueSession {
 
   QueueSession get stepped => _copy(sequence: sequence + 1, basis: basis);
 
+  bool labels(int label) =>
+      label != 0 && label >= labelsFrom && label <= number;
+
   @override
   bool operator ==(Object other) =>
       other is QueueSession &&
       other.connected == connected &&
       other.build == build &&
       other.number == number &&
+      other.labelsFrom == labelsFrom &&
       other.sequence == sequence &&
       other.generation == generation &&
       other.basis == basis;
 
   @override
-  int get hashCode =>
-      Object.hash(connected, build, number, sequence, generation, basis);
+  int get hashCode => Object.hash(
+    connected,
+    build,
+    number,
+    labelsFrom,
+    sequence,
+    generation,
+    basis,
+  );
 }
 
 final class CloudQueue {
@@ -877,9 +891,11 @@ final class Stepped extends Step {
 }
 
 final class NotApplicable extends Step {
-  const NotApplicable(super.queue, this.why);
+  NotApplicable(super.queue, this.why, {List<QueueEffect> effects = const []})
+    : effects = List.unmodifiable(effects);
 
   final Inapplicable why;
+  final List<QueueEffect> effects;
 }
 
 sealed class Inapplicable {
@@ -1211,11 +1227,14 @@ final class _Edit {
     required bool connected,
     required String build,
     Generation? generation,
+    bool sameLabels = false,
   }) {
+    final number = nextSession++;
     session = QueueSession(
       connected: connected,
       build: build,
-      number: nextSession++,
+      number: number,
+      labelsFrom: sameLabels ? session.labelsFrom : number,
       sequence: 0,
       generation: generation,
     );
@@ -1313,8 +1332,31 @@ Step transition(CloudQueue queue, QueueEvent event, {required DateTime now}) {
   final step = _step(_Edit(start, now), start, event, now);
   return switch (step) {
     Stepped() => step,
-    NotApplicable(:final why) => NotApplicable(start, why),
+    NotApplicable(:final why) => _inapplicable(start, event, why, now),
   };
+}
+
+NotApplicable _inapplicable(
+  CloudQueue start,
+  QueueEvent event,
+  Inapplicable why,
+  DateTime now,
+) {
+  final point = switch (event) {
+    BaseArrived(:final point, :final session) ||
+    ResultRefused(
+      :final point,
+      :final session,
+    ) when start.session.labels(session) => point,
+    OpAnswered(:final point) || BatchRefused(:final point) => point,
+    _ => null,
+  };
+  if (point == null) return NotApplicable(start, why);
+  final admitted = _Edit(start, now);
+  if (!_admitted(admitted, point) || admitted.session == start.session) {
+    return NotApplicable(start, why);
+  }
+  return NotApplicable(admitted.build(), why, effects: admitted.effects);
 }
 
 Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
@@ -1389,6 +1431,9 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       edit.session = edit.session.withConnection(connected: false, basis: null);
       return edit.done();
     case ConnectionReturned(:final generation):
+      if (generation.client < 1) {
+        return NotApplicable(queue, ConnectionAlreadyEnded(generation));
+      }
       switch (edit.session.generation) {
         case final held? when generation.isBefore(held):
           return NotApplicable(queue, ConnectionAlreadyEnded(generation));
@@ -1397,11 +1442,12 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
             connected: true,
             basis: edit.session.basis,
           );
-        case _:
+        case final held:
           edit.openSession(
             connected: true,
             build: edit.session.build,
             generation: generation,
+            sameLabels: held != null,
           );
       }
       return edit.done();
@@ -1461,13 +1507,14 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final point,
       :final requestedAt,
     ):
-      if (session != edit.session.number || !_admitted(edit, point)) {
+      if (!edit.session.labels(session) || !_admitted(edit, point)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       final refused = Arrival(
         order: edit.orderOf(point),
         point: point,
         requestedAt: requestedAt,
+        requestedIn: session,
       );
       final since = switch (switch (page) {
         final page? => edit.shown.pageRead(page),
@@ -1494,9 +1541,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final point,
       :final requestedAt,
     ):
-      if (session == 0 ||
-          session != edit.session.number ||
-          !_admitted(edit, point)) {
+      if (!edit.session.labels(session) || !_admitted(edit, point)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       return _arrived(
@@ -1506,6 +1551,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
           order: edit.orderOf(point),
           point: point,
           requestedAt: requestedAt,
+          requestedIn: session,
         ),
       );
   }
@@ -1513,6 +1559,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
 
 bool _admitted(_Edit edit, ResultPoint point) {
   final generation = point.generation;
+  if (generation.client < 1) return false;
   switch (edit.session.generation) {
     case null:
       edit.session = edit.session.on(generation);
@@ -1523,6 +1570,7 @@ bool _admitted(_Edit edit, ResultPoint point) {
         connected: true,
         build: edit.session.build,
         generation: generation,
+        sameLabels: true,
       );
     case _:
       break;
@@ -1819,11 +1867,7 @@ Authored _withProduces(Authored authored, ProducedRow produces) =>
       final other => other,
     };
 
-void _resultsStale(
-  _Edit edit,
-  PendingOp entry,
-  StrategyOp sent,
-) {
+void _resultsStale(_Edit edit, PendingOp entry, StrategyOp sent) {
   final row = targetOf(sent);
   final pages = {
     ..._pagesOf(entry),

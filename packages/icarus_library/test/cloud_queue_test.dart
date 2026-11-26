@@ -683,9 +683,39 @@ void main() {
   });
 
   group('sessions', () {
-    test('a result from a session that ended is not applicable', () {
+    test('a result labelled with a session that a restart or an account '
+        'change ended is not applicable, even stamped on the connection now '
+        'open', () {
+      for (final ending in [
+        const AppRestarted(build: build),
+        const AccountChanged(),
+      ]) {
+        final client = online();
+        final old = client.queue.session.number;
+        client.must(ending);
+        client.must(reconnected());
+        expect(
+          notApplicable(
+            client.step(
+              BaseArrived(
+                headerReadOf(initialRows()),
+                session: old,
+                point: tick(),
+              ),
+            ),
+          ),
+          isA<FromAnEndedSession>(),
+          reason: '$ending',
+        );
+      }
+    });
+
+    test('a result labelled with the session before a reconnect is taken '
+        'when stamped on the new connection, and not when stamped on the '
+        'old one', () {
       final client = online();
       final old = client.queue.session.number;
+      final onTheOldConnection = tick();
       client.must(const ConnectionLost());
       client.must(reconnected());
       expect(
@@ -694,14 +724,17 @@ void main() {
             BaseArrived(
               headerReadOf(initialRows()),
               session: old,
-              point: tick(),
+              point: onTheOldConnection,
             ),
           ),
         ),
         isA<FromAnEndedSession>(),
       );
+      client.must(
+        BaseArrived(headerReadOf(initialRows()), session: old, point: tick()),
+      );
+      expect(client.queue.shown.list, const ReadThisSession());
     });
-
     test('an edit made while connected goes live the first time and checked '
         'after a reconnect', () {
       final client = online();
