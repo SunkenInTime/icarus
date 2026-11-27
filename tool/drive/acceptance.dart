@@ -3,15 +3,19 @@ import 'dart:convert';
 import 'dart:io';
 
 const usage = '''
-Runs the acceptance set of driver scripts on Linux, each on Hive
-(--library-store off) and on the store (--library-store store), and reports
-how many are clean in both, fail in both, and fail only on one.
+Runs the acceptance set of driver scripts, each on Hive (--library-store
+off) and on the store (--library-store store), and reports how many are
+clean in both, fail in both, and fail only on one. On Linux each run goes
+through tool/drive/linux.dart; on Windows through tool/drive/run.ps1, which
+needs --exe, a build from tool/drive/build.ps1, and the logged-in desktop.
 
   dart tool/drive/acceptance.dart --out DIR [--library DIR] [--workers N]
       [--only NAME,NAME] [--exe DIR]
 
 The set is every script under tool/drive/scripts that never signs in, less
-those tool/drive/acceptance.json leaves out by name with a reason. That file
+those tool/drive/acceptance.json leaves out by name with a reason: the ones
+that test a mode the store replaces, those waiting on a decision, and those
+that cannot run on this system. That file
 also says what each script starts on: a fixture written by
 test/library_store/drive_fixtures_test.dart, the library given with
 --library (a Hive store folder, copied, never opened itself), or what the
@@ -55,6 +59,9 @@ final class _Plan {
 
   Map<String, String> get notOnLinux =>
       (json['notOnLinux']! as Map<String, Object?>).cast<String, String>();
+
+  Map<String, String> get notOnWindows =>
+      (json['notOnWindows']! as Map<String, Object?>).cast<String, String>();
 
   Map<String, String> get waiting =>
       (json['waiting']! as Map<String, Object?>).cast<String, String>();
@@ -152,7 +159,14 @@ Future<int> _accept(Map<String, String> options) async {
       .map((file) => file.uri.pathSegments.last.replaceAll('.json', ''))
       .toList()
     ..sort();
-  final leftOut = {...plan.replaced, ...plan.notOnLinux, ...plan.waiting};
+  final leftOut = {
+    ...plan.replaced,
+    ...(Platform.isWindows ? plan.notOnWindows : plan.notOnLinux),
+    ...plan.waiting,
+  };
+  if (Platform.isWindows && options['exe'] == null) {
+    throw const _UsageError('on Windows, give --exe a build from build.ps1');
+  }
   for (final name in leftOut.keys) {
     if (!scripts.contains(name)) {
       throw _UsageError('acceptance.json leaves out $name, which is not a '
@@ -216,6 +230,7 @@ Future<int> _accept(Map<String, String> options) async {
       ['test', 'test/library_store/drive_fixtures_test.dart'],
       workingDirectory: repo.path,
       environment: {fixture: folder.path},
+      runInShell: Platform.isWindows,
     );
     if (written.exitCode != 0) {
       stderr
@@ -249,22 +264,43 @@ Future<int> _accept(Map<String, String> options) async {
         };
         final runOut = '${out.path}/$mode/$name';
         Directory('${out.path}/$mode').createSync(recursive: true);
-        final run = await Process.run(
-          'dart',
-          [
-            'tool/drive/linux.dart',
-            'run',
-            '--script',
-            'tool/drive/scripts/$name.json',
-            '--library-store',
-            mode,
-            '--out',
-            runOut,
-            if (hiveStore != null) ...['--hive-store', hiveStore],
-            if (options['exe'] case final exe?) ...['--exe', exe],
-          ],
-          workingDirectory: repo.path,
-        );
+        final run = Platform.isWindows
+            ? await Process.run(
+                'powershell',
+                [
+                  '-NoProfile',
+                  '-ExecutionPolicy',
+                  'Bypass',
+                  '-File',
+                  r'tool\drive\run.ps1',
+                  '-Exe',
+                  options['exe']!,
+                  '-Script',
+                  'tool\\drive\\scripts\\$name.json',
+                  '-LibraryStore',
+                  mode,
+                  '-Out',
+                  runOut,
+                  if (hiveStore != null) ...['-HiveStore', hiveStore],
+                ],
+                workingDirectory: repo.path,
+              )
+            : await Process.run(
+                'dart',
+                [
+                  'tool/drive/linux.dart',
+                  'run',
+                  '--script',
+                  'tool/drive/scripts/$name.json',
+                  '--library-store',
+                  mode,
+                  '--out',
+                  runOut,
+                  if (hiveStore != null) ...['--hive-store', hiveStore],
+                  if (options['exe'] case final exe?) ...['--exe', exe],
+                ],
+                workingDirectory: repo.path,
+              );
         final summary = '${run.stdout}'
             .split('\n')
             .where((line) => line.contains('SUMMARY'))

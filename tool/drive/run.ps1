@@ -86,6 +86,17 @@ function Start-Instance([string]$name, [string]$scriptPath, [string]$email, [str
   }
 }
 
+$hiveLibrary = @{}
+if ($LibraryStore -eq 'store') {
+  $names = @('main') + $(if ($Companion) { @('companion') } else { @() })
+  foreach ($name in $names) {
+    foreach ($box in 'strategy_box.hive', 'folder_box.hive') {
+      $file = Join-Path $Out "store-$name\$box"
+      if (Test-Path -LiteralPath $file) { $hiveLibrary[$file] = (Get-FileHash -LiteralPath $file).Hash }
+    }
+  }
+}
+
 $originalAppData = $env:LOCALAPPDATA
 $instances = [ordered]@{ main = Start-Instance 'main' $Script $Account $SecondAccount }
 if ($Companion) {
@@ -109,6 +120,13 @@ foreach ($name in $instances.Keys) {
   $summary = $lines | Where-Object { $_ -match ' SUMMARY ' } | Select-Object -Last 1
   "${name}: $(if ($summary) { $summary } else { 'no SUMMARY (the script never finished)' })"
   if (-not ($summary -match 'CLEAN$')) { $clean = $false }
+}
+foreach ($file in $hiveLibrary.Keys) {
+  $now = if (Test-Path -LiteralPath $file) { (Get-FileHash -LiteralPath $file).Hash } else { $null }
+  if ($now -ne $hiveLibrary[$file]) {
+    "the store mode changed the Hive library file $file"
+    $clean = $false
+  }
 }
 "logs and shots: $Out"
 exit $(if ($clean) { 0 } else { 1 })

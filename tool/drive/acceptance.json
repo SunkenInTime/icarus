@@ -81,5 +81,12 @@
   },
   "waiting": {
     "back-button-over-dialog-local": "what Back does over Settings is an open question on #790"
+  },
+  "notOnWindows": {
+    "door-old-build-2-old": "it opens the library in the released build before this one, which this run does not have",
+    "door-old-build-3-new": "it follows door-old-build-2-old",
+    "wall-old-build-2-old": "it opens the library in the released build before this one, which this run does not have",
+    "wall-old-build-3-new": "it follows wall-old-build-2-old",
+    "captions-write-in-place": "it waits for a helper to type into the app"
   }
 }
