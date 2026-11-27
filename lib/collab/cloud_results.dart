@@ -102,6 +102,19 @@ LineupGroupRow _lineupGroup(RemoteLineup lineup, CanRead canRead) =>
       'deleted': lineup.deleted,
     }, canRead: canRead.lineupGroup));
 
+PictureAsset _picture(RemoteImageAsset asset) => PictureAsset(
+      provider: asset.provider,
+      uploadStatus: asset.uploadStatus,
+      fileExtension: asset.fileExtension,
+      mimeType: asset.mimeType,
+      width: asset.width,
+      height: asset.height,
+      byteSize: asset.byteSize,
+      uploadedAt: asset.uploadedAt,
+      url: asset.url,
+      legacyStoragePath: asset.legacyStoragePath,
+    );
+
 ResultRows<HeaderRead> pageListRead(RemotePageList list) => _rows(
       () => HeaderRead(
         strategy: _strategy(list.header),
@@ -110,6 +123,7 @@ ResultRows<HeaderRead> pageListRead(RemotePageList list) => _rows(
           for (final page in list.pages)
             _settings(page.page.publicId, page.content),
         ],
+        role: StrategyRole.ofWire(list.header.role),
       ),
     );
 
@@ -223,6 +237,10 @@ ResultRows<PageRead> pageReadOver(
             held.lineupGroup(lineup) ??
                 _decoded(decoded, _lineupGroup(lineup, canRead)),
         ],
+        pictures: {
+          for (final MapEntry(key: id, value: asset) in page.assetsById.entries)
+            id: _picture(asset),
+        },
       ),
     );
 

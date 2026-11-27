@@ -110,6 +110,7 @@ void main() {
     expect(answered.role!.edits, isTrue);
     final header = answered.base as HeaderRead;
     expect([for (final page in header.pages) page.publicId], ['p1']);
+    expect(header.role, const RoleKnown(CloudRole.owner));
   });
 
   test('a viewer\'s page list says the caller cannot edit', () async {
@@ -119,6 +120,33 @@ void main() {
       account: owner,
     );
     expect((outcome as StoreReadAnswered).role!.edits, isFalse);
+    expect(
+      (outcome.base as HeaderRead).role,
+      const RoleKnown(CloudRole.viewer),
+    );
+  });
+
+  test('a page carries every picture the server listed for it, as listed',
+      () async {
+    transport.answer = (_) => {
+          ...pageAnswer(),
+          'assets': [assetRow('pic-1')],
+        };
+    final outcome = await reads.page(
+      strategyPublicId: strategy,
+      pagePublicId: 'p1',
+      account: owner,
+    );
+    final page = (outcome as StoreReadAnswered).base as PageRead;
+    expect(page.pictures, {
+      'pic-1': const PictureAsset(
+        provider: 'r2',
+        uploadStatus: 'active',
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        url: 'https://images.example/pic-1.png',
+      ),
+    });
   });
 
   test(
@@ -140,6 +168,7 @@ void main() {
     expect(answered.role, isNull);
     final page = answered.base as PageRead;
     expect(page.page.publicId, 'p1');
+    expect(page.pictures, isEmpty);
     expect(
       [for (final row in page.elements) (row as LiveElement).revision],
       [4],

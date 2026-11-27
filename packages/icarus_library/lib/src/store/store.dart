@@ -24,6 +24,7 @@ import '../cloud/events.dart';
 import '../cloud/shown.dart';
 import '../cloud/op_facts.dart';
 import '../cloud/pending.dart';
+import '../cloud/pictures.dart';
 import '../cloud/queue.dart';
 import '../cloud/sync.dart';
 import '../cloud/version.dart';
@@ -549,6 +550,7 @@ final class LibraryStore {
       LandedName() ||
       HeaderReadName() ||
       PageReadName() ||
+      AssetsName() ||
       UnknownKindName() ||
       ForeignName() => Unplaced(null, '${name.name} holds no row'),
       FolderName(:final digest) => FolderRow.parse(
@@ -638,6 +640,7 @@ final class LibraryStore {
           _PutFacts() ||
           _PutNumbers() ||
           _PutGroup() ||
+          _PutPictures() ||
           _PutLanded():
         return _cloudChange(write);
     }

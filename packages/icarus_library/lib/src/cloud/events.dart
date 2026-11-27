@@ -2,6 +2,7 @@ import '../ops.dart';
 import '../outcome.dart';
 import '../rows.dart';
 import 'pending.dart';
+import 'pictures.dart';
 
 sealed class QueueEvent {
   const QueueEvent();
@@ -498,12 +499,14 @@ final class HeaderRead extends ArrivedBase {
     required this.strategy,
     required List<PageRow> pages,
     required List<PageSettingsRow> settings,
+    this.role = const RoleUnknown(),
   }) : pages = List.unmodifiable(pages),
        settings = List.unmodifiable(settings);
 
   final StrategyRow strategy;
   final List<PageRow> pages;
   final List<PageSettingsRow> settings;
+  final StrategyRole role;
 }
 
 final class PageRead extends ArrivedBase {
@@ -511,12 +514,15 @@ final class PageRead extends ArrivedBase {
     required this.page,
     required List<ElementRow> elements,
     required List<LineupGroupRow> lineupGroups,
+    Map<String, PictureAsset> pictures = const {},
   }) : elements = List.unmodifiable(elements),
-       lineupGroups = List.unmodifiable(lineupGroups);
+       lineupGroups = List.unmodifiable(lineupGroups),
+       pictures = Map.unmodifiable(pictures);
 
   final PageRow page;
   final List<ElementRow> elements;
   final List<LineupGroupRow> lineupGroups;
+  final Map<String, PictureAsset> pictures;
 }
 
 final class PageGone extends ArrivedBase {

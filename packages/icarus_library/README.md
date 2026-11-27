@@ -1441,7 +1441,14 @@ rows sit beside them, each versioned and each read back before it is written:
 - `cloud`: the account the strategy's work belongs to (the identity subject
   the app sends as `accountSubject`), and the strategy's facts (deleted on the
   server, edit access lost or confirmed after attempt N, upgrade asked of
-  build X by attempt N).
+  build X by attempt N), and that account's role on it (owner, editor or
+  viewer) as the last page list the queue took said. A row without a role, or
+  with a role this build does not name, reads as `RoleUnknown`.
+- `assets/<page digest>`: the pictures the last page result the queue took
+  listed for that page (picture id to the server's asset fields, url
+  included), whole, an empty page as an empty map. It is written in the same
+  commit as that result, only when it differs from what is stored, and
+  deleted with the page.
 - `pending/<place>`: one row per entry.
 - `attempt/<number>`: one row per attempt.
 - `landed/<attempt>/<position>`: one row per piece of landed work.
@@ -1468,7 +1475,7 @@ rows sit beside them, each versioned and each read back before it is written:
   `ICARUS_DRIVE`).
 
 Any row under one of these names, or under the `pending/`, `attempt/`,
-`landed/` or `read/` prefixes, marks the area as a cloud strategy
+`landed/`, `read/` or `assets/` prefixes, marks the area as a cloud strategy
 (`isCloudName`, one function used by loading, both removals, the discard, the
 folder move and the `putStrategy` guard). A name under a cloud prefix that
 this build cannot decode, including a number too large to be exact in
@@ -1529,8 +1536,21 @@ at, and a call re-encodes the stored results only when it changed what they
 show, so one queued edit does the same work on a strategy of 10 pages and of
 100. A cold read of one page still lists every key of the strategy (3,303 at
 100 pages); that is measured and not yet addressed.
-Loading a strategy's queue is four listings (`pending/`, `attempt/`,
-`landed/`, `read/`) and one read (`cloud`).
+Loading a strategy's queue is five listings (`pending/`, `attempt/`,
+`landed/`, `read/`, `assets/`) and one read (`cloud`).
+
+**Role and pictures.** `CloudStrategy.roleOf(account)` is the stored role for
+the account that owns the work and `RoleUnknown` for any other, so a second
+account on the machine never sees the first one's role. `editsAs(account)` is
+true only for a known owner or editor role while edit access is not lost: lost
+access wins over the stored role, and unknown never edits. A page whose
+content a stored result covers reads `ContentShown`, carrying its pictures; a
+page with content but no `assets/` row (stored before pictures were kept)
+reads `ContentNotRead`, and is read again. A picture an element names that
+the map does not hold is one the server did not describe; the element's row
+keeps its reference either way. Only a result the queue takes stores either:
+an older result, one out of place, one deferred until the list shows its page,
+or one from an ended session stores neither.
 
 **Results reach the cached rows in the order they arrive.** Results come
 from subscriptions, which deliver ordered states, so the latest one wins:

@@ -9,12 +9,16 @@ final class _OnDisk {
     required this.landed,
     required this.groups,
     required this.shown,
+    required this.role,
+    required this.pictures,
   });
 
   final Map<int, QueueEntry> entries;
   final Map<int, AttemptFact> attempts;
   Account? owner;
   StrategyFacts? facts;
+  StrategyRole role;
+  final Map<String, StoredPictures?> pictures;
   final Map<(int, int), LandedWork> landed;
   final Map<String?, String> groups;
   final encodedThisRun = <String?, String>{};
@@ -42,10 +46,29 @@ final class _PutAttempt extends _Write {
 }
 
 final class _PutFacts extends _Write {
-  const _PutFacts(super.area, this.owner, this.facts);
+  const _PutFacts(
+    super.area,
+    this.owner,
+    this.facts, {
+    this.role = const RoleUnknown(),
+  });
 
   final Account owner;
   final StrategyFacts facts;
+  final StrategyRole role;
+}
+
+final class _PutPictures extends _Write {
+  const _PutPictures(super.area, this.stored);
+
+  final StoredPictures stored;
+}
+
+final class _Taken {
+  StrategyRole? role;
+  final pictures = <String, StoredPictures?>{};
+
+  void pageLeft(String page) => pictures[digestOf(page)] = null;
 }
 
 final class _PutLanded extends _Write {
@@ -463,10 +486,16 @@ extension _CloudStore on LibraryStore {
         attemptToJson(attempt),
         (text) => same(attemptFromText(attempt.number, text), attempt),
       ),
-      _PutFacts(:final owner, :final facts) => checked(
+      _PutFacts(:final owner, :final facts, :final role) => checked(
         const CloudName().name,
-        factsToJson(owner, facts),
-        (text) => same(factsFromText(text), CloudFacts(owner, facts)),
+        factsToJson(owner, facts, role: role),
+        (text) =>
+            same(factsFromText(text), CloudFacts(owner, facts, role: role)),
+      ),
+      _PutPictures(:final stored) => checked(
+        AssetsName(digestOf(stored.page)).name,
+        picturesToJson(stored),
+        (text) => same(picturesFromText(text), stored),
       ),
       _PutNumbers(:final numbers) => checked(
         const NumbersName().name,
@@ -497,6 +526,7 @@ extension _CloudStore on LibraryStore {
     void cannotRead(String name, String problem) =>
         unreadable.add(UnreadableQueueRow(strategy.refOf(name), problem));
     var facts = StrategyFacts.fresh;
+    StrategyRole role = const RoleUnknown();
     CloudOwner owner = const OwnerUnreadable();
     switch (await _lease.read(area, const CloudName().name)) {
       case KeyNotRead(:final failure):
@@ -508,6 +538,7 @@ extension _CloudStore on LibraryStore {
         switch (factsFromText(value)) {
           case CloudRowRead(:final value):
             facts = value.facts;
+            role = value.role;
           case CloudRowUnreadable(:final problem):
             cannotRead(const CloudName().name, problem);
         }
@@ -565,6 +596,21 @@ extension _CloudStore on LibraryStore {
         }
     }
     landed.sort((a, b) => a.compareTo(b));
+    final pictures = <String, StoredPictures?>{};
+    switch (await _lease.entries(area, assetsPrefix)) {
+      case StorageFailed(:final failure):
+        return _QueueNotRead(failure);
+      case Done(:final value):
+        for (final (:key, :value) in value) {
+          if (readName(storeArea, key) case AssetsName(:final digest)) {
+            pictures[digest] = switch (picturesFromText(value)) {
+              CloudRowRead(:final value) when namesId(digest, value.page) =>
+                value,
+              _ => null,
+            };
+          }
+        }
+    }
     var groups = <String?, String>{};
     final resultKeys = <String>[];
     final resultsUnread = <UnreadableQueueRow>[];
@@ -703,6 +749,8 @@ extension _CloudStore on LibraryStore {
         },
         groups: groups,
         shown: shown,
+        role: role,
+        pictures: pictures,
       ),
       current,
       account,
@@ -961,6 +1009,7 @@ extension _CloudStore on LibraryStore {
     _OnDisk disk,
     Account owner,
     CloudQueue next,
+    StrategyRole role,
   ) {
     final area = strategy.area;
     final writes = <_Write>[];
@@ -994,8 +1043,10 @@ extension _CloudStore on LibraryStore {
         writes.add(_DeleteName(area, AttemptName(number).name));
       }
     }
-    if (next.strategy != disk.facts || owner != disk.owner) {
-      writes.add(_PutFacts(area, owner, next.strategy));
+    if (next.strategy != disk.facts ||
+        owner != disk.owner ||
+        role != disk.role) {
+      writes.add(_PutFacts(area, owner, next.strategy, role: role));
     }
     final landed = {
       for (final work in next.landed) (work.attempt, work.position): work,
@@ -1032,13 +1083,31 @@ extension _CloudStore on LibraryStore {
       if (!groups.containsKey(page)) _DeleteName(area, _groupName(page)),
   ];
 
+  List<_Write> _picturesWrites(String area, _OnDisk disk, _Taken taken) => [
+    for (final MapEntry(key: digest, value: stored) in taken.pictures.entries)
+      if (stored == null && disk.pictures.containsKey(digest))
+        _DeleteName(area, AssetsName(digest).name)
+      else if (stored != null && disk.pictures[digest] != stored)
+        _PutPictures(area, stored),
+  ];
+
   void _written(
     _OnDisk disk,
     Account owner,
     CloudQueue next,
     Map<String?, String> groups,
     Map<String?, String> encoded,
+    StrategyRole role,
+    _Taken taken,
   ) {
+    disk.role = role;
+    for (final MapEntry(key: digest, value: stored) in taken.pictures.entries) {
+      if (stored == null) {
+        disk.pictures.remove(digest);
+      } else {
+        disk.pictures[digest] = stored;
+      }
+    }
     disk.entries
       ..clear()
       ..addAll({for (final entry in next.entries) entry.place: entry});
@@ -1302,8 +1371,10 @@ extension _CloudStore on LibraryStore {
     CloudQueue proposed,
     List<RowDecision> decisions,
     Set<String> edited,
-    T Function(StrategySummary summary) take,
-  ) async {
+    T Function(StrategySummary summary) take, {
+    _Taken? taken,
+  }) async {
+    final results = taken ?? _Taken();
     final strategy = cloud.strategy;
     final digest = strategy.digest;
     final area = strategy.area;
@@ -1325,7 +1396,8 @@ extension _CloudStore on LibraryStore {
           base = value;
       }
       final owner = cloud.queue.owner;
-      final queued = _queueWrites(strategy, disk, owner, next);
+      final role = results.role ?? disk.role;
+      final queued = _queueWrites(strategy, disk, owner, next, role);
       final unchanged = identical(next.shown, disk.shown);
       final groups = unchanged
           ? {...disk.groups}
@@ -1439,6 +1511,7 @@ extension _CloudStore on LibraryStore {
         ...base.writes,
         ...queued.writes,
         ..._resultWrites(area, disk, groups),
+        ..._picturesWrites(area, disk, results),
         if (_numbersRow != _NumbersRowRead(numbers)) _PutNumbers(numbers),
         if (summary != previous || _unsaved.contains(digest))
           _PutSummary(digest, summary),
@@ -1450,7 +1523,7 @@ extension _CloudStore on LibraryStore {
         return Saved(take(summary));
       }
       final result = await _commit<T, CommitRefusal>(writes, () {
-        _written(disk, owner, next, groups, encoded);
+        _written(disk, owner, next, groups, encoded, role, results);
         cloud.queue.current = next;
         _sessions[digest] = (session: next.session, shown: next.shown);
         _summaries[digest] = summary;
@@ -1598,8 +1671,10 @@ extension _CloudStore on LibraryStore {
           continue;
         case OpRefused(:final refusal):
           final stop = switch (op) {
-            PageAddOp(copyContentFromPagePublicId: final source?) =>
-              _copyStop(rows, source),
+            PageAddOp(copyContentFromPagePublicId: final source?) => _copyStop(
+              rows,
+              source,
+            ),
             _ => null,
           };
           return Refused(stop ?? OpRefusal(refusal));
@@ -1808,6 +1883,7 @@ extension _CloudStore on LibraryStore {
     final now = _cloudNow();
     final outcomes = <ReportOutcome>[];
     final decisions = <RowDecision>[];
+    final taken = _Taken();
     var queue = recordExpiries(
       cloud.queue.current.raisedTo(
         nextAttempt: _numbers.nextAttempt,
@@ -1835,9 +1911,26 @@ extension _CloudStore on LibraryStore {
       switch (step) {
         case NotApplicable(:final why, :final effects):
           outcomes.add(ReportNotApplicable(why, effects: effects));
-        case Stepped(:final effects, decisions: final taken):
-          decisions.addAll(taken);
+        case Stepped(:final effects, decisions: final made, :final tookResult):
+          decisions.addAll(made);
           outcomes.add(ReportApplied(effects));
+          final left = {
+            for (final decision in made)
+              if (decision case PageLeft(:final page)) page,
+          };
+          left.forEach(taken.pageLeft);
+          switch (event) {
+            case BaseArrived(base: HeaderRead(:final role)) when tookResult:
+              taken.role = role;
+            case BaseArrived(base: PageRead(:final page, :final pictures))
+                when tookResult && !left.contains(page.publicId):
+              taken.pictures[digestOf(page.publicId)] = StoredPictures(
+                page.publicId,
+                pictures,
+              );
+            case _:
+              break;
+          }
       }
     }
     final result = await _finishCloud(
@@ -1846,6 +1939,7 @@ extension _CloudStore on LibraryStore {
       decisions,
       const {},
       (summary) => Recorded(outcomes: outcomes, summary: summary),
+      taken: taken,
     );
     if (result case Saved(:final value)) {
       _emit(
@@ -1993,7 +2087,17 @@ extension _CloudStore on LibraryStore {
     queue: loaded.current,
     views: entryViews(loaded.current, _cloudNow()),
     tally: Tally.of(loaded.current, _cloudNow()),
+    role: loaded.disk.role,
   );
+
+  PageContentState _contentOf(_LoadedQueue loaded, String pagePublicId) =>
+      switch ((
+        loaded.current.shown.content.containsKey(pagePublicId),
+        loaded.disk.pictures[digestOf(pagePublicId)],
+      )) {
+        (true, final stored?) => ContentShown(pictures: stored.pictures),
+        _ => const ContentNotRead(),
+      };
 
   Future<Reading<T>> _cloudReading<T>(
     LoadedStrategy loaded,
@@ -2099,9 +2203,7 @@ extension _CloudStore on LibraryStore {
         queue.current,
         pagePublicId,
         sync: _syncView(queue),
-        content: queue.current.shown.content.containsKey(pagePublicId)
-            ? const ContentShown()
-            : const ContentNotRead(),
+        content: _contentOf(queue, pagePublicId),
       ),
     _CloudHeld(:final strategy, :final header, :final rows, :final owner) =>
       _cloudPageContent(
@@ -2274,6 +2376,8 @@ extension _CloudStore on LibraryStore {
         landed: {},
         groups: {},
         shown: Shown.nothing,
+        role: const RoleUnknown(),
+        pictures: {},
       ),
       queue,
       account,

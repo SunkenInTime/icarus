@@ -56,6 +56,7 @@ void main() {
           'pending/',
           'attempt/',
           'landed/',
+          'assets/',
           'read/',
         ])
           (area, prefix),

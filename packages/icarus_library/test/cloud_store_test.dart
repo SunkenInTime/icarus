@@ -772,7 +772,7 @@ void main() {
     expect(cloud.queue.nextAttempt, sent.attempt + 1);
   });
 
-  test('opening a cloud strategy reads its queue in four listings and one '
+  test('opening a cloud strategy reads its queue in five listings and one '
       'read besides the strategy itself', () async {
     final storage = MemoryStorage();
     var store = await openCloudStore(MemoryEngine(storage));
@@ -804,6 +804,7 @@ void main() {
         (area, 'attempt/'),
         (area, 'landed/'),
         (area, 'read/'),
+        (area, 'assets/'),
       ]),
     );
     expect(counts.commits, 0);

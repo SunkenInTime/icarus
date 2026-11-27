@@ -4,6 +4,7 @@ import '../outcome.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
 import '../cloud/account.dart';
+import '../cloud/pictures.dart';
 import '../cloud/queue.dart';
 import '../cloud/sync.dart';
 import '../cloud/version.dart';
@@ -785,12 +786,25 @@ final class CloudStrategy extends StrategySync {
     required this.queue,
     required Map<String, EntryView> views,
     required this.tally,
+    this.role = const RoleUnknown(),
   }) : views = Map.unmodifiable(views);
 
   final Account owner;
   final CloudQueue queue;
   final Map<String, EntryView> views;
   final Tally tally;
+  final StrategyRole role;
+
+  StrategyRole roleOf(Account asking) =>
+      asking == owner ? role : const RoleUnknown();
+
+  bool editsAs(Account asking) => switch (roleOf(asking)) {
+    RoleKnown(:final role) => role.edits && !_accessLost,
+    RoleUnknown() => false,
+  };
+
+  bool get _accessLost =>
+      queue.strategy.accessLostAt > queue.strategy.accessConfirmedAt;
 }
 
 sealed class SettingsOnPage {
@@ -812,7 +826,12 @@ sealed class PageContentState {
 }
 
 final class ContentShown extends PageContentState {
-  const ContentShown();
+  ContentShown({Map<String, PictureAsset> pictures = const {}})
+    : pictures = Map.unmodifiable(pictures);
+
+  static final here = ContentShown();
+
+  final Map<String, PictureAsset> pictures;
 }
 
 final class ContentNotRead extends PageContentState {
@@ -830,8 +849,9 @@ final class PageContent implements StrategyRead {
     required Iterable<UnplacedRow> unplaced,
     required Iterable<ForeignName> foreignNames,
     this.sync = const LocalStrategy(),
-    this.content = const ContentShown(),
-  }) : elements = List.unmodifiable(elements),
+    PageContentState? content,
+  }) : content = content ?? ContentShown.here,
+       elements = List.unmodifiable(elements),
        lineupGroups = List.unmodifiable(lineupGroups),
        unknownKinds = List.unmodifiable(unknownKinds),
        unplaced = List.unmodifiable(unplaced),
