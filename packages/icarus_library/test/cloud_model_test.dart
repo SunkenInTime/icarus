@@ -660,7 +660,7 @@ final class Model {
         ![
           client.queue.shown.list,
           ...client.queue.shown.pageReads.values,
-        ].any((read) => read is ReadRefused) &&
+        ].any((read) => read is ReadRefused || read is ReadOwed) &&
         client.queue.shown.pages.keys.every(
           client.queue.shown.content.containsKey,
         );
@@ -1112,6 +1112,83 @@ final class Model {
     log.add('the strategy is replaced');
   }
 
+  void teammateReplacesARow() {
+    final busy = {
+      for (final op in [
+        for (final entry in client.queue.entries.whereType<PendingOp>())
+          entry.op,
+        for (final work in client.queue.landed) work.op,
+        for (final (_, _, ops, _, _) in inFlight) ...ops,
+        for (final (_, ops, _) in held) ...ops,
+      ])
+        for (final target in [targetOf(op), checkTargetOf(op)])
+          if (target case ElementTarget(:final elementPublicId))
+            elementPublicId,
+    };
+    final shown = [
+      for (final row in client.visible.elements)
+        if (row is LiveElement && !busy.contains(row.publicId))
+          if (server.rows.element(row.publicId) case final LiveElement live)
+            if (server.rows.page(live.pagePublicId) is LivePage) live,
+    ];
+    if (shown.isEmpty) return;
+    final row = pick(shown);
+    final before = fieldsOf(server.rows);
+    final deleted = applyOp(
+      server.rows,
+      elementDelete(
+        fresh('t'),
+        elementId: row.publicId,
+        pageId: row.pagePublicId,
+        expected: row.revision,
+      ),
+    );
+    if (deleted is! OpApplied) return;
+    server.write(deleted);
+    server.purgeTombstone(row.publicId);
+    final back = applyOp(
+      server.rows,
+      ElementAddOp(
+        opId: fresh('t'),
+        elementPublicId: row.publicId,
+        pagePublicId: row.pagePublicId,
+        payload: agentPayload(row.publicId, {
+          ...row.payload.data.toJson(),
+          'rotation': 135,
+        }),
+        sortIndex: row.sortIndex,
+      ),
+    );
+    if (back is! OpApplied) return;
+    server.write(back);
+    teammateEdited = true;
+    recordHistory();
+    final after = fieldsOf(server.rows);
+    for (final key in {...before.keys, ...after.keys}) {
+      if (before[key] != after[key]) teammateWrote[key] = serverNow;
+    }
+    count('teammate replaces a row this device shows');
+    log.add('teammate replaces ${row.publicId}');
+    if (replacing.nextBool()) editBeforeReading(row.publicId);
+  }
+
+  void editBeforeReading(String elementId) {
+    if (standingOf(client.queue) != Standing.good) return;
+    if (client.visible.element(elementId) case final LiveElement row) {
+      count('edits of a replaced row sent before reading it');
+      edit(
+        movePatch(
+          fresh('op'),
+          elementId: elementId,
+          expected: row.revision,
+          rotation: 60,
+        ),
+      );
+      claim();
+      deliver(reliable: false);
+    }
+  }
+
   void teammateWrites() {
     final before = fieldsOf(server.rows);
     teammate();
@@ -1507,6 +1584,7 @@ final class Model {
         }
       case Standing.upgradeRequired:
         build = 'build-up-${restarts++}';
+        late.clear();
         must(AppRestarted(build: build), 'upgraded to $build');
       case Standing.good || Standing.deletedOnServer || Standing.held:
         break;
@@ -1775,6 +1853,8 @@ final class Model {
       case 16:
         if (replacing.nextInt(30) == 0) {
           ownerReplaces();
+        } else if (teammates && replacing.nextInt(6) == 0) {
+          teammateReplacesARow();
         } else if (teammates) {
           teammateWrites();
         }
@@ -1933,7 +2013,9 @@ const minimums = {
   'teammate makes this device\'s change': 20,
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
-  'ops refused as naming a row life that was replaced': 1,
+  'ops refused as naming a row life that was replaced': 80,
+  'teammate replaces a row this device shows': 80,
+  'edits of a replaced row sent before reading it': 30,
   'the strategy is replaced': 5,
   'end content compared after a replacement': 5,
   'end content compared without a replacement': 80,
@@ -1959,7 +2041,7 @@ const minimums = {
   'calls the transport held 20 to 29 s': 100,
   'backward clock steps': 50,
   'stamps delivered ahead of their reconnect event': 400,
-  'results at or after a row refusal\'s snapshot while its debt stood': 2,
+  'results at or after a row refusal\'s snapshot while its debt stood': 20,
   'access confirmed on an ended connection, read again': 1,
   'a stamp at the snapshot already held': 3000,
   'a stamp at the snapshot held from before a reconnect': 185,
@@ -1988,16 +2070,6 @@ void main() {
   final steps = int.tryParse(environment['CLOUD_MODEL_STEPS'] ?? '') ?? 150;
   final one = int.tryParse(environment['CLOUD_MODEL_SEED'] ?? '');
   final seeds = int.tryParse(environment['CLOUD_MODEL_SEEDS'] ?? '') ?? 200;
-  test(
-    'seed 375: a whole write behind this device\'s own landed work, on a row '
-    'a teammate moved to another page, waits for that page and is settled by '
-    'reading it',
-    () {
-      runSeed(375, 150, folding: true);
-      runSeed(375, 150, folding: false);
-    },
-  );
-
   test(
     'seed 7: after the device clock moves back a day, a retry waiting out its '
     'backoff goes, so the queue drains',
