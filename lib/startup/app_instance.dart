@@ -44,11 +44,11 @@ AppInstance appInstanceAt(String? separateFolder) => switch (separateFolder) {
       final folder => SeparateInstance(folder),
     };
 
-Future<String> debugLogPath() async =>
-    path.join((await appInstance.supportDirectory()).path, 'icarus_debug.log');
+String debugLogPathIn(Directory support) =>
+    path.join(support.path, 'icarus_debug.log');
 
-Future<String> webViewDataFolder() async =>
-    path.join((await appInstance.supportDirectory()).path, 'webview');
+String webViewDataFolderIn(Directory support) =>
+    path.join(support.path, 'webview');
 
 Future<Directory> sightlineReportsFolder() async => Directory(
       path.join(
@@ -74,55 +74,89 @@ Future<String?> storedAuthFlowValue(String key) async =>
       final storage => storage.getItem(key: key),
     };
 
-final class FileSessionStorage extends LocalStorage {
-  const FileSessionStorage(this._file);
+final class _SerialFile {
+  _SerialFile._(this._file);
+
+  factory _SerialFile(File file) =>
+      _byPath.putIfAbsent(file.path, () => _SerialFile._(file));
+
+  static final _byPath = <String, _SerialFile>{};
 
   final File _file;
+  Future<void> _last = Future.value();
+
+  Future<T> run<T>(Future<T> Function() work) {
+    final done = _last.then((_) => work());
+    _last = done.then((_) {}, onError: (Object _) {});
+    return done;
+  }
+
+  Future<String?> readNow() async =>
+      _file.existsSync() ? _file.readAsString() : null;
+
+  Future<void> writeNow(String text) async {
+    await _file.parent.create(recursive: true);
+    final beside = File('${_file.path}.writing');
+    await beside.writeAsString(text, flush: true);
+    await beside.rename(_file.path);
+  }
+
+  Future<void> deleteNow() async {
+    if (_file.existsSync()) await _file.delete();
+  }
+}
+
+final class FileSessionStorage extends LocalStorage {
+  FileSessionStorage(File file) : _file = _SerialFile(file);
+
+  final _SerialFile _file;
 
   @override
   Future<void> initialize() async {}
 
   @override
-  Future<bool> hasAccessToken() async => _file.existsSync();
+  Future<bool> hasAccessToken() =>
+      _file.run(() async => await _file.readNow() != null);
 
   @override
-  Future<String?> accessToken() async =>
-      _file.existsSync() ? _file.readAsString() : null;
+  Future<String?> accessToken() => _file.run(_file.readNow);
 
   @override
-  Future<void> removePersistedSession() async {
-    if (_file.existsSync()) await _file.delete();
-  }
+  Future<void> removePersistedSession() => _file.run(_file.deleteNow);
 
   @override
-  Future<void> persistSession(String persistSessionString) async {
-    await _file.parent.create(recursive: true);
-    await _file.writeAsString(persistSessionString);
-  }
+  Future<void> persistSession(String persistSessionString) =>
+      _file.run(() => _file.writeNow(persistSessionString));
 }
 
 final class FileAuthFlowStorage extends GotrueAsyncStorage {
-  const FileAuthFlowStorage(this._file);
+  FileAuthFlowStorage(File file) : _file = _SerialFile(file);
 
-  final File _file;
+  final _SerialFile _file;
 
-  Map<String, String> _read() => _file.existsSync()
-      ? (jsonDecode(_file.readAsStringSync()) as Map).cast<String, String>()
-      : {};
-
-  Future<void> _write(Map<String, String> items) async {
-    await _file.parent.create(recursive: true);
-    await _file.writeAsString(jsonEncode(items));
+  Future<Map<String, String>> _items() async {
+    final text = await _file.readNow();
+    if (text == null) return {};
+    try {
+      return (jsonDecode(text) as Map).cast<String, String>();
+    } on FormatException {
+      return {};
+    } on TypeError {
+      return {};
+    }
   }
 
   @override
-  Future<String?> getItem({required String key}) async => _read()[key];
+  Future<String?> getItem({required String key}) =>
+      _file.run(() async => (await _items())[key]);
 
   @override
   Future<void> setItem({required String key, required String value}) =>
-      _write({..._read(), key: value});
+      _file.run(() async =>
+          _file.writeNow(jsonEncode({...await _items(), key: value})));
 
   @override
   Future<void> removeItem({required String key}) =>
-      _write(_read()..remove(key));
+      _file.run(() async => _file.writeNow(jsonEncode(await _items()
+        ..remove(key))));
 }

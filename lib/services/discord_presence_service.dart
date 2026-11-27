@@ -139,10 +139,7 @@ class DiscordPresenceService {
   static bool get isSupported => !kIsWeb && Platform.isWindows;
 
   Future<void> update(DiscordPresenceData presence) {
-    if (!isSupported ||
-        appInstance is! InstalledApp ||
-        _disposed ||
-        presence == _lastPublished) {
+    if (!isSupported || _disposed || presence == _lastPublished) {
       return Future<void>.value();
     }
 
@@ -253,6 +250,14 @@ class DiscordPresenceService {
 /// isolate that froze the app for 50 ms each second while Discord was
 /// running, which showed as a hitch in every drag and animation.
 class DiscordPresenceWorker {
+  DiscordPresenceWorker({
+    bool? supported,
+    Future<SendPort> Function()? start,
+  })  : _supported = supported ?? DiscordPresenceService.isSupported,
+        _startWorker = start;
+
+  final bool _supported;
+  final Future<SendPort> Function()? _startWorker;
   Future<SendPort>? _inbox;
   Isolate? _isolate;
   bool _disposed = false;
@@ -284,9 +289,9 @@ class DiscordPresenceWorker {
   }
 
   Future<void> _send(Object message) async {
-    if (!DiscordPresenceService.isSupported || _disposed) return;
+    if (!_supported || appInstance is! InstalledApp || _disposed) return;
     try {
-      (await (_inbox ??= _start())).send(message);
+      (await (_inbox ??= (_startWorker ?? _start)())).send(message);
     } catch (error, stackTrace) {
       developer.log(
         'Discord Rich Presence could not start.',

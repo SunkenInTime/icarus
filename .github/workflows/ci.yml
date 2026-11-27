@@ -865,36 +865,45 @@ jobs:
         run: |
           $support = Join-Path $env:APPDATA 'xyz.icarus-strats'
           $handler = 'HKCU:\Software\Classes\icarus'
-          if ((Test-Path $support) -or (Test-Path $handler)) {
-            throw "The runner already has $support or $handler; this check needs a machine where neither exists."
+          function Get-SupportFiles {
+            if (Test-Path $support) { @(Get-ChildItem -LiteralPath $support -Recurse -Force -File) } else { @() }
+          }
+          if ((Get-SupportFiles).Count -gt 0 -or (Test-Path $handler)) {
+            throw "The runner already has files under $support or the key $handler; this check needs a machine with neither."
           }
           $scratch = Join-Path $env:RUNNER_TEMP 'separate-instance'
           New-Item -ItemType Directory -Force -Path $scratch | Out-Null
           $app = Start-Process -FilePath build\windows\x64\runner\Release\icarus.exe -PassThru `
             -ArgumentList @("`"--hive-store-dir=$scratch`"")
           $null = $app.Handle
-          Start-Sleep -Seconds 20
-          $app.Refresh()
-          "window: '$($app.MainWindowTitle)', handle $($app.MainWindowHandle)"
-          if ($app.HasExited) {
-            "it had already exited with $($app.ExitCode)"
-          } elseif ($app.MainWindowHandle -ne 0) {
-            $null = $app.CloseMainWindow()
-            if (-not $app.WaitForExit(120000)) { Stop-Process -Id $app.Id; $app.WaitForExit() }
-            "closed the way its X does; exited with $($app.ExitCode) (0x$('{0:X8}' -f $app.ExitCode))"
-          } else {
-            Stop-Process -Id $app.Id
-            $app.WaitForExit()
-            'no window to close; stopped it'
+          $window = 0
+          for ($second = 0; $second -lt 30 -and -not $app.HasExited; $second++) {
+            Start-Sleep -Seconds 1
+            $app.Refresh()
+            if ($app.MainWindowHandle -ne 0) { $window = $app.MainWindowHandle; break }
           }
+          if ($window -eq 0) {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id; $app.WaitForExit() }
+            throw "The release build never showed a window; exited with $($app.ExitCode)."
+          }
+          Start-Sleep -Seconds 10
+          $null = $app.CloseMainWindow()
+          if (-not $app.WaitForExit(120000)) { Stop-Process -Id $app.Id; $app.WaitForExit() }
+          "closed the way its X does; exited with $($app.ExitCode) (0x$('{0:X8}' -f $app.ExitCode)); not judged until #865 is fixed"
           'in its own folder:'
           Get-ChildItem -LiteralPath $scratch -Force | ForEach-Object { "  $($_.Name)" }
+          $missing = @(
+            if (-not (Test-Path (Join-Path $scratch 'icarus_debug.log'))) { 'its debug log' }
+            if (-not (Get-ChildItem -LiteralPath $scratch -Filter '*.hive' -File)) { 'its Hive files' }
+          )
+          if ($missing.Count -gt 0) {
+            throw "The separate instance did not start for real: $($missing -join ' and ') are not in $scratch."
+          }
           $leaks = @(
-            if (Test-Path $support) { "the support folder $support" }
+            foreach ($file in Get-SupportFiles) { "the file $($file.FullName)" }
             if (Test-Path $handler) { "the icarus: link handler $handler" }
           )
           if ($leaks.Count -gt 0) {
-            if (Test-Path $support) { Get-ChildItem -LiteralPath $support -Recurse -Force | ForEach-Object { "  $($_.FullName)" } }
             throw "A separate instance wrote outside its folder: $($leaks -join '; ')"
           }
           'nothing outside its folder'

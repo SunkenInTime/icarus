@@ -107,6 +107,17 @@ Future<void> openCloudStrategyCopy() async {
   }
 }
 
+FlutterAuthClientOptions authOptionsFor(
+  AppInstance instance, {
+  required bool driveBuild,
+}) =>
+    FlutterAuthClientOptions(
+      detectSessionInUri: false,
+      localStorage:
+          driveBuild ? DriveSessionStorage() : sessionStorageOf(instance),
+      pkceAsyncStorage: authFlowStorageOf(instance),
+    );
+
 Future<void> initializeCloudClients(CloudBuildConfig config) async {
   await ConvexClient.initialize(
     ConvexConfig(
@@ -120,11 +131,6 @@ Future<void> initializeCloudClients(CloudBuildConfig config) async {
   await Supabase.initialize(
     url: 'https://gjdirtrtgnawqoruavqn.supabase.co',
     anonKey: 'sb_publishable_6M0VCSZCvRFrcgNANWPVWw_U06T_rUo',
-    authOptions: FlutterAuthClientOptions(
-      detectSessionInUri: false,
-      localStorage:
-          driveBuild ? DriveSessionStorage() : sessionStorageOf(appInstance),
-      pkceAsyncStorage: authFlowStorageOf(appInstance),
-    ),
+    authOptions: authOptionsFor(appInstance, driveBuild: driveBuild),
   );
 }

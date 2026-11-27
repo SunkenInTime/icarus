@@ -36,7 +36,10 @@ void main() {
       'launch refused over its store folder logs to the support folder',
       () async {
     expect(appInstance, isA<InstalledApp>());
-    expect(await debugLogPath(), path.join(support.path, 'icarus_debug.log'));
+    expect(
+      debugLogPathIn(await appInstance.supportDirectory()),
+      path.join(support.path, 'icarus_debug.log'),
+    );
   });
 
   test(
@@ -57,8 +60,14 @@ void main() {
         'the support folder, the debug log, the webview profile and '
         'sightline reports', () async {
       expect((await appInstance.supportDirectory()).path, support.path);
-      expect(await debugLogPath(), path.join(support.path, 'icarus_debug.log'));
-      expect(await webViewDataFolder(), path.join(support.path, 'webview'));
+      expect(
+        debugLogPathIn(await appInstance.supportDirectory()),
+        path.join(support.path, 'icarus_debug.log'),
+      );
+      expect(
+        webViewDataFolderIn(await appInstance.supportDirectory()),
+        path.join(support.path, 'webview'),
+      );
       expect(
         (await sightlineReportsFolder()).path,
         path.join(support.path, 'sightline-reports'),
@@ -91,8 +100,14 @@ void main() {
         'the support folder, the debug log, the webview profile, sightline '
         'reports and replays', () async {
       expect((await appInstance.supportDirectory()).path, scratch.path);
-      expect(await debugLogPath(), path.join(scratch.path, 'icarus_debug.log'));
-      expect(await webViewDataFolder(), path.join(scratch.path, 'webview'));
+      expect(
+        debugLogPathIn(await appInstance.supportDirectory()),
+        path.join(scratch.path, 'icarus_debug.log'),
+      );
+      expect(
+        webViewDataFolderIn(await appInstance.supportDirectory()),
+        path.join(scratch.path, 'webview'),
+      );
       expect(
         (await sightlineReportsFolder()).path,
         path.join(scratch.path, 'sightline-reports'),
@@ -138,6 +153,47 @@ void main() {
       await storage.removeItem(key: pkceVerifierStorageKey);
       expect(await storedAuthFlowValue(pkceVerifierStorageKey), isNull);
       expect(await support.list().isEmpty, isTrue);
+    });
+
+    test(
+        'a session write left running is ordered before a later sign-out, '
+        'so no stale session is left', () async {
+      final storage = sessionStorageOf(appInstance)!;
+
+      final writing = storage.persistSession('{"session":"stale"}');
+      await storage.removePersistedSession();
+      await writing;
+
+      expect(await storage.hasAccessToken(), isFalse);
+      expect(
+        File(path.join(scratch.path, 'session.json')).existsSync(),
+        isFalse,
+      );
+    });
+
+    test(
+        'a sign-in flow file that is not JSON reads as empty and still '
+        'takes the next sign-in', () async {
+      File(path.join(scratch.path, 'auth_flow.json'))
+          .writeAsStringSync('{not json');
+      final storage = authFlowStorageOf(appInstance)!;
+
+      expect(await storage.getItem(key: pkceVerifierStorageKey), isNull);
+      await storage.setItem(key: pkceVerifierStorageKey, value: 'next');
+      expect(await storage.getItem(key: pkceVerifierStorageKey), 'next');
+    });
+
+    test('a write that fails leaves the file it would have replaced', () async {
+      final storage = sessionStorageOf(appInstance)!;
+      await storage.persistSession('{"session":"kept"}');
+      Directory(path.join(scratch.path, 'session.json.writing')).createSync();
+
+      await expectLater(
+        storage.persistSession('{"session":"lost"}'),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(await storage.accessToken(), '{"session":"kept"}');
     });
   });
 }

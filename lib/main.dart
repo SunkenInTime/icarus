@@ -638,7 +638,7 @@ Future<void> _initializePersistedDebugLog() async {
 
   try {
     final dir = await appInstance.supportDirectory();
-    final logPath = await debugLogPath();
+    final logPath = debugLogPathIn(dir);
     AppErrorReporter.setApplicationSupportDirectoryPath(dir.path);
     await AppErrorReporter.initializePersistedLog(logPath);
     AppErrorReporter.reportInfo(
@@ -662,6 +662,7 @@ Future<void> _initWebViewEnvironment() async {
       return;
     }
 
+    final dir = await appInstance.supportDirectory();
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
 
     if (availableVersion == null) {
@@ -672,7 +673,7 @@ Future<void> _initWebViewEnvironment() async {
 
     webViewEnvironment = await WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
-        userDataFolder: await webViewDataFolder(),
+        userDataFolder: webViewDataFolderIn(dir),
       ),
     );
     isWebViewInitialized = true;

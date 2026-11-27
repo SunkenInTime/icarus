@@ -5,10 +5,16 @@ import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/startup/app_instance.dart';
 import 'package:win32_registry/win32_registry.dart';
 
+const forcesProtocolRegistration =
+    bool.fromEnvironment('ICARUS_FORCE_PROTOCOL_REGISTER');
+
 Future<void> registerDeepLinkProtocol(String scheme) async {
   // A driver build is a copy run from a scratch folder; icarus: links stay
   // with the installed app.
-  if (!Platform.isWindows || driveBuild || appInstance is! InstalledApp) {
+  if (!Platform.isWindows || driveBuild) {
+    return;
+  }
+  if (appInstance is! InstalledApp && !forcesProtocolRegistration) {
     return;
   }
 
@@ -21,8 +27,8 @@ Future<void> registerDeepLinkProtocol(String scheme) async {
 
   final currentCommand = _readCurrentProtocolCommand(scheme);
   final looksLikeDevBuild = _looksLikeDevBuildPath(appPath);
-  final canOverwriteDevRegistration = !looksLikeDevBuild ||
-      const bool.fromEnvironment('ICARUS_FORCE_PROTOCOL_REGISTER');
+  final canOverwriteDevRegistration =
+      !looksLikeDevBuild || forcesProtocolRegistration;
 
   if (!canOverwriteDevRegistration &&
       currentCommand != null &&
