@@ -1175,10 +1175,10 @@ final class Model {
   void editBeforeReading(String elementId) {
     if (standingOf(client.queue) != Standing.good) return;
     if (client.visible.element(elementId) case final LiveElement row) {
-      count('edits of a replaced row sent before reading it');
+      final opId = fresh('op');
       edit(
         movePatch(
-          fresh('op'),
+          opId,
           elementId: elementId,
           expected: row.revision,
           rotation: 60,
@@ -1186,6 +1186,9 @@ final class Model {
       );
       claim();
       deliver(reliable: false);
+      if (server.landed(opId) || server.refused(opId)) {
+        count('edits of a replaced row the server answered before a read');
+      }
     }
   }
 
@@ -2015,7 +2018,7 @@ const minimums = {
   'teammate puts a purged element back at revision 1': 10,
   'ops refused as naming a row life that was replaced': 80,
   'teammate replaces a row this device shows': 80,
-  'edits of a replaced row sent before reading it': 30,
+  'edits of a replaced row the server answered before a read': 10,
   'the strategy is replaced': 5,
   'end content compared after a replacement': 5,
   'end content compared without a replacement': 80,
