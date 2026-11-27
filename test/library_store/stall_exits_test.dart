@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus_library/icarus_library.dart';
@@ -117,6 +118,17 @@ final stalls = <StallExit, Stall>{
               : Future.delayed(const Duration(seconds: 30), () => answer);
         });
       }
+      world.sender.adopt(strategyId);
+    },
+    goAgain: (world) {},
+    wentAgain: (world, after) => world.face() == null,
+  ),
+  StallExit.liveNoFirstResult: Stall(
+    held: false,
+    look: const Duration(seconds: 5),
+    start: (world) {
+      world.pagesOnServer(['p2']);
+      world.sender.liveOpened(strategyId, const ReadOfPage('p2'));
       world.sender.adopt(strategyId);
     },
     goAgain: (world) {},
@@ -484,6 +496,11 @@ const logs = <StallExit, List<String>>{
     '0 s list',
     '0 s page p1',
     '30 s page p2',
+  ],
+  StallExit.liveNoFirstResult: [
+    '0 s list',
+    '0 s page p1',
+    '10 s page p2',
   ],
   StallExit.unsettledResult: [
     '0 s list',

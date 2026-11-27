@@ -1,15 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
+import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/library_store_switch.dart';
+import 'package:icarus/library_store/live_results.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus_library/icarus_library.dart'
+    show Account, CanRead, PageGone;
 
 final editorSubscriptionsProvider = Provider<EditorSubscriptions>(
   (ref) => switch (ref.watch(cloudStoreSwitchProvider)) {
     CloudStoreOff() =>
       TodaysSubscriptions(ref.watch(convexStrategyRepositoryProvider)),
-    CloudStoreSend() =>
-      StampedSubscriptions(ref.watch(storeRepositoryProvider)),
+    CloudStoreSend() => StampedSubscriptions(
+        ref.watch(storeRepositoryProvider),
+        accountSubject: () => ref.read(authProvider).user?.id,
+        live: ref.watch(storeLiveResultsProvider),
+        canRead: appCanRead,
+      ),
   },
 );
 
@@ -54,7 +68,16 @@ final class TodaysSubscriptions extends EditorSubscriptions {
 }
 
 final class StampedSubscriptions extends EditorSubscriptions {
-  const StampedSubscriptions(super.repository);
+  const StampedSubscriptions(
+    super.repository, {
+    required this.accountSubject,
+    required this.live,
+    required this.canRead,
+  });
+
+  final String? Function() accountSubject;
+  final LiveResults live;
+  final CanRead canRead;
 
   @override
   Stream<RemoteStrategyShell> shell(
@@ -70,12 +93,77 @@ final class StampedSubscriptions extends EditorSubscriptions {
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
-  }) =>
-      asPlainWatch(
-        repository.watchPageSnapshotStamped(
-          strategyPublicId: strategyPublicId,
+  }) {
+    final subject = accountSubject();
+    final watched = repository.watchPageSnapshotStamped(
+      strategyPublicId: strategyPublicId,
+      pagePublicId: pagePublicId,
+      shareToken: shareToken,
+      accountSubject: subject,
+    );
+    if (subject == null || shareToken != null) return asPlainWatch(watched);
+    return asPlainWatch(
+      _toldToTheStore(
+        watched,
+        strategyPublicId: strategyPublicId,
+        subject: ReadOfPage(pagePublicId),
+        account: Account(subject),
+        outcomeOf: (answer) => pageOutcomeOf(
+          answer,
           pagePublicId: pagePublicId,
-          shareToken: shareToken,
+          canRead: canRead,
         ),
-      );
+        lostOf: (error) => storeReadOutcomeOfError(
+          error,
+          gone: PageGone(pagePublicId),
+          point: null,
+        ),
+      ),
+    );
+  }
+
+  Stream<Stamped<T>> _toldToTheStore<T>(
+    Stream<Stamped<T>> watched, {
+    required String strategyPublicId,
+    required ReadOf subject,
+    required Account account,
+    required StoreReadOutcome Function(Stamped<T> answer) outcomeOf,
+    required StoreReadOutcome Function(Object error) lostOf,
+  }) {
+    StreamSubscription<Stamped<T>>? inner;
+    late final StreamController<Stamped<T>> told;
+    told = StreamController<Stamped<T>>(
+      onListen: () {
+        live.liveOpened(strategyPublicId, subject);
+        inner = watched.listen(
+          (answer) {
+            live.liveArrived(
+              strategyPublicId,
+              subject,
+              account,
+              outcomeOf(answer),
+            );
+            told.add(answer);
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            live.liveArrived(
+              strategyPublicId,
+              subject,
+              account,
+              lostOf(error),
+            );
+            told.addError(error, stackTrace);
+          },
+          onDone: told.close,
+        );
+      },
+      onPause: () => inner?.pause(),
+      onResume: () => inner?.resume(),
+      onCancel: () {
+        live.liveClosed(strategyPublicId, subject);
+        return inner?.cancel();
+      },
+    );
+    return told.stream;
+  }
 }

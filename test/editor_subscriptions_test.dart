@@ -177,9 +177,26 @@ void main() {
         'b',
         'c',
       ]);
+      final transport =
+          cloud is CloudStoreSend ? storeTransport : editorTransport;
       expect(
-        (cloud is CloudStoreSend ? storeTransport : editorTransport).calls,
+        transport.calls,
         cloud is CloudStoreSend ? stampedCalls : todaysCalls,
+      );
+      expect(
+        {
+          for (final (name, args) in transport.watchedWith)
+            '$name ${args['accountSubject'] ?? 'without the account'}',
+        },
+        {
+          'strategy:getShell without the account',
+          for (final name in [
+            'page:getSnapshot',
+            'page:getFrame',
+            'page:getElementSlice',
+          ])
+            '$name ${cloud is CloudStoreSend ? 'account-a' : 'without the account'}',
+        },
       );
     });
   }

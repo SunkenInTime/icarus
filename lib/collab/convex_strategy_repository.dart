@@ -394,7 +394,8 @@ class ConvexStrategyRepository {
             (null, 0);
     if (live != null) return live;
     final page = _pageSnapshot(
-      await _wholePage(strategyPublicId, pagePublicId, shareToken).fetch(),
+      await _wholePage(strategyPublicId, pagePublicId, shareToken, null)
+          .fetch(),
     );
     _tell(strategyPublicId, page, shareToken);
     return page;
@@ -404,12 +405,14 @@ class ConvexStrategyRepository {
     String strategyPublicId,
     String pagePublicId,
     String? shareToken,
+    String? accountSubject,
   ) =>
       _api.page.getSnapshot(
         clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
         strategyPublicId: strategyPublicId,
         pagePublicId: pagePublicId,
         shareToken: _optional(shareToken),
+        accountSubject: _optional(accountSubject),
         // This client keeps an image's picture id (PlacedImage.assetId).
         acceptsPictureIds: const ConvexOptional.present(true),
         elementFieldLevel: _elementFieldLevel,
@@ -422,16 +425,19 @@ class ConvexStrategyRepository {
     String strategyPublicId,
     String pagePublicId,
     String? shareToken,
+    String? accountSubject,
     List<String> starts,
   ) {
     final protocol = currentCloudProtocolVersion.toDouble();
     final token = _optional(shareToken);
+    final subject = _optional(accountSubject);
     return (
       _api.page.getFrame(
         clientProtocolVersion: protocol,
         strategyPublicId: strategyPublicId,
         pagePublicId: pagePublicId,
         shareToken: token,
+        accountSubject: subject,
       ),
       [
         for (final (index, start) in starts.indexed)
@@ -440,6 +446,7 @@ class ConvexStrategyRepository {
             strategyPublicId: strategyPublicId,
             pagePublicId: pagePublicId,
             shareToken: token,
+            accountSubject: subject,
             fromPublicId: start,
             toPublicId: index + 1 < starts.length
                 ? ConvexOptional.present(starts[index + 1])
@@ -464,6 +471,7 @@ class ConvexStrategyRepository {
         strategyPublicId,
         pagePublicId,
         shareToken,
+        null,
         whole: (query) => query.watch().map(_unstamped),
         parts: (queries) =>
             assembledPages(ConvexQuery.watchTogether(queries)).map(_unstamped),
@@ -473,6 +481,7 @@ class ConvexStrategyRepository {
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
+    String? accountSubject,
   }) {
     final transport = _stampedTransport;
     return _stampedFrom(
@@ -480,6 +489,7 @@ class ConvexStrategyRepository {
         strategyPublicId,
         pagePublicId,
         shareToken,
+        accountSubject,
         whole: (query) => _seenEach(query.stampedOn(transport).watch()),
         parts: (queries) => _seenEach(
           StampedConvexQuery.watchTogether(transport, queries),
@@ -499,7 +509,8 @@ class ConvexStrategyRepository {
   Stream<_Seen<RemotePageSnapshot, S>> _watchPage<S>(
     String strategyPublicId,
     String pagePublicId,
-    String? shareToken, {
+    String? shareToken,
+    String? accountSubject, {
     required Stream<_Seen<PageGetSnapshotResult, S>> Function(
       ConvexQuery<PageGetSnapshotResult>,
     ) whole,
@@ -543,8 +554,13 @@ class ConvexStrategyRepository {
       // least as new; a later answer of the whole page could arrive after
       // it, and the page shown would go back.
       slicing = true;
-      final (frame, slices) =
-          _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
+      final (frame, slices) = _pageParts(
+        strategyPublicId,
+        pagePublicId,
+        shareToken,
+        accountSubject,
+        starts,
+      );
       sliced = parts([frame, ...slices]).listen(
         (assembled) {
           final page = _pageSnapshot(assembled.value);
@@ -578,9 +594,12 @@ class ConvexStrategyRepository {
 
     controller = StreamController<_Seen<RemotePageSnapshot, S>>(
       onListen: () {
-        watchedWhole =
-            whole(_wholePage(strategyPublicId, pagePublicId, shareToken))
-                .listen(
+        watchedWhole = whole(_wholePage(
+          strategyPublicId,
+          pagePublicId,
+          shareToken,
+          accountSubject,
+        )).listen(
           (seen) {
             lastWhole = seen;
             if (slicing) return;

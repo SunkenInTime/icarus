@@ -47,7 +47,11 @@ enum StallExit {
     onScreen: Face.awaitingResult,
     goesAgain: 'a read whose server time reaches the answer\'s, which the '
         'ladder issues once the server clock has caught up; a read showing '
-        'the write; $newEvidence',
+        'the write; $newEvidence. While the editor watches the page live '
+        'and the watch has given a result on this connection, the ladder '
+        'makes no read of it: the next change to the page, a reconnect '
+        'after which the watch gives no result in time, or the page closing '
+        'lets it go again',
   ),
   refusedResult(
     title: 'The queue does not take a result (a page list of an earlier life '
@@ -63,6 +67,16 @@ enum StallExit {
     calls: 'the page and the page list, each on its own ladder',
     onScreen: Face.unreadableWork,
     goesAgain: 'a list that shows the page, $newEvidence',
+  ),
+  liveNoFirstResult(
+    title: 'The editor watches the page live, and the watch has given no '
+        'result on this connection yet',
+    waitsFor: 'the watch\'s first result',
+    calls: 'nothing until the bound, then the read the queue asked for',
+    onScreen: Face.awaitingResult,
+    goesAgain: 'the watch\'s first result, which is taken as a read\'s '
+        'would be; the page closing; or the bound passing, after which the '
+        'page is read as before',
   ),
   lostRead(
     title: 'A read is lost or times out, or the read to take up a strategy '
@@ -241,8 +255,8 @@ enum StallExit {
         'teammates\' latest has no face in the store yet',
     calls: 'nothing',
     onScreen: null,
-    goesAgain: 'an edit, or the editor\'s live results once the store is '
-        'their source (decided, not built)',
+    goesAgain: 'an edit, or a live result of the page the editor has '
+        'open (the page list is not watched live)',
   );
 
   const StallExit({
@@ -282,6 +296,8 @@ enum StallExit {
             '${span(timing.readAgainAfter)}; never twice within '
             '${span(timing.readFloor)}',
       firstRead => 'at once, one read per step',
+      liveNoFirstResult => 'after ${span(timing.firstLiveResult)} without a '
+          'first result, then as the read\'s own row',
       landedWork => 'after ${span(timing.quietBeforeRetiring)} without an '
           'edit, then every ${span(timing.retireAgainAfter)}',
       viewerOnly ||
@@ -327,6 +343,8 @@ enum StallExit {
           '${timing.unresolvedRounds} reads, then recorded as refused '
               '(unreadable work); the ladder goes on',
         firstRead => 'one read per page',
+        liveNoFirstResult => 'one wait of '
+            '${timing.firstLiveResult.inSeconds} s per watch and connection',
         landedWork => '${timing.unresolvedRounds} reads that show nothing '
             'new, then shown as could not resolve and read every '
             '${timing.readAgainAfter.inMinutes} min',

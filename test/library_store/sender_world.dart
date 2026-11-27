@@ -665,6 +665,7 @@ final class SlowSenderStore extends SenderStore {
   var refusesBaseWrites = 0;
   var rejectsBasesOutOfPlace = 0;
   var refusesUpgradeWrites = 0;
+  var baseWritesWait = Duration.zero;
 
   @override
   Future<ClaimResult> claim(
@@ -730,6 +731,10 @@ final class SlowSenderStore extends SenderStore {
         events.any((event) => event is ResultRefused)) {
       refusesRefusedResult--;
       return const WriteTroubled(NotWrittenNow('the test refused the write'));
+    }
+    if (baseWritesWait > Duration.zero &&
+        events.any((event) => event is BaseArrived)) {
+      await Future<void>.delayed(baseWritesWait);
     }
     if (readSession) {
       final during = duringSessionWrite;
