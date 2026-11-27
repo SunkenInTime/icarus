@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -2148,6 +2149,41 @@ void main() {
     },
   );
 
+  final sweepFrom = int.tryParse(environment['CLOUD_MODEL_FIRST_SEED'] ?? '');
+  if (sweepFrom != null) {
+    test('a sweep of $seeds seeds from $sweepFrom fails only where it is known '
+        'to', () {
+      final known = knownFailures();
+      final unknown = <String>[];
+      final fixed = <int>[];
+      for (var seed = sweepFrom; seed < sweepFrom + seeds; seed++) {
+        final failed = <String>[];
+        for (final folding in [true, false]) {
+          try {
+            runSeed(seed, steps, folding: folding);
+          } on TestFailure catch (failure) {
+            failed.add((failure.message ?? '').split('\n').first.trim());
+          }
+        }
+        switch ((known[seed], failed)) {
+          case (final cause?, []):
+            fixed.add(seed);
+            stdout.writeln('SWEEP seed $seed passes, known for: $cause');
+          case (final cause?, _):
+            stdout.writeln('SWEEP seed $seed fails as known: $cause');
+          case (null, []):
+            break;
+          case (null, [final first, ...]):
+            unknown.add(first);
+            stdout.writeln('SWEEP $first');
+        }
+      }
+      expect(fixed, isEmpty, reason: 'remove these from $knownFailuresFile');
+      expect(unknown, isEmpty);
+    });
+    return;
+  }
+
   test('random interleavings keep every edit and end where the user meant', () {
     final picked = one == null ? [for (var s = 1; s <= seeds; s++) s] : [one];
     for (final seed in picked) {
@@ -2165,6 +2201,14 @@ void main() {
     }
   });
 }
+
+const knownFailuresFile = 'test/cloud_model_known_failures.json';
+
+Map<int, String> knownFailures() => {
+  for (final entry
+      in jsonDecode(File(knownFailuresFile).readAsStringSync()) as List)
+    (entry as Map<String, Object?>)['seed']! as int: entry['cause']! as String,
+};
 
 bool uncheckedOnTheWire(StrategyOp op) => switch (op.toJson()) {
   {
