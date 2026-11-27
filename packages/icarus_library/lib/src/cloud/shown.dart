@@ -103,18 +103,18 @@ final class AnswerMark {
   bool onlyItsTimeAhead(Arrival? arrival) =>
       arrival != null && !arrival.order.isBefore(order) && !reachedBy(arrival);
 
-  AnswerMark and(AnswerMark? other) {
-    if (other == null) return this;
-    final later = order.isBefore(other.order) ? other : this;
-    final (time, wrote) = switch ((serverTime, other.serverTime)) {
-      (final mine?, final theirs?) when mine != theirs =>
-        mine > theirs ? (mine, this.wrote) : (theirs, other.wrote),
-      (final mine?, null) => (mine, this.wrote),
-      (null, final theirs?) => (theirs, other.wrote),
-      _ => (serverTime, later.wrote ?? this.wrote ?? other.wrote),
-    };
-    return AnswerMark(order: later.order, serverTime: time, wrote: wrote);
-  }
+  AnswerMark and(AnswerMark? other) => switch (other) {
+    null => this,
+    final other => AnswerMark(
+      order: order.isBefore(other.order) ? other.order : order,
+      serverTime: _later(serverTime, other.serverTime),
+      wrote: switch ((wrote, other.wrote)) {
+        (final mine?, final theirs?) when mine.target == theirs.target =>
+          mine.version >= theirs.version ? mine : theirs,
+        _ => null,
+      },
+    ),
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -138,8 +138,12 @@ final class Marks {
     this.allPages,
     Map<String, AnswerMark> pages = const {},
     Map<Target, AnswerMark> rows = const {},
+    Map<Target, String> placed = const {},
+    Map<String, Set<Target>> rowsOn = const {},
   }) : pages = Map.unmodifiable(pages),
-       rows = Map.unmodifiable(rows);
+       rows = Map.unmodifiable(rows),
+       placed = Map.unmodifiable(placed),
+       rowsOn = Map.unmodifiable(rowsOn);
 
   static final none = Marks();
 
@@ -147,6 +151,8 @@ final class Marks {
   final AnswerMark? allPages;
   final Map<String, AnswerMark> pages;
   final Map<Target, AnswerMark> rows;
+  final Map<Target, String> placed;
+  final Map<String, Set<Target>> rowsOn;
 
   bool get isEmpty =>
       list == null && allPages == null && pages.isEmpty && rows.isEmpty;
@@ -155,13 +161,45 @@ final class Marks {
     AnswerMark? Function()? list,
     AnswerMark? Function()? allPages,
     Map<String, AnswerMark>? pages,
-    Map<Target, AnswerMark>? rows,
   }) => Marks(
     list: list == null ? this.list : list(),
     allPages: allPages == null ? this.allPages : allPages(),
     pages: pages ?? this.pages,
-    rows: rows ?? this.rows,
+    rows: rows,
+    placed: placed,
+    rowsOn: rowsOn,
   );
+
+  Marks _rowsAt(
+    Map<Target, AnswerMark> rows,
+    Iterable<Target> moved,
+    String? Function(Target target) pageOf,
+  ) {
+    final placed = {...this.placed};
+    final rowsOn = {...this.rowsOn};
+    for (final target in moved) {
+      final was = placed[target];
+      final now = rows.containsKey(target) ? pageOf(target) : null;
+      if (was == now) continue;
+      if (was != null) {
+        final left = {...rowsOn[was]!}..remove(target);
+        left.isEmpty ? rowsOn.remove(was) : rowsOn[was] = left;
+        placed.remove(target);
+      }
+      if (now != null) {
+        placed[target] = now;
+        rowsOn[now] = {...?rowsOn[now], target};
+      }
+    }
+    return Marks(
+      list: list,
+      allPages: allPages,
+      pages: pages,
+      rows: rows,
+      placed: placed,
+      rowsOn: rowsOn,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -1082,10 +1120,30 @@ final class Shown {
 
   Taken taken(ArrivedBase result, {required Arrival? arrival}) {
     final taken = _taken(result, arrival: arrival);
+    final found = switch (result) {
+      PageRead(:final elements, :final lineupGroups) => [
+        for (final row in elements)
+          if (marks.rows.containsKey(ElementTarget(row.publicId)))
+            ElementTarget(row.publicId) as Target,
+        for (final row in lineupGroups)
+          if (marks.rows.containsKey(LineupTarget(row.publicId)))
+            LineupTarget(row.publicId),
+      ],
+      _ => const <Target>[],
+    };
+    final placed = taken.shown._rowMarksPlaced(switch (result) {
+      HeaderRead() => marks.rows.keys,
+      StrategyGone() => const <Target>[],
+      PageRead(:final page) => {...?marks.rowsOn[page.publicId], ...found},
+      PageGone(:final pagePublicId) => {...?marks.rowsOn[pagePublicId]},
+    });
     final settled = switch (result) {
-      HeaderRead() || StrategyGone() => taken.shown._settledByList(),
-      PageRead(:final page) => taken.shown._settledByPage(page.publicId),
-      PageGone(:final pagePublicId) => taken.shown._settledByPage(pagePublicId),
+      HeaderRead() || StrategyGone() => placed._settledByList(),
+      PageRead(:final page) => placed._settledByPage(page.publicId, found),
+      PageGone(:final pagePublicId) => placed._settledByPage(
+        pagePublicId,
+        const [],
+      ),
     };
     return identical(settled, taken.shown)
         ? taken
@@ -1296,15 +1354,17 @@ final class Shown {
         for (final page in pages)
           if (!_settledFor(page, mark)) page: mark.and(marks.pages[page]),
       },
-      rows: switch (row) {
-        final row? when !_rowSettled(row, mark) => {
-          ...marks.rows,
-          row: mark.and(marks.rows[row]),
-        },
-        _ => null,
+    );
+    return _with(
+      marks: switch (row) {
+        final row? when !_rowSettled(row, mark) => next._rowsAt(
+          {...next.rows, row: mark.and(next.rows[row])},
+          [row],
+          (target) => rows[target]?.page,
+        ),
+        _ => next,
       },
     );
-    return _with(marks: next);
   }
 
   bool get listCurrent => _listCurrent(counted: true);
@@ -1328,7 +1388,7 @@ final class Shown {
         !_pageReaches(page, seen, marks.allPages, counted: true)) {
       return false;
     }
-    for (final target in _rowMarksOn[page] ?? const <Target>[]) {
+    for (final target in marks.rowsOn[page] ?? const <Target>{}) {
       shownWork.marksLooked++;
       if (!_rowReached(marks.rows[target]!, seen)) return false;
     }
@@ -1350,7 +1410,7 @@ final class Shown {
           for (final mark in [?marks.pages[page], ?marks.allPages])
             if (!_pageReaches(page, pagesSeen[page]!, mark, counted: false))
               mark,
-          for (final target in _rowMarksOn[page] ?? const <Target>[])
+          for (final target in marks.rowsOn[page] ?? const <Target>{})
             if (!_rowReached(marks.rows[target]!, pagesSeen[page]!))
               marks.rows[target]!,
         ],
@@ -1360,14 +1420,6 @@ final class Shown {
     return waiting.isNotEmpty &&
         waiting.every((mark) => mark.onlyItsTimeAhead(seen?.at));
   }
-
-  late final Map<String, List<Target>> _rowMarksOn = () {
-    final on = <String, List<Target>>{};
-    for (final target in marks.rows.keys) {
-      if (rows[target]?.page case final page?) (on[page] ??= []).add(target);
-    }
-    return on;
-  }();
 
   bool _listReaches(AnswerMark? mark, {required bool counted}) {
     if (mark == null) return true;
@@ -1452,7 +1504,17 @@ final class Shown {
     return next == marks ? this : _with(marks: next);
   }
 
-  Shown _settledByPage(String page) {
+  Shown _rowMarksPlaced(Iterable<Target> moved) {
+    if (marks.rows.isEmpty) return this;
+    final next = marks._rowsAt(
+      marks.rows,
+      moved,
+      (target) => rows[target]?.page,
+    );
+    return _with(marks: next);
+  }
+
+  Shown _settledByPage(String page, Iterable<Target> found) {
     if (marks.isEmpty) return this;
     final allPages = marks.allPages;
     final next = marks._with(
@@ -1477,12 +1539,23 @@ final class Shown {
         }..remove(page),
         _ => null,
       },
-      rows: {
-        for (final MapEntry(:key, :value) in marks.rows.entries)
-          if (!_rowSettled(key, value)) key: value,
-      },
     );
-    return next == marks ? this : _with(marks: next);
+    final settled = {
+      for (final target in {...?marks.rowsOn[page], ...found})
+        if (marks.rows[target] case final mark? when _rowSettled(target, mark))
+          target,
+    };
+    if (settled.isEmpty) return next == marks ? this : _with(marks: next);
+    return _with(
+      marks: next._rowsAt(
+        {
+          for (final MapEntry(:key, :value) in next.rows.entries)
+            if (!settled.contains(key)) key: value,
+        },
+        settled,
+        (target) => null,
+      ),
+    );
   }
 
   Shown owingList(PaidBy since) =>

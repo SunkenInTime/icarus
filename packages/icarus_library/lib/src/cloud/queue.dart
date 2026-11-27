@@ -2125,11 +2125,8 @@ void _resultsStale(
 }
 
 Set<String> _marksMoved(Shown before, Shown after) => {
-  for (final target in {...before.marks.rows.keys, ...after.marks.rows.keys})
-    if (before.rows[target]?.page != after.rows[target]?.page) ...[
-      ?before.rows[target]?.page,
-      ?after.rows[target]?.page,
-    ],
+  for (final page in {...before.marks.rowsOn.keys, ...after.marks.rowsOn.keys})
+    if (!identical(before.marks.rowsOn[page], after.marks.rowsOn[page])) page,
 };
 
 Iterable<Target> _shownOn(Shown shown, String page) => [
