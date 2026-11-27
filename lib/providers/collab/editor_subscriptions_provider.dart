@@ -11,6 +11,7 @@ import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/live_results.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus_library/icarus_library.dart'
     show Account, CanRead, PageGone, StrategyGone;
 
@@ -154,29 +155,47 @@ final class StampedSubscriptions extends EditorSubscriptions {
     required StoreReadOutcome Function(Stamped<T> answer) outcomeOf,
     required StoreReadOutcome Function(Object error) lostOf,
   }) {
+    void tellStore(void Function() hand) {
+      try {
+        hand();
+      } catch (error, stackTrace) {
+        AppErrorReporter.reportError(
+          'The store did not take a live result of $subject',
+          error: error,
+          stackTrace: stackTrace,
+          source: 'editor_subscriptions:live_results',
+          promptUser: false,
+        );
+      }
+    }
+
     StreamSubscription<Stamped<T>>? inner;
     late final StreamController<Stamped<T>> told;
     told = StreamController<Stamped<T>>(
       onListen: () {
-        live.liveOpened(strategyPublicId, subject);
+        tellStore(() => live.liveOpened(strategyPublicId, subject));
         inner = watched.listen(
           (answer) {
-            live.liveArrived(
-              strategyPublicId,
-              subject,
-              account,
-              outcomeOf(answer),
-            );
             told.add(answer);
+            tellStore(
+              () => live.liveArrived(
+                strategyPublicId,
+                subject,
+                account,
+                outcomeOf(answer),
+              ),
+            );
           },
           onError: (Object error, StackTrace stackTrace) {
-            live.liveArrived(
-              strategyPublicId,
-              subject,
-              account,
-              lostOf(error),
-            );
             told.addError(error, stackTrace);
+            tellStore(
+              () => live.liveArrived(
+                strategyPublicId,
+                subject,
+                account,
+                lostOf(error),
+              ),
+            );
           },
           onDone: told.close,
         );
@@ -184,7 +203,7 @@ final class StampedSubscriptions extends EditorSubscriptions {
       onPause: () => inner?.pause(),
       onResume: () => inner?.resume(),
       onCancel: () {
-        live.liveClosed(strategyPublicId, subject);
+        tellStore(() => live.liveClosed(strategyPublicId, subject));
         return inner?.cancel();
       },
     );
