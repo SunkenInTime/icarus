@@ -128,35 +128,35 @@ void main() {
         await store.close();
       });
 
-      test(
-        'restart from the stored rows with nothing read this session, and '
-        'the rows-agree check runs against what was rebuilt and passes',
-        () async {
-          final (:store, disk: _, :cloud) = await opened(
-            damaged(stored, damagedGroup),
-          );
-          final shown = cloud.queue.shown;
-          expect(shown.list, const NotReadThisSession());
-          expect(shown.pageReads, isEmpty);
-          expect(shown.listSeen, isNull);
-          expect(shown.pagesSeen, isEmpty);
-          expect(shown.marks.isEmpty, isTrue);
-          expect(shown.listTaken, isNull);
-          expect(shown.pagesTaken, isEmpty);
-          final rows = initialRows();
-          expect(shown.highest, {
-            const StrategyTarget(): versionOfRow(rows.strategy),
-            for (final page in rows.pages)
-              PageTarget(page.publicId): versionOfRow(page),
-            for (final row in rows.settings)
-              SettingsTarget(row.pagePublicId): versionOfRow(row),
-            for (final row in rows.elements)
-              ElementTarget(row.publicId): versionOfRow(row),
-          });
-          expect(await refusedFor(store), isNull);
-          await store.close();
-        },
-      );
+      test('restart from the stored rows with nothing read this session, the '
+          'page list and the pages with pending work owed, and the rows-agree '
+          'check runs against what was rebuilt and passes', () async {
+        final (:store, disk: _, :cloud) = await opened(
+          damaged(stored, damagedGroup),
+        );
+        final shown = cloud.queue.shown;
+        expect(shown.list, const ReadOwed(since: ResultAtOrAfter.anyResult));
+        for (final read in shown.pageReads.values) {
+          expect(read, const ReadOwed(since: ResultAtOrAfter.anyResult));
+        }
+        expect(shown.listSeen, isNull);
+        expect(shown.pagesSeen, isEmpty);
+        expect(shown.marks.isEmpty, isTrue);
+        expect(shown.listTaken, isNull);
+        expect(shown.pagesTaken, isEmpty);
+        final rows = initialRows();
+        expect(shown.highest, {
+          const StrategyTarget(): versionOfRow(rows.strategy),
+          for (final page in rows.pages)
+            PageTarget(page.publicId): versionOfRow(page),
+          for (final row in rows.settings)
+            SettingsTarget(row.pagePublicId): versionOfRow(row),
+          for (final row in rows.elements)
+            ElementTarget(row.publicId): versionOfRow(row),
+        });
+        expect(await refusedFor(store), isNull);
+        await store.close();
+      });
 
       test('is reported once: a second load finds the results it wrote and '
           'drops nothing', () async {
@@ -289,48 +289,60 @@ void main() {
       }
     });
 
-    test('work a ROW_REPLACED debt held on its page is no longer held by it, '
-        'and goes out checked, at its revision and naming the lives it was '
-        'written over, as all work from an earlier session does', () async {
-      final stored = await storedAfter((store) async {
-        await commit(store, movePatch('move'));
-        final sent = await claimAll(store);
-        await commit(store, movePatch('other', elementId: 'e2'));
-        await recordAll(store, [
-          OpAnswered(
-            sent.attempt,
-            const RejectedAnswer(
-              'move',
-              RejectionReason.rowReplaced,
-              NoServerCopy(),
+    test(
+      'work a ROW_REPLACED debt held on its page stays held after the '
+      'results are dropped until its page is read again, then goes out '
+      'checked, at its revision and naming the lives it was written over',
+      () async {
+        final stored = await storedAfter((store) async {
+          await commit(store, movePatch('move'));
+          final sent = await claimAll(store);
+          await commit(store, movePatch('other', elementId: 'e2'));
+          await recordAll(store, [
+            OpAnswered(
+              sent.attempt,
+              const RejectedAnswer(
+                'move',
+                RejectionReason.rowReplaced,
+                NoServerCopy(),
+              ),
+              point: tick(),
             ),
-            point: tick(),
-          ),
-        ]);
-        expect(
-          (await syncOf(store)).views['other']!.holds,
-          contains(const AwaitingResult(PageResult('page-a'))),
+          ]);
+          expect(
+            (await syncOf(store)).views['other']!.holds,
+            contains(const AwaitingResult(PageResult('page-a'))),
+          );
+        });
+        final (:store, disk: _, cloud: _) = await opened(
+          damaged(stored, header),
         );
-      });
-      final (:store, disk: _, cloud: _) = await opened(damaged(stored, header));
-      await recordAll(store, [const AppRestarted(build: build), reconnected()]);
-      final cloud = await syncOf(store);
-      expect(sendable(cloud, 'other'), isTrue);
-      final batch = await claimAll(store);
-      expect(batch.ops.map((op) => op.opId), ['other']);
-      expect(batch.basis, isNull);
-      expect(
-        batch.ops.single,
-        isA<ElementPatchOp>().having(
-          (op) => op.expectedElementRevision,
-          'expected',
-          1,
-        ),
-      );
-      expect(batch.lives, {'other': fixtureLife});
-      expect(batch.strategyLife, isNotNull);
-      await store.close();
-    });
+        await recordAll(store, [
+          const AppRestarted(build: build),
+          reconnected(),
+        ]);
+        expect(sendable(await syncOf(store), 'other'), isFalse);
+        await recordAll(store, [
+          await arrivalIn(store, headerReadOf(initialRows())),
+          await arrivalIn(store, pageReadOf(initialRows(), 'page-a')),
+        ]);
+        expect(sendable(await syncOf(store), 'other'), isTrue);
+        final batch = await claimAll(store);
+        expect(batch.ops.map((op) => op.opId), ['other']);
+        expect(batch.basis, isNull);
+        expect(
+          batch.ops.single,
+          isA<ElementPatchOp>().having(
+            (op) => op.expectedElementRevision,
+            'expected',
+            1,
+          ),
+        );
+        expect(batch.lives, {'other': fixtureLife});
+        expect(batch.strategyLife, isNotNull);
+        await store.close();
+      },
+    );
 
     test('a STRATEGY_REPLACED debt naming a life is paid by the first list '
         'of a later session, which shows that life', () async {

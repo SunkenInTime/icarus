@@ -623,6 +623,9 @@ extension _CloudStore on LibraryStore {
       }
       shown = Shown.ofStoredRows(
         _baseRows(strategy, storedHeader!, strategy.pageDigests),
+        owing: {
+          for (final entry in entries.whereType<PendingOp>()) ...pagesOf(entry),
+        },
       );
       groups = {
         for (final MapEntry(:key, :value) in shownToGroups(shown).entries)

@@ -978,13 +978,21 @@ final class Shown {
     );
   }
 
-  factory Shown.ofStoredRows(StrategyRowSet rows) {
+  factory Shown.ofStoredRows(
+    StrategyRowSet rows, {
+    Iterable<String> owing = const [],
+  }) {
     final holding = {
       for (final row in rows.elements) row.pagePublicId,
       for (final row in rows.lineupGroups) row.pagePublicId,
     };
     final stored = Shown.of(rows, readPages: holding).inNewSession();
     return stored._with(
+      list: const ReadOwed(since: ResultAtOrAfter.anyResult),
+      pageReads: {
+        for (final page in owing)
+          page: const ReadOwed(since: ResultAtOrAfter.anyResult),
+      },
       content: {
         for (final MapEntry(:key, :value) in stored.content.entries)
           if (stored.pages.containsKey(key)) key: value,
