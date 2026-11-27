@@ -5,6 +5,7 @@ param(
   [int]$Rounds = 2
 )
 $ErrorActionPreference = 'Stop'
+$Library = @($Library | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 if ((Test-Path -LiteralPath $Out) -and (Get-ChildItem -LiteralPath $Out -Force | Select-Object -First 1)) {
   throw "$Out is not empty; give each run a new -Out"
 }
