@@ -11,12 +11,11 @@ import {
   clampPageIndex,
   getPageByPublicId,
   getStrategyByPublicId,
-  isPastTrashRetention,
   isTrashed,
   listLivePages,
   listRestorablePages,
   PAGE_TRASH_RETENTION_MS,
-  restoreTrashedPage,
+  restorePage,
   sortByNumberField,
   trashPage,
 } from "./lib/entities";
@@ -250,32 +249,16 @@ export const restore = mutation({
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-    const page = await ctx.db
-      .query("pages")
-      .withIndex("by_publicId", (q) => q.eq("publicId", args.pagePublicId))
-      .first();
-    const now = Date.now();
-    if (
-      page === null ||
-      page.strategyId !== strategy._id ||
-      isPastTrashRetention(page, now)
-    ) {
-      throw notFoundError("Page", args.pagePublicId);
+    const restore = await restorePage(ctx, strategy, args.pagePublicId);
+    switch (restore.outcome) {
+      case "gone":
+        throw notFoundError("Page", args.pagePublicId);
+      case "live":
+        return { ok: true, reused: true, revision: strategy.revision } as const;
+      case "restored":
+        await refreshStrategyAgentSummary(ctx, strategy._id);
+        return { ok: true, revision: restore.strategy.revision } as const;
     }
-    if (!isTrashed(page)) {
-      return { ok: true, reused: true, revision: strategy.revision } as const;
-    }
-
-    await restoreTrashedPage(
-      ctx,
-      page,
-      await listLivePages(ctx, strategy._id),
-      now,
-    );
-    await refreshStrategyAgentSummary(ctx, strategy._id);
-    const revision = strategy.revision + 1;
-    await ctx.db.patch(strategy._id, { revision, updatedAt: now });
-    return { ok: true, revision } as const;
   },
 });
 

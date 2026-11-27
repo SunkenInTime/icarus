@@ -534,6 +534,7 @@ sealed class OpsApplyBatchArgsOpsItem {
       'page.patch' => OpsApplyBatchArgsOpsItemPagePatch.decode(value, path),
       'page.delete' => OpsApplyBatchArgsOpsItemPageDelete.decode(value, path),
       'page.reorder' => OpsApplyBatchArgsOpsItemPageReorder.decode(value, path),
+      'page.restore' => OpsApplyBatchArgsOpsItemPageRestore.decode(value, path),
       'pageContent.patch' => OpsApplyBatchArgsOpsItemPageContentPatch.decode(
         value,
         path,
@@ -3304,6 +3305,54 @@ final class OpsApplyBatchArgsOpsItemPageReorder
       'opId': ConvexString(opId),
       'pagePublicId': ConvexString(pagePublicId),
       'sortIndex': _encodeNumber(sortIndex, '$path.sortIndex'),
+    });
+  }
+}
+
+final class OpsApplyBatchArgsOpsItemPageRestore
+    extends OpsApplyBatchArgsOpsItem {
+  const OpsApplyBatchArgsOpsItemPageRestore({
+    required this.opId,
+    required this.pagePublicId,
+    this.expectedLife = const ConvexOptional.absent(),
+  });
+  final ConvexOptional<double> expectedLife;
+  final String opId;
+  final String pagePublicId;
+
+  factory OpsApplyBatchArgsOpsItemPageRestore.decode(
+    ConvexValue value,
+    String path,
+  ) {
+    final object = _decodeObject(value, path);
+    return OpsApplyBatchArgsOpsItemPageRestore(
+      expectedLife: object.value.containsKey('expectedLife')
+          ? ConvexOptional.present(
+              _decodeNumber(
+                object.value['expectedLife']!,
+                '$path.expectedLife',
+              ),
+            )
+          : const ConvexOptional.absent(),
+      opId: _decodeString(
+        object.value['opId'] ?? _missing(path, 'opId'),
+        '$path.opId',
+      ),
+      pagePublicId: _decodeString(
+        object.value['pagePublicId'] ?? _missing(path, 'pagePublicId'),
+        '$path.pagePublicId',
+      ),
+    );
+  }
+
+  @override
+  ConvexObject encode(String path) {
+    return ConvexObject({
+      'type': ConvexString('page.restore'),
+      if (expectedLife.isPresent)
+        'expectedLife': _encodeNumber(expectedLife.value, '$path.expectedLife'),
+      'opId': ConvexString(opId),
+      'pagePublicId': ConvexString(pagePublicId),
     });
   }
 }

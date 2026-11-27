@@ -26,6 +26,7 @@ import {
   getStrategyByPublicId,
   isTrashed,
   listLivePages,
+  restorePage,
   sortByNumberField,
   trashPage,
 } from "./lib/entities";
@@ -81,7 +82,7 @@ type PagePayload = {
 type StrategyOp = {
   opId: string;
   type: WireStrategyOp["type"];
-  kind: "add" | "patch" | "delete" | "reorder";
+  kind: "add" | "patch" | "delete" | "reorder" | "restore";
   entityType: "strategy" | "page" | "pageContent" | "element" | "lineup";
   entityPublicId?: string;
   pagePublicId?: string;
@@ -170,6 +171,15 @@ function normalizeOp(op: WireStrategyOp): StrategyOp {
         pagePublicId: op.pagePublicId,
         sortIndex: op.sortIndex,
         expectedRevision: op.expectedStrategyRevision,
+      };
+    case "page.restore":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "restore",
+        entityType: "page",
+        entityPublicId: op.pagePublicId,
+        pagePublicId: op.pagePublicId,
       };
     case "pageContent.patch":
       return {
@@ -799,7 +809,10 @@ function noop(revision?: number, eventPageId?: Id<"pages">): OperationResult {
 function currentTargetForOp(op: StrategyOp): CurrentTarget {
   if (
     op.entityType === "page" &&
-    (op.kind === "add" || op.kind === "delete" || op.kind === "reorder")
+    (op.kind === "add" ||
+      op.kind === "delete" ||
+      op.kind === "reorder" ||
+      op.kind === "restore")
   ) {
     return "strategy";
   }
@@ -1008,6 +1021,27 @@ async function applyPageOp(
   const publicId = op.entityPublicId ?? op.pagePublicId;
   if (publicId === undefined) {
     throw errorWithCode("MISSING_PAGE_ID", "Missing page id");
+  }
+  if (op.kind === "restore") {
+    const restore = await restorePage(ctx, strategy, publicId);
+    switch (restore.outcome) {
+      case "gone":
+        return { strategy, result: rejected("not_found") };
+      case "live":
+        return {
+          strategy,
+          result: noop(strategy.revision, restore.page._id),
+        };
+      case "restored":
+        return {
+          strategy: restore.strategy,
+          result: {
+            status: "ack",
+            appliedRevision: restore.strategy.revision,
+            eventPageId: restore.page._id,
+          },
+        };
+    }
   }
   const existing = await getPageByPublicIdOrNull(ctx, publicId);
 
