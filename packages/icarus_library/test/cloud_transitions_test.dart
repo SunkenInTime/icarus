@@ -765,9 +765,14 @@ String renderTable() {
       'the list still applies.',
     )
     ..writeln(
-      '- Each kind of row keeps one owner. The list owns the strategy row, '
-      'every page row\'s place in the list and the settings rows: a list '
-      'writes the settings of every page it lists. A page\'s own result owns '
+      '- Each kind of row has its sources. The list carries the strategy row '
+      'and the settings rows: a list writes the settings of every page it '
+      'lists, under the version rule above, so a settings row at a lower '
+      'revision than the one held is kept out. Page rows come from both '
+      'kinds: a page\'s own result newer than the list writes that page\'s '
+      'row whole, its place in the list included, so until the next list two '
+      'pages can show the same place; that list sets every page row it '
+      'decides. A page\'s own result owns '
       'that page\'s items, ordered by that page\'s taken order. A list that '
       'adopts a later strategy life starts from nothing: no taken or refused '
       'order of the old life is kept.',

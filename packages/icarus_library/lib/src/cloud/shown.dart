@@ -1284,12 +1284,22 @@ final class Shown {
     }
     final remaining = {...nextPages.keys, ...nextTrashed.keys};
     final withSettings = {for (final row in settings) row.pagePublicId};
+    final takenSettings = [
+      for (final row in settings)
+        if (remaining.contains(row.pagePublicId) &&
+            replaces(this.settings[row.pagePublicId], row))
+          row,
+    ];
+    final settingsTaken = {for (final row in takenSettings) row.pagePublicId};
     decisions.addAll([
       for (final page in listedRows.keys)
         if (remaining.contains(page) && !withSettings.contains(page))
           SettingsLeft(page),
       for (final row in settings)
-        if (remaining.contains(row.pagePublicId)) RowTaken(row),
+        if (remaining.contains(row.pagePublicId))
+          settingsTaken.contains(row.pagePublicId)
+              ? RowTaken(row)
+              : RowKept(row, KeptBecause.heldIsNewer),
     ]);
     final live = nextPages.keys.toSet();
     return Taken(
@@ -1330,9 +1340,8 @@ final class Shown {
           for (final page in listed)
             if (!_isTrashed(page) && takenPages.contains(page.publicId))
               PageTarget(page.publicId): ?versionOfRow(page),
-          for (final row in settings)
-            if (remaining.contains(row.pagePublicId))
-              SettingsTarget(row.pagePublicId): ?versionOfRow(row),
+          for (final row in takenSettings)
+            SettingsTarget(row.pagePublicId): ?versionOfRow(row),
         }),
         strategy: _strategyRow(strategyRow, listed),
         pages: nextPages,
@@ -1340,11 +1349,11 @@ final class Shown {
         tombstones: _removedOn(removed.contains, arrival?.order),
         settings: {
           for (final MapEntry(:key, :value) in this.settings.entries)
-            if (remaining.contains(key) && !listedRows.containsKey(key))
+            if (remaining.contains(key) &&
+                (!listedRows.containsKey(key) || withSettings.contains(key)))
               key: value,
-          for (final row in settings)
-            if (remaining.contains(row.pagePublicId))
-              row.pagePublicId: _rowOf(row, row.pagePublicId),
+          for (final row in takenSettings)
+            row.pagePublicId: _rowOf(row, row.pagePublicId),
         },
         content: {
           for (final MapEntry(:key, :value) in content.entries)

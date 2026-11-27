@@ -188,6 +188,48 @@ void main() {
       expect(client.queue.shown.highest[const PageTarget('page-a')], held);
     });
 
+    test('a list carrying a lower settings revision than the one held keeps '
+        'the held settings and raises no highest version for them', () {
+      ReadablePageSettings settingsAt(int revision) => ReadablePageSettings(
+        pagePublicId: 'page-a',
+        settings: defaultSettings,
+        revision: revision,
+        unknownFields: jsonObject({'createdAt': fixtureLife}),
+      );
+      HeaderRead listWithSettings(int revision) => HeaderRead(
+        strategy: initialRows().strategy,
+        pages: initialRows().pages.toList(),
+        settings: [
+          settingsAt(revision),
+          for (final row in initialRows().settings)
+            if (row.pagePublicId != 'page-a') row,
+        ],
+      );
+      final client = connectedOn();
+      client.must(arrivalAt(client, listWithSettings(3), pointAt(10)));
+      client.must(reconnected());
+      final held = client.queue.shown.highest[const SettingsTarget('page-a')];
+      final step = client.step(
+        arrivalAt(client, listWithSettings(2), pointAt(1, later: 1)),
+      );
+      expect(
+        (step as Stepped).decisions,
+        contains(RowKept(settingsAt(2), KeptBecause.heldIsNewer)),
+      );
+      expect(client.queue.shown.settings['page-a']?.revision, 3);
+      expect(client.queue.shown.highest[const SettingsTarget('page-a')], held);
+    });
+
+    test('a page read newer than the list writes the page row whole, its '
+        'place included, before a list shows the move', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(10)));
+      final moved = page('page-a', sortIndex: 1, revision: 2);
+      final step = client.step(arrivalAt(client, pageAAs(moved), pointAt(20)));
+      expect((step as Stepped).decisions, contains(RowTaken(moved)));
+      expect(client.queue.shown.pages['page-a']?.revision, 2);
+    });
+
     test('lists either side of a page-gone, then a page read and a newer '
         'list', () {
       final client = connectedOn();
