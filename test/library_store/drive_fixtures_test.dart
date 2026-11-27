@@ -1,8 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
@@ -10,6 +13,9 @@ import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/sqlite_storage.dart';
@@ -26,6 +32,8 @@ final _keptOut = Platform.environment['ICARUS_KEPT_ON_HIVE_FIXTURE'];
 final _leftBehindOut = Platform.environment['ICARUS_LEFT_BEHIND_FIXTURE'];
 final _sixtyDrawingsOut =
     Platform.environment['ICARUS_SIXTY_DRAWINGS_FIXTURE'];
+final _acceptanceLibraryOut =
+    Platform.environment['ICARUS_ACCEPTANCE_LIBRARY_FIXTURE'];
 final _storeHoldsOut =
     Platform.environment['ICARUS_STORE_HOLDS_LIBRARY_FIXTURE'];
 
@@ -220,7 +228,78 @@ Future<void> writeSixtyDrawingsFixture(Directory out) async {
   await Hive.close();
 }
 
+final class _SignedOut extends AuthProvider {
+  @override
+  AppAuthState build() => AppAuthState.fromSession(null);
+}
+
+Future<void> writeAcceptanceLibraryFixture(Directory out) async {
+  const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(pathProvider, (_) async => out.path);
+  final folders = [
+    for (var index = 0; index < 6; index++)
+      Folder(
+        name: 'Folder ${index + 1}',
+        id: 'acceptance-folder-$index',
+        dateCreated: DateTime.utc(2026, 2, 1),
+      ),
+  ];
+  await openScratchHive(
+    out,
+    folders: folders,
+    strategies: [
+      for (var index = 0; index < 100; index++)
+        generatedStrategy(index.isEven ? Optionals.set : Optionals.unset)
+            .copyWith(
+          id: 'acceptance-$index',
+          name: 'Generated ${index.toString().padLeft(3, '0')}',
+          folderID: index % 3 == 0 ? folders[index % folders.length].id : null,
+        ),
+    ],
+  );
+  await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+  await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+  await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+  await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
+  await MapThemeProfilesProvider.bootstrap();
+  appProviderContainer = ProviderContainer();
+  final container = ProviderContainer(
+    overrides: [authProvider.overrideWith(_SignedOut.new)],
+  );
+  try {
+    final imported = await StrategyImportExportService(container)
+        .loadFromFilePath(
+      'test/fixtures/strategy_integrity/canvas-compatibility-v97.ica',
+    );
+    expect(imported.issues, isEmpty);
+  } finally {
+    container.dispose();
+    appProviderContainer.dispose();
+    await Hive.close();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(pathProvider, null);
+  }
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'writes the library the acceptance set starts its library scripts on: '
+    'a hundred generated strategies in and out of folders, and the canvas '
+    'compatibility strategy imported',
+    () async {
+      final out = Directory(_acceptanceLibraryOut!)
+        ..createSync(recursive: true);
+      expect(out.listSync(), isEmpty, reason: 'give the fixture a new folder');
+      await writeAcceptanceLibraryFixture(out);
+    },
+    skip: _acceptanceLibraryOut == null
+        ? 'set ICARUS_ACCEPTANCE_LIBRARY_FIXTURE to a new folder'
+        : false,
+  );
+
   test(
     'writes a library of one strategy whose page holds sixty drawings',
     () async {

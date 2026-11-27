@@ -1,0 +1,115 @@
+name: Nightly Acceptance On Linux
+
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+    inputs:
+      workers:
+        description: Runs at once
+        required: false
+  push:
+    branches:
+      - t3/nightly-acceptance
+      - t3/nightly-acceptance-red
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  FVM_HOME: ${{ github.workspace }}/.fvm_cache
+
+concurrency:
+  group: acceptance-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
+
+      - uses: ./.github/actions/setup-flutter
+
+      - name: Put The Pinned Flutter On PATH
+        run: echo "$FVM_HOME/versions/$(jq -r .flutter .fvmrc)/bin" >> "$GITHUB_PATH"
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: third_party/convex_flutter/rust -> ../../../build/linux/x64/release/plugins/convex_flutter/cargokit_build
+
+      - name: Build The Driver
+        run: dart tool/drive/linux.dart build
+
+      - name: Write The Library Fixture
+        run: |
+          set -o pipefail
+          ICARUS_ACCEPTANCE_LIBRARY_FIXTURE="$RUNNER_TEMP/library" \
+            flutter test test/library_store/drive_fixtures_test.dart \
+            --plain-name 'writes the library the acceptance set' 2>&1 | tail -5
+
+      - name: Run The Acceptance Set On Hive And On The Store
+        id: accept
+        env:
+          WORKERS: ${{ inputs.workers || '2' }}
+        run: |
+          started=$(date +%s)
+          set +e
+          dart tool/drive/acceptance.dart --out "$RUNNER_TEMP/acceptance" \
+            --library "$RUNNER_TEMP/library" --workers "$WORKERS"
+          status=$?
+          set -e
+          echo "wall time: $(( ($(date +%s) - started) / 60 )) min $(( ($(date +%s) - started) % 60 )) s with $WORKERS workers"
+          exit $status
+
+      - name: Gather The Failing Runs
+        if: failure()
+        run: |
+          out="$RUNNER_TEMP/acceptance"
+          kept="$RUNNER_TEMP/kept"
+          mkdir -p "$kept"
+          cp "$out/report.txt" "$out/results.txt" "$kept/" 2>/dev/null || true
+          grep ' NOT CLEAN' "$out/results.txt" 2>/dev/null | while read -r name mode _; do
+            mkdir -p "$kept/$mode/$name"
+            cp "$out/$mode/$name.launcher.txt" "$kept/$mode/" 2>/dev/null || true
+            find "$out/$mode/$name" -maxdepth 2 -type f \( -name '*.log' -o -name '*.txt' \) \
+              -exec cp {} "$kept/$mode/$name/" \; 2>/dev/null || true
+          done
+
+      - name: Keep The Failing Runs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: acceptance-failures
+          path: ${{ runner.temp }}/kept
+          if-no-files-found: ignore
+
+      - name: Report On The Tracking Issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: "869"
+        run: |
+          out="$RUNNER_TEMP/acceptance"
+          {
+            echo "Nightly acceptance on Linux at ${GITHUB_SHA::9} failed ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)). The failing runs' launcher output and logs are the run's \`acceptance-failures\` artifact."
+            echo
+            echo '```'
+            if [ -f "$out/report.txt" ]; then
+              sed -n '/^set:/,/^on the store alone/p' "$out/report.txt"
+            else
+              echo 'the set did not run: see the failing step in the run'
+            fi
+            echo '```'
+          } > report.md
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file report.md
