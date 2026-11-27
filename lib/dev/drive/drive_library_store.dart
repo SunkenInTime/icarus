@@ -1224,9 +1224,13 @@ List<String> migrationLines(
     'STORE move at start: $state, $inStore strategies and '
         '${list?.folders.length} folders in the store, '
         '${left.length} left behind',
-    if (atStart?.migration case MigrationFinishedNow(:final record))
+    if (atStart?.migration case MigrationFinishedNow(:final record, :final took))
       'STORE move took '
-          '${record.finishedAt.difference(record.startedAt).inMilliseconds} ms',
+          '${record.finishedAt.difference(record.startedAt).inMilliseconds} ms: '
+          'copying the records ${took.copying.inMilliseconds} ms, bringing '
+          'them up to date ${took.upgrading.inMilliseconds} ms, converting '
+          'them to rows ${took.converting.inMilliseconds} ms, '
+          '${took.commits} commits ${took.committing.inMilliseconds} ms',
     switch (onStore) {
       null => 'STORE library: not on the store',
       LibraryServedFromStore(:final loading) =>

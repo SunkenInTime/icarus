@@ -21,9 +21,26 @@ final class MigrationWasFinished extends LibraryMigration {
 }
 
 final class MigrationFinishedNow extends LibraryMigration {
-  const MigrationFinishedNow(this.record);
+  const MigrationFinishedNow(this.record, {this.took = const CopyTook()});
 
   final MigrationFinished record;
+  final CopyTook took;
+}
+
+final class CopyTook {
+  const CopyTook({
+    this.copying = Duration.zero,
+    this.upgrading = Duration.zero,
+    this.converting = Duration.zero,
+    this.committing = Duration.zero,
+    this.commits = 0,
+  });
+
+  final Duration copying;
+  final Duration upgrading;
+  final Duration converting;
+  final Duration committing;
+  final int commits;
 }
 
 final class MigrationStopped extends LibraryMigration {
@@ -115,6 +132,21 @@ Future<LibraryMigration> migrateLibraryIntoStore(
     if (await _emptied(store, list) case final notEmptied?) return notEmptied;
   }
 
+  final copying = Stopwatch();
+  final upgrading = Stopwatch();
+  final converting = Stopwatch();
+  final committing = Stopwatch();
+  var commits = 0;
+  Future<T> committed<T>(Future<T> Function() commit) async {
+    commits++;
+    committing.start();
+    try {
+      return await commit();
+    } finally {
+      committing.stop();
+    }
+  }
+
   final foldersLeft = <LeftBehind>[];
   final folderIds = <String>{};
   for (final folder in folders) {
@@ -129,9 +161,9 @@ Future<LibraryMigration> migrateLibraryIntoStore(
     final atItsPlace = orphanFolders.contains(folder)
         ? _folderAtTopLevel(folder)
         : folder;
-    switch (_put(await store.editLibrary([
-      PutFolder(folderToRow(atItsPlace)),
-    ]))) {
+    switch (_put(await committed(() => store.editLibrary([
+          PutFolder(folderToRow(atItsPlace)),
+        ])))) {
       case _Kept():
         break;
       case _LeftBehind(:final reason):
@@ -150,20 +182,22 @@ Future<LibraryMigration> migrateLibraryIntoStore(
       strategiesLeft.add(LeftBehind(strategy.id, strategy.name, sameIdTwice));
       continue;
     }
+    copying.start();
     final copy = wholeCopyOf(strategy);
+    copying.stop();
     if (orphanStrategies.contains(strategy)) copy.folderID = null;
     final StrategyRowSet rows;
-    switch (await _rowsOf(copy)) {
+    switch (await _rowsOf(copy, upgrading, converting)) {
       case _Converted(rows: final made):
         rows = made;
       case _NotConverted(:final problem):
         strategiesLeft.add(LeftBehind(strategy.id, strategy.name, problem));
         continue;
     }
-    switch (_put(await store.putStrategy(
-      rows,
-      writtenAt: Settings.versionNumber,
-    ))) {
+    switch (_put(await committed(() => store.putStrategy(
+          rows,
+          writtenAt: Settings.versionNumber,
+        )))) {
       case _Kept():
         break;
       case _LeftBehind(:final reason):
@@ -182,7 +216,16 @@ Future<LibraryMigration> migrateLibraryIntoStore(
   if (_stopped(await store.recordMigration(record)) case final failure?) {
     return MigrationStopped(failure);
   }
-  return MigrationFinishedNow(record);
+  return MigrationFinishedNow(
+    record,
+    took: CopyTook(
+      copying: copying.elapsed,
+      upgrading: upgrading.elapsed,
+      converting: converting.elapsed,
+      committing: committing.elapsed,
+      commits: commits,
+    ),
+  );
 }
 
 DateTime _now() => DateTime.now().toUtc();
@@ -216,14 +259,24 @@ final class _NotConverted extends _Rows {
   final String problem;
 }
 
-Future<_Rows> _rowsOf(StrategyData strategy) async {
+Future<_Rows> _rowsOf(
+  StrategyData strategy,
+  Stopwatch upgrading,
+  Stopwatch converting,
+) async {
   final StrategyData current;
+  upgrading.start();
   try {
     current = await StrategyMigrator.migrateLegacyData(strategy);
   } on Object catch (error) {
     return _NotConverted('it could not be brought up to date: $error');
+  } finally {
+    upgrading.stop();
   }
-  return switch (strategyToRows(pagesInTheirShownOrder(current))) {
+  converting.start();
+  final made = strategyToRows(pagesInTheirShownOrder(current));
+  converting.stop();
+  return switch (made) {
     StrategyRowsMade(:final rows) => _Converted(rows),
     StrategyRowsRefused(:final problems) => _NotConverted(
         'it could not be converted: ${problems.map(rowsProblemWords).join('; ')}',
