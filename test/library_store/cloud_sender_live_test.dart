@@ -686,8 +686,10 @@ void main() {
         world.settle();
         final from = world.async.elapsed;
 
-        teammateRenamesPage(world, 'Retake');
         world.sender.owesFreshRead(strategyId, theListRead);
+        world.settle(timing.liveGrace - const Duration(milliseconds: 500));
+        expect(listReads(world, from), isEmpty);
+        teammateRenamesPage(world, 'Retake');
         live.publish(theList);
         world.settle(const Duration(minutes: 2));
 
