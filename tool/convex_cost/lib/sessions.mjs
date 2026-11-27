@@ -727,18 +727,6 @@ async function liveListEdit({ env, world, rng }) {
 }
 
 export const SESSIONS = {
-  liveListEdit: {
-    title: "Item edits under a live page list",
-    about:
-      "A 10-page strategy of 30 items a page, shared with a teammate, open in an editor that watches " +
-      "strategy:getPageList with its account (as the store's editor does with the switch on) and its first page in " +
-      "slices. One own move, one teammate's move on that page, one on another page, then ten own moves. An item edit " +
-      "writes only its element row and an operation event, which no list query reads, so the list must not re-run: " +
-      "the bill for a live list depends on it.",
-    world: "team",
-    run: liveListEdit,
-  },
-
   libraryOpen: {
     title: "Open the library",
     about:
@@ -1215,6 +1203,18 @@ export const SESSIONS = {
       };
     },
   },
+  liveListEdit: {
+    title: "Item edits under a live page list",
+    about:
+      "A 10-page strategy of 30 items a page, shared with a teammate, open in an editor that watches " +
+      "strategy:getPageList with its account (as the store's editor does with the switch on) and its first page in " +
+      "slices. One own move, one teammate's move on that page, one on another page, then ten own moves. An item edit " +
+      "writes only its element row and an operation event, which no list query reads, so the list must not re-run: " +
+      "the bill for a live list depends on it.",
+    world: "team",
+    run: liveListEdit,
+  },
+
 };
 
 seedTeam.ownBackendOnly = true;
