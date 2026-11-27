@@ -294,7 +294,7 @@ void main() {
         isA<Pushed>(),
       );
     }
-    await settleWithDisk(tester);
+    await settleUntilOpen(tester, container, 'second');
 
     expect(container.read(strategyProvider).strategyId, 'second');
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
@@ -338,7 +338,7 @@ void main() {
     windowCalls.clear();
     held.complete();
     strategies.held = null;
-    await settleWithDisk(tester);
+    await settleUntilOpen(tester, container, 'opened-since');
 
     expect(container.read(strategyProvider).strategyId, 'opened-since');
     expect(container.read(strategySaveStateProvider).isDirty, isTrue);
@@ -483,7 +483,7 @@ void main() {
         ));
     held.complete();
     strategies.held = null;
-    await settleWithDisk(tester);
+    await settleUntilOpen(tester, container, 'opened-since');
 
     expect(container.read(strategyProvider).strategyId, 'opened-since');
     expect(container.read(interactionStateProvider), InteractionState.drawing);
@@ -536,7 +536,7 @@ void main() {
       ),
       isA<Pushed>(),
     );
-    await settleWithDisk(tester);
+    await settleUntilOpen(tester, container, id);
     expect(container.read(strategyProvider).strategyId, id);
     container.read(agentProvider.notifier).addAgent(PlacedAgent(
           id: 'placed-on-$id',
@@ -1035,7 +1035,7 @@ void main() {
     required Route<dynamic> notIn,
   }) async {
     await untilOpen(tester, id);
-    await settleWithDisk(tester);
+    await settleUntilOpen(tester, container, id);
     expect(container.read(strategyProvider).strategyId, id);
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);
     final editor = tester
@@ -1510,7 +1510,7 @@ void main() {
           .runAsync(() => strategies.openCloud('opened-next', asked: claimed!)),
       isA<Changed>(),
     );
-    await settleWithDisk(tester);
+    await settleUntilOpen(tester, container, 'opened-next');
 
     expect(container.read(strategyProvider).strategyId, 'opened-next');
     expect(find.byType(StrategyView, skipOffstage: false), findsOneWidget);

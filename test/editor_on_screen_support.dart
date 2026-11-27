@@ -72,12 +72,29 @@ Future<List<MethodCall>> pumpLibraryWithEditors(
   return windowCalls;
 }
 
+Future<void> _aTurnWithDisk(WidgetTester tester) async {
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 20)),
+  );
+  await tester.pump(const Duration(milliseconds: 50));
+}
+
 Future<void> settleWithDisk(WidgetTester tester) async {
   for (var turn = 0; turn < 20; turn++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 20)),
-    );
-    await tester.pump(const Duration(milliseconds: 50));
+    await _aTurnWithDisk(tester);
+  }
+}
+
+Future<void> settleUntilOpen(
+  WidgetTester tester,
+  ProviderContainer container,
+  String strategyId,
+) async {
+  await settleWithDisk(tester);
+  for (var turn = 0;
+      turn < 1500 && container.read(strategyProvider).strategyId != strategyId;
+      turn++) {
+    await _aTurnWithDisk(tester);
   }
 }
 
