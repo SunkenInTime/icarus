@@ -22,6 +22,7 @@ final class SenderTiming {
     this.readAgainAfter = const Duration(minutes: 10),
     this.quietBeforeRetiring = const Duration(seconds: 30),
     this.retireAgainAfter = const Duration(minutes: 5),
+    this.lookupGiveUpAfter = const Duration(seconds: 10),
   });
 
   final Duration wait;
@@ -33,6 +34,7 @@ final class SenderTiming {
   final Duration readAgainAfter;
   final Duration quietBeforeRetiring;
   final Duration retireAgainAfter;
+  final Duration lookupGiveUpAfter;
 
   RetiringTiming get retiring => (
         quiet: quietBeforeRetiring,
@@ -250,6 +252,9 @@ final class CloudSender {
         _recordsLost = recordsConnectionLost ?? (() => true);
 
   final Future<({int client, int connection})> Function() _generation;
+
+  Future<({int client, int connection})> _lookUpGeneration() =>
+      _generation().timeout(_timing.lookupGiveUpAfter);
 
   final SenderStore _store;
   final CallGovernor _governor;
@@ -1688,7 +1693,7 @@ final class CloudSender {
 
   Future<bool> _onCurrentConnection(ResultPoint point) async {
     try {
-      final now = await _generation();
+      final now = await _lookUpGeneration();
       return point.client == now.client && point.connection == now.connection;
     } catch (_) {
       return false;
@@ -1698,7 +1703,7 @@ final class CloudSender {
   Future<Generation?> _currentGeneration() async {
     if (_inputs.connection == null) return null;
     try {
-      final now = await _generation();
+      final now = await _lookUpGeneration();
       return Generation(client: now.client, connection: now.connection);
     } catch (_) {
       return null;
@@ -1710,7 +1715,7 @@ final class CloudSender {
   ) async {
     if (_inputs.connection == null) return null;
     try {
-      final now = await _generation();
+      final now = await _lookUpGeneration();
       return [
         ConnectionReturned(
           Generation(client: now.client, connection: now.connection),
@@ -1744,7 +1749,7 @@ final class CloudSender {
     }
     final ({int client, int connection}) on;
     try {
-      on = await _generation();
+      on = await _lookUpGeneration();
     } catch (error) {
       return _Troubled(
         NotWrittenNow('the client did not say which connection it is on: '

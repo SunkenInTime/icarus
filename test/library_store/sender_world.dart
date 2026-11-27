@@ -203,8 +203,12 @@ final class FakeServer {
 
   ResultPoint failed() => varies == null ? stamp() : stamps.answered;
 
-  Future<({int client, int connection})> generation() async =>
-      (client: client, connection: connection);
+  Future<({int client, int connection})> Function()? lookup;
+
+  Future<({int client, int connection})> generation() async {
+    if (lookup case final looking?) return looking();
+    return (client: client, connection: connection);
+  }
 
   int get applied => appliedTimes.length;
 

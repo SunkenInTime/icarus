@@ -3583,4 +3583,28 @@ void main() {
       });
     });
   });
+
+  group('the follow-up review', () {
+    test(
+        'a connection lookup that never answers after a batch returns is '
+        'given up as cannot say: the batch is sent again and lands', () {
+      inWorld((world) {
+        world.commitMove(1);
+        world.settle();
+        expect(world.queueLength(), 0);
+        world.server.onCall = (call) {
+          world.server.onCall = null;
+          world.server.lookup = () {
+            world.server.lookup = null;
+            return Completer<({int client, int connection})>().future;
+          };
+        };
+        world.commitMove(2);
+        world.settle(const Duration(minutes: 2));
+        expect(world.server.log.where((line) => line == 'send move-2'),
+            hasLength(2));
+        expect(world.queueLength(), 0);
+      });
+    });
+  });
 }
