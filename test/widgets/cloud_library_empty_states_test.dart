@@ -22,6 +22,7 @@ import 'package:icarus/providers/desktop_update_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
+import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
@@ -321,6 +322,57 @@ void main() {
       expect(find.byKey(const ValueKey('library-not-opened')), findsNothing);
     });
 
+    testWidgets(
+        'a search that matches nothing in the cloud keeps the root, not the '
+        'could-not-open screen', (tester) async {
+      await tester.pumpWidget(
+        _cloudApp(
+          FolderContent(onCreateStrategy: () {}),
+          strategies: Stream.value([
+            (
+              strategy: _strategy('cloud-plan', 'Cloud Plan'),
+              revision: 1,
+              role: 'owner',
+              attackLabel: 'Attack',
+              agentTypes: const [],
+            ),
+          ]),
+          extraOverrides: [
+            ...overrides,
+            strategySearchQueryProvider.overrideWith(_NothingMatches.new),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('library-not-opened')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('library-not-opened-banner')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+        'a cloud that failed to load keeps its own state and retry beside the '
+        'banner', (tester) async {
+      await tester.pumpWidget(
+        _cloudApp(
+          FolderContent(onCreateStrategy: () {}),
+          strategies: Stream.error(StateError('the cloud is down')),
+          extraOverrides: overrides,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('library-not-opened')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('library-not-opened-banner')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('cloud-error-banner')), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+    });
+
     testWidgets('inside a cloud folder the cloud folder shows', (tester) async {
       await tester.pumpWidget(
         _cloudApp(
@@ -447,4 +499,9 @@ class _CloudSectionNotifier extends CloudLibrarySectionNotifier {
 
   @override
   CloudLibrarySection build() => _section;
+}
+
+class _NothingMatches extends StrategySearchQueryNotifier {
+  @override
+  String build() => 'nothing is called this';
 }

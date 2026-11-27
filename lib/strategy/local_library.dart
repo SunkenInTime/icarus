@@ -28,10 +28,15 @@ final class LibraryWritten extends LibraryWrite {
 }
 
 final class LibraryWriteFailed extends LibraryWrite {
-  const LibraryWriteFailed(this.error, this.stackTrace);
+  const LibraryWriteFailed(
+    this.error,
+    this.stackTrace, {
+    this.mayHaveLanded = false,
+  });
 
   final Object error;
   final StackTrace stackTrace;
+  final bool mayHaveLanded;
 }
 
 final class LibraryTouch {

@@ -348,9 +348,9 @@ class FolderContent extends ConsumerWidget {
             _ => null,
           };
           if (notServed != null &&
-              !cloudLoading &&
-              folders.isEmpty &&
-              strategies.isEmpty) {
+              cloudBanner == null &&
+              cloudFolders.isEmpty &&
+              cloudStrategies.isEmpty) {
             return _crossFade(_LibraryNotOpened(notServed));
           }
           // What's on this computer shows while the cloud loads. With
@@ -380,10 +380,16 @@ class FolderContent extends ConsumerWidget {
                 },
                 emptyStateKey: const ValueKey('library-empty-state'),
                 emptyStateIcon: LucideIcons.folder,
-                emptyStateTitle: context.l10n.folderLibraryEmptyTitle,
-                emptyStateSubtitle: cloudAvailable
-                    ? context.l10n.folderLibraryEmptyCloudSubtitle
-                    : context.l10n.folderLibraryEmptyLocalSubtitle,
+                emptyStateTitle: notServed != null
+                    ? context.l10n.libraryNotOpenedTitle
+                    : context.l10n.folderLibraryEmptyTitle,
+                emptyStateSubtitle: switch (notServed) {
+                  final notServed? => context.l10n
+                      .libraryNotOpenedBody(notServed.oldLibraryFolder),
+                  null => cloudAvailable
+                      ? context.l10n.folderLibraryEmptyCloudSubtitle
+                      : context.l10n.folderLibraryEmptyLocalSubtitle,
+                },
                 emptyStateAction: ShadButton(
                   key: const ValueKey('library-empty-create-strategy'),
                   onPressed: onCreateStrategy,

@@ -18,6 +18,17 @@ final class CommitGate {
     _held?.complete();
     _held = null;
   }
+
+  var _waiting = 0;
+
+  Future<void> releaseOne() async {
+    while (_waiting == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    final held = _held;
+    _held = Completer<void>();
+    held?.complete();
+  }
 }
 
 final class GatedEngine implements StorageEngine {
@@ -72,7 +83,11 @@ final class _GatedLease implements StorageLease {
     if (gate.endAfter case final last? when gate.commits > last) {
       gate.ended = true;
     }
-    if (gate._held case final held?) await held.future;
+    if (gate._held case final held?) {
+      gate._waiting++;
+      await held.future;
+      gate._waiting--;
+    }
     if (gate.ended) return const CommitRefused(LeaseEnded());
     if (gate.failNext) {
       gate.failNext = false;

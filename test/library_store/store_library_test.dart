@@ -266,15 +266,19 @@ void main() {
     });
     tearDown(() => store.close());
 
-    Future<void> refused(Future<LibraryWrite> write) async {
+    Future<void> refused(Future<LibraryWrite> Function() write) async {
       final before = _seen();
       final heard = <String>[];
-      final listening = const LocalLibrary().strategyRecords.changes().listen(
-            heard.add,
-          );
-      expect(await write, isA<LibraryWriteFailed>());
+      const library = LocalLibrary();
+      final listening = [
+        library.strategyRecords.changes().listen(heard.add),
+        library.folderRecords.changes().listen(heard.add),
+      ];
+      expect(await write(), isA<LibraryWriteFailed>());
       await pumpEventQueue();
-      await listening.cancel();
+      for (final subscription in listening) {
+        await subscription.cancel();
+      }
       expect(heard, isEmpty);
       _expectSame(_seen(), before, 'in memory');
       await store.close();
@@ -282,43 +286,54 @@ void main() {
     }
 
     test('a strategy into a folder that is not there', () async {
-      await refused(const LocalLibrary().addStrategy(
-        _strategy('lost', folderId: 'no-folder'),
-      ));
+      await refused(() => const LocalLibrary().addStrategy(
+            _strategy('lost', folderId: 'no-folder'),
+          ));
     });
 
     test('a move into a folder that is not there', () async {
-      await refused(const LocalLibrary().moveStrategy(
-        const LocalLibrary().storedStrategy('b')!,
-        'no-folder',
-      ));
+      await refused(() => const LocalLibrary().moveStrategy(
+            const LocalLibrary().storedStrategy('b')!,
+            'no-folder',
+          ));
     });
 
     test('a folder under its own child', () async {
-      await refused(const LocalLibrary().moveFolder(
-        const LocalLibrary().storedFolder('folder-1')!,
-        'folder-2',
-      ));
+      await refused(() => const LocalLibrary().moveFolder(
+            const LocalLibrary().storedFolder('folder-1')!,
+            'folder-2',
+          ));
+    });
+
+    test('a folder delete that would leave a strategy behind', () async {
+      await refused(() => const LocalLibrary().deleteFolder('folder-2'));
+    });
+
+    test('a folder delete that would leave a child folder behind', () async {
+      await refused(() => const LocalLibrary().deleteFoldersWithStrategies(
+            folderIds: ['folder-1'],
+            strategyIds: ['b'],
+          ));
     });
 
     test('a rename through a record deleted meanwhile', () async {
       const library = LocalLibrary();
       final held = library.storedStrategy('a')!;
       (await library.deleteStrategy('a')).orThrow();
-      await refused(library.renameStrategy(held, 'Back from the dead'));
+      await refused(() => library.renameStrategy(held, 'Back from the dead'));
     });
 
     test('a restyle through a record replaced meanwhile', () async {
       const library = LocalLibrary();
       final held = library.storedFolder('folder-1')!;
       (await library.addFolder(_folder('folder-1'))).orThrow();
-      await refused(library.restyleFolder(
-        held,
-        name: 'Old record',
-        iconId: 2,
-        customColor: null,
-        color: FolderColor.blue,
-      ));
+      await refused(() => library.restyleFolder(
+            held,
+            name: 'Old record',
+            iconId: 2,
+            customColor: null,
+            color: FolderColor.blue,
+          ));
     });
   });
 
@@ -404,6 +419,110 @@ void main() {
       expect(now.strategies['a']!.folderID, isNull);
       await store.close();
       _expectSame(await reopened(storage), now, 'after a reopen');
+    });
+
+    StrategyData named(StrategyData strategy, List<String> pageNames) =>
+        strategy.copyWith(pages: [
+          for (final (index, page) in strategy.pages.indexed)
+            page.copyWith(name: pageNames[index]),
+        ]);
+
+    test(
+        'three saves of one strategy: once the second has landed and before '
+        'the third has, the library holds the third', () async {
+      const library = LocalLibrary();
+      final base = library.storedStrategy('a')!;
+      gate.hold();
+
+      final second = library.saveStrategyFields(base.copyWith(name: 'Two'));
+      final third = library.saveStrategyFields(base.copyWith(name: 'Three'));
+      await gate.releaseOne();
+
+      expect(await second, isA<LibraryWritten>());
+      expect(library.storedStrategy('a')!.name, 'Three');
+      gate.release();
+      expect(await third, isA<LibraryWritten>());
+      final now = _seen();
+      await store.close();
+      _expectSame(await reopened(storage), now, 'after a reopen');
+      expect(now.strategies['a']!.name, 'Three');
+    });
+
+    test(
+        'a save that fails with a later save still in flight: the library '
+        'holds the later one until it lands, then the store agrees', () async {
+      const library = LocalLibrary();
+      final base = library.storedStrategy('a')!;
+      gate
+        ..hold()
+        ..failNext = true;
+
+      final failing = library.saveStrategyFields(base.copyWith(name: 'Two'));
+      final later = library.saveStrategyFields(base.copyWith(name: 'Three'));
+      await gate.releaseOne();
+
+      expect(await failing, isA<LibraryWriteFailed>());
+      expect(library.storedStrategy('a')!.name, 'Three');
+      gate.release();
+      expect(await later, isA<LibraryWritten>());
+      final now = _seen();
+      await store.close();
+      _expectSame(await reopened(storage), now, 'after a reopen');
+      expect(now.strategies['a']!.name, 'Three');
+    });
+
+    test(
+        'saves built on the stored record while earlier ones are in flight '
+        'keep every page\'s edit', () async {
+      const library = LocalLibrary();
+      gate.hold();
+
+      final first = library.changePages(
+        named(library.storedStrategy('a')!, ['A', 'a-1']),
+      );
+      final second = library.changePages(
+        named(library.storedStrategy('a')!, ['A', 'B']),
+      );
+      await gate.releaseOne();
+      expect(await first, isA<LibraryWritten>());
+      final third = library.changePages(
+        library.storedStrategy('a')!.copyWith(name: 'C'),
+      );
+      gate.release();
+
+      expect(await second, isA<LibraryWritten>());
+      expect(await third, isA<LibraryWritten>());
+      await store.close();
+      final back = (await reopened(storage)).strategies['a']!;
+      expect([for (final page in back.pages) page.name], ['A', 'B']);
+      expect(back.name, 'C');
+    });
+
+    test(
+        'a rename that fails, then a move from the record read again, keep the '
+        'rename still in flight', () async {
+      const library = LocalLibrary();
+      gate
+        ..hold()
+        ..failNext = true;
+
+      final failing = library.renameStrategy(library.storedStrategy('a')!, 'X');
+      final renaming =
+          library.renameStrategy(library.storedStrategy('a')!, 'Y');
+      await gate.releaseOne();
+      expect(await failing, isA<LibraryWriteFailed>());
+      final moving =
+          library.moveStrategy(library.storedStrategy('a')!, 'folder-1');
+      gate.release();
+
+      expect(await renaming, isA<LibraryWritten>());
+      expect(await moving, isA<LibraryWritten>());
+      final now = _seen();
+      await store.close();
+      final back = await reopened(storage);
+      _expectSame(back, now, 'after a reopen');
+      expect(back.strategies['a']!.name, 'Y');
+      expect(back.strategies['a']!.folderID, 'folder-1');
     });
 
     test(

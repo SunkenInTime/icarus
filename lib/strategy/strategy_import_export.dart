@@ -2237,8 +2237,12 @@ class StrategyImportExportService {
 
       newStrategy = await StrategyMigrator.migrateLegacyData(newStrategy);
 
-      (await const LocalLibrary().addStrategy(newStrategy)).orThrow();
-      saved = true;
+      final written = await const LocalLibrary().addStrategy(newStrategy);
+      saved = switch (written) {
+        LibraryWritten() => true,
+        LibraryWriteFailed(:final mayHaveLanded) => mayHaveLanded,
+      };
+      written.orThrow();
       if (targetFolderId == null) {
         _savedAtTopLevel.add((id: newStrategy.id, isFolder: false));
       }

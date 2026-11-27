@@ -183,9 +183,10 @@ final class _Committed extends _Commit {
 }
 
 final class _NotCommitted extends _Commit {
-  const _NotCommitted(this.words);
+  const _NotCommitted(this.words, {this.mayHaveLanded = false});
 
   final String words;
+  final bool mayHaveLanded;
 }
 
 _Commit _commitOf(LibraryEditResult result) => switch (result) {
@@ -194,12 +195,38 @@ _Commit _commitOf(LibraryEditResult result) => switch (result) {
         _NotCommitted('the library refused the change: $reason'),
       NotSaved(:final failure) =>
         _NotCommitted('the change was not saved: $failure'),
-      SaveInDoubt(:final failure) =>
-        _NotCommitted('the change may not have been saved: $failure'),
+      SaveInDoubt(:final failure) => _NotCommitted(
+          'the change may not have been saved: $failure',
+          mayHaveLanded: true,
+        ),
     };
 
-LibraryWrite _failed(String words) =>
-    LibraryWriteFailed(StoreWriteFailed(words), StackTrace.current);
+final class _InFlight {
+  _InFlight(this.replay);
+
+  final void Function() replay;
+}
+
+String _unwritable(StrategyData strategy, List<RowsProblem> problems) =>
+    'the strategy ${strategy.id} cannot be written: '
+    '${problems.map(rowsProblemWords).join('; ')}';
+
+Folder _copyOf(Folder folder) => Folder(
+      name: folder.name,
+      id: folder.id,
+      dateCreated: folder.dateCreated,
+      iconId: folder.iconId,
+      color: folder.color,
+      parentID: folder.parentID,
+      customColor: folder.customColor,
+    );
+
+LibraryWrite _failed(String words, {bool mayHaveLanded = false}) =>
+    LibraryWriteFailed(
+      StoreWriteFailed(words),
+      StackTrace.current,
+      mayHaveLanded: mayHaveLanded,
+    );
 
 final class StoreLibrary {
   StoreLibrary._(this._store, this._lost, _Held held)
@@ -221,20 +248,26 @@ final class StoreLibrary {
   final StoreRecords<StrategyData> strategies;
   final StoreRecords<Folder> folders;
   Future<void> _turn = Future.value();
+  final _inFlight = <_InFlight>[];
 
-  Future<LibraryWrite> _inTurn(
-    Future<_Commit> Function() commit,
-    void Function() kept,
-  ) {
+  Future<LibraryWrite> _write({
+    required void Function() show,
+    required void Function() replay,
+    required Future<_Commit> Function() commit,
+  }) {
+    show();
+    final inFlight = _InFlight(replay);
+    _inFlight.add(inFlight);
     final written = Completer<LibraryWrite>();
     _turn = _turn.then((_) async {
-      switch (await commit()) {
+      final committed = await commit();
+      _inFlight.remove(inFlight);
+      switch (committed) {
         case _Committed():
-          kept();
           written.complete(const LibraryWritten());
-        case _NotCommitted(:final words):
+        case _NotCommitted(:final words, :final mayHaveLanded):
           await _readAgain();
-          written.complete(_failed(words));
+          written.complete(_failed(words, mayHaveLanded: mayHaveLanded));
       }
     });
     return written.future;
@@ -245,6 +278,9 @@ final class StoreLibrary {
       case _ReadWhole(:final held):
         strategies._replaceAll(held.strategies);
         folders._replaceAll(held.folders);
+        for (final inFlight in [..._inFlight]) {
+          inFlight.replay();
+        }
       case _ReadNot(:final why):
         _lost(why);
     }
@@ -280,18 +316,15 @@ final class StoreLibrary {
     final StrategyRowSet rows;
     switch (strategyToRows(strategy)) {
       case StrategyRowsRefused(:final problems):
-        return _failed(
-          'the strategy ${strategy.id} cannot be written: '
-          '${problems.map(rowsProblemWords).join('; ')}',
-        );
+        return _failed(_unwritable(strategy, problems));
       case StrategyRowsMade(rows: final made):
         rows = made;
     }
     void show() => strategies._put(strategy.id, strategy);
-    show();
-    return _inTurn(
-      () async => _commitOf(await _store.putStrategy(rows)),
-      show,
+    return _write(
+      show: show,
+      replay: show,
+      commit: () async => _commitOf(await _store.putStrategy(rows)),
     );
   }
 
@@ -322,16 +355,13 @@ final class StoreLibrary {
     switch (strategyToRows(stored)) {
       case StrategyRowsRefused(:final problems):
         asItWas(before);
-        return _failed(
-          'the strategy ${stored.id} cannot be written: '
-          '${problems.map(rowsProblemWords).join('; ')}',
-        );
+        return _failed(_unwritable(stored, problems));
       case StrategyRowsMade(:final rows):
-        void show() => strategies._put(stored.id, stored);
-        show();
-        return _inTurn(
-          () async => _commitOf(await _store.putStrategy(rows)),
-          show,
+        final asWritten = wholeCopyOf(stored);
+        return _write(
+          show: () => strategies._put(stored.id, stored),
+          replay: () => strategies._put(stored.id, asWritten),
+          commit: () async => _commitOf(await _store.putStrategy(rows)),
         );
     }
   }
@@ -340,7 +370,7 @@ final class StoreLibrary {
     if (_placeRefusal(folder, folder.parentID) case final refusal?) {
       return _failed(refusal);
     }
-    return _showFolder(folder);
+    return _writeFolder(folder);
   }
 
   Future<LibraryWrite> restyleFolder(Folder stored, void Function() change) {
@@ -348,7 +378,7 @@ final class StoreLibrary {
       return Future.value(_failed(refusal));
     }
     change();
-    return _showFolder(stored);
+    return _writeFolder(stored);
   }
 
   Future<LibraryWrite> moveFolder(Folder stored, String? parentId) {
@@ -358,27 +388,27 @@ final class StoreLibrary {
       return Future.value(_failed(refusal));
     }
     stored.parentID = parentId;
-    return _showFolder(stored);
+    return _writeFolder(stored);
   }
 
-  Future<LibraryWrite> _showFolder(Folder folder) {
+  Future<LibraryWrite> _writeFolder(Folder folder) {
     final row = PutFolder(_folderRow(folder));
-    void show() => folders._put(folder.id, folder);
-    show();
-    return _inTurn(
-      () async => _commitOf(await _store.editLibrary([row])),
-      show,
+    final asWritten = _copyOf(folder);
+    return _write(
+      show: () => folders._put(folder.id, folder),
+      replay: () => folders._put(folder.id, asWritten),
+      commit: () async => _commitOf(await _store.editLibrary([row])),
     );
   }
 
   Future<LibraryWrite> deleteStrategy(String id) {
     void show() => strategies._remove(id);
-    show();
-    return _inTurn(
-      () async => _store.summaryOf(id) == null
+    return _write(
+      show: show,
+      replay: show,
+      commit: () async => _store.summaryOf(id) == null
           ? const _Committed()
           : _commitOf(await _store.editLibrary([RemoveStrategy(id)])),
-      show,
     );
   }
 
@@ -386,14 +416,18 @@ final class StoreLibrary {
     required List<String> folderIds,
     required List<String> strategyIds,
   }) {
+    if (_deleteRefusal(folderIds, strategyIds) case final refusal?) {
+      return Future.value(_failed(refusal));
+    }
     void show() {
       strategyIds.forEach(strategies._remove);
       folderIds.forEach(folders._remove);
     }
 
-    show();
-    return _inTurn(
-      () async {
+    return _write(
+      show: show,
+      replay: show,
+      commit: () async {
         final LibraryList list;
         switch (_store.library) {
           case LibraryOpen(list: final open):
@@ -428,8 +462,28 @@ final class StoreLibrary {
             RemoveFolder(row.publicId),
         ]));
       },
-      show,
     );
+  }
+
+  String? _deleteRefusal(List<String> folderIds, List<String> strategyIds) {
+    final going = {...folderIds};
+    final inThem = {
+      for (final strategy in strategies.values)
+        if (going.contains(strategy.folderID)) strategy.id,
+    };
+    final asked = {
+      for (final id in strategyIds)
+        if (strategies.containsKey(id)) id,
+    };
+    if (!setEquals(inThem, asked)) {
+      return 'the folders hold other strategies than the ones asked to go';
+    }
+    for (final folder in folders.values) {
+      if (going.contains(folder.parentID) && !going.contains(folder.id)) {
+        return 'the folder ${folder.parentID} holds a folder not asked to go';
+      }
+    }
+    return null;
   }
 
   ReadableFolder _folderRow(Folder folder) {
