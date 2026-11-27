@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -140,8 +141,11 @@ Future<Future<LibraryStoreOpened>?> moveLibraryIntoStore(
   required bool allowsLocalLibrary,
   required String build,
 }) async {
-  if (launch.choice is! StoreSwitchStore ||
-      !allowsLocalLibrary ||
+  if (!libraryGoesToStore(
+        launch,
+        hiveDirectory: hiveDirectory,
+        allowsLocalLibrary: allowsLocalLibrary,
+      ) ||
       hiveDirectory == null) {
     return null;
   }
@@ -150,18 +154,15 @@ Future<Future<LibraryStoreOpened>?> moveLibraryIntoStore(
         build: launch.cloud is CloudStoreSend ? build : '',
       );
   final migration = switch (await opening) {
-    LibraryStoreReady(:final store) => await migrateLibraryIntoStore(
-        store,
-        strategies: _ownIdFirst([
-          for (final (:key, :strategy)
-              in const LocalLibrary().hiveStrategyRecords)
-            (own: '$key' == strategy.id, record: strategy),
-        ]),
-        folders: _ownIdFirst([
-          for (final (:key, :folder) in const LocalLibrary().hiveFolderRecords)
-            (own: '$key' == folder.id, record: folder),
-        ]),
-      ),
+    LibraryStoreReady(
+      store: LibraryStore(migration: final MigrationFinished record)
+    ) =>
+      MigrationWasFinished(record),
+    LibraryStoreReady(
+      store: LibraryStore(migration: MigrationUnreadable(:final problem)),
+    ) =>
+      MigrationRecordUnreadable(problem),
+    LibraryStoreReady(:final store) => await _copyFromHive(store),
     final notReady => MigrationNotRun('the store did not open: $notReady'),
   };
   container.read(libraryMigrationProvider.notifier).state = (
@@ -169,6 +170,30 @@ Future<Future<LibraryStoreOpened>?> moveLibraryIntoStore(
     oldLibraryFolder: hiveDirectory,
   );
   return opening;
+}
+
+bool libraryGoesToStore(
+  LibraryStoreLaunch launch, {
+  required String? hiveDirectory,
+  required bool allowsLocalLibrary,
+}) =>
+    launch.choice is StoreSwitchStore &&
+    allowsLocalLibrary &&
+    hiveDirectory != null;
+
+Future<LibraryMigration> _copyFromHive(LibraryStore store) async {
+  await openHiveLibrary();
+  return migrateLibraryIntoStore(
+    store,
+    strategies: _ownIdFirst([
+      for (final (:key, :strategy) in const LocalLibrary().hiveStrategyRecords)
+        (own: '$key' == strategy.id, record: strategy),
+    ]),
+    folders: _ownIdFirst([
+      for (final (:key, :folder) in const LocalLibrary().hiveFolderRecords)
+        (own: '$key' == folder.id, record: folder),
+    ]),
+  );
 }
 
 Future<void> recordLeftBehindClosed(

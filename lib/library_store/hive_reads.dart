@@ -81,6 +81,8 @@ List<Stream<Object?>> libraryBoxEvents() => const LocalLibrary().boxEvents();
 
 Set<String> libraryBoxFileNames() => const LocalLibrary().boxFileNames();
 
+Future<void> openHiveLibrary() => LocalLibrary.openHiveBoxes();
+
 final class HiveReads {
   HiveReads() : _boxes = const _HiveBoxes();
 
