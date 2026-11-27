@@ -12,6 +12,13 @@ abstract interface class LiveResults {
     StoreReadOutcome outcome,
   );
 
+  void livePageArrived(
+    String strategyId,
+    ReadOfPage subject,
+    Account account,
+    LivePageAnswer answer,
+  );
+
   void liveClosed(String strategyId, ReadOf subject);
 }
 
@@ -27,6 +34,14 @@ final class NoLiveResults implements LiveResults {
     ReadOf subject,
     Account account,
     StoreReadOutcome outcome,
+  ) {}
+
+  @override
+  void livePageArrived(
+    String strategyId,
+    ReadOfPage subject,
+    Account account,
+    LivePageAnswer answer,
   ) {}
 
   @override

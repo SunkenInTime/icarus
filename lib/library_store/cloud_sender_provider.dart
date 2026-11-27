@@ -137,6 +137,15 @@ final class LiveResultsToSender implements LiveResults {
       _to.liveArrived(strategyId, subject, account, outcome);
 
   @override
+  void livePageArrived(
+    String strategyId,
+    ReadOfPage subject,
+    Account account,
+    LivePageAnswer answer,
+  ) =>
+      _to.livePageArrived(strategyId, subject, account, answer);
+
+  @override
   void liveClosed(String strategyId, ReadOf subject) =>
       _to.liveClosed(strategyId, subject);
 }

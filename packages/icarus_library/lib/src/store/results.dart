@@ -1,3 +1,5 @@
+import 'dart:collection' show UnmodifiableMapView;
+
 import '../outcome.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
@@ -674,6 +676,19 @@ final class CloudHeld extends StrategySync {
 
   final CloudOwner owner;
   final List<UnreadableQueueRow> rows;
+}
+
+final class HeldOnPage {
+  HeldOnPage({
+    required Map<String, ElementRow> elements,
+    required Map<String, LineupGroupRow> lineupGroups,
+  }) : elements = UnmodifiableMapView(elements),
+       lineupGroups = UnmodifiableMapView(lineupGroups);
+
+  static final nothing = HeldOnPage(elements: const {}, lineupGroups: const {});
+
+  final Map<String, ElementRow> elements;
+  final Map<String, LineupGroupRow> lineupGroups;
 }
 
 final class CloudStrategy extends StrategySync {

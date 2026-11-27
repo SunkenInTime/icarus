@@ -114,14 +114,119 @@ ResultRows<HeaderRead> pageListRead(RemotePageList list) => _rows(
     );
 
 ResultRows<PageRead> pageRead(RemotePageSnapshot page, CanRead canRead) =>
+    pageReadOver(page, canRead, held: DecodedRows(), decoded: (_) {});
+
+typedef _Identity = ({String page, int revision, int? life});
+
+final class DecodedRows {
+  DecodedRows();
+
+  DecodedRows.of(HeldOnPage held) {
+    for (final row in held.elements.values) {
+      keep(row);
+    }
+    for (final row in held.lineupGroups.values) {
+      keep(row);
+    }
+  }
+
+  final _elements = <String, (_Identity, ElementRow)>{};
+  final _lineupGroups = <String, (_Identity, LineupGroupRow)>{};
+
+  void keep(Row row) {
+    final version = versionOfRow(row);
+    if (version == null) return;
+    switch (row) {
+      case ElementRow(:final publicId, :final pagePublicId):
+        _elements[publicId] = (
+          (
+            page: pagePublicId,
+            revision: version.revisionOnTheWire,
+            life: version.lifeOnTheWire,
+          ),
+          row,
+        );
+      case LineupGroupRow(:final publicId, :final pagePublicId):
+        _lineupGroups[publicId] = (
+          (
+            page: pagePublicId,
+            revision: version.revisionOnTheWire,
+            life: version.lifeOnTheWire,
+          ),
+          row,
+        );
+      case _:
+        break;
+    }
+  }
+
+  void forgetRowsNotIn(RemotePageSnapshot page) {
+    if (_elements.length > page.elements.length) {
+      final named = {for (final element in page.elements) element.publicId};
+      _elements.removeWhere((publicId, _) => !named.contains(publicId));
+    }
+    if (_lineupGroups.length > page.lineups.length) {
+      final named = {for (final lineup in page.lineups) lineup.publicId};
+      _lineupGroups.removeWhere((publicId, _) => !named.contains(publicId));
+    }
+  }
+
+  ElementRow? element(RemoteElement element) => _held(
+        _elements[element.publicId],
+        page: element.pagePublicId,
+        revision: element.revision,
+        createdAt: element.createdAt,
+      );
+
+  LineupGroupRow? lineupGroup(RemoteLineup lineup) => _held(
+        _lineupGroups[lineup.publicId],
+        page: lineup.pagePublicId,
+        revision: lineup.revision,
+        createdAt: lineup.createdAt,
+      );
+
+  static T? _held<T>(
+    (_Identity, T)? held, {
+    required String page,
+    required int revision,
+    required DateTime? createdAt,
+  }) =>
+      switch (held) {
+        (
+          (page: final heldPage, revision: final heldRevision, :final life),
+          final row
+        )
+            when heldPage == page &&
+                heldRevision == revision &&
+                life == createdAt?.millisecondsSinceEpoch =>
+          row,
+        _ => null,
+      };
+}
+
+ResultRows<PageRead> pageReadOver(
+  RemotePageSnapshot page,
+  CanRead canRead, {
+  required DecodedRows held,
+  required void Function(Row row) decoded,
+}) =>
     _rows(
       () => PageRead(
         page: _page(page.page),
         elements: [
-          for (final element in page.elements) _element(element, canRead),
+          for (final element in page.elements)
+            held.element(element) ??
+                _decoded(decoded, _element(element, canRead)),
         ],
         lineupGroups: [
-          for (final lineup in page.lineups) _lineupGroup(lineup, canRead),
+          for (final lineup in page.lineups)
+            held.lineupGroup(lineup) ??
+                _decoded(decoded, _lineupGroup(lineup, canRead)),
         ],
       ),
     );
+
+T _decoded<T extends Row>(void Function(Row row) counted, T row) {
+  counted(row);
+  return row;
+}

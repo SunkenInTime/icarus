@@ -151,6 +151,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:icarus/collab/cloud_results.dart' show DecodedRows;
+import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/library_store/cloud_sender_provider.dart';
+import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus_library/icarus_library.dart' show ResultPoint;
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/weapons.dart';
@@ -2305,6 +2310,103 @@ Future<void> _run(Map<String, dynamic> step) async {
               ),
       );
       await _place(id, _point(step, 'at'), (p) => agents.updatePosition(p, id));
+    case 'liveHandOffCost':
+      final shown =
+          c.read(remoteEditorSnapshotProvider).valueOrNull?.activePage;
+      final strategy =
+          c.read(remoteEditorSnapshotProvider.notifier).activeStrategyPublicId;
+      final sender = c.read(cloudSenderProvider);
+      if (shown == null || strategy == null || shown.elements.isEmpty) {
+        throw StateError('liveHandOffCost needs a cloud page with items open');
+      }
+      if (sender == null) {
+        throw StateError('liveHandOffCost needs --cloud-store send');
+      }
+      final runs = (value as num).toInt();
+      final page = shown.page.publicId;
+      const point = ResultPoint(client: 1, connection: 1, snapshot: 1);
+      final changed = shown.elements.first;
+      final edit = LivePageAnswer(
+        RemotePageSnapshot(
+          page: shown.page,
+          content: shown.content,
+          elements: [
+            RemoteElement(
+              publicId: changed.publicId,
+              strategyPublicId: changed.strategyPublicId,
+              pagePublicId: changed.pagePublicId,
+              elementType: changed.elementType,
+              payload: changed.payload,
+              sortIndex: changed.sortIndex,
+              revision: changed.revision + 1,
+              deleted: changed.deleted,
+              createdAt: changed.createdAt,
+            ),
+            ...shown.elements.skip(1),
+          ],
+          lineups: shown.lineups,
+          assetsById: shown.assetsById,
+        ),
+        pagePublicId: page,
+        point: point,
+      );
+      final first = LivePageAnswer(shown, pagePublicId: page, point: point);
+      String ms(num micros) => (micros / 1000).toStringAsFixed(2);
+      String median(List<int> each) {
+        each.sort();
+        return ms((each[(runs - 1) ~/ 2] + each[runs ~/ 2]) / 2);
+      }
+
+      final seeding = Stopwatch()..start();
+      final heldOnPage = await sender.store.heldOnPage(strategy, page);
+      final read = seeding.elapsedMicroseconds;
+      final held = DecodedRows.of(heldOnPage);
+      seeding.stop();
+      _log(
+        'HANDOFF seeding a watch\'s index once, ${shown.elements.length} '
+        'items, ${heldOnPage.elements.length} held: '
+        '${ms(seeding.elapsedMicroseconds)} ms '
+        '(reading what the store holds ${ms(read)} ms)',
+      );
+      void timed(
+        String what,
+        LivePageAnswer answer,
+        DecodedRows Function() rows,
+        int decodes,
+      ) {
+        final micros = <int>[];
+        var decoded = 0;
+        for (var run = 0; run <= runs; run++) {
+          final index = rows();
+          final watch = Stopwatch()..start();
+          final converted =
+              livePageOutcome(answer, canRead: appCanRead, held: index);
+          watch.stop();
+          decoded = converted.decoded;
+          if (converted.outcome is! StoreReadAnswered) {
+            throw StateError('liveHandOffCost: the page did not convert: '
+                '${converted.outcome}');
+          }
+          if (decoded != decodes) {
+            throw StateError('liveHandOffCost: the $what decoded $decoded '
+                'rows, not $decodes');
+          }
+          if (run > 0) micros.add(watch.elapsedMicroseconds);
+        }
+        _log(
+          'HANDOFF $what, ${shown.elements.length} items, $decoded decoded, '
+          '$runs runs: median ${median(micros)} ms, fastest '
+          '${ms(micros.first)} ms, slowest ${ms(micros.last)} ms',
+        );
+      }
+
+      timed('edit answer', edit, () => held, 1);
+      timed(
+        'first answer',
+        first,
+        DecodedRows.new,
+        shown.elements.length + shown.lineups.length,
+      );
     case 'fillPage':
       int onPage() =>
           c.read(agentProvider).length +

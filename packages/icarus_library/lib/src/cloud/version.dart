@@ -43,9 +43,9 @@ int? createdAtOf(Row row) => switch (row) {
   ReadablePageRow(:final unknownFields) ||
   ReadablePageSettings(:final unknownFields) ||
   ReadableElementRow(:final unknownFields) ||
-  ReadableLineupGroupRow(:final unknownFields) => switch (viewsOf(
-    unknownFields,
-  )['createdAt']) {
+  ReadableLineupGroupRow(
+    :final unknownFields,
+  ) => switch (unknownFields['createdAt']) {
     final num life when isSafeWhole(life) => life.toInt(),
     _ => null,
   },

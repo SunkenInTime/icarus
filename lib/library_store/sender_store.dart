@@ -233,6 +233,12 @@ final class StoredResultsDroppedReport extends SenderReport {
   final StoredResultsDropped dropped;
 }
 
+final class HeldRowsNotRead extends SenderReport {
+  const HeldRowsNotRead(super.strategyId, this.why);
+
+  final String why;
+}
+
 final class WriteNotMade extends SenderReport {
   const WriteNotMade(super.strategyId, this.trouble);
 
@@ -301,6 +307,25 @@ base class SenderStore {
     if (_refusalsReported[strategyId] == refusal.serial) return;
     _refusalsReported[strategyId] = refusal.serial;
     report(StoredRowsRefused(strategyId, refusal));
+  }
+
+  Future<HeldOnPage> heldOnPage(String strategyId, String pagePublicId) async {
+    final Reading<HeldOnPage> reading;
+    try {
+      reading = await store.heldOnPage(strategyId, pagePublicId);
+    } catch (error) {
+      report(HeldRowsNotRead(strategyId, 'the store threw: $error'));
+      return HeldOnPage.nothing;
+    }
+    switch (reading) {
+      case Found(:final value):
+        return value;
+      case NotFound() || InUnreadableStrategy():
+        return HeldOnPage.nothing;
+      case NotRead(:final failure):
+        report(HeldRowsNotRead(strategyId, '$failure'));
+        return HeldOnPage.nothing;
+    }
   }
 
   Future<QueueRead> read(String strategyId) async {

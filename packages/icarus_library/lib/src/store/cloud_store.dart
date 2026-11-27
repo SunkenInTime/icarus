@@ -1992,6 +1992,35 @@ extension _CloudStore on LibraryStore {
     );
   }
 
+  Future<Reading<HeldOnPage>> _heldOnCloudPage(
+    _CloudOpen cloud,
+    String pagePublicId,
+  ) async {
+    final strategy = switch (cloud) {
+      _CloudReady(:final strategy) => strategy,
+      _CloudHeld() => null,
+      _CloudRefused() || _CloudUnread() => throw StateError('not open'),
+    };
+    if (strategy == null) return Found(HeldOnPage.nothing);
+    final digest = digestOf(pagePublicId);
+    if (strategy.hasPageRow(digest)) {
+      if (await _checkedPages(strategy, [digest]) case StorageFailed(
+        :final failure,
+      )) {
+        return NotRead(failure);
+      }
+    }
+    return Found(switch (strategy.loadedPage(digest)) {
+      final loaded? => HeldOnPage(
+        elements: {for (final row in loaded.elements.values) row.publicId: row},
+        lineupGroups: {
+          for (final row in loaded.lineupGroups.values) row.publicId: row,
+        },
+      ),
+      null => HeldOnPage.nothing,
+    });
+  }
+
   Future<Reading<PageContent>> _readCloudPage(
     _CloudOpen cloud,
     String pagePublicId,

@@ -1188,6 +1188,30 @@ final class LibraryStore {
         };
       });
 
+  Future<Reading<HeldOnPage>> heldOnPage(
+    String strategyPublicId,
+    String pagePublicId,
+  ) => _inTurn(() async {
+    if (_settle() case StorageFailed(:final failure)) return NotRead(failure);
+    final LoadedStrategy strategy;
+    switch (await _strategy(strategyPublicId)) {
+      case Found(:final value):
+        strategy = value;
+      case NotFound():
+        return const NotFound();
+      case NotRead(:final failure):
+        return NotRead(failure);
+      case InUnreadableStrategy(:final listing):
+        return InUnreadableStrategy(listing);
+    }
+    if (strategy.keeping != Keeping.cloud) return Found(HeldOnPage.nothing);
+    return _cloudReading(
+      strategy,
+      strategyPublicId,
+      (cloud) => _heldOnCloudPage(cloud, pagePublicId),
+    );
+  });
+
   Future<Reading<PageContent>> readPage(
     String strategyPublicId,
     String pagePublicId,
