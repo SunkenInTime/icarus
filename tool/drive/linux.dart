@@ -37,7 +37,10 @@ run     Runs --script, and --companion beside it when given, against the
         also commits each editor action's ops to the store as it happens
         and checks the store against the canvas after every turn. store
         moves the library into the store once, as the app will when it
-        runs on the store, and leaves the Hive files as they were.
+        runs on the store, and leaves the Hive files as they were; with
+        store, the run also fails when an instance's Hive library files
+        (strategy_box.hive, folder_box.hive) are not byte for byte what
+        they were when it started.
         --cloud-store send passes --cloud-store=send to every instance: the
         store reads the open cloud strategy and sends its queue to the
         server.
@@ -428,6 +431,16 @@ Future<int> runScripts(Map<String, String> options) async {
       }),
   ];
 
+  final hiveLibrary = options['library-store'] == 'store'
+      ? {
+          for (final instance in instances)
+            for (final box in hiveLibraryFiles)
+              if (File('${out.path}/store-${instance.name}/$box')
+                  case final file when file.existsSync())
+                file.path: file.readAsBytesSync(),
+        }
+      : const <String, List<int>>{};
+
   try {
     screen = await _Screen.launch(out.path);
     final display = await screen.display();
@@ -469,6 +482,13 @@ Future<int> runScripts(Map<String, String> options) async {
     var clean = true;
     for (final instance in instances) {
       clean = await _report(instance, out.path, timeout) && clean;
+    }
+    for (final MapEntry(key: path, value: before) in hiveLibrary.entries) {
+      final file = File(path);
+      if (!file.existsSync() || !_sameBytes(file.readAsBytesSync(), before)) {
+        stdout.writeln('the store mode changed the Hive library file $path');
+        clean = false;
+      }
     }
     stdout.writeln('logs and shots: ${out.path}');
     return clean ? 0 : 1;
@@ -668,6 +688,16 @@ Future<bool> _report(_Instance instance, String out, int timeout) async {
       isCleanSummary(summary) &&
       !instance.timedOut &&
       exitCode == 0;
+}
+
+const hiveLibraryFiles = ['strategy_box.hive', 'folder_box.hive'];
+
+bool _sameBytes(List<int> a, List<int> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 String _describeExit(int code) =>

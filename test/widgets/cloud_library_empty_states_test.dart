@@ -373,6 +373,31 @@ void main() {
       expect(find.text('Retry'), findsOneWidget);
     });
 
+    testWidgets(
+        'while the cloud library loads with nothing yet, the banner and its '
+        'Try again show above the loading cards', (tester) async {
+      final loading = StreamController<List<CloudStrategyEntry>>();
+      addTearDown(loading.close);
+      await tester.pumpWidget(
+        _cloudApp(
+          FolderContent(onCreateStrategy: () {}),
+          strategies: loading.stream,
+          extraOverrides: overrides,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byKey(const ValueKey('cloud-loading')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('library-not-opened-banner')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('library-not-opened-banner-try-again')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('inside a cloud folder the cloud folder shows', (tester) async {
       await tester.pumpWidget(
         _cloudApp(
