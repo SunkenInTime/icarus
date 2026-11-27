@@ -13,6 +13,7 @@ import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/live_results.dart';
+import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/editor_subscriptions_provider.dart';
@@ -297,6 +298,12 @@ int revisionOnServer(World world, String element) =>
 
 int revisionInStore(World world) => world.firstElement().revision;
 
+bool refusedAsEnded(World world) => world.sender.store.reports.any(
+      (report) =>
+          report is EventNotApplied &&
+          report.why.startsWith('FromAnEndedSession'),
+    );
+
 String moved(World world) => world.firstElement().publicId;
 
 List<String> pageReads(World world, Duration from) => [
@@ -554,13 +561,12 @@ void main() {
       inWorld((world) {
         world.sender.liveOpened(strategyId, openPage);
         world.settle();
-        final before = revisionInStore(world);
         world.teammateMoves(1);
         final stale = livePage(world);
         world.server.connection = 2;
         world.sender.liveArrived(strategyId, openPage, servedAccount, stale);
         world.settle();
-        expect(revisionInStore(world), before);
+        expect(refusedAsEnded(world), isTrue);
         final written = world.written();
         final arrived = written.lastIndexWhere(
           (event) => event is BaseArrived && event.point == stale.point,
@@ -867,13 +873,12 @@ void main() {
       inWorld((world) {
         world.sender.liveOpened(strategyId, theListRead);
         world.settle();
-        final before = storedPageName(world);
         teammateRenamesPage(world, 'Retake');
         final stale = liveList(world);
         world.server.connection = 2;
         world.sender.liveArrived(strategyId, theListRead, servedAccount, stale);
         world.settle();
-        expect(storedPageName(world), before);
+        expect(refusedAsEnded(world), isTrue);
         final written = world.written();
         final arrived = written.lastIndexWhere(
           (event) => event is BaseArrived && event.point == stale.point,
@@ -1110,6 +1115,51 @@ void main() {
       expect(reads.length, greaterThanOrEqualTo(4));
       expect(reads.first - from, greaterThanOrEqualTo(timing.liveGrace));
       expectTheLadder(reads);
+    });
+  });
+
+  group('a result the queue refuses is not written', () {
+    test(
+        'an answer from an ended connection, delivered after the next one '
+        'began, on a watch that then closes, leaves a read owed that brings '
+        'the store to the server', () {
+      inWorld((world) {
+        world.sender
+          ..liveOpened(strategyId, openPage)
+          ..liveArrived(strategyId, openPage, servedAccount, livePage(world));
+        world.settle();
+        world.teammateMoves(1);
+        final stale = livePage(world);
+        world.connection = 2;
+        world.sender
+          ..liveArrived(strategyId, openPage, servedAccount, stale)
+          ..liveClosed(strategyId, openPage);
+        world.settle(const Duration(minutes: 1));
+        expect(revisionInStore(world), revisionOnServer(world, moved(world)));
+      });
+    });
+
+    test(
+        'the same refusal with the watch still up makes no read: its next '
+        'answer pays', () {
+      inWorld((world) {
+        world.sender
+          ..liveOpened(strategyId, openPage)
+          ..liveArrived(strategyId, openPage, servedAccount, livePage(world));
+        world.settle();
+        final from = world.async.elapsed;
+        world.teammateMoves(1);
+        final stale = livePage(world);
+        world.connection = 2;
+        world.sender.liveArrived(strategyId, openPage, servedAccount, stale);
+        world.async.elapse(const Duration(milliseconds: 500));
+        world.async.flushMicrotasks();
+        world.sender
+            .liveArrived(strategyId, openPage, servedAccount, livePage(world));
+        world.settle(const Duration(minutes: 1));
+        expect(revisionInStore(world), revisionOnServer(world, moved(world)));
+        expect(pageReads(world, from), isEmpty);
+      });
     });
   });
 }

@@ -683,9 +683,11 @@ final class CloudSender implements LiveResults {
   void _owe(String id, ReadOf read) {
     final live = _live[(id, read)];
     if (live?.owed() == null) return;
-    live!.deliveredOn = null;
     liveOwed++;
-    _owedPastTheWatch.add((id, read));
+    if (live!.watchers <= 0 || live.deliveredOn != _inputs.connection) {
+      live.deliveredOn = null;
+      _owedPastTheWatch.add((id, read));
+    }
     _governor.written(id, read, late: true);
     _forgetEnded(id, read);
     wake();
@@ -1532,7 +1534,8 @@ final class CloudSender implements LiveResults {
             ),
         ]);
         if (disposed) return const _Ended();
-        if (written is! WriteTroubled || written.trouble is ResultNotStored) {
+        if (written case WrittenWith(:final notApplied)
+            when notApplied.isEmpty) {
           handled?.call();
         }
         switch (written) {
