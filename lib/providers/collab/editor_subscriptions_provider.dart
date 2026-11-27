@@ -127,7 +127,7 @@ final class StampedSubscriptions extends EditorSubscriptions {
     required String pagePublicId,
     String? shareToken,
   }) =>
-      repository.fetchPageSnapshot(
+      repository.fetchPageSnapshotAs(
         strategyPublicId: strategyPublicId,
         pagePublicId: pagePublicId,
         shareToken: shareToken,

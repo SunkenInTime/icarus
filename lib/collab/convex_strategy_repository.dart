@@ -418,7 +418,19 @@ class ConvexStrategyRepository {
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
-    String? accountSubject,
+  }) =>
+      fetchPageSnapshotAs(
+        strategyPublicId: strategyPublicId,
+        pagePublicId: pagePublicId,
+        shareToken: shareToken,
+        accountSubject: null,
+      );
+
+  Future<RemotePageSnapshot> fetchPageSnapshotAs({
+    required String strategyPublicId,
+    required String pagePublicId,
+    required String? shareToken,
+    required String? accountSubject,
   }) async {
     final (live, _) =
         _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)] ??
