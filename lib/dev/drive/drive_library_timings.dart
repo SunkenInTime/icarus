@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
@@ -8,7 +9,6 @@ import 'package:icarus/library_store/slowed_engine.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/local_library.dart';
-import 'package:icarus_library/take_cost.dart' show Ticker;
 
 String memoryLine(String label) =>
     'MEMORY $label: ${(ProcessInfo.currentRss / (1024 * 1024)).toStringAsFixed(0)} MB resident, '
@@ -19,6 +19,49 @@ String _spread(List<Duration> times) {
   String ms(Duration time) => (time.inMicroseconds / 1000).toStringAsFixed(1);
   return 'median ${ms(sorted[sorted.length ~/ 2])} ms, '
       'fastest ${ms(sorted.first)} ms, worst ${ms(sorted.last)} ms';
+}
+
+final class _Gaps {
+  final _clock = Stopwatch();
+  final gaps = <int>[];
+  var _last = 0;
+  var _running = false;
+
+  void start() {
+    gaps.clear();
+    _clock
+      ..reset()
+      ..start();
+    _last = 0;
+    _running = true;
+    Timer.run(_tick);
+  }
+
+  void _tick() {
+    _gap();
+    if (_running) Timer.run(_tick);
+  }
+
+  void _gap() {
+    final now = _clock.elapsedMicroseconds;
+    gaps.add(now - _last);
+    _last = now;
+  }
+
+  void stop() {
+    _gap();
+    _running = false;
+  }
+
+  int get longest => gaps.fold(0, (most, gap) => gap > most ? gap : most);
+}
+
+Future<int> _idleGap() async {
+  final idle = _Gaps()..start();
+  await Future<void>.delayed(const Duration(milliseconds: 50));
+  idle.stop();
+  final sorted = [...idle.gaps]..sort();
+  return sorted[sorted.length ~/ 2];
 }
 
 Future<List<String>> editToSavedLines(
@@ -43,9 +86,10 @@ Future<List<String>> editToSavedLines(
         );
   final times = <Duration>[];
   final longest = <Duration>[];
-  final busy = <Duration>[];
   final waited = <Duration>[];
-  final ticker = Ticker();
+  final notWaiting = <Duration>[];
+  final idleGaps = <Duration>[];
+  final ticker = _Gaps();
   for (var run = 1; run <= runs; run++) {
     c.read(agentProvider.notifier).addAgent(PlacedAgent(
           id: 'timed-edit-$run',
@@ -54,6 +98,7 @@ Future<List<String>> editToSavedLines(
           isAlly: true,
         ));
     await WidgetsBinding.instance.endOfFrame;
+    final idle = await _idleGap();
     SlowedEngine.waitedMicros = 0;
     ticker.start();
     final clock = Stopwatch()..start();
@@ -61,8 +106,9 @@ Future<List<String>> editToSavedLines(
     times.add(clock.elapsed);
     ticker.stop();
     longest.add(Duration(microseconds: ticker.longest));
-    busy.add(Duration(microseconds: ticker.busy));
     waited.add(Duration(microseconds: SlowedEngine.waitedMicros));
+    notWaiting.add(times.last - waited.last);
+    idleGaps.add(Duration(microseconds: idle));
     await Future<void>.delayed(const Duration(milliseconds: 200));
   }
   final page = 'SAVETIME ${stored?.name} (${stored?.pages.length} pages, '
@@ -70,8 +116,11 @@ Future<List<String>> editToSavedLines(
   return [
     '$page: ${_spread(times)}',
     '$page, the main thread held in one stretch: ${_spread(longest)}',
-    '$page, the main thread busy in all: ${_spread(busy)}',
     '$page, waiting on the engine: ${_spread(waited)}',
+    '$page, not waiting on the engine (the most the main thread can be '
+        'busy): ${_spread(notWaiting)}',
+    '$page, the main thread\'s idle tick before the save: '
+        '${_spread(idleGaps)}',
   ];
 }
 
