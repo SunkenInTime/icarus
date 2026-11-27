@@ -3093,8 +3093,8 @@ Step _keepMine(
     return NotApplicable(queue, NotInThatState(opId, '${view.state}'));
   }
   if (entityOf(replacement) != entityOf(entry.op) ||
-      replacement.type != entry.op.type &&
-          !_putsBackDeleted(entry, replacement)) {
+      (replacement.type != entry.op.type &&
+          !_putsBackDeleted(entry, replacement))) {
     return NotApplicable(queue, OtherEntity(replacement.opId));
   }
   if (!isJson(replacement.toJson())) {
