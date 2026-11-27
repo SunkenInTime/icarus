@@ -42,7 +42,7 @@
 //   {"hoverWords": t}                  {"dragWords": t, "by": [dx, dy]}
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
 //                                      held: a shot before letting go
-//   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
+//   {"scrollAt": [x, y, dy]}  {"scrollTo": t, "at": [x, y]} wheels until t taps  {"key": name}  {"keyCombo": [names]}
 //   {"panScroll": [x, y, dy, ms]}      a trackpad swipe of dy over ms, then
 //                                      lets go so the list flings, as on a Mac
 //   {"holdKey": name}  {"letGoKey": name}  a key held across other steps
@@ -1251,6 +1251,19 @@ Offset _doorPoint(String id) {
 
 var _pointer = 900;
 final _pointerClock = Stopwatch()..start();
+
+Future<void> _wheel(Offset at, double dy) async {
+  GestureBinding.instance.handlePointerEvent(
+    PointerScrollEvent(
+      kind: PointerDeviceKind.mouse,
+      position: at,
+      scrollDelta: Offset(0, dy),
+    ),
+  );
+  await Future<void>.delayed(const Duration(milliseconds: 300));
+  await _frames();
+}
+
 Offset? _mouseAt;
 
 /// Puts the mouse at [at]. MouseTracker asserts in debug builds when the
@@ -2229,15 +2242,31 @@ Future<void> _run(Map<String, dynamic> step) async {
       }
     case 'scrollAt':
       final xy = (value as List).cast<num>();
-      GestureBinding.instance.handlePointerEvent(
-        PointerScrollEvent(
-          kind: PointerDeviceKind.mouse,
-          position: Offset(xy[0].toDouble(), xy[1].toDouble()),
-          scrollDelta: Offset(0, xy[2].toDouble()),
-        ),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      await _frames();
+      await _wheel(
+          Offset(xy[0].toDouble(), xy[1].toDouble()), xy[2].toDouble());
+    case 'scrollTo':
+      final at = _point(step, 'at');
+      final where = '(${at.dx.round()}, ${at.dy.round()})';
+      bool tappable() {
+        try {
+          clickableCenterOf((w) => _isText(w, value as String),
+              what: 'scrollTo "$value"');
+          return true;
+        } on StateError {
+          return false;
+        }
+      }
+
+      var scrolls = 0;
+      while (!tappable()) {
+        if (scrolls == 60) {
+          throw StateError('"$value" could not be tapped after $scrolls '
+              'wheel turns at $where');
+        }
+        await _wheel(at, 200);
+        scrolls++;
+      }
+      _log('SCROLLED $scrolls wheel turns at $where to "$value"');
     case 'panScroll':
       final v = (value as List).cast<num>();
       await _panScroll(
