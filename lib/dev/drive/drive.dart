@@ -2546,6 +2546,7 @@ Future<void> _run(Map<String, dynamic> step) async {
                 landingId: legacy ? 'lo$n' : 'll$n',
                 name: 'Smoke $n',
                 images: const [],
+                youtubeLink: step['youtube'] as String? ?? '',
               ),
             ],
           );

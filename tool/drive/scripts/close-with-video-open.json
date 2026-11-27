@@ -1,0 +1,18 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"newLocal": "ascent", "name": "Close with video {run}"},
+  {"wait": 4},
+  {"tapText": "Close with video {run}", "optional": true},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"addLineup": "p", "youtube": "https://www.youtube.com/watch?v=9vxdjCd272k"},
+  {"wait": 1},
+  {"tapAgent": "lo1p"},
+  {"wait": 15},
+  {"shot": "{out}/video-open.png"},
+  {"logPage": "before close"},
+  {"closeWindow": true},
+  {"wait": 20}
+]

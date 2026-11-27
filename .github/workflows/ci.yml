@@ -880,7 +880,10 @@ jobs:
           if (-not ((Test-Path $result) -and (Select-String -LiteralPath $result -Pattern 'CHECK DONE: (exited cleanly|did not exit cleanly)' -Quiet))) {
             throw "release-close.ps1 failed before it judged the exit (exit $closed)."
           }
-          "release-close.ps1 exited $closed; the exit is not judged until #865 is fixed"
+          if ($closed -ne 0) {
+            Get-Content -LiteralPath $result
+            throw "The release build did not exit cleanly when its window was closed (#865)."
+          }
           $scratch = Join-Path $out 'store'
           'in its own folder:'
           Get-ChildItem -LiteralPath $scratch -Force | ForEach-Object { "  $($_.Name)" }
