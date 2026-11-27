@@ -1,13 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_store/hive_library.dart';
 import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
-import 'package:path/path.dart' as path;
 
 sealed class HiveRead<T> {
   const HiveRead();
@@ -88,9 +84,7 @@ Set<String> libraryBoxFileNames() => const LocalLibrary().boxFileNames();
 Future<void> openHiveLibrary() => LocalLibrary.openHiveBoxes();
 
 bool hiveLibraryOnDisk(String directory) =>
-    [HiveBoxNames.strategiesBox, HiveBoxNames.foldersBox].any(
-      (box) => File(path.join(directory, '$box.hive')).existsSync(),
-    );
+    LocalLibrary.hiveFilesIn(directory);
 
 final class HiveReads {
   HiveReads() : _boxes = const _HiveBoxes();
