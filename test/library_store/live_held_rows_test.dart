@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -42,6 +43,74 @@ void main() {
         world.teammateMoves(1);
         expect(deliver(world), 1);
         expect(revisionsInStore(world), revisionsOnServer(world));
+      });
+    });
+
+    test(
+        'with an unsent edit to an item drawn at the revision it predicts, '
+        'a teammate\'s edit that the server gives that same revision is '
+        'what the queue is handed, not the unsent edit', () {
+      inWorld((world) {
+        world.commitMove(1);
+        final drawn = world.firstElement();
+        final before = world.server.rows[strategyId]!.element(drawn.publicId)!
+            as LiveElement;
+        world.server
+            .teammate(strategyId, World.moveOf(before, 501, 'teammate-1'));
+        final teammate = world.server.rows[strategyId]!.element(drawn.publicId)!
+            as LiveElement;
+        expect(teammate.revision, drawn.revision);
+        expect(teammate.payload, isNot(drawn.payload));
+
+        world.sender
+          ..liveOpened(strategyId, openPage)
+          ..livePageArrived(
+            strategyId,
+            openPage,
+            servedAccount,
+            LivePageAnswer(
+              remotePageOf(world),
+              pagePublicId: pageId,
+              point: world.server.stamp(),
+            ),
+          );
+        world.settle(const Duration(seconds: 1));
+
+        final taken = pageResultsWritten(world).last.elements.firstWhere(
+              (row) => row.publicId == drawn.publicId,
+            ) as LiveElement;
+        expect(taken.revision, teammate.revision);
+        expect(taken.payload, teammate.payload);
+      });
+    });
+
+    test(
+        'an answer without a row the memo held drops it from the memo, so the '
+        'row coming back at the same identity is decoded again', () {
+      inWorld((world) {
+        world.sender.liveOpened(strategyId, openPage);
+        expect(deliver(world), 0);
+        final whole = remotePageOf(world);
+        final before = world.sender.liveRowsDecoded;
+        world.sender.livePageArrived(
+          strategyId,
+          openPage,
+          servedAccount,
+          LivePageAnswer(
+            RemotePageSnapshot(
+              page: whole.page,
+              content: whole.content,
+              elements: whole.elements.skip(1).toList(),
+              lineups: whole.lineups,
+              assetsById: whole.assetsById,
+            ),
+            pagePublicId: pageId,
+            point: world.server.stamp(),
+          ),
+        );
+        world.settle();
+        expect(world.sender.liveRowsDecoded - before, 0);
+        expect(deliver(world), 1);
       });
     });
 

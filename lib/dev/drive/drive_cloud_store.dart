@@ -1558,6 +1558,12 @@ CloudStoreLine? _senderReportLine(SenderReport report) => switch (report) {
           'and starts its results again from the rows it holds',
           problem: false,
         ),
+      HeldRowsNotRead(:final strategyId, :final why) => CloudStoreLine(
+          'CLOUDSTORE the rows the store holds for a watched page of '
+          '$strategyId could not be read ($why), so its next answer is '
+          'decoded whole',
+          problem: true,
+        ),
       WriteNotMade(:final strategyId, :final trouble) => CloudStoreLine(
           'CLOUDSTORE a write for $strategyId was not made '
           '(${trouble.runtimeType}): ${trouble.why}',

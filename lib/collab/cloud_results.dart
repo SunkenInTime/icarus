@@ -114,14 +114,14 @@ ResultRows<HeaderRead> pageListRead(RemotePageList list) => _rows(
     );
 
 ResultRows<PageRead> pageRead(RemotePageSnapshot page, CanRead canRead) =>
-    pageReadOver(page, canRead, held: HeldRows(), decoded: (_) {});
+    pageReadOver(page, canRead, held: DecodedRows(), decoded: (_) {});
 
 typedef _Identity = ({String page, int revision, int? life});
 
-final class HeldRows {
-  HeldRows();
+final class DecodedRows {
+  DecodedRows();
 
-  HeldRows.of(HeldOnPage held) {
+  DecodedRows.of(HeldOnPage held) {
     for (final row in held.elements.values) {
       keep(row);
     }
@@ -157,6 +157,17 @@ final class HeldRows {
         );
       case _:
         break;
+    }
+  }
+
+  void forgetRowsNotIn(RemotePageSnapshot page) {
+    if (_elements.length > page.elements.length) {
+      final named = {for (final element in page.elements) element.publicId};
+      _elements.removeWhere((publicId, _) => !named.contains(publicId));
+    }
+    if (_lineupGroups.length > page.lineups.length) {
+      final named = {for (final lineup in page.lineups) lineup.publicId};
+      _lineupGroups.removeWhere((publicId, _) => !named.contains(publicId));
     }
   }
 
@@ -196,7 +207,7 @@ final class HeldRows {
 ResultRows<PageRead> pageReadOver(
   RemotePageSnapshot page,
   CanRead canRead, {
-  required HeldRows held,
+  required DecodedRows held,
   required void Function(Row row) decoded,
 }) =>
     _rows(

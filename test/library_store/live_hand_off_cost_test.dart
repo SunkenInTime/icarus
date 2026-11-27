@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/collab/cloud_results.dart' show HeldRows;
+import 'package:icarus/collab/cloud_results.dart' show DecodedRows;
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus_library/icarus_library.dart';
@@ -13,7 +13,7 @@ const runs = 20;
 
 typedef Timed = ({List<int> micros, int decoded});
 
-Timed timed(LivePageAnswer answer, HeldRows Function() held) {
+Timed timed(LivePageAnswer answer, DecodedRows Function() held) {
   final micros = <int>[];
   var decoded = 0;
   for (var run = 0; run <= runs; run++) {
@@ -35,13 +35,13 @@ Timed timed(LivePageAnswer answer, HeldRows Function() held) {
   return (micros: micros..sort(), decoded: decoded);
 }
 
-HeldRows seeded(World world) {
+DecodedRows seeded(World world) {
   HeldOnPage? held;
   world.sender.store
       .heldOnPage(strategyId, pageId)
       .then((value) => held = value);
   world.async.flushMicrotasks();
-  return HeldRows.of(held!);
+  return DecodedRows.of(held!);
 }
 
 String described(String what, Timed timed) {
@@ -72,7 +72,7 @@ void main() {
       world.sender.adopt(strategyId);
       world.settle(const Duration(seconds: 1));
 
-      first = timed(answerOf(world), HeldRows.new);
+      first = timed(answerOf(world), DecodedRows.new);
       expect(first.decoded, heavyItems);
 
       deliver(world);

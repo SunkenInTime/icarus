@@ -1456,9 +1456,12 @@ rows sit beside them, each versioned and each read back before it is written:
   item it already holds at that revision and life, on that page only, as
   stored, and encodes a group here again only when what it holds changed.
   `heldOnPage` hands out those stored rows of one page (the results, not the
-  page as drawn with queued work), so a caller converting a page result can
-  use the stored row for an item at the same id, revision and life instead
-  of decoding it again.
+  page as drawn with queued work). The app's sender seeds a memo of decodes
+  from them when a page's watch begins, keyed by id, page, revision and life,
+  and adds every row it decodes from an answer, whether the queue then takes
+  that answer or not. It is right for one reason only: within a life a
+  revision names one content, so an item at the same id, page, revision and
+  life is the same row and isn't decoded again.
   Tests and driver builds also take every page from scratch, compare every
   item they leave as stored and encode every group, and fail on any
   difference (`shownTakesChecked`, on unless the build is a release without

@@ -184,7 +184,7 @@ final class LivePageAnswer {
 ({StoreReadOutcome outcome, int decoded}) livePageOutcome(
   LivePageAnswer answer, {
   required store.CanRead canRead,
-  required HeldRows held,
+  required DecodedRows held,
   void Function(store.Row row)? decoded,
 }) {
   var count = 0;
@@ -201,6 +201,7 @@ final class LivePageAnswer {
     RowsUnreadable(:final problem) =>
       StoreReadUnreadable(problem, point: answer.point),
   };
+  held.forgetRowsNotIn(answer.page);
   return (outcome: outcome, decoded: count);
 }
 
