@@ -625,7 +625,8 @@ extension _CloudStore on LibraryStore {
       nextAttempt: _numbers.nextAttempt,
       nextSession: _numbers.nextSession,
       shown: switch (kept) {
-        (shown: final memory, session: _) when memory.inNewSession() == shown =>
+        (shown: final memory, session: _)
+            when memory.inNewSession().withoutMarks() == shown =>
           memory,
         _ => shown,
       },

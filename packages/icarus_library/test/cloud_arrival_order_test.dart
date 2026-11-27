@@ -271,6 +271,7 @@ final class Reference {
   Generation? held;
   bool listFreshSinceSession = true;
   final Set<String> pagesFreshSinceSession;
+  final Set<String> goneByResult = {};
 
   static const anyResultOfThisSession = -1;
 
@@ -292,6 +293,7 @@ final class Reference {
     if (listOwed) listOwedFrom = anyResultOfThisSession;
     listFreshSinceSession = false;
     pagesFreshSinceSession.clear();
+    goneByResult.clear();
   }
 
   bool admits(Generation generation) {
@@ -377,6 +379,7 @@ final class Reference {
     pageTakenAt[page] = read.tick;
     content[page] = itemsOf(read.state.rows, page);
     pagesFreshSinceSession.add(page);
+    goneByResult.remove(page);
   }
 
   void _pageGone(ReadFact read, String page) {
@@ -387,7 +390,12 @@ final class Reference {
     listed = {...listed}..remove(page);
     content.remove(page);
     pagesFreshSinceSession.add(page);
+    goneByResult.add(page);
   }
+
+  bool pageCurrent(String page) =>
+      pagesFreshSinceSession.contains(page) &&
+      !(goneByResult.contains(page) && listed.contains(page));
 }
 
 Iterable<List<Fact>> orders(List<Fact> facts) sync* {
@@ -578,16 +586,17 @@ String? disagreement(CloudQueue queue, Reference want) {
   for (final page in {
     ...listed,
     ...want.listed,
-    ...shown.fresh.pagesSinceTouch,
+    ...shown.pagesSeen.keys,
     ...want.pagesFreshSinceSession,
   }) {
-    final listFresh = shown.fresh.listFreshFor(page);
-    if (listFresh != want.listFreshSinceSession) {
-      return 'the page list is ${listFresh ? '' : 'not '}fresh for $page, '
-          'the reference says ${want.listFreshSinceSession ? '' : 'not '}fresh';
+    final listFresh = shown.listCurrentFor(page);
+    final wantListFresh = want.listFreshSinceSession && !want.listOwed;
+    if (listFresh != wantListFresh) {
+      return 'the page list is ${listFresh ? '' : 'not '}current for $page, '
+          'the reference says ${wantListFresh ? '' : 'not '}current';
     }
-    final pageFresh = shown.fresh.pageFreshFor(page);
-    final wantPageFresh = want.pagesFreshSinceSession.contains(page);
+    final pageFresh = shown.pageCurrent(page);
+    final wantPageFresh = want.pageCurrent(page);
     if (pageFresh != wantPageFresh) {
       return 'page $page is ${pageFresh ? '' : 'not '}fresh, the reference '
           'says ${wantPageFresh ? '' : 'not '}fresh';

@@ -31,19 +31,19 @@ enum HeldDeleteCause { pageChanged, contentNeverRead }
 
 PageDeleteVerdict pageDeleteVerdict(Shown shown, CheckedDelete work) {
   final page = work.op.pagePublicId;
-  final fresh = shown.fresh;
-  if (fresh.disagreeOn(page)) {
+  final listFresh = shown.listCurrentFor(page);
+  final pageFresh = shown.pageResultCurrent(page);
+  final listed = shown.pages.containsKey(page);
+  if (listFresh && pageFresh && listed == shown.goneByResult(page)) {
     return const PageResultAwaited(list: true, page: true);
   }
-  if (!fresh.freshFor(page)) {
+  if (!listFresh || (!pageFresh && listed)) {
     return PageResultAwaited(
-      list: !fresh.listFreshFor(page),
-      page:
-          !fresh.pageFreshFor(page) &&
-          (!fresh.listFreshFor(page) || fresh.listed.contains(page)),
+      list: !listFresh,
+      page: !pageFresh && (!listFresh || listed),
     );
   }
-  if (!fresh.listed.contains(page)) return const PageAlreadyGone();
+  if (!listed) return const PageAlreadyGone();
   final seen = work.seen;
   final digests = switch (seen.content) {
     ContentSeen(:final digests) => digests,

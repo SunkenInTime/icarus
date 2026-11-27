@@ -61,6 +61,7 @@ _Keys _keysOf(PendingOp entry) => _keysCache[entry] ??= () {
         null => null,
       },
       for (final page in pages) _OnPage(page),
+      if (_readsFreshness(entry)) const _ReadsFreshness(),
     ],
     read: [
       target,
@@ -75,6 +76,38 @@ _Keys _keysOf(PendingOp entry) => _keysCache[entry] ??= () {
     ],
   );
 }();
+
+bool _readsFreshness(PendingOp entry) => switch (_writesOf(entry.op)) {
+  _Writes.putBack => true,
+  _Writes.wholeRow || _Writes.other => entry.behindOwn,
+  _Writes.fields => false,
+};
+
+Iterable<Target> _freshnessReadersOn(
+  CloudQueue queue,
+  Shown shown,
+  Set<String> pages,
+) sync* {
+  if (pages.isEmpty) return;
+  for (final id in queue._index.ids(const _ReadsFreshness())) {
+    final entry = queue._index.byId[id]! as PendingOp;
+    final target = targetOf(entry.op);
+    if (pages.contains(shown.rows[target]?.page) ||
+        _pagesOf(entry).any(pages.contains)) {
+      yield target;
+    }
+  }
+}
+
+final class _ReadsFreshness {
+  const _ReadsFreshness();
+
+  @override
+  bool operator ==(Object other) => other is _ReadsFreshness;
+
+  @override
+  int get hashCode => (_ReadsFreshness).hashCode;
+}
 
 final class _Renumbering {
   const _Renumbering();

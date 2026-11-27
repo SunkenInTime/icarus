@@ -29,6 +29,23 @@ enum StallExit {
     onScreen: Face.awaitingResult,
     goesAgain: 'a read that settles it, $newEvidence',
   ),
+  answerAhead(
+    title: 'Our own answer is newer, by the server clock, than every result '
+        'read since, and none of them shows what it wrote (the clock went '
+        'back on a new connection)',
+    waitsFor: 'a read of the page or page list whose server time reaches the '
+        'answer\'s, or one that shows the written row at the answer\'s '
+        'revision or later. Answers that leave no row to show: a page reorder, '
+        'add or delete on every page it renumbers; an answer with no revision '
+        '(nothing to do, failed, rejected without the server\'s row); two '
+        'answers on one page that wrote different rows; the page an item '
+        'moved off',
+    calls: 'that read',
+    onScreen: Face.awaitingResult,
+    goesAgain: 'a read whose server time reaches the answer\'s, which the '
+        'ladder issues once the server clock has caught up; a read showing '
+        'the write; $newEvidence',
+  ),
   refusedResult(
     title: 'The queue does not take a result (a page list of an earlier life '
         'than the record holds)',
@@ -217,6 +234,7 @@ enum StallExit {
     ];
     return switch (this) {
       unsettledResult ||
+      answerAhead ||
       refusedResult ||
       pageAheadOfList ||
       lostRead ||
@@ -253,6 +271,7 @@ enum StallExit {
 
   String bound(SenderTiming timing) => switch (this) {
         unsettledResult ||
+        answerAhead ||
         lostRead =>
           '${timing.unresolvedRounds} reads, then shown as could not resolve; '
               'the ladder goes on',

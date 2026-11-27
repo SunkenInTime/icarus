@@ -467,7 +467,8 @@ void main() {
         ),
       );
       expect(notApplicable(step), isA<OlderResult>());
-      expect(client.queue.shown.fresh, shown.fresh);
+      expect(client.queue.shown.pagesSeen, shown.pagesSeen);
+      expect(client.queue.shown.marks, shown.marks);
       expect(client.queue.shown.content, shown.content);
     });
   });

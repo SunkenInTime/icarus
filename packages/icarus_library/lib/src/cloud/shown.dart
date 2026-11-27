@@ -15,9 +15,11 @@ bool shownTakesReuse = true;
 
 final class ShownWork {
   int contentRowsDigested = 0;
+  int marksLooked = 0;
 
   void reset() {
     contentRowsDigested = 0;
+    marksLooked = 0;
   }
 }
 
@@ -80,94 +82,111 @@ final class ShownRow {
   int get hashCode => Object.hash(page, revision, life, digest);
 }
 
-final class Freshness {
-  Freshness._({
-    required this.listSinceTouch,
-    required Set<String> listed,
-    required Set<String> touchedSinceList,
-    required Set<String> pagesSinceTouch,
-    required Set<String> goneByResult,
-  }) : listed = Set.unmodifiable(listed),
-       goneByResult = Set.unmodifiable(goneByResult),
-       touchedSinceList = Set.unmodifiable(touchedSinceList),
-       pagesSinceTouch = Set.unmodifiable(pagesSinceTouch);
+typedef Wrote = ({Target target, Version version});
 
-  static final none = Freshness._(
-    listSinceTouch: false,
-    listed: const {},
-    touchedSinceList: const {},
-    pagesSinceTouch: const {},
-    goneByResult: const {},
-  );
+final class AnswerMark {
+  const AnswerMark({required this.order, this.serverTime, this.wrote});
 
-  final bool listSinceTouch;
-  final Set<String> goneByResult;
-  final Set<String> listed;
-  final Set<String> touchedSinceList;
-  final Set<String> pagesSinceTouch;
+  final ResultOrder order;
+  final int? serverTime;
+  final Wrote? wrote;
 
-  Freshness afterList(Iterable<String> live) {
-    final listedNow = {...live};
-    return Freshness._(
-      listSinceTouch: true,
-      listed: listedNow,
-      touchedSinceList: const {},
-      pagesSinceTouch: pagesSinceTouch,
-      goneByResult: goneByResult,
-    );
+  bool reachedBy(Arrival? arrival) =>
+      arrival != null &&
+      !arrival.order.isBefore(order) &&
+      switch ((serverTime, arrival.point.serverTime)) {
+        (null, _) => true,
+        (_, null) => false,
+        (final answered?, final shown?) => shown >= answered,
+      };
+
+  bool onlyItsTimeAhead(Arrival? arrival) =>
+      arrival != null && !arrival.order.isBefore(order) && !reachedBy(arrival);
+
+  AnswerMark and(AnswerMark? other) {
+    if (other == null) return this;
+    final later = order.isBefore(other.order) ? other : this;
+    final (time, wrote) = switch ((serverTime, other.serverTime)) {
+      (final mine?, final theirs?) when mine != theirs =>
+        mine > theirs ? (mine, this.wrote) : (theirs, other.wrote),
+      (final mine?, null) => (mine, this.wrote),
+      (null, final theirs?) => (theirs, other.wrote),
+      _ => (serverTime, later.wrote ?? this.wrote ?? other.wrote),
+    };
+    return AnswerMark(order: later.order, serverTime: time, wrote: wrote);
   }
-
-  Freshness afterPage(String page, {required bool gone}) => Freshness._(
-    listSinceTouch: listSinceTouch,
-    listed: listed,
-    touchedSinceList: touchedSinceList,
-    pagesSinceTouch: {...pagesSinceTouch, page},
-    goneByResult: gone
-        ? {...goneByResult, page}
-        : ({...goneByResult}..remove(page)),
-  );
-
-  Freshness touched(Iterable<String> pages, {required bool list}) =>
-      Freshness._(
-        listSinceTouch: listSinceTouch && !list,
-        listed: listed,
-        touchedSinceList: {...touchedSinceList, ...pages},
-        pagesSinceTouch: list
-            ? const {}
-            : ({...pagesSinceTouch}..removeAll(pages)),
-        goneByResult: goneByResult,
-      );
-
-  bool listFreshFor(String page) =>
-      listSinceTouch && !touchedSinceList.contains(page);
-
-  bool pageFreshFor(String page) => pagesSinceTouch.contains(page);
-
-  bool freshFor(String page) =>
-      listFreshFor(page) && (pageFreshFor(page) || !listed.contains(page));
-
-  bool disagreeOn(String page) =>
-      listFreshFor(page) &&
-      pageFreshFor(page) &&
-      listed.contains(page) == goneByResult.contains(page);
 
   @override
   bool operator ==(Object other) =>
-      other is Freshness &&
-      other.listSinceTouch == listSinceTouch &&
-      const SetEquality<String>().equals(other.listed, listed) &&
-      const SetEquality<String>().equals(
-        other.touchedSinceList,
-        touchedSinceList,
-      ) &&
-      const SetEquality<String>().equals(
-        other.pagesSinceTouch,
-        pagesSinceTouch,
-      ) &&
-      const SetEquality<String>().equals(other.goneByResult, goneByResult);
+      other is AnswerMark &&
+      other.order == order &&
+      other.serverTime == serverTime &&
+      other.wrote == wrote;
 
   @override
-  int get hashCode => Object.hash(listSinceTouch, listed.length);
+  int get hashCode => Object.hash(order, serverTime, wrote);
+
+  @override
+  String toString() =>
+      'our answer at $order and time $serverTime'
+      '${wrote == null ? '' : ', which wrote ${wrote!.target} at ${wrote!.version}'}';
+}
+
+final class Marks {
+  Marks({
+    this.list,
+    this.allPages,
+    Map<String, AnswerMark> pages = const {},
+    Map<Target, AnswerMark> rows = const {},
+  }) : pages = Map.unmodifiable(pages),
+       rows = Map.unmodifiable(rows);
+
+  static final none = Marks();
+
+  final AnswerMark? list;
+  final AnswerMark? allPages;
+  final Map<String, AnswerMark> pages;
+  final Map<Target, AnswerMark> rows;
+
+  bool get isEmpty =>
+      list == null && allPages == null && pages.isEmpty && rows.isEmpty;
+
+  Marks _with({
+    AnswerMark? Function()? list,
+    AnswerMark? Function()? allPages,
+    Map<String, AnswerMark>? pages,
+    Map<Target, AnswerMark>? rows,
+  }) => Marks(
+    list: list == null ? this.list : list(),
+    allPages: allPages == null ? this.allPages : allPages(),
+    pages: pages ?? this.pages,
+    rows: rows ?? this.rows,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is Marks &&
+      other.list == list &&
+      other.allPages == allPages &&
+      const MapEquality<String, AnswerMark>().equals(other.pages, pages) &&
+      const MapEquality<Target, AnswerMark>().equals(other.rows, rows);
+
+  @override
+  int get hashCode => Object.hash(list, allPages, pages.length, rows.length);
+}
+
+final class Seen {
+  const Seen(this.at, {this.gone = false});
+
+  final Arrival? at;
+  final bool gone;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Seen && other.at == at && other.gone == gone;
+
+  @override
+  int get hashCode => Object.hash(at, gone);
 }
 
 final class ResultOrder {
@@ -410,6 +429,84 @@ final class AfterAnswer extends PaidBy {
   @override
   String toString() => 'a result at or after $order and time $serverTime';
 }
+
+final class AllOf extends PaidBy {
+  AllOf._(Iterable<PaidBy> each) : each = Set.unmodifiable(each);
+
+  final Set<PaidBy> each;
+
+  @override
+  bool paidBy(Arrival arrival, ArrivedBase? base) =>
+      each.every((debt) => debt.paidBy(arrival, base));
+
+  @override
+  bool operator ==(Object other) =>
+      other is AllOf && const SetEquality<PaidBy>().equals(other.each, each);
+
+  @override
+  int get hashCode => Object.hash(AllOf, Object.hashAllUnordered(each));
+
+  @override
+  String toString() => 'all of ${each.join('; ')}';
+}
+
+PaidBy both(PaidBy held, PaidBy added) {
+  ResultAtOrAfter? atOrAfter;
+  AfterAnswer? answer;
+  final rest = <PaidBy>{};
+  for (final debt in [
+    for (final debt in [held, added])
+      if (debt case AllOf(:final each)) ...each else debt,
+  ]) {
+    switch (debt) {
+      case ResultAtOrAfter(:final order):
+        if (atOrAfter == null || atOrAfter.order.isBefore(order)) {
+          atOrAfter = debt;
+        }
+      case AfterAnswer():
+        answer = debt.and(answer);
+      case AfterRefusal() || AllOf():
+        rest.add(debt);
+    }
+  }
+  final combined = {
+    if (atOrAfter != ResultAtOrAfter.anyResult) ?atOrAfter,
+    ?answer,
+    ...rest,
+  };
+  if (combined.isEmpty) return ResultAtOrAfter.anyResult;
+  return combined.length == 1 ? combined.single : AllOf._(combined);
+}
+
+PaidBy refusedOver(PaidBy owed, Arrival refused) {
+  final each = switch (owed) {
+    AllOf(:final each) => each,
+    final one => {one},
+  };
+  final orders = each.whereType<ResultAtOrAfter>();
+  if (orders.isEmpty) return owed;
+  final kept = [
+    for (final debt in each)
+      if (debt is! ResultAtOrAfter) debt,
+  ];
+  final order = switch (orders.where((debt) => !debt.paidBy(refused, null))) {
+    final unpaid when unpaid.isNotEmpty => unpaid.reduce(
+      (a, b) => a.order.isBefore(b.order) ? b : a,
+    ),
+    _ => ResultAtOrAfter(refused.order),
+  };
+  return kept.fold<PaidBy>(order, both);
+}
+
+PaidBy oweAlso(ReadState state, PaidBy added) => switch (state) {
+  ReadOwed(:final since) || ReadRefused(:final since) => both(since, added),
+  NotReadThisSession() || ReadThisSession() => added,
+};
+
+int? _later(int? held, int? added) => switch ((held, added)) {
+  (final a?, final b?) => a > b ? a : b,
+  (final a, final b) => a ?? b,
+};
 
 bool paidBy(ReadState state, Arrival? arrival, ArrivedBase base) =>
     switch (state) {
@@ -726,13 +823,16 @@ final class Shown {
     Map<String, ReadState> pageReads = const {},
     Set<String> goneThisSession = const {},
     Map<Target, Version> highest = const {},
-    Freshness? fresh,
+    Marks? marks,
+    this.listSeen,
+    Map<String, Seen> pagesSeen = const {},
     this.listTaken,
     Map<String, ResultOrder> pagesTaken = const {},
     this.listRefusedAt,
     Map<String, ResultOrder> pagesRefusedAt = const {},
     this.fence,
-  }) : fresh = fresh ?? Freshness.none,
+  }) : marks = marks ?? Marks.none,
+       pagesSeen = Map.unmodifiable(pagesSeen),
        pagesTaken = Map.unmodifiable(pagesTaken),
        pagesRefusedAt = Map.unmodifiable(pagesRefusedAt),
        pageReads = Map.unmodifiable({
@@ -758,15 +858,9 @@ final class Shown {
 
   factory Shown.of(StrategyRowSet rows, {required Iterable<String> readPages}) {
     final read = {...readPages};
-    var fresh = Freshness.none.afterList([
-      for (final page in rows.pages)
-        if (!_isTrashed(page)) page.publicId,
-    ]);
-    for (final page in read) {
-      fresh = fresh.afterPage(page, gone: false);
-    }
     return Shown(
-      fresh: fresh,
+      listSeen: const Seen(null),
+      pagesSeen: {for (final page in read) page: const Seen(null)},
       list: const ReadThisSession(),
       pageReads: {for (final page in read) page: const ReadThisSession()},
       strategy: _strategyRow(rows.strategy, rows.pages),
@@ -814,7 +908,9 @@ final class Shown {
   }
 
   final ShownRow? strategy;
-  final Freshness fresh;
+  final Marks marks;
+  final Seen? listSeen;
+  final Map<String, Seen> pagesSeen;
   final ReadState list;
   final Map<String, ReadState> pageReads;
   final ResultOrder? listTaken;
@@ -844,7 +940,9 @@ final class Shown {
     pageReads: pageReads,
     goneThisSession: goneThisSession,
     highest: highest,
-    fresh: fresh,
+    marks: marks,
+    listSeen: listSeen,
+    pagesSeen: pagesSeen,
     listTaken: listTaken,
     pagesTaken: pagesTaken,
     listRefusedAt: listRefusedAt,
@@ -884,7 +982,7 @@ final class Shown {
 
   bool get headerThisSession => list is ReadThisSession;
 
-  bool pageReadThisSession(String page) => pageReads[page] is ReadThisSession;
+  bool goneByResult(String page) => pagesSeen[page]?.gone ?? false;
 
   ReadState pageRead(String page) =>
       pageReads[page] ?? const NotReadThisSession();
@@ -919,7 +1017,9 @@ final class Shown {
   );
 
   Shown _with({
-    Freshness? fresh,
+    Marks? marks,
+    Seen? listSeen,
+    Map<String, Seen>? pagesSeen,
     ReadState? list,
     Map<String, ReadState>? pageReads,
     Set<String>? goneThisSession,
@@ -941,7 +1041,9 @@ final class Shown {
     listRefusedAt: listRefusedAt ?? this.listRefusedAt,
     pagesRefusedAt: pagesRefusedAt ?? this.pagesRefusedAt,
     fence: fence,
-    fresh: fresh ?? this.fresh,
+    marks: marks ?? this.marks,
+    listSeen: listSeen ?? this.listSeen,
+    pagesSeen: pagesSeen ?? this.pagesSeen,
     list: list ?? this.list,
     pageReads: pageReads ?? this.pageReads,
     goneThisSession: goneThisSession ?? this.goneThisSession,
@@ -978,7 +1080,19 @@ final class Shown {
         if (gone(value.page)) key: Removed(started, held: value.version),
   };
 
-  Taken taken(
+  Taken taken(ArrivedBase result, {required Arrival? arrival}) {
+    final taken = _taken(result, arrival: arrival);
+    final settled = switch (result) {
+      HeaderRead() || StrategyGone() => taken.shown._settledByList(),
+      PageRead(:final page) => taken.shown._settledByPage(page.publicId),
+      PageGone(:final pagePublicId) => taken.shown._settledByPage(pagePublicId),
+    };
+    return identical(settled, taken.shown)
+        ? taken
+        : Taken(settled, taken.decisions, differing: taken.differing);
+  }
+
+  Taken _taken(
     ArrivedBase result, {
     required Arrival? arrival,
   }) => switch (result) {
@@ -996,7 +1110,7 @@ final class Shown {
     PageGone(:final pagePublicId) => Taken(
       _with(
         pagesTaken: {...pagesTaken, pagePublicId: ?arrival?.order},
-        fresh: fresh.afterPage(pagePublicId, gone: true),
+        pagesSeen: {...pagesSeen, pagePublicId: Seen(arrival, gone: true)},
         pageReads: {...pageReads}..remove(pagePublicId),
         goneThisSession: {...goneThisSession, pagePublicId},
         pages: {...pages}..remove(pagePublicId),
@@ -1014,6 +1128,7 @@ final class Shown {
     StrategyGone() => Taken(
       _with(
         listTaken: arrival?.order,
+        listSeen: Seen(arrival),
         list: paidBy(list, arrival, result) ? const ReadThisSession() : list,
         pageReads: {
           for (final MapEntry(:key, :value) in pageReads.entries)
@@ -1091,7 +1206,9 @@ final class Shown {
         pagesTaken: pagesTaken,
         listRefusedAt: listRefusedAt,
         pagesRefusedAt: pagesRefusedAt,
-        fresh: fresh.afterList(live),
+        marks: marks,
+        listSeen: Seen(arrival),
+        pagesSeen: pagesSeen,
         list: switch ((list, createdAtOf(strategyRow))) {
           (final owed, _) when !paidBy(owed, arrival, result) => owed,
           (
@@ -1162,21 +1279,242 @@ final class Shown {
   Shown withGone(String page) =>
       _with(goneThisSession: {...goneThisSession, page});
 
-  Shown touched(Iterable<String> pages, {required bool list}) =>
-      _with(fresh: fresh.touched(pages, list: list));
+  Shown marked(
+    AnswerMark mark, {
+    required Iterable<String> pages,
+    required bool list,
+    required bool allPages,
+    Target? row,
+  }) {
+    final next = marks._with(
+      list: list && !_listReaches(mark, counted: false)
+          ? () => mark.and(marks.list)
+          : null,
+      allPages: allPages ? () => mark.and(marks.allPages) : null,
+      pages: {
+        ...marks.pages,
+        for (final page in pages)
+          if (!_settledFor(page, mark)) page: mark.and(marks.pages[page]),
+      },
+      rows: switch (row) {
+        final row? when !_rowSettled(row, mark) => {
+          ...marks.rows,
+          row: mark.and(marks.rows[row]),
+        },
+        _ => null,
+      },
+    );
+    return _with(marks: next);
+  }
 
-  Shown owingList(PaidBy since) => _with(list: ReadOwed(since: since));
+  bool get listCurrent => _listCurrent(counted: true);
+
+  bool get listCurrentUncounted => _listCurrent(counted: false);
+
+  bool _listCurrent({required bool counted}) =>
+      headerThisSession && _listReaches(marks.list, counted: counted);
+
+  bool listCurrentFor(String page) =>
+      listCurrent && _listReaches(marks.pages[page], counted: true);
+
+  bool pageCurrent(String page) =>
+      pageResultCurrent(page) &&
+      !(pagesSeen[page]!.gone && pages.containsKey(page));
+
+  bool pageResultCurrent(String page) {
+    final seen = pagesSeen[page];
+    if (seen == null || isDebt(pageRead(page))) return false;
+    if (!_pageReaches(page, seen, marks.pages[page], counted: true) ||
+        !_pageReaches(page, seen, marks.allPages, counted: true)) {
+      return false;
+    }
+    for (final target in _rowMarksOn[page] ?? const <Target>[]) {
+      shownWork.marksLooked++;
+      if (!_rowReached(marks.rows[target]!, seen)) return false;
+    }
+    return true;
+  }
+
+  bool waitsOnClock(String? page) {
+    final (seen, waiting) = switch (page) {
+      null when headerThisSession => (
+        listSeen,
+        [
+          for (final mark in [?marks.list, ...marks.pages.values])
+            if (!_listReaches(mark, counted: false)) mark,
+        ],
+      ),
+      final page? when pagesSeen[page] != null && !isDebt(pageRead(page)) => (
+        pagesSeen[page],
+        [
+          for (final mark in [?marks.pages[page], ?marks.allPages])
+            if (!_pageReaches(page, pagesSeen[page]!, mark, counted: false))
+              mark,
+          for (final target in _rowMarksOn[page] ?? const <Target>[])
+            if (!_rowReached(marks.rows[target]!, pagesSeen[page]!))
+              marks.rows[target]!,
+        ],
+      ),
+      _ => (null, const <AnswerMark>[]),
+    };
+    return waiting.isNotEmpty &&
+        waiting.every((mark) => mark.onlyItsTimeAhead(seen?.at));
+  }
+
+  late final Map<String, List<Target>> _rowMarksOn = () {
+    final on = <String, List<Target>>{};
+    for (final target in marks.rows.keys) {
+      if (rows[target]?.page case final page?) (on[page] ??= []).add(target);
+    }
+    return on;
+  }();
+
+  bool _listReaches(AnswerMark? mark, {required bool counted}) {
+    if (mark == null) return true;
+    if (counted) shownWork.marksLooked++;
+    return mark.reachedBy(listSeen?.at) || _listHolds(mark.wrote);
+  }
+
+  bool _listHolds(Wrote? wrote) => switch (wrote) {
+    (target: StrategyTarget(), :final version) => _atLeast(
+      strategy?.version,
+      version,
+    ),
+    (target: PageTarget(:final pagePublicId), :final version) => _atLeast(
+      (pages[pagePublicId] ?? trashed[pagePublicId])?.version,
+      version,
+    ),
+    (target: SettingsTarget(:final pagePublicId), :final version) => _atLeast(
+      settings[pagePublicId]?.version,
+      version,
+    ),
+    _ => false,
+  };
+
+  bool _pageReaches(
+    String page,
+    Seen seen,
+    AnswerMark? mark, {
+    required bool counted,
+  }) {
+    if (mark == null) return true;
+    if (counted) shownWork.marksLooked++;
+    return mark.reachedBy(seen.at) || _heldOn(page, mark.wrote);
+  }
+
+  bool _heldOn(String page, Wrote? wrote) =>
+      wrote != null &&
+      switch (rows[wrote.target]) {
+        final row? when row.page == page => _atLeast(
+          row.version,
+          wrote.version,
+        ),
+        _ => false,
+      };
+
+  bool _rowReached(AnswerMark mark, Seen seen) =>
+      mark.reachedBy(seen.at) || _holds(mark.wrote);
+
+  bool _holds(Wrote? wrote) =>
+      wrote != null &&
+      (_atLeast(rows[wrote.target]?.version, wrote.version) ||
+          _atLeast(highest[wrote.target], wrote.version));
+
+  static bool _atLeast(Version? held, Version wanted) =>
+      held != null && held >= wanted;
+
+  bool _settledFor(String page, AnswerMark mark) =>
+      _listReaches(mark, counted: false) &&
+      switch (pagesSeen[page]) {
+        final seen? => _pageReaches(page, seen, mark, counted: false),
+        null => false,
+      };
+
+  bool _rowSettled(Target row, AnswerMark mark) =>
+      _holds(mark.wrote) ||
+      switch (rows[row]) {
+        ShownRow(:final page) => switch (pagesSeen[page]) {
+          final seen? => mark.reachedBy(seen.at),
+          null => false,
+        },
+        null => false,
+      };
+
+  Shown _settledByList() {
+    if (marks.isEmpty) return this;
+    final next = marks._with(
+      list: _listReaches(marks.list, counted: false) ? () => null : null,
+      pages: {
+        for (final MapEntry(:key, :value) in marks.pages.entries)
+          if (!_settledFor(key, value)) key: value,
+      },
+    );
+    return next == marks ? this : _with(marks: next);
+  }
+
+  Shown _settledByPage(String page) {
+    if (marks.isEmpty) return this;
+    final allPages = marks.allPages;
+    final next = marks._with(
+      allPages:
+          allPages != null &&
+              pages.keys.every(
+                (page) => switch (pagesSeen[page]) {
+                  final seen? => _pageReaches(
+                    page,
+                    seen,
+                    allPages,
+                    counted: false,
+                  ),
+                  null => false,
+                },
+              )
+          ? () => null
+          : null,
+      pages: switch (marks.pages[page]) {
+        final mark? when _settledFor(page, mark) => {
+          ...marks.pages,
+        }..remove(page),
+        _ => null,
+      },
+      rows: {
+        for (final MapEntry(:key, :value) in marks.rows.entries)
+          if (!_rowSettled(key, value)) key: value,
+      },
+    );
+    return next == marks ? this : _with(marks: next);
+  }
+
+  Shown owingList(PaidBy since) =>
+      _with(list: _owed(list, since, unlessLife: _refusedLifeOf(list)));
 
   Shown owingListPast(int? life, PaidBy since, {int? named}) => _with(
-    list: ReadOwed(unlessLife: life, namedLife: named, since: since),
+    list: _owed(
+      list,
+      since,
+      unlessLife: life ?? _refusedLifeOf(list),
+      namedLife: _later(namedLifeOf(list), named),
+    ),
   );
 
-  Shown owingPage(String page, PaidBy since) => _with(
-    pageReads: {
-      ...pageReads,
-      page: ReadOwed(since: since),
-    },
+  Shown owingPage(String page, PaidBy since) =>
+      _with(pageReads: {...pageReads, page: _owed(pageRead(page), since)});
+
+  static ReadOwed _owed(
+    ReadState held,
+    PaidBy since, {
+    int? unlessLife,
+    int? namedLife,
+  }) => ReadOwed(
+    unlessLife: unlessLife,
+    namedLife: namedLife ?? namedLifeOf(held),
+    since: oweAlso(held, since),
   );
+
+  static int? _refusedLifeOf(ReadState state) => switch (state) {
+    ReadOwed(:final unlessLife) || ReadRefused(:final unlessLife) => unlessLife,
+    NotReadThisSession() || ReadThisSession() => null,
+  };
 
   Shown listRefused(String problem, PaidBy since, {required ResultOrder at}) =>
       _with(
@@ -1214,10 +1552,18 @@ final class Shown {
       const DeepCollectionEquality().equals(other.content, content) &&
       sameMap(other.rows, rows);
 
-  Shown paidAgain(Shown again) =>
-      _with(list: again.list, pageReads: again.pageReads, fresh: again.fresh);
+  Shown paidAgain(Shown again) => _with(
+    list: again.list,
+    pageReads: again.pageReads,
+    marks: again.marks,
+    listSeen: again.listSeen,
+    pagesSeen: again.pagesSeen,
+  );
+
+  Shown withoutMarks() => _with(marks: Marks.none);
 
   Shown inNewSession() => Shown(
+    marks: marks,
     list: list.inNewSession,
     pageReads: {
       for (final MapEntry(:key, :value) in pageReads.entries)
@@ -1313,7 +1659,10 @@ final class Shown {
     return Taken(
       _with(
         pagesTaken: {...pagesTaken, page: ?arrival?.order},
-        fresh: fresh.afterPage(page, gone: trashedNow),
+        pagesSeen: {
+          ...pagesSeen,
+          page: Seen(arrival, gone: trashedNow),
+        },
         pageReads: {
           ...pageReads,
           page: paid ? const ReadThisSession() : pageRead(page),
@@ -1350,7 +1699,9 @@ final class Shown {
   bool operator ==(Object other) =>
       other is Shown &&
       other.strategy == strategy &&
-      other.fresh == fresh &&
+      other.marks == marks &&
+      other.listSeen == listSeen &&
+      const MapEquality<String, Seen>().equals(other.pagesSeen, pagesSeen) &&
       other.list == list &&
       other.listTaken == listTaken &&
       other.listRefusedAt == listRefusedAt &&
