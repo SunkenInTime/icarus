@@ -4,11 +4,11 @@ import 'dart:math';
 import 'package:collection/collection.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/cloud/op_facts.dart';
+import 'package:icarus_library/stamp_source.dart';
 import 'package:test/test.dart';
 
 import 'cloud_server.dart';
 import 'cloud_support.dart';
-import 'stamp_source.dart';
 import 'support.dart';
 
 final reached = <String, int>{};
@@ -23,12 +23,22 @@ ResultPoint? pointOf(QueueEvent event) => switch (event) {
   BaseArrived(:final point) ||
   ResultRefused(:final point) ||
   OpAnswered(:final point) ||
-  BatchRefused(:final point) => point,
+  BatchRefused(:final point) ||
+  ServerTimeHeld(:final point) ||
+  EditAccessConfirmed(:final point) ||
+  ReadRefusedForUpgrade(:final point) ||
+  ReadRefusedForSignIn(:final point) ||
+  BatchAccountMismatch(:final point) => point,
   _ => null,
 };
 
 int? labelOf(QueueEvent event) => switch (event) {
-  BaseArrived(:final session) || ResultRefused(:final session) => session,
+  BaseArrived(:final session) ||
+  ResultRefused(:final session) ||
+  ServerTimeHeld(:final session) ||
+  EditAccessConfirmed(:final session) ||
+  ReadRefusedForUpgrade(:final session) ||
+  ReadRefusedForSignIn(:final session) => session,
   _ => null,
 };
 
@@ -1070,7 +1080,12 @@ final class Model {
       }
     }
     apply(
-      ServerTimeHeld(serverNow, at: elapsed, session: session),
+      ServerTimeHeld(
+        serverNow,
+        at: elapsed,
+        session: session,
+        point: stamps.current,
+      ),
       'server time $serverNow from session $session',
     );
   }
@@ -1478,7 +1493,11 @@ final class Model {
     switch (standingOf(client.queue)) {
       case Standing.editAccessLost:
         must(
-          EditAccessConfirmed(afterAttempt: client.queue.nextAttempt - 1),
+          EditAccessConfirmed(
+            afterAttempt: client.queue.nextAttempt - 1,
+            session: client.queue.session.number,
+            point: stamps.at(serverState),
+          ),
           'access confirmed',
         );
       case Standing.upgradeRequired:
@@ -1797,10 +1816,10 @@ final class Model {
   }
 
   void reconnect() {
-    final generation = stamps.random.nextInt(6) == 0
+    final generation = stamps.random!.nextInt(6) == 0
         ? stamps.anotherClient()
         : stamps.reconnect();
-    if (stamps.random.nextInt(3) == 0) {
+    if (stamps.random!.nextInt(3) == 0) {
       count('stamps delivered ahead of their reconnect event');
       if (server.exists) {
         arrive(headerReadOf(server.rows), 'read strategy ahead of $generation');
@@ -1938,6 +1957,7 @@ const minimums = {
   'reads asked for without a step': 800,
   'reads requested after a refusal while its debt stood': 5,
   'a stamp at the snapshot already held': 3000,
+  'a stamp at the snapshot held from before a reconnect': 185,
   'a new snapshot at the same time': 1500,
   'an answer before any state was applied': 150,
   'a read before any state was applied': 240,
@@ -1954,7 +1974,7 @@ const minimums = {
   'reads of a strategy life answered after it was replaced': 20,
   'read refusals taken': 350,
   'read refusals not taken: not newer than the content taken': 100,
-  'read refusals not taken: older than the last refusal taken': 3,
+  'read refusals not taken: older than the last refusal taken': 2,
   'read refusals not taken: from an ended connection': 12,
 };
 

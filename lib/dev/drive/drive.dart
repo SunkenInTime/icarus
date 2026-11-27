@@ -2699,6 +2699,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log(await storeUseCloud(c, value as String));
     case 'storeSyncState':
       (await storeSyncStates(c)).forEach(_log);
+    case 'storeAnswerLostAndResent':
+      storeAnswerLostAndResent(c).forEach(_log);
     case 'storeSessionOpenings':
       storeSessionOpenings(
         c,
@@ -2709,6 +2711,10 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'waitStoreHeld':
       _log(
         await waitStoreHeld(c, Duration(seconds: (value as num).toInt())),
+      );
+    case 'waitStoreReading':
+      _log(
+        await waitStoreReading(c, Duration(seconds: (value as num).toInt())),
       );
     case 'killNow':
       _log('KILLED by the script');

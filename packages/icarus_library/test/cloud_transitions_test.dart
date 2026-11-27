@@ -394,10 +394,14 @@ final events = <String, QueueEvent Function(Client)>{
     1764000000000,
     at: Duration.zero,
     session: c.queue.session.number,
+    point: lastPoint,
   ),
   'account changed': (c) => const AccountChanged(),
-  'edit access confirmed after attempt 5': (c) =>
-      const EditAccessConfirmed(afterAttempt: 5),
+  'edit access confirmed after attempt 5': (c) => EditAccessConfirmed(
+    afterAttempt: 5,
+    session: c.queue.session.number,
+    point: tick(),
+  ),
   'user: retry': (c) => const UserRetried('x'),
   'user: keep mine, same item': (c) => UserKeptMine(
     'x',
@@ -564,6 +568,10 @@ String outcome(Client before, Step result) {
             ReportSameOrderDiffers(:final page) =>
               'reports two results at one point that differ for '
                   '${page ?? 'the page list'}',
+            ReportAccountMismatch() => 'reports another account',
+            AnswerAdmitted(:final attempt, :final opId) =>
+              'admits attempt $attempt\'s answer'
+                  '${opId == null ? '' : ' for $opId'}',
             StrategySetAside(:final count) => 'sets $count aside',
             ReportReplacedWithoutLife(:final attempt) =>
               'reports attempt $attempt replaced without a life',

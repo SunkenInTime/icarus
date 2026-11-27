@@ -237,6 +237,7 @@ final class Client {
           heldServerTime,
           at: elapsed,
           session: queue.session.number,
+          point: lastPoint,
         ),
       );
     }

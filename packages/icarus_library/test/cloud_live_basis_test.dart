@@ -30,6 +30,7 @@ void hold(Client client, int serverTime, Duration at, {int? session}) =>
         serverTime,
         at: at,
         session: session ?? client.queue.session.number,
+        point: lastPoint,
       ),
     );
 

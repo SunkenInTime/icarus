@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_results.dart';
@@ -10,6 +12,7 @@ import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/stamp_source.dart';
 
 import 'cloud_shadow_test.dart'
     show at, pageList, secondPage, serverRows, servedAccount, strategyId;
@@ -74,6 +77,7 @@ final class ReadCall {
   DateTime? at;
   String? why;
   StoreReadRole? role;
+  ResultPoint? point;
   bool answered = false;
 
   @override
@@ -132,6 +136,9 @@ int lifeOfChecked(StrategyRowSet rows, StrategyOp op) {
 const stampedWhenAnswered = ResultPoint(client: 0, connection: 0, snapshot: 0);
 
 final class FakeServer {
+  FakeServer({this.varies});
+
+  final Random? varies;
   int nextLife = firstLife + 1;
   final calls = <ServerCall>[];
   final log = <String>[];
@@ -150,18 +157,54 @@ final class FakeServer {
   DateTime Function()? clock;
   String? Function()? whyNow;
   StoreReadOutcome? Function(ReadCall call)? overrideRead;
-  int connection = 1;
-  var _snapshot = 0;
+  late final stamps = StampSource(
+    varies,
+    from: const ResultPoint(client: 1, connection: 1, snapshot: 0),
+    now: () => _nowNanos,
+  );
+  int _input = 1;
+  List<(String, StrategyRowSet)>? _state;
 
-  ResultPoint stamp() => ResultPoint(
-        client: 1,
-        connection: connection,
-        snapshot: ++_snapshot,
-        serverTime: _snapshot * 1000,
-      );
+  Map<String, int> get made => stamps.made;
+
+  int get client => stamps.client;
+
+  int get connection => stamps.connection;
+
+  set connection(int next) {
+    if (next == _input) return;
+    _input = next;
+    if (varies case final random?) {
+      random.nextInt(5) == 0 ? stamps.anotherClient() : stamps.reconnect();
+    } else {
+      stamps.reconnectTo(next);
+    }
+  }
+
+  int get _nowNanos =>
+      (clock?.call() ?? DateTime.now()).microsecondsSinceEpoch * 1000 +
+      skew * 1000000;
+
+  ResultPoint get current => stamps.current;
+
+  Object get _rowsNow {
+    final held = _state;
+    if (held != null &&
+        held.length == rows.length &&
+        held.every((entry) => identical(rows[entry.$1], entry.$2))) {
+      return held;
+    }
+    return _state = [
+      for (final MapEntry(:key, :value) in rows.entries) (key, value),
+    ];
+  }
+
+  ResultPoint stamp() => stamps.at(_rowsNow);
+
+  ResultPoint failed() => varies == null ? stamp() : stamps.answered;
 
   Future<({int client, int connection})> generation() async =>
-      (client: 1, connection: connection);
+      (client: client, connection: connection);
 
   int get applied => appliedTimes.length;
 
@@ -269,7 +312,7 @@ final class FakeServer {
             (createdAtOf(held.strategy) ?? firstLife) != call.strategyLife) {
       return StoreBatchRefusedWhole(
         BatchRefusal.strategyReplaced,
-        point: stamp(),
+        point: failed(),
         currentLife: createdAtOf(held.strategy) ?? firstLife,
       );
     }
@@ -279,12 +322,12 @@ final class FakeServer {
       case null when asked && call.unchecked.isNotEmpty:
         return StoreBatchOutsideWindow(
           'An unchecked change needs a live basis',
-          point: stamp(),
+          point: failed(),
         );
       case final basis? when basis > now || now - basis > 30000:
         return StoreBatchOutsideWindow(
           'The batch arrived too long after its live basis',
-          point: stamp(),
+          point: failed(),
         );
       case _:
         break;
@@ -313,13 +356,17 @@ final class FakeServer {
         StoreReadUnreadable(:final problem, :final point)
             when point == stampedWhenAnswered =>
           StoreReadUnreadable(problem, point: at),
+        StoreReadRefused(:final refusal, :final why, :final point)
+            when point == stampedWhenAnswered =>
+          StoreReadRefused(refusal, why, point: at),
         _ => outcome,
       };
 
   static StoreBatchOutcome _answeredAt(
     StoreBatchOutcome outcome,
-    ResultPoint at,
-  ) =>
+    ResultPoint at, {
+    required ResultPoint Function() failedAt,
+  }) =>
       switch (outcome) {
         StoreBatchAnswered(
           :final answers,
@@ -338,12 +385,15 @@ final class FakeServer {
             when point == stampedWhenAnswered =>
           StoreBatchRefusedWhole(
             refusal,
-            point: at,
+            point: failedAt(),
             currentLife: currentLife,
           ),
         StoreBatchOutsideWindow(:final why, :final point)
             when point == stampedWhenAnswered =>
-          StoreBatchOutsideWindow(why, point: at),
+          StoreBatchOutsideWindow(why, point: failedAt()),
+        StoreBatchAccountMismatch(:final why, :final point)
+            when point == stampedWhenAnswered =>
+          StoreBatchAccountMismatch(why, point: failedAt()),
         _ => outcome,
       };
 
@@ -377,8 +427,15 @@ final class FakeServer {
     final queued = _answers[strategyPublicId];
     if (queued != null && queued.isNotEmpty) {
       final answering = queued.removeAt(0)(call);
+      final held = current;
       final point = stamp();
-      return answering.then((outcome) => _answeredAt(outcome, point));
+      return answering.then(
+        (outcome) => _answeredAt(
+          outcome,
+          point,
+          failedAt: () => varies == null ? point : stamps.answeredFrom(held),
+        ),
+      );
     }
     return Future.value(applyAll(call));
   }
@@ -459,7 +516,7 @@ final class FakeServer {
     final queued = _readAnswers[call.strategyId];
     if (queued != null && queued.isNotEmpty) {
       final answering = queued.removeAt(0)(call);
-      final point = stamp();
+      final point = call.point = stamp();
       return answering.then((outcome) => _readAt(outcome, point));
     }
     if (overrideRead?.call(call) case final outcome?) {
@@ -572,7 +629,7 @@ final class RefusingEngine implements StorageEngine {
 
 Future<void> none() async {}
 
-final class _Flag {
+final class OnOff {
   var value = false;
 }
 
@@ -697,7 +754,7 @@ final class World {
   final LibraryStore store;
   final FakeServer server;
   final CloudSender sender;
-  late _Flag dropsConnectionLost;
+  late OnOff dropsConnectionLost;
   late _Slept _slept;
   late _Shows _shows;
 
@@ -778,7 +835,7 @@ final class World {
   }) {
     final inputs = startingWith ??
         (account: servedAccount, connection: 1, signIns: 1, signOuts: 0);
-    final dropsConnectionLost = _Flag();
+    final dropsConnectionLost = OnOff();
     final slept = _Slept();
     final shows = _Shows();
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
@@ -798,8 +855,8 @@ final class World {
     final fake = server ?? FakeServer();
     fake
       ..owners[strategyId] ??= servedAccount
-      ..connection = inputs.connection ?? fake.connection
       ..clock = () => start.add(async.elapsed);
+    if (inputs.connection case final connection?) fake.connection = connection;
     fake.rows[strategyId] ??= serverRows();
     final sender = CloudSender(
       store: SlowSenderStore(store!),
@@ -1178,6 +1235,19 @@ final class World {
         for (final report in sender.store.reports)
           if (report case EventsWritten(:final strategyId, :final events)
               when strategyId == strategy)
+            ...events,
+      ];
+
+  static bool isSessionEvent(QueueEvent event) =>
+      event is AppRestarted ||
+      event is AccountChanged ||
+      event is ConnectionReturned ||
+      event is ConnectionLost;
+
+  List<QueueEvent> sessionWrites([String strategy = strategyId]) => [
+        for (final report in sender.store.reports)
+          if (report case EventsWritten(:final strategyId, :final events)
+              when strategyId == strategy && events.every(isSessionEvent))
             ...events,
       ];
 

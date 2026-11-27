@@ -22,7 +22,7 @@
   {"waitSignal": "cut", "seconds": 120},
   {"storeDeletePage": 1},
   {"releaseSender": true},
-  {"wait": 50},
+  {"waitStoreReading": 300},
   {"storeSyncState": true},
   {"signal": "edited-offline"},
   {"waitSignal": "restored", "seconds": 120},
@@ -30,6 +30,9 @@
   {"waitStoreSent": 180},
   {"storeSyncState": true},
   {"wait": 3},
+  {"holdSender": true},
+  {"wait": 2},
+  {"storeAnswerLostAndResent": true},
   {"storeSessionOpenings": true},
   {"shot": "{out}/back-online.png"},
   {"exit": 1}

@@ -2,11 +2,11 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:icarus_library/icarus_library.dart';
+import 'package:icarus_library/stamp_source.dart';
 import 'package:test/test.dart';
 
 import 'cloud_server.dart' show withoutPage;
 import 'cloud_support.dart';
-import 'stamp_source.dart';
 
 typedef Items = Map<String, int?>;
 
