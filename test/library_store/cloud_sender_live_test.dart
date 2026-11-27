@@ -295,6 +295,8 @@ int revisionOnServer(World world, String element) =>
 
 int revisionInStore(World world) => world.firstElement().revision;
 
+String moved(World world) => world.firstElement().publicId;
+
 List<String> pageReads(World world, Duration from) => [
       for (final call in world.server.readCalls)
         if (call.page == pageId && call.at!.difference(start) >= from)
@@ -337,6 +339,18 @@ List<BaseArrived> listResultsWritten(World world) => [
       for (final event in world.written())
         if (event case BaseArrived(base: HeaderRead())) event,
     ];
+
+StoreReadAnswered at(StoreReadAnswered result, int snapshot) =>
+    StoreReadAnswered(
+      result.base,
+      point: ResultPoint(
+        client: result.point.client,
+        connection: result.point.connection,
+        snapshot: snapshot,
+        serverTime: result.point.serverTime,
+      ),
+      role: result.role,
+    );
 
 void main() {
   group('with the store switch on, the editor\'s page watch', () {
@@ -817,6 +831,87 @@ void main() {
             const Generation(client: 1, connection: 2),
           ),
         );
+      });
+    });
+  });
+
+  group('a delivered live result reaches the store or leaves a read owed', () {
+    test(
+        'an older callback does not replace a newer pending result: 6 then 5 '
+        'while 3 is being taken ends with 6 taken', () {
+      inWorld((world) {
+        world.sender
+          ..liveOpened(strategyId, openPage)
+          ..liveArrived(strategyId, openPage, servedAccount, livePage(world));
+        world.settle();
+        final base = world.server.stamp().snapshot;
+        world.slowStore.baseWritesWait = const Duration(seconds: 1);
+        world.teammateMoves(1);
+        world.sender.liveArrived(
+            strategyId, openPage, servedAccount, at(livePage(world), base + 3));
+        world.async.elapse(const Duration(milliseconds: 100));
+        world.teammateMoves(2);
+        final five = at(livePage(world), base + 5);
+        world.teammateMoves(3);
+        final six = at(livePage(world), base + 6);
+        world.sender
+          ..liveArrived(strategyId, openPage, servedAccount, six)
+          ..liveArrived(strategyId, openPage, servedAccount, five)
+          ..liveArrived(
+            strategyId,
+            openPage,
+            servedAccount,
+            const StoreReadLost(TransportFailure.network, 'dropped'),
+          );
+        world.settle(const Duration(seconds: 10));
+        final taken = [
+          for (final result in pageResultsWritten(world)) result.point.snapshot,
+        ];
+        expect(taken.last, base + 6);
+        expect(taken, isNot(contains(base + 5)));
+        expect(revisionInStore(world), revisionOnServer(world, moved(world)));
+      });
+    });
+
+    test(
+        'a watch closed with a result pending still gets it to the store, with '
+        'no further edit', () {
+      inWorld((world) {
+        world.sender
+          ..liveOpened(strategyId, openPage)
+          ..liveArrived(strategyId, openPage, servedAccount, livePage(world));
+        world.settle();
+        world.slowStore.baseWritesWait = const Duration(seconds: 1);
+        world.teammateMoves(1);
+        world.sender
+            .liveArrived(strategyId, openPage, servedAccount, livePage(world));
+        world.async.elapse(const Duration(milliseconds: 100));
+        world.teammateMoves(2);
+        world.sender
+          ..liveArrived(strategyId, openPage, servedAccount, livePage(world))
+          ..liveClosed(strategyId, openPage);
+        world.settle(const Duration(minutes: 1));
+        expect(revisionInStore(world), revisionOnServer(world, moved(world)));
+      });
+    });
+
+    test(
+        'a connection lookup that fails once with a result pending gets the '
+        'result to the store within the read retry timing', () {
+      inWorld((world) {
+        world.sender
+          ..liveOpened(strategyId, openPage)
+          ..liveArrived(strategyId, openPage, servedAccount, livePage(world));
+        world.settle();
+        world.server.lookup = () {
+          world.server.lookup = null;
+          throw StateError('the lookup broke');
+        };
+        world.teammateMoves(1);
+        world.sender
+            .liveArrived(strategyId, openPage, servedAccount, livePage(world));
+        world.settle(timing.readRetryAfter(1) + timing.liveGrace);
+        expect(revisionInStore(world), revisionOnServer(world, moved(world)));
       });
     });
   });

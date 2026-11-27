@@ -226,8 +226,21 @@ typedef _Planned = ({ReadOf read, _Why why});
 typedef _LiveResult = ({
   Account account,
   StoreReadOutcome outcome,
+  ResultPoint point,
   DateTime at,
 });
+
+ResultPoint? _pointOf(StoreReadOutcome outcome) => switch (outcome) {
+      StoreReadAnswered(:final point) ||
+      StoreReadRefused(:final point) ||
+      StoreReadUnreadable(:final point) =>
+        point,
+      StoreReadLost() => null,
+    };
+
+bool _isOlder(ResultPoint point, ResultPoint than) =>
+    point.generation.isBefore(than.generation) ||
+    (point.generation == than.generation && point.snapshot < than.snapshot);
 
 final class _Live {
   _Live(this.since);
@@ -235,7 +248,29 @@ final class _Live {
   DateTime since;
   var watchers = 0;
   int? deliveredOn;
-  _LiveResult? pending;
+  _LiveResult? _pending;
+  _LiveResult? taking;
+
+  _LiveResult? get pending => _pending;
+
+  bool get dropsOnReplace => _pending != null && !identical(_pending, taking);
+
+  bool offered(_LiveResult result) {
+    final held = _pending;
+    if (held != null && _isOlder(result.point, held.point)) return false;
+    _pending = result;
+    return true;
+  }
+
+  void written(_LiveResult result) {
+    if (identical(_pending, result)) _pending = null;
+  }
+
+  _LiveResult? owed() {
+    final held = _pending;
+    _pending = null;
+    return held;
+  }
 }
 
 sealed class _LiveGate {
@@ -332,8 +367,11 @@ final class CloudSender implements LiveResults {
   final _live = <(String, ReadOf), _Live>{};
   final _clockHeldByLive = <String, Set<ReadOf>>{};
   final _heldByLiveSince = <(String, ReadOf), DateTime>{};
+  final _owedPastTheWatch = <(String, ReadOf)>{};
   var liveTaken = 0;
   var liveReplaced = 0;
+  var liveOlderDropped = 0;
+  var liveOwed = 0;
   var clockWaitsOnLive = 0;
   var looks = 0;
   var wakes = 0;
@@ -589,14 +627,21 @@ final class CloudSender implements LiveResults {
     if (disposed) return;
     final live = _live[(strategyId, subject)] ??= _Live(_clock());
     if (live.watchers == 0) live.watchers = 1;
-    if (outcome is StoreReadLost) {
+    final point = _pointOf(outcome);
+    if (point == null) {
       live.deliveredOn = null;
-    } else {
-      if (live.pending != null) liveReplaced++;
-      live
-        ..pending = (account: account, outcome: outcome, at: _clock())
-        ..deliveredOn = _inputs.connection;
+      wake();
+      return;
     }
+    final replacing = live.dropsOnReplace;
+    if (live.offered(
+      (account: account, outcome: outcome, point: point, at: _clock()),
+    )) {
+      if (replacing) liveReplaced++;
+    } else {
+      liveOlderDropped++;
+    }
+    live.deliveredOn = _inputs.connection;
     wake();
   }
 
@@ -604,7 +649,26 @@ final class CloudSender implements LiveResults {
   void liveClosed(String strategyId, ReadOf subject) {
     final live = _live[(strategyId, subject)];
     if (live == null) return;
-    if (--live.watchers <= 0) _live.remove((strategyId, subject));
+    live.watchers--;
+    _forgetEnded(strategyId, subject);
+    wake();
+  }
+
+  void _forgetEnded(String strategyId, ReadOf subject) {
+    if (_live[(strategyId, subject)] case final live?
+        when live.watchers <= 0 && live.pending == null) {
+      _live.remove((strategyId, subject));
+    }
+  }
+
+  void _owe(String id, ReadOf read) {
+    final live = _live[(id, read)];
+    if (live?.owed() == null) return;
+    live!.deliveredOn = null;
+    liveOwed++;
+    _owedPastTheWatch.add((id, read));
+    _governor.written(id, read, late: true);
+    _forgetEnded(id, read);
     wake();
   }
 
@@ -612,13 +676,14 @@ final class CloudSender implements LiveResults {
       .any((entry) => entry.key.$1 == id && entry.value.pending != null);
 
   ({ReadOf read, _LiveResult result})? _nextLive(String id, Account owner) {
-    for (final MapEntry(key: (strategy, read), value: live) in _live.entries) {
+    for (final MapEntry(key: (strategy, read), value: live)
+        in _live.entries.toList()) {
       if (strategy != id) continue;
       final pending = live.pending;
       if (pending == null) continue;
-      live.pending = null;
       if (pending.account != owner) {
         _note(id, 'a live result of $read was read as another account');
+        _owe(id, read);
         continue;
       }
       return (read: read, result: pending);
@@ -628,7 +693,11 @@ final class CloudSender implements LiveResults {
 
   _LiveGate _liveGate(String id, ReadOf read, DateTime now, Snapshot snap) {
     final live = _live[(id, read)];
-    if (live == null || live.watchers <= 0) return const _NotLive();
+    if (live == null ||
+        live.watchers <= 0 ||
+        _owedPastTheWatch.contains((id, read))) {
+      return const _NotLive();
+    }
     if (live.deliveredOn case final on? when on == snap.connection) {
       return const _LiveCurrent();
     }
@@ -1301,6 +1370,7 @@ final class CloudSender implements LiveResults {
           case Answered(outcome: final fresh, started: final at):
             outcome = fresh;
             started = at;
+            _owedPastTheWatch.remove((id, read));
         }
     }
     return _answered(
@@ -1331,11 +1401,8 @@ final class CloudSender implements LiveResults {
     ReadOf read,
     _LiveResult result,
   ) async {
-    void putBack() {
-      final live = _live[(id, read)];
-      if (live != null) live.pending ??= result;
-    }
-
+    var handled = false;
+    _live[(id, read)]?.taking = result;
     final step = await _answered(
       id,
       owner,
@@ -1346,17 +1413,22 @@ final class CloudSender implements LiveResults {
       result.outcome,
       result.at,
       late: false,
-      troubled: putBack,
+      troubled: () {},
+      handled: () => handled = true,
     );
-    switch (step) {
-      case _Acted():
-        liveTaken++;
-      case _Ended():
-        break;
-      case _Skipped() || _Restart():
-        if (_live[(id, read)] case final live? when live.pending == null) {
-          live.deliveredOn = null;
-        }
+    if (_live[(id, read)] case final live?
+        when identical(live.taking, result)) {
+      live.taking = null;
+    }
+    if (step is _Ended) return step;
+    final troubled = step is _Skipped && step.why == StallExit.localTrouble;
+    if (handled) {
+      _live[(id, read)]?.written(result);
+      _forgetEnded(id, read);
+      if (step is _Acted) liveTaken++;
+      if (step is! _Acted) _live[(id, read)]?.deliveredOn = null;
+    } else if (!troubled) {
+      _owe(id, read);
     }
     return step;
   }
@@ -1372,6 +1444,7 @@ final class CloudSender implements LiveResults {
     DateTime started, {
     required bool late,
     required void Function() troubled,
+    void Function()? handled,
   }) async {
     final (:read, :why) = planned;
     final marking = switch (why) {
@@ -1409,6 +1482,9 @@ final class CloudSender implements LiveResults {
             ),
         ]);
         if (disposed) return const _Ended();
+        if (written is! WriteTroubled || written.trouble is ResultNotStored) {
+          handled?.call();
+        }
         switch (written) {
           case WriteTroubled(trouble: ResultNotStored(:final why)):
             _governor.written(id, read, late: late);
@@ -1473,6 +1549,7 @@ final class CloudSender implements LiveResults {
         notBefore.remove(id);
         return const _Acted();
       case final other:
+        handled?.call();
         return _readRefused(
           id,
           owner,
