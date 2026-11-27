@@ -141,6 +141,32 @@ void main() {
       );
     });
 
+    test('a server time that is the first stamp of a later connection sets '
+        'the basis of the session it opens, though it is lower than the time '
+        'held on the connection before', () {
+      final client = connectedOn();
+      client.must(
+        ServerTimeHeld(
+          5000,
+          at: Duration.zero,
+          session: client.queue.session.number,
+          point: pointAt(3),
+        ),
+      );
+      expect(client.queue.session.basis?.serverTime, 5000);
+      final before = client.queue.session.number;
+      client.must(
+        ServerTimeHeld(
+          3000,
+          at: const Duration(seconds: 1),
+          session: client.queue.session.number,
+          point: pointAt(1, later: 1),
+        ),
+      );
+      expect(client.queue.session.number, greaterThan(before));
+      expect(client.queue.session.basis?.serverTime, 3000);
+    });
+
     test('client 0 on a reconnect is no connection: it opens nothing, and a '
         'real reconnect after it does', () {
       final client = connectedOn();

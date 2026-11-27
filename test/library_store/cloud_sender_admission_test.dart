@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
@@ -127,6 +125,45 @@ void main() {
       expect(standingOf(world.cloud().queue), isNot(Standing.deletedOnServer));
       world.commitMove(1);
       world.settle(const Duration(minutes: 1));
+      expect(world.queueLength(), 0);
+    });
+  });
+
+  test(
+      'a batch answered while the app loses its connection, before the '
+      'answer is written, is recorded as lost and sent again under the same '
+      'op id; the server applies it once and answers the resend as applied '
+      'when first received', () {
+    inWorld((world) {
+      world.settle();
+      world.server.answerNext(strategyId, (call) async {
+        final applied = world.server.applyAll(call);
+        world.connection = null;
+        return applied;
+      });
+      world.commitMove(1);
+      world.settle(const Duration(seconds: 1));
+      expect(world.server.calls, hasLength(1));
+      expect(world.written().whereType<OpAnswered>(), isEmpty);
+      world.server.connection = 2;
+      world.connection = 2;
+      world.settle(const Duration(minutes: 1));
+      expect(
+        [for (final call in world.server.calls) call.opIds],
+        [
+          ['move-1'],
+          ['move-1'],
+        ],
+      );
+      expect(world.server.anyAppliedTwice, isFalse);
+      expect(
+        world.written().whereType<OpAnswered>().single.answer,
+        isA<NoopAnswer>().having(
+          (answer) => answer.replay,
+          'replay',
+          NoopReplay.appliedWhenFirstReceived,
+        ),
+      );
       expect(world.queueLength(), 0);
     });
   });

@@ -83,6 +83,9 @@ DateTime readDueAt(World world) => switch (world.sender.outlook(
   while (true) {
     world.async.elapse(const Duration(milliseconds: 10));
     if (world.sender.dues != dues) break;
+    if (now(world).difference(due) > const Duration(minutes: 5)) {
+      throw StateError('the sender was not due within five minutes of $due');
+    }
     expect(world.server.calls, hasLength(sends));
     expect(world.server.readCalls, hasLength(reads));
     expect(world.sender.wakes, wakes, reason: 'woken before its deadline');

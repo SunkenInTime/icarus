@@ -1442,10 +1442,11 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final session,
       :final point,
     ):
+      if (!edit.session.labels(session) || !_admitted(edit, point)) {
+        return edit.done();
+      }
       final held = edit.session.basis;
-      if (edit.session.labels(session) &&
-          _admitted(edit, point) &&
-          edit.session.connected &&
+      if (edit.session.connected &&
           (held == null || serverTime > held.serverTime)) {
         edit.session = edit.session.withConnection(
           connected: true,
