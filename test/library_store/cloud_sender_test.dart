@@ -3651,5 +3651,70 @@ void main() {
         addStrategy: false,
       );
     });
+
+    test(
+        'an answer that comes back while the connection lookup throws is not '
+        'taken: the batch is sent again and lands', () {
+      inWorld((world) {
+        world.commitMove(1);
+        world.settle();
+        world.server.onCall = (call) {
+          world.server.onCall = null;
+          world.server.lookup = () {
+            world.server.lookup = null;
+            throw StateError('the client cannot say');
+          };
+        };
+        world.commitMove(2);
+        world.settle(const Duration(minutes: 1));
+        expect(
+          world.server.log.where((line) => line == 'send move-2'),
+          hasLength(2),
+        );
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
+        'a rejected edit whose answer the queue does not admit, stamped on a '
+        'connection that has ended, does not read the stalled page list again '
+        'early', () {
+      inWorld((world) {
+        world.connection = 2;
+        world.settle();
+        world.server.overrideRead = (call) => call.page == null
+            ? const StoreReadLost(TransportFailure.network, 'lost')
+            : null;
+        world.sender.owesFreshRead(strategyId, const ReadOfList());
+        world.settle(const Duration(seconds: 40));
+        bool onList(ReadCall call) => call.page == null;
+        final stalled = world.server.readCalls.where(onList).length;
+        expect(stalled, greaterThanOrEqualTo(3));
+        world.server.answerNext(
+          strategyId,
+          (call) async => StoreBatchAnswered(
+            [
+              for (final op in call.opIds)
+                RejectedAnswer(
+                  op,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+            ],
+            complete: true,
+            point: ResultPoint(
+              client: 1,
+              connection: 1,
+              snapshot: world.server.stamp().snapshot,
+              serverTime: world.server.serverNow,
+            ),
+          ),
+        );
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 5));
+        expect(world.server.log, contains('send move-1'));
+        expect(world.server.readCalls.where(onList).length, stalled);
+      });
+    });
   });
 }
