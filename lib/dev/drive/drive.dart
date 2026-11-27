@@ -177,6 +177,7 @@ import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
+import 'package:icarus/dev/drive/drive_library_timings.dart';
 import 'package:icarus/dev/drive/drive_load_copy_cost.dart';
 import 'package:icarus/dev/drive/drive_page_take.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
@@ -2588,6 +2589,27 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _mapThenOpen(step);
     case 'cloudOpenTime':
       await _cloudOpenTime(step);
+    case 'logMemory':
+      _log(memoryLine(value as String));
+    case 'editToSaved':
+      _log(await editToSavedLine(c, runs: value as int));
+    case 'backupTime':
+      final times = <Duration>[];
+      var bytes = 0;
+      for (var run = 0; run < (value as int); run++) {
+        final into = await Directory.systemTemp.createTemp('icarus-backup-');
+        try {
+          FilePicker.platform = _FakeSaver(into.path, 'backup.zip');
+          final clock = Stopwatch()..start();
+          await StrategyImportExportService(c).exportLibrary();
+          times.add(clock.elapsed);
+          bytes = File('${into.path}${Platform.pathSeparator}backup.zip')
+              .lengthSync();
+        } finally {
+          await into.delete(recursive: true);
+        }
+      }
+      _log(backupLine(times, bytes));
     case 'openFirstFrame':
       await _openFirstFrame(step);
     case 'loadCopyCost':
