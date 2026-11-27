@@ -1826,8 +1826,11 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   if (shown.owedBy(base) case final owed? when !owed.paidBy(arrival, base)) {
     return ResultFit.older;
   }
-  if (taken == arrival.order) return ResultFit.same;
-  if (_pageFitAgainstList(shown, base, arrival) case final fit?) return fit;
+  final againstList = _pageFitAgainstList(shown, base, arrival);
+  if (taken == arrival.order) {
+    return againstList == ResultFit.older ? ResultFit.older : ResultFit.same;
+  }
+  if (againstList case final fit?) return fit;
   return switch (base) {
     HeaderRead(:final strategy) => switch ((held, createdAtOf(strategy))) {
       (_, final listed?) when listed == _refusedLife(shown.list) =>
@@ -1893,7 +1896,8 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
       return NotApplicable(edit.original, const OlderResult());
     case ResultFit.same:
       final again = edit.shown.taken(base, arrival: arrival).shown;
-      if (!again.sameContentAs(edit.shown)) {
+      if (!again.sameContentAs(edit.shown) ||
+          (base is StrategyGone && edit.strategy.presence != Presence.gone)) {
         edit.effects.add(ReportSameOrderDiffers(_subjectOf(base)));
         return edit.done();
       }

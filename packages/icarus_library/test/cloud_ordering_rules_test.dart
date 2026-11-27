@@ -431,6 +431,35 @@ void main() {
       }
     });
 
+    test('a strategy-gone at the order of a live list taken is reported and '
+        'changes nothing', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(22)));
+      final before = client.queue;
+      client.effects.clear();
+      client.must(arrivalAt(client, const StrategyGone(), pointAt(22)));
+      expect(client.effects, contains(const ReportSameOrderDiffers(null)));
+      expect(client.queue.strategy, before.strategy);
+      expect(client.queue.shown, before.shown);
+    });
+
+    test('a page-gone repeated at its own order after a newer list restored '
+        'the page is an older result', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, const PageGone('page-a'), pointAt(10)));
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(20)));
+      expect(client.queue.shown.pages, contains('page-a'));
+      client.effects.clear();
+      expect(
+        notApplicable(
+          client.step(arrivalAt(client, const PageGone('page-a'), pointAt(10))),
+        ),
+        isA<OlderResult>(),
+      );
+      expect(client.effects, isEmpty);
+      expect(client.queue.shown.pages, contains('page-a'));
+    });
+
     test('a causal repeat at the taken order pays the refusal debt it would '
         'have paid', () {
       final client = connectedOn();
