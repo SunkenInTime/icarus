@@ -34,6 +34,11 @@ PageDeleteVerdict pageDeleteVerdict(Shown shown, CheckedDelete work) {
   final listFresh = shown.listCurrentFor(page);
   final pageFresh = shown.pageResultCurrent(page);
   final listed = shown.pages.containsKey(page);
+  if (listFresh &&
+      !listed &&
+      shown.listIsNewerThan(shown.pagesSeen[page]?.at)) {
+    return const PageAlreadyGone();
+  }
   if (listFresh && pageFresh && listed == shown.goneByResult(page)) {
     return const PageResultAwaited(list: true, page: true);
   }

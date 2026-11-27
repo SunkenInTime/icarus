@@ -454,6 +454,23 @@ void main() {
     expect(client.view('del').sendable, isTrue);
   });
 
+  test('a newer list that leaves out a page read live settles a page delete '
+      'as already gone, asking for no read', () {
+    final client = connectedOn();
+    client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(5)));
+    client.must(arrivalAt(client, pageA(), pointAt(8)));
+    client.edit(pageDelete('del', 'page-a'));
+    client.must(arrivalAt(client, pageA(), pointAt(10)));
+    client.must(
+      arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(20)),
+    );
+    final entry = client.queue.entry('del') as PendingOp;
+    expect(
+      pageDeleteVerdict(client.queue.shown, entry.work as CheckedDelete),
+      isA<PageAlreadyGone>(),
+    );
+  });
+
   test('adopting a later life keeps no mark of the old one, so a page-gone '
       'of the new life at a later order removes the page it shows', () {
     final client = connectedOn();
