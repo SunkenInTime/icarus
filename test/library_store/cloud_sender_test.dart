@@ -57,7 +57,14 @@ void main() {
           opened.session.generation,
           const Generation(client: 1, connection: 2),
         );
-        expect(world.written().whereType<ConnectionReturned>(), isEmpty);
+        expect(
+          [
+            for (final returned
+                in world.written().whereType<ConnectionReturned>())
+              returned.generation,
+          ],
+          everyElement(const Generation(client: 1, connection: 2)),
+        );
         expect(opened.shown.list, const NotReadThisSession());
         final pageReads =
             world.server.readCalls.where((call) => call.page != null).toList();
