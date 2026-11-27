@@ -302,6 +302,37 @@ void main() {
   });
 
   group('a page read the list has not shown yet', () {
+    test('a page read deferred to a refused page list keeps the list '
+        'refused, with the read\'s order added to what it owes', () {
+      final client = connectedOn();
+      final rows = initialRows();
+      client.must(
+        arrivalAt(
+          client,
+          HeaderRead(
+            strategy: rows.strategy,
+            pages: const [],
+            settings: const [],
+          ),
+          pointAt(10),
+        ),
+      );
+      client.must(refusalAt(client, null, pointAt(15)));
+      client.must(arrivalAt(client, pageA(), pointAt(20)));
+      final list = client.queue.shown.list;
+      expect(list, isA<ReadRefused>());
+      expect(
+        (list as ReadRefused).since.paidBy(
+          Arrival(
+            order: client.queue.session.orderOf(pointAt(19)),
+            point: pointAt(19),
+          ),
+          null,
+        ),
+        isFalse,
+      );
+    });
+
     test('owes a list at its own order, so a list between two deferred page '
         'reads, missing the later page, is not current', () {
       final client = connectedOn();

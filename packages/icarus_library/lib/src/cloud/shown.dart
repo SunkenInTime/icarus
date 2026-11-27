@@ -1601,6 +1601,24 @@ final class Shown {
   Shown owingList(PaidBy since) =>
       _with(list: _owed(list, since, unlessLife: _refusedLifeOf(list)));
 
+  Shown owingListAlso(PaidBy since) => switch (list) {
+    ReadRefused(
+      :final problem,
+      :final unlessLife,
+      :final namedLife,
+      since: final held,
+    ) =>
+      _with(
+        list: ReadRefused(
+          problem,
+          unlessLife: unlessLife,
+          namedLife: namedLife,
+          since: both(held, since),
+        ),
+      ),
+    _ => owingList(since),
+  };
+
   Shown owingListPast(int? life, PaidBy since, {int? named}) => _with(
     list: _owed(
       list,
