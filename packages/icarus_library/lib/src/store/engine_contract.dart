@@ -599,6 +599,30 @@ final List<EngineCheck> engineContract = [
     _sameList(_done(await lease.entries('b', ''), 'entries'), [], 'empty');
     await harness.close(engine);
   }),
+  _check('answers listings asked together each as if asked alone', (
+    harness,
+  ) async {
+    final engine = await harness.open();
+    final lease = await _lease(engine);
+    final areas = [for (var i = 0; i < 20; i++) 'a$i'];
+    for (final area in areas) {
+      await _put(lease, area, {'k1': '$area-1', 'k2': '$area-2'}, 'write');
+    }
+    final together = await Future.wait([
+      for (final area in areas) lease.entries(area, ''),
+    ]);
+    for (final (index, area) in areas.indexed) {
+      _sameList(
+        [
+          for (final (:key, :value) in _done(together[index], 'entries'))
+            '$key=$value',
+        ],
+        ['k1=$area-1', 'k2=$area-2'],
+        'entries of $area asked together',
+      );
+    }
+    await harness.close(engine);
+  }),
   _check('a delete removes only the names it gives', (harness) async {
     final engine = await harness.open();
     final lease = await _lease(engine);

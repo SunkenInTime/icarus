@@ -157,6 +157,10 @@ Future<_Read> _readLibrary(LibraryStore store) async {
   if (list.unreadableStrategies case [final first, ...]) {
     return _ReadNot('a strategy cannot be read: ${first.ref}');
   }
+  await store.readAhead([
+    for (final summary in list.strategies)
+      if (summary.sync is KeptHere) summary.publicId,
+  ]);
   final strategies = <String, StrategyData>{};
   for (final summary in list.strategies) {
     if (summary.sync is! KeptHere) continue;
