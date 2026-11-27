@@ -175,6 +175,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
               child: SizedBox(
                 height: 40,
                 child: NumericDragInput(
+                  key: const ValueKey('zone-length'),
                   value: _rectLengthMeters,
                   onChanged: (v) => setState(() => _rectLengthMeters = v),
                   min: 1,
@@ -189,6 +190,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
               child: SizedBox(
                 height: 40,
                 child: NumericDragInput(
+                  key: const ValueKey('zone-width'),
                   value: _rectWidthMeters,
                   onChanged: (v) => setState(() => _rectWidthMeters = v),
                   min: 0.5,

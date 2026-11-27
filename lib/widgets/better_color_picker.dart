@@ -833,6 +833,7 @@ class _PickerControls extends material.StatelessWidget {
       _GroupedFieldData(
         width: 104,
         builder: (scaledWidth, index, length) => _PickerFieldFrame(
+          key: const material.ValueKey('color-picker-hex'),
           width: scaledWidth,
           height: fieldHeight,
           fieldRadius: fieldRadius,
@@ -990,6 +991,7 @@ class _ModeField extends material.StatelessWidget {
       groupIndex: groupIndex,
       groupLength: groupLength,
       child: ShadSelect<BetterColorPickerMode>(
+        key: const material.ValueKey('color-picker-mode'),
         initialValue: value,
         minWidth: width,
         maxWidth: width,
@@ -1013,6 +1015,7 @@ class _ModeField extends material.StatelessWidget {
         options: [
           for (final mode in BetterColorPickerMode.values)
             ShadOption(
+              key: material.ValueKey('color-picker-mode-${mode.name}'),
               value: mode,
               child: material.Text(_modeLabel(mode)),
             ),
@@ -1029,6 +1032,7 @@ class _ModeField extends material.StatelessWidget {
 
 class _PickerFieldFrame extends material.StatelessWidget {
   const _PickerFieldFrame({
+    super.key,
     required this.width,
     required this.height,
     required this.fieldRadius,
