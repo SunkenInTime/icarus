@@ -1422,5 +1422,6 @@
   "libraryLeftBehindBody": "これらは新しいライブラリに移せなかったため、今のライブラリには表示されません。このコンピューターの古いライブラリ（{folder}）にそのまま保存されています。",
   "libraryLeftBehindFolder": "フォルダー: {name}",
   "libraryNotOpenedTitle": "ライブラリを開けませんでした",
-  "libraryNotOpenedBody": "何も変更されていません。作戦はこのコンピューターの {folder} に保存されたままです。"
+  "libraryNotOpenedBody": "何も変更されていません。作戦はこのコンピューターの {folder} に保存されたままです。",
+  "libraryNotOpenedBanner": "このコンピューターのライブラリを開けませんでした。何も変更されていません。"
 }

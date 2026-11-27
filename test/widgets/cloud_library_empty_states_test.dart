@@ -24,6 +24,8 @@ import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
+import 'package:icarus/library_store/library_migration_start.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
@@ -276,6 +278,85 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  group('when the library on this computer could not be opened', () {
+    final notServed = LibraryNotServed(
+      why: 'the copy stopped',
+      oldLibraryFolder: '/home/me/icarus',
+      tryAgain: () async {},
+    );
+    final overrides = [
+      libraryOnStoreProvider.overrideWith((ref) => notServed),
+    ];
+    setUp(() => LocalLibrary.source = const LibraryNotOpened());
+    tearDown(() => LocalLibrary.source = const LibraryInHive());
+
+    testWidgets(
+        'the cloud library still shows at the root, under a banner about the '
+        'library on this computer', (tester) async {
+      await tester.pumpWidget(
+        _cloudApp(
+          FolderContent(onCreateStrategy: () {}),
+          strategies: Stream.value([
+            (
+              strategy: _strategy('cloud-plan', 'Cloud Plan'),
+              revision: 1,
+              role: 'owner',
+              attackLabel: 'Attack',
+              agentTypes: const [],
+            ),
+          ]),
+          extraOverrides: overrides,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cloud Plan'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('library-not-opened-banner')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('library-not-opened')), findsNothing);
+    });
+
+    testWidgets('inside a cloud folder the cloud folder shows', (tester) async {
+      await tester.pumpWidget(
+        _cloudApp(
+          FolderContent(
+            folder: Folder(
+              name: 'Cloud Folder',
+              id: 'cloud-folder',
+              dateCreated: DateTime(2026, 9, 1),
+            ),
+            onCreateStrategy: () {},
+          ),
+          extraOverrides: overrides,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('library-not-opened')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('library-not-opened-banner')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+        'with nothing in the cloud either, the root says the library could '
+        'not be opened', (tester) async {
+      await tester.pumpWidget(
+        _cloudApp(
+          FolderContent(onCreateStrategy: () {}),
+          extraOverrides: overrides,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('library-not-opened')), findsOneWidget);
+      expect(find.text("Your library couldn't be opened"), findsOneWidget);
+    });
   });
 }
 

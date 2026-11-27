@@ -6695,5 +6695,9 @@
         "example": "C:\\Users\\you\\AppData\\Roaming\\icarus"
       }
     }
+  },
+  "libraryNotOpenedBanner": "Your library on this computer couldn't be opened. Nothing in it was changed.",
+  "@libraryNotOpenedBanner": {
+    "description": "Banner above the cloud library when the library on this computer could not be opened from its new storage."
   }
 }
