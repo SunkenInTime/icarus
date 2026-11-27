@@ -137,6 +137,25 @@ void main() {
       expect(client.queue.shown.settings, isNot(contains('page-a')));
     });
 
+    test('a list that does not bring a page back raises no highest version '
+        'for it', () {
+      final client = connectedOn();
+      final held = client.queue.shown.highest[const PageTarget('page-a')];
+      final renamed = withOp(
+        initialRows(),
+        const PagePatchOp(
+          opId: 't',
+          pagePublicId: 'page-a',
+          expectedPageRevision: 1,
+          name: 'Theirs',
+        ),
+      );
+      client.must(arrivalAt(client, const PageGone('page-a'), pointAt(5)));
+      client.must(arrivalAt(client, headerReadOf(renamed), pointAt(4)));
+      expect(client.queue.shown.pages, isNot(contains('page-a')));
+      expect(client.queue.shown.highest[const PageTarget('page-a')], held);
+    });
+
     test('lists either side of a page-gone, then a page read and a newer '
         'list', () {
       final client = connectedOn();

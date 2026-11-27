@@ -1118,10 +1118,11 @@ final class Shown {
         highest: _raised(highest, {
           const StrategyTarget(): ?versionOfRow(strategyRow),
           for (final page in listed)
-            if (!_isTrashed(page))
+            if (!_isTrashed(page) && decides[page.publicId]!)
               PageTarget(page.publicId): ?versionOfRow(page),
           for (final row in settings)
-            SettingsTarget(row.pagePublicId): ?versionOfRow(row),
+            if (remaining.contains(row.pagePublicId))
+              SettingsTarget(row.pagePublicId): ?versionOfRow(row),
         }),
         strategy: _strategyRow(strategyRow, listed),
         pages: nextPages,
