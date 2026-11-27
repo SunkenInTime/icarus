@@ -81,18 +81,14 @@ Future<void> readServer(
   }
 }
 
-Future<ReadAsked> askedIn(LibraryStore store) async =>
-    askRead((await syncOf(store)).queue);
-
 BaseArrived arrivedAs(
   ArrivedBase base, {
   required int session,
-  required ReadAsked asked,
+  required ResultPoint asked,
 }) => BaseArrived(
   base,
   session: session,
-  point: asked.point,
-  requestedAt: asked.requestedAt,
+  point: asked,
 );
 
 Future<BaseArrived> arrivalIn(LibraryStore store, ArrivedBase base) async {
@@ -101,7 +97,6 @@ Future<BaseArrived> arrivalIn(LibraryStore store, ArrivedBase base) async {
     base,
     session: session.number,
     point: tick(),
-    requestedAt: session.sequence,
   );
 }
 
@@ -116,7 +111,6 @@ Future<ResultRefused> readRefusedIn(
     problem: problem,
     session: session.number,
     point: tick(),
-    requestedAt: session.sequence,
   );
 }
 

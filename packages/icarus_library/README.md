@@ -2019,11 +2019,13 @@ the record's life are set aside; a list of any life before the named one is
 dropped and the list stays owed. A later life is adopted because lives are
 creation times and only grow: it is a replacement made after the refusal.
 
-A refusal that names no life (a server from before #772) keeps the earlier way
-out: a page list of an earlier life than the record's is dropped, except after a
-`STRATEGY_REPLACED` for the record's own life, when the next list read after the
-refusal is adopted if it shows a different life (a list showing the very life
-just refused is dropped).
+A refusal that names no life (a server from before #772) is an error answer,
+stamped before the server's check, so on its own connection only content pays
+it: a page list of a later life than the one the record holds. A later
+connection or session pays it too, and then a page list of an earlier life than
+the record's is dropped, except after a `STRATEGY_REPLACED` for the record's own
+life, when it is adopted if it shows a different life (a list showing the very
+life just refused is dropped).
 
 Two limits, neither reached today:
 - A delayed repeat of an earlier `STRATEGY_REPLACED` answer would overwrite a

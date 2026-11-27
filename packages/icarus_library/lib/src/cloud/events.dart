@@ -340,14 +340,12 @@ final class ResultRefused extends QueueEvent {
     required this.problem,
     required this.session,
     required this.point,
-    this.requestedAt,
   });
 
   final String? page;
   final String problem;
   final int session;
   final ResultPoint point;
-  final int? requestedAt;
 }
 
 final class StampedRead<T extends ArrivedBase> {
@@ -358,17 +356,11 @@ final class StampedRead<T extends ArrivedBase> {
 }
 
 final class BaseArrived extends QueueEvent {
-  const BaseArrived(
-    this.base, {
-    required this.session,
-    required this.point,
-    this.requestedAt,
-  });
+  const BaseArrived(this.base, {required this.session, required this.point});
 
   final ArrivedBase base;
   final int session;
   final ResultPoint point;
-  final int? requestedAt;
 }
 
 final class EditOfAnotherLife extends QueueEvent {

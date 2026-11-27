@@ -89,6 +89,19 @@ final class Server {
     );
   }
 
+  void purgeTombstone(String elementPublicId) {
+    rows = StrategyRowSet(
+      strategy: rows.strategy,
+      pages: rows.pages,
+      settings: rows.settings,
+      elements: [
+        for (final row in rows.elements)
+          if (row is! DeletedElement || row.publicId != elementPublicId) row,
+      ],
+      lineupGroups: rows.lineupGroups,
+    );
+  }
+
   void create() {
     final life = nextLife++;
     rows = StrategyRowSet(

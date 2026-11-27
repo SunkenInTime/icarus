@@ -384,7 +384,7 @@ void main() {
     final rowA = AfterRefusal(
       session: 3,
       point: const ResultPoint(client: testClient, connection: 1, snapshot: 5),
-      step: 4,
+      visibleAt: true,
       evidence: const RowAtLeast(
         ElementTarget('e1'),
         life: fixtureLife,
@@ -394,7 +394,7 @@ void main() {
     final rowB = AfterRefusal(
       session: 3,
       point: const ResultPoint(client: testClient, connection: 1, snapshot: 6),
-      step: 5,
+      visibleAt: true,
       evidence: const RowAtLeast(
         ElementTarget('e2'),
         life: fixtureLife,
@@ -415,7 +415,7 @@ void main() {
           .owingPage('page-a', rowB);
       final since = (shown.pageRead('page-a') as ReadOwed).since;
       expect(since, isA<AllOf>());
-      final stale = arrivalOf(orderAt(7));
+      final stale = arrivalOf(orderAt(4));
       expect(since.paidBy(stale, showing(e1: 3, e2: 1)), isFalse);
       expect(since.paidBy(stale, showing(e1: 1, e2: 3)), isFalse);
       expect(since.paidBy(stale, showing(e1: 3, e2: 3)), isTrue);
@@ -495,14 +495,13 @@ void main() {
               snapshot: 5,
               serverTime: 7,
             ),
-            step: 4,
             evidence: const StrategyLifeAtLeast(fixtureLife),
           ),
         );
     const fixture =
         '{"allOf":[{"session":3,"client":1,"snapshot":9},'
         '{"afterRefusal":{"session":3,"client":1,"connection":1,'
-        '"snapshot":5,"time":"7","step":4,'
+        '"snapshot":5,"time":"7",'
         '"evidence":{"strategyLife":$fixtureLife}}}]}';
 
     test('is written as allOf', () {

@@ -124,7 +124,7 @@ typedef HeldResult = ({
   StoreReadOutcome outcome,
   DateTime started,
   ReadsUnder under,
-  ({int? requestedAt, int session})? read,
+  int? readIn,
 });
 
 sealed class Issued {

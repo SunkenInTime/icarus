@@ -301,7 +301,6 @@ void main() {
             world.server.headerOf(strategyId),
             session: world.cloud().queue.session.number,
             point: world.server.stamp(),
-            requestedAt: world.cloud().queue.session.sequence,
           ),
         ]).then((value) => recorded = value);
         world.async.flushMicrotasks();

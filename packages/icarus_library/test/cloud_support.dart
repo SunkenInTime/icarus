@@ -41,11 +41,6 @@ ResultPoint get lastPoint => ResultPoint(
   serverTime: _snapshot * 1000,
 );
 
-typedef ReadAsked = ({ResultPoint point, int requestedAt});
-
-ReadAsked askRead(CloudQueue queue) =>
-    (point: tick(), requestedAt: queue.session.sequence);
-
 ConnectionReturned reconnected() => ConnectionReturned(
   Generation(client: testClient, connection: ++_connection),
 );
@@ -318,12 +313,11 @@ final class Client {
   void arrive(ArrivedBase base, {ResultPoint? at}) =>
       must(arrival(base, at: at));
 
-  BaseArrived arrival(ArrivedBase base, {ResultPoint? at, int? requestedAt}) =>
+  BaseArrived arrival(ArrivedBase base, {ResultPoint? at}) =>
       BaseArrived(
         base,
         session: queue.session.number,
         point: at ?? tick(),
-        requestedAt: requestedAt ?? queue.session.sequence,
       );
 
   ResultRefused readRefused(String? page, String problem) => ResultRefused(
@@ -331,7 +325,6 @@ final class Client {
     problem: problem,
     session: queue.session.number,
     point: tick(),
-    requestedAt: queue.session.sequence,
   );
 
   void read(StrategyRowSet server, {Iterable<String>? pages}) {

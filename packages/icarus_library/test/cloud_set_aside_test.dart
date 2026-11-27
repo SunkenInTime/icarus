@@ -69,7 +69,6 @@ void main() {
           headerReadOf(replaced(initialRows())),
           session: before.session.number,
           point: tick(),
-          requestedAt: before.session.sequence,
         ),
         now: client.at,
       );
@@ -122,7 +121,6 @@ void main() {
             ),
             session: client.queue.session.number,
             point: tick(),
-            requestedAt: client.queue.session.sequence,
           ),
         ),
         isA<NotApplicable>(),
@@ -145,7 +143,6 @@ void main() {
             headerReadOf(initialRows()),
             session: client.queue.session.number,
             point: tick(),
-            requestedAt: client.queue.session.sequence,
           ),
         ),
         isA<NotApplicable>(),

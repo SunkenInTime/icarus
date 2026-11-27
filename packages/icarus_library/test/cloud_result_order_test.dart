@@ -84,7 +84,12 @@ void main() {
       client.arrive(pageReadOf(replaced(initialRows()), 'page-a'));
       final attempt = client.claim(['move']);
       client.must(
-        BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
+        BatchRefused(
+          attempt,
+          BatchRefusal.strategyReplaced,
+          currentLife: strategyLife,
+          point: tick(),
+        ),
       );
       client.arrive(headerReadOf(initialRows()));
       expect(client.queue.shown.strategy?.life, strategyLife);
@@ -227,15 +232,107 @@ void main() {
     });
   });
 
-  group('a refusal is paid by content, a later session, or a read asked for '
-      'after it', () {
-    test('after a STRATEGY_REPLACED that names no life, a list requested '
-        'before the refusal pays nothing, one requested after it does, and '
-        'the missing life is reported', () {
+  group('a row refusal is paid by a result at or after its snapshot on its '
+      'connection, or by a later connection or session', () {
+    void refuseRow(Client client, ResultPoint at) {
+      client.edit(movePatch('move'));
+      final attempt = client.claim(['move']);
+      client.must(
+        OpAnswered(
+          attempt,
+          const RejectedAnswer(
+            'move',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+          point: at,
+        ),
+      );
+      expect(
+        (client.queue.shown.pageRead('page-a') as ReadOwed).since,
+        isA<AfterRefusal>().having(
+          (owed) => owed.visibleAt,
+          'visible at',
+          isTrue,
+        ),
+      );
+    }
+
+    PageRead pageA() => pageReadOf(initialRows(), 'page-a') as PageRead;
+
+    test('a page result on the same connection at the refusal\'s snapshot '
+        'pays it, and one after it does too', () {
+      for (final after in [false, true]) {
+        final client = Client();
+        final refused = tick();
+        refuseRow(client, refused);
+        client.arrive(pageA(), at: after ? tick() : refused);
+        expect(
+          client.queue.shown.pageRead('page-a'),
+          const ReadThisSession(),
+          reason: after ? 'after' : 'at',
+        );
+      }
+    });
+
+    test('a page result on the same connection before the refusal\'s '
+        'snapshot does not pay it', () {
+      final client = Client();
+      final before = tick();
+      refuseRow(client, tick());
+      expect(
+        notApplicable(client.step(client.arrival(pageA(), at: before))),
+        isA<OlderResult>(),
+      );
+      expect(client.queue.shown.pageRead('page-a'), isA<ReadOwed>());
+      expect(client.view('move').state, isA<NeedsUser>());
+    });
+
+    test('a result from a different connection with a lower generation does '
+        'not pay it', () {
+      final client = Client();
+      client.must(reconnected());
+      final earlier = tick();
+      client.must(reconnected());
+      final refused = tick();
+      expect(earlier.generation.isBefore(refused.generation), isTrue);
+      refuseRow(client, refused);
+      final lower = ResultPoint(
+        client: earlier.client,
+        connection: earlier.connection,
+        snapshot: refused.snapshot + 1,
+        serverTime: refused.serverTime,
+      );
+      expect(
+        notApplicable(client.step(client.arrival(pageA(), at: lower))),
+        isA<FromAnEndedSession>(),
+      );
+      expect(client.queue.shown.pageRead('page-a'), isA<ReadOwed>());
+    });
+
+    test('any result of a later connection or a later session pays it', () {
+      final onLater = Client();
+      refuseRow(onLater, tick());
+      onLater.arrive(pageA(), at: onNextConnection());
+      expect(onLater.queue.shown.pageRead('page-a'), const ReadThisSession());
+      final restarted = Client();
+      refuseRow(restarted, tick());
+      final refusedIn = restarted.queue.session.number;
+      restarted.must(AppRestarted(build: build));
+      expect(restarted.queue.session.number, greaterThan(refusedIn));
+      restarted.arrive(pageA());
+      expect(restarted.queue.shown.pageRead('page-a'), const ReadThisSession());
+    });
+  });
+
+  group('a whole-batch refusal is paid by content, a later connection or a '
+      'later session', () {
+    test('after a STRATEGY_REPLACED that names no life, a list of the life '
+        'held pays nothing though it is later on the same connection, a list '
+        'of a later life pays it, and the missing life is reported', () {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      final requestedBefore = client.queue.session.sequence;
       final refused = client.step(
         BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
       );
@@ -244,24 +341,50 @@ void main() {
         contains(ReportReplacedWithoutLife(attempt)),
       );
       client.queue = refused.queue;
-      final early = client.step(
-        client.arrival(
-          headerReadOf(replaced(initialRows())),
-          requestedAt: requestedBefore,
-        ),
-      );
-      expect(notApplicable(early), isA<OlderResult>());
+      client.step(client.arrival(headerReadOf(initialRows())));
+      expect(client.queue.shown.list, isA<ReadOwed>());
+      expect(client.queue.shown.strategy?.life, strategyLife);
+      expect(setAsideIds(client.queue), isEmpty);
       client.arrive(headerReadOf(replaced(initialRows())));
+      expect(client.queue.shown.list, const ReadThisSession());
       expect(client.queue.shown.strategy?.life, laterLife);
       expect(setAsideIds(client.queue), ['move']);
     });
 
-    test('a list showing the life the refusal named pays it, though it was '
-        'requested before the refusal', () {
+    test('after a STRATEGY_REPLACED, an answer that the strategy is gone '
+        'pays it on the same connection, and the strategy shows as deleted on '
+        'the server', () {
+      for (final named in [null, laterLife]) {
+        final client = Client();
+        client.edit(movePatch('move'));
+        final attempt = client.claim(['move']);
+        client.must(
+          BatchRefused(
+            attempt,
+            BatchRefusal.strategyReplaced,
+            point: tick(),
+            currentLife: named,
+          ),
+        );
+        expect(client.queue.shown.list, isA<ReadOwed>(), reason: '$named');
+        client.arrive(const StrategyGone());
+        expect(
+          client.queue.shown.list,
+          const ReadThisSession(),
+          reason: '$named',
+        );
+        expect(
+          standingOf(client.queue),
+          Standing.deletedOnServer,
+          reason: '$named',
+        );
+      }
+    });
+
+    test('a list showing the life the refusal named pays it', () {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      final requestedBefore = client.queue.session.sequence;
       client.must(
         BatchRefused(
           attempt,
@@ -270,12 +393,7 @@ void main() {
           point: tick(),
         ),
       );
-      client.must(
-        client.arrival(
-          headerReadOf(replaced(initialRows())),
-          requestedAt: requestedBefore,
-        ),
-      );
+      client.must(client.arrival(headerReadOf(replaced(initialRows()))));
       expect(client.queue.shown.strategy?.life, laterLife);
     });
 
@@ -290,31 +408,20 @@ void main() {
         client.arrival(
           headerReadOf(replaced(initialRows())),
           at: onNextConnection(),
-          requestedAt: -1,
         ),
       );
       expect(client.queue.shown.strategy?.life, laterLife);
     });
 
-    test('a refused read leaves a refusal debt as it was, whether or not it '
-        'would have paid it', () {
+    test('a refused read leaves a whole-batch refusal debt as it was', () {
       final client = Client();
       client.edit(movePatch('move'));
       final attempt = client.claim(['move']);
-      final requestedBefore = client.queue.session.sequence;
       client.must(
         BatchRefused(attempt, BatchRefusal.strategyReplaced, point: tick()),
       );
       final owed = (client.queue.shown.list as ReadOwed).since;
-      client.must(
-        ResultRefused(
-          page: null,
-          problem: 'unreadable',
-          session: client.queue.session.number,
-          point: tick(),
-          requestedAt: requestedBefore,
-        ),
-      );
+      client.must(client.readRefused(null, 'unreadable'));
       expect((client.queue.shown.list as ReadRefused).since, owed);
       client.must(client.readRefused(null, 'unreadable'));
       expect((client.queue.shown.list as ReadRefused).since, owed);
@@ -419,7 +526,7 @@ void main() {
             snapshot: 17,
             serverTime: nanos,
           ),
-          step: 5,
+          visibleAt: true,
         );
         expect(readBack(ReadOwed(since: refusal)), ReadOwed(since: refusal));
       },
@@ -553,7 +660,7 @@ void main() {
           snapshot: 17,
           serverTime: 1700,
         ),
-        step: 5,
+        visibleAt: true,
         evidence: RowAtLeast(ElementTarget('e1'), life: 12, revision: 4),
       );
       expect(
@@ -563,7 +670,6 @@ void main() {
       const named = AfterRefusal(
         session: 4,
         point: ResultPoint(client: 2, connection: 3, snapshot: 17),
-        step: 5,
         evidence: StrategyLifeAtLeast(laterLife),
       );
       expect(

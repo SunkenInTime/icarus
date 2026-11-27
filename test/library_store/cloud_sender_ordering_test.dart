@@ -135,10 +135,9 @@ void main() {
   });
 
   test(
-      'a page read asked for after a refusal, while an earlier read of the '
-      'page timed out unanswered on this connection, does not pay the '
-      'refusal, nor does any later read on that connection, since the native '
-      'read may still be running; a read on the next connection does', () {
+      'a page read after a row_replaced refusal pays it on the same '
+      'connection, though an earlier read of the page timed out unanswered '
+      'there', () {
     inWorld((world) {
       world.settle();
       world.server.answerReadNext(
@@ -162,63 +161,7 @@ void main() {
         [for (final call in world.server.readCalls.skip(reads)) '$call'],
         ['page $pageId'],
       );
-      expect(world.cloud().queue.shown.pageRead(pageId), isA<ReadOwed>());
-      expect(world.written().whereType<BaseArrived>().last.requestedAt, isNull);
-      final asked = world.written().whereType<BaseArrived>().length;
-      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
-      world.settle(const Duration(seconds: 10));
-      final later = world.written().whereType<BaseArrived>().skip(asked);
-      expect(later, isNotEmpty);
-      expect(
-          [for (final read in later) read.requestedAt], everyElement(isNull));
-      expect(isDebt(world.cloud().queue.shown.pageRead(pageId)), isTrue);
-      world
-        ..connection = null
-        ..connection = 2;
-      world.server.connection = 2;
-      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
-      world.settle(const Duration(seconds: 10));
-      expect(
-        world.cloud().queue.shown.pageRead(pageId),
-        const ReadThisSession(),
-      );
-    });
-  });
-
-  test(
-      'a page read that timed out after the client moved to connection 2, '
-      'with the app hearing of the move only later, keeps later reads on '
-      'connection 2 from paying a refusal; a read on connection 3 pays it', () {
-    inWorld((world) {
-      world.settle();
-      world.server.answerReadNext(strategyId, (call) {
-        world.server.connection = 2;
-        return Completer<StoreReadOutcome>().future;
-      });
-      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
-      world.settle(const Duration(seconds: 1));
-      expect(world.server.readCalls.last.answered, isFalse);
-      world.settle(timing.giveUpAfter);
       expect(world.connection, 1);
-      world.connection = 2;
-      world.settle();
-      final reads = world.server.readCalls.length;
-      world.server.answerNext(strategyId, rowReplaced);
-      world.commitMove(1);
-      while (world.server.readCalls.length == reads) {
-        world.settle(const Duration(milliseconds: 50));
-      }
-      world.settle(const Duration(seconds: 10));
-      expect(isDebt(world.cloud().queue.shown.pageRead(pageId)), isTrue);
-      expect(
-        world.written().whereType<BaseArrived>().last.requestedAt,
-        isNull,
-      );
-      world
-        ..connection = null
-        ..connection = 3;
-      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
-      world.settle(const Duration(seconds: 10));
       expect(
         world.cloud().queue.shown.pageRead(pageId),
         const ReadThisSession(),

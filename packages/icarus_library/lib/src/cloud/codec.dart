@@ -1129,25 +1129,31 @@ Object? _debtToJson(PaidBy debt) => switch (debt) {
   },
   ResultAtOrAfter(:final order) => _startToJson(order),
   AfterAnswer() => {'afterAnswer': _answerToJson(debt)},
-  AfterRefusal(:final session, :final point, :final step, :final evidence) => {
-    'afterRefusal': {
-      'session': session,
-      'client': point.client,
-      'connection': point.connection,
-      'snapshot': point.snapshot,
-      if (point.serverTime case final time?) 'time': _timeToJson(time),
-      'step': step,
-      'evidence': ?switch (evidence) {
-        RowAtLeast(:final target, :final life, :final revision) => {
-          'row': _targetKey(target),
-          'life': ?life,
-          'revision': revision,
+  AfterRefusal(
+    :final session,
+    :final point,
+    :final visibleAt,
+    :final evidence,
+  ) =>
+    {
+      'afterRefusal': {
+        'session': session,
+        'client': point.client,
+        'connection': point.connection,
+        'snapshot': point.snapshot,
+        if (point.serverTime case final time?) 'time': _timeToJson(time),
+        if (visibleAt) 'visibleAt': true,
+        'evidence': ?switch (evidence) {
+          RowAtLeast(:final target, :final life, :final revision) => {
+            'row': _targetKey(target),
+            'life': ?life,
+            'revision': revision,
+          },
+          StrategyLifeAtLeast(:final life) => {'strategyLife': life},
+          null => null,
         },
-        StrategyLifeAtLeast(:final life) => {'strategyLife': life},
-        null => null,
       },
     },
-  },
 };
 
 PaidBy? _debtFrom(Object? raw) => switch (raw) {
@@ -1174,7 +1180,7 @@ const _refusalKeys = {
   'connection',
   'snapshot',
   'time',
-  'step',
+  'visibleAt',
   'evidence',
 };
 
@@ -1184,9 +1190,9 @@ AfterRefusal? _refusalFrom(Map<Object?, Object?> raw) => switch (raw) {
     'client': final num client,
     'connection': final num connection,
     'snapshot': final num snapshot,
-    'step': final num step,
   }
-      when [session, client, connection, snapshot, step].every(_countable) &&
+      when [session, client, connection, snapshot].every(_countable) &&
+          (raw['visibleAt'] == null || raw['visibleAt'] == true) &&
           raw.keys.every(_refusalKeys.contains) &&
           (raw['time'] == null || _timeFrom(raw['time']) != null) &&
           (!raw.containsKey('evidence') ||
@@ -1199,7 +1205,7 @@ AfterRefusal? _refusalFrom(Map<Object?, Object?> raw) => switch (raw) {
         snapshot: snapshot.toInt(),
         serverTime: _timeFrom(raw['time']),
       ),
-      step: step.toInt(),
+      visibleAt: raw['visibleAt'] == true,
       evidence: raw.containsKey('evidence')
           ? _evidenceFrom(raw['evidence'])
           : null,

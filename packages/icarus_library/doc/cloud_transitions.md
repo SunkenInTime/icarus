@@ -104,7 +104,7 @@ Starts as: waiting, behind first (sameRow).
 | attempt 1 refused whole: editAccessRemoved | first: waiting; standing editAccessLost; admits attempt 1's answer |
 | attempt 1 refused whole: strategyDeleted | first: waiting; standing deletedOnServer; admits attempt 1's answer |
 | attempt 1 refused whole: uncheckedTooLate | first: waiting; admits attempt 1's answer |
-| attempt 1 refused whole: strategyReplaced | first: waiting, awaiting a result for the page list; x: waiting, awaiting a result for the page list, behind first (sameRow); page list owed by a list of another life than 1767322800000, read after the refusal; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused whole: strategyReplaced | first: waiting, awaiting a result for the page list; x: waiting, awaiting a result for the page list, behind first (sameRow); page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; admits attempt 1's answer; reports attempt 1 replaced without a life |
 | app restarted, same build | first: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | first: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -199,7 +199,7 @@ Does not apply: claimed; claimed under another client id; attempt 1 released; at
 
 ## refused whole as STRATEGY_REPLACED, waiting for a page list of a later strategy life
 
-Starts as: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal.
+Starts as: waiting, awaiting a result for the page list; page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session.
 
 | Event | Result |
 | --- | --- |
@@ -234,12 +234,11 @@ Starts as: waiting, awaiting a result for the page list; page list owed by a lis
 | result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | page-b not read this session |
 | result: strategy gone | x: waiting; standing deletedOnServer; page list read this session |
-| result: page list the store would not keep | page list refused: ResultWithoutLife(page-a), owed by a list of another life than 1767322800000, read after the refusal |
-| result: page-a of another life | page list owed by a list of another life than 1767322800000, read after the refusal; defers page-a for the page list |
-| result: page list of an earlier strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
+| result: page list the store would not keep | page list refused: ResultWithoutLife(page-a), owed by a list of a later life than 1767322800000, or of another life from a later connection or session |
+| result: page-a of another life | page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; user: discard what was set aside.
+Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## set aside after the strategy was replaced
 
@@ -298,7 +297,7 @@ Starts as: sending in 1.
 | attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost; admits attempt 1's answer |
 | attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer; admits attempt 1's answer |
 | attempt 1 refused whole: uncheckedTooLate | x: waiting; admits attempt 1's answer |
-| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; admits attempt 1's answer; reports attempt 1 replaced without a life |
 | app restarted, same build | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | x: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 2026-11-20T12:00:00.600Z; page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -348,7 +347,7 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z), until 
 | attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost; admits attempt 1's answer |
 | attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer; admits attempt 1's answer |
 | attempt 1 refused whole: uncheckedTooLate | x: waiting; admits attempt 1's answer |
-| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; admits attempt 1's answer; reports attempt 1 replaced without a life |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -399,7 +398,7 @@ Starts as: unanswered (1 failures, retry after 2026-11-20T12:00:00.600Z).
 | attempt 1 refused whole: editAccessRemoved | x: waiting; standing editAccessLost; admits attempt 1's answer |
 | attempt 1 refused whole: strategyDeleted | x: waiting; standing deletedOnServer; admits attempt 1's answer |
 | attempt 1 refused whole: uncheckedTooLate | x: waiting; admits attempt 1's answer |
-| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of another life than 1767322800000, read after the refusal; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused whole: strategyReplaced | x: waiting, awaiting a result for the page list; page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; admits attempt 1's answer; reports attempt 1 replaced without a life |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -505,7 +504,7 @@ Starts as: needs user: the server may have forgotten whether it landed.
 | attempt 1 refused whole: editAccessRemoved | standing editAccessLost; admits attempt 1's answer |
 | attempt 1 refused whole: strategyDeleted | standing deletedOnServer; admits attempt 1's answer |
 | attempt 1 refused whole: uncheckedTooLate | admits attempt 1's answer |
-| attempt 1 refused whole: strategyReplaced | page list owed by a list of another life than 1767322800000, read after the refusal; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused whole: strategyReplaced | page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; admits attempt 1's answer; reports attempt 1 replaced without a life |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |
@@ -585,7 +584,7 @@ Starts as: needs user: retries exhausted.
 | attempt 1 refused whole: editAccessRemoved | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing editAccessLost; admits attempt 1's answer |
 | attempt 1 refused whole: strategyDeleted | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; standing deletedOnServer; admits attempt 1's answer |
 | attempt 1 refused whole: uncheckedTooLate | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), until 2026-11-20T12:00:19.200Z; admits attempt 1's answer |
-| attempt 1 refused whole: strategyReplaced | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), awaiting a result for the page list, until 2026-11-20T12:00:19.200Z; page list owed by a list of another life than 1767322800000, read after the refusal; admits attempt 1's answer; reports attempt 1 replaced without a life |
+| attempt 1 refused whole: strategyReplaced | x: unanswered (7 failures, retry after 2026-11-20T12:00:19.200Z), awaiting a result for the page list, until 2026-11-20T12:00:19.200Z; page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; admits attempt 1's answer; reports attempt 1 replaced without a life |
 | app restarted, same build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | app restarted, new build | page list not read this session; page-a not read this session; page-b not read this session; opens session 2 |
 | connection lost | unchanged |

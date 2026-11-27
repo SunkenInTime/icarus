@@ -20,7 +20,6 @@ final class QueueSession {
     required this.connected,
     required this.build,
     required this.number,
-    required this.sequence,
     int? labelsFrom,
     this.generation,
     this.basis,
@@ -30,7 +29,6 @@ final class QueueSession {
   final String build;
   final int number;
   final int labelsFrom;
-  final int sequence;
   final Generation? generation;
   final ServerTimeBasis? basis;
 
@@ -42,7 +40,6 @@ final class QueueSession {
 
   QueueSession _copy({
     bool? connected,
-    int? sequence,
     Generation? generation,
     required ServerTimeBasis? basis,
   }) => QueueSession(
@@ -50,7 +47,6 @@ final class QueueSession {
     build: build,
     number: number,
     labelsFrom: labelsFrom,
-    sequence: sequence ?? this.sequence,
     generation: generation ?? this.generation,
     basis: basis,
   );
@@ -63,8 +59,6 @@ final class QueueSession {
   QueueSession on(Generation generation) =>
       _copy(generation: generation, basis: basis);
 
-  QueueSession get stepped => _copy(sequence: sequence + 1, basis: basis);
-
   bool labels(int label) =>
       label != 0 && label >= labelsFrom && label <= number;
 
@@ -75,20 +69,12 @@ final class QueueSession {
       other.build == build &&
       other.number == number &&
       other.labelsFrom == labelsFrom &&
-      other.sequence == sequence &&
       other.generation == generation &&
       other.basis == basis;
 
   @override
-  int get hashCode => Object.hash(
-    connected,
-    build,
-    number,
-    labelsFrom,
-    sequence,
-    generation,
-    basis,
-  );
+  int get hashCode =>
+      Object.hash(connected, build, number, labelsFrom, generation, basis);
 }
 
 final class CloudQueue {
@@ -145,12 +131,7 @@ final class CloudQueue {
     nextSession: 2,
     shown: Shown.nothing,
     strategy: StrategyFacts.fresh,
-    session: QueueSession(
-      connected: false,
-      build: build,
-      number: 1,
-      sequence: 0,
-    ),
+    session: QueueSession(connected: false, build: build, number: 1),
     index: _Index.empty,
     lineage: null,
   );
@@ -1273,11 +1254,6 @@ final class _Edit {
 
   int get lastAttempt => nextAttempt - 1;
 
-  int recordStep() {
-    session = session.stepped;
-    return session.sequence;
-  }
-
   ResultOrder orderOf(ResultPoint point) => session.orderOf(point);
 
   void openSession({
@@ -1292,7 +1268,6 @@ final class _Edit {
       build: build,
       number: number,
       labelsFrom: sameLabels ? session.labelsFrom : number,
-      sequence: 0,
       generation: generation,
     );
     shown = shown.inNewSession();
@@ -1602,17 +1577,11 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       :final problem,
       :final session,
       :final point,
-      :final requestedAt,
     ):
       if (!edit.session.labels(session) || !_admitted(edit, point)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
-      final refused = Arrival(
-        order: edit.orderOf(point),
-        point: point,
-        requestedAt: requestedAt,
-        requestedIn: session,
-      );
+      final refused = Arrival(order: edit.orderOf(point), point: point);
       if (edit.shown.fence case final fence?
           when refused.order.isBefore(fence)) {
         return NotApplicable(queue, const StartedInAnotherLife());
@@ -1653,24 +1622,14 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         return NotApplicable(queue, const NotOfAnotherLife());
       }
       return _setAsideEdit(edit, change, madeOn, recordLife, now);
-    case BaseArrived(
-      :final base,
-      :final session,
-      :final point,
-      :final requestedAt,
-    ):
+    case BaseArrived(:final base, :final session, :final point):
       if (!edit.session.labels(session) || !_admitted(edit, point)) {
         return NotApplicable(queue, FromAnEndedSession(session));
       }
       return _arrived(
         edit,
         base,
-        Arrival(
-          order: edit.orderOf(point),
-          point: point,
-          requestedAt: requestedAt,
-          requestedIn: session,
-        ),
+        Arrival(order: edit.orderOf(point), point: point),
       );
   }
 }
@@ -1779,10 +1738,10 @@ Step _batchRefused(
         AfterRefusal(
           session: edit.session.number,
           point: point,
-          step: edit.recordStep(),
-          evidence: switch (currentLife) {
-            final life? => StrategyLifeAtLeast(life),
-            null => null,
+          evidence: switch ((currentLife, edit.shown.strategy?.life)) {
+            (final life?, _) => StrategyLifeAtLeast(life),
+            (null, final named?) => StrategyLifeAtLeast(named + 1),
+            (null, null) => null,
           },
         ),
         named: currentLife,
@@ -2957,7 +2916,7 @@ void _oweTheRowsRead(
   final since = AfterRefusal(
     session: edit.session.number,
     point: point,
-    step: edit.recordStep(),
+    visibleAt: true,
     evidence: switch ((current, checked)) {
       (
         ServerSnapshot(target: SnapshotTarget.strategy) &&
