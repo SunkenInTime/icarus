@@ -72,7 +72,8 @@ enum StallExit {
     waitsFor: 'a result of that subject whose server time reaches the '
         'answer\'s, or one that shows the written row',
     calls: 'nothing: each round of the ladder passes without a read, and the '
-        'user\'s retry asks the client to reconnect, once per wait',
+        'user\'s retry asks the client to reconnect when the watch has '
+        'answered since the last reconnect a retry asked for',
     onScreen: Face.awaitingResult,
     goesAgain: 'the next change to the subject; the user\'s retry, whose '
         'reconnect makes the server answer every watch again at its current '
@@ -357,7 +358,8 @@ enum StallExit {
               '(unreadable work); the ladder goes on',
         firstRead => 'one read per page',
         clockOnWatch => '${timing.unresolvedRounds} rounds, then shown as '
-            'could not resolve; one reconnect when the user retries',
+            'could not resolve; a retry asks for one reconnect per answer of '
+            'the watch',
         liveNoFirstResult => 'one wait of '
             '${timing.firstLiveResult.inSeconds} s per watch and connection',
         landedWork => '${timing.unresolvedRounds} reads that show nothing '

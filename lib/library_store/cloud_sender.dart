@@ -250,6 +250,10 @@ final class _Live {
   int? deliveredOn;
   _LiveResult? _pending;
   _LiveResult? taking;
+  var answers = 0;
+  int? answersAtReconnect;
+
+  bool get answeredSinceReconnect => answersAtReconnect != answers;
 
   _LiveResult? get pending => _pending;
 
@@ -378,7 +382,6 @@ final class CloudSender implements LiveResults {
   var clockWaitsOnLive = 0;
   var clockRoundsOnWatch = 0;
   var reconnectsAsked = 0;
-  final _reconnectedFor = <String>{};
   var looks = 0;
   var wakes = 0;
   var dues = 0;
@@ -600,8 +603,14 @@ final class CloudSender implements LiveResults {
   }
 
   void retryNow(String strategyId) {
-    if ((_clockHeldByLive[strategyId]?.isNotEmpty ?? false) &&
-        _reconnectedFor.add(strategyId)) {
+    final watches = [
+      for (final read in _clockHeldByLive[strategyId] ?? const <ReadOf>{})
+        if (_live[(strategyId, read)] case final live?) live,
+    ];
+    if (watches.any((live) => live.answeredSinceReconnect)) {
+      for (final live in watches) {
+        live.answersAtReconnect = live.answers;
+      }
       reconnectsAsked++;
       unawaited(_askReconnect(strategyId));
     }
@@ -652,6 +661,7 @@ final class CloudSender implements LiveResults {
       wake();
       return;
     }
+    live.answers++;
     final replacing = live.dropsOnReplace;
     if (live.offered(
       (account: account, outcome: outcome, point: point, at: _clock()),
@@ -767,7 +777,6 @@ final class CloudSender implements LiveResults {
     }
     if (held.isEmpty) {
       _clockHeldByLive.remove(id);
-      _reconnectedFor.remove(id);
     } else {
       _clockHeldByLive[id] = held;
     }

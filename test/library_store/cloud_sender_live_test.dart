@@ -1182,4 +1182,40 @@ void main() {
       expect(world.sender.waitingOn(strategyId), StallExit.clockOnWatch);
     }, addStrategy: false);
   });
+
+  group('one reconnect per wait', () {
+    test('two retries before any answer ask once', () {
+      inWorld((world) {
+        clockHeldOnWatch(world);
+        world.settle(const Duration(seconds: 10));
+        world.sender.retryNow(strategyId);
+        world.settle();
+        world.sender.retryNow(strategyId);
+        world.settle();
+        expect(world.reconnects, 1);
+      }, addStrategy: false);
+    });
+
+    test('an answer still behind, then a retry, asks again', () {
+      inWorld((world) {
+        clockHeldOnWatch(world);
+        world.settle(const Duration(seconds: 10));
+        world.onReconnect = () {
+          world.connection = 3;
+          world.sender.liveArrived(
+            strategyId,
+            watchedP2,
+            servedAccount,
+            p2Of(world),
+          );
+        };
+        world.sender.retryNow(strategyId);
+        world.settle();
+        expect(world.cloud().queue.shown.waitsOnClock('p2'), isTrue);
+        world.sender.retryNow(strategyId);
+        world.settle();
+        expect(world.reconnects, 2);
+      }, addStrategy: false);
+    });
+  });
 }
