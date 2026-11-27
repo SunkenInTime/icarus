@@ -30,7 +30,7 @@ void main() {
         'the removed read mode is still taken and stays off '
         '(mayShadow: $mayShadow), so its flag is never opened as a file', () {
       final launch = LibraryStoreLaunch.parse(
-        const ['--library-store=read', 'a.ica'],
+        const ['--library-store=store', '--library-store=read', 'a.ica'],
         mayShadow: mayShadow,
       );
       expect(launch.choice, isA<StoreSwitchOff>());
