@@ -32,12 +32,12 @@ const todaysCalls = [
 ];
 
 void main() {
-  late _Server server;
+  late _TwoPageServer server;
   late StampedOver editorTransport;
   late StampedOver storeTransport;
 
   setUp(() {
-    server = _Server();
+    server = _TwoPageServer();
     editorTransport = StampedOver(server);
     storeTransport = StampedOver(server);
   });
@@ -72,9 +72,8 @@ void main() {
     return container;
   }
 
-  /// Opens the strategy on page a, then a teammate moves an agent on it, so
-  /// the page is handed over from its whole watch to its slices.
-  Future<RemoteEditorSnapshot?> openAndEdit(ProviderContainer container) async {
+  Future<RemoteEditorSnapshot?> openThenTeammateEditsPageA(
+      ProviderContainer container) async {
     await container.read(remoteEditorSnapshotProvider.future);
     await container
         .read(remoteEditorSnapshotProvider.notifier)
@@ -89,7 +88,7 @@ void main() {
     test(
         'the editor makes today\'s calls, by name, and none through the '
         'store\'s transport', () async {
-      final shown = await openAndEdit(start());
+      final shown = await openThenTeammateEditsPageA(start());
 
       expect(editorTransport.calls, todaysCalls);
       expect(storeTransport.calls, isEmpty);
@@ -109,7 +108,7 @@ void main() {
             LibraryStoreLaunch.parse(args, mayShadow: mayShadow).cloud;
         expect(cloud, isA<CloudStoreOff>());
 
-        await openAndEdit(start(cloud: cloud));
+        await openThenTeammateEditsPageA(start(cloud: cloud));
 
         expect(editorTransport.calls, todaysCalls);
         expect(storeTransport.calls, isEmpty);
@@ -127,7 +126,7 @@ void main() {
       ).cloud;
       expect(cloud, isA<CloudStoreSend>());
 
-      final shown = await openAndEdit(start(cloud: cloud));
+      final shown = await openThenTeammateEditsPageA(start(cloud: cloud));
 
       expect(editorTransport.calls, isEmpty);
       expect(storeTransport.calls, [
@@ -151,11 +150,11 @@ void main() {
         'a refused page watch reaches the editor as it does with the switch '
         'off: it reads the strategy again', () async {
       Future<List<String>> readsAfterRefusal(CloudStoreSwitch cloud) async {
-        server = _Server();
+        server = _TwoPageServer();
         editorTransport = StampedOver(server);
         storeTransport = StampedOver(server);
         final container = start(cloud: cloud);
-        await openAndEdit(container);
+        await openThenTeammateEditsPageA(container);
         final transport =
             cloud is CloudStoreSend ? storeTransport : editorTransport;
         final before = transport.calls.length;
@@ -185,9 +184,9 @@ List<Map<String, Object?>> _agents(int count, {String? moved}) => [
         agentRow(_id(index), 'a', revision: _id(index) == moved ? 2 : 1),
     ];
 
-/// A two-page strategy whose page a holds twenty agents, answered whole or
-/// in slices, read once or live.
-final class _Server with SubscribeTogetherFromEach implements ConvexTransport {
+final class _TwoPageServer
+    with SubscribeTogetherFromEach
+    implements ConvexTransport {
   final _elements = <String, List<Map<String, Object?>>>{
     'a': _agents(20),
     'b': const [],

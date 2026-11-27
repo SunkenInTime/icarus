@@ -2,10 +2,6 @@ import 'dart:async';
 
 import 'package:icarus/collab/transport/convex_transport.dart';
 
-/// [inner] answering stamped calls: each answer carries the next snapshot on
-/// one connection, and a [ConvexTransportError] comes back as a
-/// [StampedError] at the snapshot it was answered at, as the native bridge
-/// hands a refused query over. Every call is recorded by kind and name.
 final class StampedOver implements StampedConvexTransport {
   StampedOver(this.inner);
 

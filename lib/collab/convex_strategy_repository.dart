@@ -260,8 +260,6 @@ class ConvexStrategyRepository {
   }) =>
       _shellQuery(strategyPublicId, shareToken).watch().map(_strategyShell);
 
-  /// [watchShell], each answer with its stamp, and each refusal as a
-  /// [StampedError] rather than a stream error.
   Stream<Stamped<RemoteStrategyShell>> watchShellStamped(
     String strategyPublicId, {
     String? shareToken,
@@ -471,8 +469,6 @@ class ConvexStrategyRepository {
             assembledPages(ConvexQuery.watchTogether(queries)).map(_unstamped),
       ).map((seen) => seen.value);
 
-  /// [watchPageSnapshot], each answer with its stamp, and each refusal of
-  /// the page as a [StampedError] rather than a stream error.
   Stream<Stamped<RemotePageSnapshot>> watchPageSnapshotStamped({
     required String strategyPublicId,
     required String pagePublicId,
