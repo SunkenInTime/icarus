@@ -356,8 +356,7 @@ final class StrategyLifeAtLeast extends Evidence {
   @override
   bool shownBy(ArrivedBase base) => switch (base) {
     HeaderRead(:final strategy) => (createdAtOf(strategy) ?? 0) >= life,
-    StrategyGone() => true,
-    PageRead() || PageGone() => false,
+    StrategyGone() || PageRead() || PageGone() => false,
   };
 
   @override
@@ -428,7 +427,7 @@ final class AfterRefusal extends PaidBy {
       arrival.order.session > session ||
       (arrival.order.session == session &&
           (point.generation.isBefore(arrival.point.generation) ||
-              (visibleAt &&
+              ((visibleAt || base is StrategyGone) &&
                   arrival.point.generation == point.generation &&
                   arrival.point.snapshot >= point.snapshot)));
 
