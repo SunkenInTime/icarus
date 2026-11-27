@@ -122,9 +122,12 @@ Future<List<String>> editToSavedLines(
     SlowedEngine.waitedMicros = 0;
     ticker.start();
     final clock = Stopwatch()..start();
-    await c.read(strategyProvider.notifier).forceSaveNow(id);
-    times.add(clock.elapsed);
-    ticker.stop();
+    try {
+      await c.read(strategyProvider.notifier).forceSaveNow(id);
+      times.add(clock.elapsed);
+    } finally {
+      ticker.stop();
+    }
     longest.add(Duration(microseconds: ticker.longest));
     waited.add(Duration(microseconds: SlowedEngine.waitedMicros));
     notWaiting.add(times.last - waited.last);
