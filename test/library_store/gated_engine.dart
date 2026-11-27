@@ -8,6 +8,7 @@ final class CommitGate {
   var doubtNext = false;
   var commits = 0;
   var reads = 0;
+  final puts = <(String, String)>[];
   var ended = false;
   int? endAfter;
 
@@ -89,6 +90,10 @@ final class _GatedLease implements StorageLease {
   @override
   Future<Committing> commit(List<Change> changes) async {
     gate.commits++;
+    gate.puts.addAll([
+      for (final change in changes)
+        if (change case Put(:final area, :final key)) (area, key),
+    ]);
     if (gate.endAfter case final last? when gate.commits > last) {
       gate.ended = true;
     }

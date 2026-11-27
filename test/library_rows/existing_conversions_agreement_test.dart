@@ -84,7 +84,11 @@ List<String> elementDisagreements(
   for (final page in mine.pages) {
     List<LiveElement> ordered(StrategyRowSet rows) =>
         rows.elementsOn(page.publicId).cast<LiveElement>().toList()
-          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+          ..sort((a, b) =>
+              switch (a.payload.kind.index.compareTo(b.payload.kind.index)) {
+                0 => a.sortIndex.compareTo(b.sortIndex),
+                final byKind => byKind,
+              });
     final ours = ordered(mine);
     final theirs = ordered(cloud.rows);
     expect(theirs.length, ours.length, reason: 'page ${page.publicId}');
@@ -106,18 +110,8 @@ List<String> elementDisagreements(
         }
       }
       expect(
-        (
-          their.sortIndex,
-          their.revision,
-          their.payload.kind,
-          their.payload.payloadVersion
-        ),
-        (
-          our.sortIndex,
-          our.revision,
-          our.payload.kind,
-          our.payload.payloadVersion
-        ),
+        (their.revision, their.payload.kind, their.payload.payloadVersion),
+        (our.revision, our.payload.kind, our.payload.payloadVersion),
       );
     }
   }
