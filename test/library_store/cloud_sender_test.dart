@@ -3329,6 +3329,22 @@ void main() {
     });
 
     test(
+        'an edit made checked goes checked where one made the same way '
+        'unmarked, within 20 s of an answer, would go unchecked', () {
+      inWorld((world) {
+        world.commitMerge(1);
+        world.settle();
+        world.async.elapse(const Duration(seconds: 5));
+        world.commitMerge(2, made: MadeChecked());
+        world.settle();
+        final [second] = callsOf(world, 'merge-2');
+        expect(second.unchecked, isEmpty);
+        expect(second.ops.single.toJson()['merge'], contains('base'));
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
         'a batch refused as late is sent again at once, checked, under the '
         'same op id, and a same-field edit right after it goes checked too',
         () {

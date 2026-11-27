@@ -63,9 +63,16 @@ bool _ofTheRowsLife(StrategyRows rows, StrategyOp op, int? life) =>
     };
 
 bool _drawn(CloudQueue queue, StrategyRows rows, PendingOp entry) =>
-    switch ((entry.strategyLife, queue.shown.strategy?.life)) {
-      (final written?, final shown?) when written != shown => false,
+    switch ((entry.strategyLife, queue.shown.strategy?.life, entry.refusal)) {
+      (final written?, final shown?, _) when written != shown => false,
+      (_, _, ConflictedAtCommit()) => false,
       _ => _ofTheRowsLife(rows, entry.op, expectedLifeOf(entry)),
+    };
+
+StrategyOp _drawnForm(PendingOp entry) =>
+    switch ((entry.madeAs, entry.refusal)) {
+      (MadeAs.live, NotRefused()) => withoutFieldBase(entry.op),
+      _ => entry.op,
     };
 
 StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
@@ -130,8 +137,8 @@ StrategyRowSet visibleOver(StrategyRowSet base, CloudQueue queue, Pages pages) {
   };
   for (final entry in entries) {
     if (!_drawn(queue, rows, entry)) continue;
-    final PendingOp(:op, :authored) = entry;
-    final moved = switch (authored) {
+    final op = _drawnForm(entry);
+    final moved = switch (entry.authored) {
       AuthoredRow(:final movedRow?) => movedRow,
       _ => null,
     };

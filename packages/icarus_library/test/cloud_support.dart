@@ -1,6 +1,13 @@
 import 'package:icarus_library/icarus_library.dart';
 import 'package:icarus_library/src/cloud/op_facts.dart'
-    show CopyExpanded, CopyNotExpanded, expandCopy;
+    show
+        AppliedAs,
+        AtCommit,
+        CopyExpanded,
+        CopyNotExpanded,
+        HeldForUser,
+        atCommit,
+        expandCopy;
 import 'package:icarus_library/src/cloud/visible.dart';
 import 'package:test/test.dart';
 
@@ -258,11 +265,30 @@ final class Client {
 
   void must(QueueEvent event) => stepped(step(event));
 
-  QueueEvent editEvent(StrategyOp op) {
+  AtCommit atCommitOf(StrategyOp op, HowMade? made) => atCommit(
+    visible,
+    op,
+    madeAs: madeAsIn(queue.session.number, made),
+    drawnLives: made?.drawnLives ?? const {},
+  );
+
+  QueueEvent editEvent(StrategyOp op, [HowMade? made]) {
     final rows = visible;
-    final authored = authoredFor(rows, op);
+    final at = atCommitOf(op, made);
+    final authored = authoredFor(rows, switch (at) {
+      AppliedAs(op: final form) => form,
+      HeldForUser() => op,
+    });
+    UserEdited edited(Edit edit) => UserEdited(
+      edit,
+      madeAs: madeAsIn(queue.session.number, made),
+      conflict: switch (at) {
+        HeldForUser(:final reason) => reason,
+        AppliedAs() => null,
+      },
+    );
     if (op is PageDeleteOp) {
-      return UserEdited(
+      return edited(
         PageDeleteEdit(op, seenPageIn(rows, op.pagePublicId), authored),
       );
     }
@@ -273,11 +299,11 @@ final class Client {
         rows.lineupGroup(lineupPublicId)?.pagePublicId,
       _ => null,
     };
-    EditMaking made(StrategyOp op) =>
+    EditMaking making(StrategyOp op) =>
         editOf(op, authored: authored, rowPage: rowPage);
-    return UserEdited(switch (made(op)) {
+    return edited(switch (making(op)) {
       EditMade(:final edit) => edit,
-      NeedsFieldBase() => switch (made(withFieldBase(rows, op))) {
+      NeedsFieldBase() => switch (making(withFieldBase(rows, op))) {
         EditMade(:final edit) => edit,
         _ => fail('cannot edit $op'),
       },

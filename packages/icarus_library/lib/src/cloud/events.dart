@@ -8,11 +8,45 @@ sealed class QueueEvent {
 }
 
 final class UserEdited extends QueueEvent {
-  const UserEdited(this.edit, {this.madeOn});
+  const UserEdited(
+    this.edit, {
+    this.madeOn,
+    this.madeAs = MadeAs.unmarked,
+    this.conflict,
+  });
 
   final Edit edit;
   final int? madeOn;
+  final MadeAs madeAs;
+  final RejectionReason? conflict;
 }
+
+sealed class HowMade {
+  HowMade({
+    Map<String, SeenPage> pagesAsSeen = const {},
+    Map<RowKey, int> drawnLives = const {},
+  }) : pagesAsSeen = Map.unmodifiable(pagesAsSeen),
+       drawnLives = Map.unmodifiable(drawnLives);
+
+  final Map<String, SeenPage> pagesAsSeen;
+  final Map<RowKey, int> drawnLives;
+}
+
+final class MadeLive extends HowMade {
+  MadeLive(this.session, {super.pagesAsSeen, super.drawnLives});
+
+  final int session;
+}
+
+final class MadeChecked extends HowMade {
+  MadeChecked({super.pagesAsSeen, super.drawnLives});
+}
+
+MadeAs madeAsIn(int session, HowMade? made) => switch (made) {
+  null => MadeAs.unmarked,
+  MadeLive(session: final drawn) when drawn == session => MadeAs.live,
+  MadeLive() || MadeChecked() => MadeAs.checked,
+};
 
 sealed class Edit {
   const Edit();
