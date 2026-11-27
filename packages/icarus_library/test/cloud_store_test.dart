@@ -588,11 +588,10 @@ void main() {
       await withEntryText(entryText({'op': movePatch('good').toJson()}));
     });
 
-    test('an attempt, the facts or evidence it cannot read', () async {
+    test('an attempt, the facts or landed work it cannot read', () async {
       for (final name in [
         AttemptName(1).name,
         'cloud',
-        'read/header',
         'landed/${(1).toString().padLeft(16, '0')}/${(0).toString().padLeft(16, '0')}',
       ]) {
         await expectHeld(name, '{"version":2}');
@@ -2159,7 +2158,8 @@ void main() {
         });
       }
 
-      test('a shown row stored in two page groups holds the queue', () async {
+      test('a shown row stored in two page groups drops the stored results '
+          'and loads the strategy from its stored rows', () async {
         final storage = MemoryStorage();
         var store = await openCloudStore(MemoryEngine(storage));
         await addCloud(store, initialRows());
@@ -2183,11 +2183,24 @@ void main() {
           ['element:e1', 'page-b', e1[2], e1[3]],
         ];
         contents[area]![bKey] = canonicalJson(b);
-        store = await openCloudStore(MemoryEngine(MemoryStorage(contents)));
+        final disk = MemoryStorage(contents);
+        store = await openCloudStore(MemoryEngine(disk));
+        final dropped = store.changes
+            .where((change) => change is StoredResultsDropped)
+            .toList();
         expect(
           strategyOf(await store.readStrategy(strategyId)).sync,
-          isA<CloudHeld>(),
+          isA<CloudStrategy>(),
         );
+        await store.close();
+        expect(await dropped, [
+          StoredResultsDropped(
+            strategyPublicId: strategyId,
+            group: bKey,
+            problem: 'shown results: a shown row stored in two page groups',
+          ),
+        ]);
+        expect(disk.contents[area]![bKey], isNot(contents[area]![bKey]));
       });
 
       test(

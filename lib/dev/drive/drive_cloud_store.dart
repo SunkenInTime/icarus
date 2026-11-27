@@ -706,6 +706,24 @@ String reconnectSessionOpening(
   );
 }
 
+String storeResultsDropped(ProviderContainer c) {
+  final strategyId = storedCloudStrategy(c);
+  final dropped = [
+    for (final report in _sender(c).store.reports)
+      if (report case StoredResultsDroppedReport(:final dropped)
+          when report.strategyId == strategyId)
+        dropped,
+  ];
+  if (dropped case [final only]) {
+    return 'CLOUDSTORE the sender reported once that the stored results of '
+        '$strategyId were dropped: ${only.group}: ${only.problem}';
+  }
+  throw StateError(
+    'the sender reported ${dropped.length} drops of the stored results of '
+    '$strategyId, not one',
+  );
+}
+
 List<String> storeAnswerLostAndResent(ProviderContainer c) => [
       lostAnswerResent(_sender(c).store.reports, storedCloudStrategy(c)),
     ];
@@ -1532,6 +1550,13 @@ CloudStoreLine? _senderReportLine(SenderReport report) => switch (report) {
           'CLOUDSTORE the rows stored for $strategyId disagree with its '
           'queue, so the store refuses it: ${refusal.reason}',
           problem: true,
+        ),
+      StoredResultsDroppedReport(:final strategyId, :final dropped) =>
+        CloudStoreLine(
+          'CLOUDSTORE the stored results of $strategyId could not be read '
+          '(${dropped.group}: ${dropped.problem}), so the store dropped them '
+          'and starts its results again from the rows it holds',
+          problem: false,
         ),
       WriteNotMade(:final strategyId, :final trouble) => CloudStoreLine(
           'CLOUDSTORE a write for $strategyId was not made '

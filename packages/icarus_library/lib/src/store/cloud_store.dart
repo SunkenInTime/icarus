@@ -540,12 +540,17 @@ extension _CloudStore on LibraryStore {
         }
     }
     landed.sort((a, b) => a.compareTo(b));
-    final groups = <String?, String>{};
+    var groups = <String?, String>{};
+    final resultKeys = <String>[];
+    final resultsUnread = <UnreadableQueueRow>[];
+    void resultsCannotRead(String name, String problem) =>
+        resultsUnread.add(UnreadableQueueRow(strategy.refOf(name), problem));
     switch (await _lease.entries(area, readPrefix)) {
       case StorageFailed(:final failure):
         return _QueueNotRead(failure);
       case Done(:final value):
         for (final (:key, :value) in value) {
+          resultKeys.add(key);
           switch (readName(storeArea, key)) {
             case HeaderReadName():
               groups[null] = value;
@@ -554,10 +559,10 @@ extension _CloudStore on LibraryStore {
                 case final page?:
                   groups[page] = value;
                 case null:
-                  cannotRead(key, 'stored results for another page');
+                  resultsCannotRead(key, 'stored results for another page');
               }
             case _:
-              cannotRead(key, 'a queue row this build does not name');
+              resultsCannotRead(key, 'a queue row this build does not name');
           }
         }
     }
@@ -566,8 +571,9 @@ extension _CloudStore on LibraryStore {
       case ShownRead(shown: final read):
         shown = read.withTrashedPages(strategy.pages);
       case ShownUnreadable(:final page, :final problem):
-        cannotRead(_groupName(page), problem);
+        resultsCannotRead(_groupName(page), problem);
     }
+    final heldBeforeEntries = unreadable.length;
     final List<QueueEntry> entries;
     switch (entriesFrom(stored)) {
       case EntriesRead(entries: final read):
@@ -577,6 +583,14 @@ extension _CloudStore on LibraryStore {
         entries = const [];
     }
     if (_numbersHold case final row?) unreadable.add(row);
+    final storedHeader = switch (strategy.header) {
+      HeaderPlaced(row: final ReadableStrategy header) => header,
+      _ => null,
+    };
+    if (resultsUnread.isNotEmpty &&
+        (unreadable.isNotEmpty || storedHeader == null)) {
+      unreadable.insertAll(heldBeforeEntries, resultsUnread);
+    }
     if (unreadable.isNotEmpty) {
       if (strategy.header case HeaderPlaced(
         row: final ReadableStrategy header,
@@ -601,6 +615,23 @@ extension _CloudStore on LibraryStore {
       OwnedBy(:final account) => account,
       OwnerUnreadable() => throw StateError('an unread owner was not held'),
     };
+    final dropped = resultsUnread.firstOrNull;
+    if (dropped != null) {
+      if (await _loadUnchecked(strategy, strategy.pageDigests)
+          case StorageFailed(:final failure)) {
+        return _QueueNotRead(failure);
+      }
+      shown = Shown.ofStoredRows(
+        _baseRows(strategy, storedHeader!, strategy.pageDigests),
+        owing: {
+          for (final entry in entries.whereType<PendingOp>()) ...pagesOf(entry),
+        },
+      );
+      groups = {
+        for (final MapEntry(:key, :value) in shownToGroups(shown).entries)
+          key: _groupText(value),
+      };
+    }
     final pending = entries.whereType<PendingOp>();
     final mentioned = Counters(
       nextAttempt: [
@@ -661,6 +692,28 @@ extension _CloudStore on LibraryStore {
         case final reason?) {
       _refuse(strategy, reason);
       return _QueueLoaded(loaded);
+    }
+    if (dropped != null) {
+      final saved = await _commit<void, CommitRefusal>([
+        for (final key in resultKeys) _DeleteName(area, key),
+        for (final MapEntry(key: page, value: text) in groups.entries)
+          _PutGroup(area, page, text),
+      ], () {});
+      switch (saved) {
+        case Saved():
+          final report = StoredResultsDropped(
+            strategyPublicId: storedHeader!.publicId,
+            group: dropped.ref.name,
+            problem: dropped.problem,
+          );
+          _resultsDropped.add(report);
+          _emit(report);
+        case NotSaved(:final failure) || SaveInDoubt(:final failure):
+          _forgetCloud(strategy.digest);
+          return _QueueNotRead(failure);
+        case NothingToSave() || Refused():
+          throw StateError('dropping stored results wrote nothing');
+      }
     }
     if (_summaries[strategy.digest] case final summary?) {
       _keepInMemory(

@@ -369,6 +369,11 @@ final class LibraryStore {
       refusal.strategyPublicId ?? digest: refusal,
   };
 
+  final _resultsDropped = <StoredResultsDropped>[];
+
+  List<StoredResultsDropped> get resultsDropped =>
+      List.unmodifiable(_resultsDropped);
+
   void Function(String strategy, String page)? pageEnteringMemory;
   var _numbers = const Counters(nextAttempt: 1, nextSession: 1);
   Migration _migration = const MigrationNotStarted();

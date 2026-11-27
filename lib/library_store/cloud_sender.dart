@@ -453,6 +453,9 @@ final class CloudSender {
         StrategyEdited(:final strategyPublicId) => edited(strategyPublicId),
         StrategyRefused(:final strategyPublicId, :final refusal) =>
           _store.refused(strategyPublicId, refusal),
+        final StoredResultsDropped dropped => _store.report(
+            StoredResultsDroppedReport(dropped.strategyPublicId, dropped),
+          ),
         LibraryEdited(:final summaries) => _libraryEdited(summaries),
         _ => wake(),
       },
@@ -461,6 +464,11 @@ final class CloudSender {
     for (final MapEntry(key: strategyId, value: refusal)
         in _store.store.refusedStrategies.entries) {
       _store.refused(strategyId, refusal);
+    }
+    for (final dropped in _store.store.resultsDropped) {
+      _store.report(
+        StoredResultsDroppedReport(dropped.strategyPublicId, dropped),
+      );
     }
     _running ??= _loop();
   }

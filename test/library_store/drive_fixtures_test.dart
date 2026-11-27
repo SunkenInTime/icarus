@@ -20,6 +20,7 @@ import 'hive_scratch.dart';
 
 final _notInStoreOut = Platform.environment['ICARUS_NOT_IN_STORE_FIXTURE'];
 final _storeToAge = Platform.environment['ICARUS_AGE_STORE'];
+final _resultsToMakeNewer = Platform.environment['ICARUS_NEWER_RESULTS_STORE'];
 final _smallOut = Platform.environment['ICARUS_SMALL_LIBRARY_FIXTURE'];
 final _keptOut = Platform.environment['ICARUS_KEPT_ON_HIVE_FIXTURE'];
 final _leftBehindOut = Platform.environment['ICARUS_LEFT_BEHIND_FIXTURE'];
@@ -249,6 +250,21 @@ void main() {
     },
     skip: _storeHoldsOut == null
         ? 'set ICARUS_STORE_HOLDS_LIBRARY_FIXTURE to a new folder'
+        : false,
+  );
+
+  test(
+    'writes the stored page list results of every cloud strategy in a store '
+    'as a newer build would, in a shape this build cannot read',
+    () async {
+      final engine = SqliteEngine(_resultsToMakeNewer!);
+      final changed = await resultsAsANewerBuildWroteThem(engine);
+      await engine.close();
+      expect(changed, greaterThan(0));
+      debugPrint('made $changed stored results newer in $_resultsToMakeNewer');
+    },
+    skip: _resultsToMakeNewer == null
+        ? 'set ICARUS_NEWER_RESULTS_STORE to a scratch copy of a library store'
         : false,
   );
 

@@ -1,0 +1,20 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 6},
+  {"storeExpect": "held"},
+  {"openStoredCloudStrategy": true},
+  {"wait": 12},
+  {"tapIcon": "x", "optional": true},
+  {"waitSettled": 60},
+  {"storeResultsDropped": true},
+  {"waitStoreSent": 120},
+  {"storeAdd": "d1-{run}", "kind": "agent", "at": [640, 420]},
+  {"waitStoreSent": 60, "landed": "may wait"},
+  {"storeResultsDropped": true},
+  {"storeSyncState": true},
+  {"wait": 3},
+  {"shot": "{out}/after-results-dropped.png"},
+  {"exit": 1}
+]

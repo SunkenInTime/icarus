@@ -451,6 +451,33 @@ final class StrategyRefused extends StoreChange {
   final StoredRowsDisagree refusal;
 }
 
+final class StoredResultsDropped extends StoreChange {
+  const StoredResultsDropped({
+    required this.strategyPublicId,
+    required this.group,
+    required this.problem,
+  });
+
+  final String strategyPublicId;
+  final String group;
+  final String problem;
+
+  @override
+  bool operator ==(Object other) =>
+      other is StoredResultsDropped &&
+      other.strategyPublicId == strategyPublicId &&
+      other.group == group &&
+      other.problem == problem;
+
+  @override
+  int get hashCode => Object.hash(strategyPublicId, group, problem);
+
+  @override
+  String toString() =>
+      'StoredResultsDropped($strategyPublicId: $group could not be read: '
+      '$problem)';
+}
+
 final class LibraryEdited extends StoreChange {
   LibraryEdited({
     required List<StrategySummary> summaries,
