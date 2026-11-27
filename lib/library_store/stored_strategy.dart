@@ -1,5 +1,6 @@
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 sealed class StoredStrategy {
@@ -54,9 +55,10 @@ sealed class StoredRows {
 }
 
 final class StoredRowsRead extends StoredRows {
-  const StoredRowsRead(this.rows);
+  const StoredRowsRead(this.rows, {this.written = const WrittenNotRecorded()});
 
   final StrategyRowSet rows;
+  final StrategyWritten written;
 }
 
 final class StoredRowsNot extends StoredRows {
@@ -117,6 +119,7 @@ Future<StoredRows> readStoredRows(LibraryStore store, String strategyId) async {
     ReadableStrategy() when damaged.isNotEmpty =>
       StoredRowsNot(StoredUnreadable(damaged)),
     final ReadableStrategy header => StoredRowsRead(
+        written: content.written,
         StrategyRowSet(
           strategy: header,
           pages: content.pages,
@@ -128,8 +131,11 @@ Future<StoredRows> readStoredRows(LibraryStore store, String strategyId) async {
   };
 }
 
-StoredStrategy strategyOfRows(StrategyRowSet rows) =>
-    switch (strategyFromRows(rows)) {
+StoredStrategy strategyOfRows(
+  StrategyRowSet rows, {
+  int versionNumber = Settings.versionNumber,
+}) =>
+    switch (strategyFromRows(rows, versionNumber: versionNumber)) {
       StrategyDataRefused(:final problems) => StoredUnreadable([
           for (final problem in problems) 'not converted back: $problem',
         ]),

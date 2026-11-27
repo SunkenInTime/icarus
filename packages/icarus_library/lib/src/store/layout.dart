@@ -153,6 +153,13 @@ final class NumbersName extends StoreName {
   String get name => 'numbers';
 }
 
+final class WrittenName extends StoreName {
+  const WrittenName();
+
+  @override
+  String get name => 'written';
+}
+
 final class MigrationName extends StoreName {
   const MigrationName();
 
@@ -263,6 +270,7 @@ StoreName readName(StoreArea area, String name) =>
       (LibraryArea(), ['migration']) => const MigrationName(),
       (StrategyArea(), ['strategy']) => const HeaderName(),
       (StrategyArea(), ['cloud']) => const CloudName(),
+      (StrategyArea(), ['written']) => const WrittenName(),
       (StrategyArea(), ['pending', final place]) when _isPlace(place) =>
         PendingName(int.parse(place)),
       (StrategyArea(), ['attempt', final number]) when _isPlace(number) =>

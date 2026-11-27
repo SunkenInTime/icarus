@@ -580,6 +580,33 @@ sealed class StrategyRead {
   int? get strategyLife;
 }
 
+sealed class StrategyWritten {
+  const StrategyWritten();
+}
+
+final class WrittenNotRecorded extends StrategyWritten {
+  const WrittenNotRecorded();
+}
+
+final class WrittenAt extends StrategyWritten {
+  const WrittenAt(this.version);
+
+  final int version;
+}
+
+final class WrittenUnreadable extends StrategyWritten {
+  const WrittenUnreadable(this.stored);
+
+  final String stored;
+}
+
+StrategyWritten writtenFrom(String stored) => switch (int.tryParse(stored)) {
+  final version? when version >= 0 && '$version' == stored => WrittenAt(
+    version,
+  ),
+  _ => WrittenUnreadable(stored),
+};
+
 final class StrategyContent implements StrategyRead {
   StrategyContent({
     required this.strategy,
@@ -588,6 +615,7 @@ final class StrategyContent implements StrategyRead {
     required Iterable<UnplacedRow> unplaced,
     required Iterable<ForeignName> foreignNames,
     this.sync = const LocalStrategy(),
+    this.written = const WrittenNotRecorded(),
   }) : pages = List.unmodifiable(pages),
        settings = Map.unmodifiable(settings),
        unplaced = List.unmodifiable(unplaced),
@@ -599,6 +627,7 @@ final class StrategyContent implements StrategyRead {
   final List<UnplacedRow> unplaced;
   final List<ForeignName> foreignNames;
   final StrategySync sync;
+  final StrategyWritten written;
 
   @override
   int? get strategyLife => createdAtOf(strategy);

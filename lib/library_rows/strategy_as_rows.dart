@@ -608,7 +608,10 @@ MapValue? _mapNamed(String name) {
   return null;
 }
 
-StrategyFromRows strategyFromRows(StrategyRowSet rows) {
+StrategyFromRows strategyFromRows(
+  StrategyRowSet rows, {
+  int versionNumber = Settings.versionNumber,
+}) {
   final strategyRow = rows.strategy;
   final problems = <DataProblem>[];
   final map = _mapNamed(strategyRow.mapData);
@@ -792,7 +795,7 @@ StrategyFromRows strategyFromRows(StrategyRowSet rows) {
       id: strategyRow.publicId,
       name: strategyRow.name,
       mapData: map,
-      versionNumber: Settings.versionNumber,
+      versionNumber: versionNumber,
       lastEdited: strategyRow.updatedAt,
       createdAt: strategyRow.createdAt,
       folderID: strategyRow.folderPublicId,

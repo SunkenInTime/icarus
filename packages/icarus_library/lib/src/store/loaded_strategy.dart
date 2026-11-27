@@ -95,6 +95,7 @@ final class LoadedStrategy {
 
   final String digest;
   Keeping keeping = Keeping.here;
+  StrategyWritten written = const WrittenNotRecorded();
   StrategyHeader header;
 
   static LoadedStrategy image(String digest, StrategyRowSet rows) {
