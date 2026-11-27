@@ -2076,6 +2076,9 @@ rows (`atCommit`):
 
 - A row whose life differs from the drawn one was replaced since the draw:
   the op is queued as `ChangedSinceDrawn(rowReplaced)` and not applied.
+- A patch or reorder of a row drawn live that the store holds deleted is
+  queued as `ChangedSinceDrawn(deleted)` and not applied. Keep mine takes a
+  put-back: an add at the tombstone's revision with the user's payload.
 - Made live, a merge is applied as the server applies a live send, its fields
   over the held row with no base check, and keeps its authored base. The
   send policy picks its form as for any edit.

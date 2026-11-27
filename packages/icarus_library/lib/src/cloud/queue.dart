@@ -3067,6 +3067,17 @@ bool _userMayReplace(EntryView view) => switch (view.state) {
   _ => false,
 };
 
+bool _putsBackDeleted(PendingOp entry, StrategyOp replacement) =>
+    switch ((entry.refusal, replacement)) {
+      (
+        ConflictedAtCommit(reason: RejectionReason.deleted),
+        ElementAddOp(expectedElementRevision: _?) ||
+            LineupGroupAddOp(expectedLineupRevision: _?),
+      ) =>
+        true,
+      _ => false,
+    };
+
 Step _keepMine(
   _Edit edit,
   String opId,
@@ -3082,7 +3093,8 @@ Step _keepMine(
     return NotApplicable(queue, NotInThatState(opId, '${view.state}'));
   }
   if (entityOf(replacement) != entityOf(entry.op) ||
-      replacement.type != entry.op.type) {
+      replacement.type != entry.op.type &&
+          !_putsBackDeleted(entry, replacement)) {
     return NotApplicable(queue, OtherEntity(replacement.opId));
   }
   if (!isJson(replacement.toJson())) {

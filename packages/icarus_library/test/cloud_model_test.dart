@@ -953,13 +953,32 @@ final class Model {
                 current.element(row.publicId) is LiveElement)
           row,
     ];
-    if (live.isEmpty) return;
+    final ownDeletes = {
+      for (final op in [
+        for (final entry in client.queue.entries.whereType<PendingOp>())
+          entry.op,
+        for (final work in client.queue.landed) work.op,
+      ])
+        if (op case ElementDeleteOp(:final elementPublicId)) elementPublicId,
+    };
+    final deleted = [
+      for (final row in drawn.elements)
+        if (row case LiveElement(:final pagePublicId)
+            when current.page(pagePublicId) is LivePage &&
+                !copying.contains(pagePublicId) &&
+                !ownDeletes.contains(row.publicId) &&
+                current.element(row.publicId) is DeletedElement)
+          row,
+    ];
+    if (live.isEmpty && deleted.isEmpty) return;
     final replaced = [
       for (final row in live)
         if (createdAtOf(row) != createdAtOf(current.element(row.publicId)!))
           row,
     ];
-    final target = replaced.isNotEmpty && making.nextBool()
+    final target = deleted.isNotEmpty
+        ? deleted[making.nextInt(deleted.length)]
+        : replaced.isNotEmpty && making.nextBool()
         ? replaced[making.nextInt(replaced.length)]
         : live[making.nextInt(live.length)];
     final op = ElementPatchOp(
@@ -1001,6 +1020,8 @@ final class Model {
         count(
           'made checked: a base the held row moved past, held for the user',
         );
+      case HeldForUser(reason: RejectionReason.deleted):
+        count('a row deleted since the draw, held for the user');
       case HeldForUser():
         count('a row replaced since the draw, held for the user');
     }
@@ -2228,6 +2249,7 @@ const minimums = {
   'made checked: a base the held row moved past, held for the user': 60,
   'made live in an ended session, made checked': 300,
   'a row replaced since the draw, held for the user': 5,
+  'a row deleted since the draw, held for the user': 5,
   'page reads deferred, moving no order': 8,
   'taken content checked not to go back': 100000,
   'taken content of a page not shown checked not to go back': 4000,

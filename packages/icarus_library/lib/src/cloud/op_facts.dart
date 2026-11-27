@@ -682,9 +682,18 @@ AtCommit atCommit(
   required Map<RowKey, int> drawnLives,
 }) {
   if (_rowAt(rows, targetOf(op)) case final row?
-      when drawnLives.containsKey(row.key) &&
-          drawnLives[row.key] != createdAtOf(row)) {
-    return const HeldForUser(RejectionReason.rowReplaced);
+      when drawnLives.containsKey(row.key)) {
+    if (drawnLives[row.key] != createdAtOf(row)) {
+      return const HeldForUser(RejectionReason.rowReplaced);
+    }
+    if ((op, row)
+        case (ElementPatchOp() || ElementReorderOp(), DeletedElement()) ||
+            (
+              LineupGroupPatchOp() || LineupGroupReorderOp(),
+              DeletedLineupGroup(),
+            )) {
+      return const HeldForUser(RejectionReason.deleted);
+    }
   }
   if (madeAs == MadeAs.live) return AppliedAs(withoutFieldBase(op));
   if (madeAs == MadeAs.checked) {
