@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:icarus/collab/cloud_results.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
+import 'package:icarus/collab/collab_models.dart' show RemotePageSnapshot;
 import 'package:icarus/collab/convex_client.dart'
     show ConvexClientFunctionError;
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -90,26 +91,12 @@ StoreReads storeReadsOver(
     StoreReads(
       pageList: ({required strategyPublicId, required account}) async {
         try {
-          return switch (await repository.readPageListStamped(
-            strategyPublicId,
-            accountSubject: account.subject,
-          )) {
-            StampedValue(value: final list, :final stamp) => switch (
-                  pageListRead(list)) {
-                RowsRead(:final value) => StoreReadAnswered(
-                    value,
-                    point: pointOf(stamp),
-                    role: StoreReadRole.of(list.header.role),
-                  ),
-                RowsUnreadable(:final problem) =>
-                  StoreReadUnreadable(problem, point: pointOf(stamp)),
-              },
-            StampedError(:final error, :final stamp) => storeReadOutcomeOfError(
-                ConvexFunctionException.fromTransport(error),
-                gone: const store.StrategyGone(),
-                point: pointOf(stamp),
-              ),
-          };
+          return pageListOutcomeOf(
+            await repository.readPageListStamped(
+              strategyPublicId,
+              accountSubject: account.subject,
+            ),
+          );
         } catch (error) {
           return storeReadOutcomeOfError(
             error,
@@ -124,24 +111,15 @@ StoreReads storeReadsOver(
         required account,
       }) async {
         try {
-          return switch (await repository.readPageStamped(
-            strategyPublicId: strategyPublicId,
+          return pageOutcomeOf(
+            await repository.readPageStamped(
+              strategyPublicId: strategyPublicId,
+              pagePublicId: pagePublicId,
+              accountSubject: account.subject,
+            ),
             pagePublicId: pagePublicId,
-            accountSubject: account.subject,
-          )) {
-            StampedValue(value: final page, :final stamp) => switch (
-                  pageRead(page, canRead)) {
-                RowsRead(:final value) =>
-                  StoreReadAnswered(value, point: pointOf(stamp)),
-                RowsUnreadable(:final problem) =>
-                  StoreReadUnreadable(problem, point: pointOf(stamp)),
-              },
-            StampedError(:final error, :final stamp) => storeReadOutcomeOfError(
-                ConvexFunctionException.fromTransport(error),
-                gone: store.PageGone(pagePublicId),
-                point: pointOf(stamp),
-              ),
-          };
+            canRead: canRead,
+          );
         } catch (error) {
           return storeReadOutcomeOfError(
             error,
@@ -151,6 +129,45 @@ StoreReads storeReadsOver(
         }
       },
     );
+
+StoreReadOutcome pageListOutcomeOf(Stamped<RemotePageList> answer) =>
+    switch (answer) {
+      StampedValue(value: final list, :final stamp) => switch (
+            pageListRead(list)) {
+          RowsRead(:final value) => StoreReadAnswered(
+              value,
+              point: pointOf(stamp),
+              role: StoreReadRole.of(list.header.role),
+            ),
+          RowsUnreadable(:final problem) =>
+            StoreReadUnreadable(problem, point: pointOf(stamp)),
+        },
+      StampedError(:final error, :final stamp) => storeReadOutcomeOfError(
+          ConvexFunctionException.fromTransport(error),
+          gone: const store.StrategyGone(),
+          point: pointOf(stamp),
+        ),
+    };
+
+StoreReadOutcome pageOutcomeOf(
+  Stamped<RemotePageSnapshot> answer, {
+  required String pagePublicId,
+  required store.CanRead canRead,
+}) =>
+    switch (answer) {
+      StampedValue(value: final page, :final stamp) => switch (
+            pageRead(page, canRead)) {
+          RowsRead(:final value) =>
+            StoreReadAnswered(value, point: pointOf(stamp)),
+          RowsUnreadable(:final problem) =>
+            StoreReadUnreadable(problem, point: pointOf(stamp)),
+        },
+      StampedError(:final error, :final stamp) => storeReadOutcomeOfError(
+          ConvexFunctionException.fromTransport(error),
+          gone: store.PageGone(pagePublicId),
+          point: pointOf(stamp),
+        ),
+    };
 
 StoreReadOutcome storeReadOutcomeOfError(
   Object error, {

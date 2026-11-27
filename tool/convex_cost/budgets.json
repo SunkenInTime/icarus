@@ -800,6 +800,40 @@
           "budget": 0
         }
       }
+    },
+    "liveListEdit": {
+      "title": "Item edits under a live page list",
+      "about": "A 10-page strategy of 30 items a page, shared with a teammate, open in an editor that watches strategy:getPageList with its account (as the store's editor does with the switch on) and its first page in slices. One own move, one teammate's move on that page, one on another page, then ten own moves. An item edit writes only its element row and an operation event, which no list query reads, so the list must not re-run: the bill for a live list depends on it.",
+      "metrics": {
+        "functionCalls": {
+          "today": 25,
+          "budget": 30
+        },
+        "readBytes": {
+          "today": 211358,
+          "budget": 264198
+        },
+        "writeBytes": {
+          "today": 30095,
+          "budget": 37619
+        },
+        "sentBytes": {
+          "today": 12254,
+          "budget": 15318
+        },
+        "returnBytes": {
+          "today": 128724,
+          "budget": 160905
+        },
+        "queryReruns": {
+          "today": 12,
+          "budget": 12
+        },
+        "pageListReruns": {
+          "today": 0,
+          "budget": 0
+        }
+      }
     }
   }
 }

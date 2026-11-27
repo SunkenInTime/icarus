@@ -694,6 +694,38 @@ async function twoPeople({ env, world, rng }, send) {
   return result;
 }
 
+async function liveListEdit({ env, world, rng }) {
+  const { coach, teammate } = world;
+  const strategy = await makeStrategy(coach, rng, { name: "live page list", pageCount: 10, items: 30 });
+  await share(coach, teammate, rng, "strategy", strategy.publicId, "editor");
+  const strategyPublicId = strategy.publicId;
+  const stopList = await coach.watch("strategy:getPageList", { strategyPublicId, accountSubject: COACH.subject });
+  const page = await PageWatch.start(coach, strategyPublicId, strategy.pages[0]);
+  const rowsOf = async (pagePublicId) =>
+    (await coach.query("page:getSnapshot", wholePageArgs(strategyPublicId, pagePublicId))).elements;
+  const coachClient = rng.uuid();
+  const teammateClient = rng.uuid();
+  const moveAndSee = async (device, clientId, row) => {
+    const revision = await sendLive(device, strategyPublicId, clientId, liveMove(row, rng));
+    await page.waitFor((elements) => elements.some((seen) => seen.publicId === row.publicId && seen.revision >= revision));
+    await page.settle();
+  };
+  const open = await rowsOf(strategy.pages[0]);
+  await moveAndSee(coach, coachClient, open[0]);
+  const elsewhere = await rowsOf(strategy.pages[5]);
+  const result = await metered([coach, teammate], env, async () => {
+    await moveAndSee(coach, coachClient, open[1]);
+    await moveAndSee(teammate, teammateClient, open[2]);
+    await sendLive(teammate, strategyPublicId, teammateClient, liveMove(elsewhere[0], rng));
+    await page.settle();
+    for (const row of open.slice(3, 13)) await moveAndSee(coach, coachClient, row);
+  });
+  page.stop();
+  stopList();
+  const listRow = [...result.summary.byFunction.entries()].find(([name]) => name.includes("getPageList"))?.[1];
+  return { ...result, metrics: { ...result.metrics, pageListReruns: listRow?.runs ?? 0 } };
+}
+
 export const SESSIONS = {
   libraryOpen: {
     title: "Open the library",
@@ -1171,6 +1203,18 @@ export const SESSIONS = {
       };
     },
   },
+  liveListEdit: {
+    title: "Item edits under a live page list",
+    about:
+      "A 10-page strategy of 30 items a page, shared with a teammate, open in an editor that watches " +
+      "strategy:getPageList with its account (as the store's editor does with the switch on) and its first page in " +
+      "slices. One own move, one teammate's move on that page, one on another page, then ten own moves. An item edit " +
+      "writes only its element row and an operation event, which no list query reads, so the list must not re-run: " +
+      "the bill for a live list depends on it.",
+    world: "team",
+    run: liveListEdit,
+  },
+
 };
 
 seedTeam.ownBackendOnly = true;

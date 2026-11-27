@@ -7,6 +7,8 @@ final class StampedOver implements StampedConvexTransport {
 
   final ConvexTransport inner;
   final calls = <String>[];
+  final watchedWith = <(String, Map<String, Object?>)>[];
+  final queriedWith = <(String, Map<String, Object?>)>[];
   var _snapshot = 0;
 
   ResultStamp _next() => ResultStamp(
@@ -30,12 +32,14 @@ final class StampedOver implements StampedConvexTransport {
   @override
   Future<ConvexValue> query(String name, ConvexObject args) {
     calls.add('query $name');
+    queriedWith.add((name, args.toDart()));
     return inner.query(name, args);
   }
 
   @override
   Stream<ConvexValue> subscribe(String name, ConvexObject args) {
     calls.add('subscribe $name');
+    watchedWith.add((name, args.toDart()));
     return inner.subscribe(name, args);
   }
 
@@ -45,6 +49,9 @@ final class StampedOver implements StampedConvexTransport {
   ) {
     calls
         .add('subscribeTogether ${queries.map((query) => query.$1).join(',')}');
+    for (final (name, args) in queries) {
+      watchedWith.add((name, args.toDart()));
+    }
     return inner.subscribeTogether(queries);
   }
 
@@ -82,6 +89,7 @@ final class StampedOver implements StampedConvexTransport {
     ConvexObject args,
   ) {
     calls.add('subscribeStamped $name');
+    watchedWith.add((name, args.toDart()));
     return _stamped(inner.subscribe(name, args));
   }
 
@@ -92,6 +100,9 @@ final class StampedOver implements StampedConvexTransport {
     calls.add(
       'subscribeTogetherStamped ${queries.map((query) => query.$1).join(',')}',
     );
+    for (final (name, args) in queries) {
+      watchedWith.add((name, args.toDart()));
+    }
     return _stamped(inner.subscribeTogether(queries));
   }
 

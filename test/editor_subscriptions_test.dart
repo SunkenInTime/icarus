@@ -33,9 +33,9 @@ const todaysCalls = [
 ];
 
 const stampedCalls = [
-  'query strategy:getShell',
+  'query strategy:getPageList',
   'query page:getSnapshot',
-  'subscribeStamped strategy:getShell',
+  'subscribeStamped strategy:getPageList',
   'subscribeStamped page:getSnapshot',
   'subscribeTogetherStamped page:getFrame,page:getElementSlice,'
       'page:getElementSlice',
@@ -177,9 +177,71 @@ void main() {
         'b',
         'c',
       ]);
+      final transport =
+          cloud is CloudStoreSend ? storeTransport : editorTransport;
       expect(
-        (cloud is CloudStoreSend ? storeTransport : editorTransport).calls,
+        transport.calls,
         cloud is CloudStoreSend ? stampedCalls : todaysCalls,
+      );
+      expect(
+        {
+          for (final (name, args) in transport.watchedWith)
+            '$name ${args['accountSubject'] ?? 'without the account'}',
+        },
+        {
+          cloud is CloudStoreSend
+              ? 'strategy:getPageList account-a'
+              : 'strategy:getShell without the account',
+          for (final name in [
+            'page:getSnapshot',
+            'page:getFrame',
+            'page:getElementSlice',
+          ])
+            '$name ${cloud is CloudStoreSend ? 'account-a' : 'without the account'}',
+        },
+      );
+    });
+  }
+
+  for (final cloud in [const CloudStoreOff(), const CloudStoreSend()]) {
+    test(
+        'with the switch ${cloud is CloudStoreSend ? 'on' : 'off'}, an open '
+        'and a refresh read the shell from the query the editor watches, '
+        'and the page with the account its watch names', () async {
+      final container = start(cloud: cloud);
+      await openThenTeammateEditsPageA(container);
+      await container.read(remoteEditorSnapshotProvider.notifier).refresh();
+      await pumpEventQueue();
+      final transport =
+          cloud is CloudStoreSend ? storeTransport : editorTransport;
+      final shellQuery = cloud is CloudStoreSend
+          ? 'strategy:getPageList'
+          : 'strategy:getShell';
+      expect(
+        [
+          for (final call in transport.calls)
+            if (call.contains('strategy:')) call,
+        ],
+        [
+          'query $shellQuery',
+          '${cloud is CloudStoreSend ? 'subscribeStamped' : 'subscribe'} '
+              '$shellQuery',
+          'query $shellQuery',
+        ],
+      );
+      expect(
+        {
+          for (final (name, args) in transport.queriedWith)
+            if (name == shellQuery) args['accountSubject'],
+        },
+        {if (cloud is CloudStoreSend) 'account-a' else null},
+      );
+      expect(
+        {
+          for (final (name, args) in transport.queriedWith)
+            if (name == 'page:getSnapshot') args['accountSubject'],
+        },
+        {if (cloud is CloudStoreSend) 'account-a' else null},
       );
     });
   }
@@ -208,14 +270,14 @@ void main() {
                 .recoveries,
         rereads: [
           for (final call in transport.calls.skip(before))
-            if (call.startsWith('query ')) call,
+            if (call.startsWith('query ')) _reread(call),
         ].join(', '),
         upgradeAsked: container.read(clientUpgradeRequiredProvider),
       );
     }
 
-    const shell = 'query strategy:getShell';
-    const both = 'query strategy:getShell, query page:getSnapshot';
+    const shell = 'the shell';
+    const both = 'the shell, the page';
     for (final (code, watch, expected) in <(String, String, Outcome)>[
       (
         'UNAUTHENTICATED',
@@ -317,15 +379,13 @@ final class _TwoPageServer
     _shellPages = pages;
     _shellRevision++;
     for (final (name, args, controller) in _live) {
-      if (name == 'strategy:getShell') controller.add(_answer(name, args));
+      if (_watchesShell(name)) controller.add(_answer(name, args));
     }
   }
 
   void refuse(ConvexTransportError error, {required String watch}) {
     for (final (name, _, controller) in _live) {
-      if (watch == 'shell'
-          ? name == 'strategy:getShell'
-          : name != 'strategy:getShell') {
+      if (watch == 'shell' ? _watchesShell(name) : !_watchesShell(name)) {
         controller.addError(error);
       }
     }
@@ -334,6 +394,9 @@ final class _TwoPageServer
   ConvexValue _answer(String name, ConvexObject args) {
     if (name == 'strategy:getShell') {
       return shellAnswer(_shellPages, revision: _shellRevision);
+    }
+    if (name == 'strategy:getPageList') {
+      return pageListAnswer(_shellPages, revision: _shellRevision);
     }
     final page = args.value['pagePublicId']!.toDart() as String;
     final whole = pageAnswer(page, elements: _elements[page]!).toDart();
@@ -382,6 +445,15 @@ final class _TwoPageServer
   Future<ConvexValue> action(String name, ConvexObject args) =>
       throw UnimplementedError(name);
 }
+
+String _reread(String call) => switch (call) {
+      'query strategy:getShell' || 'query strategy:getPageList' => 'the shell',
+      'query page:getSnapshot' => 'the page',
+      _ => call,
+    };
+
+bool _watchesShell(String name) =>
+    name == 'strategy:getShell' || name == 'strategy:getPageList';
 
 bool _inRange(String id, String from, String? to) =>
     id.compareTo(from) >= 0 && (to == null || id.compareTo(to) < 0);

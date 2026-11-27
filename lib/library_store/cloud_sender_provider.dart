@@ -8,8 +8,10 @@ import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
 import 'package:icarus/config/drive_build.dart';
+import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/library_store/live_results.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -37,6 +39,10 @@ final cloudSenderTimingProvider = Provider<SenderTiming>(
 
 final cloudSenderClockProvider = Provider<DateTime Function()>(
   (ref) => DateTime.now,
+);
+
+final storeReconnectProvider = Provider<Future<void> Function()>(
+  (ref) => () => ConvexClient.instance.reconnect(),
 );
 
 final convexSignInsProvider = Provider<Stream<bool>>(
@@ -104,6 +110,37 @@ final cloudSenderProvider = NotifierProvider<CloudSenderNotifier, CloudSender?>(
   CloudSenderNotifier.new,
 );
 
+final storeLiveResultsProvider = Provider<LiveResultsToSender>(
+  (ref) => LiveResultsToSender(),
+);
+
+final class LiveResultsToSender implements LiveResults {
+  LiveResults _to = const NoLiveResults();
+
+  void attach(CloudSender sender) => _to = sender;
+
+  void detach(CloudSender sender) {
+    if (identical(_to, sender)) _to = const NoLiveResults();
+  }
+
+  @override
+  void liveOpened(String strategyId, ReadOf subject) =>
+      _to.liveOpened(strategyId, subject);
+
+  @override
+  void liveArrived(
+    String strategyId,
+    ReadOf subject,
+    Account account,
+    StoreReadOutcome outcome,
+  ) =>
+      _to.liveArrived(strategyId, subject, account, outcome);
+
+  @override
+  void liveClosed(String strategyId, ReadOf subject) =>
+      _to.liveClosed(strategyId, subject);
+}
+
 class CloudSenderNotifier extends Notifier<CloudSender?> {
   var _signOuts = 0;
   Account? _lastAccount;
@@ -142,8 +179,10 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
       timing: ref.read(cloudSenderTimingProvider),
       clock: ref.read(cloudSenderClockProvider),
       editorShows: () => ref.read(ref.read(senderEditorProvider)),
+      reconnect: ref.read(storeReconnectProvider),
     );
     state = sender;
+    final live = ref.read(storeLiveResultsProvider)..attach(sender);
     final editor = ref.read(senderEditorProvider);
     void adoptOpen() {
       if (ref.read(editor) case final open?) sender.adopt(open);
@@ -167,6 +206,7 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
     );
     ref.onDispose(() {
       unawaited(signIns.cancel());
+      live.detach(sender);
       sender.dispose();
     });
     sender.start();

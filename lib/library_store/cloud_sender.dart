@@ -5,6 +5,7 @@ import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/landed_retiring.dart';
 import 'package:icarus/library_store/call_governor.dart';
+import 'package:icarus/library_store/live_results.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/store_sessions.dart';
@@ -23,6 +24,8 @@ final class SenderTiming {
     this.quietBeforeRetiring = const Duration(seconds: 30),
     this.retireAgainAfter = const Duration(minutes: 5),
     this.lookupGiveUpAfter = const Duration(seconds: 10),
+    this.firstLiveResult = const Duration(seconds: 10),
+    this.liveGrace = const Duration(seconds: 2),
   });
 
   final Duration wait;
@@ -35,6 +38,8 @@ final class SenderTiming {
   final Duration quietBeforeRetiring;
   final Duration retireAgainAfter;
   final Duration lookupGiveUpAfter;
+  final Duration firstLiveResult;
+  final Duration liveGrace;
 
   RetiringTiming get retiring => (
         quiet: quietBeforeRetiring,
@@ -207,7 +212,8 @@ enum _Why {
       'than every result read since, with nothing in them showing our write',
       StallExit.answerAhead),
   access('edit access was lost', StallExit.viewerOnly),
-  retire('landed work waits for a result', StallExit.landedWork);
+  retire('landed work waits for a result', StallExit.landedWork),
+  live('a live result arrived', StallExit.unsettledResult);
 
   const _Why(this.words, this.row);
 
@@ -217,7 +223,79 @@ enum _Why {
 
 typedef _Planned = ({ReadOf read, _Why why});
 
-final class CloudSender {
+typedef _LiveResult = ({
+  Account account,
+  StoreReadOutcome outcome,
+  ResultPoint point,
+  DateTime at,
+});
+
+ResultPoint? _pointOf(StoreReadOutcome outcome) => switch (outcome) {
+      StoreReadAnswered(:final point) ||
+      StoreReadRefused(:final point) ||
+      StoreReadUnreadable(:final point) =>
+        point,
+      StoreReadLost() => null,
+    };
+
+bool _isOlder(ResultPoint point, ResultPoint than) =>
+    point.generation.isBefore(than.generation) ||
+    (point.generation == than.generation && point.snapshot < than.snapshot);
+
+final class _Live {
+  _Live(this.since);
+
+  DateTime since;
+  var watchers = 0;
+  int? deliveredOn;
+  _LiveResult? _pending;
+  _LiveResult? taking;
+  var answers = 0;
+  int? answersAtReconnect;
+
+  bool get answeredSinceReconnect => answersAtReconnect != answers;
+
+  _LiveResult? get pending => _pending;
+
+  bool get dropsOnReplace => _pending != null && !identical(_pending, taking);
+
+  bool offered(_LiveResult result) {
+    final held = _pending;
+    if (held != null && _isOlder(result.point, held.point)) return false;
+    _pending = result;
+    return true;
+  }
+
+  void written(_LiveResult result) {
+    if (identical(_pending, result)) _pending = null;
+  }
+
+  _LiveResult? owed() {
+    final held = _pending;
+    _pending = null;
+    return held;
+  }
+}
+
+sealed class _LiveGate {
+  const _LiveGate();
+}
+
+final class _NotLive extends _LiveGate {
+  const _NotLive();
+}
+
+final class _LiveCurrent extends _LiveGate {
+  const _LiveCurrent();
+}
+
+final class _LiveAwaitingFirst extends _LiveGate {
+  const _LiveAwaitingFirst(this.until);
+
+  final DateTime until;
+}
+
+final class CloudSender implements LiveResults {
   CloudSender({
     required SenderStore store,
     required StoreBatchSend send,
@@ -236,7 +314,9 @@ final class CloudSender {
     Duration Function()? elapsed,
     bool Function()? recordsConnectionLost,
     String? Function()? editorShows,
+    Future<void> Function()? reconnect,
   })  : _store = store,
+        _reconnect = reconnect ?? (() async {}),
         _governor = CallGovernor(
           reads: reads,
           send: send,
@@ -252,6 +332,7 @@ final class CloudSender {
         _recordsLost = recordsConnectionLost ?? (() => true);
 
   final Future<({int client, int connection})> Function() _generation;
+  final Future<void> Function() _reconnect;
 
   Future<({int client, int connection})> _lookUpGeneration() =>
       _generation().timeout(_timing.lookupGiveUpAfter);
@@ -290,6 +371,17 @@ final class CloudSender {
   final _lastSeen = <String, CloudStrategy>{};
   final retiring = Retiring();
   final _waits = <String, StallExit>{};
+  final _live = <(String, ReadOf), _Live>{};
+  final _clockHeldByLive = <String, Set<ReadOf>>{};
+  final _heldByLiveSince = <(String, ReadOf), DateTime>{};
+  final _owedPastTheWatch = <(String, ReadOf)>{};
+  var liveTaken = 0;
+  var liveReplaced = 0;
+  var liveOlderDropped = 0;
+  var liveOwed = 0;
+  var clockWaitsOnLive = 0;
+  var clockRoundsOnWatch = 0;
+  var reconnectsAsked = 0;
   var looks = 0;
   var wakes = 0;
   var dues = 0;
@@ -370,6 +462,7 @@ final class CloudSender {
         null => !_checkedClean.contains(strategy.id),
         _ => strategy.hasWorkToSend ||
             strategy.needsReading ||
+            _livePending(strategy.id) ||
             _unread.contains(strategy.id) ||
             retiring.mayRetire(strategy.id) ||
             _governor.keeping.contains(strategy.id) ||
@@ -431,6 +524,14 @@ final class CloudSender {
 
   set inputs(Snapshot next) {
     if (disposed) return;
+    if (next.connection != _inputs.connection) {
+      final now = _clock();
+      for (final live in _live.values) {
+        live
+          ..deliveredOn = null
+          ..since = now;
+      }
+    }
     _inputs = next;
     _dropRequestsNotMadeUnder(next);
     _governor.under(readsUnder(next));
@@ -502,14 +603,183 @@ final class CloudSender {
   }
 
   void retryNow(String strategyId) {
+    final watches = [
+      for (final read in _clockHeldByLive[strategyId] ?? const <ReadOf>{})
+        if (_live[(strategyId, read)] case final live?) live,
+    ];
+    if (watches.any((live) => live.answeredSinceReconnect)) {
+      for (final live in watches) {
+        live.answersAtReconnect = live.answers;
+      }
+      reconnectsAsked++;
+      unawaited(_askReconnect(strategyId));
+    }
     _governor.newEvidence(strategyId);
     notBefore.remove(strategyId);
     wake();
   }
 
+  Future<void> _askReconnect(String strategyId) async {
+    try {
+      await _reconnect();
+    } catch (error) {
+      _note(strategyId, 'the reconnect the retry asked for failed: $error');
+    }
+  }
+
   void editorOpened(String? strategyId) {
     _governor.userOpened(strategyId);
     wake();
+  }
+
+  @override
+  void liveOpened(String strategyId, ReadOf subject) {
+    if (disposed) return;
+    final live = _live[(strategyId, subject)] ??= _Live(_clock());
+    if (live.watchers == 0) {
+      live
+        ..since = _clock()
+        ..deliveredOn = null;
+    }
+    live.watchers++;
+    wake();
+  }
+
+  @override
+  void liveArrived(
+    String strategyId,
+    ReadOf subject,
+    Account account,
+    StoreReadOutcome outcome,
+  ) {
+    if (disposed) return;
+    final live = _live[(strategyId, subject)] ??= _Live(_clock());
+    if (live.watchers == 0) live.watchers = 1;
+    final point = _pointOf(outcome);
+    if (point == null) {
+      live.deliveredOn = null;
+      wake();
+      return;
+    }
+    live.answers++;
+    final replacing = live.dropsOnReplace;
+    if (live.offered(
+      (account: account, outcome: outcome, point: point, at: _clock()),
+    )) {
+      if (replacing) liveReplaced++;
+    } else {
+      liveOlderDropped++;
+    }
+    live.deliveredOn = _inputs.connection;
+    wake();
+  }
+
+  @override
+  void liveClosed(String strategyId, ReadOf subject) {
+    final live = _live[(strategyId, subject)];
+    if (live == null) return;
+    live.watchers--;
+    _forgetEnded(strategyId, subject);
+    wake();
+  }
+
+  void _forgetEnded(String strategyId, ReadOf subject) {
+    if (_live[(strategyId, subject)] case final live?
+        when live.watchers <= 0 && live.pending == null) {
+      _live.remove((strategyId, subject));
+    }
+  }
+
+  void _owe(String id, ReadOf read) {
+    final live = _live[(id, read)];
+    if (live?.owed() == null) return;
+    liveOwed++;
+    if (live!.watchers <= 0 || live.deliveredOn != _inputs.connection) {
+      live.deliveredOn = null;
+      _owedPastTheWatch.add((id, read));
+    }
+    _governor.written(id, read, late: true);
+    _forgetEnded(id, read);
+    wake();
+  }
+
+  bool _livePending(String id) => _live.entries
+      .any((entry) => entry.key.$1 == id && entry.value.pending != null);
+
+  ({ReadOf read, _LiveResult result})? _nextLive(String id, Account owner) {
+    for (final MapEntry(key: (strategy, read), value: live)
+        in _live.entries.toList()) {
+      if (strategy != id) continue;
+      final pending = live.pending;
+      if (pending == null) continue;
+      if (pending.account != owner) {
+        _note(id, 'a live result of $read was read as another account');
+        _owe(id, read);
+        continue;
+      }
+      return (read: read, result: pending);
+    }
+    return null;
+  }
+
+  _LiveGate _liveGate(String id, ReadOf read, DateTime now, Snapshot snap) {
+    final live = _live[(id, read)];
+    if (live == null ||
+        live.watchers <= 0 ||
+        _owedPastTheWatch.contains((id, read))) {
+      return const _NotLive();
+    }
+    if (live.deliveredOn case final on? when on == snap.connection) {
+      return const _LiveCurrent();
+    }
+    final until = live.since.add(_timing.firstLiveResult);
+    return until.isAfter(now) ? _LiveAwaitingFirst(until) : const _NotLive();
+  }
+
+  DateTime? _nextRoundOnWatch(
+    String id,
+    ReadOf read,
+    DateTime now,
+    Snapshot snap,
+  ) =>
+      switch (_governor.readAt(id, read, snap)) {
+        ReadFrom(:final at?) when at.isAfter(now) => at,
+        _ => null,
+      };
+
+  DateTime _roundDue(String id, ReadOf read, DateTime now, Snapshot snap) =>
+      _nextRoundOnWatch(id, read, now, snap) ?? now;
+
+  void _countClockHeldByLive(
+    String id,
+    CloudStrategy cloud,
+    DateTime now,
+    Snapshot snap,
+  ) {
+    final memory = _governor.memory(id, readsUnder(snap));
+    final held = {
+      for (final (:planned, wantedAt: _)
+          in _readsWanted(id, cloud, now, memory))
+        if (planned.why == _Why.clock &&
+            _liveGate(id, planned.read, now, snap) is _LiveCurrent)
+          planned.read,
+    };
+    final before = _clockHeldByLive[id] ?? const <ReadOf>{};
+    clockWaitsOnLive += held.difference(before).length;
+    for (final read in held) {
+      if (_nextRoundOnWatch(id, read, now, snap) == null) {
+        clockRoundsOnWatch++;
+        _governor.remember(
+          id,
+          _boundMemory(id, snap).climbed('$read', now, StallExit.clockOnWatch),
+        );
+      }
+    }
+    if (held.isEmpty) {
+      _clockHeldByLive.remove(id);
+    } else {
+      _clockHeldByLive[id] = held;
+    }
   }
 
   void adopt(String strategyId) {
@@ -815,6 +1085,7 @@ final class CloudSender {
     retiring.looked(id, cloud, now);
     _forgetResolved(id, cloud, snap);
     _lastSeen[id] = cloud;
+    _countClockHeldByLive(id, cloud, now, snap);
     if (_unreadPages(cloud).isEmpty) {
       _unread.remove(id);
     } else {
@@ -834,7 +1105,7 @@ final class CloudSender {
           reading = why;
       }
     }
-    if (!sends && planned == null) {
+    if (!sends && planned == null && !_livePending(id)) {
       DateTime? retryAt;
       if (pick(cloud, clientId)
           case NothingSendable(:final why, retryAt: final at)) {
@@ -882,7 +1153,10 @@ final class CloudSender {
       _note(id, 'closed attempts $open that no call answers');
       return _afterWrite(id, written, mustApply: true);
     }
-    final fresh = _plan(id, cloud, _clock(), snap);
+    if (_nextLive(id, owner) case (:final read, :final result)) {
+      return _takeLive(id, owner, snap, session, cloud, read, result);
+    }
+    final fresh = _plan(id, cloud, now, snap);
     switch (pick(cloud, clientId)) {
       case final Picked picked when _sendable(cloud):
         return _sendStep(id, owner, snap, picked, session);
@@ -914,16 +1188,50 @@ final class CloudSender {
     Snapshot snap,
   ) {
     final memory = _governor.memory(id, readsUnder(snap));
+    final reads = _readsWanted(id, cloud, now, memory).toList();
+    _heldByLiveSince.removeWhere(
+      (key, _) =>
+          key.$1 == id && !reads.any((each) => each.planned.read == key.$2),
+    );
     DateTime? due;
     StallExit? why;
-    for (final (:planned, :wantedAt) in _readsWanted(id, cloud, now, memory)) {
+    for (final (:planned, :wantedAt) in reads) {
+      final gate = _liveGate(id, planned.read, now, snap);
+      if (gate is _LiveCurrent && planned.why == _Why.clock) {
+        final round = _roundDue(id, planned.read, now, snap);
+        if (due == null || round.isBefore(due)) {
+          due = round;
+          why = StallExit.clockOnWatch;
+        }
+        continue;
+      }
+      final (wanted, wantedRow) = switch (gate) {
+        _LiveCurrent() when planned.why == _Why.clock => (
+            null,
+            planned.why.row
+          ),
+        _LiveCurrent() => switch (_heldByLiveSince.putIfAbsent(
+              (id, planned.read), () => now).add(_timing.liveGrace)) {
+            final until when until.isAfter(now) => (until, planned.why.row),
+            _ => (wantedAt, planned.why.row),
+          },
+        _LiveAwaitingFirst(:final until) when until.isAfter(wantedAt) => (
+            until,
+            StallExit.liveNoFirstResult
+          ),
+        _LiveAwaitingFirst() || _NotLive() => (wantedAt, planned.why.row),
+      };
+      if (wanted == null) {
+        why ??= wantedRow;
+        continue;
+      }
       final (at, row) = switch (_governor.readAt(id, planned.read, snap)) {
         ReadStopped(:final why) => (null, why),
-        ReadFrom(at: final from?, :final why) when from.isAfter(wantedAt) => (
+        ReadFrom(at: final from?, :final why) when from.isAfter(wanted) => (
             from,
-            why ?? planned.why.row
+            why ?? wantedRow
           ),
-        ReadFrom() => (wantedAt, planned.why.row),
+        ReadFrom() => (wanted, wantedRow),
       };
       if (at == null) {
         why ??= row;
@@ -1099,10 +1407,6 @@ final class CloudSender {
   ) async {
     final (:read, :why) = planned;
     final under = readsUnder(snap);
-    final marking = switch (why) {
-      _Why.need || _Why.clock || _Why.adopt => cloud,
-      _Why.access || _Why.retire => null,
-    };
     final StoreReadOutcome outcome;
     final DateTime started;
     final kept = _governor.heldFor(id, read, under);
@@ -1128,8 +1432,87 @@ final class CloudSender {
           case Answered(outcome: final fresh, started: final at):
             outcome = fresh;
             started = at;
+            _owedPastTheWatch.remove((id, read));
         }
     }
+    return _answered(
+      id,
+      owner,
+      snap,
+      session,
+      cloud,
+      planned,
+      outcome,
+      started,
+      late: kept != null,
+      troubled: () => _governor.hold(id, read, (
+        outcome: outcome,
+        started: started,
+        under: under,
+        readIn: session,
+      )),
+    );
+  }
+
+  Future<_Step> _takeLive(
+    String id,
+    Account owner,
+    Snapshot snap,
+    int session,
+    CloudStrategy cloud,
+    ReadOf read,
+    _LiveResult result,
+  ) async {
+    var handled = false;
+    _live[(id, read)]?.taking = result;
+    final step = await _answered(
+      id,
+      owner,
+      snap,
+      session,
+      cloud,
+      (read: read, why: _Why.live),
+      result.outcome,
+      result.at,
+      late: false,
+      troubled: () {},
+      handled: () => handled = true,
+    );
+    if (_live[(id, read)] case final live?
+        when identical(live.taking, result)) {
+      live.taking = null;
+    }
+    if (step is _Ended) return step;
+    final troubled = step is _Skipped && step.why == StallExit.localTrouble;
+    if (handled) {
+      _live[(id, read)]?.written(result);
+      _forgetEnded(id, read);
+      if (step is _Acted) liveTaken++;
+      if (step is! _Acted) _live[(id, read)]?.deliveredOn = null;
+    } else if (!troubled) {
+      _owe(id, read);
+    }
+    return step;
+  }
+
+  Future<_Step> _answered(
+    String id,
+    Account owner,
+    Snapshot snap,
+    int session,
+    CloudStrategy cloud,
+    _Planned planned,
+    StoreReadOutcome outcome,
+    DateTime started, {
+    required bool late,
+    required void Function() troubled,
+    void Function()? handled,
+  }) async {
+    final (:read, :why) = planned;
+    final marking = switch (why) {
+      _Why.need || _Why.clock || _Why.adopt || _Why.live => cloud,
+      _Why.access || _Why.retire => null,
+    };
     if (disposed) return const _Ended();
     if (_inputs != snap) {
       _note(
@@ -1161,9 +1544,13 @@ final class CloudSender {
             ),
         ]);
         if (disposed) return const _Ended();
+        if (written case WrittenWith(:final notApplied)
+            when notApplied.isEmpty) {
+          handled?.call();
+        }
         switch (written) {
           case WriteTroubled(trouble: ResultNotStored(:final why)):
-            _governor.written(id, read, late: kept != null);
+            _governor.written(id, read, late: late);
             _governor.keep(id, read, _refusedMark(read, why, asked));
             return _unsettled(
               id,
@@ -1175,15 +1562,10 @@ final class CloudSender {
               planned: cloud,
             );
           case WriteTroubled(:final trouble):
-            _governor.hold(id, read, (
-              outcome: outcome,
-              started: started,
-              under: under,
-              readIn: session,
-            ));
+            troubled();
             return _troubled(id, trouble);
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
-            _governor.written(id, read, late: kept != null);
+            _governor.written(id, read, late: late);
             return _unsettled(
               id,
               owner,
@@ -1196,7 +1578,7 @@ final class CloudSender {
               planned: cloud,
             );
           case WrittenWith(:final effects):
-            _governor.written(id, read, late: kept != null);
+            _governor.written(id, read, late: late);
             if (read case ReadOfPage(:final page)
                 when effects.any(
                   (effect) =>
@@ -1230,6 +1612,7 @@ final class CloudSender {
         notBefore.remove(id);
         return const _Acted();
       case final other:
+        handled?.call();
         return _readRefused(
           id,
           owner,
@@ -1255,7 +1638,12 @@ final class CloudSender {
     switch (why) {
       case _Why.access when !(role?.edits ?? false):
         _governor.climbAccess(id, snap, null);
-      case _Why.access || _Why.need || _Why.clock || _Why.adopt || _Why.retire:
+      case _Why.access ||
+            _Why.need ||
+            _Why.clock ||
+            _Why.adopt ||
+            _Why.retire ||
+            _Why.live:
         _governor.accessConfirmed(id);
     }
     final memory = _boundMemory(id, snap);
@@ -1272,7 +1660,7 @@ final class CloudSender {
               ReadOfList() =>
                 Retiring.read(memory.retired, Retiring.list, cloud, started),
             }),
-          _Why.access => memory,
+          _Why.access || _Why.live => memory,
         });
     _store.report(ReadRecorded(id, '$read', why.words, at: started));
   }
