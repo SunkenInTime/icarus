@@ -1,7 +1,8 @@
 param(
   [Parameter(Mandatory)] [string]$Exe,
-  [Parameter(Mandatory)] [string]$Library,
   [Parameter(Mandatory)] [string]$Out,
+  [string]$Library,
+  [int]$WindowSeconds = 30,
   [int]$WaitSeconds = 20,
   [int]$WaitMinutes = 20
 )
@@ -11,28 +12,38 @@ if ((Test-Path -LiteralPath $Out) -and (Get-ChildItem -LiteralPath $Out -Force |
 }
 $exePath = Join-Path (Resolve-Path -LiteralPath $Exe) 'icarus.exe'
 $store = Join-Path $Out 'store'
-$appData = Join-Path $Out 'appdata'
-New-Item -ItemType Directory -Force -Path $store, $appData | Out-Null
-Copy-Item -Path (Join-Path (Resolve-Path -LiteralPath $Library) '*') -Destination $store -Recurse
+New-Item -ItemType Directory -Force -Path $store | Out-Null
+if ($Library) {
+  Copy-Item -Path (Join-Path (Resolve-Path -LiteralPath $Library) '*') -Destination $store -Recurse
+}
 $result = Join-Path $Out 'result.txt'
 function Note([string]$text) { $text; Add-Content -Path $result -Value "$(Get-Date -Format HH:mm:ss.fff) $text" }
 
-$env:LOCALAPPDATA = $appData
 $started = Get-Date
 $process = Start-Process -FilePath $exePath -PassThru -ArgumentList @("`"--hive-store-dir=$store`"")
 $null = $process.Handle
-Note "started pid $($process.Id) on $store, LOCALAPPDATA $appData"
+Note "started pid $($process.Id) as a separate instance at $store$(if (-not $Library) { ' on an empty library' })"
 
-Start-Sleep -Seconds $WaitSeconds
-$process.Refresh()
-if ($process.MainWindowHandle -eq 0) {
-  Note "no window after $WaitSeconds s; stopping it"
-  Stop-Process -Id $process.Id
-  $process.WaitForExit()
+$window = 0
+for ($second = 0; $second -lt $WindowSeconds -and -not $process.HasExited; $second++) {
+  Start-Sleep -Seconds 1
+  $process.Refresh()
+  if ($process.MainWindowHandle -ne 0) { $window = $process.MainWindowHandle; break }
+}
+if ($window -eq 0) {
+  if ($process.HasExited) {
+    Note "exited with $($process.ExitCode) before showing a window"
+  } else {
+    Note "no window after $WindowSeconds s; stopping it"
+    Stop-Process -Id $process.Id
+    $process.WaitForExit()
+  }
   Note 'CHECK DONE: the build never showed a window, so nothing was closed'
   exit 2
 }
-Note "window '$($process.MainWindowTitle)'; closing it as its X does"
+Note "window '$($process.MainWindowTitle)' after $([int]((Get-Date) - $started).TotalSeconds) s"
+Start-Sleep -Seconds $WaitSeconds
+Note "closing it as its X does, $WaitSeconds s after its window showed"
 $null = $process.CloseMainWindow()
 
 if (-not $process.WaitForExit($WaitMinutes * 60 * 1000)) {

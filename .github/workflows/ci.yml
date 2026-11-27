@@ -871,25 +871,17 @@ jobs:
           if ((Get-SupportFiles).Count -gt 0 -or (Test-Path $handler)) {
             throw "The runner already has files under $support or the key $handler; this check needs a machine with neither."
           }
-          $scratch = Join-Path $env:RUNNER_TEMP 'separate-instance'
-          New-Item -ItemType Directory -Force -Path $scratch | Out-Null
-          $app = Start-Process -FilePath build\windows\x64\runner\Release\icarus.exe -PassThru `
-            -ArgumentList @("`"--hive-store-dir=$scratch`"")
-          $null = $app.Handle
-          $window = 0
-          for ($second = 0; $second -lt 30 -and -not $app.HasExited; $second++) {
-            Start-Sleep -Seconds 1
-            $app.Refresh()
-            if ($app.MainWindowHandle -ne 0) { $window = $app.MainWindowHandle; break }
+          $out = Join-Path $env:RUNNER_TEMP 'release-close'
+          pwsh -NoProfile -File tool\drive\release-close.ps1 -Exe build\windows\x64\runner\Release -Out $out -WaitSeconds 10 -WaitMinutes 2
+          $closed = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          $result = Join-Path $out 'result.txt'
+          if ($closed -eq 2) { throw 'The release build never showed a window.' }
+          if (-not ((Test-Path $result) -and (Select-String -LiteralPath $result -Pattern 'CHECK DONE: (exited cleanly|did not exit cleanly)' -Quiet))) {
+            throw "release-close.ps1 failed before it judged the exit (exit $closed)."
           }
-          if ($window -eq 0) {
-            if (-not $app.HasExited) { Stop-Process -Id $app.Id; $app.WaitForExit() }
-            throw "The release build never showed a window; exited with $($app.ExitCode)."
-          }
-          Start-Sleep -Seconds 10
-          $null = $app.CloseMainWindow()
-          if (-not $app.WaitForExit(120000)) { Stop-Process -Id $app.Id; $app.WaitForExit() }
-          "closed the way its X does; exited with $($app.ExitCode) (0x$('{0:X8}' -f $app.ExitCode)); not judged until #865 is fixed"
+          "release-close.ps1 exited $closed; the exit is not judged until #865 is fixed"
+          $scratch = Join-Path $out 'store'
           'in its own folder:'
           Get-ChildItem -LiteralPath $scratch -Force | ForEach-Object { "  $($_.Name)" }
           $missing = @(
