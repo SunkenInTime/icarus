@@ -2008,10 +2008,16 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
     case HeaderRead():
       edit.change.everything = true;
     case PageRead(:final page, :final elements, :final lineupGroups):
-      edit.change.pages.add(page.publicId);
-      edit.change.targets.addAll([
-        for (final row in elements) ElementTarget(row.publicId),
+      final carried = [
+        for (final row in elements) ElementTarget(row.publicId) as Target,
         for (final row in lineupGroups) LineupTarget(row.publicId),
+      ];
+      edit.change.pages.addAll({
+        page.publicId,
+        for (final target in carried) ?before.rows[target]?.page,
+      });
+      edit.change.targets.addAll([
+        ...carried,
         ..._shownOn(before, page.publicId),
       ]);
     case PageGone(:final pagePublicId):
