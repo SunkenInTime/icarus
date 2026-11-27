@@ -55,3 +55,24 @@ Future<int> ageSummaries(SqliteEngine engine) async {
   await lease.release();
   return entries.length;
 }
+
+const resultsOfANewerBuild = '{"version":99}';
+
+Future<int> resultsAsANewerBuildWroteThem(StorageEngine engine) async {
+  final lease = switch (await engine.lease()) {
+    Leased(:final lease) => lease,
+    final other => fail('$other'),
+  };
+  final areas = switch (await lease.areas('s/')) {
+    Done(:final value) => value,
+    final other => fail('$other'),
+  };
+  final changes = <Change>[
+    for (final area in areas)
+      if (await lease.read(area, 'read/header') is KeyHeld)
+        Put(area, 'read/header', resultsOfANewerBuild),
+  ];
+  expect(await lease.commit(changes), isA<CommitApplied>());
+  await lease.release();
+  return changes.length;
+}
