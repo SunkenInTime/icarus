@@ -33,7 +33,8 @@ param(
   [ValidateSet('off', 'shadow', 'mirror', 'read', 'ops', 'store')] [string]$LibraryStore,
   [ValidateSet('send')] [string]$CloudStore,
   [string]$SecondAccount,
-  [ValidateSet('close')] [string]$EndsBy
+  [ValidateSet('close')] [string]$EndsBy,
+  [string]$ExitNotJudged
 )
 $ErrorActionPreference = 'Stop'
 # New every run: the server refuses an item id another strategy holds.
@@ -143,6 +144,7 @@ foreach ($name in $instances.Keys) {
     if ($summary) { $why += 'it was still open at the end of its script' }
     if ($lines | Where-Object { $_ -match ' (FAIL|FLUTTER-ERROR|MISPLACED) ' }) { $why += 'a step failed' }
     if (-not $process.HasExited) { $why += 'it timed out' }
+    elseif ($process.ExitCode -ne 0 -and $ExitNotJudged) { "${name}: exit $($process.ExitCode) not judged: $ExitNotJudged" }
     elseif ($process.ExitCode -ne 0) { $why += "it exited with $($process.ExitCode)" }
     if ($why.Count -eq 0) {
       "${name}: closed the app after its window was asked to close"
