@@ -43,22 +43,23 @@ function pageVersion(page) {
 }
 
 class PageWatch {
-  constructor(device, strategyPublicId, pagePublicId) {
+  constructor(device, strategyPublicId, pagePublicId, named) {
     this.device = device;
     this.strategyPublicId = strategyPublicId;
     this.pagePublicId = pagePublicId;
+    this.named = named;
     this.waiters = [];
     this.switching = Promise.resolve();
     this.slicing = false;
     this.stopParts = [];
   }
 
-  static async start(device, strategyPublicId, pagePublicId) {
-    const watch = new PageWatch(device, strategyPublicId, pagePublicId);
+  static async start(device, strategyPublicId, pagePublicId, named = {}) {
+    const watch = new PageWatch(device, strategyPublicId, pagePublicId, named);
     const first = new Promise((resolve) => {
       watch.stopWhole = device.watchEach(
         "page:getSnapshot",
-        wholePageArgs(strategyPublicId, pagePublicId),
+        { ...wholePageArgs(strategyPublicId, pagePublicId), ...named },
         (page) => {
           watch.onWhole(page);
           resolve();
@@ -97,7 +98,7 @@ class PageWatch {
       this.notify();
       allAnswered();
     };
-    const page = { strategyPublicId: this.strategyPublicId, pagePublicId: this.pagePublicId };
+    const page = { strategyPublicId: this.strategyPublicId, pagePublicId: this.pagePublicId, ...this.named };
     this.stopParts = [
       this.device.watchEach("page:getFrame", page, take(0)),
       ...starts.map((start, index) =>
@@ -172,6 +173,114 @@ class Editor {
     this.page?.stop();
     this.unsubscribes.forEach((unsubscribe) => unsubscribe());
   }
+}
+
+class StoreEditor {
+  constructor(device, strategy) {
+    this.device = device;
+    this.strategy = strategy;
+    this.named = { accountSubject: COACH.subject };
+    this.unsubscribes = [];
+  }
+
+  async open(pagePublicId) {
+    const strategyPublicId = this.strategy.publicId;
+    const pageId = pagePublicId ?? this.strategy.pages[0];
+    const list = this.device.watch("strategy:getPageList", { strategyPublicId, ...this.named });
+    const page = PageWatch.start(this.device, strategyPublicId, pageId, this.named);
+    this.unsubscribes.push(await list);
+    this.page = await page;
+    await this.device.mutation("presence:issueRoomPass", { strategyPublicId });
+    await this.device.query("pages:listTrashed", { strategyPublicId });
+    return this;
+  }
+
+  async switchPage(pagePublicId) {
+    this.page.stop();
+    this.page = await PageWatch.start(this.device, this.strategy.publicId, pagePublicId, this.named);
+  }
+
+  close() {
+    this.page?.stop();
+    this.unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }
+}
+
+const FIVE_PAGES = { pageCount: 5, items: 60 };
+
+const makeFivePages = (world, rng, name) => makeStrategy(world.coach, rng, { name, ...FIVE_PAGES });
+
+const editorOf = (store, world, strategy) =>
+  store ? new StoreEditor(world.coach, strategy) : new Editor(world.coach, strategy, { desktop: true });
+
+function fivePageOpen(store) {
+  return {
+    world: "team",
+    async run({ env, world, rng }) {
+      const strategy = await makeFivePages(world, rng, store ? "five pages, store" : "five pages");
+      await rename(strategy);
+      const editor = editorOf(store, world, strategy);
+      const result = await metered([world.coach], env, () => editor.open());
+      editor.close();
+      return result;
+    },
+  };
+}
+
+function fivePageReopen(store) {
+  return {
+    world: "team",
+    async run({ env, world, rng }) {
+      const strategy = await makeFivePages(world, rng, store ? "reopened, store" : "reopened");
+      await rename(strategy);
+      (await editorOf(store, world, strategy).open()).close();
+      const again = editorOf(store, world, strategy);
+      const result = await metered([world.coach], env, () => again.open());
+      again.close();
+      return result;
+    },
+  };
+}
+
+function fivePageSwitch(store) {
+  return {
+    world: "team",
+    async run({ env, world, rng }) {
+      const strategy = await makeFivePages(world, rng, store ? "switched, store" : "switched");
+      await rename(strategy);
+      const editor = await editorOf(store, world, strategy).open(strategy.pages[2]);
+      const result = await metered([world.coach], env, () => editor.switchPage(strategy.pages[3]));
+      editor.close();
+      return result;
+    },
+  };
+}
+
+function fivePageEdit(store) {
+  return {
+    world: "team",
+    async run({ env, world, rng }) {
+      const strategy = await makeFivePages(world, rng, store ? "edited, store" : "edited");
+      const strategyPublicId = strategy.publicId;
+      if (store) {
+        const list = await world.coach.query("strategy:getPageList", { strategyPublicId });
+        strategyLives.set(strategyPublicId, list.header.createdAt);
+      }
+      const editor = await editorOf(store, world, strategy).open();
+      const row = editor.page.elements.find((element) => element.payload.kind === "agent");
+      const send = store ? sendFromStoreWithLives : sendLive;
+      const clientId = rng.uuid();
+      const result = await metered([world.coach], env, async () => {
+        const revision = await send(world.coach, strategyPublicId, clientId, liveMove(row, rng), row);
+        await editor.page.waitFor((elements) =>
+          elements.some((seen) => seen.publicId === row.publicId && seen.revision >= revision),
+        );
+        await editor.page.settle();
+      });
+      editor.close();
+      return store ? withSenderCounts(result) : result;
+    },
+  };
 }
 
 async function watchMyLibrary(device) {
@@ -1203,6 +1312,75 @@ export const SESSIONS = {
       };
     },
   },
+  openFive: {
+    title: "Open a 5-page strategy cold",
+    about:
+      "Desktop opens a strategy of 5 pages and 60 items a page that nothing has read since it last changed, as " +
+      "openTypical does: getShell and the first page read once, then both watched, presence:issueRoomPass, " +
+      "pages:listTrashed, and strategy:getFullSnapshot for the copy desktop keeps. openFiveStore is the same open " +
+      "with the cloud store's switch on.",
+    ...fivePageOpen(false),
+  },
+
+  openFiveStore: {
+    title: "Open a 5-page strategy cold, the store's editor",
+    about:
+      "The same open as the editor of a store-owned strategy makes it: strategy:getPageList and the first page " +
+      "watched with the account named (the store draws the first answers, so neither is read once first), " +
+      "presence:issueRoomPass and pages:listTrashed. No getShell and no strategy:getFullSnapshot: the page list " +
+      "replaces the shell, and the store is the copy desktop keeps, holding each page once it has been shown.",
+    ...fivePageOpen(true),
+  },
+
+  reopenFive: {
+    title: "Reopen an unchanged 5-page strategy",
+    about:
+      "openFive's strategy closed and opened again within seconds with nothing changed, so the server answers " +
+      "unchanged queries from its cache.",
+    ...fivePageReopen(false),
+  },
+
+  reopenFiveStore: {
+    title: "Reopen an unchanged 5-page strategy, the store's editor",
+    about:
+      "The same reopen by the store's editor. The store already holds the list and the page, so it draws them at " +
+      "once; the two watches start behind the drawing and their answers come from the cache.",
+    ...fivePageReopen(true),
+  },
+
+  pageSwitchFive: {
+    title: "Switch pages in a 5-page strategy",
+    about:
+      "With a 5-page strategy open on its third page, the user goes to the fourth, not yet read: page:getSnapshot read " +
+      "once, then watched whole, as pageSwitchNew.",
+    ...fivePageSwitch(false),
+  },
+
+  pageSwitchFiveStore: {
+    title: "Switch pages in a 5-page strategy, the store's editor",
+    about:
+      "The same switch by the store's editor: the page watched with the account named, its first answer drawn, " +
+      "with no read before the watch.",
+    ...fivePageSwitch(true),
+  },
+
+  oneEditFive: {
+    title: "One edit in a 5-page strategy",
+    about:
+      "A 5-page strategy open on its first page, one agent moved: one live element.patch, and the page watch re-run " +
+      "until the move shows, switching to slices as the first edit does.",
+    ...fivePageEdit(false),
+  },
+
+  oneEditFiveStore: {
+    title: "One edit in a 5-page strategy, the store's editor",
+    about:
+      "The same move by the store's editor, sent 180 ms after it is made by the store's sender naming lives, the " +
+      "page watched with the account named. It measures the server's side of that call pattern; the Dart sender's " +
+      "own call count is checked in test/library_store/cloud_sender_test.dart.",
+    ...fivePageEdit(true),
+  },
+
   liveListEdit: {
     title: "Item edits under a live page list",
     about:
@@ -1216,5 +1394,12 @@ export const SESSIONS = {
   },
 
 };
+
+export const STORE_BESIDE_TODAY = [
+  ["openFiveStore", "openFive"],
+  ["reopenFiveStore", "reopenFive"],
+  ["pageSwitchFiveStore", "pageSwitchFive"],
+  ["oneEditFiveStore", "oneEditFive"],
+];
 
 seedTeam.ownBackendOnly = true;

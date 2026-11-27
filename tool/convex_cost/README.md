@@ -101,6 +101,8 @@ in here.
 | `drawingMove` | Moving a 2,000-point freehand drawing. | the everyday set |
 | `twoPeople` | 20 moves by the owner, counting what the teammate's live queries re-run. | the everyday set |
 | `liveListEdit` | Item edits (own, a teammate's on the open page and on another page, then ten own) with `strategy:getPageList` watched with its account, as the store's editor watches it. | the everyday set, and page list re-runs, which must stay 0: an item edit writes no row a list query reads |
+| `openFive`, `reopenFive`, `pageSwitchFive`, `oneEditFive` | A 5-page strategy of 60 items a page: a cold open on desktop, a reopen within seconds, a switch to a page not read yet, and one agent moved. | the everyday set |
+| `openFiveStore`, `reopenFiveStore`, `pageSwitchFiveStore`, `oneEditFiveStore` | The same four as the editor of a store-owned strategy makes them, with the cloud store's switch on: the page list and the page watched with the account named, no read before a watch, no `strategy:getShell` or `strategy:getFullSnapshot`, the edit sent by the store's sender naming lives. These are a model of what the editor will do, so they cannot fail because of the Dart code: when the store-owned editor lands, a Dart test counts its real transport calls for the same four flows and holds them to these numbers. | the everyday set, and function calls no more than the same flow's without the switch |
 | `editorIdleHour` | An open editor for an hour: 60 room-pass renewals. | calls, bytes read, written and sent an hour, re-runs |
 | `idleHour` | Every scheduled job for an hour with nothing to do. | calls, bytes read and written an hour |
 
