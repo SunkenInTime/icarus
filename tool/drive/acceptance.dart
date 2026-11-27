@@ -60,6 +60,9 @@ final class _Plan {
   Map<String, String> get notOnLinux =>
       (json['notOnLinux']! as Map<String, Object?>).cast<String, String>();
 
+  Map<String, String> get quits =>
+      (json['quits']! as Map<String, Object?>).cast<String, String>();
+
   Map<String, String> get notOnWindows =>
       (json['notOnWindows']! as Map<String, Object?>).cast<String, String>();
 
@@ -75,10 +78,16 @@ final class _Plan {
 }
 
 final class _Start {
-  const _Start(
-      {this.fixture, this.library = false, this.after, this.following});
+  const _Start({
+    this.fixture,
+    this.library = false,
+    this.after,
+    this.following,
+    this.picture,
+  });
 
   final String? fixture;
+  final String? picture;
   final bool library;
   final String? after;
   final String? following;
@@ -90,6 +99,7 @@ final class _Start {
         library: json?['library'] == true,
         after: json?['after'] as String?,
         following: json?['following'] as String?,
+        picture: json?['picture'] as String?,
       );
 }
 
@@ -163,6 +173,7 @@ Future<int> _accept(Map<String, String> options) async {
     ...plan.replaced,
     ...(Platform.isWindows ? plan.notOnWindows : plan.notOnLinux),
     ...plan.waiting,
+    ...plan.quits,
   };
   if (Platform.isWindows && options['exe'] == null) {
     throw const _UsageError('on Windows, give --exe a build from build.ps1');
@@ -264,6 +275,9 @@ Future<int> _accept(Map<String, String> options) async {
         };
         final runOut = '${out.path}/$mode/$name';
         Directory('${out.path}/$mode').createSync(recursive: true);
+        if (start.picture case final picture?) {
+          File('${out.path}/$mode/$picture').writeAsBytesSync(_bitmap);
+        }
         final run = Platform.isWindows
             ? await Process.run(
                 'powershell',
@@ -358,3 +372,46 @@ Future<int> _accept(Map<String, String> options) async {
 
 String _list(List<String> names) =>
     names.isEmpty ? '' : ' (${names.join(', ')})';
+
+final _bitmap = [
+  ...'BM'.codeUnits,
+  ..._le32(54 + 16),
+  ..._le32(0),
+  ..._le32(54),
+  ..._le32(40),
+  ..._le32(2),
+  ..._le32(2),
+  1,
+  0,
+  24,
+  0,
+  ..._le32(0),
+  ..._le32(16),
+  ..._le32(2835),
+  ..._le32(2835),
+  ..._le32(0),
+  ..._le32(0),
+  0,
+  0,
+  255,
+  0,
+  255,
+  0,
+  0,
+  0,
+  255,
+  0,
+  0,
+  255,
+  255,
+  255,
+  0,
+  0,
+];
+
+List<int> _le32(int value) => [
+      value & 0xff,
+      (value >> 8) & 0xff,
+      (value >> 16) & 0xff,
+      (value >> 24) & 0xff,
+    ];

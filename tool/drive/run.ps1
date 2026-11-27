@@ -86,13 +86,29 @@ function Start-Instance([string]$name, [string]$scriptPath, [string]$email, [str
   }
 }
 
+function Get-SharedHash([string]$file) {
+  for ($try = 1; $try -le 40; $try++) {
+    try {
+      $stream = [System.IO.File]::Open($file, 'Open', 'Read', 'ReadWrite, Delete')
+      try {
+        return [BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($stream))
+      } finally {
+        $stream.Dispose()
+      }
+    } catch [System.IO.IOException] {
+      Start-Sleep -Milliseconds 250
+    }
+  }
+  throw "Could not read $file to compare Hive's library files"
+}
+
 $hiveLibrary = @{}
 if ($LibraryStore -eq 'store') {
   $names = @('main') + $(if ($Companion) { @('companion') } else { @() })
   foreach ($name in $names) {
     foreach ($box in 'strategy_box.hive', 'folder_box.hive') {
       $file = Join-Path $Out "store-$name\$box"
-      if (Test-Path -LiteralPath $file) { $hiveLibrary[$file] = (Get-FileHash -LiteralPath $file).Hash }
+      if (Test-Path -LiteralPath $file) { $hiveLibrary[$file] = Get-SharedHash $file }
     }
   }
 }
@@ -122,7 +138,7 @@ foreach ($name in $instances.Keys) {
   if (-not ($summary -match 'CLEAN$')) { $clean = $false }
 }
 foreach ($file in $hiveLibrary.Keys) {
-  $now = if (Test-Path -LiteralPath $file) { (Get-FileHash -LiteralPath $file).Hash } else { $null }
+  $now = if (Test-Path -LiteralPath $file) { Get-SharedHash $file } else { $null }
   if ($now -ne $hiveLibrary[$file]) {
     "the store mode changed the Hive library file $file"
     $clean = $false

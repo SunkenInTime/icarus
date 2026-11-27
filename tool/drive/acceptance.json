@@ -31,7 +31,6 @@
     "paste-while-busy": "the clipboard step puts a picture on the Windows clipboard",
     "captions-write-in-place": "it waits for a helper to type into the app",
     "spawn-barriers-all-maps": "growing the window to 2400x1350 crashes the Linux engine",
-    "close-with-unsaved-local": "closing the window crashes in the Linux engine's teardown before SUMMARY",
     "door-old-build-2-old": "it opens the library in a released build, which is built for Windows",
     "door-old-build-3-new": "it follows door-old-build-2-old",
     "wall-old-build-2-old": "it opens the library in a released build, which is built for Windows",
@@ -80,6 +79,12 @@
     },
     "library-timings-local": {
       "library": true
+    },
+    "paste-on-canvas": {
+      "picture": "paste.bmp"
+    },
+    "paste-while-busy": {
+      "picture": "paste.bmp"
     }
   },
   "waiting": {
@@ -91,5 +96,8 @@
     "wall-old-build-2-old": "it opens the library in the released build before this one, which this run does not have",
     "wall-old-build-3-new": "it follows wall-old-build-2-old",
     "captions-write-in-place": "it waits for a helper to type into the app"
+  },
+  "quits": {
+    "close-with-unsaved-local": "it closes the window, so the app quits before it can write SUMMARY; what it saved is read by opening the strategy again"
   }
 }
