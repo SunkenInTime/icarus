@@ -1990,7 +1990,8 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   }
   for (final work in [...edit.landed]) {
     if (!_alreadyShown(edit.shown, work) &&
-        !_goneSince(edit.shown, work, before)) {
+        (edit.strategy.presence == Presence.gone ||
+            !_goneSince(edit.shown, work))) {
       continue;
     }
     edit.landed.remove(work);
@@ -2143,32 +2144,28 @@ bool _alreadyShown(Shown shown, LandedWork work) {
   return _ownDelete(work) ? shownAt > work.version : shownAt >= work.version;
 }
 
-bool _goneSince(Shown shown, LandedWork work, Shown before) {
-  final page = _landedOn(work, before);
+bool _goneSince(Shown shown, LandedWork work) {
+  final page = _namedPage(work.op);
   if (page == null || shown.knownPages.contains(page)) return false;
   final answered = work.answeredAt;
-  final ownResult = shown.pagesSeen[page];
-  return (ownResult != null &&
-          ownResult.gone &&
-          ownResult.at != null &&
-          answered.reachedBy(ownResult.at!)) ||
-      switch (shown.listSeen?.at) {
-        final list? => answered.reachedBy(list),
-        null => false,
-      };
+  final own = shown.pagesSeen[page];
+  final ownSaysGone = switch (own) {
+    Seen(gone: true, at: final at?) => answered.reachedBy(at),
+    _ => false,
+  };
+  final listSaysGone = switch ((shown.listSeen?.at, own?.at)) {
+    (final list?, final read?) =>
+      read.order.isBefore(list.order) && answered.reachedBy(list),
+    (final list?, null) => answered.reachedBy(list),
+    (null, _) => false,
+  };
+  return ownSaysGone || listSaysGone;
 }
 
-String? _landedOn(LandedWork work, Shown before) => switch (work.op) {
+String? _namedPage(StrategyOp op) => switch (op) {
   StrategyPatchOp() => null,
-  ElementPatchOp(:final pagePublicId?) ||
-  LineupGroupPatchOp(:final pagePublicId?) => pagePublicId,
-  ElementPatchOp() || LineupGroupPatchOp() =>
-    before.rows[targetOf(work.op)]?.page ??
-        switch (work.movedRow) {
-          ElementRow(:final pagePublicId) ||
-          LineupGroupRow(:final pagePublicId) => pagePublicId,
-          _ => null,
-        },
+  ElementPatchOp(:final pagePublicId) ||
+  LineupGroupPatchOp(:final pagePublicId) => pagePublicId,
   PageAddOp(:final pagePublicId) ||
   PagePatchOp(:final pagePublicId) ||
   PageDeleteOp(:final pagePublicId) ||
@@ -3034,7 +3031,7 @@ void _landed(
   );
   if (!_alreadyShown(edit.shown, work) &&
       (edit.strategy.presence == Presence.gone ||
-          !_goneSince(edit.shown, work, edit.shown))) {
+          !_goneSince(edit.shown, work))) {
     edit.landed
       ..add(work)
       ..sort((a, b) => a.compareTo(b));

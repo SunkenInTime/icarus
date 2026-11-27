@@ -26,4 +26,26 @@ void main() {
       expect(world.server.readCalls.length - reads, lessThanOrEqualTo(1));
     });
   });
+
+  test(
+      'a move that names no page, landing on a page a teammate deletes, stays '
+      'drawn as on main, and the sender reads for it 7 times in the next '
+      'hour, as main does', () {
+    inWorld((world) {
+      world.settle();
+      final page =
+          serverRows().elements.whereType<LiveElement>().first.pagePublicId;
+      world.server.answerNext(strategyId, (call) async {
+        final applied = world.server.applyAll(call);
+        world.teammateDeletesPage(page);
+        return applied;
+      });
+      world.commitMove(1);
+      world.settle(const Duration(minutes: 2));
+      final reads = world.server.readCalls.length;
+      world.settle(const Duration(hours: 1));
+      expect(world.cloud().queue.landed, hasLength(1));
+      expect(world.server.readCalls.length - reads, 7);
+    });
+  });
 }
