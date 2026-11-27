@@ -707,6 +707,10 @@ final class CloudSender {
           :final role
         ):
         if (role == null || !role.edits) {
+          if (await _endedTakeUp(id, account, read, snap, point)
+              case final step?) {
+            return step;
+          }
           _wanted.remove(id);
           _note(id, 'not adopted: this account can only view it');
           return const _Skipped(StallExit.viewerOnTakeUp);
@@ -744,13 +748,39 @@ final class CloudSender {
             _note(id, 'adopted from the page list');
             return const _Acted();
         }
-      case StoreReadAnswered():
+      case StoreReadAnswered(:final point):
+        if (await _endedTakeUp(id, account, read, snap, point)
+            case final step?) {
+          return step;
+        }
         _wanted.remove(id);
         _note(id, 'not adopted: the server no longer has it');
         return const _Skipped(StallExit.goneOnTakeUp);
       case final other:
         return _readRefused(id, account, read, other, snap);
     }
+  }
+
+  Future<_Step?> _endedTakeUp(
+    String id,
+    Account account,
+    ReadOf read,
+    Snapshot snap,
+    ResultPoint point,
+  ) async {
+    if (await _onCurrentConnection(point)) {
+      return disposed ? const _Ended() : null;
+    }
+    if (disposed) return const _Ended();
+    return _unsettled(
+      id,
+      account,
+      read,
+      snap,
+      'the read to adopt it came back on a connection that has ended, so it '
+      'is read again',
+      row: StallExit.lostRead,
+    );
   }
 
   Future<_Step> _step(
@@ -1480,7 +1510,25 @@ final class CloudSender {
               planned: planned,
             );
         }
-      case StoreReadRefused(refusal: StoreReadRefusal.forbidden, :final why):
+      case StoreReadRefused(
+          refusal: StoreReadRefusal.forbidden,
+          :final why,
+          :final point,
+        ):
+        if (!await _onCurrentConnection(point)) {
+          if (disposed) return const _Ended();
+          return _unsettled(
+            id,
+            owner,
+            read,
+            snap,
+            'the read was refused ($why) on a connection that has ended, so '
+            'it is read again',
+            row: StallExit.lostRead,
+            planned: planned,
+          );
+        }
+        if (disposed) return const _Ended();
         final cannot = CannotRead(why);
         _governor.climbAccess(id, snap, cannot);
         final at = _readAgainAt(id, read, snap);

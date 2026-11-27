@@ -433,6 +433,64 @@ void main() {
   });
 
   test(
+      'a no-access refusal stamped on a connection that has ended climbs no '
+      'access rung, and the page list is read again on the lost-read ladder',
+      () {
+    inWorld((world) {
+      world.server.answerWith(
+        strategyId,
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+            point: stampedWhenAnswered),
+      );
+      world.server.answerReadNext(strategyId, (call) async {
+        world.server.connection = 2;
+        return StoreReadRefused(
+          StoreReadRefusal.forbidden,
+          'forbidden',
+          point: onConnection(world, 1),
+        );
+      });
+      world.commitMove(1);
+      world.settle(const Duration(seconds: 1));
+      final lists = world.server.readCalls.where((call) => call.page == null);
+      final refused = lists.length;
+      expect(world.sender.accessRung(strategyId), isNull);
+      world.settle(const Duration(seconds: 10));
+      expect(lists.length, greaterThan(refused));
+    });
+  });
+
+  test(
+      'a read to take up a strategy that says viewer or gone, stamped on a '
+      'connection that has ended, is read again and the strategy is taken up',
+      () {
+    for (final ended in <StoreReadOutcome Function(World)>[
+      (world) => StoreReadAnswered(
+            world.server.headerOf(strategyId),
+            role: StoreReadRole.viewer,
+            point: onConnection(world, 1),
+          ),
+      (world) => StoreReadAnswered(
+            const StrategyGone(),
+            point: onConnection(world, 1),
+          ),
+    ]) {
+      inWorld(
+        (world) {
+          world.server.answerReadNext(strategyId, (call) async {
+            world.server.connection = 2;
+            return ended(world);
+          });
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(minutes: 1));
+          expect(world.holds(strategyId), isTrue);
+        },
+        addStrategy: false,
+      );
+    }
+  });
+
+  test(
       'an unreadable read stamped on a later connection brings that '
       'connection to the queue before the app hears of the reconnect, though '
       'no refusal is recorded for it', () {
