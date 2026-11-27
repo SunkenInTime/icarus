@@ -8,10 +8,6 @@ on:
       workers:
         description: Runs at once
         required: false
-  push:
-    branches:
-      - t3/nightly-acceptance
-      - t3/nightly-acceptance-red
 
 permissions:
   contents: read
