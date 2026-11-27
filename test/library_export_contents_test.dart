@@ -15,6 +15,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/services/image_file_name.dart';
+import 'package:icarus/startup/app_instance.dart';
 import 'package:icarus/library_store/library_store_start.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/strategy/export_strategy_reads.dart';
@@ -202,6 +203,33 @@ void main() {
       jsonDecode(jsonEncode(written)),
       jsonDecode(await _expectedFile.readAsString()),
     );
+  });
+
+  test(
+      'a single .ica exported by a separate instance carries the pictures in '
+      "that instance's folder, not the support folder's", () async {
+    final instance = await Directory(path.join(temp.path, 'instance')).create();
+    final pictures = await Directory(path.join(
+      strategyFolderPath(instance.path, 'strategy-set'),
+      'images',
+    )).create(recursive: true);
+    File(path.join(pictures.path, 'strategy-set-picture.png'))
+        .writeAsBytesSync([9, 9, 9]);
+    decideAppInstance(SeparateInstance(instance.path));
+    addTearDown(() => decideAppInstance(const InstalledApp()));
+
+    final single = File(path.join(temp.path, 'separate.ica'));
+    await StrategyImportExportService(container)
+        .zipStrategy(id: 'strategy-set', outputFilePath: single.path);
+
+    final files = ZipDecoder().decodeBytes(single.readAsBytesSync()).files;
+    expect(
+      files
+          .singleWhere((file) => file.name.endsWith('strategy-set-picture.png'))
+          .content,
+      [9, 9, 9],
+    );
+    expect(files.any((file) => file.name.endsWith('left-behind.jpg')), isFalse);
   });
 
   test('with the store switched off, exports read strategies from Hive', () {

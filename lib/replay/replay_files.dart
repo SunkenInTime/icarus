@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:icarus/replay/recycle_bin.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:icarus/startup/app_instance.dart';
 
 enum ReplaySource {
   /// Valorant's own download folder. Valorant may clear it.
@@ -75,7 +75,7 @@ class ReplayFiles {
     Future<Directory> Function()? supportDirectory,
     String? valorantDemosPath,
     Future<void> Function(String path)? recycle,
-  })  : _supportDirectory = supportDirectory ?? getApplicationSupportDirectory,
+  })  : _supportDirectory = supportDirectory ?? appInstance.supportDirectory,
         _valorantDemosPath = valorantDemosPath ?? defaultValorantDemosPath(),
         _recycle = recycle ?? moveToRecycleBin;
 
