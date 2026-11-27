@@ -1559,7 +1559,7 @@ final class CloudSender {
         return _troubled(id, trouble);
     }
     if (disposed) return const _Ended();
-    if (_whyNotSend(snap) case final why?) {
+    if (_whyNotSend(id, snap) case final why?) {
       final written = await _store.write(
         owner,
         id,
@@ -1806,10 +1806,14 @@ final class CloudSender {
     return quiet.isBefore(longest) ? quiet : longest;
   }
 
-  String? _whyNotSend(Snapshot snap) {
+  String? _whyNotSend(String id, Snapshot snap) {
     final now = _inputs;
     if (held case final reason?) return 'sending is held: $reason';
     if (_store.shut case final shut?) return shut.why;
+    if (_store.store.refusedStrategies[id] case final refusal?) {
+      _store.refused(id, refusal);
+      return 'the store refused the strategy: $refusal';
+    }
     if (upgradeAsked) return 'the server asks for a newer build';
     if (signInWaitFrom == now.signIns) return 'waiting for the sign-in';
     if (now != snap) {

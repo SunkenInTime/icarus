@@ -3606,5 +3606,50 @@ void main() {
         expect(world.queueLength(), 0);
       });
     });
+
+    test(
+        'a strategy the store refuses while its batch is being claimed is '
+        'not sent', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      final damaged = contents[area]!.keys.firstWhere(
+            (key) => key.contains('/e/'),
+          );
+      contents[area]![damaged] = '{"broken":true}';
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          expect(world.store.refusedStrategies, isEmpty);
+          final sends = server.calls.length;
+          world.slowStore.afterClaim = () async {
+            for (final page in server.rows[strategyId]!.pages) {
+              await world.store.readPage(strategyId, page.publicId);
+            }
+          };
+          world.commitRename(strategyId, 'rename');
+          world.settle(const Duration(minutes: 1));
+          expect(world.store.refusedStrategies.keys, [strategyId]);
+          expect(server.calls.skip(sends), isEmpty);
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
   });
 }

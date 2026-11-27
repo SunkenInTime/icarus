@@ -654,6 +654,7 @@ final class SlowSenderStore extends SenderStore {
   void Function()? duringSessionWrite;
   var readsThrow = false;
   var claimWaits = Duration.zero;
+  Future<void> Function()? afterClaim;
   var refusesRefusedResult = 0;
   var refusesBaseWrites = 0;
   var rejectsBasesOutOfPlace = 0;
@@ -671,7 +672,7 @@ final class SlowSenderStore extends SenderStore {
     final wait = claimWaits;
     claimWaits = Duration.zero;
     if (wait > Duration.zero) await Future<void>.delayed(wait);
-    return super.claim(
+    final claimed = await super.claim(
       owner,
       strategyId,
       picked,
@@ -679,6 +680,10 @@ final class SlowSenderStore extends SenderStore {
       elapsed: elapsed,
       session: session,
     );
+    final after = afterClaim;
+    afterClaim = null;
+    await after?.call();
+    return claimed;
   }
 
   @override
