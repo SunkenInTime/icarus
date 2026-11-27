@@ -1162,4 +1162,24 @@ void main() {
       });
     });
   });
+
+  test(
+      'a clock round due while the store read runs is not lost: woken 50 ms '
+      'before it, with a 100 ms read, the wait still reaches could not '
+      'resolve', () {
+    inWorld((world) {
+      clockHeldOnWatch(world);
+      world.settle(const Duration(milliseconds: 500));
+      final round = world.sender.armedFor!;
+      world.async.elapse(
+        round.difference(start.add(world.async.elapsed)) -
+            const Duration(milliseconds: 50),
+      );
+      world.slowStore.afterRead = const Duration(milliseconds: 100);
+      world.sender.wake();
+      world.settle(const Duration(hours: 1));
+      expect(world.sender.couldNotResolve(strategyId)?.subjects, ['page p2']);
+      expect(world.sender.waitingOn(strategyId), StallExit.clockOnWatch);
+    }, addStrategy: false);
+  });
 }

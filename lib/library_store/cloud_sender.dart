@@ -737,6 +737,9 @@ final class CloudSender implements LiveResults {
         _ => null,
       };
 
+  DateTime _roundDue(String id, ReadOf read, DateTime now, Snapshot snap) =>
+      _nextRoundOnWatch(id, read, now, snap) ?? now;
+
   void _countClockHeldByLive(
     String id,
     CloudStrategy cloud,
@@ -1144,7 +1147,7 @@ final class CloudSender implements LiveResults {
     if (_nextLive(id, owner) case (:final read, :final result)) {
       return _takeLive(id, owner, snap, session, cloud, read, result);
     }
-    final fresh = _plan(id, cloud, _clock(), snap);
+    final fresh = _plan(id, cloud, now, snap);
     switch (pick(cloud, clientId)) {
       case final Picked picked when _sendable(cloud):
         return _sendStep(id, owner, snap, picked, session);
@@ -1186,12 +1189,10 @@ final class CloudSender implements LiveResults {
     for (final (:planned, :wantedAt) in reads) {
       final gate = _liveGate(id, planned.read, now, snap);
       if (gate is _LiveCurrent && planned.why == _Why.clock) {
-        final round = _nextRoundOnWatch(id, planned.read, now, snap);
-        if (round != null && (due == null || round.isBefore(due))) {
+        final round = _roundDue(id, planned.read, now, snap);
+        if (due == null || round.isBefore(due)) {
           due = round;
           why = StallExit.clockOnWatch;
-        } else {
-          why ??= StallExit.clockOnWatch;
         }
         continue;
       }
