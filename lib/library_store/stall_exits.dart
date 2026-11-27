@@ -178,20 +178,6 @@ enum StallExit {
     onScreen: Face.sending,
     goesAgain: 'the pause',
   ),
-  liveResultsBehind(
-    title: 'Shadow mode only: a live result from before a send\'s commit '
-        'arrives after the send is answered',
-    waitsFor: 'a live result that includes the commit',
-    calls: 'nothing: the editor\'s live queries',
-    onScreen: null,
-    shownAs: 'not measured here. A known state of shadow mode until the '
-        'vendored Rust client waits for a send\'s transition before it '
-        'resolves the send, as the JavaScript client does; that fix comes '
-        'next. Whether the editor then shows the edit undone and redone is '
-        'measured in that fix',
-    goesAgain: 'the next live result',
-    inSenderWorld: false,
-  ),
   notBeingRead(
     title: 'Nothing is queued and nothing is subscribed (send mode)',
     waitsFor: 'nothing: the store does not learn of teammates\' edits. Saved '
@@ -210,7 +196,6 @@ enum StallExit {
     required this.onScreen,
     required this.goesAgain,
     this.shownAs,
-    this.inSenderWorld = true,
   });
 
   final String title;
@@ -219,7 +204,6 @@ enum StallExit {
   final Face? onScreen;
   final String? shownAs;
   final String goesAgain;
-  final bool inSenderWorld;
 
   String get shown => shownAs ?? onScreen?.name ?? 'saved';
 
@@ -262,7 +246,6 @@ enum StallExit {
       replaced ||
       deletedOnServer ||
       refusedEdit ||
-      liveResultsBehind ||
       notBeingRead =>
         'never',
     };
@@ -302,7 +285,6 @@ enum StallExit {
         replaced ||
         deletedOnServer ||
         refusedEdit ||
-        liveResultsBehind ||
         notBeingRead =>
           'no calls',
       };

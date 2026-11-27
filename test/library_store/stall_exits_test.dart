@@ -651,7 +651,6 @@ const closing = '<!-- end of stall exits -->';
 
 void main() {
   for (final row in StallExit.values) {
-    if (!row.inSenderWorld) continue;
     test('${row.name}: ${row.title}', () {
       final stall = stalls[row]!;
       inWorld(
