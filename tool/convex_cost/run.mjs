@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { BACKEND_RELEASE, deploy, setEnvironment, startBackend } from "./lib/backend.mjs";
 import { LogStream } from "./lib/logs.mjs";
 import { runScenarios, SCENARIOS as CORE } from "./lib/scenarios.mjs";
-import { seedTeam, SESSIONS } from "./lib/sessions.mjs";
+import { seedTeam, SESSIONS, STORE_BESIDE_TODAY } from "./lib/sessions.mjs";
 
 const SCENARIOS = { ...CORE, ...SESSIONS };
 
@@ -178,6 +178,17 @@ async function main() {
         const times = entry.today > 0 ? ` (${(value / entry.today).toFixed(1)}x today's ${format(metric, entry.today)})` : ` (today ${format(metric, entry.today)})`;
         failures.push(`${scenario.title}: ${label} ${format(metric, value)}, over the budget of ${format(metric, entry.budget)}${times}`);
       }
+    }
+  }
+
+  for (const [store, today] of STORE_BESIDE_TODAY) {
+    if (!results[store] || !results[today]) continue;
+    const calls = results[store].metrics.functionCalls;
+    const todays = results[today].metrics.functionCalls;
+    const over = calls > todays;
+    console.log(`\n${over ? "OVER" : "ok  "} ${store}: ${calls} function calls beside ${today}'s ${todays}`);
+    if (over) {
+      failures.push(`${SCENARIOS[store].title}: ${calls} function calls, more than today's editor's ${todays} (${today})`);
     }
   }
 
