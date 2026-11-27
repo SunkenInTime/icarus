@@ -3,7 +3,10 @@ import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_store.dart';
+import 'package:icarus/library_store/store_library.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/local_library.dart';
+import 'package:icarus_library/icarus_library.dart';
 
 typedef MigrationAtStart = ({
   LibraryMigration migration,
@@ -13,6 +16,98 @@ typedef MigrationAtStart = ({
 final libraryMigrationProvider = StateProvider<MigrationAtStart?>(
   (ref) => null,
 );
+
+sealed class LibraryOnStore {
+  const LibraryOnStore();
+}
+
+final class LibraryServedFromStore extends LibraryOnStore {
+  const LibraryServedFromStore();
+}
+
+final class LibraryNotServed extends LibraryOnStore {
+  const LibraryNotServed({
+    required this.why,
+    required this.oldLibraryFolder,
+    required this.tryAgain,
+  });
+
+  final String why;
+  final String oldLibraryFolder;
+  final Future<void> Function() tryAgain;
+}
+
+final libraryOnStoreProvider = StateProvider<LibraryOnStore?>((ref) => null);
+
+Future<Future<LibraryStoreOpened>?> openLibraryOnStore(
+  ProviderContainer container,
+  LibraryStoreLaunch launch, {
+  required String? hiveDirectory,
+  required bool allowsLocalLibrary,
+  required String build,
+  required Future<void> Function() bringUpToDate,
+}) async {
+  Future<Future<LibraryStoreOpened>?> move() => moveLibraryIntoStore(
+        container,
+        launch,
+        hiveDirectory: hiveDirectory,
+        allowsLocalLibrary: allowsLocalLibrary,
+        build: build,
+      );
+  late final Future<void> Function() tryAgain;
+  tryAgain = () async {
+    await container.read(libraryStoreProvider.notifier).close();
+    await move();
+    if (await _serve(container, tryAgain) is LibraryServedFromStore) {
+      await bringUpToDate();
+    }
+  };
+  final opening = await move();
+  if (opening != null) await _serve(container, tryAgain);
+  return opening;
+}
+
+Future<LibraryOnStore> _serve(
+  ProviderContainer container,
+  Future<void> Function() tryAgain,
+) async {
+  final atStart = container.read(libraryMigrationProvider)!;
+  final String why;
+  switch (atStart.migration) {
+    case MigrationWasFinished() || MigrationFinishedNow():
+      switch (container.read(libraryStoreProvider)) {
+        case LibraryStoreReady(:final store):
+          switch (await StoreLibrary.load(store)) {
+            case StoreLibraryLoaded(:final library):
+              LocalLibrary.source = LibraryInStore(library);
+              return container.read(libraryOnStoreProvider.notifier).state =
+                  const LibraryServedFromStore();
+            case StoreLibraryNotLoaded(why: final notLoaded):
+              why = notLoaded;
+          }
+        case final other:
+          why = 'the store is not open: $other';
+      }
+    case MigrationStopped(:final failure):
+      why = 'the copy stopped: $failure';
+    case MigrationRecordUnreadable(:final problem):
+      why = 'the record of the copy cannot be read: $problem';
+    case MigrationNotRun(why: final notRun):
+      why = notRun;
+  }
+  LocalLibrary.source = const LibraryNotOpened();
+  AppErrorReporter.reportError(
+    "The library couldn't be opened from its new storage: $why",
+    source: 'main.libraryOnStore',
+    promptUser: false,
+  );
+  return container.read(libraryOnStoreProvider.notifier).state =
+      LibraryNotServed(
+    why: why,
+    oldLibraryFolder: atStart.oldLibraryFolder,
+    tryAgain: tryAgain,
+  );
+}
 
 Future<Future<LibraryStoreOpened>?> moveLibraryIntoStore(
   ProviderContainer container,
@@ -35,12 +130,11 @@ Future<Future<LibraryStoreOpened>?> moveLibraryIntoStore(
         store,
         strategies: _ownIdFirst([
           for (final (:key, :strategy)
-              in const LocalLibrary().storedStrategyRecords)
+              in const LocalLibrary().hiveStrategyRecords)
             (own: '$key' == strategy.id, record: strategy),
         ]),
         folders: _ownIdFirst([
-          for (final (:key, :folder)
-              in const LocalLibrary().storedFolderRecords)
+          for (final (:key, :folder) in const LocalLibrary().hiveFolderRecords)
             (own: '$key' == folder.id, record: folder),
         ]),
       ),
@@ -51,6 +145,16 @@ Future<Future<LibraryStoreOpened>?> moveLibraryIntoStore(
     oldLibraryFolder: hiveDirectory,
   );
   return opening;
+}
+
+Future<void> recordLeftBehindClosed(
+  ProviderContainer container,
+  MigrationFinished record,
+) async {
+  if (container.read(libraryStoreProvider)
+      case LibraryStoreReady(:final store)) {
+    await store.recordMigration(record.closedLeftBehind());
+  }
 }
 
 List<T> _ownIdFirst<T>(List<({bool own, T record})> records) => [

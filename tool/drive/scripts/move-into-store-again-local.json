@@ -1,8 +1,14 @@
 [
-  {"wait": 6},
+  {"wait": 5},
+  {"waitText": "Some strategies stayed in your old library", "seconds": 30},
+  {"expectMigration": {"state": "wasFinished", "inStore": 2, "foldersInStore": 1, "leftBehind": 1, "served": true}},
+  {"tapKey": "left-behind-close"},
+  {"wait": 1},
   {"tapIcon": "x", "optional": true},
-  {"expectMigration": {"state": "wasFinished", "inStore": 2, "foldersInStore": 1, "leftBehind": 1}},
   {"expectText": "Some strategies stayed in your old library", "count": 0},
-  {"shot": "{out}/0-second-start.png"},
+  {"expectText": "Moved", "count": 1},
+  {"expectText": "Retakes", "count": 1},
+  {"expectText": "From a newer build", "count": 0},
+  {"shot": "{out}/0-library-on-store.png"},
   {"exit": 1}
 ]

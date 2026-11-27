@@ -230,18 +230,24 @@ It times the open from inside the app, with provider listeners rather than polli
 
 ## The library on the store
 
-`--library-store store` on Linux, `-LibraryStore store` on Windows, starts the app the way it will run once the library lives in the store. At this stage it does one thing more than `off`: before the start-up migrations run, it moves the local library into the store beside the Hive boxes (`library_store/library.sqlite`), once. Each Hive record is brought up to date in memory and converted; the Hive files are only read, so they stay as the last build left them. The store records that the move is copying, then that it finished, with every strategy or folder it could not move and why. A move that stops part way is run again from the top at the next start; a finished one never runs again, whatever Hive holds since. When the move leaves anything behind, a dialog names each one and says where the old library is.
+`--library-store store` on Linux, `-LibraryStore store` on Windows, starts the app the way it will run once the library lives in the store. Before the start-up migrations run, it moves the local library into the store beside the Hive boxes (`library_store/library.sqlite`), once. Each Hive record is brought up to date in memory and converted; the Hive files are only read, so they stay as the last build left them. The store records that the move is copying, then that it finished, with every strategy or folder it could not move and why. A move that stops part way is run again from the top at the next start; a finished one never runs again, whatever Hive holds since.
 
-`{"expectMigration": {"state": s, "inStore": n, "foldersInStore": f, "leftBehind": l}}` logs `STORE move at start` with what this start's move did (`finishedNow`, `wasFinished`, `stopped`, `unreadable`, `notRun`, or `none` when the store is not on), how many strategies and folders the store holds, and each one left behind with its reason, and fails when any key given differs.
+Once the move has finished, the library is served from the store: the library screen, the editor, saves, imports and exports all read and write it, and nothing writes Hive's library boxes, the start-up migrations and the repair of folders whose parent is gone included. When the move did not finish, or the store cannot be read, no library is served: the library screen says it could not be opened, that nothing was changed and where the old library is, and offers to try again; every write fails without saving. When the move left anything behind, a dialog names each one and says where the old library is, on every start until it is closed once.
 
-`ICARUS_LEFT_BEHIND_FIXTURE=<new folder> flutter test test/library_store/drive_fixtures_test.dart` writes a Hive library of a folder and two strategies that move, and one saved by a newer version that stays behind. `scripts/move-into-store-local.json` starts on it and checks the move and the dialog; `scripts/move-into-store-again-local.json` starts again on what that run left and checks the move is not run twice:
+`{"expectMigration": {"state": s, "inStore": n, "foldersInStore": f, "leftBehind": l, "served": b}}` logs `STORE move at start` with what this start's move did (`finishedNow`, `wasFinished`, `stopped`, `unreadable`, `notRun`, or `none` when the store is not on), how many strategies and folders the store holds, and each one left behind with its reason, then `STORE library` with whether the library is served from the store and, when it is not, why. It fails when any key given differs.
+
+`ICARUS_LEFT_BEHIND_FIXTURE=<new folder> flutter test test/library_store/drive_fixtures_test.dart` writes a Hive library of a folder and two strategies that move, and one saved by a newer version that stays behind. Three scripts start on it in turn, each on what the one before left: `move-into-store-local.json` checks the move and the dialog and quits with the dialog open, `move-into-store-again-local.json` checks the move is not run twice, closes the dialog and checks the library shows what moved, and `move-into-store-closed-local.json` checks the dialog stays closed:
 
 ```sh
 dart tool/drive/linux.dart run --script tool/drive/scripts/move-into-store-local.json \
-  --library-store store --hive-store <fixture> --out <out>
+  --library-store store --hive-store <fixture> --out <out-1>
 dart tool/drive/linux.dart run --script tool/drive/scripts/move-into-store-again-local.json \
-  --library-store store --hive-store <out>/store-main --out <out-2>
+  --library-store store --hive-store <out-1>/store-main --out <out-2>
+dart tool/drive/linux.dart run --script tool/drive/scripts/move-into-store-closed-local.json \
+  --library-store store --hive-store <out-2>/store-main --out <out-3>
 ```
+
+`ICARUS_STORE_HOLDS_LIBRARY_FIXTURE=<new folder>` writes that library beside a store that already holds a folder and has no record of a copy, so the move is not run. `store-not-opened-local.json` starts on it and checks the library screen says the library could not be opened, and that trying again leaves it so.
 
 ## Editor actions as ops
 

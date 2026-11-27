@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/strategy/local_library_view.dart';
@@ -144,6 +145,10 @@ class FolderContent extends ConsumerWidget {
       case LibraryTab.library:
         if (ref.watch(librarySignInRequiredProvider)) {
           return _crossFade(_buildSignInState(context, ref));
+        }
+        if (ref.watch(libraryOnStoreProvider)
+            case final LibraryNotServed notServed) {
+          return _crossFade(_LibraryNotOpened(notServed));
         }
         if (folder == null) {
           return _crossFade(_buildLibraryRoot(context, ref));
@@ -1108,11 +1113,54 @@ class _CloudBanner extends StatelessWidget {
   }
 }
 
+class _LibraryNotOpened extends StatefulWidget {
+  const _LibraryNotOpened(this.notServed);
+
+  final LibraryNotServed notServed;
+
+  @override
+  State<_LibraryNotOpened> createState() => _LibraryNotOpenedState();
+}
+
+class _LibraryNotOpenedState extends State<_LibraryNotOpened> {
+  var _trying = false;
+
+  Future<void> _tryAgain() async {
+    setState(() => _trying = true);
+    try {
+      await widget.notServed.tryAgain();
+    } finally {
+      if (mounted) setState(() => _trying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return _LibraryMessageState(
+      key: const ValueKey('library-not-opened'),
+      icon: LucideIcons.hardDrive,
+      iconColor: Settings.tacticalVioletTheme.destructive,
+      title: l10n.libraryNotOpenedTitle,
+      subtitle: l10n.libraryNotOpenedBody(widget.notServed.oldLibraryFolder),
+      actions: [
+        ShadButton(
+          key: const ValueKey('library-not-opened-try-again'),
+          leading: const Icon(LucideIcons.refreshCw, size: 14),
+          onPressed: _trying ? null : _tryAgain,
+          child: Text(l10n.commonTryAgain),
+        ),
+      ],
+    );
+  }
+}
+
 /// Shared full-pane message layout (dot-grid backdrop, icon, title, subtitle,
 /// action row) used by the cloud unavailable/error states so they carry the
 /// same visual weight.
 class _LibraryMessageState extends StatelessWidget {
   const _LibraryMessageState({
+    super.key,
     required this.icon,
     required this.iconColor,
     required this.title,

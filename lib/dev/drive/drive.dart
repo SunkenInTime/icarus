@@ -487,10 +487,9 @@ var _buildsLogged = '';
 
 void _countLibraryBoxEvents() {
   final [strategies, folders] = const LocalLibrary().boxEvents();
-  strategies.listen((event) {
+  strategies.listen((id) {
     countLibraryBoxEvent('strategies-box');
-    if (event case BoxEvent(:final key)
-        when key == appProviderContainer.read(strategyProvider).strategyId) {
+    if (id == appProviderContainer.read(strategyProvider).strategyId) {
       countLibraryBoxEvent('open-strategy-box');
     }
   });

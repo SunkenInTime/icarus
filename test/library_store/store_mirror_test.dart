@@ -409,7 +409,7 @@ void main() {
     await const LocalLibrary()
         .addStrategy(_legacy('orphan-strategy', folderId: 'gone-folder'));
     await StrategyMigrator.migrateAllStrategies();
-    await moveOrphansToTopLevel(_folders, _strategies);
+    await moveOrphansToTopLevel();
     await step('move orphans to the top level');
     await const LocalLibrary().addStrategy(_legacy('opened-legacy'));
     await notifier.loadFromHive('opened-legacy');

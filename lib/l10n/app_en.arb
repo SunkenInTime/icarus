@@ -6681,5 +6681,19 @@
         "example": "Retakes"
       }
     }
+  },
+  "libraryNotOpenedTitle": "Your library couldn't be opened",
+  "@libraryNotOpenedTitle": {
+    "description": "Shown in place of the library when its new storage could not be opened or filled. Nothing was lost or changed."
+  },
+  "libraryNotOpenedBody": "Nothing in it was changed. Your strategies are still saved on this computer, in {folder}.",
+  "@libraryNotOpenedBody": {
+    "description": "Under that title. folder is the path of the folder holding the library files.",
+    "placeholders": {
+      "folder": {
+        "type": "String",
+        "example": "C:\\Users\\you\\AppData\\Roaming\\icarus"
+      }
+    }
   }
 }

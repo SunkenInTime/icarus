@@ -1,0 +1,10 @@
+[
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"expectMigration": {"state": "wasFinished", "inStore": 2, "foldersInStore": 1, "leftBehind": 1, "served": true}},
+  {"expectText": "Some strategies stayed in your old library", "count": 0},
+  {"expectText": "Moved", "count": 1},
+  {"expectText": "From a newer build", "count": 0},
+  {"shot": "{out}/0-third-start.png"},
+  {"exit": 1}
+]

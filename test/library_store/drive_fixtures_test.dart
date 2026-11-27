@@ -23,6 +23,8 @@ final _storeToAge = Platform.environment['ICARUS_AGE_STORE'];
 final _smallOut = Platform.environment['ICARUS_SMALL_LIBRARY_FIXTURE'];
 final _keptOut = Platform.environment['ICARUS_KEPT_ON_HIVE_FIXTURE'];
 final _leftBehindOut = Platform.environment['ICARUS_LEFT_BEHIND_FIXTURE'];
+final _storeHoldsOut =
+    Platform.environment['ICARUS_STORE_HOLDS_LIBRARY_FIXTURE'];
 
 const unreadableInStoreId = 'fixture-unreadable-in-store';
 const newerBuildId = 'fixture-newer-build';
@@ -135,6 +137,29 @@ Future<void> writeLeftBehindFixture(Directory out) async {
   expect(strategyToRows(strategyAsHiveHoldsIt(newer)), isA<StrategyRowsRefused>());
 }
 
+Future<void> writeStoreHoldsLibraryFixture(Directory out) async {
+  await writeLeftBehindFixture(out);
+  final file = libraryStoreFile(out.path);
+  file.parent.createSync(recursive: true);
+  final engine = SqliteEngine(file.path);
+  final store = switch (await LibraryStore.open(engine, canRead: appCanRead)) {
+    StoreOpened(:final store) => store,
+    StoreNotOpened(:final problem) => fail('$problem'),
+  };
+  expect(
+    await store.editLibrary([
+      PutFolder(ReadableFolder(
+        publicId: 'fixture-already-here',
+        name: 'Already here',
+        createdAt: DateTime.utc(2026, 2, 1),
+      )),
+    ]),
+    isA<Saved<LibraryEdited, Object>>(),
+  );
+  await store.close();
+  await engine.close();
+}
+
 Future<void> writeKeptOnHiveFixture(Directory out) async {
   final bare = generatedStrategy(Optionals.unset).copyWith(
     pages: [
@@ -211,6 +236,19 @@ void main() {
     },
     skip: _leftBehindOut == null
         ? 'set ICARUS_LEFT_BEHIND_FIXTURE to a new folder'
+        : false,
+  );
+
+  test(
+    'writes that library beside a store that already holds a folder and has '
+    'no record of a copy',
+    () async {
+      final out = Directory(_storeHoldsOut!)..createSync(recursive: true);
+      expect(out.listSync(), isEmpty, reason: 'give the fixture a new folder');
+      await writeStoreHoldsLibraryFixture(out);
+    },
+    skip: _storeHoldsOut == null
+        ? 'set ICARUS_STORE_HOLDS_LIBRARY_FIXTURE to a new folder'
         : false,
   );
 

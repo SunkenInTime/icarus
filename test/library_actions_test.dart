@@ -522,7 +522,7 @@ void main() {
         });
 
         final moved = await tester.runAsync(
-          () => moveOrphansToTopLevel(_folders, _strategies),
+          () => moveOrphansToTopLevel(),
         );
 
         expect(moved, (folders: 1, strategies: 1));

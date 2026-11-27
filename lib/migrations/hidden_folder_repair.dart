@@ -1,4 +1,3 @@
-import 'package:hive_ce/hive.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -16,22 +15,20 @@ import 'package:icarus/strategy/strategy_models.dart';
 /// delete that stopped between its two writes can leave one. Nothing is
 /// deleted. Anything whose folder exists is left where it is, parent loops
 /// included.
-Future<({int folders, int strategies})> moveOrphansToTopLevel(
-  Box<Folder> folders,
-  Box<StrategyData> strategies,
-) async {
+Future<({int folders, int strategies})> moveOrphansToTopLevel() async {
+  const library = LocalLibrary();
   var movedFolders = 0;
   for (final folder in foldersUnderMissingParents(
-      folders.values.toList(), folders.containsKey)) {
-    (await const LocalLibrary().moveFolder(folder, null)).orThrow();
+      library.storedFolders.toList(), library.holdsFolder)) {
+    (await library.moveFolder(folder, null)).orThrow();
     movedFolders++;
   }
   var movedStrategies = 0;
   for (final strategy in strategiesInMissingFolders(
-    strategies.values.toList(),
-    folders.containsKey,
+    library.storedStrategies.toList(),
+    library.holdsFolder,
   )) {
-    (await const LocalLibrary().moveStrategy(strategy, null)).orThrow();
+    (await library.moveStrategy(strategy, null)).orThrow();
     movedStrategies++;
   }
   return (folders: movedFolders, strategies: movedStrategies);
