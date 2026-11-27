@@ -1528,7 +1528,7 @@ extension _CloudStore on LibraryStore {
     _CloudReady cloud,
     List<StrategyOp> asked, {
     required int? madeOn,
-    required Map<String, SeenPage> pagesAsSeen,
+    required HowMade? made,
   }) async {
     final strategy = cloud.strategy;
     final now = _cloudNow();
@@ -1553,11 +1553,47 @@ extension _CloudStore on LibraryStore {
       case Done(:final value):
         rows = value;
     }
+    final madeAs = madeAsIn(queue.session.number, made);
+    final pagesAsSeen = made?.pagesAsSeen ?? const {};
     final applied = <(StrategyOp, OpApplied)>[];
     final edited = <String>{...pages};
+    var heldForUser = false;
+    CommitRefusal? queued(Edit edit, RejectionReason? conflict) {
+      switch (transition(
+        queue,
+        UserEdited(edit, madeOn: madeOn, madeAs: madeAs, conflict: conflict),
+        now: now,
+      )) {
+        case NotApplicable(:final why):
+          return QueueRefusal(why);
+        case Stepped(queue: final stepped):
+          queue = stepped;
+          return null;
+      }
+    }
+
     for (final op in asked) {
+      final StrategyOp form;
+      switch (atCommit(
+        rows,
+        op,
+        madeAs: madeAs,
+        drawnLives: made?.drawnLives ?? const {},
+      )) {
+        case HeldForUser(:final reason):
+          final edit = _editAt(rows, op, op, pagesAsSeen);
+          if (edit == null) {
+            return Refused(OpRefusal(const Rejected(RejectionReason.notFound)));
+          }
+          if (queued(edit, reason) case final refusal?) return Refused(refusal);
+          edited.addAll(pagesNeeded(op));
+          heldForUser = true;
+          continue;
+        case AppliedAs(op: final applying):
+          form = applying;
+      }
       final OpApplied result;
-      switch (applyOp(rows, op)) {
+      switch (applyOp(rows, form)) {
         case OpUnchanged():
           continue;
         case OpRefused(:final refusal):
@@ -1570,7 +1606,7 @@ extension _CloudStore on LibraryStore {
         case final OpApplied done:
           result = done;
       }
-      final List<StrategyOp> ops;
+      final List<(StrategyOp, StrategyOp)> ops;
       switch (op) {
         case PageAddOp(copyContentFromPagePublicId: final source?)
             when !queue.shown.content.containsKey(source):
@@ -1579,57 +1615,23 @@ extension _CloudStore on LibraryStore {
           if (_copyStop(rows, source) case final stop?) return Refused(stop);
           switch (expandCopy(rows, op)) {
             case CopyExpanded(ops: final expanded):
-              ops = expanded;
+              ops = [for (final each in expanded) (each, each)];
             case CopyNotExpanded(result: OpRefused(:final refusal)):
               return Refused(OpRefusal(refusal));
             case CopyNotExpanded():
               continue;
           }
         case _:
-          ops = [op];
+          ops = [(op, form)];
       }
       var at = rows;
-      for (final each in ops) {
-        final rowPage = switch (each) {
-          ElementPatchOp(:final elementPublicId) =>
-            at.element(elementPublicId)?.pagePublicId,
-          LineupGroupPatchOp(:final lineupPublicId) =>
-            at.lineupGroup(lineupPublicId)?.pagePublicId,
-          _ => null,
-        };
-        final authored = authoredFor(at, each);
-        EditMaking made(StrategyOp op) =>
-            editOf(op, authored: authored, rowPage: rowPage);
-        final Edit edit;
-        switch ((each, made(each))) {
-          case (final PageDeleteOp delete, _):
-            edit = PageDeleteEdit(
-              delete,
-              pagesAsSeen[delete.pagePublicId] ??
-                  seenPageIn(at, delete.pagePublicId),
-              authored,
-            );
-          case (_, EditMade(edit: final found)):
-            edit = found;
-          case (_, NeedsFieldBase()):
-            switch (made(withFieldBase(at, each))) {
-              case EditMade(edit: final found):
-                edit = found;
-              case _:
-                return Refused(
-                  OpRefusal(const Rejected(RejectionReason.notFound)),
-                );
-            }
-          case (_, _):
-            return Refused(OpRefusal(const Rejected(RejectionReason.notFound)));
+      for (final (each, form) in ops) {
+        final edit = _editAt(at, each, form, pagesAsSeen);
+        if (edit == null) {
+          return Refused(OpRefusal(const Rejected(RejectionReason.notFound)));
         }
-        switch (transition(queue, UserEdited(edit, madeOn: madeOn), now: now)) {
-          case NotApplicable(:final why):
-            return Refused(QueueRefusal(why));
-          case Stepped(queue: final stepped):
-            queue = stepped;
-        }
-        if (applyOp(at, each) case final OpApplied done) {
+        if (queued(edit, null) case final refusal?) return Refused(refusal);
+        if (applyOp(at, form) case final OpApplied done) {
           at = at.withRows(done.rows);
         }
         edited.addAll(pagesNeeded(each));
@@ -1637,7 +1639,7 @@ extension _CloudStore on LibraryStore {
       rows = rows.withRows(result.rows);
       applied.add((op, result));
     }
-    if (applied.isEmpty) return const NothingToSave();
+    if (applied.isEmpty && !heldForUser) return const NothingToSave();
     final result = await _finishCloud(
       cloud,
       queue,
@@ -1663,6 +1665,37 @@ extension _CloudStore on LibraryStore {
       }
     }
     return result;
+  }
+
+  Edit? _editAt(
+    StrategyRows at,
+    StrategyOp each,
+    StrategyOp form,
+    Map<String, SeenPage> pagesAsSeen,
+  ) {
+    final rowPage = switch (each) {
+      ElementPatchOp(:final elementPublicId) =>
+        at.element(elementPublicId)?.pagePublicId,
+      LineupGroupPatchOp(:final lineupPublicId) =>
+        at.lineupGroup(lineupPublicId)?.pagePublicId,
+      _ => null,
+    };
+    final authored = authoredFor(at, form);
+    EditMaking made(StrategyOp op) =>
+        editOf(op, authored: authored, rowPage: rowPage);
+    return switch ((each, made(each))) {
+      (final PageDeleteOp delete, _) => PageDeleteEdit(
+        delete,
+        pagesAsSeen[delete.pagePublicId] ?? seenPageIn(at, delete.pagePublicId),
+        authored,
+      ),
+      (_, EditMade(:final edit)) => edit,
+      (_, NeedsFieldBase()) => switch (made(withFieldBase(at, each))) {
+        EditMade(:final edit) => edit,
+        _ => null,
+      },
+      _ => null,
+    };
   }
 
   CommitRefusal? _anotherAccount(
@@ -1732,15 +1765,10 @@ extension _CloudStore on LibraryStore {
     _CloudReady cloud,
     List<StrategyOp> asked, {
     required int? madeOn,
-    required Map<String, SeenPage> pagesAsSeen,
+    required HowMade? made,
   }) async {
     try {
-      return await _commitCloud(
-        cloud,
-        asked,
-        madeOn: madeOn,
-        pagesAsSeen: pagesAsSeen,
-      );
+      return await _commitCloud(cloud, asked, madeOn: madeOn, made: made);
     } on _RowsDisagree catch (disagreement) {
       return Refused(disagreement.refusal);
     }

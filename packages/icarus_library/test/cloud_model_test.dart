@@ -50,7 +50,8 @@ final class Model {
   Model(this.seed, {required this.teammates, required this.folding})
     : random = Random(seed),
       replacing = Random(seed * 7919 + 1),
-      lateness = Random(seed * 104729 + 3) {
+      lateness = Random(seed * 104729 + 3),
+      making = Random(seed * 15485863 + 5) {
     skew = Duration(milliseconds: random.nextInt(180001) - 90000);
   }
 
@@ -60,6 +61,7 @@ final class Model {
   final Random random;
   final Random replacing;
   final Random lateness;
+  final Random making;
   final readsInFlight = <(QueueEvent, String)>[];
   late final StampSource stamps;
   Generation? heldGeneration;
@@ -188,6 +190,8 @@ final class Model {
   final refusedLate = <String>{};
   final livesSent = <String, int>{};
   final refusedOps = <String>{};
+  final heldAtCommit = <String>{};
+  StrategyRowSet? lastDrawn;
   final strategyLifeSent = <String, int>{};
   final setAsideIds = <String>{};
   final refusedStrategyLives = <int>{};
@@ -588,7 +592,8 @@ final class Model {
   }
 
   Step unfolded(CloudQueue before, QueueEvent event, Step result) {
-    if ((event, result) case (UserEdited(:final edit), Stepped(:final effects))
+    if ((event, result)
+        case (UserEdited(:final edit, :final madeAs), Stepped(:final effects))
         when effects.any(
           (effect) => effect is OpRemoved && effect.cause is FoldedInto,
         )) {
@@ -606,6 +611,8 @@ final class Model {
               refusal: const NotRefused(),
               retriedAfter: before.nextAttempt - 1,
               basis: before.session.basis,
+              strategyLife: before.shown.strategy?.life,
+              madeAs: madeAs,
             ),
           ],
           attempts: before.attempts,
@@ -925,6 +932,106 @@ final class Model {
     }
   }
 
+  void madeEdit() {
+    final current = client.visible;
+    final drawn = teammates && making.nextBool()
+        ? lastDrawn ?? current
+        : current;
+    lastDrawn = current;
+    final copying = {
+      for (final entry in client.queue.entries)
+        if (entry case PendingOp(
+          op: PageAddOp(:final pagePublicId, copyContentFromPagePublicId: _?),
+        ))
+          pagePublicId,
+    };
+    final live = [
+      for (final row in drawn.elements)
+        if (row case LiveElement(:final pagePublicId)
+            when current.page(pagePublicId) is LivePage &&
+                !copying.contains(pagePublicId) &&
+                current.element(row.publicId) is LiveElement)
+          row,
+    ];
+    if (live.isEmpty) return;
+    final replaced = [
+      for (final row in live)
+        if (createdAtOf(row) != createdAtOf(current.element(row.publicId)!))
+          row,
+    ];
+    final target = replaced.isNotEmpty && making.nextBool()
+        ? replaced[making.nextInt(replaced.length)]
+        : live[making.nextInt(live.length)];
+    final op = ElementPatchOp(
+      opId: fresh('op'),
+      elementPublicId: target.publicId,
+      expectedElementRevision: target.revision,
+      payload: agentPayload(target.publicId, {
+        ...target.payload.data.toJson(),
+        'position': {'dx': making.nextInt(1000), 'dy': 0},
+      }),
+      sortIndex: target.sortIndex,
+      merge: FieldMerge(
+        fields: ['position'],
+        base: {'position': ?target.payload.data['position']},
+      ),
+    );
+    final session = client.queue.session.number;
+    final lives = {target.key: ?createdAtOf(target)};
+    final made = switch (making.nextInt(4)) {
+      0 || 1 => MadeLive(session, drawnLives: lives),
+      2 => MadeLive(session - 1, drawnLives: lives),
+      _ => MadeChecked(drawnLives: lives),
+    };
+    final at = client.atCommitOf(op, made);
+    if (at case AppliedAs(
+      op: final form,
+    ) when applyOp(current, form) is! OpApplied) {
+      return;
+    }
+    if (made is MadeLive && made.session != session) {
+      count('made live in an ended session, made checked');
+    }
+    switch (at) {
+      case AppliedAs(op: final form):
+        if (form != op && applyOp(current, op) is OpRefused) {
+          count('made live: a base the held row moved past, applied unchecked');
+        }
+      case HeldForUser(reason: RejectionReason.fieldConflict):
+        count(
+          'made checked: a base the held row moved past, held for the user',
+        );
+      case HeldForUser():
+        count('a row replaced since the draw, held for the user');
+    }
+    final row = rowOf(current, checkTargetOf(op))!;
+    (seen[checkTargetOf(op)] ??= {}).add(target.revision);
+    if (revisionsOf(client.base)[checkTargetOf(op)] case final shown?) {
+      (seen[checkTargetOf(op)] ??= {}).add(shown);
+    }
+    seenDigest[op.opId] = rowDigest(row);
+    if (apply(
+          client.editEvent(op, made),
+          'edit ${op.opId} made as ${made.runtimeType} ${targetOf(op)}',
+        )
+        is! Stepped) {
+      return;
+    }
+    switch (at) {
+      case AppliedAs(op: final form):
+        if (applyOp(reference, onVisible(reference, withoutFieldBase(form)))
+            case final OpApplied done) {
+          reference = bornWhereNew(reference, done.rows, addedLife);
+        }
+      case HeldForUser():
+        heldAtCommit.add(op.opId);
+        if (rowDigest(rowOf(client.visible, checkTargetOf(op))!) !=
+            rowDigest(row)) {
+          throw StateError('${op.opId} was held at commit but drawn over');
+        }
+    }
+  }
+
   void claim() {
     if (standingOf(client.queue) != Standing.good) return;
     final seen = look(client.queue, clock);
@@ -981,6 +1088,9 @@ final class Model {
           '${op.opId} was sent again after the server refused it',
         );
       }
+      if (heldAtCommit.contains(op.opId)) {
+        throw StateError('${op.opId} was sent after its commit held it');
+      }
     }
     count('ops sent naming a row life', sent.lives.length);
     if (sent.strategyLife != null) count('batches naming the strategy life');
@@ -988,6 +1098,9 @@ final class Model {
     for (final op in sent.ops) {
       inFlightLog[op.opId] = '${op.toJson()}';
       if (!uncheckedOnTheWire(op)) continue;
+      if (entries[op.opId]!.madeAs == MadeAs.checked) {
+        throw StateError('${op.opId} was made checked and went out unchecked');
+      }
       count('unchecked sends');
       final basis = entries[op.opId]!.basis;
       if (basis == null) {
@@ -1926,6 +2039,7 @@ final class Model {
     switch (random.nextInt(24)) {
       case < 6:
         edit();
+        if (making.nextInt(4) == 0) madeEdit();
       case 6:
         deleteAndPutBack();
       case < 10:
@@ -2109,7 +2223,11 @@ const minimums = {
   'teammate makes this device\'s change': 20,
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
-  'ops refused as naming a row life that was replaced': 80,
+  'ops refused as naming a row life that was replaced': 70,
+  'made live: a base the held row moved past, applied unchecked': 60,
+  'made checked: a base the held row moved past, held for the user': 60,
+  'made live in an ended session, made checked': 300,
+  'a row replaced since the draw, held for the user': 5,
   'page reads deferred, moving no order': 8,
   'taken content checked not to go back': 100000,
   'taken content of a page not shown checked not to go back': 4000,

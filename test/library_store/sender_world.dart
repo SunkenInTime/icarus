@@ -1142,18 +1142,23 @@ final class World {
     return find((read! as Found<StrategyContent>).value)!;
   }
 
-  void commitMerge(int n) {
+  void commitMerge(int n, {HowMade? made}) {
     final element = firstElement();
     final move = moveOf(element, n, 'merge-$n');
-    _commit(strategyId, servedAccount, [
-      ElementPatchOp(
-        opId: move.opId,
-        elementPublicId: move.elementPublicId,
-        expectedElementRevision: move.expectedElementRevision,
-        payload: move.payload,
-        merge: FieldMerge(fields: const ['position']),
-      ),
-    ]);
+    _commit(
+      strategyId,
+      servedAccount,
+      [
+        ElementPatchOp(
+          opId: move.opId,
+          elementPublicId: move.elementPublicId,
+          expectedElementRevision: move.expectedElementRevision,
+          payload: move.payload,
+          merge: FieldMerge(fields: const ['position']),
+        ),
+      ],
+      made: made,
+    );
   }
 
   void commitElementDelete(String opId) {
@@ -1214,10 +1219,15 @@ final class World {
   int viewedLife([String strategy = strategyId]) =>
       cloud(strategy).queue.shown.strategy!.life!;
 
-  void _commit(String strategy, Account owner, List<StrategyOp> ops) {
+  void _commit(
+    String strategy,
+    Account owner,
+    List<StrategyOp> ops, {
+    HowMade? made,
+  }) {
     Saving<List<Committed>, CommitRefusal>? saved;
     store
-        .commitAllAs(owner, strategy, ops, seen: seenNow(strategy))
+        .commitAllAs(owner, strategy, ops, seen: seenNow(strategy), made: made)
         .then((value) => saved = value);
     async.flushMicrotasks();
     expect(saved, isA<Saved<List<Committed>, CommitRefusal>>());

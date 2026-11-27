@@ -501,6 +501,22 @@ final class ChangedUnseen extends UserReason {
   String toString() => 'changed by someone else since the user saw it';
 }
 
+final class ChangedSinceDrawn extends UserReason {
+  const ChangedSinceDrawn(this.reason);
+
+  final RejectionReason reason;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChangedSinceDrawn && other.reason == reason;
+
+  @override
+  int get hashCode => Object.hash(ChangedSinceDrawn, reason);
+
+  @override
+  String toString() => 'changed since it was drawn: ${reason.wireName}';
+}
+
 final class RetiredFormat extends UserReason {
   const RetiredFormat();
 
@@ -1400,7 +1416,12 @@ NotApplicable _inapplicable(
 
 Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
   switch (event) {
-    case UserEdited(edit: final change, :final madeOn):
+    case UserEdited(
+      edit: final change,
+      :final madeOn,
+      :final madeAs,
+      :final conflict,
+    ):
       final recordLife = edit.shown.strategy?.life;
       if ((madeOn, recordLife) case (
         final made?,
@@ -1408,7 +1429,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
       ) when made != record) {
         return _setAsideEdit(edit, change, made, record, now);
       }
-      return _userEdited(edit, change, now);
+      return _userEdited(edit, change, madeAs, conflict, now);
     case BatchClaimed(:final clientId, :final opIds, :final at, :final elapsed):
       return _claim(edit, clientId, opIds, at, elapsed?.call(), now);
     case ServerTimeHeld(
@@ -2214,7 +2235,13 @@ bool _opIdTaken(_Edit edit, String opId) =>
       NothingSetAside() => false,
     };
 
-Step _userEdited(_Edit edit, Edit change, DateTime now) {
+Step _userEdited(
+  _Edit edit,
+  Edit change,
+  MadeAs madeAs,
+  RejectionReason? conflict,
+  DateTime now,
+) {
   final queue = edit.original;
   final op = change.op;
   if (!isJson(op.toJson())) return NotApplicable(queue, NotJson(op.opId));
@@ -2236,6 +2263,8 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
           last,
         ).any((page) => queue._index.anyAfter(_OnPage(page), last.place));
     if (alone &&
+        conflict == null &&
+        last.madeAs == madeAs &&
         (queue._index.attemptsByOp[last.id] ?? const []).isEmpty &&
         last.work is OpWork &&
         last.scope == change.scope &&
@@ -2292,11 +2321,14 @@ Step _userEdited(_Edit edit, Edit change, DateTime now) {
       authored: authored,
       authoredIn: edit.session.number,
       authoredAt: now,
-      refusal: const NotRefused(),
+      refusal: conflict == null
+          ? const NotRefused()
+          : ConflictedAtCommit(conflict),
       retriedAfter: edit.lastAttempt,
       behindOwn: behindOwn,
       basis: edit.session.basis,
       strategyLife: queue.shown.strategy?.life,
+      madeAs: madeAs,
     ),
   );
   return edit.done();
@@ -2755,6 +2787,7 @@ StrategyOp sendable(CloudQueue queue, PendingOp entry, Duration? elapsed) =>
     sendForm(
       entry.op,
       sendPolicy(
+        madeChecked: entry.madeAs == MadeAs.checked,
         attempted: (queue._index.attemptsByOp[entry.id] ?? const []).isNotEmpty,
         connected: queue.session.connected,
         writtenThisSession: entry.authoredIn == queue.session.number,
@@ -2764,12 +2797,18 @@ StrategyOp sendable(CloudQueue queue, PendingOp entry, Duration? elapsed) =>
     );
 
 SendPolicy sendPolicy({
+  required bool madeChecked,
   required bool attempted,
   required bool connected,
   required bool writtenThisSession,
   required ServerTimeBasis? basis,
   required Duration? elapsed,
-}) => switch ((attempted, connected && writtenThisSession, basis, elapsed)) {
+}) => switch ((
+  madeChecked || attempted,
+  connected && writtenThisSession,
+  basis,
+  elapsed,
+)) {
   (true, _, _, _) => SendPolicy.checked,
   (false, false, _, _) => SendPolicy.checked,
   (false, true, null, _) => SendPolicy.checked,
@@ -3019,6 +3058,7 @@ bool _userMayReplace(EntryView view) => switch (view.state) {
   NeedsUser(
     reason: RefusedByServer() ||
         ChangedUnseen() ||
+        ChangedSinceDrawn() ||
         WindowClosed() ||
         WrittenLongAgo() ||
         RowPageGone(),
@@ -3069,6 +3109,7 @@ Step _keepMine(
               refusal: RejectedByServer(current: ServerSnapshot(:final life)),
             ) =>
               life,
+            ConflictedAtCommit() => expectedLifeOf(entry),
             _ => null,
           },
         ),

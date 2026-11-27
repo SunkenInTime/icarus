@@ -76,6 +76,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
     'refusal': switch (entry.refusal) {
       NotRefused() => null,
       RefusedWith(:final refusal) => _refusalToJson(refusal),
+      ConflictedAtCommit(:final reason) => {'atCommit': reason.wireName},
     },
     if (entry.window is WindowPassed) 'windowPassed': true,
     if (entry.behindOwn) 'behindOwn': true,
@@ -85,6 +86,7 @@ Map<String, Object?> entryToJson(QueueEntry entry) => switch (entry) {
         'heldAtMicros': basis.heldAt.inMicroseconds,
       },
     'strategyLife': ?entry.strategyLife,
+    if (entry.madeAs != MadeAs.unmarked) 'madeAs': entry.madeAs.name,
   },
   RetiredOp(:final opId, :final clientId, :final landing, :final stored) => {
     'version': cloudRowVersion,
@@ -242,7 +244,7 @@ Decoded<QueueEntry> decodeEntry(
       final retriedAfter = fields.whole('retriedAfter');
       if (retriedAfter < 0) fields.reject('a negative attempt number');
       final refused = fields.json['refusal'] == null
-          ? null
+          ? const NotRefused()
           : fields.decoded('refusal', _refusal);
       final windowPassed = switch (fields.json['windowPassed']) {
         null => false,
@@ -268,6 +270,9 @@ Decoded<QueueEntry> decodeEntry(
       final strategyLife = fields.has('strategyLife')
           ? fields.whole('strategyLife')
           : null;
+      final madeAs = fields.has('madeAs')
+          ? _named(fields, 'madeAs', MadeAs.values)
+          : MadeAs.unmarked;
       final behindOwn = switch (fields.json['behindOwn']) {
         null => false,
         true => true,
@@ -301,10 +306,11 @@ Decoded<QueueEntry> decodeEntry(
         authored: authored!,
         authoredIn: authoredIn,
         authoredAt: authoredAt,
-        refusal: refused == null ? const NotRefused() : RefusedWith(refused),
+        refusal: refused!,
         retriedAfter: retriedAfter,
         window: windowPassed ? const WindowPassed() : const WindowOpen(),
         strategyLife: strategyLife,
+        madeAs: madeAs!,
       );
     default:
       fields.reject('an entry kind this build does not read');
@@ -420,8 +426,15 @@ Decoded<SeenPage> _seen(Object? json) => JsonFields.read(json, 'seen page', (
   );
 });
 
-Decoded<ServerRefusal> _refusal(Object? json) =>
+Decoded<RefusalRecord> _refusal(Object? json) =>
     JsonFields.read(json, 'refusal', (fields) {
+      if (fields.has('atCommit')) {
+        final reason = RejectionReason.values
+            .where((reason) => reason.wireName == fields.json['atCommit'])
+            .firstOrNull;
+        if (reason == null) fields.reject('an unknown conflict');
+        return () => ConflictedAtCommit(reason!);
+      }
       if (fields.has('rejected')) {
         final reason = RejectionReason.values
             .where((reason) => reason.wireName == fields.json['rejected'])
@@ -449,23 +462,25 @@ Decoded<ServerRefusal> _refusal(Object? json) =>
             return const NoServerCopy();
           }(),
         };
-        return () => RejectedByServer(reason!, current);
+        return () => RefusedWith(RejectedByServer(reason!, current));
       }
       if (fields.has('withoutLife')) {
         final revision = switch (fields.json['withoutLife']) {
           true => null,
           _ => fields.whole('withoutLife'),
         };
-        return () => AnsweredWithoutLife(revision);
+        return () => RefusedWith(AnsweredWithoutLife(revision));
       }
       final code = fields.string('failed');
       final message = fields.string('message');
-      return () => FailedOnServer(switch (FailureCode.values
-          .where((known) => known.wireName == code)
-          .firstOrNull) {
-        final known? => KnownFailure(known),
-        null => OtherFailure(code),
-      }, message);
+      return () => RefusedWith(
+        FailedOnServer(switch (FailureCode.values
+            .where((known) => known.wireName == code)
+            .firstOrNull) {
+          final known? => KnownFailure(known),
+          null => OtherFailure(code),
+        }, message),
+      );
     });
 
 sealed class EntriesReading {
