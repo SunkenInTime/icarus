@@ -36,10 +36,11 @@ enum StallExit {
     waitsFor: 'a read of the page or page list whose server time reaches the '
         'answer\'s, or one that shows the written row at the answer\'s '
         'revision or later. Answers that leave no row to show: a page reorder, '
-        'add or delete on every page it renumbers; an answer with no revision '
-        '(nothing to do, failed, rejected without the server\'s row); two '
-        'answers on one page that wrote different rows; the page an item '
-        'moved off',
+        'add or delete, on every page it renumbers; an edit of an item, for '
+        'the page list\'s view of its page (a list shows no items); an answer '
+        'with no revision (nothing to do, failed, rejected without the '
+        'server\'s row); two answers on one page or list that wrote different '
+        'rows; the page an item moved off',
     calls: 'that read',
     onScreen: Face.awaitingResult,
     goesAgain: 'a read whose server time reaches the answer\'s, which the '
