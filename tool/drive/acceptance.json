@@ -38,6 +38,7 @@
     "page-take-budget": "a timing budget set on the PC; this box runs the cloud store's take slower"
   },
   "storeOnly": [
+    "library-copy-only-local",
     "move-into-store-local",
     "move-into-store-again-local",
     "move-into-store-closed-local",
@@ -76,6 +77,9 @@
     },
     "restored-colours-2-after-restart": {
       "after": "restored-colours-1-restore-and-edit"
+    },
+    "library-copy-only-local": {
+      "library": true
     },
     "library-timings-local": {
       "library": true

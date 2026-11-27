@@ -15,7 +15,7 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
       [--hive-store DIR] [--library-store off|shadow|mirror|read|ops|store]
       [--cloud-store send] [--second-account EMAIL]
-      [--kill-after-seconds S] [--main-scope UNIT]
+      [--kill-after-seconds S] [--main-scope UNIT] [--ends-by close]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
         --convex it talks to the dev deployment; production is refused.
@@ -40,7 +40,7 @@ run     Runs --script, and --companion beside it when given, against the
         runs on the store, and leaves the Hive files as they were; with
         store, the run also fails when an instance's Hive library files
         (strategy_box.hive, folder_box.hive) are not byte for byte what
-        they were when it started.
+        they were when it started, or were absent then and exist after.
         --cloud-store send passes --cloud-store=send to every instance: the
         store reads the open cloud strategy and sends its queue to the
         server.
@@ -54,6 +54,12 @@ run     Runs --script, and --companion beside it when given, against the
         --main-scope starts the main instance in a systemd user scope of
         that name, apart from the companion, so a harness can cut its
         network alone (tool/drive/linux-cloud-store-late.sh).
+        --ends-by close is for a script whose last step closes the window,
+        so the app quits before it can write SUMMARY: the main instance
+        passes when its log shows the window was asked to close, it wrote
+        no SUMMARY, no step failed and it did not time out. Its exit status
+        is not judged, because the Linux engine's teardown crashes about
+        half the time after the save; check that on Windows.
 
 run exits 0 when every instance finished its script with SUMMARY ... CLEAN
 and quit before the timeout (default 900 s), 1 when anything else happened,
@@ -202,6 +208,7 @@ Future<void> main(List<String> args) async {
           'second-account',
           'kill-after-seconds',
           'main-scope',
+          'ends-by',
         })));
       default:
         throw UsageError('no command called "${args.first}"; see --help');
@@ -431,15 +438,20 @@ Future<int> runScripts(Map<String, String> options) async {
       }),
   ];
 
+  final closes = switch (options['ends-by']) {
+    null => false,
+    'close' => true,
+    final other => throw UsageError('--ends-by is close, not "$other"'),
+  };
   final hiveLibrary = options['library-store'] == 'store'
       ? {
           for (final instance in instances)
             for (final box in hiveLibraryFiles)
-              if (File('${out.path}/store-${instance.name}/$box')
-                  case final file when file.existsSync())
-                file.path: file.readAsBytesSync(),
+              '${out.path}/store-${instance.name}/$box': _bytesOrNone(
+                File('${out.path}/store-${instance.name}/$box'),
+              ),
         }
-      : const <String, List<int>>{};
+      : const <String, List<int>?>{};
 
   try {
     screen = await _Screen.launch(out.path);
@@ -481,12 +493,24 @@ Future<int> runScripts(Map<String, String> options) async {
     ]);
     var clean = true;
     for (final instance in instances) {
-      clean = await _report(instance, out.path, timeout) && clean;
+      clean = await _report(
+            instance,
+            out.path,
+            timeout,
+            closes: closes && instance.name == 'main',
+          ) &&
+          clean;
     }
     for (final MapEntry(key: path, value: before) in hiveLibrary.entries) {
-      final file = File(path);
-      if (!file.existsSync() || !_sameBytes(file.readAsBytesSync(), before)) {
-        stdout.writeln('the store mode changed the Hive library file $path');
+      final now = _bytesOrNone(File(path));
+      final same =
+          before == null ? now == null : now != null && _sameBytes(now, before);
+      if (!same) {
+        stdout.writeln(
+          before == null
+              ? 'the store mode created the Hive library file $path'
+              : 'the store mode changed the Hive library file $path',
+        );
         clean = false;
       }
     }
@@ -652,7 +676,12 @@ Future<int> _stop(_Instance instance) async {
   return leaderExit(2);
 }
 
-Future<bool> _report(_Instance instance, String out, int timeout) async {
+Future<bool> _report(
+  _Instance instance,
+  String out,
+  int timeout, {
+  required bool closes,
+}) async {
   final name = instance.name;
   if (instance.killed) {
     stdout.writeln('$name: killed with SIGKILL as asked');
@@ -684,6 +713,24 @@ Future<bool> _report(_Instance instance, String out, int timeout) async {
       stdout.writeln('$name: the app reported $error');
     }
   }
+  if (closes) {
+    final why = [
+      if (!lines.any((line) => line.contains(' WINDOW asked to close')))
+        'its window was never asked to close',
+      if (summary != null) 'it was still open at the end of its script',
+      if (lines.any(
+          (line) => RegExp(r' (FAIL|FLUTTER-ERROR|MISPLACED) ').hasMatch(line)))
+        'a step failed',
+      if (instance.timedOut) 'it timed out',
+    ];
+    stdout.writeln(
+      why.isEmpty
+          ? '$name: closed the app after its window was asked to close'
+          : '$name: did not close the app as its script means to: '
+              '${why.join('; ')}',
+    );
+    return why.isEmpty;
+  }
   return summary != null &&
       isCleanSummary(summary) &&
       !instance.timedOut &&
@@ -691,6 +738,9 @@ Future<bool> _report(_Instance instance, String out, int timeout) async {
 }
 
 const hiveLibraryFiles = ['strategy_box.hive', 'folder_box.hive'];
+
+List<int>? _bytesOrNone(File file) =>
+    file.existsSync() ? file.readAsBytesSync() : null;
 
 bool _sameBytes(List<int> a, List<int> b) {
   if (a.length != b.length) return false;

@@ -316,6 +316,16 @@ final _frameTimings = <ui.FrameTiming>[];
 void _log(String line) =>
     _entries.add('${DateTime.now().toIso8601String().substring(11, 23)} $line');
 
+final class _CloseAsked with WindowListener {
+  @override
+  void onWindowClose() {
+    _log('WINDOW asked to close');
+    if (_logPath case final path?) {
+      File(path).writeAsStringSync('${_entries.join('\n')}\n');
+    }
+  }
+}
+
 Future<void> _flush() async {
   final path = _logPath;
   if (path != null) await File(path).writeAsString('${_entries.join('\n')}\n');
@@ -346,6 +356,7 @@ Future<void> _play(String script) async {
     exit(0);
   }
   _log('RUN $_runId $script');
+  windowManager.addListener(_CloseAsked());
   _countLibraryBoxEvents();
   _log(await firstFrameLine(appProviderContainer));
   if (_cloudStore.isOn(appProviderContainer)) {
@@ -2398,25 +2409,24 @@ Future<void> _run(Map<String, dynamic> step) async {
       final id = value as String;
       final utilities = c.read(utilityProvider.notifier);
       final type = UtilityType.values.byName(step['type'] as String);
-      utilities.addUtility(
-        PlacedUtility(
-          type: type,
-          position: const Offset(500, 500),
-          id: id,
-          customWidth: type == UtilityType.customRectangle
-              ? ((step['size'] ?? 2) as num).toDouble()
-              : null,
-          customLength: type == UtilityType.customRectangle
-              ? ((step['size'] ?? 2) as num).toDouble()
-              : null,
-          customDiameter: type == UtilityType.customCircle ? 10 : null,
-          customColorValue: type == UtilityType.spike ? null : 0xFF22C55E,
-          customOpacityPercent: type == UtilityType.spike ? null : 30,
-          mapDoor: step['door'] as String?,
-          isZone: step['zone'] == true,
-        ),
+      final placed = PlacedUtility(
+        type: type,
+        position: const Offset(500, 500),
+        id: id,
+        customWidth: type == UtilityType.customRectangle
+            ? ((step['size'] ?? 2) as num).toDouble()
+            : null,
+        customLength: type == UtilityType.customRectangle
+            ? ((step['size'] ?? 2) as num).toDouble()
+            : null,
+        customDiameter: type == UtilityType.customCircle ? 10 : null,
+        customColorValue: type == UtilityType.spike ? null : 0xFF22C55E,
+        customOpacityPercent: type == UtilityType.spike ? null : 30,
+        mapDoor: step['door'] as String?,
+        isZone: step['zone'] == true,
       );
-      if (step['door'] == null) {
+      utilities.addUtility(placed);
+      if (mapDoorOfRow(placed, c.read(mapProvider).currentMap) == null) {
         await _place(
           id,
           _point(step, 'at'),
@@ -2598,6 +2608,7 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'backupTime':
       final times = <Duration>[];
       var bytes = 0;
+      final picker = FilePicker.platform;
       for (var run = 0; run < (value as int); run++) {
         final into = await Directory.systemTemp.createTemp('icarus-backup-');
         try {
@@ -2608,6 +2619,7 @@ Future<void> _run(Map<String, dynamic> step) async {
           bytes = File('${into.path}${Platform.pathSeparator}backup.zip')
               .lengthSync();
         } finally {
+          FilePicker.platform = picker;
           await into.delete(recursive: true);
         }
       }
@@ -3114,6 +3126,27 @@ Future<void> _run(Map<String, dynamic> step) async {
       if (step['changed'] != true && !same) {
         throw StateError('the page\'s items are not as they were at "$value"');
       }
+    case 'writePositions':
+      File(value as String).writeAsStringSync(jsonEncode({
+        for (final agent in c.read(agentProvider))
+          agent.id: [agent.position.dx, agent.position.dy],
+      }));
+    case 'expectPositions':
+      final written =
+          jsonDecode(File(value as String).readAsStringSync()) as Map;
+      final onPage = {
+        for (final agent in c.read(agentProvider)) agent.id: agent.position,
+      };
+      final wrong = <String>[];
+      for (final MapEntry(key: id, value: at) in written.entries) {
+        final expected =
+            Offset((at[0] as num).toDouble(), (at[1] as num).toDouble());
+        final now = onPage[id];
+        if (now == null || (now - expected).distance >= 0.5) {
+          wrong.add('$id: written at $expected, now ${now ?? 'not on the page'}');
+        }
+      }
+      if (wrong.isNotEmpty) throw StateError(wrong.join('; '));
     case 'logPage':
       _log(
         'PAGE $value strategy=${c.read(strategyProvider).strategyName} '

@@ -231,6 +231,8 @@ Future<void> _oneStore(Directory store, Directory root, _Totals totals) async {
     if (starting.read(libraryOnStoreProvider)
         case final LibraryNotServed notServed) {
       problem('the library was not served: ${notServed.why}');
+      await starting.read(libraryStoreProvider.notifier).close();
+      starting.dispose();
       return;
     }
     await StrategyMigrator.migrateAllStrategies();
@@ -276,10 +278,10 @@ Future<void> _oneStore(Directory store, Directory root, _Totals totals) async {
         );
       }
     } finally {
-      LocalLibrary.source = const LibraryInHive();
       await fresh.close();
     }
   } finally {
+    LocalLibrary.source = const LibraryInHive();
     container.dispose();
     await Hive.close();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

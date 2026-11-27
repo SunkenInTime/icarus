@@ -14,6 +14,7 @@
   {"addText": "t1-{run}", "at": [500, 500], "text": "unsaved when closed"},
   {"dragAgent": "a1-{run}", "by": [60, 40]},
   {"logPage": "before close"},
+  {"writePositions": "{out}/../closed-on-page-2.json"},
   {"tapAt": [1577, 16]},
   {"wait": 20}
 ]

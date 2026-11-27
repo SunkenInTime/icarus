@@ -14,5 +14,6 @@
   {"logPage": "the page added before the close"},
   {"expectAgents": 2},
   {"expectText": "unsaved when closed", "count": 1},
+  {"expectPositions": "{out}/../closed-on-page-2.json"},
   {"exit": 1}
 ]

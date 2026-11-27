@@ -152,9 +152,16 @@ Future<int> _accept(Map<String, String> options) async {
   if (library != null && !library.existsSync()) {
     throw _UsageError('--library ${library.path} does not exist');
   }
-  final workers = int.tryParse(options['workers'] ?? '2') ?? 0;
+  final workers =
+      int.tryParse(options['workers'] ?? (Platform.isWindows ? '1' : '2')) ?? 0;
   if (workers < 1)
     throw const _UsageError('--workers is a whole number from 1');
+  if (Platform.isWindows && workers > 1) {
+    throw const _UsageError(
+      'on Windows the runs share one desktop and one clipboard; run one at a '
+      'time',
+    );
+  }
 
   final plan = _Plan(
     jsonDecode(
@@ -273,6 +280,7 @@ Future<int> _accept(Map<String, String> options) async {
           _ => null,
         };
         final runOut = '${out.path}/$mode/$name';
+        final closes = plan.closesTheApp.contains(name);
         Directory('${out.path}/$mode').createSync(recursive: true);
         if (start.picture case final picture?) {
           File('${out.path}/$mode/$picture').writeAsBytesSync(_bitmap);
@@ -295,6 +303,7 @@ Future<int> _accept(Map<String, String> options) async {
                   '-Out',
                   runOut,
                   if (hiveStore != null) ...['-HiveStore', hiveStore],
+                  if (closes) ...['-EndsBy', 'close'],
                 ],
                 workingDirectory: repo.path,
               )
@@ -311,19 +320,30 @@ Future<int> _accept(Map<String, String> options) async {
                   runOut,
                   if (hiveStore != null) ...['--hive-store', hiveStore],
                   if (options['exe'] case final exe?) ...['--exe', exe],
+                  if (closes) ...['--ends-by', 'close'],
                 ],
                 workingDirectory: repo.path,
               );
-        final summary = '${run.stdout}'
-            .split('\n')
-            .where((line) => line.contains('SUMMARY'))
-            .lastOrNull;
-        final outcome = plan.closesTheApp.contains(name)
-            ? _closedTheApp(runOut, '${run.stdout}')
-            : _Outcome(
-                run.exitCode == 0,
-                summary?.trim() ?? 'no SUMMARY (exit ${run.exitCode})',
-              );
+        final said = '${run.stdout}'.split('\n');
+        File('${out.path}/$mode/$name.launcher.txt')
+            .writeAsStringSync('${run.stdout}\n${run.stderr}');
+        final verdict = said
+                .where((line) => closes
+                    ? line.contains('the app after its window') ||
+                        line.contains('did not close the app')
+                    : line.contains('SUMMARY'))
+                .lastOrNull
+                ?.trim() ??
+            'no SUMMARY (exit ${run.exitCode}): '
+                '${_lines('${run.stderr}', '${run.stdout}')}';
+        final outcome = _Outcome(
+          run.exitCode == 0,
+          [
+            verdict,
+            for (final line in said)
+              if (line.contains('the Hive library file')) line.trim(),
+          ].join('; '),
+        );
         (outcomes[name] ??= {})[mode] = outcome;
         final line = '$name $mode ${outcome.clean ? 'CLEAN' : 'NOT CLEAN'}: '
             '${outcome.line}';
@@ -341,9 +361,15 @@ Future<int> _accept(Map<String, String> options) async {
   final failBoth = <String>[];
   final onlyStore = <String>[];
   final onlyHive = <String>[];
+  final storeAlone = <String>[];
+  final storeAloneFailing = <String>[];
   for (final name in run) {
     final store = clean(name, 'store');
-    final hive = plan.storeOnly.contains(name) || clean(name, 'off');
+    if (plan.storeOnly.contains(name)) {
+      (store ? storeAlone : storeAloneFailing).add(name);
+      continue;
+    }
+    final hive = clean(name, 'off');
     switch ((hive, store)) {
       case (true, true):
         inBoth.add(name);
@@ -362,13 +388,15 @@ Future<int> _accept(Map<String, String> options) async {
     'failing in both: ${failBoth.length}${_list(failBoth)}',
     'failing only on the store: ${onlyStore.length}${_list(onlyStore)}',
     'failing only on Hive: ${onlyHive.length}${_list(onlyHive)}',
+    'on the store alone (they never run on Hive): ${storeAlone.length} clean, '
+        '${storeAloneFailing.length} failing${_list(storeAloneFailing)}',
     'left out:',
     for (final MapEntry(key: name, value: reason) in leftOut.entries)
       '  $name: $reason',
   ].join('\n');
   File('${out.path}/report.txt').writeAsStringSync('$report\n');
   stdout.writeln(report);
-  return inBoth.length == run.length ? 0 : 1;
+  return inBoth.length + storeAlone.length == run.length ? 0 : 1;
 }
 
 String _list(List<String> names) =>
@@ -409,23 +437,10 @@ List<int> _le32(int value) => [
       (value >> 24) & 0xff,
     ];
 
-_Outcome _closedTheApp(String runOut, String said) {
-  final log = File('$runOut/main.log');
-  final failures = log.existsSync()
-      ? log
-          .readAsLinesSync()
-          .where((line) =>
-              RegExp(r' (FAIL|FLUTTER-ERROR|MISPLACED) ').hasMatch(line))
-          .toList()
-      : const ['no log'];
-  final timedOut = said.contains('timed out');
-  return _Outcome(
-    failures.isEmpty && !timedOut,
-    failures.isEmpty && !timedOut
-        ? 'closed the app after its last step, as it means to'
-        : 'did not close the app cleanly: ${[
-            ...failures,
-            if (timedOut) 'timed out'
-          ].join('; ')}',
-  );
+String _lines(String stderr, String stdout) {
+  final said = [
+    for (final line in '$stderr\n$stdout'.split('\n'))
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
+  return said.isEmpty ? 'the launcher said nothing' : said.take(3).join(' / ');
 }
