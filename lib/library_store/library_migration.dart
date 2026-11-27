@@ -156,55 +156,60 @@ Future<LibraryMigration> migrateLibraryIntoStore(
   }
   final orphanFolders =
       foldersUnderMissingParents(folders, folderIds.contains).toSet();
-  for (final folder
-      in foldersParentsFirst(_firstOfEachId(folders, (folder) => folder.id))) {
-    final atItsPlace = orphanFolders.contains(folder)
-        ? _folderAtTopLevel(folder)
-        : folder;
-    switch (_put(await committed(() => store.editLibrary([
-          PutFolder(folderToRow(atItsPlace)),
-        ])))) {
-      case _Kept():
-        break;
-      case _LeftBehind(:final reason):
-        foldersLeft.add(LeftBehind(folder.id, folder.name, reason));
-      case _StoreStopped(:final failure):
-        return MigrationStopped(failure);
-    }
+  final folderPuts = [
+    for (final folder in foldersParentsFirst(
+      _firstOfEachId(folders, (folder) => folder.id),
+    ))
+      _Ready(
+        folder.id,
+        folder.name,
+        PutFolder(folderToRow(
+          orphanFolders.contains(folder) ? _folderAtTopLevel(folder) : folder,
+        )),
+      ),
+  ];
+  if (await _putInBatches(store, folderPuts, foldersLeft, committed)
+      case final failure?) {
+    return MigrationStopped(failure);
   }
 
   final orphanStrategies =
       strategiesInMissingFolders(strategies, folderIds.contains).toSet();
   final strategiesLeft = <LeftBehind>[];
   final strategyIds = <String>{};
+  var batch = <_Copied>[];
   for (final strategy in strategies) {
     if (!strategyIds.add(strategy.id)) {
-      strategiesLeft.add(LeftBehind(strategy.id, strategy.name, sameIdTwice));
+      batch.add(_NotCopied(LeftBehind(strategy.id, strategy.name, sameIdTwice)));
       continue;
     }
     copying.start();
     final copy = wholeCopyOf(strategy);
     copying.stop();
     if (orphanStrategies.contains(strategy)) copy.folderID = null;
-    final StrategyRowSet rows;
     switch (await _rowsOf(copy, upgrading, converting)) {
-      case _Converted(rows: final made):
-        rows = made;
+      case _Converted(:final rows):
+        batch.add(_Ready(
+          strategy.id,
+          strategy.name,
+          AddStrategy(rows, writtenAt: Settings.versionNumber),
+        ));
       case _NotConverted(:final problem):
-        strategiesLeft.add(LeftBehind(strategy.id, strategy.name, problem));
-        continue;
+        batch.add(
+          _NotCopied(LeftBehind(strategy.id, strategy.name, problem)),
+        );
     }
-    switch (_put(await committed(() => store.putStrategy(
-          rows,
-          writtenAt: Settings.versionNumber,
-        )))) {
-      case _Kept():
-        break;
-      case _LeftBehind(:final reason):
-        strategiesLeft.add(LeftBehind(strategy.id, strategy.name, reason));
-      case _StoreStopped(:final failure):
+    if (batch.length == strategiesPerCommit) {
+      if (await _putInBatches(store, batch, strategiesLeft, committed)
+          case final failure?) {
         return MigrationStopped(failure);
+      }
+      batch = [];
     }
+  }
+  if (await _putInBatches(store, batch, strategiesLeft, committed)
+      case final failure?) {
+    return MigrationStopped(failure);
   }
 
   final record = MigrationFinished(
@@ -229,6 +234,77 @@ Future<LibraryMigration> migrateLibraryIntoStore(
 }
 
 DateTime _now() => DateTime.now().toUtc();
+
+const strategiesPerCommit = 100;
+
+sealed class _Copied {
+  const _Copied();
+}
+
+final class _Ready extends _Copied {
+  const _Ready(this.id, this.name, this.change);
+
+  final String id;
+  final String name;
+  final LibraryChange change;
+}
+
+final class _NotCopied extends _Copied {
+  const _NotCopied(this.left);
+
+  final LeftBehind left;
+}
+
+Future<StorageFailure?> _putInBatches(
+  LibraryStore store,
+  List<_Copied> batch,
+  List<LeftBehind> left,
+  Future<LibraryEditResult> Function(Future<LibraryEditResult> Function())
+      committed,
+) async {
+  final ready = batch.whereType<_Ready>().toList();
+  if (ready.isEmpty) {
+    left.addAll([for (final copied in batch) (copied as _NotCopied).left]);
+    return null;
+  }
+  switch (_put(await committed(
+    () => store.editLibrary([for (final each in ready) each.change]),
+  ))) {
+    case _Kept():
+      left.addAll([
+        for (final copied in batch)
+          if (copied case _NotCopied(left: final one)) one,
+      ]);
+      return null;
+    case _LeftBehind():
+      break;
+    case _StoreStopped(:final failure):
+      return failure;
+  }
+  for (final copied in batch) {
+    switch (copied) {
+      case _NotCopied(left: final one):
+        left.add(one);
+      case _Ready(:final id, :final name, :final change):
+        switch (_put(await committed(() => _putOne(store, change)))) {
+          case _Kept():
+            break;
+          case _LeftBehind(:final reason):
+            left.add(LeftBehind(id, name, reason));
+          case _StoreStopped(:final failure):
+            return failure;
+        }
+    }
+  }
+  return null;
+}
+
+Future<LibraryEditResult> _putOne(LibraryStore store, LibraryChange change) =>
+    switch (change) {
+      AddStrategy(:final rows, :final writtenAt) =>
+        store.putStrategy(rows, writtenAt: writtenAt),
+      _ => store.editLibrary([change]),
+    };
 
 List<T> _firstOfEachId<T>(List<T> items, String Function(T item) idOf) {
   final seen = <String>{};

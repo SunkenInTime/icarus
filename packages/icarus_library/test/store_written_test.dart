@@ -35,6 +35,22 @@ void main() {
     );
   });
 
+  test('a strategy added with the version it was written at reads it back '
+      'after a reopen', () async {
+    final storage = MemoryStorage();
+    final store = await openStore(MemoryEngine(storage));
+
+    savedValue(
+      await store.editLibrary([AddStrategy(strategyRows(), writtenAt: 113)]),
+    );
+    await store.close();
+
+    expect(
+      await writtenAfterReopen(storage),
+      isA<WrittenAt>().having((written) => written.version, 'version', 113),
+    );
+  });
+
   test('a strategy put without a version has none recorded', () async {
     final storage = MemoryStorage();
     final store = await openStore(MemoryEngine(storage));

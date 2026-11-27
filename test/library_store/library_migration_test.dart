@@ -127,6 +127,10 @@ void main() {
       await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
           .put(strategy.id, strategy);
     }
+    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).close();
+    await folders.close();
+    await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+    await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
   }
 
   Future<StrategyData> readBack(LibraryStore store, String id) async =>
@@ -219,6 +223,8 @@ void main() {
         strategy('a'),
         strategy('b', folderId: 'folder-1'),
         strategy('c', folderId: 'folder-2'),
+        for (var index = 3; index <= strategiesPerCommit; index++)
+          strategy('s$index'),
       ]);
       final expected = await uninterrupted();
       final counting = CommitGate();
@@ -227,7 +233,12 @@ void main() {
       await _migrate(whole);
       await whole.close();
       final commits = counting.commits;
-      expect(commits, greaterThan(5));
+      expect(
+        commits,
+        5,
+        reason: 'the record that it is copying, the folders, two batches of '
+            'strategies and the finished record',
+      );
 
       for (var stopAfter = 0; stopAfter < commits; stopAfter++) {
         final storage = MemoryStorage();
@@ -301,6 +312,56 @@ void main() {
           summary.publicId,
       ],
       ['good'],
+    );
+  });
+
+  test(
+      'a strategy the store refuses is left behind alone: the others in its '
+      'commit are copied, and what is left behind keeps the order of Hive',
+      () async {
+    final repeated = strategy('3-outside');
+    await library([
+      strategy('1-good'),
+      strategy('2-refused'),
+      repeated.copyWith(pages: [
+        repeated.pages[0],
+        repeated.pages[1].copyWith(id: repeated.pages[0].id),
+      ]),
+      strategy('4-good'),
+    ]);
+    final store = switch (await LibraryStore.open(
+      MemoryEngine(MemoryStorage()),
+      canRead: CanRead(
+        element: (payload) =>
+            !'${payload.data['id']}'.startsWith('2-refused') &&
+            appCanRead.element(payload),
+        lineupGroup: appCanRead.lineupGroup,
+      ),
+      clock: _storeClock,
+    )) {
+      StoreOpened(:final store) => store,
+      StoreNotOpened(:final problem) => fail('$problem'),
+    };
+    addTearDown(store.close);
+
+    final migration = await _migrate(store) as MigrationFinishedNow;
+
+    expect(
+      [
+        for (final left in migration.record.strategies)
+          (left.publicId, left.reason.split(':').first),
+      ],
+      [
+        ('2-refused', 'it would not read back'),
+        ('3-outside', 'it could not be converted'),
+      ],
+    );
+    expect(
+      [
+        for (final summary in (store.library as LibraryOpen).list.strategies)
+          summary.publicId,
+      ]..sort(),
+      ['1-good', '4-good'],
     );
   });
 
