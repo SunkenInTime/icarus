@@ -4,6 +4,7 @@ final class SlowedEngine implements StorageEngine {
   SlowedEngine(this._inner);
 
   static var commitDelay = Duration.zero;
+  static var waitedMicros = 0;
 
   final StorageEngine _inner;
 
@@ -19,6 +20,15 @@ final class _SlowedLease implements StorageLease {
 
   final StorageLease _inner;
 
+  Future<T> _waited<T>(Future<T> asked) async {
+    final clock = Stopwatch()..start();
+    try {
+      return await asked;
+    } finally {
+      SlowedEngine.waitedMicros += clock.elapsedMicroseconds;
+    }
+  }
+
   @override
   int get maxKeyLength => _inner.maxKeyLength;
 
@@ -26,15 +36,16 @@ final class _SlowedLease implements StorageLease {
   LeaseStatus get status => _inner.status;
 
   @override
-  Future<KeyRead> read(String area, String key) => _inner.read(area, key);
+  Future<KeyRead> read(String area, String key) =>
+      _waited(_inner.read(area, key));
 
   @override
   Future<Stored<List<String>>> keys(String area, String prefix) =>
-      _inner.keys(area, prefix);
+      _waited(_inner.keys(area, prefix));
 
   @override
   Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
-      _inner.entries(area, prefix);
+      _waited(_inner.entries(area, prefix));
 
   @override
   Future<Stored<List<String>>> areas(String prefix) => _inner.areas(prefix);
@@ -43,7 +54,7 @@ final class _SlowedLease implements StorageLease {
   Future<Committing> commit(List<Change> changes) async {
     final delay = SlowedEngine.commitDelay;
     if (delay > Duration.zero) await Future<void>.delayed(delay);
-    return _inner.commit(changes);
+    return _waited(_inner.commit(changes));
   }
 
   @override
