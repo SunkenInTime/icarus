@@ -565,6 +565,31 @@ void main() {
     });
 
     test(
+        'a delete queued behind a save whose answer is lost does not happen, '
+        'says so, and the reopened store still holds the strategy', () async {
+      const library = LocalLibrary();
+      gate.doubtNext = true;
+
+      final saving = library.saveStrategyFields(
+        library.storedStrategy('b')!.copyWith(name: 'Saved'),
+      );
+      final deleting = library.deleteStrategy('a');
+
+      expect(
+        await saving,
+        isA<LibraryWriteFailed>()
+            .having((failed) => failed.mayHaveLanded, 'mayHaveLanded', isTrue),
+      );
+      expect(
+        await deleting,
+        isA<LibraryWriteFailed>()
+            .having((failed) => failed.mayHaveLanded, 'mayHaveLanded', isFalse),
+      );
+      await store.close();
+      expect((await reopened(storage)).strategies.keys, contains('a'));
+    });
+
+    test(
         'a write that ends in doubt leaves the library as the reopened store '
         'holds it, or not opened', () async {
       const library = LocalLibrary();
