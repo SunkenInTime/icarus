@@ -25,9 +25,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  acceptance:
+  part:
+    name: part ${{ matrix.part }} of 4
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3, 4]
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -58,27 +63,27 @@ jobs:
             flutter test test/library_store/drive_fixtures_test.dart \
             --plain-name 'writes the library the acceptance set' 2>&1 | tail -5
 
-      - name: Run The Acceptance Set On Hive And On The Store
-        id: accept
+      - name: Run This Part On Hive And On The Store
         env:
+          PART: ${{ matrix.part }}
           WORKERS: ${{ inputs.workers || '2' }}
         run: |
           started=$(date +%s)
           set +e
           dart tool/drive/acceptance.dart --out "$RUNNER_TEMP/acceptance" \
-            --library "$RUNNER_TEMP/library" --workers "$WORKERS"
+            --library "$RUNNER_TEMP/library" --workers "$WORKERS" --shard "$PART/4"
           status=$?
           set -e
           echo "wall time: $(( ($(date +%s) - started) / 60 )) min $(( ($(date +%s) - started) % 60 )) s with $WORKERS workers"
           exit $status
 
-      - name: Gather The Failing Runs
-        if: failure()
+      - name: Gather This Part's Verdicts And Failing Runs
+        if: always()
         run: |
           out="$RUNNER_TEMP/acceptance"
           kept="$RUNNER_TEMP/kept"
           mkdir -p "$kept"
-          cp "$out/report.txt" "$out/results.txt" "$kept/" 2>/dev/null || true
+          cp "$out/verdicts.json" "$out/report.txt" "$out/results.txt" "$kept/" 2>/dev/null || true
           grep ' NOT CLEAN' "$out/results.txt" 2>/dev/null | while read -r name mode _; do
             mkdir -p "$kept/$mode/$name"
             cp "$out/$mode/$name.launcher.txt" "$kept/$mode/" 2>/dev/null || true
@@ -86,13 +91,47 @@ jobs:
               -exec cp {} "$kept/$mode/$name/" \; 2>/dev/null || true
           done
 
-      - name: Keep The Failing Runs
-        if: failure()
+      - name: Keep This Part
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: acceptance-failures
+          name: acceptance-part-${{ matrix.part }}
           path: ${{ runner.temp }}/kept
           if-no-files-found: ignore
+
+  whole:
+    name: the whole set
+    needs: part
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          problem-matcher: false
+
+      - name: Fetch Every Part
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: acceptance-part-*
+          path: ${{ runner.temp }}/parts
+
+      - name: Combine The Parts
+        run: |
+          parts="$RUNNER_TEMP/parts"
+          mkdir -p "$parts"
+          folders=$(for k in 1 2 3 4; do printf '%s/acceptance-part-%s,' "$parts" "$k"; done)
+          set +e
+          dart tool/drive/acceptance.dart --combine "${folders%,}" | tee "$RUNNER_TEMP/whole.txt"
+          status=${PIPESTATUS[0]}
+          set -e
+          { echo '```'; cat "$RUNNER_TEMP/whole.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
 
       - name: Report On The Tracking Issue
         if: failure()
@@ -100,15 +139,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ISSUE: "869"
         run: |
-          out="$RUNNER_TEMP/acceptance"
           {
-            echo "Nightly acceptance on Linux at ${GITHUB_SHA::9} failed ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)). The failing runs' launcher output and logs are the run's \`acceptance-failures\` artifact."
+            echo "Nightly acceptance on Linux at ${GITHUB_SHA::9} failed ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)). Each part's failing runs, launcher output and logs are its \`acceptance-part-N\` artifact."
             echo
             echo '```'
-            if [ -f "$out/report.txt" ]; then
-              sed -n '/^set:/,/^on the store alone/p' "$out/report.txt"
+            if [ -f "$RUNNER_TEMP/whole.txt" ]; then
+              sed -n '/^set:/,/^left out:/p' "$RUNNER_TEMP/whole.txt" | grep -v '^left out:'
             else
-              echo 'the set did not run: see the failing step in the run'
+              echo 'the parts were not combined: see the failing step in the run'
             fi
             echo '```'
           } > report.md
