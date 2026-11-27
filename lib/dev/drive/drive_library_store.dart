@@ -1224,9 +1224,14 @@ List<String> migrationLines(
     'STORE move at start: $state, $inStore strategies and '
         '${list?.folders.length} folders in the store, '
         '${left.length} left behind',
+    if (atStart?.migration case MigrationFinishedNow(:final record))
+      'STORE move took '
+          '${record.finishedAt.difference(record.startedAt).inMilliseconds} ms',
     switch (onStore) {
       null => 'STORE library: not on the store',
-      LibraryServedFromStore() => 'STORE library: served from the store',
+      LibraryServedFromStore(:final loading) =>
+        'STORE library: served from the store, loaded in '
+            '${loading.inMilliseconds} ms',
       LibraryNotServed(:final why, :final tries) =>
         'STORE library: not served after $tries tries, $why',
     },

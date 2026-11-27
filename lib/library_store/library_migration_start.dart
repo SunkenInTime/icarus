@@ -22,7 +22,9 @@ sealed class LibraryOnStore {
 }
 
 final class LibraryServedFromStore extends LibraryOnStore {
-  const LibraryServedFromStore();
+  const LibraryServedFromStore(this.loading);
+
+  final Duration loading;
 }
 
 final class LibraryNotServed extends LibraryOnStore {
@@ -84,6 +86,7 @@ Future<LibraryOnStore> _serve(
     case MigrationWasFinished() || MigrationFinishedNow():
       switch (container.read(libraryStoreProvider)) {
         case LibraryStoreReady(:final store):
+          final loading = Stopwatch()..start();
           switch (await StoreLibrary.load(
             store,
             lost: (why) => _notServed(container, atStart, why, tryAgain, tries),
@@ -91,7 +94,7 @@ Future<LibraryOnStore> _serve(
             case StoreLibraryLoaded(:final library):
               LocalLibrary.source = LibraryInStore(library);
               return container.read(libraryOnStoreProvider.notifier).state =
-                  const LibraryServedFromStore();
+                  LibraryServedFromStore(loading.elapsed);
             case StoreLibraryNotLoaded(why: final notLoaded):
               why = notLoaded;
           }
