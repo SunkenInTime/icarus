@@ -445,9 +445,13 @@ final class StoreLibrary {
     return _write(
       show: show,
       replay: show,
-      commit: () async => _store.summaryOf(id) == null
-          ? const _Committed()
-          : _commitOf(await _store.editLibrary([RemoveStrategy(id)])),
+      commit: () async => switch (_store.library) {
+        LibraryShut(:final failure) =>
+          _NotCommitted('the store is shut: $failure'),
+        LibraryOpen() when _store.summaryOf(id) == null => const _Committed(),
+        LibraryOpen() =>
+          _commitOf(await _store.editLibrary([RemoveStrategy(id)])),
+      },
     );
   }
 
