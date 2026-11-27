@@ -2604,7 +2604,12 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'logMemory':
       _log(memoryLine(value as String));
     case 'editToSaved':
-      _log(await editToSavedLine(c, runs: value as int));
+      (await editToSavedLines(
+        c,
+        runs: value as int,
+        edit: TimedEdit.values.byName((step['edit'] ?? 'addAgent') as String),
+      ))
+          .forEach(_log);
     case 'backupTime':
       final times = <Duration>[];
       var bytes = 0;

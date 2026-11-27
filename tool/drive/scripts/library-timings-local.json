@@ -19,6 +19,7 @@
   {"openFirstFrame": "largest", "runs": 5},
   {"logMemory": "with the largest strategy open"},
   {"editToSaved": 10},
+  {"editToSaved": 10, "edit": "removeFirstDrawing"},
   {"logMemory": "after the saves"},
   {"exit": 1}
 ]
