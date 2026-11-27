@@ -85,6 +85,9 @@
     },
     "paste-while-busy": {
       "picture": "paste.bmp"
+    },
+    "close-with-unsaved-reopen-local": {
+      "after": "close-with-unsaved-local"
     }
   },
   "waiting": {
@@ -97,7 +100,7 @@
     "wall-old-build-3-new": "it follows wall-old-build-2-old",
     "captions-write-in-place": "it waits for a helper to type into the app"
   },
-  "quits": {
-    "close-with-unsaved-local": "it closes the window, so the app quits before it can write SUMMARY; what it saved is read by opening the strategy again"
-  }
+  "closesTheApp": [
+    "close-with-unsaved-local"
+  ]
 }

@@ -60,8 +60,8 @@ final class _Plan {
   Map<String, String> get notOnLinux =>
       (json['notOnLinux']! as Map<String, Object?>).cast<String, String>();
 
-  Map<String, String> get quits =>
-      (json['quits']! as Map<String, Object?>).cast<String, String>();
+  Set<String> get closesTheApp =>
+      (json['closesTheApp']! as List).cast<String>().toSet();
 
   Map<String, String> get notOnWindows =>
       (json['notOnWindows']! as Map<String, Object?>).cast<String, String>();
@@ -173,7 +173,6 @@ Future<int> _accept(Map<String, String> options) async {
     ...plan.replaced,
     ...(Platform.isWindows ? plan.notOnWindows : plan.notOnLinux),
     ...plan.waiting,
-    ...plan.quits,
   };
   if (Platform.isWindows && options['exe'] == null) {
     throw const _UsageError('on Windows, give --exe a build from build.ps1');
@@ -319,10 +318,12 @@ Future<int> _accept(Map<String, String> options) async {
             .split('\n')
             .where((line) => line.contains('SUMMARY'))
             .lastOrNull;
-        final outcome = _Outcome(
-          run.exitCode == 0,
-          summary?.trim() ?? 'no SUMMARY (exit ${run.exitCode})',
-        );
+        final outcome = plan.closesTheApp.contains(name)
+            ? _closedTheApp(runOut, '${run.stdout}')
+            : _Outcome(
+                run.exitCode == 0,
+                summary?.trim() ?? 'no SUMMARY (exit ${run.exitCode})',
+              );
         (outcomes[name] ??= {})[mode] = outcome;
         final line = '$name $mode ${outcome.clean ? 'CLEAN' : 'NOT CLEAN'}: '
             '${outcome.line}';
@@ -415,3 +416,24 @@ List<int> _le32(int value) => [
       (value >> 16) & 0xff,
       (value >> 24) & 0xff,
     ];
+
+_Outcome _closedTheApp(String runOut, String said) {
+  final log = File('$runOut/main.log');
+  final failures = log.existsSync()
+      ? log
+          .readAsLinesSync()
+          .where((line) =>
+              RegExp(r' (FAIL|FLUTTER-ERROR|MISPLACED) ').hasMatch(line))
+          .toList()
+      : const ['no log'];
+  final timedOut = said.contains('timed out');
+  return _Outcome(
+    failures.isEmpty && !timedOut,
+    failures.isEmpty && !timedOut
+        ? 'closed the app after its last step, as it means to'
+        : 'did not close the app cleanly: ${[
+            ...failures,
+            if (timedOut) 'timed out'
+          ].join('; ')}',
+  );
+}
