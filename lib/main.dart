@@ -45,7 +45,6 @@ import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/migrations/hidden_folder_repair.dart';
-import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
@@ -280,8 +279,13 @@ Future<void> main(List<String> args) async {
 
       registerIcarusAdapters(Hive);
 
-      await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
-      await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+      if (!libraryGoesToStore(
+        storeLaunch,
+        hiveDirectory: hiveDirectoryPath,
+        allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
+      )) {
+        await LocalLibrary.openHiveBoxes();
+      }
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);

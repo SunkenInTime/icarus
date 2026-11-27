@@ -1,0 +1,19 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"tapWords": "Close unsaved"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"logPage": "reopened on the first page"},
+  {"expectAgents": 1},
+  {"tapAt": [206, 857]},
+  {"wait": 2},
+  {"tapText": "Page 2"},
+  {"wait": 2},
+  {"logPage": "the page added before the close"},
+  {"expectAgents": 2},
+  {"expectText": "unsaved when closed", "count": 1},
+  {"expectPositions": "{out}/../closed-on-page-2.json"},
+  {"exit": 1}
+]

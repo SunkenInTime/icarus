@@ -1,0 +1,6 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"expectMigration": {"state": "finishedNow", "served": true}, "seconds": 120},
+  {"exit": 1}
+]

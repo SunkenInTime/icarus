@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/domain/folder.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
@@ -170,6 +171,59 @@ void main() {
           isA<LibraryServedFromStore>());
       expect(LocalLibrary.source, isA<LibraryInStore>());
       expect(served(), ['a', 'b']);
+    });
+
+    test(
+        'once the move has finished, a start leaves Hive\'s library boxes '
+        'closed and still serves the library', () async {
+      await open();
+      await container.read(libraryStoreProvider.notifier).close();
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).close();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).close();
+
+      await open();
+
+      expect(container.read(libraryMigrationProvider)!.migration,
+          isA<MigrationWasFinished>());
+      expect(served(), ['a', 'b']);
+      expect(Hive.isBoxOpen(HiveBoxNames.strategiesBox), isFalse);
+      expect(Hive.isBoxOpen(HiveBoxNames.foldersBox), isFalse);
+    });
+
+    test('a move still to run opens Hive\'s library boxes to copy from',
+        () async {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).close();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).close();
+
+      await open();
+
+      expect(container.read(libraryMigrationProvider)!.migration,
+          isA<MigrationFinishedNow>());
+      expect(served(), ['a', 'b']);
+      expect(Hive.isBoxOpen(HiveBoxNames.strategiesBox), isTrue);
+    });
+
+    test(
+        'a first start with no Hive library on disk copies nothing, serves an '
+        'empty library and creates no Hive library file', () async {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).close();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).close();
+      final files = [
+        for (final box in [HiveBoxNames.strategiesBox, HiveBoxNames.foldersBox])
+          File('${directory.path}/$box.hive'),
+      ];
+      for (final file in files) {
+        await file.delete();
+      }
+
+      await open();
+
+      expect(container.read(libraryMigrationProvider)!.migration,
+          isA<MigrationFinishedNow>());
+      expect(container.read(libraryOnStoreProvider),
+          isA<LibraryServedFromStore>());
+      expect(served(), isEmpty);
+      expect([for (final file in files) file.existsSync()], [false, false]);
     });
 
     test('a later start serves what the store holds, whatever Hive holds since',

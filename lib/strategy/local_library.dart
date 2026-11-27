@@ -147,6 +147,17 @@ final class LocalLibrary {
 
   Box<Folder> get _folderBox => Hive.box<Folder>(HiveBoxNames.foldersBox);
 
+  static bool hiveFilesIn(String directory) =>
+      [HiveBoxNames.strategiesBox, HiveBoxNames.foldersBox].any(
+        (box) =>
+            File('$directory${Platform.pathSeparator}$box.hive').existsSync(),
+      );
+
+  static Future<void> openHiveBoxes() async {
+    await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+    await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+  }
+
   LibraryRecords<StrategyData> get strategyRecords => switch (source) {
         LibraryInHive() => HiveRecords(_strategyBox),
         LibraryInStore(:final library) => library.strategies,

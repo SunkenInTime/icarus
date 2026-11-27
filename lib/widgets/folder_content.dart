@@ -357,9 +357,18 @@ class FolderContent extends ConsumerWidget {
           // nothing to show yet, the page waits for the cloud rather than
           // call the library empty.
           if (cloudLoading && folders.isEmpty && strategies.isEmpty) {
-            return _crossFade(
-              const _LibraryLoadingSkeleton(key: ValueKey('cloud-loading')),
-            );
+            const skeleton =
+                _LibraryLoadingSkeleton(key: ValueKey('cloud-loading'));
+            return _crossFade(switch (notServed) {
+              null => skeleton,
+              final notServed => Column(
+                  key: const ValueKey('cloud-loading-not-opened'),
+                  children: [
+                    _LocalNotOpenedBanner(notServed),
+                    const Expanded(child: skeleton),
+                  ],
+                ),
+            });
           }
           return _crossFade(
             KeyedSubtree(

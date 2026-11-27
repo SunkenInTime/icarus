@@ -1,0 +1,110 @@
+{
+  "replaced": {
+    "reason": "tests a mode the store replaces",
+    "scripts": [
+      "library-store-shadow",
+      "library-store-shadow-hidden",
+      "library-store-mirror-hold",
+      "library-switch-to-store",
+      "library-large-from-store",
+      "library-move-then-look",
+      "library-rename-then-look",
+      "library-second-start",
+      "library-not-in-store",
+      "library-kept-on-hive",
+      "open-first-frame-while-copying",
+      "read-back-cost",
+      "read-back-budget",
+      "read-mode-round",
+      "ops-cost-24-local",
+      "ops-cost-240-local",
+      "ops-cost-960-local",
+      "ops-every-kind-local",
+      "ops-lineups-local",
+      "ops-settings-order-weapon-local",
+      "ops-strokes-with-slow-commits",
+      "ops-text-draft-autosave-local"
+    ]
+  },
+  "notOnLinux": {
+    "paste-on-canvas": "the clipboard step puts a picture on the Windows clipboard",
+    "paste-while-busy": "the clipboard step puts a picture on the Windows clipboard",
+    "captions-write-in-place": "it waits for a helper to type into the app",
+    "spawn-barriers-all-maps": "growing the window to 2400x1350 crashes the Linux engine",
+    "door-old-build-2-old": "it opens the library in a released build, which is built for Windows",
+    "door-old-build-3-new": "it follows door-old-build-2-old",
+    "wall-old-build-2-old": "it opens the library in a released build, which is built for Windows",
+    "wall-old-build-3-new": "it follows wall-old-build-2-old",
+    "page-take-budget": "a timing budget set on the PC; this box runs the cloud store's take slower"
+  },
+  "storeOnly": [
+    "library-copy-only-local",
+    "move-into-store-local",
+    "move-into-store-again-local",
+    "move-into-store-closed-local",
+    "store-not-opened-local"
+  ],
+  "starts": {
+    "move-into-store-local": {
+      "fixture": "ICARUS_LEFT_BEHIND_FIXTURE"
+    },
+    "move-into-store-again-local": {
+      "after": "move-into-store-local"
+    },
+    "move-into-store-closed-local": {
+      "after": "move-into-store-again-local"
+    },
+    "store-not-opened-local": {
+      "fixture": "ICARUS_STORE_HOLDS_LIBRARY_FIXTURE"
+    },
+    "open-first-frame-local": {
+      "library": true
+    },
+    "open-first-frame-abandoned": {
+      "library": true
+    },
+    "library-large": {
+      "library": true
+    },
+    "doors-reopen": {
+      "after": "doors-session"
+    },
+    "high-tide-wall-reopen": {
+      "after": "high-tide-wall-menu"
+    },
+    "restored-colours-1-restore-and-edit": {
+      "following": "restored-colours-0-make-backup"
+    },
+    "restored-colours-2-after-restart": {
+      "after": "restored-colours-1-restore-and-edit"
+    },
+    "library-copy-only-local": {
+      "library": true
+    },
+    "library-timings-local": {
+      "library": true
+    },
+    "paste-on-canvas": {
+      "picture": "paste.bmp"
+    },
+    "paste-while-busy": {
+      "picture": "paste.bmp"
+    },
+    "close-with-unsaved-reopen-local": {
+      "after": "close-with-unsaved-local"
+    }
+  },
+  "waiting": {
+    "back-button-over-dialog-local": "what Back does over Settings is an open question on #790"
+  },
+  "notOnWindows": {
+    "door-old-build-2-old": "it opens the library in the released build before this one, which this run does not have",
+    "door-old-build-3-new": "it follows door-old-build-2-old",
+    "wall-old-build-2-old": "it opens the library in the released build before this one, which this run does not have",
+    "wall-old-build-3-new": "it follows wall-old-build-2-old",
+    "captions-write-in-place": "it waits for a helper to type into the app"
+  },
+  "closesTheApp": [
+    "close-with-unsaved-local"
+  ]
+}

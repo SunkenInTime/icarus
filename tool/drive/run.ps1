@@ -32,7 +32,8 @@ param(
   [string]$HiveStore,
   [ValidateSet('off', 'shadow', 'mirror', 'read', 'ops', 'store')] [string]$LibraryStore,
   [ValidateSet('send')] [string]$CloudStore,
-  [string]$SecondAccount
+  [string]$SecondAccount,
+  [ValidateSet('close')] [string]$EndsBy
 )
 $ErrorActionPreference = 'Stop'
 # New every run: the server refuses an item id another strategy holds.
@@ -79,10 +80,38 @@ function Start-Instance([string]$name, [string]$scriptPath, [string]$email, [str
       -ArgumentList $appArgs `
       -RedirectStandardOutput (Join-Path $Out "$name-app.out") `
       -RedirectStandardError (Join-Path $Out "$name-app.err")
+    $null = $process.Handle
     $process
   } finally {
     $env:ICARUS_DRIVE_PASSWORD = $null
     $env:ICARUS_DRIVE_PASSWORD_2 = $null
+  }
+}
+
+function Get-SharedHash([string]$file) {
+  for ($try = 1; $try -le 40; $try++) {
+    try {
+      $stream = [System.IO.File]::Open($file, 'Open', 'Read', 'ReadWrite, Delete')
+      try {
+        return [BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($stream))
+      } finally {
+        $stream.Dispose()
+      }
+    } catch [System.IO.IOException] {
+      Start-Sleep -Milliseconds 250
+    }
+  }
+  throw "Could not read $file to compare Hive's library files"
+}
+
+$hiveLibrary = @{}
+if ($LibraryStore -eq 'store') {
+  $names = @('main') + $(if ($Companion) { @('companion') } else { @() })
+  foreach ($name in $names) {
+    foreach ($box in 'strategy_box.hive', 'folder_box.hive') {
+      $file = Join-Path $Out "store-$name\$box"
+      $hiveLibrary[$file] = if (Test-Path -LiteralPath $file) { Get-SharedHash $file } else { 'absent' }
+    }
   }
 }
 
@@ -108,7 +137,34 @@ foreach ($name in $instances.Keys) {
   $lines | Where-Object { $_ -match ' (FAIL|FLUTTER-ERROR|MISPLACED) ' } | ForEach-Object { "${name}: $_" }
   $summary = $lines | Where-Object { $_ -match ' SUMMARY ' } | Select-Object -Last 1
   "${name}: $(if ($summary) { $summary } else { 'no SUMMARY (the script never finished)' })"
-  if (-not ($summary -match 'CLEAN$')) { $clean = $false }
+  if ($EndsBy -eq 'close' -and $name -eq 'main') {
+    $why = @()
+    if (-not ($lines | Where-Object { $_ -match ' WINDOW asked to close$' })) { $why += 'its window was never asked to close' }
+    if ($summary) { $why += 'it was still open at the end of its script' }
+    if ($lines | Where-Object { $_ -match ' (FAIL|FLUTTER-ERROR|MISPLACED) ' }) { $why += 'a step failed' }
+    if (-not $process.HasExited) { $why += 'it timed out' }
+    elseif ($process.ExitCode -ne 0) { $why += "it exited with $($process.ExitCode)" }
+    if ($why.Count -eq 0) {
+      "${name}: closed the app after its window was asked to close"
+    } else {
+      "${name}: did not close the app as its script means to: $($why -join '; ')"
+      $clean = $false
+    }
+  } elseif (-not ($summary -match 'CLEAN$')) {
+    $clean = $false
+  }
+}
+foreach ($file in $hiveLibrary.Keys) {
+  $before = $hiveLibrary[$file]
+  $now = if (Test-Path -LiteralPath $file) { Get-SharedHash $file } else { 'absent' }
+  if ($now -ne $before) {
+    if ($before -eq 'absent') {
+      "the store mode created the Hive library file $file"
+    } else {
+      "the store mode changed the Hive library file $file"
+    }
+    $clean = $false
+  }
 }
 "logs and shots: $Out"
 exit $(if ($clean) { 0 } else { 1 })

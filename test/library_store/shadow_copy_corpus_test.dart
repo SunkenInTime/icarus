@@ -36,6 +36,7 @@ import 'tile_parity.dart';
 const corpusVariable = 'ICARUS_LIBRARY_CORPUS';
 const scratchVariable = 'ICARUS_LIBRARY_SCRATCH';
 const syntheticVariable = 'ICARUS_SYNTHETIC_LIBRARY_OUT';
+const syntheticCountVariable = 'ICARUS_SYNTHETIC_LIBRARY_COUNT';
 const costVariable = 'ICARUS_LIBRARY_COPY_COST';
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
 
@@ -432,7 +433,8 @@ void main() {
   );
 
   test(
-    'a synthetic library of 700 strategies from the corpus is written as a Hive store',
+    'a synthetic library of 700 strategies from the corpus, or as many as '
+    '$syntheticCountVariable says, is written as a Hive store',
     skip: corpus == null || Platform.environment[syntheticVariable] == null
         ? '$corpusVariable and $syntheticVariable name the corpus and the folder to write'
         : false,
@@ -444,7 +446,9 @@ void main() {
       );
       await _writeHiveLibrary(
         Directory(Platform.environment[syntheticVariable]!),
-        strategies.take(700),
+        strategies.take(
+          int.parse(Platform.environment[syntheticCountVariable] ?? '700'),
+        ),
         folders,
       );
     },
