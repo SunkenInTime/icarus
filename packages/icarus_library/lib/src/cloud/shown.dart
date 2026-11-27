@@ -1242,6 +1242,7 @@ final class Shown {
       for (final MapEntry(:key, :value) in trashed.entries)
         if (!decides[key]!) key: value,
     };
+    final takenPages = <String>{};
     for (final page in listed) {
       final id = page.publicId;
       final heldLive = pages[id];
@@ -1251,6 +1252,7 @@ final class Shown {
         continue;
       }
       if (replaces(held, page)) {
+        takenPages.add(id);
         decisions.add(RowTaken(page));
         (_isTrashed(page) ? nextTrashed : nextPages)[id] = _rowOf(page, page);
       } else {
@@ -1304,7 +1306,7 @@ final class Shown {
         highest: _raised(highest, {
           const StrategyTarget(): ?versionOfRow(strategyRow),
           for (final page in listed)
-            if (!_isTrashed(page) && decides[page.publicId]!)
+            if (!_isTrashed(page) && takenPages.contains(page.publicId))
               PageTarget(page.publicId): ?versionOfRow(page),
           for (final row in settings)
             if (remaining.contains(row.pagePublicId))

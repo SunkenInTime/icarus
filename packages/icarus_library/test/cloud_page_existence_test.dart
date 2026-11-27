@@ -156,6 +156,38 @@ void main() {
       expect(client.queue.shown.highest[const PageTarget('page-a')], held);
     });
 
+    test('a list that keeps a newer page row raises no highest version for '
+        'it', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(10)));
+      client.must(
+        arrivalAt(
+          client,
+          pageAAs(page('page-a', sortIndex: 0, revision: 3)),
+          pointAt(30),
+        ),
+      );
+      final held = client.queue.shown.highest[const PageTarget('page-a')];
+      final step = client.step(
+        arrivalAt(
+          client,
+          listWith(page('page-a', sortIndex: 0, revision: 2)),
+          pointAt(20),
+        ),
+      );
+      expect(
+        (step as Stepped).decisions,
+        contains(
+          RowKept(
+            page('page-a', sortIndex: 0, revision: 2),
+            KeptBecause.heldIsNewer,
+          ),
+        ),
+      );
+      expect(client.queue.shown.pages['page-a']?.revision, 3);
+      expect(client.queue.shown.highest[const PageTarget('page-a')], held);
+    });
+
     test('lists either side of a page-gone, then a page read and a newer '
         'list', () {
       final client = connectedOn();
