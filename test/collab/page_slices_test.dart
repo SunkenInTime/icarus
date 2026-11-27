@@ -7,6 +7,7 @@ import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/page_slices.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 
+import 'stamped_over.dart';
 import 'strategy_copy_fixtures.dart';
 import 'subscribe_together_from_each.dart';
 
@@ -18,6 +19,169 @@ void main() {
     expect(pageSliceStarts(42), ['', '4', '8', 'c']);
     expect(pageSliceStarts(87), ['', '2', '4', '6', '8', 'a', 'c', 'e']);
     expect(pageSliceStarts(500), ['', ...'123456789abcdef'.split('')]);
+  });
+
+  group('a page watched stamped', () {
+    late _Server server;
+    late StampedOver stamped;
+    late ConvexStrategyRepository repository;
+    late List<Stamped<RemotePageSnapshot>> answers;
+    late List<Object> errors;
+    StreamSubscription<Stamped<RemotePageSnapshot>>? watching;
+
+    setUp(() {
+      server = _Server();
+      stamped = StampedOver(server);
+      repository = ConvexStrategyRepository.stamped(stamped);
+      answers = [];
+      errors = [];
+    });
+    tearDown(() => watching?.cancel());
+
+    ResultStamp at(int snapshot) => ResultStamp(
+          client: 1,
+          connection: 1,
+          snapshot: snapshot,
+          serverTime: 1000 + snapshot,
+        );
+
+    RemotePageSnapshot pageOf(Stamped<RemotePageSnapshot> answer) =>
+        (answer as StampedValue<RemotePageSnapshot>).value;
+
+    int revisionOf(Stamped<RemotePageSnapshot> answer, String id) =>
+        pageOf(answer).elements.singleWhere((e) => e.publicId == id).revision;
+
+    Future<void> watch() async {
+      watching = repository
+          .watchPageSnapshotStamped(
+            strategyPublicId: 'strategy',
+            pagePublicId: 'p',
+          )
+          .listen(answers.add, onError: errors.add);
+      await pumpEventQueue();
+    }
+
+    List<Map<String, Object?>> agents(int count, {String? moved}) => [
+          for (var index = 0; index < count; index++)
+            agentRow(
+              _id(index),
+              'p',
+              revision: _id(index) == moved ? 2 : 1,
+            ),
+        ];
+
+    Future<void> watchSlicedPage() async {
+      await watch();
+      server.publish(agents(20));
+      server.publish(agents(20, moved: _id(1)));
+      await pumpEventQueue();
+    }
+
+    test(
+        'hands over from the whole page to its slices as the plain watch '
+        'does, each page with the stamp it came with, and a read of it is '
+        'answered from the slices', () async {
+      await watchSlicedPage();
+
+      expect(stamped.calls, [
+        'subscribeStamped page:getSnapshot',
+        'subscribeTogetherStamped page:getFrame,page:getElementSlice,'
+            'page:getElementSlice',
+      ]);
+      expect(server.cancelled, ['page:getSnapshot']);
+      expect([
+        for (final answer in answers) answer.stamp
+      ], [
+        at(1),
+        at(2),
+        at(3),
+      ]);
+      expect(revisionOf(answers[1], _id(1)), 2);
+      expect(revisionOf(answers[2], _id(1)), 2);
+
+      final read = await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+      expect(server.reads, isEmpty);
+      expect(read.elements, pageOf(answers[2]).elements);
+      expect(errors, isEmpty);
+    });
+
+    test(
+        'slices that fail before they answer give the whole page again at '
+        'the stamp it came with, and it stays live', () async {
+      await watch();
+      server.refuseParts = true;
+      server.publish(agents(20));
+      server.publish(agents(20, moved: _id(1)));
+      await pumpEventQueue();
+
+      expect(answers.length, greaterThan(2));
+      for (final replay in answers.skip(2)) {
+        expect(replay.stamp, at(2));
+        expect(revisionOf(replay, _id(1)), 2);
+      }
+
+      server.publish(agents(20, moved: _id(2)));
+      await pumpEventQueue();
+      expect(answers.last.stamp, at(3));
+      expect(revisionOf(answers.last, _id(2)), 2);
+      expect(errors, isEmpty);
+    });
+
+    test(
+        'a refusal of the whole page comes as a StampedError at its stamp, '
+        'and the watch goes on', () async {
+      await watch();
+      server.publish(agents(4));
+      await pumpEventQueue();
+      server.fail(
+        'page:getSnapshot',
+        const ConvexTransportError(rawCode: 'FORBIDDEN', message: 'page'),
+      );
+      await pumpEventQueue();
+      server.publish(agents(5));
+      await pumpEventQueue();
+
+      expect(errors, isEmpty);
+      expect([
+        for (final answer in answers) answer.stamp
+      ], [
+        at(1),
+        at(2),
+        at(3),
+      ]);
+      expect(
+        (answers[1] as StampedError<RemotePageSnapshot>).error.rawCode,
+        'FORBIDDEN',
+      );
+      expect(pageOf(answers[2]).elements, hasLength(5));
+    });
+
+    test(
+        'a refusal of a slice comes as a StampedError at its stamp, and a '
+        'read then goes to the server', () async {
+      await watchSlicedPage();
+      server.fail(
+        'page:getElementSlice from "8"',
+        const ConvexTransportError(rawCode: 'FORBIDDEN', message: 'slice'),
+      );
+      await pumpEventQueue();
+
+      expect(errors, isEmpty);
+      expect(answers.last.stamp, at(4));
+      expect(
+        (answers.last as StampedError<RemotePageSnapshot>).error.rawCode,
+        'FORBIDDEN',
+      );
+
+      await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+      expect(server.reads, ['page:getSnapshot']);
+    });
   });
 
   group('a watched page', () {

@@ -220,6 +220,7 @@ Future<void> main(List<String> args) async {
           (ref) => ref.watch(cloudSignOutRequestProvider),
         ),
         ...storeStart.overrides,
+        cloudStoreSwitchProvider.overrideWithValue(storeLaunch.cloud),
       ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
