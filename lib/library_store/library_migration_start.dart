@@ -162,7 +162,8 @@ Future<Future<LibraryStoreOpened>?> moveLibraryIntoStore(
       store: LibraryStore(migration: MigrationUnreadable(:final problem)),
     ) =>
       MigrationRecordUnreadable(problem),
-    LibraryStoreReady(:final store) => await _copyFromHive(store),
+    LibraryStoreReady(:final store) =>
+      await _copyFromHive(store, hiveDirectory),
     final notReady => MigrationNotRun('the store did not open: $notReady'),
   };
   container.read(libraryMigrationProvider.notifier).state = (
@@ -181,7 +182,13 @@ bool libraryGoesToStore(
     allowsLocalLibrary &&
     hiveDirectory != null;
 
-Future<LibraryMigration> _copyFromHive(LibraryStore store) async {
+Future<LibraryMigration> _copyFromHive(
+  LibraryStore store,
+  String hiveDirectory,
+) async {
+  if (!hiveLibraryOnDisk(hiveDirectory)) {
+    return migrateLibraryIntoStore(store, strategies: [], folders: []);
+  }
   await openHiveLibrary();
   return migrateLibraryIntoStore(
     store,

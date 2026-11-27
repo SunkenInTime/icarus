@@ -203,6 +203,29 @@ void main() {
       expect(Hive.isBoxOpen(HiveBoxNames.strategiesBox), isTrue);
     });
 
+    test(
+        'a first start with no Hive library on disk copies nothing, serves an '
+        'empty library and creates no Hive library file', () async {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).close();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).close();
+      final files = [
+        for (final box in [HiveBoxNames.strategiesBox, HiveBoxNames.foldersBox])
+          File('${directory.path}/$box.hive'),
+      ];
+      for (final file in files) {
+        await file.delete();
+      }
+
+      await open();
+
+      expect(container.read(libraryMigrationProvider)!.migration,
+          isA<MigrationFinishedNow>());
+      expect(container.read(libraryOnStoreProvider),
+          isA<LibraryServedFromStore>());
+      expect(served(), isEmpty);
+      expect([for (final file in files) file.existsSync()], [false, false]);
+    });
+
     test('a later start serves what the store holds, whatever Hive holds since',
         () async {
       await open();
