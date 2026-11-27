@@ -137,10 +137,12 @@ final class Marks {
     this.list,
     this.allPages,
     Map<String, AnswerMark> pages = const {},
+    Map<String, AnswerMark> listFor = const {},
     Map<Target, AnswerMark> rows = const {},
     Map<Target, String> placed = const {},
     Map<String, Set<Target>> rowsOn = const {},
   }) : pages = Map.unmodifiable(pages),
+       listFor = Map.unmodifiable(listFor),
        rows = Map.unmodifiable(rows),
        placed = Map.unmodifiable(placed),
        rowsOn = Map.unmodifiable(rowsOn);
@@ -150,21 +152,28 @@ final class Marks {
   final AnswerMark? list;
   final AnswerMark? allPages;
   final Map<String, AnswerMark> pages;
+  final Map<String, AnswerMark> listFor;
   final Map<Target, AnswerMark> rows;
   final Map<Target, String> placed;
   final Map<String, Set<Target>> rowsOn;
 
   bool get isEmpty =>
-      list == null && allPages == null && pages.isEmpty && rows.isEmpty;
+      list == null &&
+      allPages == null &&
+      pages.isEmpty &&
+      listFor.isEmpty &&
+      rows.isEmpty;
 
   Marks _with({
     AnswerMark? Function()? list,
     AnswerMark? Function()? allPages,
     Map<String, AnswerMark>? pages,
+    Map<String, AnswerMark>? listFor,
   }) => Marks(
     list: list == null ? this.list : list(),
     allPages: allPages == null ? this.allPages : allPages(),
     pages: pages ?? this.pages,
+    listFor: listFor ?? this.listFor,
     rows: rows,
     placed: placed,
     rowsOn: rowsOn,
@@ -195,6 +204,7 @@ final class Marks {
       list: list,
       allPages: allPages,
       pages: pages,
+      listFor: listFor,
       rows: rows,
       placed: placed,
       rowsOn: rowsOn,
@@ -207,6 +217,7 @@ final class Marks {
       other.list == list &&
       other.allPages == allPages &&
       const MapEquality<String, AnswerMark>().equals(other.pages, pages) &&
+      const MapEquality<String, AnswerMark>().equals(other.listFor, listFor) &&
       const MapEquality<Target, AnswerMark>().equals(other.rows, rows);
 
   @override
@@ -1352,7 +1363,13 @@ final class Shown {
       pages: {
         ...marks.pages,
         for (final page in pages)
-          if (!_settledFor(page, mark)) page: mark.and(marks.pages[page]),
+          if (!_pageSettled(page, mark)) page: mark.and(marks.pages[page]),
+      },
+      listFor: {
+        ...marks.listFor,
+        for (final page in pages)
+          if (!_listReaches(mark, counted: false))
+            page: mark.and(marks.listFor[page]),
       },
     );
     return _with(
@@ -1375,7 +1392,7 @@ final class Shown {
       headerThisSession && _listReaches(marks.list, counted: counted);
 
   bool listCurrentFor(String page) =>
-      listCurrent && _listReaches(marks.pages[page], counted: true);
+      listCurrent && _listReaches(marks.listFor[page], counted: true);
 
   bool pageCurrent(String page) =>
       pageResultCurrent(page) &&
@@ -1400,7 +1417,7 @@ final class Shown {
       null when headerThisSession => (
         listSeen,
         [
-          for (final mark in [?marks.list, ...marks.pages.values])
+          for (final mark in [?marks.list, ...marks.listFor.values])
             if (!_listReaches(mark, counted: false)) mark,
         ],
       ),
@@ -1475,12 +1492,10 @@ final class Shown {
   static bool _atLeast(Version? held, Version wanted) =>
       held != null && held >= wanted;
 
-  bool _settledFor(String page, AnswerMark mark) =>
-      _listReaches(mark, counted: false) &&
-      switch (pagesSeen[page]) {
-        final seen? => _pageReaches(page, seen, mark, counted: false),
-        null => false,
-      };
+  bool _pageSettled(String page, AnswerMark mark) => switch (pagesSeen[page]) {
+    final seen? => _pageReaches(page, seen, mark, counted: false),
+    null => false,
+  };
 
   bool _rowSettled(Target row, AnswerMark mark) =>
       _holds(mark.wrote) ||
@@ -1496,9 +1511,9 @@ final class Shown {
     if (marks.isEmpty) return this;
     final next = marks._with(
       list: _listReaches(marks.list, counted: false) ? () => null : null,
-      pages: {
-        for (final MapEntry(:key, :value) in marks.pages.entries)
-          if (!_settledFor(key, value)) key: value,
+      listFor: {
+        for (final MapEntry(:key, :value) in marks.listFor.entries)
+          if (!_listReaches(value, counted: false)) key: value,
       },
     );
     return next == marks ? this : _with(marks: next);
@@ -1534,7 +1549,7 @@ final class Shown {
           ? () => null
           : null,
       pages: switch (marks.pages[page]) {
-        final mark? when _settledFor(page, mark) => {
+        final mark? when _pageSettled(page, mark) => {
           ...marks.pages,
         }..remove(page),
         _ => null,
