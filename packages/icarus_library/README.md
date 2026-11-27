@@ -1986,7 +1986,10 @@ simulated hour of each, and the test fails when the two disagree
 
 **Which results a record takes.** A record takes results from one source,
 fixed by the mode the app started in. In send mode that is this device's own
-reads (`CloudResults.thisDevicesReads`, chosen when the sender starts); in
+reads (`CloudResults.thisDevicesReads`, chosen when the sender starts), and
+the editor's live watch of the open page, whose answers the sender takes
+exactly as it takes a read's: newest only per page, and no one-shot read of
+that page while the watch has given a result on the current connection; in
 shadow mode it is the editor's live queries (`CloudResults.liveQueries`, chosen
 when the shadow starts). A result from the other source is not taken
 (`NotThisModesResults`), so the two never mix in one record. Inside its mode a

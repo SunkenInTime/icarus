@@ -390,7 +390,6 @@ void main() {
       inWorld((world) {
         world.sender.liveOpened(strategyId, openPage);
         world.settle();
-        final moved = world.firstElement().publicId;
         final before = revisionInStore(world);
         world.teammateMoves(1);
         final stale = livePage(world);
