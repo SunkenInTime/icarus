@@ -2285,7 +2285,7 @@ export const applyBatch = mutation({
           }
           if (
             result.status === "ack" &&
-            ((op.entityType === "page" && op.kind !== "restore") ||
+            (op.entityType === "page" ||
               op.entityType === "lineup" ||
               (op.entityType === "element" &&
                 (await elementOpChangedAgents(ctx, strategy, op, rowBefore))))

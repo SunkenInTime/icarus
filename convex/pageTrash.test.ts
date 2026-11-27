@@ -1540,6 +1540,135 @@ describe("restoring a page through the batch", () => {
     expect(twins[0]!.agents).toEqual(["sova", "jett"]);
     expect(twins[0]!.updatedAt).toBe(start + day);
   });
+
+  const pageD = "trash-page-d";
+  const addD = (expectedStrategyRevision: number) => ({
+    type: "page.add",
+    pagePublicId: pageD,
+    payload: { name: "Page 4", isAutoNamed: true, isAttack: false },
+    sortIndex: 3,
+    expectedStrategyRevision,
+  });
+
+  test("a page added after a restore in the same batch expects the revision the restore made", async () => {
+    const { owner } = await createHarness();
+    await seed(owner);
+    await deleteB(owner);
+    const revision = await strategyRevision(owner);
+
+    expect(await apply(owner, [restoreB, addD(revision)])).toMatchObject([
+      { status: "applied", appliedRevision: revision + 1 },
+      { status: "rejected", reason: "revision_mismatch" },
+    ]);
+    expect(await livePageIds(owner)).toEqual([pageA, pageB, pageC]);
+
+    await deleteB(owner);
+    const again = await strategyRevision(owner);
+    expect(await apply(owner, [restoreB, addD(again + 1)])).toMatchObject([
+      { status: "applied", appliedRevision: again + 1 },
+      { status: "applied", appliedRevision: again + 2 },
+    ]);
+    expect(await livePageIds(owner)).toEqual([pageA, pageB, pageC, pageD]);
+  });
+
+  test("three restores in one batch leave the summary of every agent they brought back", async () => {
+    const { owner, t } = await createHarness();
+    await seed(owner);
+    await apply(owner, [
+      {
+        type: "element.add",
+        elementPublicId: "c-agent",
+        pagePublicId: pageC,
+        payload: agentPayload("omen"),
+        sortIndex: 0,
+      },
+    ]);
+    await deleteB(owner);
+    await apply(owner, [
+      {
+        type: "page.delete",
+        pagePublicId: pageC,
+        expectedStrategyRevision: await strategyRevision(owner),
+      },
+    ]);
+    expect(await agentSummary(t)).toEqual(["sova"]);
+
+    expect(
+      await apply(owner, [
+        restoreB,
+        { type: "page.restore", pagePublicId: pageC },
+        restoreB,
+      ]),
+    ).toMatchObject([
+      { status: "applied" },
+      { status: "applied" },
+      { status: "noop" },
+    ]);
+    expect((await agentSummary(t)).sort()).toEqual(["jett", "omen", "sova"]);
+  });
+
+  test("a restore and an edit changing an agent on another page in one batch both reach the summary", async () => {
+    const { owner, t } = await createHarness();
+    await seed(owner);
+    await deleteB(owner);
+
+    expect(
+      await apply(owner, [
+        restoreB,
+        {
+          type: "element.patch",
+          elementPublicId: "a-agent",
+          pagePublicId: pageA,
+          payload: agentPayload("omen"),
+          expectedElementRevision: 1,
+        },
+      ]),
+    ).toMatchObject([{ status: "applied" }, { status: "applied" }]);
+    expect((await agentSummary(t)).sort()).toEqual(["jett", "omen", "sova"]);
+  });
+
+  test("a restore sent again after it changed nothing gets the same answer, though the page is in the trash by then", async () => {
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    const revision = await strategyRevision(owner);
+    const op = { opId: "restore-live-b", ...restoreB };
+    expect(await apply(owner, [op])).toMatchObject([
+      { status: "noop", currentRevision: revision },
+    ]);
+    await deleteB(owner);
+    const trashed = await pageRow(t, pageB);
+
+    expect(await apply(owner, [op])).toMatchObject([
+      { status: "noop", currentRevision: revision },
+    ]);
+    expect(await pageRow(t, pageB)).toEqual(trashed);
+    expect(await strategyRevision(owner)).toBe(revision + 1);
+  });
+
+  test("a page id that never existed is not found, and sent again once it names a page in the trash, it still is", async () => {
+    const { t, owner } = await createHarness();
+    await seed(owner);
+    const op = { opId: "restore-d", type: "page.restore", pagePublicId: pageD };
+    expect(await apply(owner, [op])).toMatchObject([
+      { status: "rejected", reason: "not_found" },
+    ]);
+    await apply(owner, [addD(await strategyRevision(owner))]);
+    await apply(owner, [
+      {
+        type: "page.delete",
+        pagePublicId: pageD,
+        expectedStrategyRevision: await strategyRevision(owner),
+      },
+    ]);
+    const trashed = await pageRow(t, pageD);
+    const revision = await strategyRevision(owner);
+
+    expect(await apply(owner, [op])).toMatchObject([
+      { status: "rejected", reason: "not_found" },
+    ]);
+    expect(await pageRow(t, pageD)).toEqual(trashed);
+    expect(await strategyRevision(owner)).toBe(revision);
+  });
 });
 
 describe("Recently deleted", () => {

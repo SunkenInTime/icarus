@@ -1,7 +1,6 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { conflictError, invalidOpError, notFoundError } from "./errors";
-import { refreshStrategyAgentSummary } from "./strategyAgentSummary";
 
 type AnyCtx = QueryCtx | MutationCtx;
 
@@ -275,7 +274,6 @@ export async function restorePage(
     await listLivePages(ctx, strategy._id),
     now,
   );
-  await refreshStrategyAgentSummary(ctx, strategy._id);
   const revision = strategy.revision + 1;
   await ctx.db.patch(strategy._id, { revision, updatedAt: now });
   return {

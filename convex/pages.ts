@@ -256,6 +256,7 @@ export const restore = mutation({
       case "live":
         return { ok: true, reused: true, revision: strategy.revision } as const;
       case "restored":
+        await refreshStrategyAgentSummary(ctx, strategy._id);
         return { ok: true, revision: restore.strategy.revision } as const;
     }
   },
