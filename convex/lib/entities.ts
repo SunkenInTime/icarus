@@ -1,6 +1,7 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { conflictError, invalidOpError, notFoundError } from "./errors";
+import { refreshStrategyAgentSummary } from "./strategyAgentSummary";
 
 type AnyCtx = QueryCtx | MutationCtx;
 
@@ -228,7 +229,7 @@ export async function trashPage(
 
 /// Takes [page] out of the trash, back at the place it was deleted from, or
 /// last if fewer pages are left than that.
-export async function restoreTrashedPage(
+async function restoreTrashedPage(
   ctx: MutationCtx,
   page: Doc<"pages">,
   livePages: Doc<"pages">[],
@@ -238,6 +239,50 @@ export async function restoreTrashedPage(
   ordered.splice(clampPageIndex(page.sortIndex, ordered.length), 0, page);
   await ctx.db.patch(page._id, { deletedAt: undefined, deletedBy: undefined });
   await writePageOrder(ctx, ordered, now);
+}
+
+export type PageRestore =
+  | { outcome: "gone" }
+  | { outcome: "live"; page: Doc<"pages"> }
+  | {
+      outcome: "restored";
+      page: Doc<"pages">;
+      strategy: Doc<"strategies">;
+    };
+
+export async function restorePage(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  pagePublicId: string,
+): Promise<PageRestore> {
+  const page = await ctx.db
+    .query("pages")
+    .withIndex("by_publicId", (q) => q.eq("publicId", pagePublicId))
+    .first();
+  const now = Date.now();
+  if (
+    page === null ||
+    page.strategyId !== strategy._id ||
+    isPastTrashRetention(page, now)
+  ) {
+    return { outcome: "gone" };
+  }
+  if (!isTrashed(page)) return { outcome: "live", page };
+
+  await restoreTrashedPage(
+    ctx,
+    page,
+    await listLivePages(ctx, strategy._id),
+    now,
+  );
+  await refreshStrategyAgentSummary(ctx, strategy._id);
+  const revision = strategy.revision + 1;
+  await ctx.db.patch(strategy._id, { revision, updatedAt: now });
+  return {
+    outcome: "restored",
+    page,
+    strategy: { ...strategy, revision, updatedAt: now },
+  };
 }
 
 export async function getElementByPublicId(

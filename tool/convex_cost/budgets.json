@@ -1082,6 +1082,36 @@
           "budget": 0
         }
       }
+    },
+    "storePageRestore": {
+      "title": "The store's sender restores a deleted page",
+      "about": "The coach deletes the typical strategy's second page (60 items), then the store's sender restores it with one page.restore op through ops:applyBatch. Only the restore is metered: it puts the page back at its place among the live pages, renumbers the page order and refreshes the strategy's agent summary once.",
+      "metrics": {
+        "functionCalls": {
+          "today": 1,
+          "budget": 3
+        },
+        "readBytes": {
+          "today": 34842,
+          "budget": 43553
+        },
+        "writeBytes": {
+          "today": 3782,
+          "budget": 4728
+        },
+        "sentBytes": {
+          "today": 375,
+          "budget": 469
+        },
+        "returnBytes": {
+          "today": 160,
+          "budget": 200
+        },
+        "queryReruns": {
+          "today": 0,
+          "budget": 0
+        }
+      }
     }
   }
 }

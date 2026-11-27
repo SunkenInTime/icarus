@@ -50576,6 +50576,36 @@
                         },
                         "optional": true
                       },
+                      "opId": {
+                        "fieldType": {
+                          "type": "string"
+                        },
+                        "optional": false
+                      },
+                      "pagePublicId": {
+                        "fieldType": {
+                          "type": "string"
+                        },
+                        "optional": false
+                      },
+                      "type": {
+                        "fieldType": {
+                          "type": "literal",
+                          "value": "page.restore"
+                        },
+                        "optional": false
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "value": {
+                      "expectedLife": {
+                        "fieldType": {
+                          "type": "number"
+                        },
+                        "optional": true
+                      },
                       "expectedPageContentRevision": {
                         "fieldType": {
                           "type": "number"

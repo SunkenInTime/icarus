@@ -1054,6 +1054,32 @@ export const SESSIONS = {
     },
   },
 
+  storePageRestore: {
+    title: "The store's sender restores a deleted page",
+    about:
+      "The coach deletes the typical strategy's second page (60 items), then the store's sender restores it with one " +
+      "page.restore op through ops:applyBatch. Only the restore is metered: it puts the page back at its place among " +
+      "the live pages, renumbers the page order and refreshes the strategy's agent summary once.",
+    world: "team",
+    async run({ env, world, rng }) {
+      const coach = world.coach;
+      const strategyPublicId = world.typical.publicId;
+      const pagePublicId = world.typical.pages[1];
+      const clientId = rng.uuid();
+      const shell = await coach.query("strategy:getShell", { strategyPublicId });
+      const [deleted] = await coach.applyBatch(strategyPublicId, clientId, [
+        { opId: rng.uuid(), type: "page.delete", pagePublicId, expectedStrategyRevision: shell.header.revision },
+      ]);
+      if (deleted.status !== "applied") throw new Error(`The page delete was ${deleted.status}`);
+      return metered([coach], env, async () => {
+        const [restored] = await coach.applyBatch(strategyPublicId, clientId, [
+          { opId: rng.uuid(), type: "page.restore", pagePublicId },
+        ]);
+        if (restored.status !== "applied") throw new Error(`The restore was ${restored.status}`);
+      });
+    },
+  },
+
   storeLivesReads: {
     title: "An op that names its row's life reads nothing more",
     about:

@@ -60,6 +60,13 @@ const pageReorderOpValidator = v.object({
   expectedLife,
 });
 
+const pageRestoreOpValidator = v.object({
+  opId: v.string(),
+  type: v.literal("page.restore"),
+  pagePublicId: v.string(),
+  expectedLife,
+});
+
 const pageContentPatchOpValidator = v.object({
   opId: v.string(),
   type: v.literal("pageContent.patch"),
@@ -166,6 +173,7 @@ export const strategyOpValidator = v.union(
   pagePatchOpValidator,
   pageDeleteOpValidator,
   pageReorderOpValidator,
+  pageRestoreOpValidator,
   pageContentPatchOpValidator,
   elementAddOpValidator,
   elementPatchOpValidator,
