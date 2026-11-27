@@ -10,6 +10,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/dev/drive/drive_session.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/local_image_file.dart' show deviceHasImageFiles;
+import 'package:icarus/startup/app_instance.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const cloudOutboxUnavailableReason =
@@ -106,6 +107,17 @@ Future<void> openCloudStrategyCopy() async {
   }
 }
 
+FlutterAuthClientOptions authOptionsFor(
+  AppInstance instance, {
+  required bool driveBuild,
+}) =>
+    FlutterAuthClientOptions(
+      detectSessionInUri: false,
+      localStorage:
+          driveBuild ? DriveSessionStorage() : sessionStorageOf(instance),
+      pkceAsyncStorage: authFlowStorageOf(instance),
+    );
+
 Future<void> initializeCloudClients(CloudBuildConfig config) async {
   await ConvexClient.initialize(
     ConvexConfig(
@@ -119,9 +131,6 @@ Future<void> initializeCloudClients(CloudBuildConfig config) async {
   await Supabase.initialize(
     url: 'https://gjdirtrtgnawqoruavqn.supabase.co',
     anonKey: 'sb_publishable_6M0VCSZCvRFrcgNANWPVWw_U06T_rUo',
-    authOptions: FlutterAuthClientOptions(
-      detectSessionInUri: false,
-      localStorage: driveBuild ? DriveSessionStorage() : null,
-    ),
+    authOptions: authOptionsFor(appInstance, driveBuild: driveBuild),
   );
 }

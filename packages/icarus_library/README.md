@@ -2056,7 +2056,11 @@ applied to the current rows: it is kept with the set-aside edits and refused to
 the caller as `EditOfAReplacedStrategy`. The store cannot tell whether `seen` is
 the read the edit was really built from; the editor, when it moves onto the
 store, must make the edit and keep the read it came from together, so that a
-caller cannot pair one read's edit with another read's `seen`.
+caller cannot pair one read's edit with another read's `seen`. A page delete
+records the page as the store holds it at commit, unless `pagesAsSeen` names
+the page: then it records that `SeenPage`, which the editor builds with
+`seenPageOf` and `contentSeenOf` from the rows it drew, or with
+`ContentNeverRead` when it drew none.
 
 **Where revisions still meet as numbers.** Every place two rows' versions are
 ordered uses `Version`: the highest version shown, which of two shown rows is
@@ -2103,7 +2107,12 @@ it, because it was built on the work given up.
 its page's add or delete, a page delete for work on that page, and page
 changes against renumbering, until that one is answered. A refused
 prerequisite keeps its dependants waiting, and the sync state says so. A page
-copy reaches the queue as ordinary adds under ids derived on this device. A
+copy reaches the queue as ordinary adds under ids derived on this device,
+including an element this build cannot draw whose stored payload still reads
+as a payload of a kind this build knows: its add carries that payload. Any
+other row it cannot send stops the copy with a `CopyStopped`
+(`CopyNeedsContent`, `CopySourceUnreadable`, `CopyHasUnreadableLineupGroup`,
+`CopyHasNonObjectElement`, `CopyHasUnsendableElement`) and nothing is saved. A
 result saying the strategy is gone stops every claim for that strategy.
 
 **Folding.** One rule: a field edit folds into an earlier field edit of the

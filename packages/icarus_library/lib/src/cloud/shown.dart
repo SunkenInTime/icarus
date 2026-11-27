@@ -943,7 +943,7 @@ final class Shown {
           page: liveContentOn([
             ...rows.elementsOn(page),
             ...rows.lineupGroupsOn(page),
-          ], page),
+          ]),
       },
       rows: {
         for (final page in read) ...{

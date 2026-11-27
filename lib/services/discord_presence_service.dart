@@ -10,6 +10,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/startup/app_instance.dart';
 
 /// Override to exercise either answer in tests, whatever they run on.
 final discordPresenceSupportedProvider = Provider<bool>(
@@ -249,6 +250,14 @@ class DiscordPresenceService {
 /// isolate that froze the app for 50 ms each second while Discord was
 /// running, which showed as a hitch in every drag and animation.
 class DiscordPresenceWorker {
+  DiscordPresenceWorker({
+    bool? supported,
+    Future<SendPort> Function()? start,
+  })  : _supported = supported ?? DiscordPresenceService.isSupported,
+        _startWorker = start;
+
+  final bool _supported;
+  final Future<SendPort> Function()? _startWorker;
   Future<SendPort>? _inbox;
   Isolate? _isolate;
   bool _disposed = false;
@@ -280,9 +289,9 @@ class DiscordPresenceWorker {
   }
 
   Future<void> _send(Object message) async {
-    if (!DiscordPresenceService.isSupported || _disposed) return;
+    if (!_supported || appInstance is! InstalledApp || _disposed) return;
     try {
-      (await (_inbox ??= _start())).send(message);
+      (await (_inbox ??= (_startWorker ?? _start)())).send(message);
     } catch (error, stackTrace) {
       developer.log(
         'Discord Rich Presence could not start.',

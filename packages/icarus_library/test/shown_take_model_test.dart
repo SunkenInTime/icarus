@@ -58,7 +58,7 @@ void expectWhatTheServerSent(Shown shown, ArrivedBase base, String where) {
       final sent = <Row>[...elements, ...lineupGroups];
       expect(
         shown.content[pageId],
-        page is TrashedPage ? isNull : liveContentOn(sent, pageId),
+        page is TrashedPage ? isNull : liveContentOn(sent),
         reason: '$where: content of $pageId',
       );
       for (final row in sent) {

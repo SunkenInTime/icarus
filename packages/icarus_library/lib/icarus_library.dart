@@ -95,6 +95,8 @@ export 'src/cloud/op_facts.dart'
         TheRow,
         authoredFor,
         seenPageIn,
+        seenPageOf,
+        contentSeenOf,
         rowDigest,
         strategyDigest,
         withFieldBase;

@@ -239,10 +239,14 @@ final class NumbersUnreadable implements CommitRefusal, LibraryRefusal {
   String toString() => 'NumbersUnreadable';
 }
 
-final class CopyNeedsContent implements CommitRefusal {
-  const CopyNeedsContent(this.pagePublicId);
+sealed class CopyStopped implements CommitRefusal {
+  const CopyStopped(this.pagePublicId);
 
   final String pagePublicId;
+}
+
+final class CopyNeedsContent extends CopyStopped {
+  const CopyNeedsContent(super.pagePublicId);
 
   @override
   bool operator ==(Object other) =>
@@ -253,6 +257,90 @@ final class CopyNeedsContent implements CommitRefusal {
 
   @override
   String toString() => 'CopyNeedsContent($pagePublicId)';
+}
+
+final class CopySourceUnreadable extends CopyStopped {
+  const CopySourceUnreadable(super.pagePublicId);
+
+  @override
+  bool operator ==(Object other) =>
+      other is CopySourceUnreadable && other.pagePublicId == pagePublicId;
+
+  @override
+  int get hashCode => Object.hash(CopySourceUnreadable, pagePublicId);
+
+  @override
+  String toString() => 'CopySourceUnreadable($pagePublicId)';
+}
+
+final class CopyHasUnreadableLineupGroup extends CopyStopped {
+  const CopyHasUnreadableLineupGroup(super.pagePublicId, this.lineupPublicId);
+
+  final String lineupPublicId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CopyHasUnreadableLineupGroup &&
+      other.pagePublicId == pagePublicId &&
+      other.lineupPublicId == lineupPublicId;
+
+  @override
+  int get hashCode =>
+      Object.hash(CopyHasUnreadableLineupGroup, pagePublicId, lineupPublicId);
+
+  @override
+  String toString() =>
+      'CopyHasUnreadableLineupGroup($pagePublicId, $lineupPublicId)';
+}
+
+final class CopyHasNonObjectElement extends CopyStopped {
+  const CopyHasNonObjectElement(super.pagePublicId, this.elementPublicId);
+
+  final String elementPublicId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CopyHasNonObjectElement &&
+      other.pagePublicId == pagePublicId &&
+      other.elementPublicId == elementPublicId;
+
+  @override
+  int get hashCode =>
+      Object.hash(CopyHasNonObjectElement, pagePublicId, elementPublicId);
+
+  @override
+  String toString() =>
+      'CopyHasNonObjectElement($pagePublicId, $elementPublicId)';
+}
+
+final class CopyHasUnsendableElement extends CopyStopped {
+  const CopyHasUnsendableElement(
+    super.pagePublicId,
+    this.elementPublicId,
+    this.reason,
+  );
+
+  final String elementPublicId;
+  final UnreadableReason reason;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CopyHasUnsendableElement &&
+      other.pagePublicId == pagePublicId &&
+      other.elementPublicId == elementPublicId &&
+      other.reason == reason;
+
+  @override
+  int get hashCode => Object.hash(
+    CopyHasUnsendableElement,
+    pagePublicId,
+    elementPublicId,
+    reason,
+  );
+
+  @override
+  String toString() =>
+      'CopyHasUnsendableElement($pagePublicId, $elementPublicId, $reason)';
 }
 
 final class UnsentWorkInArea extends LibraryRefusal {

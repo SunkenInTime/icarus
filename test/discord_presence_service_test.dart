@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/discord_presence_service.dart';
+import 'package:icarus/startup/app_instance.dart';
 
 void main() {
   group('DiscordPresenceData', () {
@@ -72,6 +74,38 @@ void main() {
         build(agents: 5, abilities: 12).state,
         '5 agents · 12 abilities on the board',
       );
+    });
+  });
+
+  group('DiscordPresenceWorker', () {
+    tearDown(() => decideAppInstance(const InstalledApp()));
+
+    Future<int> spawnedFor(AppInstance instance) async {
+      decideAppInstance(instance);
+      var spawned = 0;
+      final inbox = ReceivePort();
+      addTearDown(inbox.close);
+      final worker = DiscordPresenceWorker(
+        supported: true,
+        start: () async {
+          spawned++;
+          return inbox.sendPort;
+        },
+      );
+      await worker.update(
+        const DiscordPresenceData(details: 'Planning', state: 'Ascent'),
+      );
+      return spawned;
+    }
+
+    test('the installed app starts the worker for a presence update', () async {
+      expect(await spawnedFor(const InstalledApp()), 1);
+    });
+
+    test(
+        'a separate instance asks for a presence update and no worker is '
+        'started', () async {
+      expect(await spawnedFor(const SeparateInstance('/tmp/separate')), 0);
     });
   });
 }

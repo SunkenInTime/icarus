@@ -861,6 +861,45 @@ jobs:
       - name: Build Windows Client
         run: fvm flutter build windows --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 
+      - name: Start A Separate Instance Of The Release Build
+        run: |
+          $support = Join-Path $env:APPDATA 'xyz.icarus-strats'
+          $handler = 'HKCU:\Software\Classes\icarus'
+          function Get-SupportFiles {
+            if (Test-Path $support) { @(Get-ChildItem -LiteralPath $support -Recurse -Force -File) } else { @() }
+          }
+          if ((Get-SupportFiles).Count -gt 0 -or (Test-Path $handler)) {
+            throw "The runner already has files under $support or the key $handler; this check needs a machine with neither."
+          }
+          $out = Join-Path $env:RUNNER_TEMP 'release-close'
+          pwsh -NoProfile -File tool\drive\release-close.ps1 -Exe build\windows\x64\runner\Release -Out $out -WaitSeconds 10 -WaitMinutes 2
+          $closed = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          $result = Join-Path $out 'result.txt'
+          if ($closed -eq 2) { throw 'The release build never showed a window.' }
+          if (-not ((Test-Path $result) -and (Select-String -LiteralPath $result -Pattern 'CHECK DONE: (exited cleanly|did not exit cleanly)' -Quiet))) {
+            throw "release-close.ps1 failed before it judged the exit (exit $closed)."
+          }
+          "release-close.ps1 exited $closed; the exit is not judged until #865 is fixed"
+          $scratch = Join-Path $out 'store'
+          'in its own folder:'
+          Get-ChildItem -LiteralPath $scratch -Force | ForEach-Object { "  $($_.Name)" }
+          $missing = @(
+            if (-not (Test-Path (Join-Path $scratch 'icarus_debug.log'))) { 'its debug log' }
+            if (-not (Get-ChildItem -LiteralPath $scratch -Filter '*.hive' -File)) { 'its Hive files' }
+          )
+          if ($missing.Count -gt 0) {
+            throw "The separate instance did not start for real: $($missing -join ' and ') are not in $scratch."
+          }
+          $leaks = @(
+            foreach ($file in Get-SupportFiles) { "the file $($file.FullName)" }
+            if (Test-Path $handler) { "the icarus: link handler $handler" }
+          )
+          if ($leaks.Count -gt 0) {
+            throw "A separate instance wrote outside its folder: $($leaks -join '; ')"
+          }
+          'nothing outside its folder'
+
       - name: Check The Library Engine Ships
         run: |
           if (-not (Test-Path build/windows/x64/runner/Release/sqlite3.dll)) {

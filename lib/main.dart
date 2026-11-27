@@ -74,11 +74,11 @@ import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/services/open_cloud_strategy_store.dart';
-import 'package:icarus/services/strategy_folders.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/startup/cloud_bootstrap.dart';
+import 'package:icarus/startup/app_instance.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/startup/launch_clock.dart';
 import 'package:icarus/library_store/store_startup.dart';
@@ -93,7 +93,6 @@ import 'package:icarus/widgets/window_close_guard.dart';
 import 'package:icarus/widgets/replay/open_replays.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/services/product_metrics.dart';
-import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:icarus/widgets/dialogs/auth/set_password_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -221,26 +220,35 @@ Future<void> main(List<String> args) async {
         ...storeStart.overrides,
         cloudStoreSwitchProvider.overrideWithValue(storeLaunch.cloud),
       ]);
+      final HiveStoreLaunch launch;
+      final PreparedHiveStore? alternateHiveStore;
+      try {
+        launch = HiveStoreLaunch.parse(storeLaunch.otherArgs);
+        if (kIsWeb) {
+          launch.validateForWeb();
+          alternateHiveStore = null;
+        } else {
+          alternateHiveStore = await launch.prepareAlternateStore(
+            getDefaultHiveDirectory: getApplicationSupportDirectory,
+          );
+        }
+      } on HiveStoreLaunchException catch (refused) {
+        await _initializePersistedDebugLog();
+        AppErrorReporter.reportError(
+          'Icarus did not start: ${refused.message}',
+          source: 'main.hiveStoreLaunch',
+          promptUser: false,
+        );
+        await AppErrorReporter.flushPersistedLog();
+        await refuseLaunch('Icarus did not start: ${refused.message}');
+      }
+      decideAppInstance(appInstanceAt(alternateHiveStore?.hiveDirectoryPath));
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
       AppErrorReporter.describeSession = _describeSession;
       final cloudBuildConfig = CloudBuildConfig.fromEnvironment(
         isReleaseMode: kReleaseMode,
       );
-
-      final launch = HiveStoreLaunch.parse(storeLaunch.otherArgs);
-      final PreparedHiveStore? alternateHiveStore;
-      if (kIsWeb) {
-        launch.validateForWeb();
-        alternateHiveStore = null;
-      } else {
-        alternateHiveStore = await launch.prepareAlternateStore(
-          getDefaultHiveDirectory: getApplicationSupportDirectory,
-        );
-        if (alternateHiveStore != null) {
-          keepStrategyFoldersInDriveStore(alternateHiveStore.hiveDirectoryPath);
-        }
-      }
 
       await registerDeepLinkProtocol('icarus');
       await _initializeDeepLinkHandling();
@@ -256,8 +264,7 @@ Future<void> main(List<String> args) async {
         // On web, Hive uses IndexedDB; no path needed.
         await Hive.initFlutter();
       } else {
-        hiveDirectoryPath = alternateHiveStore?.hiveDirectoryPath ??
-            (await getApplicationSupportDirectory()).path;
+        hiveDirectoryPath = (await appInstance.supportDirectory()).path;
         await getTemporaryDirectory();
         await Hive.initFlutter(hiveDirectoryPath);
         if (alternateHiveStore != null) {
@@ -630,13 +637,12 @@ Future<void> _initializePersistedDebugLog() async {
   if (kIsWeb) return;
 
   try {
-    final dir = await getApplicationSupportDirectory();
+    final dir = await appInstance.supportDirectory();
+    final logPath = debugLogPathIn(dir);
     AppErrorReporter.setApplicationSupportDirectoryPath(dir.path);
-    await AppErrorReporter.initializePersistedLog(
-      path.join(dir.path, 'icarus_debug.log'),
-    );
+    await AppErrorReporter.initializePersistedLog(logPath);
     AppErrorReporter.reportInfo(
-      'Persisted debug log file: ${path.join(dir.path, 'icarus_debug.log')}',
+      'Persisted debug log file: $logPath',
       source: 'main._initializePersistedDebugLog',
     );
   } catch (error, stackTrace) {
@@ -656,7 +662,7 @@ Future<void> _initWebViewEnvironment() async {
       return;
     }
 
-    final dir = await getApplicationSupportDirectory();
+    final dir = await appInstance.supportDirectory();
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
 
     if (availableVersion == null) {
@@ -667,7 +673,7 @@ Future<void> _initWebViewEnvironment() async {
 
     webViewEnvironment = await WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
-        userDataFolder: path.join(dir.path, 'webview'),
+        userDataFolder: webViewDataFolderIn(dir),
       ),
     );
     isWebViewInitialized = true;

@@ -18,8 +18,8 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/auth_callback_uri.dart';
 import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/services/product_metrics.dart';
+import 'package:icarus/startup/app_instance.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final authProvider =
@@ -478,9 +478,8 @@ class _DefaultAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
 
   @override
   Future<bool> passwordResetPending() async {
-    final preferences = await SharedPreferences.getInstance();
     return isPasswordResetVerifier(
-      preferences.getString(pkceVerifierStorageKey),
+      await storedAuthFlowValue(pkceVerifierStorageKey),
     );
   }
 
