@@ -152,8 +152,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/library_store/library_store_open.dart';
-import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/store_reads.dart';
+import 'package:icarus/library_store/cloud_sender_provider.dart';
+import 'package:icarus_library/icarus_library.dart'
+    show HeldOnPage, ResultPoint;
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/weapons.dart';
@@ -2374,33 +2376,92 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'liveHandOffCost':
       final shown =
           c.read(remoteEditorSnapshotProvider).valueOrNull?.activePage;
-      if (shown == null) {
-        throw StateError('liveHandOffCost needs a cloud page open');
+      final strategy =
+          c.read(remoteEditorSnapshotProvider.notifier).activeStrategyPublicId;
+      final sender = c.read(cloudSenderProvider);
+      if (shown == null || strategy == null || shown.elements.isEmpty) {
+        throw StateError('liveHandOffCost needs a cloud page with items open');
+      }
+      if (sender == null) {
+        throw StateError('liveHandOffCost needs --cloud-store send');
       }
       final runs = (value as num).toInt();
-      const stamp = ResultStamp(client: 1, connection: 1, snapshot: 1);
-      final micros = <int>[];
-      for (var run = 0; run <= runs; run++) {
-        final watch = Stopwatch()..start();
-        final outcome = pageOutcomeOf(
-          StampedValue(shown, stamp),
-          pagePublicId: shown.page.publicId,
-          canRead: appCanRead,
-        );
-        watch.stop();
-        if (outcome is! StoreReadAnswered) {
-          throw StateError(
-            'liveHandOffCost: the page did not convert: $outcome',
-          );
-        }
-        if (run > 0) micros.add(watch.elapsedMicroseconds);
-      }
-      micros.sort();
+      final page = shown.page.publicId;
+      const point = ResultPoint(client: 1, connection: 1, snapshot: 1);
+      final changed = shown.elements.first;
+      final edit = LivePageAnswer(
+        RemotePageSnapshot(
+          page: shown.page,
+          content: shown.content,
+          elements: [
+            RemoteElement(
+              publicId: changed.publicId,
+              strategyPublicId: changed.strategyPublicId,
+              pagePublicId: changed.pagePublicId,
+              elementType: changed.elementType,
+              payload: changed.payload,
+              sortIndex: changed.sortIndex,
+              revision: changed.revision + 1,
+              deleted: changed.deleted,
+              createdAt: changed.createdAt,
+            ),
+            ...shown.elements.skip(1),
+          ],
+          lineups: shown.lineups,
+          assetsById: shown.assetsById,
+        ),
+        pagePublicId: page,
+        point: point,
+      );
+      final first = LivePageAnswer(shown, pagePublicId: page, point: point);
       String ms(num micros) => (micros / 1000).toStringAsFixed(2);
-      _log(
-        'HANDOFF ${shown.elements.length} items, $runs runs: median '
-        '${ms((micros[(runs - 1) ~/ 2] + micros[runs ~/ 2]) / 2)} ms, fastest '
-        '${ms(micros.first)} ms, slowest ${ms(micros.last)} ms',
+      Future<void> timed(
+        String what,
+        LivePageAnswer answer,
+        Future<HeldOnPage> Function() held,
+        int decodes,
+      ) async {
+        final micros = <int>[];
+        var decoded = 0;
+        for (var run = 0; run <= runs; run++) {
+          final watch = Stopwatch()..start();
+          final converted = livePageOutcome(
+            answer,
+            canRead: appCanRead,
+            held: await held(),
+          );
+          watch.stop();
+          decoded = converted.decoded;
+          if (converted.outcome is! StoreReadAnswered) {
+            throw StateError('liveHandOffCost: the page did not convert: '
+                '${converted.outcome}');
+          }
+          if (decoded != decodes) {
+            throw StateError('liveHandOffCost: the $what decoded $decoded '
+                'rows, not $decodes');
+          }
+          if (run > 0) micros.add(watch.elapsedMicroseconds);
+        }
+        micros.sort();
+        _log(
+          'HANDOFF $what, ${shown.elements.length} items, $decoded decoded, '
+          '$runs runs: median '
+          '${ms((micros[(runs - 1) ~/ 2] + micros[runs ~/ 2]) / 2)} ms, '
+          'fastest ${ms(micros.first)} ms, slowest ${ms(micros.last)} ms',
+        );
+      }
+
+      await timed(
+        'edit answer',
+        edit,
+        () => sender.store.heldOnPage(strategy, page),
+        1,
+      );
+      await timed(
+        'first answer',
+        first,
+        () async => HeldOnPage.nothing,
+        shown.elements.length + shown.lineups.length,
       );
     case 'fillPage':
       int onPage() =>
@@ -3296,7 +3357,8 @@ Future<void> _run(Map<String, dynamic> step) async {
             Offset((at[0] as num).toDouble(), (at[1] as num).toDouble());
         final now = onPage[id];
         if (now == null || (now - expected).distance >= 0.5) {
-          wrong.add('$id: written at $expected, now ${now ?? 'not on the page'}');
+          wrong.add(
+              '$id: written at $expected, now ${now ?? 'not on the page'}');
         }
       }
       if (wrong.isNotEmpty) throw StateError(wrong.join('; '));
