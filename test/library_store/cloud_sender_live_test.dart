@@ -260,7 +260,9 @@ void main() {
         world.commitMove(1);
         world.settle();
         expect(world.server.log, contains('send move-1'));
+        world.settle(timing.quietBeforeRetiring * 2);
         expect(world.cloud().queue.landed, isNotEmpty);
+        expect(world.server.readsOf(strategyId).skip(readsBefore), isEmpty);
         live.publish(pageId);
         world.settle(const Duration(minutes: 5));
 
