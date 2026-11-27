@@ -2120,7 +2120,7 @@ final class _LibraryEdit {
 
   Future<_Step> add(LibraryChange change) async {
     switch (change) {
-      case AddStrategy(:final rows):
+      case AddStrategy(:final rows, :final writtenAt):
         final id = rows.strategy.publicId;
         final digest = digestOf(id);
         if (_hasStrategy(id) ||
@@ -2148,6 +2148,7 @@ final class _LibraryEdit {
         for (final row in rows.rows) {
           writes.add(_PutRow(area, row));
         }
+        if (writtenAt != null) writes.add(_PutWritten(area, writtenAt));
         _headers[id] = rows.strategy;
         final summary = _summaryOfRows(rows);
         _added[id] = (rows.strategy, summary);

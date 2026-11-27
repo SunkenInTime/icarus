@@ -785,9 +785,10 @@ sealed class LibraryChange {
 }
 
 final class AddStrategy extends LibraryChange {
-  const AddStrategy(this.rows);
+  const AddStrategy(this.rows, {this.writtenAt});
 
   final StrategyRowSet rows;
+  final int? writtenAt;
 }
 
 final class RemoveStrategy extends LibraryChange {
