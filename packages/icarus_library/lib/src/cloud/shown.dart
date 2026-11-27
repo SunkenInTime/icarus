@@ -426,13 +426,13 @@ final class AfterRefusal extends PaidBy {
   const AfterRefusal({
     required this.session,
     required this.point,
-    required this.step,
+    this.visibleAt = false,
     this.evidence,
   });
 
   final int session;
   final ResultPoint point;
-  final int step;
+  final bool visibleAt;
   final Evidence? evidence;
 
   @override
@@ -441,23 +441,27 @@ final class AfterRefusal extends PaidBy {
       arrival.order.session > session ||
       (arrival.order.session == session &&
           (point.generation.isBefore(arrival.point.generation) ||
-              arrival.requestedAtOrAfter(session, step)));
+              (visibleAt &&
+                  arrival.point.generation == point.generation &&
+                  arrival.point.snapshot >= point.snapshot)));
 
   @override
   bool operator ==(Object other) =>
       other is AfterRefusal &&
       other.session == session &&
       other.point == point &&
-      other.step == step &&
+      other.visibleAt == visibleAt &&
       other.evidence == evidence;
 
   @override
-  int get hashCode => Object.hash(AfterRefusal, session, point, step, evidence);
+  int get hashCode =>
+      Object.hash(AfterRefusal, session, point, visibleAt, evidence);
 
   @override
   String toString() =>
-      'content, a later connection, client or session, or a read requested '
-      'after step $step of session $session';
+      'content, a later connection, client or session'
+      '${visibleAt ? ', or a result at or after snapshot ${point.snapshot} '
+                'of the same connection' : ''}';
 }
 
 final class AfterAnswer extends PaidBy {

@@ -1779,10 +1779,10 @@ Step _batchRefused(
         AfterRefusal(
           session: edit.session.number,
           point: point,
-          step: edit.recordStep(),
-          evidence: switch (currentLife) {
-            final life? => StrategyLifeAtLeast(life),
-            null => null,
+          evidence: switch ((currentLife, edit.shown.strategy?.life)) {
+            (final life?, _) => StrategyLifeAtLeast(life),
+            (null, final named?) => StrategyLifeAtLeast(named + 1),
+            (null, null) => null,
           },
         ),
         named: currentLife,
@@ -2957,7 +2957,7 @@ void _oweTheRowsRead(
   final since = AfterRefusal(
     session: edit.session.number,
     point: point,
-    step: edit.recordStep(),
+    visibleAt: true,
     evidence: switch ((current, checked)) {
       (
         ServerSnapshot(target: SnapshotTarget.strategy) &&
