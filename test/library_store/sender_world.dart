@@ -311,6 +311,12 @@ final class FakeServer {
   var skew = 0;
 
   StoreBatchOutcome applyAll(ServerCall call) {
+    if (!rows.containsKey(call.strategyId)) {
+      return StoreBatchRefusedWhole(
+        BatchRefusal.strategyDeleted,
+        point: failed(),
+      );
+    }
     if (rows[call.strategyId] case final held?
         when call.strategyLife != null &&
             (createdAtOf(held.strategy) ?? firstLife) != call.strategyLife) {

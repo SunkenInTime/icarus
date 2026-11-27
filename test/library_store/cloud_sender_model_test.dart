@@ -18,7 +18,12 @@ import 'sender_world.dart';
 const seeds = int.fromEnvironment('SENDER_MODEL_SEEDS', defaultValue: 480);
 const from = int.fromEnvironment('SENDER_MODEL_FROM');
 final stampsMade = <String, int>{};
+final faultsHit = <String, int>{};
+
+void _hit(String fault) => faultsHit[fault] = (faultsHit[fault] ?? 0) + 1;
 const steps = 70;
+const faultSeeds =
+    int.fromEnvironment('SENDER_MODEL_FAULT_SEEDS', defaultValue: 160);
 const strategies = [strategyId, otherStrategy];
 
 final class Model {
@@ -29,9 +34,12 @@ final class Model {
     this.server, {
     this.dropLost,
     Random? drops,
+    this.serverFaults = false,
   }) : drops = drops ?? Random(random.nextInt(1 << 30));
 
   final bool? dropLost;
+  final bool serverFaults;
+  final deleted = <String>{};
   final Random drops;
 
   final FakeAsync async;
@@ -141,6 +149,7 @@ final class Model {
 
   void teammate() {
     final strategy = strategies[random.nextInt(2)];
+    if (deleted.contains(strategy)) return;
     final row = server.rows[strategy]!.strategy;
     final revision = (row.toJson() as Map)['revision']! as int;
     teammates++;
@@ -364,6 +373,7 @@ final class Model {
       if (stored.ownerAccount != servedAccount) continue;
       if (sender.cannotRead(stored.id) != null) continue;
       final cloud = world.cloud(stored.id);
+      if (standingOf(cloud.queue) == Standing.deletedOnServer) continue;
       final shown = sender.couldNotResolve(stored.id, cloud)?.subjects ?? [];
       final unshown = {
         for (final view in cloud.views.values)
@@ -729,6 +739,28 @@ final class Model {
     }
   }
 
+  void serverFault() {
+    if (random.nextBool()) {
+      var left = 1 + random.nextInt(3);
+      final hangs = random.nextBool();
+      server.lookup = () {
+        if (--left == 0) server.lookup = null;
+        if (hangs) {
+          _hit('a lookup that never answered');
+          return Completer<({int client, int connection})>().future;
+        }
+        _hit('a lookup that threw');
+        throw StateError('the client cannot say which connection it is on');
+      };
+      log.add('the next lookups ${hangs ? 'never answer' : 'throw'}');
+    } else if (deleted.isEmpty) {
+      server.rows.remove(otherStrategy);
+      deleted.add(otherStrategy);
+      _hit('a strategy deleted on the server');
+      log.add('the server deletes $otherStrategy');
+    }
+  }
+
   void waitAndCountLooks(int seconds) {
     final sender = world.sender;
     final (looks, wakes, dues, acts) =
@@ -803,6 +835,8 @@ final class Model {
       case 15:
         world.slowStore.dropSessionReadBack = 1;
         log.add('one session read-back is lost');
+      case 16 when serverFaults:
+        serverFault();
       case 17:
         readFault();
       case 18:
@@ -850,8 +884,9 @@ final class Model {
     expect(
       [
         for (final strategy in strategies)
-          if (standingOf(world.cloud(strategy).queue) ==
-              Standing.deletedOnServer)
+          if (!deleted.contains(strategy) &&
+              standingOf(world.cloud(strategy).queue) ==
+                  Standing.deletedOnServer)
             strategy,
       ],
       isEmpty,
@@ -871,6 +906,7 @@ final class Model {
       server.answersNormally &&
       world.slowStore.dropSessionReadBack == 0 &&
       world.slowStore.afterRead == Duration.zero &&
+      server.lookup == null &&
       !world.sender.inStep;
 
   bool _idle(String strategy) =>
@@ -880,7 +916,7 @@ final class Model {
 
   void checkIsolation() {
     final refused = world.lease.refusedAreas;
-    if (refused.length != 1 || !_healthy) return;
+    if (refused.length != 1 || !_healthy || deleted.isNotEmpty) return;
     final healthy = strategies.firstWhere((id) => !refused.contains(id));
     if (!_idle(healthy)) return;
     final before = server.calls.length;
@@ -896,7 +932,11 @@ final class Model {
   }
 
   void checkFairness() {
-    if (world.lease.refusedAreas.isNotEmpty || !_healthy) return;
+    if (world.lease.refusedAreas.isNotEmpty ||
+        !_healthy ||
+        deleted.isNotEmpty) {
+      return;
+    }
     if (!strategies.every(_idle)) return;
     final before = server.calls.length;
     for (final strategy in strategies) {
@@ -917,6 +957,7 @@ final class Model {
 
   void heal() {
     server.answerNormally();
+    server.lookup = null;
     world.slowStore
       ..afterRead = Duration.zero
       ..dropSessionReadBack = 0;
@@ -940,8 +981,9 @@ final class Model {
     for (final strategy in strategies) {
       final cloud = world.cloud(strategy);
       final sendable = [
-        for (final entry in cloud.queue.entries)
-          if (cloud.views[entry.id]?.sendable ?? false) entry.id,
+        if (standingOf(cloud.queue) != Standing.deletedOnServer)
+          for (final entry in cloud.queue.entries)
+            if (cloud.views[entry.id]?.sendable ?? false) entry.id,
       ];
       expect(
         sendable,
@@ -957,6 +999,25 @@ final class Model {
     }
     for (final strategy in strategies) {
       final cloud = world.cloud(strategy);
+      if (deleted.contains(strategy)) {
+        if (standingOf(cloud.queue) == Standing.deletedOnServer) {
+          _hit('a deleted strategy shown as deleted');
+        }
+        expect(
+          _settledAfterDeletion(cloud),
+          isTrue,
+          reason: '$strategy was deleted on the server, and its queued work '
+              'is not shown as deleted: ${standingOf(cloud.queue)}, '
+              '${cloud.queue.shown.list}, ${[
+            for (final entry in cloud.queue.entries)
+              '${entry.id} ${cloud.views[entry.id]?.state} '
+                  '${cloud.views[entry.id]?.holds}',
+          ].join('; ')}, waiting on ${world.sender.waitingOn(strategy)}, '
+              'access ${world.sender.accessRung(strategy)}; sender '
+              '${world.sender.view}\n$trail',
+        );
+        continue;
+      }
       expect(
         _landedNotShown(strategy, cloud),
         isEmpty,
@@ -1036,12 +1097,17 @@ final class Model {
 
   bool _settledOrNeedsYou() => strategies.every((strategy) {
         final cloud = world.cloud(strategy);
+        if (deleted.contains(strategy)) return _settledAfterDeletion(cloud);
         return _landedNotShown(strategy, cloud).isEmpty &&
             world.sender.cannotRead(strategy) == null &&
             cloud.queue.entries.every(
               (entry) => _needsUser(cloud, entry.id),
             );
       });
+
+  bool _settledAfterDeletion(CloudStrategy cloud) =>
+      standingOf(cloud.queue) == Standing.deletedOnServer ||
+      cloud.queue.entries.every((entry) => _needsUser(cloud, entry.id));
 
   List<String> _landedNotShown(String strategy, CloudStrategy cloud) {
     final shown = world.sender.couldNotResolve(strategy, cloud)?.subjects ??
@@ -1079,7 +1145,12 @@ typedef Outcome = ({
   Set<String> landed,
 });
 
-Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
+Outcome? runSeed(
+  int seed, {
+  bool? dropLost,
+  List<String>? found,
+  bool serverFaults = false,
+}) {
   Outcome? ended;
   fakeAsync((async) {
     final model = Model(
@@ -1089,6 +1160,7 @@ Outcome? runSeed(int seed, {bool? dropLost, List<String>? found}) {
       FakeServer(varies: Random(seed * 31 + 7)),
       dropLost: dropLost,
       drops: dropLost == null ? null : Random(0),
+      serverFaults: serverFaults,
     );
     model.open(first: true);
     try {
@@ -1159,6 +1231,29 @@ void main() {
         'an answer stamped on the connection before a reconnect': 31,
       }.entries) {
         expect(stampsMade[shape] ?? 0, greaterThan(least), reason: shape);
+      }
+    }
+  });
+
+  test(
+      'the loop keeps its promises through $faultSeeds random runs where the '
+      'connection lookup throws or never answers and the server deletes a '
+      'strategy', () {
+    final found = <String>[];
+    for (var seed = 0; seed < faultSeeds; seed++) {
+      runSeed(seed, found: found, serverFaults: true);
+      if (found.isNotEmpty) break;
+    }
+    expect(found, isEmpty);
+    printOnFailure('$faultsHit');
+    if (faultSeeds >= 160) {
+      for (final MapEntry(key: fault, value: least) in const {
+        'a lookup that threw': 15,
+        'a lookup that never answered': 15,
+        'a strategy deleted on the server': 80,
+        'a deleted strategy shown as deleted': 40,
+      }.entries) {
+        expect(faultsHit[fault] ?? 0, greaterThan(least), reason: fault);
       }
     }
   });
