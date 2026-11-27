@@ -60,8 +60,13 @@ jobs:
           {
             echo "Nightly sweep of seeds $FIRST to $(( FIRST + 1999 )) at ${GITHUB_SHA::9} failed ([run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID))."
             echo
+            grep -E '^SWEEP|remove these' packages/icarus_library/sweep.log > failures.txt || true
+            total=$(wc -l < failures.txt)
             echo '```'
-            grep -E '^SWEEP|remove these' packages/icarus_library/sweep.log | head -40 || true
+            head -40 failures.txt
             echo '```'
+            if [ "$total" -gt 40 ]; then
+              echo "$(( total - 40 )) more lines are in the run's log."
+            fi
           } > report.md
           gh issue comment 847 --repo "$GITHUB_REPOSITORY" --body-file report.md

@@ -2173,9 +2173,11 @@ void main() {
             stdout.writeln('SWEEP seed $seed fails as known: $cause');
           case (null, []):
             break;
-          case (null, [final first, ...]):
-            unknown.add(first);
-            stdout.writeln('SWEEP $first');
+          case (null, _):
+            unknown.addAll(failed);
+            for (final failure in failed) {
+              stdout.writeln('SWEEP $failure');
+            }
         }
       }
       expect(fixed, isEmpty, reason: 'remove these from $knownFailuresFile');
