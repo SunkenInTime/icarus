@@ -5,6 +5,7 @@ import 'package:icarus_library/icarus_library.dart';
 final class CommitGate {
   Completer<void>? _held;
   var failNext = false;
+  var doubtNext = false;
   var commits = 0;
   var ended = false;
   int? endAfter;
@@ -76,6 +77,11 @@ final class _GatedLease implements StorageLease {
     if (gate.failNext) {
       gate.failNext = false;
       return const CommitRefused(DeviceFailure('the disk is full'));
+    }
+    if (gate.doubtNext) {
+      gate.doubtNext = false;
+      await inner.commit(changes);
+      return const CommitUnknown(DeviceFailure('the disk stopped answering'));
     }
     return inner.commit(changes);
   }

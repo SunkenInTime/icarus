@@ -30,9 +30,11 @@ final class LibraryNotServed extends LibraryOnStore {
     required this.why,
     required this.oldLibraryFolder,
     required this.tryAgain,
+    required this.tries,
   });
 
   final String why;
+  final int tries;
   final String oldLibraryFolder;
   final Future<void> Function() tryAgain;
 }
@@ -46,6 +48,7 @@ Future<Future<LibraryStoreOpened>?> openLibraryOnStore(
   required bool allowsLocalLibrary,
   required String build,
   required Future<void> Function() bringUpToDate,
+  required void Function() servedAgain,
 }) async {
   Future<Future<LibraryStoreOpened>?> move() => moveLibraryIntoStore(
         container,
@@ -54,22 +57,26 @@ Future<Future<LibraryStoreOpened>?> openLibraryOnStore(
         allowsLocalLibrary: allowsLocalLibrary,
         build: build,
       );
+  var tries = 1;
   late final Future<void> Function() tryAgain;
   tryAgain = () async {
+    tries++;
     await container.read(libraryStoreProvider.notifier).close();
     await move();
-    if (await _serve(container, tryAgain) is LibraryServedFromStore) {
+    if (await _serve(container, tryAgain, tries) is LibraryServedFromStore) {
       await bringUpToDate();
+      servedAgain();
     }
   };
   final opening = await move();
-  if (opening != null) await _serve(container, tryAgain);
+  if (opening != null) await _serve(container, tryAgain, tries);
   return opening;
 }
 
 Future<LibraryOnStore> _serve(
   ProviderContainer container,
   Future<void> Function() tryAgain,
+  int tries,
 ) async {
   final atStart = container.read(libraryMigrationProvider)!;
   final String why;
@@ -77,7 +84,10 @@ Future<LibraryOnStore> _serve(
     case MigrationWasFinished() || MigrationFinishedNow():
       switch (container.read(libraryStoreProvider)) {
         case LibraryStoreReady(:final store):
-          switch (await StoreLibrary.load(store)) {
+          switch (await StoreLibrary.load(
+            store,
+            lost: (why) => _notServed(container, atStart, why, tryAgain, tries),
+          )) {
             case StoreLibraryLoaded(:final library):
               LocalLibrary.source = LibraryInStore(library);
               return container.read(libraryOnStoreProvider.notifier).state =
@@ -95,6 +105,16 @@ Future<LibraryOnStore> _serve(
     case MigrationNotRun(why: final notRun):
       why = notRun;
   }
+  return _notServed(container, atStart, why, tryAgain, tries);
+}
+
+LibraryNotServed _notServed(
+  ProviderContainer container,
+  MigrationAtStart atStart,
+  String why,
+  Future<void> Function() tryAgain,
+  int tries,
+) {
   LocalLibrary.source = const LibraryNotOpened();
   AppErrorReporter.reportError(
     "The library couldn't be opened from its new storage: $why",
@@ -106,6 +126,7 @@ Future<LibraryOnStore> _serve(
     why: why,
     oldLibraryFolder: atStart.oldLibraryFolder,
     tryAgain: tryAgain,
+    tries: tries,
   );
 }
 
@@ -153,7 +174,17 @@ Future<void> recordLeftBehindClosed(
 ) async {
   if (container.read(libraryStoreProvider)
       case LibraryStoreReady(:final store)) {
-    await store.recordMigration(record.closedLeftBehind());
+    switch (await store.recordMigration(record.closedLeftBehind())) {
+      case Saved() || NothingToSave():
+        break;
+      case Refused() || NotSaved() || SaveInDoubt():
+        AppErrorReporter.reportError(
+          "Couldn't record that the left-behind dialog was closed; it shows "
+          'again next start',
+          source: 'main.libraryOnStore',
+          promptUser: false,
+        );
+    }
   }
 }
 

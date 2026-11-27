@@ -1215,6 +1215,10 @@ List<String> migrationLines(
     'foldersInStore': list?.folders.length,
     'leftBehind': left.length,
     'served': onStore is LibraryServedFromStore,
+    'tries': switch (onStore) {
+      LibraryNotServed(:final tries) => tries,
+      _ => null,
+    },
   };
   final lines = [
     'STORE move at start: $state, $inStore strategies and '
@@ -1223,7 +1227,8 @@ List<String> migrationLines(
     switch (onStore) {
       null => 'STORE library: not on the store',
       LibraryServedFromStore() => 'STORE library: served from the store',
-      LibraryNotServed(:final why) => 'STORE library: not served, $why',
+      LibraryNotServed(:final why, :final tries) =>
+        'STORE library: not served after $tries tries, $why',
     },
     for (final entry in left)
       'STORE left behind ${entry.publicId} "${entry.name}": ${entry.reason}',

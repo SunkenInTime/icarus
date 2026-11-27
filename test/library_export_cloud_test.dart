@@ -35,6 +35,7 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:image/image.dart' as img;
@@ -232,6 +233,42 @@ void main() {
       _strategyByName('Local In Folder').folderID,
       _folderByName('Local Plays').id,
     );
+  });
+
+  group('with the library on this computer not opened', () {
+    setUp(() => LocalLibrary.source = const LibraryNotOpened());
+    tearDown(() => LocalLibrary.source = const LibraryInHive());
+
+    test(
+        'the backup, a local folder export and a strategy export are '
+        'refused, and nothing is written', () async {
+      LocalLibrary.source = const LibraryInHive();
+      await _storeLocalLibrary();
+      final localFolder = _folderByName('Local Plays');
+      final strategy = _strategyByName('Local Root');
+      LocalLibrary.source = const LibraryNotOpened();
+      final container = signedIn();
+      final service = StrategyImportExportService(container);
+      final out = path.join(tempDir.path, 'refused.ica');
+
+      await expectLater(
+        service.buildLibraryExportDirectoryForTest(),
+        throwsA(isA<LibraryNotOpenedExport>()),
+      );
+      await expectLater(
+        service.buildFolderExportDirectoryForTest(localFolder.id),
+        throwsA(isA<LibraryNotOpenedExport>()),
+      );
+      Object? strategyRefused;
+      try {
+        await service.zipStrategy(id: strategy.id, outputFilePath: out);
+      } on LibraryNotOpenedExport catch (error) {
+        strategyRefused = error;
+      }
+      expect(strategyRefused, isNotNull);
+      expect(File(out).existsSync(), isFalse);
+      expect(repository.scopes, isEmpty);
+    });
   });
 
   test('a cloud strategy that cannot be read stops the backup', () async {

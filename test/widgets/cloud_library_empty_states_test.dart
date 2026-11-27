@@ -285,6 +285,7 @@ void main() {
       why: 'the copy stopped',
       oldLibraryFolder: '/home/me/icarus',
       tryAgain: () async {},
+      tries: 1,
     );
     final overrides = [
       libraryOnStoreProvider.overrideWith((ref) => notServed),

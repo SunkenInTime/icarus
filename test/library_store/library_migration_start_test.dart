@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -136,10 +137,12 @@ void main() {
   group('serving the library from the store', () {
     late ProviderContainer container;
     late int broughtUpToDate;
+    late int servedAgain;
 
     setUp(() {
       container = ProviderContainer();
       broughtUpToDate = 0;
+      servedAgain = 0;
     });
     tearDown(() async {
       await container.read(libraryStoreProvider.notifier).close();
@@ -153,6 +156,7 @@ void main() {
           allowsLocalLibrary: true,
           build: '',
           bringUpToDate: () async => broughtUpToDate++,
+          servedAgain: () => servedAgain++,
         );
 
     List<String> served() =>
@@ -166,6 +170,67 @@ void main() {
           isA<LibraryServedFromStore>());
       expect(LocalLibrary.source, isA<LibraryInStore>());
       expect(served(), ['a', 'b']);
+    });
+
+    test('a later start serves what the store holds, whatever Hive holds since',
+        () async {
+      await open();
+      await container.read(libraryStoreProvider.notifier).close();
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      await box.delete('a');
+      await box.put(
+        'z',
+        generatedStrategy(Optionals.unset).copyWith(id: 'z', name: 'Z'),
+      );
+      await box.put(
+        'b',
+        generatedStrategy(Optionals.unset).copyWith(id: 'b', name: 'B in Hive'),
+      );
+
+      await open();
+
+      expect(container.read(libraryMigrationProvider)!.migration,
+          isA<MigrationWasFinished>());
+      expect(served(), ['a', 'b']);
+      expect(const LocalLibrary().storedStrategy('b')!.name, 'B');
+    });
+
+    test(
+        'closing the left-behind dialog is kept in the store, with what was '
+        'left behind, across a reopen', () async {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).put(
+        'newer',
+        generatedStrategy(Optionals.unset).copyWith(
+          id: 'newer',
+          name: 'Newer',
+          versionNumber: Settings.versionNumber + 1,
+        ),
+      );
+      await open();
+      final first =
+          switch (container.read(libraryMigrationProvider)!.migration) {
+        MigrationFinishedNow(:final record) => record,
+        final other => fail('$other'),
+      };
+      expect(first.leftBehindClosed, isFalse);
+
+      await recordLeftBehindClosed(container, first);
+      await container.read(libraryStoreProvider.notifier).close();
+      await open();
+
+      final again =
+          switch (container.read(libraryMigrationProvider)!.migration) {
+        MigrationWasFinished(:final record) => record,
+        final other => fail('$other'),
+      };
+      expect(again.leftBehindClosed, isTrue);
+      List<(String, String, String)> named(List<LeftBehind> entries) => [
+            for (final entry in entries)
+              (entry.publicId, entry.name, entry.reason),
+          ];
+      expect(named(again.strategies), named(first.strategies));
+      expect(named(again.folders), named(first.folders));
+      expect(named(again.strategies).single.$1, 'newer');
     });
 
     test(
@@ -227,6 +292,7 @@ void main() {
           isA<LibraryServedFromStore>());
       expect(served(), ['a', 'b']);
       expect(broughtUpToDate, 1);
+      expect(servedAgain, 1);
     });
   });
 }

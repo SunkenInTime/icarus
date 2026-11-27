@@ -318,6 +318,14 @@ Future<void> main(List<String> args) async {
         }
       }
 
+      void tellWhatWasLeftBehind(Future<void> firstFrame) =>
+          showWhatWasLeftBehind(
+            appProviderContainer.read(libraryMigrationProvider),
+            firstFrame: firstFrame,
+            closed: (record) =>
+                recordLeftBehindClosed(appProviderContainer, record),
+          );
+
       final movedIntoStore = await openLibraryOnStore(
         appProviderContainer,
         storeLaunch,
@@ -325,6 +333,7 @@ Future<void> main(List<String> args) async {
         allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
         build: Settings.versionName,
         bringUpToDate: bringLibraryUpToDate,
+        servedAgain: () => tellWhatWasLeftBehind(Future.value()),
       );
       await bringLibraryUpToDate();
 
@@ -438,11 +447,8 @@ Future<void> main(List<String> args) async {
               mode: mode,
             );
       }
-      showWhatWasLeftBehind(
-        appProviderContainer.read(libraryMigrationProvider),
-        firstFrame: WidgetsBinding.instance.waitUntilFirstFrameRasterized,
-        closed: (record) =>
-            recordLeftBehindClosed(appProviderContainer, record),
+      tellWhatWasLeftBehind(
+        WidgetsBinding.instance.waitUntilFirstFrameRasterized,
       );
       if (driveBuild) startDrive();
     },

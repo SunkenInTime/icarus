@@ -117,6 +117,14 @@ final class LibraryNotOpenedWrite implements Exception {
   String toString() => 'the library could not be opened, so nothing was saved';
 }
 
+final class LibraryNotOpenedExport implements Exception {
+  const LibraryNotOpenedExport();
+
+  @override
+  String toString() =>
+      'the library could not be opened, so nothing was exported';
+}
+
 final _nothingHeld = StoreRecords<Never>();
 
 final class LocalLibrary {
@@ -228,55 +236,49 @@ final class LocalLibrary {
           },
       };
 
-  Future<LibraryWrite> renameStrategy(StrategyData stored, String name) {
-    final before = stored.name;
-    return _changeStrategy(
-      stored,
-      () => stored.name = name,
-      () => stored.name = before,
-    );
-  }
+  Future<LibraryWrite> renameStrategy(StrategyData stored, String name) =>
+      switch (source) {
+        LibraryInStore(:final library) => library.renameStrategy(stored, name),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => _saveInHive(
+            stored,
+            () => stored.name = name,
+          ),
+      };
 
-  Future<LibraryWrite> moveStrategy(StrategyData stored, String? folderId) {
-    final before = stored.folderID;
-    return _changeStrategy(
-      stored,
-      () => stored.folderID = folderId,
-      () => stored.folderID = before,
-    );
-  }
+  Future<LibraryWrite> moveStrategy(StrategyData stored, String? folderId) =>
+      switch (source) {
+        LibraryInStore(:final library) =>
+          library.moveStrategy(stored, folderId),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => _saveInHive(
+            stored,
+            () => stored.folderID = folderId,
+          ),
+      };
 
-  Future<LibraryWrite> _changeStrategy(
+  Future<LibraryWrite> _saveInHive(
     StrategyData stored,
     void Function() change,
-    void Function() undo,
   ) {
-    switch (source) {
-      case LibraryInStore(:final library):
-        return library.changeStrategy(stored, change, undo);
-      case LibraryNotOpened():
-        return _notOpened();
-      case LibraryInHive():
-        change();
-        return switch (_following) {
-          null => _write(stored.save),
-          final following => _write(
-              () => following._tracked(
-                LibraryTouch(
-                  strategies: [stored.id],
-                  folders: const [],
-                  wrote: stored,
-                ),
-                stored.save,
-              ),
+    change();
+    return switch (_following) {
+      null => _write(stored.save),
+      final following => _write(
+          () => following._tracked(
+            LibraryTouch(
+              strategies: [stored.id],
+              folders: const [],
+              wrote: stored,
             ),
-        };
-    }
+            stored.save,
+          ),
+        ),
+    };
   }
 
   Future<LibraryWrite> deleteStrategy(String strategyId) => switch (source) {
-        LibraryInStore(:final library) =>
-          library.deleteStrategies([strategyId]),
+        LibraryInStore(:final library) => library.deleteStrategy(strategyId),
         LibraryNotOpened() => _notOpened(),
         LibraryInHive() => switch (_following) {
             null => _write(() => _strategyBox.delete(strategyId)),
@@ -310,58 +312,40 @@ final class LocalLibrary {
     required Color? customColor,
     required FolderColor color,
   }) {
-    final before = (
-      name: stored.name,
-      iconId: stored.iconId,
-      customColor: stored.customColor,
-      color: stored.color,
-    );
-    return _changeFolder(
-      stored,
-      () => stored
-        ..name = name
-        ..iconId = iconId
-        ..customColor = customColor
-        ..color = color,
-      () => stored
-        ..name = before.name
-        ..iconId = before.iconId
-        ..customColor = before.customColor
-        ..color = before.color,
-    );
+    void change() => stored
+      ..name = name
+      ..iconId = iconId
+      ..customColor = customColor
+      ..color = color;
+    return switch (source) {
+      LibraryInStore(:final library) => library.restyleFolder(stored, change),
+      LibraryNotOpened() => _notOpened(),
+      LibraryInHive() => _saveFolderInHive(stored, change),
+    };
   }
 
-  Future<LibraryWrite> moveFolder(Folder stored, String? parentId) {
-    final before = stored.parentID;
-    return _changeFolder(
-      stored,
-      () => stored.parentID = parentId,
-      () => stored.parentID = before,
-    );
-  }
+  Future<LibraryWrite> moveFolder(Folder stored, String? parentId) =>
+      switch (source) {
+        LibraryInStore(:final library) => library.moveFolder(stored, parentId),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() =>
+          _saveFolderInHive(stored, () => stored.parentID = parentId),
+      };
 
-  Future<LibraryWrite> _changeFolder(
+  Future<LibraryWrite> _saveFolderInHive(
     Folder stored,
     void Function() change,
-    void Function() undo,
   ) {
-    switch (source) {
-      case LibraryInStore(:final library):
-        return library.changeFolder(stored, change, undo);
-      case LibraryNotOpened():
-        return _notOpened();
-      case LibraryInHive():
-        change();
-        return switch (_following) {
-          null => _write(stored.save),
-          final following => _write(
-              () => following._tracked(
-                LibraryTouch(strategies: const [], folders: [stored.id]),
-                stored.save,
-              ),
-            ),
-        };
-    }
+    change();
+    return switch (_following) {
+      null => _write(stored.save),
+      final following => _write(
+          () => following._tracked(
+            LibraryTouch(strategies: const [], folders: [stored.id]),
+            stored.save,
+          ),
+        ),
+    };
   }
 
   Future<LibraryWrite> deleteFolder(String folderId) => switch (source) {
