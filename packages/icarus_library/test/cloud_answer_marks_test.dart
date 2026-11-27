@@ -18,6 +18,7 @@ import 'cloud_ordering_rules_test.dart'
         pageAWithout,
         pointAt,
         stateIn;
+import 'cloud_set_aside_test.dart' show laterLife, replaced;
 import 'cloud_support.dart';
 import 'support.dart';
 
@@ -601,6 +602,29 @@ void main() {
     expect(shown.pagesSeen, isEmpty);
     expect(shown, reloaded);
   });
+
+  test(
+    'adopting a later strategy life keeps no answer mark of the old one',
+    () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(2)));
+      client.must(arrivalAt(client, pageA(), pointAt(3)));
+      answerMove(client, pointAt(10));
+      answerReorder(client, pointAt(11));
+      final old = client.queue.shown.marks;
+      expect(old.list, isNotNull);
+      expect(old.allPages, isNotNull);
+      expect(old.pages, isNotEmpty);
+      expect(old.listFor, isNotEmpty);
+      expect(old.rows, isNotEmpty);
+      client.must(
+        arrivalAt(client, headerReadOf(replaced(initialRows())), pointAt(12)),
+      );
+      expect(client.queue.shown.strategy?.life, laterLife);
+      expect(client.queue.shown.marks.isEmpty, isTrue);
+      expect(client.queue.shown.marks.rowsOn, isEmpty);
+    },
+  );
 
   group('a timed answer whose clock never catches up', () {
     test('two answers that wrote different items on one page release the '
