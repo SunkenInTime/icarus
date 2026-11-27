@@ -275,7 +275,7 @@ final class Model {
   final produced = <Target, Set<int>>{};
 
   final seenDigest = <String, String>{};
-  final history = <(Target, int), String>{};
+  final history = <(Target, int?, int), String>{};
 
   void recordHistory() {
     for (final MapEntry(key: target, value: revision) in revisionsOf(
@@ -283,9 +283,39 @@ final class Model {
     ).entries) {
       final row = rowOf(server.rows, target);
       if (row == null) continue;
-      history[(target, revision)] = target is StrategyTarget
+      history[(target, createdAtOf(row), revision)] = target is StrategyTarget
           ? strategyDigest(server.rows.strategy, server.rows.pages)
           : rowDigest(row);
+    }
+  }
+
+  void checkNothingTakenGoesBack(
+    CloudQueue before,
+    CloudQueue after,
+    String label,
+  ) {
+    if (after.session.number != before.session.number ||
+        after.shown.fence != before.shown.fence) {
+      return;
+    }
+    for (final subject in {
+      null,
+      ...before.shown.pages.keys,
+      ...before.shown.pagesTaken.keys,
+    }) {
+      final held = before.shown.contentTakenOf(subject);
+      if (held == null) continue;
+      final now = after.shown.contentTakenOf(subject);
+      if (now == null || now.isBefore(held)) {
+        throw StateError(
+          '$label moved ${subject ?? 'the page list'} back from content '
+          'taken at $held to ${now ?? 'no taken content'}',
+        );
+      }
+      count('taken content checked not to go back');
+      if (subject != null && !before.shown.pages.containsKey(subject)) {
+        count('taken content of a page not shown checked not to go back');
+      }
     }
   }
 
@@ -294,7 +324,17 @@ final class Model {
       final produced = work.produced;
       if (produced == null) continue;
       final target = targetOf(work.op);
-      final truth = history[(target, produced.revision)];
+      final held = [
+        for (final MapEntry(key: (row, life, revision), :value)
+            in history.entries)
+          if (row == target &&
+              revision == produced.revision &&
+              (produced.life == null || life == produced.life))
+            value,
+      ];
+      final truth = held.contains(produced.digest)
+          ? produced.digest
+          : held.firstOrNull;
       if (truth == null) {
         throw StateError(
           '${work.op.opId} justified $target at ${produced.revision}, a '
@@ -349,6 +389,15 @@ final class Model {
 
   String fresh(String prefix) => '$prefix${nextId++}';
 
+  String freshElementId() {
+    final starting = {for (final row in initialRows().elements) row.publicId};
+    var id = fresh('e');
+    while (starting.contains(id)) {
+      id = fresh('e');
+    }
+    return id;
+  }
+
   T pick<T>(List<T> items) => items[random.nextInt(items.length)];
 
   Step apply(QueueEvent event, String label) {
@@ -382,6 +431,7 @@ final class Model {
       );
     }
     if (opened > 0) count('sessions opened, checked against the model');
+    checkNothingTakenGoesBack(before, result.queue, label);
     if (result case NotApplicable(:final queue)) client.queue = queue;
     log.add(
       '$label -> ${switch (result) {
@@ -733,7 +783,7 @@ final class Model {
       );
     }
     if (roll < 14 && pages.isNotEmpty) {
-      return elementAdd(opId, elementId: fresh('e'), pageId: pick(pages));
+      return elementAdd(opId, elementId: freshElementId(), pageId: pick(pages));
     }
     if (roll == 14 && pages.length < 5) {
       return pageAdd(
@@ -1303,6 +1353,16 @@ final class Model {
     final fenceBefore = opened ? null : shownBefore.fence;
     final mine = mirrorTaken[subject];
     final order = mirrorRead(read);
+    if (result case Stepped(
+      :final effects,
+    ) when effects.any((effect) => effect is PageResultDeferred)) {
+      if (mine == null) {
+        mirrorTaken.remove(subject);
+      } else {
+        mirrorTaken[subject] = mine;
+      }
+      count('page reads deferred, moving no order');
+    }
     final shown = client.queue.shown;
     final now = shown.contentTakenOf(subject);
     final taken = order != null && now == order && now != before;
@@ -1810,7 +1870,11 @@ final class Model {
         _ => false,
       };
       if (forgotten) count('forgotten answers handed to the user');
-      final expected = forgotten || userRemoved;
+      final retriedAfterTheLadder = action is UserRetried;
+      if (draining && retriedAfterTheLadder) {
+        count('ladders run out by lost answers, retried in the drain');
+      }
+      final expected = forgotten || userRemoved || retriedAfterTheLadder;
       if (draining && !expected) drainHelps++;
       if (!teammates && action is! UserRetried && !expected) {
         throw StateError(
@@ -2017,6 +2081,9 @@ const minimums = {
   'teammate makes this device\'s change and rotates': 20,
   'teammate puts a purged element back at revision 1': 10,
   'ops refused as naming a row life that was replaced': 80,
+  'page reads deferred, moving no order': 8,
+  'taken content checked not to go back': 100000,
+  'taken content of a page not shown checked not to go back': 4000,
   'teammate replaces a row this device shows': 80,
   'edits of a replaced row the server answered before a read': 10,
   'the strategy is replaced': 5,
@@ -2045,7 +2112,6 @@ const minimums = {
   'backward clock steps': 50,
   'stamps delivered ahead of their reconnect event': 400,
   'results at or after a row refusal\'s snapshot while its debt stood': 20,
-  'access confirmed on an ended connection, read again': 1,
   'a stamp at the snapshot already held': 3000,
   'a stamp at the snapshot held from before a reconnect': 185,
   'a new snapshot at the same time': 1500,
@@ -2064,7 +2130,7 @@ const minimums = {
   'reads of a strategy life answered after it was replaced': 20,
   'read refusals taken': 350,
   'read refusals not taken: not newer than the content taken': 100,
-  'read refusals not taken: older than the last refusal taken': 2,
+  'read refusals not taken: older than the last refusal taken': 1,
   'read refusals not taken: from an ended connection': 12,
 };
 

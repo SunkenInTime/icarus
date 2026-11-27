@@ -148,6 +148,9 @@ final class Server {
   }
 
   void reupload() {
+    for (final opId in firstClient.keys) {
+      if (landed(opId)) appliedBeforePurge.add(opId);
+    }
     heldIds.addAll([
       for (final row in rows.elements) row.publicId,
       for (final row in rows.lineupGroups) row.publicId,
