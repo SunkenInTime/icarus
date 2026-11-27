@@ -126,7 +126,7 @@
   {"wait": 1},
   {"shot": "{out}/12-edit-moved.png"},
   {"expectSelected": 2},
-  {"tapKey": "lineup-edit-save"},
+  {"tapAt": [1197, 871]},
   {"wait": 1},
   {"shot": "{out}/13-edit-saved.png"},
   {"logLineups": "after-edit"},

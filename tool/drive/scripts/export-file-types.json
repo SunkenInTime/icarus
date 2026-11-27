@@ -13,7 +13,7 @@
   {"waitFile": "{out}/saved/renamed.ica", "seconds": 20},
   {"tapAt": [124, 142]},
   {"wait": 2},
-  {"tapAt": [835, 618]},
+  {"tapAt": [835, 649]},
   {"waitFile": "{out}/saved/renamed.png", "seconds": 20},
   {"wait": 2},
   {"tapAt": [92, 142]},
