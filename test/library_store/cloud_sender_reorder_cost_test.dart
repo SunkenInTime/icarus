@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart' show strategyId;
+import 'server_fixtures.dart' show strategyId;
 import 'sender_world.dart';
 
 const pages = ['p2', 'p3', 'p4', 'p5'];
@@ -59,6 +59,35 @@ void main() {
     expect(calls, {
       'send reorder': 1,
       'send move-1': 1,
+      'list': 1,
+      'page p1': 1,
+    });
+  });
+
+  test(
+      'an edit of one item followed by a rename of its page reads the page '
+      'list and that page once, as main does', () {
+    final calls = callsAfter((world) {
+      world.commitMove(1);
+      world.settle(const Duration(seconds: 5));
+      final revision = (world
+          .rowOf(
+            (content) =>
+                content.pages.firstWhere((page) => page.publicId == 'p1'),
+          )
+          .toJson()! as Map)['revision']! as int;
+      world.commit([
+        PagePatchOp(
+          opId: 'rename',
+          pagePublicId: 'p1',
+          expectedPageRevision: revision,
+          name: 'Renamed',
+        ),
+      ]);
+    });
+    expect(calls, {
+      'send move-1': 1,
+      'send rename': 1,
       'list': 1,
       'page p1': 1,
     });
