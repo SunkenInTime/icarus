@@ -257,16 +257,29 @@ class ConvexStrategyRepository {
   Stream<RemoteStrategyShell> watchShell(
     String strategyPublicId, {
     String? shareToken,
-  }) {
-    return _api.strategy
-        .getShell(
-          clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
-          strategyPublicId: strategyPublicId,
-          shareToken: _optional(shareToken),
-        )
-        .watch()
-        .map(_strategyShell);
-  }
+  }) =>
+      _shellQuery(strategyPublicId, shareToken).watch().map(_strategyShell);
+
+  /// [watchShell], each answer with its stamp, and each refusal as a
+  /// [StampedError] rather than a stream error.
+  Stream<Stamped<RemoteStrategyShell>> watchShellStamped(
+    String strategyPublicId, {
+    String? shareToken,
+  }) =>
+      _shellQuery(strategyPublicId, shareToken)
+          .stampedOn(_stampedTransport)
+          .watch()
+          .map((stamped) => _mapStamped(stamped, _strategyShell));
+
+  ConvexQuery<StrategyGetShellResult> _shellQuery(
+    String strategyPublicId,
+    String? shareToken,
+  ) =>
+      _api.strategy.getShell(
+        clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+        strategyPublicId: strategyPublicId,
+        shareToken: _optional(shareToken),
+      );
 
   Stream<RemotePageList> watchPageList(
     String strategyPublicId, {
@@ -448,18 +461,67 @@ class ConvexStrategyRepository {
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
+  }) =>
+      _watchPage(
+        strategyPublicId,
+        pagePublicId,
+        shareToken,
+        whole: (query) => query.watch().map(_unstamped),
+        parts: (queries) =>
+            assembledPages(ConvexQuery.watchTogether(queries)).map(_unstamped),
+      ).map((seen) => seen.value);
+
+  /// [watchPageSnapshot], each answer with its stamp, and each refusal of
+  /// the page as a [StampedError] rather than a stream error.
+  Stream<Stamped<RemotePageSnapshot>> watchPageSnapshotStamped({
+    required String strategyPublicId,
+    required String pagePublicId,
+    String? shareToken,
+  }) {
+    final transport = _stampedTransport;
+    return _stampedFrom(
+      _watchPage(
+        strategyPublicId,
+        pagePublicId,
+        shareToken,
+        whole: (query) => _seenEach(query.stampedOn(transport).watch()),
+        parts: (queries) => _seenEach(
+          StampedConvexQuery.watchTogether(transport, queries),
+        ).map(
+          (seen) => (
+            value: assemblePage(
+              seen.value.first! as PageGetFrameResult,
+              seen.value.skip(1).cast<PageGetElementSliceResult>().toList(),
+            ),
+            stamp: seen.stamp,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Stream<_Seen<RemotePageSnapshot, S>> _watchPage<S>(
+    String strategyPublicId,
+    String pagePublicId,
+    String? shareToken, {
+    required Stream<_Seen<PageGetSnapshotResult, S>> Function(
+      ConvexQuery<PageGetSnapshotResult>,
+    ) whole,
+    required Stream<_Seen<PageGetSnapshotResult, S>> Function(
+      List<ConvexQuery<Object?>>,
+    ) parts,
   }) {
     final key = _pageKey(strategyPublicId, pagePublicId, shareToken);
-    late final StreamController<RemotePageSnapshot> controller;
-    StreamSubscription<PageGetSnapshotResult>? whole;
-    StreamSubscription<PageGetSnapshotResult>? sliced;
+    late final StreamController<_Seen<RemotePageSnapshot, S>> controller;
+    StreamSubscription<_Seen<PageGetSnapshotResult, S>>? watchedWhole;
+    StreamSubscription<_Seen<PageGetSnapshotResult, S>>? sliced;
     var slicing = false;
     var registered = false;
     String? firstVersion;
-    PageGetSnapshotResult? lastWhole;
+    _Seen<PageGetSnapshotResult, S>? lastWhole;
 
-    void deliver(RemotePageSnapshot page) {
-      controller.add(page);
+    void deliver(RemotePageSnapshot page, S stamp) {
+      controller.add((value: page, stamp: stamp));
       _tell(strategyPublicId, page, shareToken);
     }
 
@@ -471,9 +533,9 @@ class ConvexStrategyRepository {
       sliced = null;
       slicing = false;
       if (stopping != null) unawaited(stopping.cancel());
-      if (lastWhole case final page?) {
-        firstVersion = _pageVersion(page);
-        deliver(_pageSnapshot(page));
+      if (lastWhole case (:final value, :final stamp)) {
+        firstVersion = _pageVersion(value);
+        deliver(_pageSnapshot(value), stamp);
       }
     }
 
@@ -487,21 +549,19 @@ class ConvexStrategyRepository {
       slicing = true;
       final (frame, slices) =
           _pageParts(strategyPublicId, pagePublicId, shareToken, starts);
-      sliced = assembledPages(
-        ConvexQuery.watchTogether([frame, ...slices]),
-      ).listen(
+      sliced = parts([frame, ...slices]).listen(
         (assembled) {
-          final page = _pageSnapshot(assembled);
+          final page = _pageSnapshot(assembled.value);
           final (_, watchers) = _slicedPages[key] ?? (null, 0);
-          if (whole case final stopping?) {
-            whole = null;
+          if (watchedWhole case final stopping?) {
+            watchedWhole = null;
             unawaited(stopping.cancel());
             _slicedPages[key] = (page, watchers + 1);
             registered = true;
           } else {
             _slicedPages[key] = (page, watchers);
           }
-          deliver(page);
+          deliver(page, assembled.stamp);
         },
         onError: (Object error, StackTrace stackTrace) {
           if (!registered) {
@@ -520,15 +580,16 @@ class ConvexStrategyRepository {
       );
     }
 
-    controller = StreamController<RemotePageSnapshot>(
+    controller = StreamController<_Seen<RemotePageSnapshot, S>>(
       onListen: () {
-        whole = _wholePage(strategyPublicId, pagePublicId, shareToken)
-            .watch()
-            .listen(
-          (page) {
-            lastWhole = page;
+        watchedWhole =
+            whole(_wholePage(strategyPublicId, pagePublicId, shareToken))
+                .listen(
+          (seen) {
+            lastWhole = seen;
             if (slicing) return;
-            deliver(_pageSnapshot(page));
+            final page = seen.value;
+            deliver(_pageSnapshot(page), seen.stamp);
             // The web client can hand over its cached answer and then the
             // same one from the server: only different rows are a change.
             final version = _pageVersion(page);
@@ -539,11 +600,11 @@ class ConvexStrategyRepository {
         );
       },
       onPause: () {
-        whole?.pause();
+        watchedWhole?.pause();
         sliced?.pause();
       },
       onResume: () {
-        whole?.resume();
+        watchedWhole?.resume();
         sliced?.resume();
       },
       onCancel: () async {
@@ -556,7 +617,7 @@ class ConvexStrategyRepository {
           }
         }
         await Future.wait([
-          if (whole case final w?) w.cancel(),
+          if (watchedWhole case final w?) w.cancel(),
           if (sliced case final s?) s.cancel(),
         ]);
       },
@@ -1971,6 +2032,42 @@ InvitesCreateArgsRole _shareRole(String value) => switch (value) {
       'viewer' => InvitesCreateArgsRole.viewer,
       _ => throw ArgumentError.value(value, 'role', 'Unsupported share role'),
     };
+
+typedef _Seen<T, S> = ({T value, S stamp});
+
+_Seen<T, Null> _unstamped<T>(T value) => (value: value, stamp: null);
+
+final class _RefusedAt {
+  const _RefusedAt(this.error, this.stamp);
+
+  final ConvexTransportError error;
+  final ResultStamp stamp;
+}
+
+Stream<_Seen<T, ResultStamp>> _seenEach<T>(Stream<Stamped<T>> stamped) =>
+    stamped.map(
+      (each) => switch (each) {
+        StampedValue(:final value, :final stamp) => (
+            value: value,
+            stamp: stamp,
+          ),
+        StampedError(:final error, :final stamp) =>
+          throw _RefusedAt(error, stamp),
+      },
+    );
+
+Stream<Stamped<T>> _stampedFrom<T>(Stream<_Seen<T, ResultStamp>> seen) =>
+    seen.transform(
+      StreamTransformer.fromHandlers(
+        handleData: (each, sink) =>
+            sink.add(StampedValue(each.value, each.stamp)),
+        handleError: (error, stackTrace, sink) => switch (error) {
+          _RefusedAt(:final error, :final stamp) =>
+            sink.add(StampedError(error, stamp)),
+          _ => sink.addError(error, stackTrace),
+        },
+      ),
+    );
 
 Stamped<T> _mapStamped<V, T>(Stamped<V> stamped, T Function(V) map) =>
     switch (stamped) {

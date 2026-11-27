@@ -107,3 +107,7 @@ final class LibraryStoreLaunch {
 final libraryStoreSwitchProvider = Provider<LibraryStoreSwitch>(
   (ref) => const StoreSwitchOff(),
 );
+
+final cloudStoreSwitchProvider = Provider<CloudStoreSwitch>(
+  (ref) => const CloudStoreOff(),
+);

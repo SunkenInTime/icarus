@@ -7,6 +7,7 @@ import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/page_slices.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 
+import 'stamped_over.dart';
 import 'strategy_copy_fixtures.dart';
 import 'subscribe_together_from_each.dart';
 
@@ -18,6 +19,103 @@ void main() {
     expect(pageSliceStarts(42), ['', '4', '8', 'c']);
     expect(pageSliceStarts(87), ['', '2', '4', '6', '8', 'a', 'c', 'e']);
     expect(pageSliceStarts(500), ['', ...'123456789abcdef'.split('')]);
+  });
+
+  group('a page watched stamped', () {
+    late _Server server;
+    late StampedOver stamped;
+    late ConvexStrategyRepository repository;
+    late List<Stamped<RemotePageSnapshot>> answers;
+    late List<Object> errors;
+    StreamSubscription<Stamped<RemotePageSnapshot>>? watching;
+
+    setUp(() {
+      server = _Server();
+      stamped = StampedOver(server);
+      repository = ConvexStrategyRepository.stamped(stamped);
+      answers = [];
+      errors = [];
+    });
+    tearDown(() => watching?.cancel());
+
+    Future<void> watch() async {
+      watching = repository
+          .watchPageSnapshotStamped(
+            strategyPublicId: 'strategy',
+            pagePublicId: 'p',
+          )
+          .listen(answers.add, onError: errors.add);
+      await pumpEventQueue();
+    }
+
+    List<Map<String, Object?>> agents(int count, {String? moved}) => [
+          for (var index = 0; index < count; index++)
+            agentRow(
+              _id(index),
+              'p',
+              revision: _id(index) == moved ? 2 : 1,
+            ),
+        ];
+
+    test(
+        'hands over from the whole page to its slices as the plain watch '
+        'does, each page with the stamp it came with, and a read of it is '
+        'answered from the slices', () async {
+      await watch();
+      server.publish(agents(20));
+      server.publish(agents(20, moved: _id(1)));
+      await pumpEventQueue();
+
+      expect(stamped.calls, [
+        'subscribeStamped page:getSnapshot',
+        'subscribeTogetherStamped page:getFrame,page:getElementSlice,'
+            'page:getElementSlice',
+      ]);
+      expect(server.cancelled, ['page:getSnapshot']);
+      final pages = [
+        for (final answer in answers) (answer as StampedValue).value,
+      ];
+      expect(pages, hasLength(3));
+      expect(
+        pages.last.elements.map((element) => element.revision),
+        contains(2),
+      );
+      final snapshots = [for (final answer in answers) answer.stamp.snapshot];
+      expect(snapshots, orderedEquals([...snapshots]..sort()));
+      expect(snapshots.toSet(), hasLength(3));
+
+      final read = await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+      expect(server.reads, isEmpty);
+      expect(read.elements, pages.last.elements);
+      expect(errors, isEmpty);
+    });
+
+    test(
+        'a refusal of the page comes as a StampedError at its stamp, and the '
+        'watch goes on', () async {
+      await watch();
+      server.publish(agents(4));
+      await pumpEventQueue();
+      server.fail(
+        'page:getSnapshot',
+        const ConvexTransportError(rawCode: 'FORBIDDEN', message: 'page'),
+      );
+      await pumpEventQueue();
+      server.publish(agents(5));
+      await pumpEventQueue();
+
+      expect(errors, isEmpty);
+      expect(answers, hasLength(3));
+      expect(
+        (answers[1] as StampedError).error.rawCode,
+        'FORBIDDEN',
+      );
+      expect(answers[1].stamp.snapshot, 2);
+      expect((answers[2] as StampedValue).value.elements, hasLength(5));
+    });
   });
 
   group('a watched page', () {

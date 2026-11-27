@@ -16,6 +16,7 @@ import 'package:icarus/providers/collab/client_upgrade_required_provider.dart';
 import 'package:icarus/providers/collab/cloud_copy_scope_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/editor_subscriptions_provider.dart';
 import 'package:icarus/providers/collab/strategy_copy_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
@@ -409,7 +410,7 @@ class RemoteEditorSnapshotNotifier
     final epoch = ++_readEpoch;
     var shellRead = false;
     try {
-      final repository = ref.read(convexStrategyRepositoryProvider);
+      final repository = ref.read(editorSubscriptionsProvider).repository;
       final scope = _copyScope;
       final shellAskedAt = DateTime.now();
       final shell = await repository.fetchShell(
@@ -501,8 +502,8 @@ class RemoteEditorSnapshotNotifier
     await _shellSubscription?.cancel();
     final scope = _copyScope;
     _shellSubscription = ref
-        .read(convexStrategyRepositoryProvider)
-        .watchShell(strategyPublicId, shareToken: _shareToken)
+        .read(editorSubscriptionsProvider)
+        .shell(strategyPublicId, shareToken: _shareToken)
         .listen(
       (shell) {
         _keepShell(shell, askedAt: DateTime.now(), scope: scope);
@@ -562,8 +563,8 @@ class RemoteEditorSnapshotNotifier
     );
     final scope = _copyScope;
     _pageSubscription = ref
-        .read(convexStrategyRepositoryProvider)
-        .watchPageSnapshot(
+        .read(editorSubscriptionsProvider)
+        .page(
           strategyPublicId: strategyPublicId,
           pagePublicId: pagePublicId,
           shareToken: _shareToken,
@@ -629,12 +630,14 @@ class RemoteEditorSnapshotNotifier
     try {
       final scope = _copyScope;
       final askedAt = DateTime.now();
-      final page =
-          await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
-                strategyPublicId: strategyPublicId,
-                pagePublicId: pagePublicId,
-                shareToken: _shareToken,
-              );
+      final page = await ref
+          .read(editorSubscriptionsProvider)
+          .repository
+          .fetchPageSnapshot(
+            strategyPublicId: strategyPublicId,
+            pagePublicId: pagePublicId,
+            shareToken: _shareToken,
+          );
       _keepPage(page, askedAt: askedAt, scope: scope);
       return _received(page);
     } catch (error) {
