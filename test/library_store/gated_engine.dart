@@ -6,6 +6,7 @@ final class CommitGate {
   Completer<void>? _held;
   var failNext = false;
   var doubtNext = false;
+  var doubtUnlandedNext = false;
   var commits = 0;
   var reads = 0;
   final puts = <(String, String)>[];
@@ -111,6 +112,10 @@ final class _GatedLease implements StorageLease {
       gate.doubtNext = false;
       await inner.commit(changes);
       return const CommitUnknown(DeviceFailure('the disk stopped answering'));
+    }
+    if (gate.doubtUnlandedNext) {
+      gate.doubtUnlandedNext = false;
+      return const CommitUnknown(DeviceFailure('the disk never got the write'));
     }
     return inner.commit(changes);
   }
