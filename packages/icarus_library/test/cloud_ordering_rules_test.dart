@@ -278,6 +278,25 @@ void main() {
     });
   });
 
+  test('a newer list that removes the page still keeps the page\'s taken '
+      'order', () {
+    final client = connectedOn();
+    client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(10)));
+    client.must(arrivalAt(client, pageA(), pointAt(20)));
+    client.must(
+      arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(30)),
+    );
+    expect(client.queue.shown.pages, isNot(contains('page-a')));
+    expect(
+      client.queue.shown.pagesTaken['page-a'],
+      ResultOrder(
+        session: client.queue.session.number,
+        client: testClient,
+        snapshot: pointAt(20).snapshot,
+      ),
+    );
+  });
+
   group('a page read the list has not shown yet', () {
     test('owes a list at its own order, so a list between two deferred page '
         'reads, missing the later page, is not current', () {
