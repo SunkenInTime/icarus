@@ -403,15 +403,19 @@ base class SenderStore {
       case NotSaved(:final failure):
         return _troubled(strategyId, _failed(failure, StoreStep.refusedSave));
       case SaveInDoubt(:final failure):
-        final words = storageFailureWords(failure, StoreStep.saveInDoubt);
-        AppErrorReporter.reportError(
-          'The library store lost the answer to a cloud write for '
-          '$strategyId, which may have landed: $words',
-          source: 'libraryStore.lostAnswer',
-          promptUser: false,
-        );
-        return _troubled(strategyId, StoreShut(words));
+        return _lostAnswer(strategyId, failure);
     }
+  }
+
+  WriteTroubled _lostAnswer(String strategyId, StorageFailure failure) {
+    final words = storageFailureWords(failure, StoreStep.saveInDoubt);
+    AppErrorReporter.reportError(
+      'The library store lost the answer to a cloud write for $strategyId, '
+      'which may have landed: $words',
+      source: 'libraryStore.lostAnswer',
+      promptUser: false,
+    );
+    return _troubled(strategyId, StoreShut(words));
   }
 
   WriteTroubled _troubled(String strategyId, StoreTrouble trouble) {
@@ -479,10 +483,7 @@ base class SenderStore {
       case NotSaved(:final failure):
         return _troubled(strategyId, _failed(failure, StoreStep.refusedSave));
       case SaveInDoubt(:final failure):
-        return _troubled(
-          strategyId,
-          StoreShut(storageFailureWords(failure, StoreStep.saveInDoubt)),
-        );
+        return _lostAnswer(strategyId, failure);
     }
   }
 

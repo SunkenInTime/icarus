@@ -362,6 +362,7 @@ void main() {
     expect(LocalLibrary.source, isA<LibraryInHive>());
     expect(onStore(), isNull);
     expect(shown(), ['a']);
+    expect(_lossReports(), [contains('a cloud write for $strategyId')]);
   });
 
   test(
