@@ -27,7 +27,6 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:icarus/library_store/canvas_changes.dart';
 
 final placedImageProvider =
     NotifierProvider<PlacedImageProvider, ImageState>(PlacedImageProvider.new);
@@ -331,10 +330,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(images: [...newImages, temp]);
-    ActionProvider.editFollower?.onEdit(
-      (pageId) => [ObjectRaised(pageId, ActionObjectKind.image, id)],
-      'raise image',
-    );
   }
 
   void setCaption(String id, String caption) {
@@ -367,20 +362,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
     final index = PlacedWidget.getIndexByID(id, newImages);
     if (index < 0) return;
 
-    final before = ActionProvider.editFollower == null
-        ? null
-        : ActionObjectState.image(newImages[index]);
     newImages[index].updateTagColor(colorValue);
     state = state.copyWith(images: newImages);
-    if (before != null) {
-      ActionProvider.editFollower?.onEdit(
-        (pageId) => [
-          ObjectChanged(
-              pageId, before, ActionObjectState.image(newImages[index])),
-        ],
-        'tag colour image',
-      );
-    }
   }
 
   void undoAction(UserAction action) {
@@ -605,22 +588,10 @@ class PlacedImageProvider extends Notifier<ImageState> {
     final index = PlacedWidget.getIndexByID(id, newState.images);
     if (index < 0) return;
 
-    final before = ActionProvider.editFollower == null
-        ? null
-        : ActionObjectState.image(newState.images[index]);
     newState.images[index]
       ..scale = ImageScalePolicy.clamp(scale)
       ..position = position;
     state = newState;
-    if (before != null) {
-      ActionProvider.editFollower?.onEdit(
-        (pageId) => [
-          ObjectChanged(
-              pageId, before, ActionObjectState.image(newState.images[index])),
-        ],
-        'resize image',
-      );
-    }
   }
 
   /// Keeps a newly picked image on this device before anything references

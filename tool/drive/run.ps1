@@ -30,7 +30,7 @@ param(
   [string]$AccountsFile = (Join-Path $HOME '.agents\secrets\icarus\test-accounts.md'),
   [int]$TimeoutSeconds = 900,
   [string]$HiveStore,
-  [ValidateSet('off', 'shadow', 'mirror', 'ops', 'store')] [string]$LibraryStore,
+  [ValidateSet('off', 'shadow', 'mirror', 'store')] [string]$LibraryStore,
   [ValidateSet('send')] [string]$CloudStore,
   [string]$SecondAccount,
   [ValidateSet('close')] [string]$EndsBy,

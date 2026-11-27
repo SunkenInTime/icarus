@@ -20,10 +20,6 @@ final class StoreSwitchMirror extends LibraryStoreSwitch {
   const StoreSwitchMirror();
 }
 
-final class StoreSwitchOps extends LibraryStoreSwitch {
-  const StoreSwitchOps();
-}
-
 final class StoreSwitchStore extends LibraryStoreSwitch {
   const StoreSwitchStore();
 }
@@ -75,7 +71,7 @@ final class LibraryStoreLaunch {
         case readFlag:
           choice = const StoreSwitchOff();
         case opsFlag:
-          choice = mayShadow ? const StoreSwitchOps() : const StoreSwitchOff();
+          choice = const StoreSwitchOff();
         case storeFlag:
           choice =
               mayShadow ? const StoreSwitchStore() : const StoreSwitchOff();

@@ -3,7 +3,6 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show max;
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
-import 'package:icarus/library_store/canvas_changes.dart';
 import 'package:icarus/strategy/local_library_view.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/providers/collab/move_to_cloud_provider.dart';
@@ -1098,13 +1097,6 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final updated =
         strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
-    ActionProvider.editFollower?.onPagesChanged(
-      () => [
-        PageMoved(moved.id, targetIndex),
-        ...pagesRenamedBetween(strat.pages, reindexed),
-      ],
-      'page reorder',
-    );
     (await const LocalLibrary().changePages(updated)).orThrow();
   }
 
@@ -1259,13 +1251,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     final updated = strat.copyWith(
       pages: updatedPages,
       lastEdited: DateTime.now(),
-    );
-    ActionProvider.editFollower?.onPagesChanged(
-      () => [
-        if (objectOnPage(sourcePage, widgetId) case final object?)
-          ObjectAdded(targetPage.id, object),
-      ],
-      'copy item to page',
     );
     (await const LocalLibrary().changePages(updated)).orThrow();
     return PageCopyResult.copied;
@@ -1712,18 +1697,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       ],
       lastEdited: DateTime.now(),
     );
-    ActionProvider.editFollower?.onPagesChanged(
-      () => [
-        for (final page in strat.pages)
-          if (page.id == target.id)
-            LineupsChanged(
-              page.id,
-              removed: LineUpGraph.empty,
-              added: lineUps.deepCopy(),
-            ),
-      ],
-      'copy lineups to page',
-    );
     try {
       (await const LocalLibrary().changePages(updated)).orThrow();
     } catch (error, stackTrace) {
@@ -2120,13 +2093,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       pages: reindexed,
       lastEdited: DateTime.now(),
     );
-    ActionProvider.editFollower?.onPagesChanged(
-      () => [
-        PageAdded(newPage, index: insertionIndex, copyOf: source.id),
-        ...pagesRenamedBetween([...strat.pages, newPage], reindexed),
-      ],
-      'page add',
-    );
     (await const LocalLibrary().changePages(updated)).orThrow();
 
     await setActivePageAnimated(newPage.id);
@@ -2199,10 +2165,6 @@ class StrategyProvider extends Notifier<StrategyState> {
         else
           page,
     ];
-    ActionProvider.editFollower?.onPagesChanged(
-      () => [PageRenamed(pageId, trimmed, isAutoNamed: false)],
-      'page rename',
-    );
     (await const LocalLibrary().changePages(
       strat.copyWith(pages: updatedPages, lastEdited: DateTime.now()),
     ))
@@ -2281,13 +2243,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     final nextActivePageId =
         activePageId == pageId ? reindexed.first.id : activePageId;
 
-    ActionProvider.editFollower?.onPagesChanged(
-      () => [
-        PageRemoved(pageId),
-        ...pagesRenamedBetween(strat.pages, reindexed),
-      ],
-      'page delete',
-    );
     (await const LocalLibrary().changePages(
       strat.copyWith(pages: reindexed, lastEdited: DateTime.now()),
     ))
@@ -2493,33 +2448,15 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   void setThemeProfileForCurrentStrategy(String profileId) {
     ref.read(strategyThemeProvider.notifier).setProfile(profileId);
-    _themeEdited();
   }
 
   void setThemeOverrideForCurrentStrategy(MapThemePalette palette) {
     ref.read(strategyThemeProvider.notifier).setOverride(palette);
-    _themeEdited();
   }
 
   void clearThemeOverrideForCurrentStrategy() {
     ref.read(strategyThemeProvider.notifier).clearOverride();
-    _themeEdited();
   }
-
-  void _themeEdited() => ActionProvider.editFollower?.onEdit(
-        (_) {
-          final theme = ref.read(strategyThemeProvider);
-          return [
-            StrategyFieldsChanged(
-              theme: StrategyThemeChoice(
-                profileId: theme.profileId,
-                overridePalette: theme.overridePalette,
-              ),
-            ),
-          ];
-        },
-        'theme',
-      );
 
   Future<void> renameStrategy(
     String strategyID,
@@ -2570,10 +2507,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       (await const LocalLibrary().renameStrategy(strategy, newName)).orThrow();
       if (state.strategyId == strategyID) {
         state = state.copyWith(strategyName: newName);
-        ActionProvider.editFollower?.onEdit(
-          (_) => [StrategyFieldsChanged(name: newName)],
-          'strategy name',
-        );
       }
     } else {
       log("Strategy with ID $strategyID not found.");
@@ -2921,10 +2854,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (shown == null) return;
     final isAttack = !shown.isAttack;
     ref.read(mapProvider.notifier).setAttack(isAttack);
-    ActionProvider.editFollower?.onEdit(
-      (pageId) => [PageSideSet(pageId, isAttack: isAttack)],
-      'side of the page on screen',
-    );
     setUnsaved();
     final strategyId = state.strategyId;
     if (!allPages || strategyId == null) return;
@@ -2984,14 +2913,6 @@ class StrategyProvider extends Notifier<StrategyState> {
               : page.copyWith(isAttack: isAttack),
       ],
       lastEdited: DateTime.now(),
-    );
-    ActionProvider.editFollower?.onPagesChanged(
-      () => [
-        for (final page in strat.pages)
-          if (page.id != resolvedActiveId)
-            PageSideSet(page.id, isAttack: isAttack),
-      ],
-      'side on all pages',
     );
     (await const LocalLibrary().changePages(updated)).orThrow();
   }
@@ -3101,17 +3022,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeOverridePalette: canvas.themeOverridePalette,
       clearThemeOverridePalette: canvas.themeOverridePalette == null,
       lastEdited: DateTime.now(),
-    );
-    ActionProvider.editFollower?.onPagesChanged(
-      () => [
-        for (final page in strat.pages)
-          PageSettingsChanged(
-            page.id,
-            before: page.settings,
-            after: transform(page.settings),
-          ),
-      ],
-      'settings on all pages',
     );
     (await const LocalLibrary().changePages(updated)).orThrow();
     setUnsaved();

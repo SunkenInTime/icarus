@@ -180,7 +180,6 @@ import 'package:icarus/library_store/slowed_engine.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:icarus/strategy_view.dart';
-import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_library_timings.dart';
 import 'package:icarus/dev/drive/drive_load_copy_cost.dart';
@@ -1547,7 +1546,6 @@ Future<void> _drag(
   int stepsPerLeg = 30,
   String? shotWhileHeld,
   String? markAtRelease,
-  void Function()? firstFrameAfterRelease,
 }) async {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
@@ -1597,11 +1595,6 @@ Future<void> _drag(
       position: last,
     ),
   );
-  if (firstFrameAfterRelease != null) {
-    SchedulerBinding.instance
-      ..addPostFrameCallback((_) => firstFrameAfterRelease())
-      ..scheduleFrame();
-  }
   await Future<void>.delayed(const Duration(milliseconds: 300));
   await _frames();
 }
@@ -1993,18 +1986,6 @@ Future<void> _run(Map<String, dynamic> step) async {
       SlowedEngine.commitDelay = Duration(milliseconds: (value as num).round());
       _log(
           'STORE commits now wait ${SlowedEngine.commitDelay.inMilliseconds} ms');
-    case 'actionOps':
-      (await _storeLines(
-        actionOpsStep(
-          c,
-          label: '$value',
-          expected: {...?(step['expect'] as Map<String, dynamic>?)},
-          expectedKinds: {
-            ...?(step['expectKinds'] as Map<String, dynamic>?),
-          },
-        ),
-      ))
-          .forEach(_log);
     case 'soak':
       final until = DateTime.now().add(
         Duration(milliseconds: ((value as num) * 1000).round()),
@@ -2137,33 +2118,10 @@ Future<void> _run(Map<String, dynamic> step) async {
         markAtRelease: step['mark'] as String?,
       );
     case 'path':
-      final expectOpPending = step['opStillPending'] == true;
-      String? firstFrame;
       await _drag([
         for (final p in (value as List).cast<List>())
           Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-      ],
-          stepsPerLeg: 6,
-          shotWhileHeld: step['held'] as String?,
-          firstFrameAfterRelease: switch (step['firstFrame']) {
-            final String label => () {
-                _log(
-                  'FIRST FRAME after releasing $label: drawings on screen '
-                  '${c.read(drawingProvider).elements.length}; '
-                  '${actionOpsInFlight(c)}',
-                );
-                firstFrame = opStillPendingProblem(c) ?? '';
-              },
-            _ => null,
-          });
-      if (expectOpPending) {
-        switch (firstFrame) {
-          case null:
-            throw StateError('no frame was seen after the release');
-          case final String problem when problem.isNotEmpty:
-            throw StateError(problem);
-        }
-      }
+      ], stepsPerLeg: 6, shotWhileHeld: step['held'] as String?);
     case 'scrollAt':
       final xy = (value as List).cast<num>();
       await _wheel(

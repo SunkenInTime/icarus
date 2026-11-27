@@ -13,7 +13,6 @@ import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/widgets/editor_operation_scope.dart';
 import 'package:icarus/widgets/press_scale.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -368,7 +367,6 @@ Future<void> main(List<String> args) async {
       if (shadowStore
           case (mode: Mirroring(:final mirror), opening: _, directory: _)) {
         LocalLibrary.follower = mirror;
-        ActionProvider.editFollower = storeStart.editFollower;
       }
 
       // The cloud comes up degraded rather than not at all: a failure here
@@ -431,9 +429,6 @@ Future<void> main(List<String> args) async {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _watchStrategyForDebugBreadcrumbs(),
       );
-      if (ActionProvider.editFollower case final follower?) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => follower.attach());
-      }
       if (driveBuild) {
         unawaited(
           WidgetsBinding.instance.waitUntilFirstFrameRasterized.then(

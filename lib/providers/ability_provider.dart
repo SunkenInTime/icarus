@@ -15,7 +15,6 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:icarus/library_store/canvas_changes.dart';
 
 final abilityProvider =
     NotifierProvider<AbilityProvider, List<PlacedAbility>>(AbilityProvider.new);
@@ -125,10 +124,6 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
-    ActionProvider.editFollower?.onEdit(
-      (pageId) => [ObjectRaised(pageId, ActionObjectKind.ability, id)],
-      'raise ability',
-    );
     _joinDroppedCopy(droppedCopy, id);
   }
 

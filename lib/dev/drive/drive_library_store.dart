@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/store_differences.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/canvas_units.dart';
@@ -43,7 +42,6 @@ String switchName(LibraryStoreSwitch choice) => switch (choice) {
       StoreSwitchOff() => 'off',
       StoreSwitchShadow() => 'shadow',
       StoreSwitchMirror() => 'mirror',
-      StoreSwitchOps() => 'ops',
       StoreSwitchStore() => 'store',
     };
 
@@ -775,27 +773,19 @@ Future<List<String>> mirrorEndLines(ProviderContainer c) async {
         ]),
       );
   final drainedAfter = clock.elapsed;
-  final endSave = await saveOpenLocalStrategy(c, mirror);
-  await mirror.releaseTakenUp();
   final checkClock = Stopwatch()..start();
   final check = await c.read(shadowProvider.notifier).checkAgain(ready);
   final lines = [
     'STORE mirror ${_describePhase(mirror.phase)}; ${mirror.batches} batches '
         'written after saves; drained ${drainedAfter.inMilliseconds} ms after '
         'the script ended',
-    if (endSave != null) endSave,
-    ...actionOpsEndLines(mirror),
     ...describeCheck(check, checkClock.elapsed),
   ];
-  if (endSave != null) throw StoreStepFailed(lines);
   if (check is StoreCheckCancelled) {
     throw StoreStepFailed([
       ...lines,
       'the check did not run: the mirror ${_describePhase(mirror.phase)}',
     ]);
-  }
-  if (actionOpsEndProblem(mirror) case final problem?) {
-    throw StoreStepFailed([...lines, problem]);
   }
   if (check case final StoreChecked checked) {
     final recorded = {

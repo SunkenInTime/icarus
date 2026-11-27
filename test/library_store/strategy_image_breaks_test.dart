@@ -147,7 +147,6 @@ void main() {
       container,
       _generated(id),
       betweenSteps: breaks.breathe,
-      journaled: false,
       engine: gate == null ? null : (memory) => GatedEngine(memory, gate),
     );
     return (h, id, breaks);
