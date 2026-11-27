@@ -2171,6 +2171,9 @@ void main() {
             stdout.writeln('SWEEP seed $seed passes, known for: $cause');
           case (final cause?, _):
             stdout.writeln('SWEEP seed $seed fails as known: $cause');
+            for (final failure in failed) {
+              stdout.writeln('SWEEP   $failure');
+            }
           case (null, []):
             break;
           case (null, _):
