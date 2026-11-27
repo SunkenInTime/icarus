@@ -161,18 +161,12 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
   @override
   CloudSender? build() => null;
 
-  Future<void> beginOn(
-    Future<LibraryStoreOpened> opening, {
-    required String build,
-  }) async {
-    final LibraryStoreOpened ready;
+  Future<void> noteOpening(Future<LibraryStoreOpened> opening) async {
     try {
-      ready = opened = await opening;
+      opened = await opening;
     } catch (error) {
       openingThrew = error;
-      return;
     }
-    if (ready case LibraryStoreReady(:final store)) begin(store, build: build);
   }
 
   CloudSender begin(LibraryStore store, {required String build}) {

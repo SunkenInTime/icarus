@@ -9,6 +9,7 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
+import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -48,6 +49,15 @@ List<String> _lossReports() => [
         if (entry.source == 'libraryStore.lostAnswer') entry.message,
     ];
 
+final class _NotLeased implements StorageEngine {
+  const _NotLeased(this.leasing);
+
+  final Leasing leasing;
+
+  @override
+  Future<Leasing> lease() async => leasing;
+}
+
 final class _SignedOut extends AuthProvider {
   @override
   AppAuthState build() => AppAuthState.fromSession(null);
@@ -76,6 +86,7 @@ void main() {
   late ProviderContainer container;
   late int opens;
   late int served;
+  late Leasing? firstLease;
   late FakeServer server;
 
   setUp(() async {
@@ -85,6 +96,7 @@ void main() {
     gate = CommitGate();
     opens = 0;
     served = 0;
+    firstLease = null;
     server = FakeServer()
       ..owners[strategyId] = servedAccount
       ..rows[strategyId] = serverRows()
@@ -96,9 +108,9 @@ void main() {
         authProvider.overrideWith(_SignedOut.new),
         libraryStoreProvider.overrideWith(
           () => LibraryStoreNotifier(
-            wrapEngine: (engine) {
-              opens++;
-              return GatedEngine(engine, gate);
+            wrapEngine: (engine) => switch ((++opens, firstLease)) {
+              (1, final refused?) => _NotLeased(refused),
+              _ => GatedEngine(engine, gate),
             },
           ),
         ),
@@ -287,6 +299,97 @@ void main() {
     ]);
     expect(held.isOpen, isFalse);
     expect(store().isOpen, isTrue);
+  });
+
+  Future<void> sentOnce(String opId) async {
+    final sender = container.read(cloudSenderProvider)!;
+    expect(identical(sender.store.store, store()), isTrue);
+    sender.adopt(strategyId);
+    await _until('the adoption', () => !sender.adopting(strategyId));
+    final element = switch (await store().readPage(
+      strategyId,
+      serverRows().pages.first.publicId,
+    )) {
+      Found(:final value) => value.elements.whereType<LiveElement>().first,
+      final other => fail('$other'),
+    };
+    final seen = switch (await store().readStrategy(strategyId)) {
+      Found(:final value) => value,
+      final other => fail('$other'),
+    };
+    await store().commitAllAs(
+      servedAccount,
+      strategyId,
+      [World.moveOf(element, 1, opId)],
+      seen: seen,
+    );
+    await _until('the op sent', () => server.log.contains('send $opId'));
+    await Future<void>.delayed(const Duration(seconds: 2));
+    expect(server.log.where((line) => line == 'send $opId'), hasLength(1));
+  }
+
+  List<CloudSender> sendersBegun() {
+    final begun = <CloudSender>[];
+    container.listen(cloudSenderProvider, (_, next) {
+      if (next != null && !begun.contains(next)) begun.add(next);
+    }, fireImmediately: true);
+    return begun;
+  }
+
+  for (final (what, refused) in [
+    ('held by another instance', const HeldByAnotherWriter() as Leasing),
+    (
+      'refused for a device fault',
+      const LeaseFailed(DeviceFailure('the disk is not ready')) as Leasing,
+    ),
+  ]) {
+    test(
+        'a first open $what starts no sender, and Try again starts one on the '
+        'store it opened, which sends a pending op once', () async {
+      firstLease = refused;
+      final begun = sendersBegun();
+      final opening = await openLibraryOnStore(
+        container,
+        launch([LibraryStoreLaunch.storeFlag, LibraryStoreLaunch.cloudSendFlag]),
+        hiveDirectory: directory.path,
+        allowsLocalLibrary: true,
+        build: 'b',
+        bringUpToDate: () async {},
+        servedAgain: () => served++,
+      );
+      beginCloudSender(
+        container,
+        (opening: opening, localShadow: false, cloudSends: true),
+        build: 'b',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(onStore(), isA<LibraryNotServed>());
+      expect(begun, isEmpty);
+
+      await (onStore()! as LibraryNotServed).tryAgain();
+      await _until('a sender', () => begun.isNotEmpty);
+
+      expect(onStore(), isA<LibraryServedFromStore>());
+      expect(begun, hasLength(1));
+      await sentOnce('move-$what');
+    });
+  }
+
+  test('a first open that is ready starts exactly one sender', () async {
+    final begun = sendersBegun();
+    await open(cloud: true);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(begun, hasLength(1));
+    expect(identical(begun.single.store.store, store()), isTrue);
+  });
+
+  test('the close at exit starts no sender', () async {
+    final begun = sendersBegun();
+    await open(cloud: true);
+    await notifier().close();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(container.read(libraryStoreProvider), isA<LibraryStoreClosed>());
+    expect(begun, hasLength(1));
   });
 
   test(
