@@ -1,0 +1,28 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1280, 760]},
+  {"newLocal": "ascent", "name": "Draft {run}"},
+  {"wait": 4},
+  {"tapText": "Draft {run}", "optional": true},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"addText": "note-{run}", "at": [640, 300], "text": "Go A"},
+  {"wait": 1},
+
+  {"tapWords": "Go A"},
+  {"expectEditing": true},
+  {"typeText": " then B"},
+  {"wait": 1},
+  {"probe": "typing"},
+  {"wait": 18},
+  {"probe": "after autosave"},
+  {"expectEditing": true},
+  {"logTexts": "still editing"},
+
+  {"tapAt": [150, 600]},
+  {"expectEditing": false},
+  {"wait": 1},
+  {"logTexts": "left the box"},
+  {"exit": 1}
+]
