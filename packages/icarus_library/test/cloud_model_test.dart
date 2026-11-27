@@ -298,17 +298,23 @@ final class Model {
         after.shown.fence != before.shown.fence) {
       return;
     }
-    for (final subject in [null, ...before.shown.pages.keys]) {
+    for (final subject in {
+      null,
+      ...before.shown.pages.keys,
+      ...before.shown.pagesTaken.keys,
+    }) {
       final held = before.shown.contentTakenOf(subject);
+      if (held == null) continue;
       final now = after.shown.contentTakenOf(subject);
-      if (held != null && now != null && now.isBefore(held)) {
+      if (now == null || now.isBefore(held)) {
         throw StateError(
           '$label moved ${subject ?? 'the page list'} back from content '
-          'taken at $held to content at $now',
+          'taken at $held to ${now ?? 'no taken content'}',
         );
       }
-      if (held != null && now != null) {
-        count('taken content checked not to go back');
+      count('taken content checked not to go back');
+      if (subject != null && !before.shown.pages.containsKey(subject)) {
+        count('taken content of a page not shown checked not to go back');
       }
     }
   }
@@ -1864,7 +1870,11 @@ final class Model {
         _ => false,
       };
       if (forgotten) count('forgotten answers handed to the user');
-      final expected = forgotten || userRemoved;
+      final retriedAfterTheLadder = action is UserRetried;
+      if (draining && retriedAfterTheLadder) {
+        count('ladders run out by lost answers, retried in the drain');
+      }
+      final expected = forgotten || userRemoved || retriedAfterTheLadder;
       if (draining && !expected) drainHelps++;
       if (!teammates && action is! UserRetried && !expected) {
         throw StateError(
@@ -2073,6 +2083,7 @@ const minimums = {
   'ops refused as naming a row life that was replaced': 80,
   'page reads deferred, moving no order': 8,
   'taken content checked not to go back': 100000,
+  'taken content of a page not shown checked not to go back': 4000,
   'teammate replaces a row this device shows': 80,
   'edits of a replaced row the server answered before a read': 10,
   'the strategy is replaced': 5,
