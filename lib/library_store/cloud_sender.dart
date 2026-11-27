@@ -1111,7 +1111,16 @@ final class CloudSender {
           point: point,
           requestedAt: requestedAt,
         );
-        final written = await _store.write(owner, id, [
+        final now = await _currentGeneration();
+        if (disposed) return const _Ended();
+        if (now == null) {
+          _note(
+              id,
+              'read $read came back while the client could not say which '
+              'connection it is on, so it is read again');
+          return const _Restart();
+        }
+        final written = await _store.write(owner, id, onConnection: now, [
           BaseArrived(
             base,
             session: session,
@@ -1220,11 +1229,7 @@ final class CloudSender {
     switch (why) {
       case _Why.access when !(role?.edits ?? false):
         _governor.climbAccess(id, snap, null);
-      case _Why.access ||
-            _Why.need ||
-            _Why.clock ||
-            _Why.adopt ||
-            _Why.retire:
+      case _Why.access || _Why.need || _Why.clock || _Why.adopt || _Why.retire:
         _governor.accessConfirmed(id);
     }
     final memory = _boundMemory(id, snap);
@@ -1687,6 +1692,16 @@ final class CloudSender {
       return point.client == now.client && point.connection == now.connection;
     } catch (_) {
       return false;
+    }
+  }
+
+  Future<Generation?> _currentGeneration() async {
+    if (_inputs.connection == null) return null;
+    try {
+      final now = await _generation();
+      return Generation(client: now.client, connection: now.connection);
+    } catch (_) {
+      return null;
     }
   }
 

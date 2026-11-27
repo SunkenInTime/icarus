@@ -690,6 +690,7 @@ final class SlowSenderStore extends SenderStore {
     List<QueueEvent> events, {
     ClaimedBatch? batch,
     bool readSession = false,
+    Generation? onConnection,
   }) async {
     if (throwsOnBase && events.any((event) => event is BaseArrived)) {
       throwsOnBase = false;
@@ -726,6 +727,7 @@ final class SlowSenderStore extends SenderStore {
       events,
       batch: batch,
       readSession: readSession,
+      onConnection: onConnection,
     );
     if (readSession && dropSessionReadBack > 0 && written is WrittenWith) {
       dropSessionReadBack--;

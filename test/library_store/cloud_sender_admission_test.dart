@@ -169,6 +169,28 @@ void main() {
   });
 
   test(
+      'a page list read answered strategy-gone on connection 1, delivered '
+      'after the client moved to connection 2 and before any stamp of '
+      'connection 2 reached the queue, does not mark the strategy deleted: '
+      'the queue is told the current connection first', () {
+    inWorld((world) {
+      world.settle();
+      world.server.answerReadNext(strategyId, (call) {
+        final stale = onConnection(world, 1);
+        world.server.connection = 2;
+        return Future.value(
+          StoreReadAnswered(const StrategyGone(), point: stale),
+        );
+      });
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+      world.settle(const Duration(seconds: 1));
+      expect(world.connection, 1);
+      expect(standingOf(world.cloud().queue), isNot(Standing.deletedOnServer));
+      expect(world.cloud().queue.session.generation?.connection, 2);
+    });
+  });
+
+  test(
       'a page list read refused ACCOUNT_MISMATCH on connection 1 after the '
       'client moved to connection 2 holds nothing: the list is read again and '
       'the next edit is sent', () {
