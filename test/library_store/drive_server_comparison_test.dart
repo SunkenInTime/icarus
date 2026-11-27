@@ -4,7 +4,7 @@ import 'package:icarus/dev/drive/drive_cloud_store.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart'
+import 'server_fixtures.dart'
     show openStore, pageList, pageSnapshot, serverRows, servedAccount;
 
 const point = ResultPoint(client: 1, connection: 1, snapshot: 1);
@@ -55,9 +55,7 @@ List<String> problems(List<CloudStoreLine> lines) => [
     ];
 
 void main() {
-  test(
-      'a store holding what the server holds reads back equal, with the '
-      'cloud shadow off', () async {
+  test('a store holding what the server holds reads back equal', () async {
     final rows = serverRows();
     final store = await storeHolding(rows);
     final lines = await readBack(store, serving(rows));

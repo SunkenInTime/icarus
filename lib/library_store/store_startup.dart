@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
-import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/shadow_store.dart';
@@ -10,7 +9,6 @@ import 'package:icarus/library_store/shadow_store.dart';
 typedef StoreStartup = ({
   Future<LibraryStoreOpened>? opening,
   bool localShadow,
-  bool cloudShadow,
   bool cloudSends,
 });
 
@@ -25,26 +23,22 @@ StoreStartup openStores(
   final localShadow = launch.choice is! StoreSwitchOff &&
       launch.choice is! StoreSwitchStore &&
       allowsLocalLibrary;
-  final cloudShadow = launch.cloud is CloudStoreShadow;
+  final cloudSends = launch.cloud is CloudStoreSend;
   return (
     opening: alreadyOpening ??
         switch (hiveDirectory) {
-          final String directory when localShadow || cloudShadow => container
+          final String directory when localShadow || cloudSends => container
               .read(libraryStoreProvider.notifier)
               .open(libraryStoreFile(directory),
-                  build: cloudShadow ? build : ''),
+                  build: cloudSends ? build : ''),
           _ => null,
         },
     localShadow: localShadow,
-    cloudShadow: cloudShadow,
-    cloudSends: switch (launch.cloud) {
-      CloudStoreShadow(:final sends) => sends,
-      CloudStoreOff() => false,
-    },
+    cloudSends: cloudSends,
   );
 }
 
-void beginCloudShadow(
+void beginCloudSender(
   ProviderContainer container,
   StoreStartup startup, {
   required String build,
@@ -52,18 +46,13 @@ void beginCloudShadow(
   if (startup
       case (
         opening: final opening?,
-        cloudShadow: true,
+        cloudSends: true,
         localShadow: _,
-        :final cloudSends,
       )) {
     unawaited(
-      cloudSends
-          ? container
-              .read(cloudSenderProvider.notifier)
-              .beginOn(opening, build: build)
-          : container
-              .read(cloudShadowProvider.notifier)
-              .begin(opening: opening, build: build),
+      container
+          .read(cloudSenderProvider.notifier)
+          .beginOn(opening, build: build),
     );
   }
 }

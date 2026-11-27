@@ -9,7 +9,6 @@ import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
 import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
-import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/store_sessions.dart';
@@ -21,6 +20,16 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus_library/icarus_library.dart' show Account, LibraryStore;
 import 'package:uuid/uuid.dart';
+
+typedef AuthChanges = ({int changes, bool authenticated, String? subject});
+
+final authChangesProvider = Provider<AuthChanges Function()>(
+  (ref) => () => (
+        changes: ConvexClient.instance.authChanges,
+        authenticated: ConvexClient.instance.isAuthenticated,
+        subject: ref.read(authProvider).user?.id,
+      ),
+);
 
 final cloudSenderTimingProvider = Provider<SenderTiming>(
   (ref) => const SenderTiming(),

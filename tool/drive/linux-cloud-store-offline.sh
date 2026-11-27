@@ -2,15 +2,15 @@
 set -euo pipefail
 
 if [ $# -lt 3 ] || [ $# -gt 6 ]; then
-  echo "usage: $0 <exe dir> <new out dir> <account email> [script] [shadow|send] [store to start on]" >&2
+  echo "usage: $0 <exe dir> <new out dir> <account email> [script] [send] [store to start on]" >&2
   exit 2
 fi
 exe=$(realpath "$1")
 out=$(realpath -m "$2")
 account=$3
 repo=$(realpath "$(dirname "$0")/../..")
-script=$(realpath "${4:-$repo/tool/drive/scripts/cloud-store-shadow-offline.json}")
-mode=${5:-shadow}
+script=$(realpath "${4:-$repo/tool/drive/scripts/cloud-store-send-offline.json}")
+mode=${5:-send}
 seed=()
 if [ $# -ge 6 ]; then seed=(--hive-store "$(realpath "$6")"); fi
 unit=icarus-cloud-store-offline-$$

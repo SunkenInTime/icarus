@@ -3,7 +3,7 @@ import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart' show strategyId;
+import 'server_fixtures.dart' show strategyId;
 import 'sender_world.dart';
 
 void main() {

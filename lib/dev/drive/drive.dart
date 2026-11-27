@@ -348,9 +348,7 @@ Future<void> _play(String script) async {
   _countLibraryBoxEvents();
   _log(await firstFrameLine(appProviderContainer));
   if (_cloudStore.isOn(appProviderContainer)) {
-    _log(_cloudStore.sends(appProviderContainer)
-        ? 'CLOUDSTORE switch send'
-        : 'CLOUDSTORE switch shadow');
+    _log('CLOUDSTORE switch send');
   }
   for (final raw in steps) {
     if (raw is! Map<String, dynamic> || raw.isEmpty) {
@@ -2737,14 +2735,6 @@ Future<void> _run(Map<String, dynamic> step) async {
           value as String,
           basisAgeMs: step['basisAgeMs'] as int,
           expectRefused: step['expectRefused'] as bool,
-        ),
-      );
-    case 'expectStoredPayloadVersion':
-      _log(
-        await storedPayloadVersion(
-          c,
-          value as String,
-          (step['version'] as num).toInt(),
         ),
       );
     case 'openLink':

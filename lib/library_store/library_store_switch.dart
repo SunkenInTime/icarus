@@ -4,9 +4,6 @@ import 'package:icarus/config/drive_build.dart';
 
 const shadowReachable = !kIsWeb && (driveBuild || kDebugMode);
 
-const cloudShadowOff = 'The cloud shadow is off until the store takes its '
-    'live results with stamps (slice 3, PR 5); use --cloud-store=send.';
-
 sealed class LibraryStoreSwitch {
   const LibraryStoreSwitch();
 }
@@ -43,10 +40,8 @@ final class CloudStoreOff extends CloudStoreSwitch {
   const CloudStoreOff();
 }
 
-final class CloudStoreShadow extends CloudStoreSwitch {
-  const CloudStoreShadow({this.sends = false});
-
-  final bool sends;
+final class CloudStoreSend extends CloudStoreSwitch {
+  const CloudStoreSend();
 }
 
 final class LibraryStoreLaunch {
@@ -58,8 +53,9 @@ final class LibraryStoreLaunch {
   static const opsFlag = '--library-store=ops';
   static const storeFlag = '--library-store=store';
   static const offFlag = '--library-store=off';
-  static const cloudShadowFlag = '--cloud-store=shadow';
-  static const cloudSendFlag = '--cloud-store=send';
+  static const cloudStoreFlag = '--cloud-store=';
+  static const cloudSendFlag = '${cloudStoreFlag}send';
+  static const cloudShadowFlag = '${cloudStoreFlag}shadow';
 
   final LibraryStoreSwitch choice;
   final CloudStoreSwitch cloud;
@@ -89,14 +85,17 @@ final class LibraryStoreLaunch {
               mayShadow ? const StoreSwitchStore() : const StoreSwitchOff();
         case offFlag:
           choice = const StoreSwitchOff();
-        case cloudShadowFlag when mayShadow:
-          throw ArgumentError.value(argument, 'args', cloudShadowOff);
+        case cloudSendFlag:
+          cloud = mayShadow ? const CloudStoreSend() : const CloudStoreOff();
+        case final unknown when unknown.startsWith(cloudStoreFlag) && mayShadow:
+          throw ArgumentError.value(
+            unknown,
+            'args',
+            '--cloud-store has no value '
+                '"${unknown.substring(cloudStoreFlag.length)}"; it takes send',
+          );
         case cloudShadowFlag:
           cloud = const CloudStoreOff();
-        case cloudSendFlag:
-          cloud = mayShadow
-              ? const CloudStoreShadow(sends: true)
-              : const CloudStoreOff();
         case _:
           others.add(argument);
       }

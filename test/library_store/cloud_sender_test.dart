@@ -10,28 +10,15 @@ import 'package:icarus/dev/drive/drive_cloud_store.dart'
     show useCloudAs, waitStoreSentIn;
 import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/call_governor.dart';
-import 'package:icarus/library_store/library_store_switch.dart'
-    show cloudShadowOff;
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
-import 'package:icarus/library_store/cloud_shadow.dart';
-import 'package:icarus/library_store/cloud_shadow_provider.dart';
 import 'package:icarus/library_store/landed_retiring.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart'
-    show
-        openStore,
-        pageId,
-        secondPage,
-        pageList,
-        pageSnapshot,
-        serverRows,
-        servedAccount,
-        shadowOn,
-        strategyId;
+import 'server_fixtures.dart'
+    show openStore, pageId, secondPage, servedAccount, strategyId;
 import 'sender_world.dart';
 
 final _signIns = StateProvider<int>((ref) => 0);
@@ -1588,41 +1575,6 @@ void main() {
       });
     });
   });
-
-  test(
-      'shadow-only mode compares while the queue holds this device\'s own '
-      'work, as it did before the sender', () async {
-    final store = await openStore(MemoryStorage());
-    final shadow = shadowOn(store)
-      ..pageList(strategyId, pageList(serverRows()), 0)
-      ..page(strategyId, pageSnapshot(serverRows()), 0);
-    await shadow.idle;
-    final seen = switch (await store.readStrategy(strategyId)) {
-      Found(:final value) => value,
-      final other => throw StateError('$other'),
-    };
-    final row = seen.strategy;
-    expect(
-      await store.commitAllAs(
-          servedAccount,
-          strategyId,
-          [
-            StrategyPatchOp(
-              opId: 'rename',
-              expectedStrategyRevision:
-                  (row.toJson()! as Map)['revision']! as int,
-              name: 'Renamed',
-            ),
-          ],
-          seen: seen),
-      isA<Saved<List<Committed>, CommitRefusal>>(),
-    );
-
-    shadow.page(strategyId, pageSnapshot(serverRows()), 0);
-    await shadow.idle;
-
-    expect(shadow.ledger.last.verdict, isNot(isA<Skipped>()));
-  }, skip: cloudShadowOff);
 
   group('the read step', () {
     List<String> readsAfter(World world, int before) =>

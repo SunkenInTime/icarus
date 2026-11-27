@@ -7,7 +7,7 @@ import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart' show servedAccount, strategyId;
+import 'server_fixtures.dart' show servedAccount, strategyId;
 import 'sender_world.dart';
 
 typedef Call = ({Duration at, String what});
@@ -651,7 +651,6 @@ const closing = '<!-- end of stall exits -->';
 
 void main() {
   for (final row in StallExit.values) {
-    if (!row.inSenderWorld) continue;
     test('${row.name}: ${row.title}', () {
       final stall = stalls[row]!;
       inWorld(
