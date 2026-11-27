@@ -109,6 +109,7 @@
   },
   "closingExitNotJudgedOnWindows": "every Windows build crashes in coremessaging.dll as the app exits, after the save, on the driver's exit (#581) and on the app's own close path alike; until that is fixed a closing script is judged on Windows by the asked-to-close line, no failed step, no timeout, the Hive check and the script that reopens it",
   "closesTheApp": [
-    "close-with-unsaved-local"
+    "close-with-unsaved-local",
+    "close-with-video-open"
   ]
 }
