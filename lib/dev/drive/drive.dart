@@ -152,10 +152,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/collab/cloud_results.dart' show HeldRows;
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
-import 'package:icarus_library/icarus_library.dart'
-    show HeldOnPage, ResultPoint;
+import 'package:icarus_library/icarus_library.dart' show ResultPoint;
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/weapons.dart';
@@ -2415,21 +2415,30 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
       final first = LivePageAnswer(shown, pagePublicId: page, point: point);
       String ms(num micros) => (micros / 1000).toStringAsFixed(2);
-      Future<void> timed(
-        String what,
-        LivePageAnswer answer,
-        Future<HeldOnPage> Function() held,
-        int decodes,
-      ) async {
+      String median(List<int> each) {
+        each.sort();
+        return ms((each[(runs - 1) ~/ 2] + each[runs ~/ 2]) / 2);
+      }
+
+      final seeding = Stopwatch()..start();
+      final heldOnPage = await sender.store.heldOnPage(strategy, page);
+      final read = seeding.elapsedMicroseconds;
+      final held = HeldRows.of(heldOnPage);
+      seeding.stop();
+      _log(
+        'HANDOFF seeding a watch\'s index once, ${shown.elements.length} '
+        'items, ${heldOnPage.elements.length} held: ${ms(seeding.elapsedMicroseconds)} ms '
+        '(reading what the store holds ${ms(read)} ms)',
+      );
+      void timed(String what, LivePageAnswer answer, HeldRows Function() rows,
+          int decodes) {
         final micros = <int>[];
         var decoded = 0;
         for (var run = 0; run <= runs; run++) {
+          final index = rows();
           final watch = Stopwatch()..start();
-          final converted = livePageOutcome(
-            answer,
-            canRead: appCanRead,
-            held: await held(),
-          );
+          final converted =
+              livePageOutcome(answer, canRead: appCanRead, held: index);
           watch.stop();
           decoded = converted.decoded;
           if (converted.outcome is! StoreReadAnswered) {
@@ -2442,25 +2451,18 @@ Future<void> _run(Map<String, dynamic> step) async {
           }
           if (run > 0) micros.add(watch.elapsedMicroseconds);
         }
-        micros.sort();
         _log(
           'HANDOFF $what, ${shown.elements.length} items, $decoded decoded, '
-          '$runs runs: median '
-          '${ms((micros[(runs - 1) ~/ 2] + micros[runs ~/ 2]) / 2)} ms, '
-          'fastest ${ms(micros.first)} ms, slowest ${ms(micros.last)} ms',
+          '$runs runs: median ${median(micros)} ms, fastest '
+          '${ms(micros.first)} ms, slowest ${ms(micros.last)} ms',
         );
       }
 
-      await timed(
-        'edit answer',
-        edit,
-        () => sender.store.heldOnPage(strategy, page),
-        1,
-      );
-      await timed(
+      timed('edit answer', edit, () => held, 1);
+      timed(
         'first answer',
         first,
-        () async => HeldOnPage.nothing,
+        HeldRows.new,
         shown.elements.length + shown.lineups.length,
       );
     case 'fillPage':

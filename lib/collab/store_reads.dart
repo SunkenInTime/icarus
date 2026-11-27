@@ -184,20 +184,24 @@ final class LivePageAnswer {
 ({StoreReadOutcome outcome, int decoded}) livePageOutcome(
   LivePageAnswer answer, {
   required store.CanRead canRead,
-  required store.HeldOnPage held,
+  required HeldRows held,
+  void Function(store.Row row)? decoded,
 }) {
-  var decoded = 0;
+  var count = 0;
   final outcome = switch (pageReadOver(
     answer.page,
     canRead,
     held: held,
-    decoded: () => decoded++,
+    decoded: (row) {
+      count++;
+      decoded?.call(row);
+    },
   )) {
     RowsRead(:final value) => StoreReadAnswered(value, point: answer.point),
     RowsUnreadable(:final problem) =>
       StoreReadUnreadable(problem, point: answer.point),
   };
-  return (outcome: outcome, decoded: decoded);
+  return (outcome: outcome, decoded: count);
 }
 
 StoreReadOutcome storeReadOutcomeOfError(

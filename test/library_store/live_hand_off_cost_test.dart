@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_results.dart' show HeldRows;
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus_library/icarus_library.dart';
@@ -12,17 +13,13 @@ const runs = 20;
 
 typedef Timed = ({List<int> micros, int decoded});
 
-Timed timed(World world, LivePageAnswer answer) {
+Timed timed(LivePageAnswer answer, HeldRows Function() held) {
   final micros = <int>[];
   var decoded = 0;
   for (var run = 0; run <= runs; run++) {
+    final index = held();
     final watch = Stopwatch()..start();
-    HeldOnPage? held;
-    world.sender.store
-        .heldOnPage(strategyId, pageId)
-        .then((value) => held = value);
-    world.async.flushMicrotasks();
-    final converted = livePageOutcome(answer, canRead: appCanRead, held: held!);
+    final converted = livePageOutcome(answer, canRead: appCanRead, held: index);
     watch.stop();
     expect(
       converted.outcome,
@@ -36,6 +33,15 @@ Timed timed(World world, LivePageAnswer answer) {
     if (run > 0) micros.add(watch.elapsedMicroseconds);
   }
   return (micros: micros..sort(), decoded: decoded);
+}
+
+HeldRows seeded(World world) {
+  HeldOnPage? held;
+  world.sender.store
+      .heldOnPage(strategyId, pageId)
+      .then((value) => held = value);
+  world.async.flushMicrotasks();
+  return HeldRows.of(held!);
 }
 
 String described(String what, Timed timed) {
@@ -56,8 +62,8 @@ LivePageAnswer answerOf(World world) => LivePageAnswer(
 void main() {
   test(
       'the store\'s part of one live answer of the driver\'s heavy page: '
-      'reading the rows it holds there and converting the answer against '
-      'them, for a first answer and for an edit answer', () {
+      'converting the answer against the rows it holds there, for a first '
+      'answer and for an edit answer', () {
     late final Timed first;
     late final Timed edit;
     inWorld((world) {
@@ -66,12 +72,13 @@ void main() {
       world.sender.adopt(strategyId);
       world.settle(const Duration(seconds: 1));
 
-      first = timed(world, answerOf(world));
+      first = timed(answerOf(world), HeldRows.new);
       expect(first.decoded, heavyItems);
 
       deliver(world);
       world.teammateMoves(1);
-      edit = timed(world, answerOf(world));
+      final held = seeded(world);
+      edit = timed(answerOf(world), () => held);
       expect(edit.decoded, 1);
     }, addStrategy: false);
 

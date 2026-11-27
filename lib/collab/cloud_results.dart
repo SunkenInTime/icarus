@@ -114,64 +114,108 @@ ResultRows<HeaderRead> pageListRead(RemotePageList list) => _rows(
     );
 
 ResultRows<PageRead> pageRead(RemotePageSnapshot page, CanRead canRead) =>
-    pageReadOver(page, canRead, held: HeldOnPage.nothing, decoded: () {});
+    pageReadOver(page, canRead, held: HeldRows(), decoded: (_) {});
+
+typedef _Identity = ({String page, int revision, int? life});
+
+final class HeldRows {
+  HeldRows();
+
+  HeldRows.of(HeldOnPage held) {
+    for (final row in held.elements.values) {
+      keep(row);
+    }
+    for (final row in held.lineupGroups.values) {
+      keep(row);
+    }
+  }
+
+  final _elements = <String, (_Identity, ElementRow)>{};
+  final _lineupGroups = <String, (_Identity, LineupGroupRow)>{};
+
+  void keep(Row row) {
+    final version = versionOfRow(row);
+    if (version == null) return;
+    switch (row) {
+      case ElementRow(:final publicId, :final pagePublicId):
+        _elements[publicId] = (
+          (
+            page: pagePublicId,
+            revision: version.revisionOnTheWire,
+            life: version.lifeOnTheWire,
+          ),
+          row,
+        );
+      case LineupGroupRow(:final publicId, :final pagePublicId):
+        _lineupGroups[publicId] = (
+          (
+            page: pagePublicId,
+            revision: version.revisionOnTheWire,
+            life: version.lifeOnTheWire,
+          ),
+          row,
+        );
+      case _:
+        break;
+    }
+  }
+
+  ElementRow? element(RemoteElement element) => _held(
+        _elements[element.publicId],
+        page: element.pagePublicId,
+        revision: element.revision,
+        createdAt: element.createdAt,
+      );
+
+  LineupGroupRow? lineupGroup(RemoteLineup lineup) => _held(
+        _lineupGroups[lineup.publicId],
+        page: lineup.pagePublicId,
+        revision: lineup.revision,
+        createdAt: lineup.createdAt,
+      );
+
+  static T? _held<T>(
+    (_Identity, T)? held, {
+    required String page,
+    required int revision,
+    required DateTime? createdAt,
+  }) =>
+      switch (held) {
+        (
+          (page: final heldPage, revision: final heldRevision, :final life),
+          final row
+        )
+            when heldPage == page &&
+                heldRevision == revision &&
+                life == createdAt?.millisecondsSinceEpoch =>
+          row,
+        _ => null,
+      };
+}
 
 ResultRows<PageRead> pageReadOver(
   RemotePageSnapshot page,
   CanRead canRead, {
-  required HeldOnPage held,
-  required void Function() decoded,
+  required HeldRows held,
+  required void Function(Row row) decoded,
 }) =>
     _rows(
       () => PageRead(
         page: _page(page.page),
         elements: [
           for (final element in page.elements)
-            switch (held.elements[element.publicId]) {
-              final row?
-                  when _sameIdentity(
-                    row,
-                    page: element.pagePublicId,
-                    revision: element.revision,
-                    createdAt: element.createdAt,
-                  ) =>
-                row,
-              _ => _decoded(decoded, () => _element(element, canRead)),
-            },
+            held.element(element) ??
+                _decoded(decoded, _element(element, canRead)),
         ],
         lineupGroups: [
           for (final lineup in page.lineups)
-            switch (held.lineupGroups[lineup.publicId]) {
-              final row?
-                  when _sameIdentity(
-                    row,
-                    page: lineup.pagePublicId,
-                    revision: lineup.revision,
-                    createdAt: lineup.createdAt,
-                  ) =>
-                row,
-              _ => _decoded(decoded, () => _lineupGroup(lineup, canRead)),
-            },
+            held.lineupGroup(lineup) ??
+                _decoded(decoded, _lineupGroup(lineup, canRead)),
         ],
       ),
     );
 
-T _decoded<T>(void Function() counted, T Function() decode) {
-  counted();
-  return decode();
+T _decoded<T extends Row>(void Function(Row row) counted, T row) {
+  counted(row);
+  return row;
 }
-
-bool _sameIdentity(
-  Row held, {
-  required String page,
-  required int revision,
-  required DateTime? createdAt,
-}) =>
-    switch (held) {
-      ElementRow(:final pagePublicId) ||
-      LineupGroupRow(:final pagePublicId) =>
-        pagePublicId == page,
-      _ => false,
-    } &&
-    versionOfRow(held) ==
-        Version(revision, life: createdAt?.millisecondsSinceEpoch);

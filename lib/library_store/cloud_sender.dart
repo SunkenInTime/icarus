@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:icarus/collab/cloud_results.dart' show HeldRows;
 import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/landed_retiring.dart';
@@ -269,6 +270,7 @@ final class _Live {
   _LiveResult? taking;
   var answers = 0;
   int? answersAtReconnect;
+  HeldRows? held;
 
   bool get answeredSinceReconnect => answersAtReconnect != answers;
 
@@ -712,15 +714,24 @@ final class CloudSender implements LiveResults {
     wake();
   }
 
-  Future<StoreReadOutcome> _outcomeOf(String id, _Answer answer) async {
+  Future<StoreReadOutcome> _outcomeOf(
+    String id,
+    ReadOf read,
+    _Answer answer,
+  ) async {
     switch (answer) {
       case _Converted(:final outcome):
         return outcome;
       case _PageToConvert(:final answer):
+        final live = _live[(id, read)];
+        final held = live?.held ??
+            HeldRows.of(await _store.heldOnPage(id, answer.pagePublicId));
+        live?.held = held;
         final (:outcome, :decoded) = livePageOutcome(
           answer,
           canRead: _canRead,
-          held: await _store.heldOnPage(id, answer.pagePublicId),
+          held: held,
+          decoded: held.keep,
         );
         liveRowsDecoded += decoded;
         return outcome;
@@ -1525,7 +1536,7 @@ final class CloudSender implements LiveResults {
       session,
       cloud,
       (read: read, why: _Why.live),
-      await _outcomeOf(id, result.answer),
+      await _outcomeOf(id, read, result.answer),
       result.at,
       late: false,
       troubled: () {},

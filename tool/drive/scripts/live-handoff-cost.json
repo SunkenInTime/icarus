@@ -12,6 +12,7 @@
   {"wait": 12},
   {"tapIcon": "x", "optional": true},
   {"waitSettled": 60},
+  {"storeExpect": true},
   {"fillPage": 300},
   {"wait": 20},
   {"waitSettled": 60},
