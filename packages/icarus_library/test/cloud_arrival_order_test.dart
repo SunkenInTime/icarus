@@ -78,9 +78,69 @@ final class RestartFact extends Fact {
   String toString() => 'restart into run $run on $generation';
 }
 
+final class OwnWork {
+  const OwnWork(this.op, this.attempt, {required this.page});
+
+  final StrategyOp op;
+  final int attempt;
+  final String page;
+
+  bool get changesList => op is PageReorderOp;
+
+  String get wrote => switch (op) {
+    ElementPatchOp(:final elementPublicId) => elementPublicId,
+    _ => strategyRow,
+  };
+}
+
+const strategyRow = 'the strategy';
+
+const ownReorder = PageReorderOp(
+  opId: 'reorder',
+  pagePublicId: 'page-b',
+  sortIndex: 0,
+  expectedStrategyRevision: 1,
+);
+
+final class AnswerFact extends Fact {
+  AnswerFact(this.work, this.revision, this.point, {required this.tick});
+
+  final OwnWork work;
+  final int revision;
+  final ResultPoint point;
+  final int tick;
+
+  @override
+  int get run => 0;
+
+  OpAnswer get answer => AppliedAnswer(
+    work.op.opId,
+    revision: revision,
+    life: work.changesList ? createdAtOf(initialRows().strategy)! : fixtureLife,
+  );
+
+  @override
+  String toString() =>
+      '${work.op.opId} answered at ${point.client}/${point.connection}/'
+      '${point.snapshot}, time ${point.serverTime}';
+}
+
 final class Scenario {
   Scenario(this.seed) : random = Random(seed) {
-    start = Client().queue;
+    final client = Client();
+    work = switch (seed % families) {
+      6 || 8 => () {
+        final op = movePatch('own', elementId: 'e1', x: 77);
+        client.edit(op);
+        return OwnWork(op, client.claim(['own']), page: 'page-a');
+      }(),
+      7 => () {
+        client.edit(ownReorder);
+        return OwnWork(ownReorder, client.claim(['reorder']), page: 'page-b');
+      }(),
+      _ => null,
+    };
+    start = client.queue;
     lastStamp = lastPoint;
     clock = (lastPoint.serverTime ?? 0) + 1000000000;
     stamps = StampSource(
@@ -101,6 +161,7 @@ final class Scenario {
   int run = 0;
   late ResultPoint lastStamp;
   int tick = 0;
+  late final OwnWork? work;
 
   int tickOf(ResultPoint point) {
     if (point != lastStamp) {
@@ -186,7 +247,62 @@ final class Scenario {
 
   String pickPage() => livePages[random.nextInt(livePages.length)];
 
+  void ownLands() {
+    final op = switch (work!.op) {
+      ElementPatchOp() => movePatch(
+        'own',
+        elementId: 'e1',
+        x: 77,
+        expected: revisionOfRowForTest(now.rows.element('e1')!)!,
+      ),
+      final other => other,
+    };
+    write(withOp(now.rows, op));
+  }
+
+  void answer({required bool atHeldPoint}) {
+    pass();
+    final point = atHeldPoint ? stamps.answered : stamps.at(now);
+    final row = switch (work!.wrote) {
+      strategyRow => now.rows.strategy,
+      final id => now.rows.element(id)!,
+    };
+    facts.add(
+      AnswerFact(work!, revisionOfRowForTest(row)!, point, tick: tickOf(point)),
+    );
+  }
+
+  void buildOwn() {
+    final page = work!.page;
+    switch (seed % families) {
+      case 6:
+        read(page);
+        ownLands();
+        answer(atHeldPoint: random.nextInt(3) == 0);
+        if (random.nextBool()) teammateWrites(page);
+        read(page);
+        if (random.nextBool()) read(null);
+        read(page);
+      case 7:
+        read(random.nextBool() ? null : 'page-a');
+        ownLands();
+        answer(atHeldPoint: random.nextInt(3) == 0);
+        if (random.nextBool()) reconnect();
+        read(null);
+        read(random.nextBool() ? 'page-a' : 'page-b');
+      case _:
+        read(page);
+        ownLands();
+        answer(atHeldPoint: random.nextBool());
+        if (random.nextBool()) teammateWrites(page);
+        reconnect();
+        read(page);
+        random.nextBool() ? read(page) : read(null);
+    }
+  }
+
   void build() {
+    if (work != null) return buildOwn();
     final page = pickPage();
     switch (seed % families) {
       case 0:
@@ -233,7 +349,7 @@ final class Scenario {
         deleteStrategy();
         read(null);
         read(page);
-      case _:
+      case 5:
         if (random.nextBool()) teammateWrites(page);
         read(null);
         final before = now.rows;
@@ -249,7 +365,42 @@ final class Scenario {
   }
 }
 
-const families = 6;
+const families = 9;
+
+final class Mark {
+  const Mark(this.tick, this.time, this.wrote);
+
+  final int tick;
+  final int? time;
+  final (String, int)? wrote;
+
+  bool reachedBy(ReadFact? read) =>
+      read != null &&
+      read.tick >= tick &&
+      switch ((time, read.point.serverTime)) {
+        (null, _) => true,
+        (_, null) => false,
+        (final answered?, final shown?) => shown >= answered,
+      };
+
+  Mark and(Mark? other) => switch (other) {
+    null => this,
+    final other => Mark(
+      max(tick, other.tick),
+      switch ((time, other.time)) {
+        (final a?, final b?) => max(a, b),
+        (final a, final b) => a ?? b,
+      },
+      switch ((wrote, other.wrote)) {
+        ((final a, final mine)?, (final b, final theirs)?) when a == b => (
+          a,
+          max(mine, theirs),
+        ),
+        _ => null,
+      },
+    ),
+  };
+}
 
 final class Reference {
   Reference(ServerState first, this.held)
@@ -272,6 +423,128 @@ final class Reference {
   bool listFreshSinceSession = true;
   final Set<String> pagesFreshSinceSession;
   final Set<String> goneByResult = {};
+  ReadFact? listRead;
+  final pageSeen = <String, ReadFact>{};
+  int? heldStrategy;
+  final highest = <String, int>{};
+  Mark? listMark;
+  Mark? allPages;
+  final pageMarks = <String, Mark>{};
+  final listFor = <String, Mark>{};
+  final rowMarks = <String, Mark>{};
+
+  String? rowPage(String id) => [
+    for (final MapEntry(:key, :value) in content.entries)
+      if (value.containsKey(id)) key,
+  ].firstOrNull;
+
+  bool listHolds((String, int)? wrote) => switch (wrote) {
+    (strategyRow, final revision) => (heldStrategy ?? -1) >= revision,
+    _ => false,
+  };
+
+  bool listReaches(Mark? mark) =>
+      mark == null || mark.reachedBy(listRead) || listHolds(mark.wrote);
+
+  bool pageHolds(String page, (String, int)? wrote) => switch (wrote) {
+    (final id, final revision) when id != strategyRow =>
+      (content[page]?[id] ?? -1) >= revision,
+    _ => false,
+  };
+
+  bool pageReaches(String page, Mark? mark) =>
+      mark == null ||
+      mark.reachedBy(pageSeen[page]) ||
+      pageHolds(page, mark.wrote);
+
+  bool rowHolds((String, int)? wrote) => switch (wrote) {
+    (final id, final revision) when id != strategyRow =>
+      switch (rowPage(id)) {
+            final page? => (content[page]![id] ?? -1) >= revision,
+            null => false,
+          } ||
+          (highest[id] ?? -1) >= revision,
+    _ => false,
+  };
+
+  bool rowSettled(String id, Mark mark) =>
+      rowHolds(mark.wrote) ||
+      switch (rowPage(id)) {
+        final page? => mark.reachedBy(pageSeen[page]),
+        null => false,
+      };
+
+  bool listCurrentFor(String page) =>
+      listFreshSinceSession &&
+      !listOwed &&
+      listReaches(listMark) &&
+      listReaches(listFor[page]);
+
+  bool pageCurrentNow(String page) =>
+      pageCurrent(page) &&
+      pageReaches(page, pageMarks[page]) &&
+      (allPages?.reachedBy(pageSeen[page]) ?? true) &&
+      rowMarks.entries.every(
+        (entry) =>
+            rowPage(entry.key) != page ||
+            entry.value.reachedBy(pageSeen[page]) ||
+            rowHolds(entry.value.wrote),
+      );
+
+  void _answer(AnswerFact fact) {
+    if (!admits(fact.point.generation)) return;
+    final work = fact.work;
+    final mark = Mark(fact.tick, fact.point.serverTime, (
+      work.wrote,
+      fact.revision,
+    ));
+    final pages = {
+      work.page,
+      if (work.wrote != strategyRow) ?rowPage(work.wrote),
+    };
+    if (work.changesList) {
+      if (!listReaches(mark)) listMark = mark.and(listMark);
+      allPages = mark.and(allPages);
+    }
+    for (final page in pages) {
+      if (!(pageSeen.containsKey(page) && pageReaches(page, mark))) {
+        pageMarks[page] = mark.and(pageMarks[page]);
+      }
+      if (!listReaches(mark)) listFor[page] = mark.and(listFor[page]);
+    }
+    if (work.wrote != strategyRow && !rowSettled(work.wrote, mark)) {
+      rowMarks[work.wrote] = mark.and(rowMarks[work.wrote]);
+    }
+  }
+
+  void _listSettles(ReadFact read) {
+    listRead = read;
+    if (read.base case HeaderRead(:final strategy)) {
+      heldStrategy = revisionOfRowForTest(strategy);
+    }
+    if (listReaches(listMark)) listMark = null;
+    listFor.removeWhere((_, mark) => listReaches(mark));
+  }
+
+  void _pageSettles(ReadFact read, String page) {
+    pageSeen[page] = read;
+    if (read.base case PageRead(:final elements)) {
+      for (final row in elements) {
+        final revision = revisionOfRowForTest(row) ?? -1;
+        if (revision > (highest[row.publicId] ?? -1)) {
+          highest[row.publicId] = revision;
+        }
+      }
+    }
+    if (pageMarks[page] case final mark? when pageReaches(page, mark)) {
+      pageMarks.remove(page);
+    }
+    rowMarks.removeWhere(rowSettled);
+    if (allPages case final mark?
+        when listed.every((live) => mark.reachedBy(pageSeen[live]))) {
+      allPages = null;
+    }
+  }
 
   static const anyResultOfThisSession = -1;
 
@@ -294,6 +567,8 @@ final class Reference {
     listFreshSinceSession = false;
     pagesFreshSinceSession.clear();
     goneByResult.clear();
+    listRead = null;
+    pageSeen.clear();
   }
 
   bool admits(Generation generation) {
@@ -313,6 +588,8 @@ final class Reference {
         if (held case final now? when !now.isBefore(generation)) return;
         newSession();
         held = generation;
+      case AnswerFact():
+        _answer(fact);
       case ReadFact():
         if (fact.run != run || !admits(fact.point.generation)) return;
         switch (fact.base) {
@@ -359,6 +636,7 @@ final class Reference {
       }
     }
     listFreshSinceSession = true;
+    _listSettles(read);
   }
 
   void _strategyGoneTaken(ReadFact read) {
@@ -366,6 +644,7 @@ final class Reference {
     listTakenAt = read.tick;
     listOwedFrom = null;
     gone = true;
+    _listSettles(read);
   }
 
   void _pageRead(ReadFact read, String page) {
@@ -380,6 +659,7 @@ final class Reference {
     content[page] = itemsOf(read.state.rows, page);
     pagesFreshSinceSession.add(page);
     goneByResult.remove(page);
+    _pageSettles(read, page);
   }
 
   void _pageGone(ReadFact read, String page) {
@@ -391,6 +671,7 @@ final class Reference {
     content.remove(page);
     pagesFreshSinceSession.add(page);
     goneByResult.add(page);
+    _pageSettles(read, page);
   }
 
   bool pageCurrent(String page) =>
@@ -507,6 +788,26 @@ void countCases(List<Fact> order) {
         }
       case ReadFact():
         break;
+      case AnswerFact(:final tick, :final point):
+        final reads = order.skip(at + 1).whereType<ReadFact>();
+        if (reads.any((read) => read.tick < tick)) {
+          count('a read older than our answer delivered after it');
+        }
+        if (reads.any(
+          (read) =>
+              point.generation.isBefore(read.point.generation) &&
+              (read.point.serverTime ?? 0) < (point.serverTime ?? 0),
+        )) {
+          count(
+            'a read on a later connection with a server time below our answer',
+          );
+        }
+        if (order
+            .take(at)
+            .whereType<ReadFact>()
+            .any((read) => read.tick == tick)) {
+          count('an answer at the point of a read delivered before it');
+        }
     }
   }
   if (reads.any((read) => read.base is PageGone)) {
@@ -541,6 +842,8 @@ final class Delivery {
         _step(ConnectionReturned(generation));
       case ReadFact(:final base, :final point, :final run):
         _step(BaseArrived(base, session: labelsFrom[run]!, point: point));
+      case AnswerFact(:final work, :final answer, :final point):
+        _step(OpAnswered(work.attempt, answer, point: point));
     }
   }
 }
@@ -590,13 +893,13 @@ String? disagreement(CloudQueue queue, Reference want) {
     ...want.pagesFreshSinceSession,
   }) {
     final listFresh = shown.listCurrentFor(page);
-    final wantListFresh = want.listFreshSinceSession && !want.listOwed;
+    final wantListFresh = want.listCurrentFor(page);
     if (listFresh != wantListFresh) {
       return 'the page list is ${listFresh ? '' : 'not '}current for $page, '
           'the reference says ${wantListFresh ? '' : 'not '}current';
     }
     final pageFresh = shown.pageCurrent(page);
-    final wantPageFresh = want.pageCurrent(page);
+    final wantPageFresh = want.pageCurrentNow(page);
     if (pageFresh != wantPageFresh) {
       return 'page $page is ${pageFresh ? '' : 'not '}fresh, the reference '
           'says ${wantPageFresh ? '' : 'not '}fresh';
@@ -613,8 +916,10 @@ void main() {
   final family = int.tryParse(
     Platform.environment['ARRIVAL_ORDER_FAMILY'] ?? '',
   );
-  test('after every read delivered, in every order, the queue holds what a '
-      'model of the server says: per-subject order and sessions; which pages '
+  test('after every read and own answer delivered, in every order, the queue '
+      'holds what a model of the server says: per-subject order and sessions; '
+      'whether the page list and each page are current, by the marks our '
+      'answers leave and what each result shows; which pages '
       'exist is decided by the newest claim about that page, whatever kind of '
       'result made it, so a list leaves alone a page whose own result is '
       'newer and a page result older than the list changes nothing about '
@@ -677,4 +982,7 @@ const floors = {
   'an older list leaving a page out after a newer read of it': 4300,
   'an older page-gone after a newer list showing the page': 5000,
   'an older list leaving a page out after a newer read of it, kept': 400,
+  'a read older than our answer delivered after it': 6000,
+  'a read on a later connection with a server time below our answer': 3400,
+  'an answer at the point of a read delivered before it': 4500,
 };
