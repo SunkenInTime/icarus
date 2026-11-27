@@ -123,6 +123,49 @@ final stalls = <StallExit, Stall>{
     goAgain: (world) {},
     wentAgain: (world, after) => world.face() == null,
   ),
+  StallExit.clockOnWatch: Stall(
+    adopts: true,
+    start: (world) {
+      final strategy = world.rowOf((content) => content.strategy);
+      world.commit([
+        PageReorderOp(
+          opId: 'reorder',
+          pagePublicId: 'p2',
+          sortIndex: 0,
+          expectedStrategyRevision:
+              (strategy.toJson()! as Map)['revision']! as int,
+        ),
+      ]);
+      world.settle(const Duration(seconds: 5));
+      world.server.skew = -const Duration(hours: 3).inMilliseconds;
+      world.connection = 2;
+      world.sender
+        ..liveOpened(strategyId, const ReadOfPage('p2'))
+        ..liveArrived(
+          strategyId,
+          const ReadOfPage('p2'),
+          servedAccount,
+          world.server.answerNow(ReadCall(strategyId, 'p2', servedAccount)),
+        );
+      world.settle();
+      world.commitPageDelete('delete-p2', 'p2');
+    },
+    goAgain: (world) {
+      world.server.skew = 0;
+      world.onReconnect = () {
+        world.connection = 3;
+        world.sender.liveArrived(
+          strategyId,
+          const ReadOfPage('p2'),
+          servedAccount,
+          world.server.answerNow(ReadCall(strategyId, 'p2', servedAccount)),
+        );
+      };
+      world.sender.retryNow(strategyId);
+    },
+    wentAgain: (world, after) =>
+        after.any((call) => call.what == 'send delete-p2'),
+  ),
   StallExit.liveNoFirstResult: Stall(
     held: false,
     look: const Duration(seconds: 5),
@@ -496,6 +539,10 @@ const logs = <StallExit, List<String>>{
     '0 s list',
     '0 s page p1',
     '30 s page p2',
+  ],
+  StallExit.clockOnWatch: [
+    '0 s send reorder',
+    '7 s list',
   ],
   StallExit.liveNoFirstResult: [
     '0 s list',

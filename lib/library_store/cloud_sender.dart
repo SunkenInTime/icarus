@@ -310,7 +310,9 @@ final class CloudSender implements LiveResults {
     Duration Function()? elapsed,
     bool Function()? recordsConnectionLost,
     String? Function()? editorShows,
+    Future<void> Function()? reconnect,
   })  : _store = store,
+        _reconnect = reconnect ?? (() async {}),
         _governor = CallGovernor(
           reads: reads,
           send: send,
@@ -326,6 +328,7 @@ final class CloudSender implements LiveResults {
         _recordsLost = recordsConnectionLost ?? (() => true);
 
   final Future<({int client, int connection})> Function() _generation;
+  final Future<void> Function() _reconnect;
 
   Future<({int client, int connection})> _lookUpGeneration() =>
       _generation().timeout(_timing.lookupGiveUpAfter);
@@ -373,6 +376,9 @@ final class CloudSender implements LiveResults {
   var liveOlderDropped = 0;
   var liveOwed = 0;
   var clockWaitsOnLive = 0;
+  var clockRoundsOnWatch = 0;
+  var reconnectsAsked = 0;
+  final _reconnectedFor = <String>{};
   var looks = 0;
   var wakes = 0;
   var dues = 0;
@@ -594,9 +600,22 @@ final class CloudSender implements LiveResults {
   }
 
   void retryNow(String strategyId) {
+    if ((_clockHeldByLive[strategyId]?.isNotEmpty ?? false) &&
+        _reconnectedFor.add(strategyId)) {
+      reconnectsAsked++;
+      unawaited(_askReconnect(strategyId));
+    }
     _governor.newEvidence(strategyId);
     notBefore.remove(strategyId);
     wake();
+  }
+
+  Future<void> _askReconnect(String strategyId) async {
+    try {
+      await _reconnect();
+    } catch (error) {
+      _note(strategyId, 'the reconnect the retry asked for failed: $error');
+    }
   }
 
   void editorOpened(String? strategyId) {
@@ -705,6 +724,17 @@ final class CloudSender implements LiveResults {
     return until.isAfter(now) ? _LiveAwaitingFirst(until) : const _NotLive();
   }
 
+  DateTime? _nextRoundOnWatch(
+    String id,
+    ReadOf read,
+    DateTime now,
+    Snapshot snap,
+  ) =>
+      switch (_governor.readAt(id, read, snap)) {
+        ReadFrom(:final at?) when at.isAfter(now) => at,
+        _ => null,
+      };
+
   void _countClockHeldByLive(
     String id,
     CloudStrategy cloud,
@@ -721,8 +751,18 @@ final class CloudSender implements LiveResults {
     };
     final before = _clockHeldByLive[id] ?? const <ReadOf>{};
     clockWaitsOnLive += held.difference(before).length;
+    for (final read in held) {
+      if (_nextRoundOnWatch(id, read, now, snap) == null) {
+        clockRoundsOnWatch++;
+        _governor.remember(
+          id,
+          _boundMemory(id, snap).climbed('$read', now, StallExit.clockOnWatch),
+        );
+      }
+    }
     if (held.isEmpty) {
       _clockHeldByLive.remove(id);
+      _reconnectedFor.remove(id);
     } else {
       _clockHeldByLive[id] = held;
     }
@@ -1142,8 +1182,18 @@ final class CloudSender implements LiveResults {
     DateTime? due;
     StallExit? why;
     for (final (:planned, :wantedAt) in reads) {
-      final (wanted, wantedRow) =
-          switch (_liveGate(id, planned.read, now, snap)) {
+      final gate = _liveGate(id, planned.read, now, snap);
+      if (gate is _LiveCurrent && planned.why == _Why.clock) {
+        final round = _nextRoundOnWatch(id, planned.read, now, snap);
+        if (round != null && (due == null || round.isBefore(due))) {
+          due = round;
+          why = StallExit.clockOnWatch;
+        } else {
+          why ??= StallExit.clockOnWatch;
+        }
+        continue;
+      }
+      final (wanted, wantedRow) = switch (gate) {
         _LiveCurrent() when planned.why == _Why.clock => (
             null,
             planned.why.row

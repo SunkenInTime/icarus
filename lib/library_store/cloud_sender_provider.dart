@@ -41,6 +41,10 @@ final cloudSenderClockProvider = Provider<DateTime Function()>(
   (ref) => DateTime.now,
 );
 
+final storeReconnectProvider = Provider<Future<void> Function()>(
+  (ref) => () => ConvexClient.instance.reconnect(),
+);
+
 final convexSignInsProvider = Provider<Stream<bool>>(
   (ref) => ConvexClient.instance.authState,
 );
@@ -175,6 +179,7 @@ class CloudSenderNotifier extends Notifier<CloudSender?> {
       timing: ref.read(cloudSenderTimingProvider),
       clock: ref.read(cloudSenderClockProvider),
       editorShows: () => ref.read(ref.read(senderEditorProvider)),
+      reconnect: ref.read(storeReconnectProvider),
     );
     state = sender;
     final live = ref.read(storeLiveResultsProvider)..attach(sender);

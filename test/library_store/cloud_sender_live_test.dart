@@ -376,6 +376,37 @@ final class _ThrowingStore implements LiveResults {
       throw StateError('the store broke on close');
 }
 
+const watchedP2 = ReadOfPage('p2');
+
+StoreReadAnswered p2Of(World world) =>
+    world.server.answerNow(ReadCall(strategyId, 'p2', servedAccount))
+        as StoreReadAnswered;
+
+int clockHeldOnWatch(World world) {
+  world.pagesOnServer(['p2']);
+  world.sender.adopt(strategyId);
+  world.settle(const Duration(minutes: 1));
+  final strategy = world.rowOf((content) => content.strategy);
+  world.commit([
+    PageReorderOp(
+      opId: 'reorder',
+      pagePublicId: 'p2',
+      sortIndex: 0,
+      expectedStrategyRevision: (strategy.toJson()! as Map)['revision']! as int,
+    ),
+  ]);
+  world.settle(const Duration(seconds: 5));
+  world.server.skew = -const Duration(hours: 3).inMilliseconds;
+  world.connection = 2;
+  world.sender
+    ..liveOpened(strategyId, watchedP2)
+    ..liveArrived(strategyId, watchedP2, servedAccount, p2Of(world));
+  world.settle();
+  final readsBefore = world.server.readsOf(strategyId).length;
+  world.commitPageDelete('delete-p2', 'p2');
+  return readsBefore;
+}
+
 void main() {
   group('with the store switch on, the editor\'s page watch', () {
     test(
@@ -692,7 +723,7 @@ void main() {
 
       expect(world.cloud().queue.shown.waitsOnClock('p2'), isTrue);
       expect(world.face(), Face.awaitingResult);
-      expect(world.sender.waitingOn(strategyId), StallExit.answerAhead);
+      expect(world.sender.waitingOn(strategyId), StallExit.clockOnWatch);
       expect(
         world.server.readsOf(strategyId).skip(readsBefore),
         isNot(contains('page p2')),
@@ -978,6 +1009,56 @@ void main() {
         unawaited(watch.cancel());
       }
       world.settle();
+    });
+  });
+
+  group('the clock wait on a current watch', () {
+    test(
+        'is bounded: after the ladder\'s rounds, with no read, it shows as '
+        'could not resolve, with its row', () {
+      inWorld((world) {
+        final readsBefore = clockHeldOnWatch(world);
+        final rounds = [
+          for (var n = 1; n < timing.unresolvedRounds; n++)
+            timing.settleAfter(n),
+        ].fold(Duration.zero, (sum, rung) => sum + rung);
+        world.settle(const Duration(seconds: 1));
+        expect(world.sender.couldNotResolve(strategyId), isNull);
+        world.settle(rounds + const Duration(seconds: 1));
+        expect(
+          world.sender.couldNotResolve(strategyId)?.subjects,
+          ['page p2'],
+        );
+        expect(world.sender.waitingOn(strategyId), StallExit.clockOnWatch);
+        world.settle(const Duration(hours: 1));
+        expect(
+          world.server.readsOf(strategyId).skip(readsBefore),
+          isNot(contains('page p2')),
+        );
+      }, addStrategy: false);
+    });
+
+    test(
+        'the user\'s retry asks the client to reconnect, once, and the '
+        'watch\'s answer on the new connection pays it', () {
+      inWorld((world) {
+        clockHeldOnWatch(world);
+        world.settle(const Duration(minutes: 10));
+        world.server.skew = 0;
+        world.onReconnect = () {
+          world.connection = 3;
+          world.sender
+              .liveArrived(strategyId, watchedP2, servedAccount, p2Of(world));
+        };
+        world.sender.retryNow(strategyId);
+        world.settle(const Duration(minutes: 1));
+        expect(world.reconnects, 1);
+        expect(world.cloud().queue.shown.waitsOnClock('p2'), isFalse);
+        expect(world.server.log, contains('send delete-p2'));
+        world.sender.retryNow(strategyId);
+        world.settle();
+        expect(world.reconnects, 1);
+      }, addStrategy: false);
     });
   });
 }

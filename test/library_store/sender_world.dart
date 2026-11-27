@@ -651,6 +651,11 @@ final class _Shows {
   String? value;
 }
 
+final class _Reconnects {
+  var count = 0;
+  void Function()? then;
+}
+
 final class SlowSenderStore extends SenderStore {
   SlowSenderStore(super.store) : super(keepsAllReports: true);
 
@@ -779,6 +784,11 @@ final class World {
   late OnOff dropsConnectionLost;
   late _Slept _slept;
   late _Shows _shows;
+  late _Reconnects _reconnects;
+
+  int get reconnects => _reconnects.count;
+
+  set onReconnect(void Function()? then) => _reconnects.then = then;
 
   String? get editorShows => _shows.value;
 
@@ -860,6 +870,7 @@ final class World {
     final dropsConnectionLost = OnOff();
     final slept = _Slept();
     final shows = _Shows();
+    final reconnects = _Reconnects();
     final engine = RefusingEngine(MemoryEngine(storage ?? MemoryStorage()));
     LibraryStore? store;
     LibraryStore.open(
@@ -893,12 +904,17 @@ final class World {
       elapsed: () => async.elapsed - slept.value,
       recordsConnectionLost: () => !dropsConnectionLost.value,
       editorShows: () => shows.value,
+      reconnect: () async {
+        reconnects.count++;
+        reconnects.then?.call();
+      },
     );
     fake.whyNow = () => sender.reading;
     final world = World._(async, engine, store!, fake, sender)
       ..dropsConnectionLost = dropsConnectionLost
       .._slept = slept
       .._shows = shows
+      .._reconnects = reconnects
       .._account = inputs.account
       .._connection = inputs.connection
       .._authChanges = inputs.signIns
