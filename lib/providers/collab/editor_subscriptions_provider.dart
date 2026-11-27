@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/generated/convex_error_codes.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
@@ -83,5 +84,6 @@ final class StampedSubscriptions extends EditorSubscriptions {
 
 T _valueOf<T>(Stamped<T> stamped) => switch (stamped) {
       StampedValue(:final value) => value,
-      StampedError(:final error) => throw error,
+      StampedError(:final error) =>
+        throw ConvexFunctionException.fromTransport(error),
     };

@@ -38,6 +38,19 @@ void main() {
     });
     tearDown(() => watching?.cancel());
 
+    ResultStamp at(int snapshot) => ResultStamp(
+          client: 1,
+          connection: 1,
+          snapshot: snapshot,
+          serverTime: 1000 + snapshot,
+        );
+
+    RemotePageSnapshot pageOf(Stamped<RemotePageSnapshot> answer) =>
+        (answer as StampedValue<RemotePageSnapshot>).value;
+
+    int revisionOf(Stamped<RemotePageSnapshot> answer, String id) =>
+        pageOf(answer).elements.singleWhere((e) => e.publicId == id).revision;
+
     Future<void> watch() async {
       watching = repository
           .watchPageSnapshotStamped(
@@ -57,14 +70,18 @@ void main() {
             ),
         ];
 
-    test(
-        'hands over from the whole page to its slices as the plain watch '
-        'does, each page with the stamp it came with, and a read of it is '
-        'answered from the slices', () async {
+    Future<void> watchSlicedPage() async {
       await watch();
       server.publish(agents(20));
       server.publish(agents(20, moved: _id(1)));
       await pumpEventQueue();
+    }
+
+    test(
+        'hands over from the whole page to its slices as the plain watch '
+        'does, each page with the stamp it came with, and a read of it is '
+        'answered from the slices', () async {
+      await watchSlicedPage();
 
       expect(stamped.calls, [
         'subscribeStamped page:getSnapshot',
@@ -72,30 +89,50 @@ void main() {
             'page:getElementSlice',
       ]);
       expect(server.cancelled, ['page:getSnapshot']);
-      final pages = [
-        for (final answer in answers) (answer as StampedValue).value,
-      ];
-      expect(pages, hasLength(3));
-      expect(
-        pages.last.elements.map((element) => element.revision),
-        contains(2),
-      );
-      final snapshots = [for (final answer in answers) answer.stamp.snapshot];
-      expect(snapshots, orderedEquals([...snapshots]..sort()));
-      expect(snapshots.toSet(), hasLength(3));
+      expect([
+        for (final answer in answers) answer.stamp
+      ], [
+        at(1),
+        at(2),
+        at(3),
+      ]);
+      expect(revisionOf(answers[1], _id(1)), 2);
+      expect(revisionOf(answers[2], _id(1)), 2);
 
       final read = await repository.fetchPageSnapshot(
         strategyPublicId: 'strategy',
         pagePublicId: 'p',
       );
       expect(server.reads, isEmpty);
-      expect(read.elements, pages.last.elements);
+      expect(read.elements, pageOf(answers[2]).elements);
       expect(errors, isEmpty);
     });
 
     test(
-        'a refusal of the page comes as a StampedError at its stamp, and the '
-        'watch goes on', () async {
+        'slices that fail before they answer give the whole page again at '
+        'the stamp it came with, and it stays live', () async {
+      await watch();
+      server.refuseParts = true;
+      server.publish(agents(20));
+      server.publish(agents(20, moved: _id(1)));
+      await pumpEventQueue();
+
+      expect(answers.length, greaterThan(2));
+      for (final replay in answers.skip(2)) {
+        expect(replay.stamp, at(2));
+        expect(revisionOf(replay, _id(1)), 2);
+      }
+
+      server.publish(agents(20, moved: _id(2)));
+      await pumpEventQueue();
+      expect(answers.last.stamp, at(3));
+      expect(revisionOf(answers.last, _id(2)), 2);
+      expect(errors, isEmpty);
+    });
+
+    test(
+        'a refusal of the whole page comes as a StampedError at its stamp, '
+        'and the watch goes on', () async {
       await watch();
       server.publish(agents(4));
       await pumpEventQueue();
@@ -108,13 +145,42 @@ void main() {
       await pumpEventQueue();
 
       expect(errors, isEmpty);
-      expect(answers, hasLength(3));
+      expect([
+        for (final answer in answers) answer.stamp
+      ], [
+        at(1),
+        at(2),
+        at(3),
+      ]);
       expect(
-        (answers[1] as StampedError).error.rawCode,
+        (answers[1] as StampedError<RemotePageSnapshot>).error.rawCode,
         'FORBIDDEN',
       );
-      expect(answers[1].stamp.snapshot, 2);
-      expect((answers[2] as StampedValue).value.elements, hasLength(5));
+      expect(pageOf(answers[2]).elements, hasLength(5));
+    });
+
+    test(
+        'a refusal of a slice comes as a StampedError at its stamp, and a '
+        'read then goes to the server', () async {
+      await watchSlicedPage();
+      server.fail(
+        'page:getElementSlice from "8"',
+        const ConvexTransportError(rawCode: 'FORBIDDEN', message: 'slice'),
+      );
+      await pumpEventQueue();
+
+      expect(errors, isEmpty);
+      expect(answers.last.stamp, at(4));
+      expect(
+        (answers.last as StampedError<RemotePageSnapshot>).error.rawCode,
+        'FORBIDDEN',
+      );
+
+      await repository.fetchPageSnapshot(
+        strategyPublicId: 'strategy',
+        pagePublicId: 'p',
+      );
+      expect(server.reads, ['page:getSnapshot']);
     });
   });
 
