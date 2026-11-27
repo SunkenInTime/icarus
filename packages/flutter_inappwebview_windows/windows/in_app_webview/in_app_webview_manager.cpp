@@ -42,6 +42,12 @@ namespace flutter_inappwebview_plugin
 
         graphics_context_ = std::make_unique<GraphicsContext>(rohelper_.get());
         compositor_ = graphics_context_->CreateCompositor();
+        // ICARUS PATCH: one reference to the compositor is never given back, so
+        // it is still alive when the process ends. Releasing it for the last
+        // time during process exit ended every close of the app in a crash.
+        if (compositor_) {
+          compositor_->AddRef();
+        }
         valid_ = graphics_context_->IsValid();
       }
     }
@@ -241,10 +247,6 @@ namespace flutter_inappwebview_plugin
     webViews.clear();
     keepAliveWebViews.clear();
     windowWebViews.clear();
-    // ICARUS PATCH: the compositor is static, so without this its last
-    // release ran from this DLL's exit table after ExitProcess had begun, and
-    // Windows ended the process there with a crash on every close.
-    compositor_ = nullptr;
     UnregisterClass(windowClass_.lpszClassName, nullptr);
     plugin = nullptr;
   }

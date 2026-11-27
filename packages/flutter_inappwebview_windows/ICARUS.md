@@ -14,28 +14,45 @@ already gone, so nobody saw it, but the process ended in a crash instead of
 exiting, on every close of every build since at least 5.0.2.
 
 The plugin creates a Windows composition compositor when it registers and
-keeps it in a static pointer. `~InAppWebViewManager()` cleared the web views
-and left the compositor, so its last release happened from this DLL's exit
-table, after `ExitProcess` had begun and the dispatcher it belongs to was
-gone. Registering the plugin was enough: no web view had to be opened.
+keeps it in a static pointer. Nothing released it before the process began to
+exit, so its last release, and with it the compositor's whole teardown, ran
+from this DLL's exit table after `ExitProcess` had begun. Registering the
+plugin was enough: no web view had to be opened.
 
-The patch is one line in
-`windows/in_app_webview/in_app_webview_manager.cpp`: the destructor releases
-the compositor right after it clears the web views, while the app is still
-shutting down in order.
+## The patch
 
-## What the patch assumes
+One change in `windows/in_app_webview/in_app_webview_manager.cpp`: right after
+the compositor is created, the plugin takes one more reference to it and
+never gives it back. The static pointer's release at exit is then not the
+last one, the compositor is never torn down by this process, and Windows
+frees it with the process. This is the change upstream made in
+0.7.0-beta.3, applied on its own to 0.6.0.
 
-The compositor is shared by every `InAppWebViewManager` in the process, and
-it is created only once. Icarus has one Flutter engine and so one manager. An
-app with two engines would lose the compositor for the second when the first
-one's manager went away.
+Releasing things earlier does not work. Measured on Windows 11, three closes
+each, over four ways of ending a session (the video panel opened and
+dismissed, the player still open, no web view ever shown, and the test
+driver's own `exit`):
+
+| Change | Dismissed | Open | No web view | Driver exit |
+|---|---|---|---|---|
+| None | crash | crash | crash | crash |
+| Release the compositor in the manager's destructor | crash | crash | 0 | crash |
+| Release the compositor, graphics context, dispatcher controller and WinRT helper there, in order | 0 | 0 | 0 | crash |
+| One more reference to the compositor (this patch) | 0 | 0 | 0 | 0 |
+
+## What the patch leaves behind
+
+One COM reference to the compositor for the life of the process, taken once
+when the plugin first sets itself up, not once per web view. Web views are
+still disposed as before. The compositor and what it owns stay alive until
+the process ends.
 
 ## When to remove this copy
 
 Upstream's report is
-[flutter_inappwebview #2733](https://github.com/pichillilorenzo/flutter_inappwebview/issues/2733),
-still open when this was vendored, with stable at 0.6.0. Remove this copy and
-the override in `pubspec.yaml` when Icarus moves to a release that exits
-cleanly: build a release, close its window, and check the exit code with
-`tool/drive/release-close.ps1`.
+[flutter_inappwebview #2733](https://github.com/pichillilorenzo/flutter_inappwebview/issues/2733).
+Remove this copy and the override in `pubspec.yaml` when Icarus moves to a
+stable release that carries the same change, and check it the way this was
+checked: `tool/drive/release-close.ps1` on a release build, and the driver
+scripts `close-with-video-open` and `close-after-video-dismissed` with the
+exit judged.
