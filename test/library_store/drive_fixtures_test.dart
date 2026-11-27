@@ -24,6 +24,8 @@ final _resultsToMakeNewer = Platform.environment['ICARUS_NEWER_RESULTS_STORE'];
 final _smallOut = Platform.environment['ICARUS_SMALL_LIBRARY_FIXTURE'];
 final _keptOut = Platform.environment['ICARUS_KEPT_ON_HIVE_FIXTURE'];
 final _leftBehindOut = Platform.environment['ICARUS_LEFT_BEHIND_FIXTURE'];
+final _sixtyDrawingsOut =
+    Platform.environment['ICARUS_SIXTY_DRAWINGS_FIXTURE'];
 final _storeHoldsOut =
     Platform.environment['ICARUS_STORE_HOLDS_LIBRARY_FIXTURE'];
 
@@ -190,7 +192,47 @@ Future<void> writeKeptOnHiveFixture(Directory out) async {
   await Hive.close();
 }
 
+Future<void> writeSixtyDrawingsFixture(Directory out) async {
+  final parts = [
+    for (var index = 0; index < 40; index++)
+      generatedPage(
+        id: 'part-$index',
+        sortIndex: index,
+        optionals: Optionals.set,
+        isAttack: true,
+        itemPrefix: 'sixty-$index',
+      ),
+  ];
+  final page = parts.first.copyWith(
+    drawingData: [
+      for (final part in parts) ...part.drawingData,
+    ].take(60).toList(),
+    agentData: [for (final part in parts.take(3)) ...part.agentData],
+    abilityData: [for (final part in parts.take(3)) ...part.abilityData],
+    imageData: const [],
+  );
+  final strategy = generatedStrategy(Optionals.unset).copyWith(
+    id: 'fixture-sixty-drawings',
+    name: 'Sixty drawings',
+    pages: [page],
+  );
+  await openScratchHive(out, strategies: [strategy]);
+  await Hive.close();
+}
+
 void main() {
+  test(
+    'writes a library of one strategy whose page holds sixty drawings',
+    () async {
+      final out = Directory(_sixtyDrawingsOut!)..createSync(recursive: true);
+      expect(out.listSync(), isEmpty, reason: 'give the fixture a new folder');
+      await writeSixtyDrawingsFixture(out);
+    },
+    skip: _sixtyDrawingsOut == null
+        ? 'set ICARUS_SIXTY_DRAWINGS_FIXTURE to a new folder'
+        : false,
+  );
+
   test(
     'writes a library with records the store cannot name by id: a folder sharing its id with another, a folder and a strategy under integer keys, a folder under a key that is not its id',
     () async {

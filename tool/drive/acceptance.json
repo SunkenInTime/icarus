@@ -81,6 +81,9 @@
     "library-copy-only-local": {
       "library": true
     },
+    "library-save-drawings-local": {
+      "fixture": "ICARUS_SIXTY_DRAWINGS_FIXTURE"
+    },
     "library-timings-local": {
       "library": true
     },

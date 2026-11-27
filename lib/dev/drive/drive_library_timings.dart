@@ -7,6 +7,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/library_store/slowed_engine.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/local_library.dart';
 
@@ -64,9 +65,19 @@ Future<int> _idleGap() async {
   return sorted[sorted.length ~/ 2];
 }
 
+enum TimedEdit {
+  addAgent('an agent added'),
+  removeFirstDrawing('its first drawing removed');
+
+  const TimedEdit(this.words);
+
+  final String words;
+}
+
 Future<List<String>> editToSavedLines(
   ProviderContainer c, {
   required int runs,
+  TimedEdit edit = TimedEdit.addAgent,
 }) async {
   final id = c.read(strategyProvider).strategyId;
   if (id == null) throw StateError('no strategy is open to edit');
@@ -91,12 +102,21 @@ Future<List<String>> editToSavedLines(
   final idleGaps = <Duration>[];
   final ticker = _Gaps();
   for (var run = 1; run <= runs; run++) {
-    c.read(agentProvider.notifier).addAgent(PlacedAgent(
-          id: 'timed-edit-$run',
-          type: AgentType.jett,
-          position: Offset(400.0 + run * 3, 400),
-          isAlly: true,
-        ));
+    if (edit == TimedEdit.removeFirstDrawing &&
+        c.read(drawingProvider).elements.isEmpty) {
+      break;
+    }
+    switch (edit) {
+      case TimedEdit.addAgent:
+        c.read(agentProvider.notifier).addAgent(PlacedAgent(
+              id: 'timed-edit-$run',
+              type: AgentType.jett,
+              position: Offset(400.0 + run * 3, 400),
+              isAlly: true,
+            ));
+      case TimedEdit.removeFirstDrawing:
+        c.read(drawingProvider.notifier).deleteDrawing(0);
+    }
     await WidgetsBinding.instance.endOfFrame;
     final idle = await _idleGap();
     SlowedEngine.waitedMicros = 0;
@@ -112,7 +132,8 @@ Future<List<String>> editToSavedLines(
     await Future<void>.delayed(const Duration(milliseconds: 200));
   }
   final page = 'SAVETIME ${stored?.name} (${stored?.pages.length} pages, '
-      '$items items): an agent added, then saved, $runs times';
+      '$items items): ${edit.words}, then saved, ${times.length} times';
+  if (times.isEmpty) return ['$page: the page has no drawing to remove'];
   return [
     '$page: ${_spread(times)}',
     '$page, the main thread held in one stretch: ${_spread(longest)}',

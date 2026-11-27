@@ -1,0 +1,11 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"resize": [1600, 900]},
+  {"tapText": "Sixty drawings"},
+  {"wait": 6},
+  {"tapIcon": "x", "optional": true},
+  {"editToSaved": 10},
+  {"editToSaved": 10, "edit": "removeFirstDrawing"},
+  {"exit": 1}
+]
