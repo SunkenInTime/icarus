@@ -978,6 +978,20 @@ final class Shown {
     );
   }
 
+  factory Shown.ofStoredRows(StrategyRowSet rows) {
+    final holding = {
+      for (final row in rows.elements) row.pagePublicId,
+      for (final row in rows.lineupGroups) row.pagePublicId,
+    };
+    final stored = Shown.of(rows, readPages: holding).inNewSession();
+    return stored._with(
+      content: {
+        for (final MapEntry(:key, :value) in stored.content.entries)
+          if (stored.pages.containsKey(key)) key: value,
+      },
+    );
+  }
+
   final ShownRow? strategy;
   final Marks marks;
   final Seen? listSeen;

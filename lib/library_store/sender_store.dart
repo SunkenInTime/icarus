@@ -227,6 +227,12 @@ final class StoredRowsRefused extends SenderReport {
   final StoredRowsDisagree refusal;
 }
 
+final class StoredResultsDroppedReport extends SenderReport {
+  const StoredResultsDroppedReport(super.strategyId, this.dropped);
+
+  final StoredResultsDropped dropped;
+}
+
 final class WriteNotMade extends SenderReport {
   const WriteNotMade(super.strategyId, this.trouble);
 

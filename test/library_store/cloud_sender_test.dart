@@ -2560,6 +2560,37 @@ void main() {
     });
 
     test(
+        'stored results this build cannot read are dropped and reported once: '
+        'the sender reads the strategy again and sends the next edit', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      withSecondPage(storage, server);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      contents[strategyArea(strategyId)]!['read/header'] = '{"version":99}';
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          world.commitMove(1);
+          world.settle(const Duration(minutes: 1));
+          expect(world.server.applied, 1);
+          expect(world.cloud().queue.entries, isEmpty);
+          expect(
+            world.sender.store.reports
+                .whereType<StoredResultsDroppedReport>()
+                .map((report) => report.dropped.group),
+            ['read/header'],
+          );
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
         'the driver\'s wait fails when a strategy is refused while the wait is '
         'part way through its scan', () {
       final storage = MemoryStorage();

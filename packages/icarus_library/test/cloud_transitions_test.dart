@@ -812,6 +812,42 @@ String renderTable() {
     )
     ..writeln()
     ..writeln(
+      'The stored results (`read/header` and `read/page/…`) are the one part '
+      'of the queue that does not hold the strategy when this build cannot '
+      'read it, whether a newer build wrote it in a shape this one does not '
+      'know or the row is damaged. When any of them cannot be read, and '
+      'nothing else of the queue is unreadable, the load drops all of them, '
+      'since they mean something only together, and rebuilds `Shown` from the '
+      'stored base rows: the strategy, page and settings rows, every stored '
+      'item on the page it is stored on, the contents of each live page that '
+      'holds items, and the highest version of each row at the version stored. '
+      'Nothing is read this session: no debts, no results taken, no marks. '
+      'The rows-agree check then runs against what was rebuilt and passes '
+      'unless a row is damaged or an item is stored on two pages or on a page '
+      'with no page row, which refuses the strategy as before and writes '
+      'nothing. Otherwise one commit at load removes every stored results row '
+      'and writes the rebuilt ones in their place, leaving the base rows, '
+      'entries, attempts, landed work and strategy facts byte for byte as they '
+      'were, and the sender reports it once. What the dropped rows held that '
+      'the rebuild does not: debts, which a later session pays (every result '
+      'after the restart is one, and a read labelled with the ended session '
+      'is refused); versions of rows no longer stored, which only matter '
+      'against a page list or page result read this session, and are raised '
+      'again by it; and contents for a page read with no items, which the '
+      'sender reads again, a copy of that page being refused until it has. '
+      'Work a dropped debt held waits no longer for it: it was written in an '
+      'earlier session, so it goes out checked, at its revision and naming '
+      'the strategy and row lives it was written over, and the server refuses '
+      'it if the row or the strategy was replaced, which owes the read again. '
+      'Work that needs a result read this session (a held page delete, a '
+      'whole-row edit behind our own work) waits for it as after any restart, '
+      'and landed work stays drawn until a result shows it. A queue entry, attempt, '
+      'landed work or facts row this build cannot read still holds the '
+      'strategy, and so do stored results beside it. '
+      '`test/cloud_results_dropped_test.dart` covers each of these.',
+    )
+    ..writeln()
+    ..writeln(
       'A disagreement refuses the strategy: nothing is written, no result is '
       'taken, the reader does not show it, and the sender neither reads nor '
       'sends for it and reports the reason once. Queued work stays on disk as '
