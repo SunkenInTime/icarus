@@ -1700,13 +1700,17 @@ it stores and the attempts that sent it:
 - `NeedsUser(reason)`: rejected or failed (`RefusedByServer`), unanswered for
   29 days (`WindowClosed`), retries exhausted, page delete held, too big to
   send (`Oversized`), written over a row someone else changed
-  (`ChangedUnseen`), or a format this build no longer sends.
+  (`ChangedUnseen`), found at commit to be drawn over a row that changed or
+  was replaced since (`ChangedSinceDrawn`, counted with the server's
+  rejections), or a format this build no longer sends.
 
 **What an entry stores.** Its op, with the field base of a merge always
 recorded; its scope (the page it was made on, both pages of a move, or the
 whole strategy); what it was authored against (the revision and digest of
-the row the user saw); the session it was authored in; the server's refusal
-once known; and whether its resend window has passed. The queue stores
+the row the user saw); the session it was authored in; how it was made
+(`madeAs`, stored only when live or checked); the server's refusal once
+known, or the conflict its commit found; and whether its resend window has
+passed. The queue stores
 numbered attempts, the landed work, the latest results of this session, the
 strategy's facts (deleted, edit access lost or confirmed after attempt N,
 upgrade asked of build X by attempt N) and the session.
@@ -1741,7 +1745,7 @@ overwrite a teammate's newer work.
 
 | Attempt on record | Connected, and written in this session | Basis | Age at claim | Form |
 |---|---|---|---|---|
-| yes | any | any | any | checked |
+| yes, or the entry was made checked | any | any | any | checked |
 | no | no | any | any | checked |
 | no | yes | none | any | checked |
 | no | yes | yes | no monotonic reading | checked |
@@ -2060,7 +2064,33 @@ caller cannot pair one read's edit with another read's `seen`. A page delete
 records the page as the store holds it at commit, unless `pagesAsSeen` names
 the page: then it records that `SeenPage`, which the editor builds with
 `seenPageOf` and `contentSeenOf` from the rows it drew, or with
-`ContentNeverRead` when it drew none.
+`ContentNeverRead` when it drew none. `pagesAsSeen` is part of `made:`.
+
+**How an edit was made.** `commitAllAs` takes `made:`, a `HowMade`: `MadeLive`
+names the queue session the editor read (`queue.session.number` of the
+`CloudStrategy` in the read it drew) when it judged its page live, and
+`MadeChecked` says it did not. Both may carry `drawnLives`, the life of each
+row the batch names as the editor drew it. `MadeLive` of a session that has
+since ended is made checked. Each op of the batch is judged against the held
+rows (`atCommit`):
+
+- A row whose life differs from the drawn one was replaced since the draw:
+  the op is queued as `ChangedSinceDrawn(rowReplaced)` and not applied.
+- A patch or reorder of a row drawn live that the store holds deleted is
+  queued as `ChangedSinceDrawn(deleted)` and not applied. Keep mine takes a
+  put-back: an add at the tombstone's revision with the user's payload.
+- Made live, a merge is applied as the server applies a live send, its fields
+  over the held row with no base check, and keeps its authored base. The
+  send policy picks its form as for any edit.
+- Made checked, a merge whose base the held row moved past is queued as
+  `ChangedSinceDrawn(fieldConflict)` and not applied. Its entry never goes
+  live.
+- With no `made:` an edit commits as before: a base the held row moved past
+  refuses the batch.
+
+The rest of the batch commits; an edit held this way has no `Committed`, and
+its page shows the held row until the user keeps theirs, uses the cloud's, or
+discards it. A live entry draws without its base until a server refuses it.
 
 **Where revisions still meet as numbers.** Every place two rows' versions are
 ordered uses `Version`: the highest version shown, which of two shown rows is
@@ -2118,7 +2148,8 @@ result saying the strategy is gone stops every claim for that strategy.
 **Folding.** One rule: a field edit folds into an earlier field edit of the
 same row only when the earlier one has never been claimed (no attempt on
 record, so not one given back or refused whole either), both name exactly
-the same fields (and both carry a field base or neither does), and nothing
+the same fields (and both carry a field base or neither does), both were
+made the same way, the later one was not held at commit, and nothing
 else for that row is queued between them. The folded edit keeps the earlier
 one's place, base and what it was authored against, with the later one's
 values. Nothing else folds. The fold is not exact in two corners, both pinned

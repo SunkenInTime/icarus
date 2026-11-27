@@ -62,6 +62,7 @@ final class PendingOp extends QueueEntry {
     this.behindOwn = false,
     this.basis,
     this.strategyLife,
+    this.madeAs = MadeAs.unmarked,
   });
 
   final Work work;
@@ -75,6 +76,7 @@ final class PendingOp extends QueueEntry {
   final bool behindOwn;
   final ServerTimeBasis? basis;
   final int? strategyLife;
+  final MadeAs madeAs;
 
   StrategyOp get op => work.op;
 
@@ -103,6 +105,7 @@ final class PendingOp extends QueueEntry {
     behindOwn: behindOwn,
     basis: dropBasis ? null : basis,
     strategyLife: strategyLife,
+    madeAs: madeAs,
   );
 
   @override
@@ -119,7 +122,8 @@ final class PendingOp extends QueueEntry {
       other.window == window &&
       other.behindOwn == behindOwn &&
       other.basis == basis &&
-      other.strategyLife == strategyLife;
+      other.strategyLife == strategyLife &&
+      other.madeAs == madeAs;
 
   @override
   int get hashCode => Object.hash(
@@ -516,6 +520,8 @@ final class AuthoredNoRow extends Authored {
 
 enum SendPolicy { live, checked }
 
+enum MadeAs { unmarked, live, checked }
+
 sealed class RefusalRecord {
   const RefusalRecord();
 }
@@ -547,6 +553,22 @@ final class RefusedWith extends RefusalRecord {
 
   @override
   String toString() => 'refused: $refusal';
+}
+
+final class ConflictedAtCommit extends RefusalRecord {
+  const ConflictedAtCommit(this.reason);
+
+  final RejectionReason reason;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ConflictedAtCommit && other.reason == reason;
+
+  @override
+  int get hashCode => Object.hash(ConflictedAtCommit, reason);
+
+  @override
+  String toString() => 'conflicted at commit: ${reason.wireName}';
 }
 
 sealed class ServerRefusal {

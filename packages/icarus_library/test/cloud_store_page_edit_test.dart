@@ -26,7 +26,7 @@ Future<void> deleteAsSeen(
     strategyId,
     [pageDelete('drop', pageId)],
     seen: await seenIn(store),
-    pagesAsSeen: {pageId: seen},
+    made: MadeChecked(pagesAsSeen: {pageId: seen}),
   ),
 );
 

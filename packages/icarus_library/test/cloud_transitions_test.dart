@@ -34,7 +34,8 @@ Kind kindOf(QueueEntry entry, EntryView? view) => switch ((entry, view)) {
   (PendingOp(), final EntryView view) => switch (view.state) {
     Sending() => Kind.sending,
     NeedsUser(:final reason) => switch (reason) {
-      RefusedByServer(refusal: RejectedByServer()) => Kind.rejected,
+      RefusedByServer(refusal: RejectedByServer()) ||
+      ChangedSinceDrawn() => Kind.rejected,
       RefusedByServer(refusal: FailedOnServer()) => Kind.failed,
       RefusedByServer(refusal: AnsweredWithoutLife()) => Kind.windowClosed,
       WindowClosed() => Kind.windowClosed,

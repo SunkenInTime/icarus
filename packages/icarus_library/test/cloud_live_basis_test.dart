@@ -94,6 +94,7 @@ void main() {
             expect(sent.basis, live ? 1000 : null);
             expect(
               sendPolicy(
+                madeChecked: false,
                 attempted: attempted,
                 connected: session != Session.disconnected,
                 writtenThisSession: session != Session.another,

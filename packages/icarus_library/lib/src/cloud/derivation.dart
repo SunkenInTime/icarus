@@ -760,8 +760,8 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
     switch (view.state) {
       Sending() => const _Waits(Underway.sending),
       NeedsUser(:final reason) => _Needs(switch (reason) {
-        RefusedByServer(refusal: RejectedByServer()) =>
-          Attention.rejectedByServer,
+        RefusedByServer(refusal: RejectedByServer()) ||
+        ChangedSinceDrawn() => Attention.rejectedByServer,
         RefusedByServer(refusal: FailedOnServer()) => Attention.failedOnServer,
         RefusedByServer(refusal: AnsweredWithoutLife()) =>
           Attention.serverForgotAnswer,
@@ -788,8 +788,13 @@ _Counted _countOf(EntryView view, EntryView? Function(String) viewOf) =>
     };
 
 PendingState stateOf(CloudQueue queue, PendingOp entry) {
-  if (entry.refusal case RefusedWith(:final refusal)) {
-    return NeedsUser(RefusedByServer(refusal));
+  switch (entry.refusal) {
+    case RefusedWith(:final refusal):
+      return NeedsUser(RefusedByServer(refusal));
+    case ConflictedAtCommit(:final reason):
+      return NeedsUser(ChangedSinceDrawn(reason));
+    case NotRefused():
+      break;
   }
   final attempts = [
     for (final number in queue._index.attemptsByOp[entry.id] ?? const <int>[])

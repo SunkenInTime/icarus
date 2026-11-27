@@ -267,29 +267,36 @@ int? expectedOf(StrategyOp op) => switch (op) {
   LineupGroupReorderOp(:final expectedLineupRevision) => expectedLineupRevision,
 };
 
+StrategyOp withoutFieldBase(StrategyOp op) => switch (op) {
+  ElementPatchOp(merge: FieldMerge(base: _?, :final fields)) => ElementPatchOp(
+    opId: op.opId,
+    elementPublicId: op.elementPublicId,
+    expectedElementRevision: op.expectedElementRevision,
+    pagePublicId: op.pagePublicId,
+    payload: op.payload,
+    sortIndex: op.sortIndex,
+    merge: FieldMerge(fields: fields),
+  ),
+  LineupGroupPatchOp(merge: FieldMerge(base: _?, :final fields)) =>
+    LineupGroupPatchOp(
+      opId: op.opId,
+      lineupPublicId: op.lineupPublicId,
+      expectedLineupRevision: op.expectedLineupRevision,
+      pagePublicId: op.pagePublicId,
+      payload: op.payload,
+      sortIndex: op.sortIndex,
+      merge: FieldMerge(fields: fields),
+    ),
+  _ => op,
+};
+
 StrategyOp sendForm(StrategyOp op, SendPolicy policy) {
   final live = policy == SendPolicy.live;
   return switch (op) {
-    ElementPatchOp(merge: FieldMerge(base: _?, :final fields)) when live =>
-      ElementPatchOp(
-        opId: op.opId,
-        elementPublicId: op.elementPublicId,
-        expectedElementRevision: op.expectedElementRevision,
-        pagePublicId: op.pagePublicId,
-        payload: op.payload,
-        sortIndex: op.sortIndex,
-        merge: FieldMerge(fields: fields),
-      ),
-    LineupGroupPatchOp(merge: FieldMerge(base: _?, :final fields)) when live =>
-      LineupGroupPatchOp(
-        opId: op.opId,
-        lineupPublicId: op.lineupPublicId,
-        expectedLineupRevision: op.expectedLineupRevision,
-        pagePublicId: op.pagePublicId,
-        payload: op.payload,
-        sortIndex: op.sortIndex,
-        merge: FieldMerge(fields: fields),
-      ),
+    ElementPatchOp(merge: FieldMerge(base: _?)) ||
+    LineupGroupPatchOp(
+      merge: FieldMerge(base: _?),
+    ) when live => withoutFieldBase(op),
     ElementDeleteOp(:final lastWriterWins) when lastWriterWins != live =>
       ElementDeleteOp(
         opId: op.opId,
@@ -651,6 +658,53 @@ StrategyOp withFieldBase(StrategyRows rows, StrategyOp op) => switch (op) {
     },
   _ => op,
 };
+
+sealed class AtCommit {
+  const AtCommit();
+}
+
+final class AppliedAs extends AtCommit {
+  const AppliedAs(this.op);
+
+  final StrategyOp op;
+}
+
+final class HeldForUser extends AtCommit {
+  const HeldForUser(this.reason);
+
+  final RejectionReason reason;
+}
+
+AtCommit atCommit(
+  StrategyRows rows,
+  StrategyOp op, {
+  required MadeAs madeAs,
+  required Map<RowKey, int> drawnLives,
+}) {
+  if (_rowAt(rows, targetOf(op)) case final row?
+      when drawnLives.containsKey(row.key)) {
+    if (drawnLives[row.key] != createdAtOf(row)) {
+      return const HeldForUser(RejectionReason.rowReplaced);
+    }
+    if ((op, row)
+        case (ElementPatchOp() || ElementReorderOp(), DeletedElement()) ||
+            (
+              LineupGroupPatchOp() || LineupGroupReorderOp(),
+              DeletedLineupGroup(),
+            )) {
+      return const HeldForUser(RejectionReason.deleted);
+    }
+  }
+  if (madeAs == MadeAs.live) return AppliedAs(withoutFieldBase(op));
+  if (madeAs == MadeAs.checked) {
+    if (applyOp(rows, op) case OpRefused(
+      refusal: Rejected(reason: RejectionReason.fieldConflict),
+    )) {
+      return const HeldForUser(RejectionReason.fieldConflict);
+    }
+  }
+  return AppliedAs(op);
+}
 
 sealed class CopyExpansion {
   const CopyExpansion();
