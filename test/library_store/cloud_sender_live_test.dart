@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart' show RemoteStrategyShell;
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/library_store/call_governor.dart';
@@ -1059,6 +1060,56 @@ void main() {
         world.settle();
         expect(world.reconnects, 1);
       }, addStrategy: false);
+    });
+  });
+
+  test(
+      'a read made after the grace that does not settle the debt is not '
+      'repeated faster than the ladder', () {
+    inWorld((world) {
+      world.sender
+        ..liveOpened(strategyId, openPage)
+        ..liveArrived(strategyId, openPage, servedAccount, livePage(world));
+      world.settle();
+      final held = world.server.rows[strategyId]!.page(pageId)! as LivePage;
+      world.server.overrideRead = (call) => call.page == pageId
+          ? StoreReadAnswered(
+              PageRead(
+                page: bornIn(held, lifeOfRow(held.key) + 1000) as PageRow,
+                elements: const [],
+                lineupGroups: const [],
+              ),
+              point: stampedWhenAnswered,
+            )
+          : null;
+      world.server.answerNext(
+        strategyId,
+        (call) => Future.value(
+          StoreBatchAnswered(
+            [
+              for (final op in call.opIds)
+                RejectedAnswer(
+                  op,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+            ],
+            complete: true,
+            point: stampedWhenAnswered,
+          ),
+        ),
+      );
+      final from = world.async.elapsed;
+      world.commitMove(1);
+      world.settle(const Duration(minutes: 5));
+      final reads = [
+        for (final call in world.server.readCalls)
+          if (call.page == pageId && call.at!.difference(start) >= from)
+            call.at!.difference(start),
+      ];
+      expect(reads.length, greaterThanOrEqualTo(4));
+      expect(reads.first - from, greaterThanOrEqualTo(timing.liveGrace));
+      expectTheLadder(reads);
     });
   });
 }
