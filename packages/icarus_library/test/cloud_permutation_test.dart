@@ -29,7 +29,6 @@ final class ReadFact extends Fact {
   final ArrivedBase base;
   late final int session;
   final ResultPoint point;
-  late final int requestedAt;
 }
 
 final class ClockFact extends Fact {
@@ -334,7 +333,6 @@ final class Scenario {
         fact.session = fact.phase == 2
             ? client.queue.nextSession
             : client.queue.session.number;
-        fact.requestedAt = fact.phase == 2 ? 0 : client.queue.session.sequence;
       }
     }
   }
@@ -427,21 +425,9 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
     switch (fact) {
       case EventFact(:final event):
         step(event);
-      case ReadFact(
-        :final base,
-        :final session,
-        :final point,
-        :final requestedAt,
-      ):
+      case ReadFact(:final base, :final session, :final point):
         if (base is! StrategyGone) lastDelivered[subjectOf(base)] = base;
-        step(
-          BaseArrived(
-            base,
-            session: session,
-            point: point,
-            requestedAt: requestedAt,
-          ),
-        );
+        step(BaseArrived(base, session: session, point: point));
       case ClockFact(:final by):
         at = at.add(by);
       case ClaimFact():
@@ -481,14 +467,7 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
       describeBase(current),
       describeBase(entry.value),
     )) {
-      step(
-        BaseArrived(
-          current,
-          session: queue.session.number,
-          point: tick(),
-          requestedAt: queue.session.sequence,
-        ),
-      );
+      step(BaseArrived(current, session: queue.session.number, point: tick()));
     }
   }
   for (var round = 0; ; round++) {
@@ -521,7 +500,6 @@ Delivered deliver(CloudQueue start, List<Fact> order, Server model) {
               : pageReadOf(server.rows, page),
           session: queue.session.number,
           point: tick(),
-          requestedAt: queue.session.sequence,
         ),
       );
     }
@@ -596,7 +574,6 @@ bool sameApartFromResults(CloudQueue a, CloudQueue b) {
       connected: queue.session.connected,
       build: queue.session.build,
       number: queue.session.number,
-      sequence: 0,
       basis: queue.session.basis,
     ),
   );

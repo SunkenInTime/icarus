@@ -129,7 +129,6 @@ void main() {
         pageReadOf(initialRows(), 'page-a'),
         session: client.queue.session.number,
         point: tick(),
-        requestedAt: client.queue.session.sequence,
       ),
     );
     entryViews(client.queue, now);

@@ -26,7 +26,8 @@ Future<void> _until(bool Function() done, String what) async {
 
 void main() {
   test(
-    'the stamped transport stamps reads, watches, groups and answers',
+    'the stamped transport stamps reads, watches, groups and answers, and a '
+    'read after a batch refused op by op is at or after its snapshot',
     () async {
       TestWidgetsFlutterBinding.ensureInitialized();
       await ConvexClient.initialize(
@@ -164,6 +165,69 @@ void main() {
       expect(refused.stamp.connection, generation.connection);
       expect(refused.stamp.client, generation.client);
       expect(refused.stamp.serverTime, isNotNull);
+
+      final strategyPublicId =
+          'stamped-transport-strategy-${DateTime.now().microsecondsSinceEpoch}';
+      await api.strategies.create(
+        clientProtocolVersion: _protocol,
+        mapData: 'ascent',
+        name: 'Stamped transport refusals',
+        publicId: strategyPublicId,
+      );
+      final shell = api.strategy.getShell(
+        clientProtocolVersion: _protocol,
+        strategyPublicId: strategyPublicId,
+      );
+      double revisionIn(Stamped<StrategyGetShellResult> read) => switch (read) {
+            StampedValue(:final value) => value.header.revision,
+            StampedError(:final error) => fail('the shell failed: $error'),
+          };
+      final created = revisionIn(await shell.stampedOn(transport).fetch());
+      final everyOpRefused = await transport.mutationStamped(
+        'ops:applyBatch',
+        encodeOpsApplyBatchArgs(
+          clientId: 'icarus-stamped-transport-live',
+          clientProtocolVersion: _protocol,
+          strategyPublicId: strategyPublicId,
+          ops: [
+            for (final at in [0, 1])
+              OpsApplyBatchArgsOpsItemStrategyPatch(
+                opId: '$strategyPublicId-stale-$at',
+                expectedStrategyRevision: 7,
+                payload: OpsApplyBatchArgsOpsItemStrategyPatchPayload(
+                  name: ConvexOptional.present('Never $at'),
+                ),
+              ),
+          ],
+        ),
+      );
+      final batch = switch (everyOpRefused) {
+        StampedValue(:final value) => decodeOpsApplyBatchResult(value),
+        StampedError(:final error) => fail('the batch failed whole: $error'),
+      };
+      expect(batch.results, hasLength(2));
+      expect(
+        batch.results,
+        everyElement(
+          isA<OpsApplyBatchResultResultsItemRejected>().having(
+            (rejected) => rejected.reason,
+            'reason',
+            OpsApplyBatchResultResultsItemRejectedReason.revisionMismatch,
+          ),
+        ),
+      );
+      expect(everyOpRefused.stamp.client, generation.client);
+      expect(everyOpRefused.stamp.connection, generation.connection);
+      expect(everyOpRefused.stamp.serverTime, isNotNull);
+      final readAfter = await shell.stampedOn(transport).fetch();
+      expect(readAfter.stamp.connection, everyOpRefused.stamp.connection);
+      expect(
+        readAfter.stamp.snapshot,
+        greaterThanOrEqualTo(everyOpRefused.stamp.snapshot),
+        reason: 'a batch refused op by op is answered once its snapshot is '
+            'visible, so a read after it is at or after that snapshot',
+      );
+      expect(revisionIn(readAfter), created);
 
       final unconvertible = ConvexObject({
         r'$reserved': const ConvexString('not a field name'),

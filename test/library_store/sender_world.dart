@@ -1110,7 +1110,6 @@ final class World {
           result,
           session: session.number,
           point: server.stamp(),
-          requestedAt: session.sequence,
         ),
     ]);
   }

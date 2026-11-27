@@ -13,7 +13,7 @@ import 'support.dart';
 Future<String> takeInto(
   LibraryStore store,
   ArrivedBase base,
-  ReadAsked from, {
+  ResultPoint from, {
   required bool reuse,
 }) async {
   shownTakesReuse = reuse;
@@ -105,9 +105,9 @@ Future<Counts> runSeed(int seed, int steps) async {
     await addCloud(store, server.rows());
   }
   void count(String what) => applied[what] = (applied[what] ?? 0) + 1;
-  final sources = <int, ReadAsked>{};
-  final withheld = <(ServerResult, ReadAsked)>[];
-  ReadAsked? lastFresh;
+  final sources = <int, ResultPoint>{};
+  final withheld = <(ServerResult, ResultPoint)>[];
+  ResultPoint? lastFresh;
   String? lastSubject;
   var lastPage = 0;
   var lastList = 0;
@@ -120,7 +120,7 @@ Future<Counts> runSeed(int seed, int steps) async {
     final changed = server.random.nextBool();
     if (changed) server.change();
     final ServerResult result;
-    final ReadAsked asked;
+    final ResultPoint asked;
     final bool late;
     if (withheld.isNotEmpty && server.random.nextInt(3) == 0) {
       (result, asked) = withheld.removeAt(
@@ -144,7 +144,7 @@ Future<Counts> runSeed(int seed, int steps) async {
         asked = lastFresh;
         count('started with the read before it');
       } else {
-        asked = await askedIn(stores.first);
+        asked = tick();
       }
       if (!result.stale) {
         lastFresh = asked;
@@ -162,9 +162,8 @@ Future<Counts> runSeed(int seed, int steps) async {
       queue.shown,
       result.base,
       Arrival(
-        order: queue.session.orderOf(from[0].point),
-        point: from[0].point,
-        requestedAt: from[0].requestedAt,
+        order: queue.session.orderOf(from[0]),
+        point: from[0],
       ),
     );
     final kept = await takeInto(

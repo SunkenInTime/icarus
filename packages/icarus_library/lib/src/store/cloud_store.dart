@@ -664,7 +664,7 @@ extension _CloudStore on LibraryStore {
       strategy: facts,
       session:
           kept?.session ??
-          QueueSession(connected: false, build: _build, number: 0, sequence: 0),
+          QueueSession(connected: false, build: _build, number: 0),
     );
     final current = onDisk;
     final loaded = _LoadedQueue(
@@ -2276,12 +2276,7 @@ extension _CloudStore on LibraryStore {
       nextSession: _numbers.nextSession,
       shown: Shown.nothing.owingList(ResultAtOrAfter.anyResult),
       strategy: StrategyFacts.fresh,
-      session: QueueSession(
-        connected: false,
-        build: _build,
-        number: 0,
-        sequence: 0,
-      ),
+      session: QueueSession(connected: false, build: _build, number: 0),
     );
     final summary =
         StrategySummary.of(

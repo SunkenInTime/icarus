@@ -492,7 +492,7 @@ void main() {
       final (opened, storage) = await damagedOnA();
       final store = opened.store;
       final session = await sessionOf(store);
-      final began = await askedIn(store);
+      final began = tick();
       expect(
         await store.readPage(strategyId, 'page-b'),
         isA<Found<PageContent>>(),
@@ -589,7 +589,7 @@ void main() {
         'damaged page is refused whole, with nothing written', () async {
       final (opened, storage) = await damagedOnA();
       final session = await sessionOf(opened.store);
-      final from = await askedIn(opened.store);
+      final from = tick();
       final before = editable(storage.contents);
       final commits = opened.counts.commits;
       final changedB = initialRows().withRows([
@@ -684,8 +684,8 @@ void main() {
     final opened = await Opened.over(storage);
     await recordAll(opened.store, [const AppRestarted(build: build)]);
     final session = await sessionOf(opened.store);
-    final older = await askedIn(opened.store);
-    final newer = await askedIn(opened.store);
+    final older = tick();
+    final newer = tick();
     await recordAll(opened.store, [
       arrivedAs(
         pageReadOf(initialRows(), 'page-a'),
@@ -1012,7 +1012,7 @@ void main() {
           entered.add((strategy, page));
       await recordAll(store, [const AppRestarted(build: build)]);
       final session = await sessionOf(store);
-      final from = await askedIn(store);
+      final from = tick();
       expect(
         await store.readPage(strategyId, 'page-b'),
         isA<Found<PageContent>>(),
@@ -1062,7 +1062,7 @@ void main() {
       final opened = await Opened.over(storage);
       await recordAll(opened.store, [const AppRestarted(build: build)]);
       final session = await sessionOf(opened.store);
-      final from = await askedIn(opened.store);
+      final from = tick();
       final before = editable(storage.contents);
       final commits = opened.counts.commits;
       final rows = initialRows();
@@ -1109,7 +1109,7 @@ void main() {
       );
       await recordAll(store, [const AppRestarted(build: build)]);
       final session = await sessionOf(store);
-      final from = await askedIn(store);
+      final from = tick();
       final before = editable(storage.contents);
       failing = true;
       await expectLater(
@@ -1176,7 +1176,7 @@ void main() {
     await recordAll(again.store, [const AppRestarted(build: build)]);
     expect(await refusedFor(again.store), isNull);
     final session = await sessionOf(again.store);
-    final from = await askedIn(again.store);
+    final from = tick();
     final commits = again.counts.commits;
     expect(
       await again.store.record(testAccount, strategyId, [
@@ -1316,7 +1316,7 @@ void main() {
     await addCloud(opened.store, initialRows());
     await recordAll(opened.store, [const AppRestarted(build: build)]);
     final session = await sessionOf(opened.store);
-    final from = await askedIn(opened.store);
+    final from = tick();
     final before = editable(storage.contents);
     final odd = initialRows().withRows([
       LiveElement(

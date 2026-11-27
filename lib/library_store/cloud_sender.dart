@@ -87,7 +87,7 @@ final class SignInHold extends RunHold {
   String toString() => 'waiting for the sign-in to change from count $from';
 }
 
-typedef _Asked = ({int session, ResultPoint point, int? requestedAt});
+typedef _Asked = ({int session, ResultPoint point});
 
 typedef Bound = ({
   int connection,
@@ -278,8 +278,6 @@ final class CloudSender {
   String? ended;
   var disposed = false;
   final bound = <String, Bound>{};
-  final _unanswered = <String>{};
-  Generation? _unansweredOn;
   final restarted = <String>{};
   final notBefore = <String, DateTime>{};
   final _failures = <String, int>{};
@@ -688,7 +686,7 @@ final class CloudSender {
     final DateTime started;
     final kept = _governor.heldFor(id, read, under);
     switch (kept) {
-      case (outcome: final held, started: final at, under: _, read: _):
+      case (outcome: final held, started: final at, under: _, readIn: _):
         outcome = held;
         started = at;
       case null:
@@ -734,7 +732,7 @@ final class CloudSender {
             _governor.hold(
               id,
               read,
-              (outcome: outcome, started: started, under: under, read: null),
+              (outcome: outcome, started: started, under: under, readIn: null),
             );
             return _troubled(id, trouble);
           case WrittenWith(:final session):
@@ -1105,7 +1103,6 @@ final class CloudSender {
       _Why.need || _Why.clock || _Why.adopt => cloud,
       _Why.access || _Why.retire => null,
     };
-    final int? requestedAt;
     final StoreReadOutcome outcome;
     final DateTime started;
     final kept = _governor.heldFor(id, read, under);
@@ -1114,10 +1111,9 @@ final class CloudSender {
             outcome: final kept,
             started: final at,
             under: _,
-            read: (requestedAt: final asked, session: final heldIn)
+            readIn: final heldIn?
           )
           when heldIn == session:
-        requestedAt = asked;
         outcome = kept;
         started = at;
       case _:
@@ -1126,14 +1122,6 @@ final class CloudSender {
             when at.isAfter(_clock())) {
           return _Skipped(row ?? why.row, at);
         }
-        if (_unanswered.isNotEmpty) {
-          final on = await _currentGeneration();
-          if (disposed) return const _Ended();
-          _unansweredMovesTo(on);
-        }
-        requestedAt = _unanswered.contains('$id $read')
-            ? null
-            : cloud.queue.session.sequence;
         switch (await _issue(id, owner, read, snap, why)) {
           case NotYet(:final at, why: final row):
             return _Skipped(row ?? why.row, at);
@@ -1143,12 +1131,6 @@ final class CloudSender {
         }
     }
     if (disposed) return const _Ended();
-    if (outcome case StoreReadLost(failure: TransportFailure.timeout)) {
-      final on = await _currentGeneration();
-      if (disposed) return const _Ended();
-      _unansweredMovesTo(on);
-      _unanswered.add('$id $read');
-    }
     if (_inputs != snap) {
       _note(
           id,
@@ -1159,11 +1141,7 @@ final class CloudSender {
     switch (outcome) {
       case StoreReadAnswered(:final base, :final point, :final role):
         final confirms = why == _Why.access && (role?.edits ?? false);
-        final asked = (
-          session: session,
-          point: point,
-          requestedAt: requestedAt,
-        );
+        final asked = (session: session, point: point);
         final now = await _currentGeneration();
         if (disposed) return const _Ended();
         if (now == null) {
@@ -1174,12 +1152,7 @@ final class CloudSender {
           return const _Restart();
         }
         final written = await _store.write(owner, id, onConnection: now, [
-          BaseArrived(
-            base,
-            session: session,
-            point: point,
-            requestedAt: requestedAt,
-          ),
+          BaseArrived(base, session: session, point: point),
           if (confirms)
             EditAccessConfirmed(
               afterAttempt: _accessLostAt(cloud),
@@ -1206,7 +1179,7 @@ final class CloudSender {
               outcome: outcome,
               started: started,
               under: under,
-              read: (requestedAt: requestedAt, session: session),
+              readIn: session,
             ));
             return _troubled(id, trouble);
           case WrittenWith(:final notApplied) when notApplied.isNotEmpty:
@@ -1264,7 +1237,7 @@ final class CloudSender {
           other,
           snap,
           marking: marking,
-          request: (session: session, requestedAt: requestedAt),
+          readIn: session,
           planned: cloud,
         );
     }
@@ -1322,7 +1295,7 @@ final class CloudSender {
         when count >= _timing.unresolvedRounds &&
             !_shownRefused(marking, read)) {
       _governor.keep(id, read, _refusedMark(read, why, asked));
-    } else if (asked case (:final point, session: _, requestedAt: _)) {
+    } else if (asked case (:final point, session: _)) {
       _governor.keep(id, #stamp, ConnectionReturned(point.generation));
     }
     if (await _writeKept(id, owner) case final step?) return step;
@@ -1356,7 +1329,6 @@ final class CloudSender {
         problem: problem,
         session: asked.session,
         point: asked.point,
-        requestedAt: asked.requestedAt,
       );
 
   Future<_Step?> _writeKept(
@@ -1425,7 +1397,7 @@ final class CloudSender {
     StoreReadOutcome outcome,
     Snapshot snap, {
     CloudStrategy? marking,
-    ({int session, int? requestedAt})? request,
+    int? readIn,
     CloudStrategy? planned,
   }) async {
     switch (outcome) {
@@ -1437,7 +1409,7 @@ final class CloudSender {
           :final why,
           :final point,
         ):
-        final session = request?.session;
+        final session = readIn;
         if (session == null) {
           if (await _onCurrentConnection(point)) {
             switch (refusal) {
@@ -1561,12 +1533,8 @@ final class CloudSender {
           row: StallExit.unreadableRead,
           marking: marking,
           planned: planned,
-          asked: switch (request) {
-            (:final session, :final requestedAt) => (
-                session: session,
-                point: point,
-                requestedAt: requestedAt,
-              ),
+          asked: switch (readIn) {
+            final session? => (session: session, point: point),
             null => null,
           },
         );
@@ -1770,12 +1738,6 @@ final class CloudSender {
     } catch (_) {
       return null;
     }
-  }
-
-  void _unansweredMovesTo(Generation? on) {
-    if (on == null) return;
-    if (_unansweredOn case final held? when held != on) _unanswered.clear();
-    _unansweredOn = on;
   }
 
   Future<List<QueueEvent>?> _onTheCurrentConnection(

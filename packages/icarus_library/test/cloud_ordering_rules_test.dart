@@ -55,32 +55,18 @@ Client connectedOn() {
   return client;
 }
 
-BaseArrived arrivalAt(
-  Client client,
-  ArrivedBase base,
-  ResultPoint point, {
-  int? requestedAt,
-}) => BaseArrived(
-  base,
-  session: client.queue.session.number,
-  point: point,
-  requestedAt: requestedAt,
-);
+BaseArrived arrivalAt(Client client, ArrivedBase base, ResultPoint point) =>
+    BaseArrived(base, session: client.queue.session.number, point: point);
 
-ResultRefused refusalAt(
-  Client client,
-  String? page,
-  ResultPoint point, {
-  int? requestedAt,
-}) => ResultRefused(
-  page: page,
-  problem: 'unreadable',
-  session: client.queue.session.number,
-  point: point,
-  requestedAt: requestedAt,
-);
+ResultRefused refusalAt(Client client, String? page, ResultPoint point) =>
+    ResultRefused(
+      page: page,
+      problem: 'unreadable',
+      session: client.queue.session.number,
+      point: point,
+    );
 
-Arrival arrivalOf(ResultOrder order, {int? time, int? requestedAt}) => Arrival(
+Arrival arrivalOf(ResultOrder order, {int? time}) => Arrival(
   order: order,
   point: ResultPoint(
     client: order.client,
@@ -88,8 +74,6 @@ Arrival arrivalOf(ResultOrder order, {int? time, int? requestedAt}) => Arrival(
     snapshot: order.snapshot,
     serverTime: time,
   ),
-  requestedAt: requestedAt,
-  requestedIn: order.session,
 );
 
 ResultOrder orderAt(int snapshot, {int session = 3, int client = 1}) =>
@@ -441,12 +425,7 @@ void main() {
           point: pointAt(12),
         ),
       );
-      final owed =
-          (client.queue.shown.pageRead('page-a') as ReadOwed).since
-              as AfterRefusal;
-      final step = client.step(
-        arrivalAt(client, pageA(), pointAt(12), requestedAt: owed.step),
-      );
+      final step = client.step(arrivalAt(client, pageA(), pointAt(12)));
       expect(
         step,
         isA<Stepped>()
@@ -514,8 +493,8 @@ void main() {
       expect(client.queue.shown.pages, contains('page-a'));
     });
 
-    test('a causal repeat at the taken order pays the refusal debt it would '
-        'have paid', () {
+    test('a repeat at the taken order, at the refusal\'s snapshot, pays the '
+        'refusal debt it would have paid', () {
       final client = connectedOn();
       client.must(arrivalAt(client, pageA(), pointAt(12)));
       client.edit(movePatch('move', x: 40));
@@ -531,12 +510,7 @@ void main() {
           point: pointAt(12),
         ),
       );
-      final owed =
-          (client.queue.shown.pageRead('page-a') as ReadOwed).since
-              as AfterRefusal;
-      client.must(
-        arrivalAt(client, pageA(), pointAt(12), requestedAt: owed.step),
-      );
+      client.must(arrivalAt(client, pageA(), pointAt(12)));
       expect(client.queue.shown.pageRead('page-a'), const ReadThisSession());
       expect(stateIn(client, 'move'), isA<NeedsUser>());
     });
@@ -649,8 +623,8 @@ void main() {
     });
 
     test('a read refusal replaces a debt only with what its own order '
-        'proves: a row_replaced debt stays, so a read requested before it '
-        'cannot pay it by a later snapshot', () {
+        'proves: a row_replaced debt stays as it was, and the next result at '
+        'or after its snapshot pays it', () {
       final client = connectedOn();
       final move = movePatch('move', x: 40);
       client.edit(move);
@@ -669,25 +643,12 @@ void main() {
       final owed =
           (client.queue.shown.pageRead('page-a') as ReadOwed).since
               as AfterRefusal;
-      client.must(
-        refusalAt(client, 'page-a', pointAt(12), requestedAt: owed.step),
-      );
+      client.must(refusalAt(client, 'page-a', pointAt(12)));
       expect(
         (client.queue.shown.pageRead('page-a') as ReadRefused).since,
         owed,
       );
-      expect(
-        notApplicable(
-          client.step(
-            arrivalAt(client, pageA(), pointAt(13), requestedAt: owed.step - 1),
-          ),
-        ),
-        isA<OlderResult>(),
-      );
-      expect(client.queue.shown.pageRead('page-a'), isA<ReadRefused>());
-      client.must(
-        arrivalAt(client, pageA(), pointAt(14), requestedAt: owed.step),
-      );
+      client.must(arrivalAt(client, pageA(), pointAt(14)));
       expect(client.queue.shown.pageRead('page-a'), const ReadThisSession());
     });
 
@@ -708,8 +669,8 @@ void main() {
     });
   });
 
-  test('a read requested in one session does not pay a refusal recorded in '
-      'the next', () {
+  test('a result from one session does not pay a refusal recorded in the '
+      'next', () {
     final client = connectedOn();
     client.must(arrivalAt(client, pageA(), pointAt(3)));
     final asked = client.queue.session.number;
@@ -732,7 +693,6 @@ void main() {
       pageA(),
       session: asked,
       point: pointAt(10, later: 1),
-      requestedAt: 99,
     );
     expect(notApplicable(client.step(late)), isA<OlderResult>());
     expect(client.queue.shown.pageRead('page-a'), isA<ReadOwed>());
@@ -846,13 +806,49 @@ void main() {
       );
     });
 
-    test('a refusal debt: a read with no request step is not causal, a read '
-        'requested at the refusal\'s step is', () {
-      final owed = AfterRefusal(session: 3, point: pointAt(5), step: 4);
-      expect(owed.paidBy(arrivalOf(orderAt(9)), null), isFalse);
-      expect(owed.paidBy(arrivalOf(orderAt(9), requestedAt: 3), null), isFalse);
-      expect(owed.paidBy(arrivalOf(orderAt(9), requestedAt: 4), null), isTrue);
-      expect(owed.paidBy(arrivalOf(orderAt(1, session: 4)), null), isTrue);
+    test('a row refusal debt is paid on its connection at or after its '
+        'snapshot, and by a later connection or session; a whole-batch '
+        'refusal debt only by the later connection or session', () {
+      const refusedAt = ResultPoint(client: 1, connection: 2, snapshot: 5);
+      Arrival at({
+        int session = 3,
+        int client = 1,
+        int connection = 2,
+        required int snapshot,
+      }) => Arrival(
+        order: ResultOrder(
+          session: session,
+          client: client,
+          snapshot: snapshot,
+        ),
+        point: ResultPoint(
+          client: client,
+          connection: connection,
+          snapshot: snapshot,
+        ),
+      );
+      const row = AfterRefusal(session: 3, point: refusedAt, visibleAt: true);
+      const whole = AfterRefusal(session: 3, point: refusedAt);
+      for (final (arrival, byRow, byWhole) in [
+        (at(snapshot: 4), false, false),
+        (at(snapshot: 5), true, false),
+        (at(snapshot: 6), true, false),
+        (at(connection: 1, snapshot: 9), false, false),
+        (at(connection: 3, snapshot: 1), true, true),
+        (at(client: 2, connection: 1, snapshot: 1), true, true),
+        (at(session: 4, connection: 1, snapshot: 1), true, true),
+      ]) {
+        expect(
+          row.paidBy(arrival, null),
+          byRow,
+          reason: 'row, ${arrival.point}',
+        );
+        expect(
+          whole.paidBy(arrival, null),
+          byWhole,
+          reason: 'whole, ${arrival.point}',
+        );
+      }
     });
 
     test(
@@ -865,7 +861,6 @@ void main() {
         AfterRefusal owing({int? life}) => AfterRefusal(
           session: 3,
           point: pointAt(5),
-          step: 4,
           evidence: RowAtLeast(
             const ElementTarget('e1'),
             life: life,

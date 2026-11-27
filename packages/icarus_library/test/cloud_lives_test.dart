@@ -205,7 +205,6 @@ void main() {
               headerReadOf(initialRows()),
               session: client.queue.session.number,
               point: tick(),
-              requestedAt: client.queue.session.sequence,
             ),
           ),
         ),

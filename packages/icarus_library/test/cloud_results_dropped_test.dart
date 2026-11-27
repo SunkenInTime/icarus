@@ -240,12 +240,12 @@ void main() {
     test('a ROW_REPLACED debt is paid by any result of a later session, and '
         'a read labelled with the ended session is refused', () async {
       late int ended;
-      late ReadAsked inFlight;
+      late ResultPoint inFlight;
       final stored = await storedAfter((store) async {
         await commit(store, movePatch('move'));
         final sent = await claimAll(store);
         ended = await sessionOf(store);
-        inFlight = await askedIn(store);
+        inFlight = tick();
         await recordAll(store, [
           OpAnswered(
             sent.attempt,
@@ -564,5 +564,65 @@ void main() {
       });
       await keptThroughTheLoad(stored);
     });
+  });
+
+  test('a refusal debt stored with a request step, as earlier builds wrote '
+      'it, is unreadable: the results are dropped and rebuilt, reported '
+      'once, and the work waiting on the page holds until fresh reads, then '
+      'goes', () async {
+    final stored = await storedAfter((store) async {
+      await commit(store, movePatch('move'));
+      final sent = await claimAll(store);
+      await commit(store, movePatch('other', elementId: 'e2'));
+      await recordAll(store, [
+        OpAnswered(
+          sent.attempt,
+          const RejectedAnswer(
+            'move',
+            RejectionReason.rowReplaced,
+            NoServerCopy(),
+          ),
+          point: tick(),
+        ),
+      ]);
+    });
+    final group = pageGroup('page-a');
+    final contents = editable(stored);
+    final current = contents[area]![group]!;
+    expect(current, contains('"visibleAt":true'));
+    contents[area]![group] = current.replaceFirst(
+      '"visibleAt":true',
+      '"step":4',
+    );
+    final first = await opened(contents);
+    expect(first.store.resultsDropped, [
+      isA<StoredResultsDropped>()
+          .having((dropped) => dropped.strategyPublicId, 'strategy', strategyId)
+          .having((dropped) => dropped.group, 'group', group),
+    ]);
+    expect(
+      resultsOf(first.disk.contents).values.join(),
+      isNot(contains('"step"')),
+    );
+    expect(sendable(first.cloud, 'other'), isFalse);
+    await first.store.close();
+    final written = editable(first.disk.contents);
+    final (:store, :disk, :cloud) = await opened(written);
+    expect(store.resultsDropped, isEmpty);
+    expect(disk.contents, written);
+    expect(sendable(cloud, 'other'), isFalse);
+    await recordAll(store, [const AppRestarted(build: build)]);
+    expect(sendable(await syncOf(store), 'other'), isFalse);
+    await recordAll(store, [
+      await arrivalIn(store, headerReadOf(initialRows())),
+    ]);
+    expect(sendable(await syncOf(store), 'other'), isFalse);
+    await recordAll(store, [
+      await arrivalIn(store, pageReadOf(initialRows(), 'page-a')),
+    ]);
+    expect(sendable(await syncOf(store), 'other'), isTrue);
+    final sent = await claimAll(store);
+    expect(sent.ops.map((op) => op.opId), ['other']);
+    await store.close();
   });
 }

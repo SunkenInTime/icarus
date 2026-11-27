@@ -208,15 +208,17 @@ final class StoreModel {
     return value;
   }
 
-  Future<ReadAsked> started() async => askRead((await sync()).queue);
+  Future<ResultPoint> started() async {
+    await sync();
+    return tick();
+  }
 
   Future<BaseArrived> arrivedIn(ArrivedBase base, int session) async {
     final asked = await started();
     return BaseArrived(
       base,
       session: session,
-      point: asked.point,
-      requestedAt: asked.requestedAt,
+      point: asked,
     );
   }
 
@@ -989,8 +991,7 @@ final class StoreModel {
       BaseArrived(
         base,
         session: ended,
-        point: endedFrom.point,
-        requestedAt: endedFrom.requestedAt,
+        point: endedFrom,
       ),
     ];
     final result = await store.record(testAccount, strategyId, stale);
@@ -1027,8 +1028,7 @@ final class StoreModel {
       BaseArrived(
         pageReadOf(server.rows, openPage),
         session: session,
-        point: sessionFrom.point,
-        requestedAt: sessionFrom.requestedAt,
+        point: sessionFrom,
       ),
     ];
     final result = await store.record(testAccount, strategyId, stale);
@@ -1052,7 +1052,7 @@ final class StoreModel {
     if (Tally.of(cloud.queue, clock).total > 0 || inFlight.isNotEmpty) return;
     faults = false;
     final old = cloud.queue.session.number;
-    final oldFrom = askRead(cloud.queue);
+    final oldFrom = tick();
     final oldBase = headerReadOf(server.rows);
     final oldPage = pageReadOf(server.rows, openPage);
     final removed = await store.editLibrary([const RemoveStrategy(strategyId)]);
@@ -1087,15 +1087,13 @@ final class StoreModel {
       BaseArrived(
         oldBase,
         session: old,
-        point: oldFrom.point,
-        requestedAt: oldFrom.requestedAt,
+        point: oldFrom,
       ),
       if (oldPage is PageRead)
         BaseArrived(
           oldPage,
           session: old,
-          point: oldFrom.point,
-          requestedAt: oldFrom.requestedAt,
+          point: oldFrom,
         ),
     ];
     final result = await store.record(testAccount, strategyId, stale);

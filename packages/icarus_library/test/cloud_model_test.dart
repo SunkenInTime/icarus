@@ -497,7 +497,6 @@ final class Model {
                     base,
                     session: read.session.number,
                     point: stamps.probe(++probes),
-                    requestedAt: read.session.sequence,
                   ),
                   now: clock,
                 )
@@ -1103,7 +1102,6 @@ final class Model {
             base,
             session: client.queue.session.number,
             point: stampOfState(),
-            requestedAt: client.queue.session.sequence,
           ),
           'read ${subjectOf(base) ?? 'strategy'} before it was replaced',
         ));
@@ -1149,31 +1147,32 @@ final class Model {
     must(AppRestarted(build: build), 'restart as $clientId on $build');
   }
 
-  bool refusalStands(ArrivedBase base, int requestedAt) {
+  bool atAStandingRowRefusal(ArrivedBase base, ResultPoint point) {
     final state = switch (subjectOf(base)) {
       null => client.queue.shown.list,
       final page => client.queue.shown.pageRead(page),
     };
     return switch (state) {
-      ReadOwed(since: AfterRefusal(:final step)) ||
-      ReadRefused(since: AfterRefusal(:final step)) => requestedAt >= step,
+      ReadOwed(since: AfterRefusal(visibleAt: true, point: final refused)) ||
+      ReadRefused(since: AfterRefusal(visibleAt: true, point: final refused)) =>
+        point.generation == refused.generation &&
+            point.snapshot >= refused.snapshot,
       _ => false,
     };
   }
 
   void arrive(ArrivedBase base, String label, {bool reliable = false}) {
-    final causal = reliable || lateness.nextInt(10) != 0;
-    if (!causal) count('reads asked for without a step');
-    final requestedAt = causal ? client.queue.session.sequence : null;
-    if (requestedAt != null && refusalStands(base, requestedAt)) {
-      count('reads requested after a refusal while its debt stood');
-    }
     final read = BaseArrived(
       base,
       session: client.queue.session.number,
       point: stampOfState(),
-      requestedAt: requestedAt,
     );
+    if (atAStandingRowRefusal(base, read.point)) {
+      count(
+        'results at or after a row refusal\'s snapshot while its debt '
+        'stood',
+      );
+    }
     if (!reliable &&
         (base is HeaderRead || base is PageRead) &&
         lateness.nextInt(20) == 0) {
@@ -1290,7 +1289,6 @@ final class Model {
       problem: 'the read $why',
       session: read.session,
       point: read.point,
-      requestedAt: read.requestedAt,
     );
     if (lateness.nextBool()) {
       readsInFlight.add((refusal, 'refusal of $label'));
@@ -1494,14 +1492,19 @@ final class Model {
   void lane() {
     switch (standingOf(client.queue)) {
       case Standing.editAccessLost:
-        must(
-          EditAccessConfirmed(
-            afterAttempt: client.queue.nextAttempt - 1,
-            session: client.queue.session.number,
-            point: stamps.at(serverState),
-          ),
-          'access confirmed',
+        final confirmed = EditAccessConfirmed(
+          afterAttempt: client.queue.nextAttempt - 1,
+          session: client.queue.session.number,
+          point: stamps.at(serverState),
         );
+        switch (apply(confirmed, 'access confirmed')) {
+          case NotApplicable(why: FromAnEndedSession()):
+            count('access confirmed on an ended connection, read again');
+          case NotApplicable(:final why):
+            throw StateError('access confirmed: $why');
+          case Stepped():
+            break;
+        }
       case Standing.upgradeRequired:
         build = 'build-up-${restarts++}';
         must(AppRestarted(build: build), 'upgraded to $build');
@@ -1956,8 +1959,8 @@ const minimums = {
   'calls the transport held 20 to 29 s': 100,
   'backward clock steps': 50,
   'stamps delivered ahead of their reconnect event': 400,
-  'reads asked for without a step': 800,
-  'reads requested after a refusal while its debt stood': 5,
+  'results at or after a row refusal\'s snapshot while its debt stood': 2,
+  'access confirmed on an ended connection, read again': 1,
   'a stamp at the snapshot already held': 3000,
   'a stamp at the snapshot held from before a reconnect': 185,
   'a new snapshot at the same time': 1500,

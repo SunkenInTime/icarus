@@ -298,31 +298,17 @@ final class ResultOrder {
 }
 
 final class Arrival {
-  const Arrival({
-    required this.order,
-    required this.point,
-    this.requestedAt,
-    this.requestedIn,
-  });
+  const Arrival({required this.order, required this.point});
 
   final ResultOrder order;
   final ResultPoint point;
-  final int? requestedAt;
-  final int? requestedIn;
-
-  bool requestedAtOrAfter(int session, int step) =>
-      requestedIn == session && (requestedAt ?? -1) >= step;
 
   @override
   bool operator ==(Object other) =>
-      other is Arrival &&
-      other.order == order &&
-      other.point == point &&
-      other.requestedAt == requestedAt &&
-      other.requestedIn == requestedIn;
+      other is Arrival && other.order == order && other.point == point;
 
   @override
-  int get hashCode => Object.hash(order, point, requestedAt, requestedIn);
+  int get hashCode => Object.hash(order, point);
 }
 
 sealed class Evidence {
@@ -646,7 +632,8 @@ final class ReadOwed extends ReadState {
   String toString() => switch ((unlessLife, namedLife)) {
     (null, _) => 'owed',
     (final refused?, null) =>
-      'owed by a list of another life than $refused, read after the refusal',
+      'owed by a list of a later life than $refused, or of another life from '
+          'a later connection or session',
     (_, final named?) => 'owed by a list of life $named or later',
   };
 }
@@ -680,8 +667,8 @@ final class ReadRefused extends ReadState {
   String toString() => switch ((unlessLife, namedLife)) {
     (null, _) => 'refused: $problem',
     (final refused?, null) =>
-      'refused: $problem, owed by a list of another life than $refused, read '
-          'after the refusal',
+      'refused: $problem, owed by a list of a later life than $refused, or of '
+          'another life from a later connection or session',
     (_, final named?) =>
       'refused: $problem, owed by a list of life $named or later',
   };
