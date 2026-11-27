@@ -3,6 +3,7 @@ import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
+import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -403,6 +404,29 @@ void main() {
         world.settle(const Duration(minutes: 1));
         expect(world.sender.upgradeAsked, isFalse);
         expect(world.server.readCalls.length, greaterThan(1));
+      },
+      addStrategy: false,
+    );
+  });
+
+  test(
+      'a read to adopt a strategy refused for the sign-in on a connection '
+      'that has ended waits as a lost read, which is read again on its '
+      'ladder', () {
+    inWorld(
+      (world) {
+        world.server.answerReadNext(strategyId, (call) async {
+          world.server.connection = 2;
+          return StoreReadRefused(
+            StoreReadRefusal.unauthenticated,
+            'refused',
+            point: onConnection(world, 1),
+          );
+        });
+        world.sender.adopt(strategyId);
+        world.settle(const Duration(milliseconds: 500));
+        expect(world.sender.signInWaitFrom, isNull);
+        expect(world.sender.waitingOn(strategyId), StallExit.lostRead);
       },
       addStrategy: false,
     );

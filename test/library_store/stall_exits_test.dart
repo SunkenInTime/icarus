@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -291,6 +292,43 @@ final stalls = <StallExit, Stall>{
     },
     goAgain: (world) {},
     wentAgain: (world, after) => after.isEmpty,
+  ),
+  StallExit.lookupGivenUp: Stall(
+    named: false,
+    start: (world) {
+      world.server.lookup =
+          () => Completer<({int client, int connection})>().future;
+      world.commitMove(1);
+    },
+    goAgain: (world) {
+      world.server.lookup = null;
+      record(world, const [UserRetried('move-1')]);
+    },
+    wentAgain: (world, after) => sent(after) && world.queueLength() == 0,
+  ),
+  StallExit.offline: Stall(
+    start: (world) {
+      world.connection = null;
+      world.commitMove(1);
+    },
+    goAgain: (world) => world.connection = 1,
+    wentAgain: (world, after) => sent(after),
+  ),
+  StallExit.signedOut: Stall(
+    start: (world) {
+      world.signIn(null);
+      world.commitMove(1);
+    },
+    goAgain: (world) => world.signIn(servedAccount),
+    wentAgain: (world, after) => sent(after),
+  ),
+  StallExit.heldByHand: Stall(
+    start: (world) {
+      world.sender.hold('a check');
+      world.commitMove(1);
+    },
+    goAgain: (world) => world.sender.release(),
+    wentAgain: (world, after) => sent(after),
   ),
   StallExit.lostSend: Stall(
     start: (world) {
@@ -639,6 +677,19 @@ const logs = <StallExit, List<String>>{
   StallExit.upgrade: [
     '0 s send move-1',
   ],
+  StallExit.lookupGivenUp: [
+    '0 s send move-1',
+    '10 s send move-1',
+    '21 s send move-1',
+    '34 s send move-1',
+    '49 s send move-1',
+    '68 s send move-1',
+    '97 s send move-1',
+    '127 s send move-1',
+  ],
+  StallExit.offline: [],
+  StallExit.signedOut: [],
+  StallExit.heldByHand: [],
   StallExit.lostSend: [
     '0 s send move-1',
     '0 s send move-1',

@@ -350,6 +350,9 @@ final class CloudSender {
   }
 
   StallExit? waitingOn(String strategyId) => switch (runHold) {
+        _ when held != null => StallExit.heldByHand,
+        _ when _inputs.account == null => StallExit.signedOut,
+        _ when _inputs.connection == null => StallExit.offline,
         UpgradeHold() => StallExit.upgrade,
         SignInHold() => StallExit.signIn,
         null => _waits[strategyId],
@@ -1396,10 +1399,6 @@ final class CloudSender {
           :final why,
           :final point,
         ):
-        final row = switch (refusal) {
-          StoreReadRefusal.upgradeRequired => StallExit.upgrade,
-          _ => StallExit.signIn,
-        };
         final session = request?.session;
         if (session == null) {
           if (await _onCurrentConnection(point)) {
@@ -1423,7 +1422,7 @@ final class CloudSender {
             snap,
             'the read to adopt it was refused ($why) on a connection that has '
             'ended, so it is read again',
-            row: row,
+            row: StallExit.lostRead,
             planned: planned,
           );
         }
