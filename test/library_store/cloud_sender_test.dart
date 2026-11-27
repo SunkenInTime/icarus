@@ -1935,7 +1935,7 @@ void main() {
 
     test(
         'a page delete whose page a teammate deletes between its two reads '
-        'is read again, not left waiting', () {
+        'is decided by the newer page-gone, not left waiting', () {
       final storage = MemoryStorage();
       final server = FakeServer();
       inWorld(
@@ -1958,8 +1958,7 @@ void main() {
           };
           world.commitPageDelete('delete-p2', secondId());
           world.settle(const Duration(minutes: 1));
-          expect(readsAfter(world, 0).take(2), ['list', 'page p2']);
-          expect(readsAfter(world, 0).length, inInclusiveRange(3, 6));
+          expect(readsAfter(world, 0), ['list', 'page p2']);
           expect(world.queueLength(), 0);
         },
         storage: storage,

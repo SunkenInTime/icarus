@@ -9,16 +9,9 @@ import 'store_support.dart';
 final rows = initialRows();
 
 Shown shownOfRows() {
-  var shown = Shown.nothing
-      .taken(headerReadOf(rows), arrival: null)
-      .shown;
+  var shown = Shown.nothing.taken(headerReadOf(rows), arrival: null).shown;
   for (final page in rows.pages) {
-    shown = shown
-        .taken(
-          pageReadOf(rows, page.publicId),
-          arrival: null,
-        )
-        .shown;
+    shown = shown.taken(pageReadOf(rows, page.publicId), arrival: null).shown;
   }
   return shown;
 }
@@ -161,7 +154,9 @@ void main() {
       pageReads: both.pageReads,
       goneThisSession: both.goneThisSession,
       highest: both.highest,
-      fresh: both.fresh,
+      marks: both.marks,
+      listSeen: both.listSeen,
+      pagesSeen: both.pagesSeen,
       listTaken: both.listTaken,
       pagesTaken: both.pagesTaken,
       fence: both.fence,

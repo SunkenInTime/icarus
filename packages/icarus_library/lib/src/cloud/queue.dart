@@ -1631,15 +1631,10 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         final page? => edit.shown.pageRead(page),
         null => edit.shown.list,
       }) {
-        ReadOwed(since: ResultAtOrAfter() && final owed) ||
-        ReadRefused(
-          since: ResultAtOrAfter() && final owed,
-        ) when !owed.paidBy(refused, null) => owed,
-        ReadOwed(since: ResultAtOrAfter()) ||
-        ReadRefused(since: ResultAtOrAfter()) ||
+        ReadOwed(since: final owed) ||
+        ReadRefused(since: final owed) => refusedOver(owed, refused),
         NotReadThisSession() ||
         ReadThisSession() => ResultAtOrAfter(refused.order),
-        ReadOwed(since: final owed) || ReadRefused(since: final owed) => owed,
       };
       edit.shown = switch (page) {
         final page? => edit.shown.pageRefused(
@@ -1947,6 +1942,21 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   edit.decisions.addAll(taken.decisions);
   edit.effects.addAll(taken.differing.map(ReportSameOrderDiffers.new));
   edit.shown = taken.shown;
+  final moved = _marksMoved(before, edit.shown);
+  edit.change.lives.addAll(moved);
+  edit.change.targets.addAll(
+    _freshnessReadersOn(edit.original, edit.shown, moved),
+  );
+  if (before.listCurrentUncounted != edit.shown.listCurrentUncounted) {
+    edit.change.everything = true;
+  }
+  if (base case PageRead(:final page)) {
+    edit.change.targets.addAll([
+      PageTarget(page.publicId),
+      SettingsTarget(page.publicId),
+    ]);
+    edit.change.lives.add(page.publicId);
+  }
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {
       if (work.op case PageAddOp(:final pagePublicId)
@@ -2051,7 +2061,13 @@ Authored _withProduces(Authored authored, ProducedRow produces) =>
       final other => other,
     };
 
-void _resultsStale(_Edit edit, PendingOp entry, StrategyOp sent) {
+void _resultsStale(
+  _Edit edit,
+  PendingOp entry,
+  StrategyOp sent,
+  ResultPoint point,
+  OpAnswer answer,
+) {
   final row = targetOf(sent);
   final pages = {
     ..._pagesOf(entry),
@@ -2065,12 +2081,53 @@ void _resultsStale(_Edit edit, PendingOp entry, StrategyOp sent) {
       row is PageTarget ||
       row is SettingsTarget ||
       renumbersPages(sent);
-  edit.shown = edit.shown.touched(pages, list: list);
-  edit.change.lives.addAll({
-    ...pages,
-    if (list) ...{...edit.shown.pages.keys, ...edit.shown.fresh.listed},
-  });
+  final wrote = switch (answer) {
+    AppliedAnswer(:final revision, :final life) ||
+    NoopAnswer(
+      :final revision,
+      :final life,
+    ) => (target: checkTargetOf(sent), version: Version(revision, life: life)),
+    RejectedAnswer(current: ServerSnapshot(:final revision, :final life)) => (
+      target: checkTargetOf(sent),
+      version: Version(revision, life: life),
+    ),
+    AnswerWithoutLife(revision: final revision?) => (
+      target: checkTargetOf(sent),
+      version: Version(revision),
+    ),
+    AnswerWithoutLife() ||
+    NoopWithoutRevision() ||
+    RejectedAnswer() ||
+    FailedAnswer() => null,
+  };
+  edit.shown = edit.shown.marked(
+    AnswerMark(
+      order: edit.orderOf(point),
+      serverTime: point.serverTime,
+      wrote: wrote,
+    ),
+    pages: pages,
+    list: list,
+    allPages: renumbersPages(sent),
+    row: switch (row) {
+      ElementTarget() || LineupTarget() => row,
+      StrategyTarget() || PageTarget() || SettingsTarget() => null,
+    },
+  );
+  if (list) {
+    edit.change.everything = true;
+    return;
+  }
+  edit.change.lives.addAll(pages);
+  edit.change.targets.addAll(
+    _freshnessReadersOn(edit.original, edit.shown, pages),
+  );
 }
+
+Set<String> _marksMoved(Shown before, Shown after) => {
+  for (final page in {...before.marks.rowsOn.keys, ...after.marks.rowsOn.keys})
+    if (!identical(before.marks.rowsOn[page], after.marks.rowsOn[page])) page,
+};
 
 Iterable<Target> _shownOn(Shown shown, String page) => [
   for (final MapEntry(:key, :value) in shown.rows.entries)
@@ -2362,8 +2419,9 @@ _Known? _knownRow(CloudQueue queue, Target row) {
   final shown = queue.shown;
   final result = _shownRow(shown, row);
   final current = switch (row) {
-    PageTarget() || SettingsTarget() => shown.headerThisSession,
-    _ => result != null && shown.pageReadThisSession(result.page),
+    PageTarget(:final pagePublicId) ||
+    SettingsTarget(:final pagePublicId) => shown.listCurrentFor(pagePublicId),
+    _ => result != null && shown.pageCurrent(result.page),
   };
   _Known? best = switch ((row, result)) {
     (StrategyTarget(), _) => switch (shown.strategy) {
@@ -2372,7 +2430,7 @@ _Known? _knownRow(CloudQueue queue, Target row) {
           null,
           revision,
           digest,
-          current: shown.headerThisSession,
+          current: shown.listCurrent,
           life: life,
         ),
       _ => null,
@@ -2503,10 +2561,11 @@ Authored _foldedAuthored(Authored earlier, Authored later) {
 }
 
 bool _pageGone(Shown shown, String page) =>
-    shown.goneThisSession.contains(page) ||
-    (shown.headerThisSession &&
+    (shown.goneThisSession.contains(page) && shown.pageCurrent(page)) ||
+    (shown.listCurrentFor(page) &&
         !shown.pages.containsKey(page) &&
-        shown.highest.containsKey(PageTarget(page)));
+        (shown.highest.containsKey(PageTarget(page)) ||
+            shown.goneThisSession.contains(page)));
 
 bool _deletes(StrategyOp op) =>
     op is ElementDeleteOp || op is LineupGroupDeleteOp;
@@ -2556,8 +2615,8 @@ _Verdict _wholeBehindOwn(
         (work) => targetOf(work.op) == row && work.shownWithout,
       );
       final pageCurrent = switch (row) {
-        PageTarget() || SettingsTarget() => shown.headerThisSession,
-        _ => page != null && shown.pageReadThisSession(page),
+        PageTarget() || SettingsTarget() => shown.listCurrentFor(page!),
+        _ => page != null && shown.pageCurrent(page),
       };
       if (left ||
           (pageCurrent &&
@@ -2743,7 +2802,7 @@ Step _answered(_Edit edit, int attempt, OpAnswer answer, ResultPoint point) {
     edit.orderOf(point),
     serverTime: point.serverTime,
   );
-  _resultsStale(edit, entry, sent.op);
+  _resultsStale(edit, entry, sent.op, point, answer);
   void landed(int revision, {required int? life, required bool ours}) =>
       _landed(
         edit,

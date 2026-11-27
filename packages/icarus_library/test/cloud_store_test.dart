@@ -59,7 +59,7 @@ void main() {
     expect(after.views['add']!.state, isA<Unanswered>());
     expect(after.queue.nextAttempt, before.queue.nextAttempt);
     expect(after.queue.session.number, before.queue.nextSession);
-    expect(after.queue.shown, before.queue.shown.inNewSession());
+    expect(after.queue.shown, before.queue.shown.inNewSession().withoutMarks());
     expect(
       listOf(store).strategies.single.sync,
       isA<KeptInCloud>().having(

@@ -200,6 +200,10 @@ final class _Held extends _Candidate {
 enum _Why {
   adopt('the strategy was adopted', StallExit.firstRead),
   need('the queue asked for it', StallExit.unsettledResult),
+  clock(
+      'the queue asked for it, and our own answer carries a later server time '
+      'than every result read since, with nothing in them showing our write',
+      StallExit.answerAhead),
   access('edit access was lost', StallExit.viewerOnly),
   retire('landed work waits for a result', StallExit.landedWork);
 
@@ -930,7 +934,15 @@ final class CloudSender {
             .compareTo(_readOf(b) is ReadOfList ? 0 : 1),
       );
     for (final need in needed) {
-      yield (planned: (read: _readOf(need), why: _Why.need), wantedAt: now);
+      final read = _readOf(need);
+      final ahead = cloud.queue.shown.waitsOnClock(switch (read) {
+        ReadOfList() => null,
+        ReadOfPage(:final page) => page,
+      });
+      yield (
+        planned: (read: read, why: ahead ? _Why.clock : _Why.need),
+        wantedAt: now,
+      );
     }
     for (final read in _governor.owedFresh(id)) {
       yield (planned: (read: read, why: _Why.need), wantedAt: now);
@@ -1043,7 +1055,7 @@ final class CloudSender {
     final (:read, :why) = planned;
     final under = readsUnder(snap);
     final marking = switch (why) {
-      _Why.need || _Why.adopt => cloud,
+      _Why.need || _Why.clock || _Why.adopt => cloud,
       _Why.access || _Why.retire => null,
     };
     final int? requestedAt;
@@ -1208,14 +1220,21 @@ final class CloudSender {
     switch (why) {
       case _Why.access when !(role?.edits ?? false):
         _governor.climbAccess(id, snap, null);
-      case _Why.access || _Why.need || _Why.adopt || _Why.retire:
+      case _Why.access ||
+            _Why.need ||
+            _Why.clock ||
+            _Why.adopt ||
+            _Why.retire:
         _governor.accessConfirmed(id);
     }
     final memory = _boundMemory(id, snap);
     _governor.remember(
         id,
         switch (why) {
-          _Why.need || _Why.adopt => memory.climbed('$read', started, why.row),
+          _Why.need ||
+          _Why.clock ||
+          _Why.adopt =>
+            memory.climbed('$read', started, why.row),
           _Why.retire => memory.withRetired(switch (read) {
               ReadOfPage(:final page) =>
                 Retiring.read(memory.retired, page, cloud, started),

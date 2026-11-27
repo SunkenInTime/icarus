@@ -138,6 +138,35 @@ final stalls = <StallExit, Stall>{
       ..connection = 3,
     wentAgain: (world, after) => after.any((call) => call.what == 'page p2'),
   ),
+  StallExit.answerAhead: Stall(
+    adopts: true,
+    start: (world) {
+      final strategy = world.rowOf((content) => content.strategy);
+      world.commit([
+        PageReorderOp(
+          opId: 'reorder',
+          pagePublicId: 'p2',
+          sortIndex: 0,
+          expectedStrategyRevision:
+              (strategy.toJson()! as Map)['revision']! as int,
+        ),
+      ]);
+      world.settle(const Duration(seconds: 5));
+      world.server.skew = -const Duration(hours: 3).inMilliseconds;
+      world
+        ..connection = null
+        ..connection = 2;
+      world.commitPageDelete('delete-p2', 'p2');
+    },
+    goAgain: (world) {
+      world.server.skew = 0;
+      world
+        ..connection = null
+        ..connection = 3;
+    },
+    wentAgain: (world, after) =>
+        after.any((call) => call.what == 'send delete-p2'),
+  ),
   StallExit.refusedResult: Stall(
     prepare: (world) {
       final truth = world.server.rows[strategyId]!;
@@ -440,6 +469,30 @@ const logs = <StallExit, List<String>>{
     '5822 s page p2',
     '6422 s page p2',
     '7022 s page p2',
+  ],
+  StallExit.answerAhead: [
+    '0 s send reorder',
+    '5 s list',
+    '5 s page p2',
+    '7 s page p2',
+    '11 s page p2',
+    '19 s page p2',
+    '35 s page p2',
+    '67 s page p2',
+    '131 s page p2',
+    '259 s page p2',
+    '515 s page p2',
+    '1027 s page p2',
+    '1627 s page p2',
+    '2227 s page p2',
+    '2827 s page p2',
+    '3427 s page p2',
+    '4027 s page p2',
+    '4627 s page p2',
+    '5227 s page p2',
+    '5827 s page p2',
+    '6427 s page p2',
+    '7027 s page p2',
   ],
   StallExit.refusedResult: [
     '0 s list',

@@ -371,7 +371,6 @@ void main() {
       arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(10)),
     );
     final shown = client.queue.shown;
-    expect(shown.fresh.listed, contains('page-a'));
     expect(shown.pages, contains('page-a'));
     final entry = client.queue.entry('del') as PendingOp;
     expect(

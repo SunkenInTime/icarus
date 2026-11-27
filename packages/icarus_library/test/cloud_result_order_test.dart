@@ -69,7 +69,8 @@ void main() {
       );
       expect(notApplicable(late), isA<OlderResult>());
       expect(client.queue.shown.content, shown.content);
-      expect(client.queue.shown.fresh, shown.fresh);
+      expect(client.queue.shown.pagesSeen, shown.pagesSeen);
+      expect(client.queue.shown.marks, shown.marks);
     });
 
     test('nothing from before an adoption is taken after it: a page from the '

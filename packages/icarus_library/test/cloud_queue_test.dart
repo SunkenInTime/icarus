@@ -3060,30 +3060,41 @@ void main() {
       );
     });
 
-    for (final listFirst in [true, false]) {
-      test('a page list and a page result that disagree about whether the '
-          'page exists are no verdict (${listFirst ? 'list' : 'page'} '
-          'first)', () {
-        final client = Client()..read(initialRows());
-        client.must(reconnected());
-        client.edit(pageDelete('del', 'page-b'));
-        final gone = withOp(initialRows(), pageDelete('t', 'page-b'));
-        if (listFirst) {
-          client.arrive(headerReadOf(initialRows()));
-          client.arrive(const PageGone('page-b'));
-        } else {
-          client.arrive(const PageGone('page-b'));
-          client.arrive(headerReadOf(initialRows()));
-        }
-        expect(gone.page('page-b'), isA<TrashedPage>());
-        expect(stateOf(client, 'del'), isNot(isA<NeedsUser>()));
-        expect(client.view('del').sendable, isFalse);
-        expect(resultsNeeded(client.queue, client.at), {
-          const PageListResult(),
-          const PageResult('page-b'),
-        });
+    test('a page list showing the page and a newer page result saying it is '
+        'gone that came before it are no verdict', () {
+      final client = Client()..read(initialRows());
+      client.must(reconnected());
+      client.edit(pageDelete('del', 'page-b'));
+      final gone = withOp(initialRows(), pageDelete('t', 'page-b'));
+      client.arrive(const PageGone('page-b'));
+      client.arrive(headerReadOf(initialRows()));
+      expect(gone.page('page-b'), isA<TrashedPage>());
+      expect(stateOf(client, 'del'), isNot(isA<NeedsUser>()));
+      expect(client.view('del').sendable, isFalse);
+      expect(resultsNeeded(client.queue, client.at), {
+        const PageListResult(),
+        const PageResult('page-b'),
       });
-    }
+    });
+
+    test('a page result saying the page is gone, newer than the page list '
+        'that shows it, decides the page is gone: the delete goes', () {
+      final client = Client()..read(initialRows());
+      client.must(reconnected());
+      client.edit(pageDelete('del', 'page-b'));
+      client.arrive(headerReadOf(initialRows()));
+      client.arrive(const PageGone('page-b'));
+      expect(client.queue.shown.pages, isNot(contains('page-b')));
+      expect(
+        pageDeleteVerdict(
+          client.queue.shown,
+          (client.queue.entry('del') as PendingOp).work as CheckedDelete,
+        ),
+        isA<PageAlreadyGone>(),
+      );
+      expect(client.view('del').sendable, isTrue);
+      expect(resultsNeeded(client.queue, client.at), isEmpty);
+    });
 
     test('a page delete whose page a fresh page list says is gone goes, even '
         'behind this device\'s own reorder', () {
