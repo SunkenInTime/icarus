@@ -382,6 +382,17 @@ final class _ThrowingStore implements LiveResults {
   }
 
   @override
+  void livePageArrived(
+    String strategyId,
+    ReadOfPage subject,
+    Account account,
+    LivePageAnswer answer,
+  ) {
+    told++;
+    throw StateError('the store broke');
+  }
+
+  @override
   void liveClosed(String strategyId, ReadOf subject) =>
       throw StateError('the store broke on close');
 }
@@ -437,6 +448,17 @@ final class _RecordingStore implements LiveResults {
     if (outcome case StoreReadAnswered(:final point)) {
       points.add(point.snapshot);
     }
+  }
+
+  @override
+  void livePageArrived(
+    String strategyId,
+    ReadOfPage subject,
+    Account account,
+    LivePageAnswer answer,
+  ) {
+    order.add('store');
+    points.add(answer.point.snapshot);
   }
 
   @override

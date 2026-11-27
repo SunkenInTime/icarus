@@ -169,6 +169,37 @@ StoreReadOutcome pageOutcomeOf(
         ),
     };
 
+final class LivePageAnswer {
+  const LivePageAnswer(
+    this.page, {
+    required this.pagePublicId,
+    required this.point,
+  });
+
+  final RemotePageSnapshot page;
+  final String pagePublicId;
+  final store.ResultPoint point;
+}
+
+({StoreReadOutcome outcome, int decoded}) livePageOutcome(
+  LivePageAnswer answer, {
+  required store.CanRead canRead,
+  required store.HeldOnPage held,
+}) {
+  var decoded = 0;
+  final outcome = switch (pageReadOver(
+    answer.page,
+    canRead,
+    held: held,
+    decoded: () => decoded++,
+  )) {
+    RowsRead(:final value) => StoreReadAnswered(value, point: answer.point),
+    RowsUnreadable(:final problem) =>
+      StoreReadUnreadable(problem, point: answer.point),
+  };
+  return (outcome: outcome, decoded: decoded);
+}
+
 StoreReadOutcome storeReadOutcomeOfError(
   Object error, {
   required store.ArrivedBase gone,

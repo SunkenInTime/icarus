@@ -5,6 +5,7 @@ import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/landed_retiring.dart';
 import 'package:icarus/library_store/call_governor.dart';
+import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/live_results.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/stall_exits.dart';
@@ -223,9 +224,25 @@ enum _Why {
 
 typedef _Planned = ({ReadOf read, _Why why});
 
+sealed class _Answer {
+  const _Answer();
+}
+
+final class _Converted extends _Answer {
+  const _Converted(this.outcome);
+
+  final StoreReadOutcome outcome;
+}
+
+final class _PageToConvert extends _Answer {
+  const _PageToConvert(this.answer);
+
+  final LivePageAnswer answer;
+}
+
 typedef _LiveResult = ({
   Account account,
-  StoreReadOutcome outcome,
+  _Answer answer,
   ResultPoint point,
   DateTime at,
 });
@@ -315,7 +332,9 @@ final class CloudSender implements LiveResults {
     bool Function()? recordsConnectionLost,
     String? Function()? editorShows,
     Future<void> Function()? reconnect,
+    CanRead? canRead,
   })  : _store = store,
+        _canRead = canRead ?? appCanRead,
         _reconnect = reconnect ?? (() async {}),
         _governor = CallGovernor(
           reads: reads,
@@ -333,6 +352,7 @@ final class CloudSender implements LiveResults {
 
   final Future<({int client, int connection})> Function() _generation;
   final Future<void> Function() _reconnect;
+  final CanRead _canRead;
 
   Future<({int client, int connection})> _lookUpGeneration() =>
       _generation().timeout(_timing.lookupGiveUpAfter);
@@ -376,6 +396,7 @@ final class CloudSender implements LiveResults {
   final _heldByLiveSince = <(String, ReadOf), DateTime>{};
   final _owedPastTheWatch = <(String, ReadOf)>{};
   var liveTaken = 0;
+  var liveRowsDecoded = 0;
   var liveReplaced = 0;
   var liveOlderDropped = 0;
   var liveOwed = 0;
@@ -661,10 +682,27 @@ final class CloudSender implements LiveResults {
       wake();
       return;
     }
+    _offer(live, account, _Converted(outcome), point);
+  }
+
+  @override
+  void livePageArrived(
+    String strategyId,
+    ReadOfPage subject,
+    Account account,
+    LivePageAnswer answer,
+  ) {
+    if (disposed) return;
+    final live = _live[(strategyId, subject)] ??= _Live(_clock());
+    if (live.watchers == 0) live.watchers = 1;
+    _offer(live, account, _PageToConvert(answer), answer.point);
+  }
+
+  void _offer(_Live live, Account account, _Answer answer, ResultPoint point) {
     live.answers++;
     final replacing = live.dropsOnReplace;
     if (live.offered(
-      (account: account, outcome: outcome, point: point, at: _clock()),
+      (account: account, answer: answer, point: point, at: _clock()),
     )) {
       if (replacing) liveReplaced++;
     } else {
@@ -672,6 +710,21 @@ final class CloudSender implements LiveResults {
     }
     live.deliveredOn = _inputs.connection;
     wake();
+  }
+
+  Future<StoreReadOutcome> _outcomeOf(String id, _Answer answer) async {
+    switch (answer) {
+      case _Converted(:final outcome):
+        return outcome;
+      case _PageToConvert(:final answer):
+        final (:outcome, :decoded) = livePageOutcome(
+          answer,
+          canRead: _canRead,
+          held: await _store.heldOnPage(id, answer.pagePublicId),
+        );
+        liveRowsDecoded += decoded;
+        return outcome;
+    }
   }
 
   @override
@@ -1472,7 +1525,7 @@ final class CloudSender implements LiveResults {
       session,
       cloud,
       (read: read, why: _Why.live),
-      result.outcome,
+      await _outcomeOf(id, result.answer),
       result.at,
       late: false,
       troubled: () {},

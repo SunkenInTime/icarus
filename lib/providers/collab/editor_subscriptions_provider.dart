@@ -152,12 +152,17 @@ final class StampedSubscriptions extends EditorSubscriptions {
             strategyPublicId: strategyPublicId,
             subject: const ReadOfList(),
             account: Account(subject),
-            outcomeOf: (answer) => pageListOutcomeOf(switch (answer) {
-              StampedValue(:final value, :final stamp) =>
-                StampedValue(value.list, stamp),
-              StampedError(:final error, :final stamp) =>
-                StampedError(error, stamp),
-            }),
+            answered: (answer) => live.liveArrived(
+              strategyPublicId,
+              const ReadOfList(),
+              Account(subject),
+              pageListOutcomeOf(switch (answer) {
+                StampedValue(:final value, :final stamp) =>
+                  StampedValue(value.list, stamp),
+                StampedError(:final error, :final stamp) =>
+                  StampedError(error, stamp),
+              }),
+            ),
             lostOf: (error) => storeReadOutcomeOfError(
               error,
               gone: const StrategyGone(),
@@ -187,11 +192,28 @@ final class StampedSubscriptions extends EditorSubscriptions {
         strategyPublicId: strategyPublicId,
         subject: ReadOfPage(pagePublicId),
         account: Account(subject),
-        outcomeOf: (answer) => pageOutcomeOf(
-          answer,
-          pagePublicId: pagePublicId,
-          canRead: canRead,
-        ),
+        answered: (answer) => switch (answer) {
+          StampedValue(:final value, :final stamp) => live.livePageArrived(
+              strategyPublicId,
+              ReadOfPage(pagePublicId),
+              Account(subject),
+              LivePageAnswer(
+                value,
+                pagePublicId: pagePublicId,
+                point: pointOf(stamp),
+              ),
+            ),
+          StampedError() => live.liveArrived(
+              strategyPublicId,
+              ReadOfPage(pagePublicId),
+              Account(subject),
+              pageOutcomeOf(
+                answer,
+                pagePublicId: pagePublicId,
+                canRead: canRead,
+              ),
+            ),
+        },
         lostOf: (error) => storeReadOutcomeOfError(
           error,
           gone: PageGone(pagePublicId),
@@ -206,7 +228,7 @@ final class StampedSubscriptions extends EditorSubscriptions {
     required String strategyPublicId,
     required ReadOf subject,
     required Account account,
-    required StoreReadOutcome Function(Stamped<T> answer) outcomeOf,
+    required void Function(Stamped<T> answer) answered,
     required StoreReadOutcome Function(Object error) lostOf,
   }) {
     void tellStore(void Function() hand) {
@@ -232,14 +254,7 @@ final class StampedSubscriptions extends EditorSubscriptions {
         inner = watched.listen(
           (answer) {
             told.add(answer);
-            tellStore(
-              () => live.liveArrived(
-                strategyPublicId,
-                subject,
-                account,
-                outcomeOf(answer),
-              ),
-            );
+            tellStore(() => answered(answer));
           },
           onError: (Object error, StackTrace stackTrace) {
             told.addError(error, stackTrace);

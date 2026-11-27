@@ -114,14 +114,64 @@ ResultRows<HeaderRead> pageListRead(RemotePageList list) => _rows(
     );
 
 ResultRows<PageRead> pageRead(RemotePageSnapshot page, CanRead canRead) =>
+    pageReadOver(page, canRead, held: HeldOnPage.nothing, decoded: () {});
+
+ResultRows<PageRead> pageReadOver(
+  RemotePageSnapshot page,
+  CanRead canRead, {
+  required HeldOnPage held,
+  required void Function() decoded,
+}) =>
     _rows(
       () => PageRead(
         page: _page(page.page),
         elements: [
-          for (final element in page.elements) _element(element, canRead),
+          for (final element in page.elements)
+            switch (held.elements[element.publicId]) {
+              final row?
+                  when _sameIdentity(
+                    row,
+                    page: element.pagePublicId,
+                    revision: element.revision,
+                    createdAt: element.createdAt,
+                  ) =>
+                row,
+              _ => _decoded(decoded, () => _element(element, canRead)),
+            },
         ],
         lineupGroups: [
-          for (final lineup in page.lineups) _lineupGroup(lineup, canRead),
+          for (final lineup in page.lineups)
+            switch (held.lineupGroups[lineup.publicId]) {
+              final row?
+                  when _sameIdentity(
+                    row,
+                    page: lineup.pagePublicId,
+                    revision: lineup.revision,
+                    createdAt: lineup.createdAt,
+                  ) =>
+                row,
+              _ => _decoded(decoded, () => _lineupGroup(lineup, canRead)),
+            },
         ],
       ),
     );
+
+T _decoded<T>(void Function() counted, T Function() decode) {
+  counted();
+  return decode();
+}
+
+bool _sameIdentity(
+  Row held, {
+  required String page,
+  required int revision,
+  required DateTime? createdAt,
+}) =>
+    switch (held) {
+      ElementRow(:final pagePublicId) ||
+      LineupGroupRow(:final pagePublicId) =>
+        pagePublicId == page,
+      _ => false,
+    } &&
+    versionOfRow(held) ==
+        Version(revision, life: createdAt?.millisecondsSinceEpoch);

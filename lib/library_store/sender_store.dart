@@ -303,6 +303,17 @@ base class SenderStore {
     report(StoredRowsRefused(strategyId, refusal));
   }
 
+  Future<HeldOnPage> heldOnPage(String strategyId, String pagePublicId) async {
+    try {
+      return switch (await store.heldOnPage(strategyId, pagePublicId)) {
+        Found(:final value) => value,
+        _ => HeldOnPage.nothing,
+      };
+    } catch (_) {
+      return HeldOnPage.nothing;
+    }
+  }
+
   Future<QueueRead> read(String strategyId) async {
     final Reading<StrategyContent> reading;
     try {
