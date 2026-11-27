@@ -333,12 +333,29 @@ final class Reference {
   bool _olderThanPageTaken(String page, int at) =>
       at < (pageTakenAt[page] ?? anyResultOfThisSession);
 
+  bool _listNewerThan(int at) => listTakenAt != null && at < listTakenAt!;
+
   void _listTaken(ReadFact read) {
     if (_olderThanListTakenOrOwed(read.tick)) return;
     listTakenAt = read.tick;
     listOwedFrom = null;
-    listed = livePagesOf(read.state.rows);
-    content.removeWhere((page, _) => !listed.contains(page));
+    final claimed = livePagesOf(read.state.rows);
+    for (final page in {...listed, ...claimed}) {
+      final own = pageTakenAt[page];
+      final agrees = claimed.contains(page) == listed.contains(page);
+      if (agrees || own == null || own < read.tick) {
+        if (!claimed.contains(page)) {
+          listed = {...listed}..remove(page);
+          content.remove(page);
+        } else {
+          listed = {...listed, page};
+        }
+      } else if (!claimed.contains(page)) {
+        count(
+          'an older list leaving a page out after a newer read of it, kept',
+        );
+      }
+    }
     listFreshSinceSession = true;
   }
 
@@ -352,7 +369,9 @@ final class Reference {
   void _pageRead(ReadFact read, String page) {
     if (_olderThanPageTaken(page, read.tick)) return;
     if (!listed.contains(page)) {
-      listOwedFrom ??= read.tick;
+      if (listTakenAt == null || listTakenAt! < read.tick) {
+        listOwedFrom ??= read.tick;
+      }
       return;
     }
     pageTakenAt[page] = read.tick;
@@ -362,6 +381,8 @@ final class Reference {
 
   void _pageGone(ReadFact read, String page) {
     if (_olderThanPageTaken(page, read.tick)) return;
+    if (_listNewerThan(read.tick)) return;
+    if (listTakenAt == read.tick && listed.contains(page)) return;
     pageTakenAt[page] = read.tick;
     listed = {...listed}..remove(page);
     content.remove(page);
@@ -492,26 +513,28 @@ void countCases(List<Fact> order) {
   }
 }
 
-CloudQueue deliver(CloudQueue start, List<Fact> order) {
-  var queue = start;
-  final labelsFrom = <int, int>{0: start.session.labelsFrom};
-  void step(QueueEvent event) {
+final class Delivery {
+  Delivery(this.queue) : labelsFrom = {0: queue.session.labelsFrom};
+
+  CloudQueue queue;
+  final Map<int, int> labelsFrom;
+
+  void _step(QueueEvent event) {
     queue = transition(queue, event, now: now).queue;
   }
 
-  for (final fact in order) {
+  void deliver(Fact fact) {
     switch (fact) {
       case RestartFact(:final run, :final generation):
-        step(const AppRestarted(build: build));
-        step(ConnectionReturned(generation));
+        _step(const AppRestarted(build: build));
+        _step(ConnectionReturned(generation));
         labelsFrom[run] = queue.session.labelsFrom;
       case ReconnectFact(:final generation):
-        step(ConnectionReturned(generation));
+        _step(ConnectionReturned(generation));
       case ReadFact(:final base, :final point, :final run):
-        step(BaseArrived(base, session: labelsFrom[run]!, point: point));
+        _step(BaseArrived(base, session: labelsFrom[run]!, point: point));
     }
   }
-  return queue;
 }
 
 String? disagreement(CloudQueue queue, Reference want) {
@@ -581,11 +604,13 @@ void main() {
   final family = int.tryParse(
     Platform.environment['ARRIVAL_ORDER_FAMILY'] ?? '',
   );
-  test('reads delivered in every order end where a model of the server says: '
-      'per-subject order and sessions, the newest list decides which pages '
-      'exist without touching any page\'s own order, a page read the list '
-      'does not show owes the list, and a page gone not older than its page '
-      'removes it', () {
+  test('after every read delivered, in every order, the queue holds what a '
+      'model of the server says: per-subject order and sessions; which pages '
+      'exist is decided by the newest claim about that page, whatever kind of '
+      'result made it, so a list leaves alone a page whose own result is '
+      'newer and a page result older than the list changes nothing about '
+      'existence; a page read newer than a list that does not show it owes '
+      'the list', () {
     var checked = 0;
     for (final seed
         in one == null
@@ -602,14 +627,17 @@ void main() {
           scenario.states.first,
           scenario.start.session.generation,
         );
-        order.forEach(want.apply);
-        final queue = deliver(scenario.start, order);
-        if (disagreement(queue, want) case final problem?) {
-          fail(
-            'seed $seed: $problem\n'
-            'states: ${[for (final state in scenario.states) '${state.index}${state.exists ? '' : ' (deleted)'}'].join(', ')}\n'
-            'order:\n  ${order.join('\n  ')}',
-          );
+        final delivery = Delivery(scenario.start);
+        for (final (at, fact) in order.indexed) {
+          want.apply(fact);
+          delivery.deliver(fact);
+          if (disagreement(delivery.queue, want) case final problem?) {
+            fail(
+              'seed $seed, after event ${at + 1}: $problem\n'
+              'states: ${[for (final state in scenario.states) '${state.index}${state.exists ? '' : ' (deleted)'}'].join(', ')}\n'
+              'order:\n  ${order.join('\n  ')}',
+            );
+          }
         }
       }
     }
@@ -639,4 +667,5 @@ const floors = {
   'orders with two reads of one snapshot': 10500,
   'an older list leaving a page out after a newer read of it': 4300,
   'an older page-gone after a newer list showing the page': 5000,
+  'an older list leaving a page out after a newer read of it, kept': 400,
 };
