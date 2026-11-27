@@ -351,6 +351,36 @@ void main() {
       expect(setAsideIds(client.queue), ['move']);
     });
 
+    test('after a STRATEGY_REPLACED, an answer that the strategy is gone '
+        'pays it on the same connection, and the strategy shows as deleted on '
+        'the server', () {
+      for (final named in [null, laterLife]) {
+        final client = Client();
+        client.edit(movePatch('move'));
+        final attempt = client.claim(['move']);
+        client.must(
+          BatchRefused(
+            attempt,
+            BatchRefusal.strategyReplaced,
+            point: tick(),
+            currentLife: named,
+          ),
+        );
+        expect(client.queue.shown.list, isA<ReadOwed>(), reason: '$named');
+        client.arrive(const StrategyGone());
+        expect(
+          client.queue.shown.list,
+          const ReadThisSession(),
+          reason: '$named',
+        );
+        expect(
+          standingOf(client.queue),
+          Standing.deletedOnServer,
+          reason: '$named',
+        );
+      }
+    });
+
     test('a list showing the life the refusal named pays it', () {
       final client = Client();
       client.edit(movePatch('move'));

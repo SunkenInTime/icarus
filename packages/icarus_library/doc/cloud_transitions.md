@@ -233,11 +233,12 @@ Starts as: waiting, awaiting a result for the page list; page list owed by a lis
 | result: page-a with the item at revision 2 | unchanged |
 | result: page-a with the item as this device wrote it at 2 | unchanged |
 | result: page-b gone | page-b not read this session |
+| result: strategy gone | x: waiting; standing deletedOnServer; page list read this session |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a), owed by a list of a later life than 1767322800000, or of another life from a later connection or session |
 | result: page-a of another life | page list owed by a list of a later life than 1767322800000, or of another life from a later connection or session; defers page-a for the page list |
 | result: page list of a later strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
 
-Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; result: strategy gone; user: discard what was set aside; result: page list of an earlier strategy life.
+Does not apply: claimed; claimed under another client id; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: header as it is; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
 
 ## set aside after the strategy was replaced
 

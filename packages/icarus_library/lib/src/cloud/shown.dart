@@ -356,7 +356,8 @@ final class StrategyLifeAtLeast extends Evidence {
   @override
   bool shownBy(ArrivedBase base) => switch (base) {
     HeaderRead(:final strategy) => (createdAtOf(strategy) ?? 0) >= life,
-    _ => false,
+    StrategyGone() => true,
+    PageRead() || PageGone() => false,
   };
 
   @override
