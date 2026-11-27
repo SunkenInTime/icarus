@@ -34,6 +34,18 @@ void main() {
     });
 
     test(
+        'the first answer of a watch on a page the store already holds from '
+        'its own read decodes none of the rows it holds', () {
+      inWorld((world) {
+        world.sender.liveOpened(strategyId, openPage);
+        expect(deliver(world), 0);
+        world.teammateMoves(1);
+        expect(deliver(world), 1);
+        expect(revisionsInStore(world), revisionsOnServer(world));
+      });
+    });
+
+    test(
         'a row the store holds as unreadable at the same identity stays '
         'unreadable without a second decode', () {
       inWorld((world) {
