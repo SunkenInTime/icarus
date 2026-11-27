@@ -50,8 +50,7 @@ void main() {
     final store = await openStore(engine);
     addTearDown(store.close);
     counts.reset();
-    await store.readAhead([strategyId]);
-    final read = await wholeRead(store);
+    final read = await store.readingAhead([strategyId], () => wholeRead(store));
 
     expect(read, expected);
     expect(counts.entryListings, [(strategyArea(strategyId), '')]);
@@ -67,10 +66,12 @@ void main() {
     final store = await openStore(MemoryEngine(storage));
     addTearDown(store.close);
 
-    await store.readAhead([strategyId]);
-    savedValue(await store.editLibrary([RemoveStrategy(strategyId)]));
+    final read = await store.readingAhead([strategyId], () async {
+      savedValue(await store.editLibrary([RemoveStrategy(strategyId)]));
+      return store.readStrategy(strategyId);
+    });
 
-    expect(await store.readStrategy(strategyId), isA<NotFound<Object>>());
+    expect(read, isA<NotFound<Object>>());
   });
 
   test('a strategy unloaded after it was read ahead is read from the engine '
@@ -83,12 +84,38 @@ void main() {
     final store = await openStore(engine);
     addTearDown(store.close);
 
-    await store.readAhead([strategyId]);
-    await wholeRead(store);
-    await store.unload(strategyId);
-    counts.reset();
-    await wholeRead(store);
+    await store.readingAhead([strategyId], () async {
+      await wholeRead(store);
+      await store.unload(strategyId);
+      counts.reset();
+      await wholeRead(store);
+    });
 
     expect(counts.reads, isNotEmpty);
+  });
+
+  test('nothing read ahead is held once the read that asked for it ends, '
+      'whether it finished or failed', () async {
+    final storage = MemoryStorage();
+    final writing = await openStore(MemoryEngine(storage));
+    savedValue(await writing.putStrategy(rows(), writtenAt: 113));
+    await writing.close();
+    final (engine, counts) = counting(MemoryEngine(storage));
+    final store = await openStore(engine);
+    addTearDown(store.close);
+
+    await store.readingAhead([strategyId], () async {});
+    counts.reset();
+    await wholeRead(store);
+    expect(counts.reads, contains((strategyArea(strategyId), 'strategy')));
+
+    await store.unload(strategyId);
+    await expectLater(
+      store.readingAhead([strategyId], () async => throw StateError('lost')),
+      throwsStateError,
+    );
+    counts.reset();
+    await wholeRead(store);
+    expect(counts.reads, contains((strategyArea(strategyId), 'strategy')));
   });
 }

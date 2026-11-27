@@ -240,6 +240,8 @@ final class _WatchedLease {
 
   void forget(String area) => _readAhead.remove(area);
 
+  void forgetAll() => _readAhead.clear();
+
   List<StoredEntry>? _heldAhead(String area) {
     if (_inner.status is! Holding) _readAhead.clear();
     return _readAhead[area];
@@ -286,7 +288,7 @@ final class _WatchedLease {
       };
 
   Future<Committing> commit(List<Change> changes) {
-    _readAhead.clear();
+    forgetAll();
     return _inner.commit(changes);
   }
 
@@ -1296,14 +1298,23 @@ final class LibraryStore {
     );
   });
 
-  Future<void> readAhead(Iterable<String> strategyPublicIds) =>
-      _inTurn(() async {
-        if (_settle() case StorageFailed()) return;
-        await _lease.readAhead([
-          for (final id in strategyPublicIds)
-            if (!_strategies.containsKey(digestOf(id))) strategyArea(id),
-        ]);
-      });
+  Future<T> readingAhead<T>(
+    Iterable<String> strategyPublicIds,
+    Future<T> Function() read,
+  ) async {
+    await _inTurn(() async {
+      if (_settle() case StorageFailed()) return;
+      await _lease.readAhead([
+        for (final id in strategyPublicIds)
+          if (!_strategies.containsKey(digestOf(id))) strategyArea(id),
+      ]);
+    });
+    try {
+      return await read();
+    } finally {
+      _lease.forgetAll();
+    }
+  }
 
   Future<Unloading> unload(String strategyPublicId) => _inTurn(() async {
     if (_settle() case StorageFailed(:final failure)) {
