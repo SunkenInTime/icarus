@@ -51,9 +51,40 @@ ElementPatchOp moveFromDrawn(String opId) => movePatch(
   ),
 );
 
-Future<LibraryStore> drawnThen(StrategyRowSet server) async {
+final drawnGroup = LiveLineupGroup(
+  strategyPublicId: strategyId,
+  publicId: 'g1',
+  pagePublicId: 'page-a',
+  payload: lineupPayload('g1'),
+  sortIndex: 0,
+  revision: 1,
+  unknownFields: jsonObject({'createdAt': fixtureLife}),
+);
+
+StrategyRowSet drawnWithGroup() => drawnRows().withRows([drawnGroup]);
+
+StrategyRowSet deletedByTeammate() => withOp(
+  withOp(drawnWithGroup(), elementDelete('t')),
+  const LineupGroupDeleteOp(
+    opId: 't-g',
+    lineupPublicId: 'g1',
+    pagePublicId: 'page-a',
+    expectedLineupRevision: 1,
+  ),
+);
+
+Future<LibraryStore> drawnThenDeleted() =>
+    drawnThen(deletedByTeammate(), drawn: drawnWithGroup());
+
+Future<PageContent> shownPage(LibraryStore store) async =>
+    pageOf(await store.readPage(strategyId, 'page-a'));
+
+Future<LibraryStore> drawnThen(
+  StrategyRowSet server, {
+  StrategyRowSet? drawn,
+}) async {
   final store = await openCloudStore(MemoryEngine(MemoryStorage()));
-  await addCloud(store, drawnRows());
+  await addCloud(store, drawn ?? drawnRows());
   await readServer(store, server, pages: ['page-a']);
   return store;
 }
@@ -387,6 +418,134 @@ void main() {
     });
   });
 
+  group('a row a teammate deleted since the draw', () {
+    final edits = <String, StrategyOp>{
+      'an element patch': moveFromDrawn('mine'),
+      'an element reorder': const ElementReorderOp(
+        opId: 'mine',
+        elementPublicId: 'e1',
+        pagePublicId: 'page-a',
+        sortIndex: 5,
+        expectedElementRevision: 1,
+      ),
+      'a lineup group patch': LineupGroupPatchOp(
+        opId: 'mine',
+        lineupPublicId: 'g1',
+        expectedLineupRevision: 1,
+        payload: lineupPayload('g1', notes: 'jump throw'),
+      ),
+      'a lineup group reorder': const LineupGroupReorderOp(
+        opId: 'mine',
+        lineupPublicId: 'g1',
+        pagePublicId: 'page-a',
+        sortIndex: 5,
+        expectedLineupRevision: 1,
+      ),
+    };
+    for (final MapEntry(key: name, value: op) in edits.entries) {
+      for (final (how, made) in [
+        (
+          'made live',
+          (int session) => MadeLive(session, drawnLives: drawnBoth),
+        ),
+        ('made checked', (int _) => MadeChecked(drawnLives: drawnBoth)),
+      ]) {
+        test('$name $how goes to the user, the rest of the batch commits, and '
+            'the row stays deleted', () async {
+          final store = await drawnThenDeleted();
+          final committed = savedValue(
+            await commitMade(store, [
+              op,
+              movePatch(
+                'other',
+                elementId: 'e2',
+                merge: FieldMerge(fields: const ['position']),
+              ),
+            ], made(await sessionOf(store))),
+          );
+          expect([for (final each in committed) each.change.opId], ['other']);
+          expect(
+            await stateOf(store, 'mine'),
+            const NeedsUser(ChangedSinceDrawn(RejectionReason.deleted)),
+          );
+          expect((await syncOf(store)).tally.attention, {
+            Attention.rejectedByServer: 1,
+          });
+          expect(liveIn(await shownPage(store)), {'e2'});
+        });
+      }
+    }
+
+    test('keep mine with a put-back over the tombstone brings the row back '
+        'with the user\'s payload, sent as a put-back', () async {
+      final store = await drawnThenDeleted();
+      savedValue(
+        await commitMade(store, [
+          moveFromDrawn('mine'),
+        ], MadeChecked(drawnLives: drawnBoth)),
+      );
+      final tombstone = deletedByTeammate().element('e1')! as DeletedElement;
+      final mine = (await entryOf(store, 'mine')).op as ElementPatchOp;
+      final putBack = ElementAddOp(
+        opId: 'back',
+        elementPublicId: 'e1',
+        pagePublicId: tombstone.pagePublicId,
+        payload: mine.payload!,
+        sortIndex: tombstone.sortIndex,
+        expectedElementRevision: tombstone.revision,
+      );
+      await recordAll(store, [
+        UserKeptMine('mine', putBack, authored: const AuthoredNoRow()),
+      ]);
+      expect(liveIn(await shownPage(store)), {'e1', 'e2'});
+      expect(await shownPosition(store), editedTo);
+      expect(await stateOf(store, 'back'), const Waiting());
+      final sent = await claimAll(store);
+      expect(sent.ops.single, putBack);
+      final restored = applied(applyOp(deletedByTeammate(), sent.ops.single));
+      expect(
+        restored.rows.whereType<LiveElement>().single.payload,
+        mine.payload,
+      );
+    });
+
+    for (final action in [
+      const UserUsedCloud('mine'),
+      const UserDiscarded('mine'),
+    ]) {
+      test('${action.runtimeType} leaves it deleted', () async {
+        final store = await drawnThenDeleted();
+        savedValue(
+          await commitMade(store, [
+            moveFromDrawn('mine'),
+          ], MadeChecked(drawnLives: drawnBoth)),
+        );
+        await recordAll(store, [action]);
+        expect((await syncOf(store)).queue.entries, isEmpty);
+        expect(liveIn(await shownPage(store)), {'e2'});
+      });
+    }
+
+    test('unmarked, or not drawn live, the batch is refused', () async {
+      for (final made in [null, MadeChecked()]) {
+        final store = await drawnThenDeleted();
+        final result = await store.commitAllAs(
+          testAccount,
+          strategyId,
+          [moveFromDrawn('mine')],
+          seen: await seenIn(store),
+          made: made,
+        );
+        expect(
+          '${(result as Refused).reason}',
+          '${const OpRefusal(Rejected(RejectionReason.deleted))}',
+          reason: '$made',
+        );
+        expect((await syncOf(store)).queue.entries, isEmpty);
+      }
+    });
+  });
+
   group('the page between such a commit and the user\'s answer', () {
     test('shows the held value, even once the held row is back at the '
         'drawn base', () async {
@@ -514,6 +673,15 @@ void main() {
 }
 
 final drawn = {const ElementKey('e1'): fixtureLife};
+
+final drawnBoth = {...drawn, drawnGroup.key: fixtureLife};
+
+Set<String> liveIn(PageContent page) => {
+  for (final row in page.elements)
+    if (row is LiveElement) row.publicId,
+  for (final row in page.lineupGroups)
+    if (row is LiveLineupGroup) row.publicId,
+};
 
 const writtenBefore = {
   'version': 1,
