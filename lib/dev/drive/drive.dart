@@ -151,6 +151,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/weapons.dart';
@@ -326,7 +329,7 @@ String _describe(Object error) {
   if (error is! FlutterError) return _lines('$error', 3, ' / ');
   return [
     for (final node in error.diagnostics)
-      if (node.value case final List<Object> parts) parts.join() else '$node'
+      if (node.value case final List<Object> parts) parts.join() else '$node',
   ].join(' / ');
 }
 
@@ -372,7 +375,8 @@ Future<void> _play(String script) async {
       } else {
         _failedSteps++;
         _log(
-            'FAIL ${jsonEncode(step)}: $error @ ${_lines('$stack', 8, ' | ')}');
+          'FAIL ${jsonEncode(step)}: $error @ ${_lines('$stack', 8, ' | ')}',
+        );
       }
     }
     try {
@@ -394,8 +398,10 @@ Future<void> _play(String script) async {
     _logCloudStore(_cloudStore.drain(appProviderContainer));
     await _flush();
   }
-  final cloudEnd =
-      _cloudStore.end(appProviderContainer, lastStep: DateTime.now());
+  final cloudEnd = _cloudStore.end(
+    appProviderContainer,
+    lastStep: DateTime.now(),
+  );
   await Future.wait(_pictureWatches);
   await Future.wait(_delayedLinks);
   await Future.wait(_linksOpening);
@@ -417,10 +423,12 @@ Future<void> _play(String script) async {
   final refusals =
       appProviderContainer.read(canvasShowsProvider.notifier).refusals;
   int counted(String what) => refusals.where((r) => r.what == what).length;
-  _log('CANVAS nothing shown ${counted('nothing shown')} times, a click '
-      'ignored during an open ${counted('click ignored during an open')} '
-      'times, an edit reaching the canvas during an open '
-      '${counted('edit during an open')} times');
+  _log(
+    'CANVAS nothing shown ${counted('nothing shown')} times, a click '
+    'ignored during an open ${counted('click ignored during an open')} '
+    'times, an edit reaching the canvas during an open '
+    '${counted('edit during an open')} times',
+  );
   for (final refusal in refusals) {
     _log('CANVAS $refusal');
   }
@@ -556,22 +564,28 @@ void _pressMouse(Offset at, {int buttons = kPrimaryMouseButton}) {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
   _addMouse(pointer, at);
-  binding.handlePointerEvent(PointerHoverEvent(
-    pointer: pointer,
-    kind: PointerDeviceKind.mouse,
-    position: at,
-  ));
-  binding.handlePointerEvent(PointerDownEvent(
-    pointer: pointer,
-    kind: PointerDeviceKind.mouse,
-    buttons: buttons,
-    position: at,
-  ));
-  binding.handlePointerEvent(PointerUpEvent(
-    pointer: pointer,
-    kind: PointerDeviceKind.mouse,
-    position: at,
-  ));
+  binding.handlePointerEvent(
+    PointerHoverEvent(
+      pointer: pointer,
+      kind: PointerDeviceKind.mouse,
+      position: at,
+    ),
+  );
+  binding.handlePointerEvent(
+    PointerDownEvent(
+      pointer: pointer,
+      kind: PointerDeviceKind.mouse,
+      buttons: buttons,
+      position: at,
+    ),
+  );
+  binding.handlePointerEvent(
+    PointerUpEvent(
+      pointer: pointer,
+      kind: PointerDeviceKind.mouse,
+      position: at,
+    ),
+  );
 }
 
 Future<void> _mapThenOpen(Map<String, dynamic> step) async {
@@ -585,8 +599,9 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
           .strategy
           .id;
   bool listed(String name) =>
-      (c.read(cloudStrategiesProvider).valueOrNull ?? const [])
-          .any((entry) => entry.strategy.name == name);
+      (c.read(cloudStrategiesProvider).valueOrNull ?? const []).any(
+        (entry) => entry.strategy.name == name,
+      );
   await _waitFor(
     () =>
         listed(step['mapThenOpen'] as String) && listed(step['from'] as String),
@@ -607,8 +622,10 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
   Future<String> serverMap(String id) async =>
       (await repository.fetchShell(id)).header.mapData;
   Future<void> openAndSettle(String id) async {
-    switch (await strategies.openCloud(id,
-        asked: strategies.askedByTheUserNow())) {
+    switch (await strategies.openCloud(
+      id,
+      asked: strategies.askedByTheUserNow(),
+    )) {
       case Changed():
         break;
       case GaveWay():
@@ -639,17 +656,22 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
     Future<Offset> shown(String text, String shot) async {
       try {
         return clickableCenterOf(
-            note: _log, (w) => _isText(w, text), what: '"$text"');
+          note: _log,
+          (w) => _isText(w, text),
+          what: '"$text"',
+        );
       } on StateError {
         if (shots != null) await _shot('$shots/maprace-$run-$shot.png');
         rethrow;
       }
     }
 
-    await _tap(await shown(
-      Maps.mapNames[c.read(mapProvider).currentMap]!.toUpperCase(),
-      'no-map-button',
-    ));
+    await _tap(
+      await shown(
+        Maps.mapNames[c.read(mapProvider).currentMap]!.toUpperCase(),
+        'no-map-button',
+      ),
+    );
     final tile = await shown(targetName.toUpperCase(), 'no-tile');
     if (shots != null && run <= 2)
       await _shot('$shots/maprace-$run-picker.png');
@@ -663,8 +685,10 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
       }
       if (patchAt != null) return;
       for (final pending in next.pending) {
-        if (pending.op case StrategyPatchOp(:final payload)
-            when payload['mapData'] == targetName) {
+        if (pending.op
+            case StrategyPatchOp(
+              :final payload,
+            ) when payload['mapData'] == targetName) {
           patchAt = clock.elapsedMicroseconds;
           patchUnder = next.strategyPublicId;
         }
@@ -679,7 +703,8 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
       _pressMouse(restAt, buttons: kBackMouseButton);
     } else {
       unawaited(
-          strategies.openCloud(opened, asked: strategies.askedByTheUserNow()));
+        strategies.openCloud(opened, asked: strategies.askedByTheUserNow()),
+      );
     }
     await _waitFor(
       () =>
@@ -706,28 +731,34 @@ Future<void> _mapThenOpen(Map<String, dynamic> step) async {
     outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
     if (patchAt case final at?) patchWaits.add(at);
     if (openAt case final at?) openStarts.add(at);
-    _log('MAPRACE run $run (${byBackButton ? 'back button' : 'direct open'}): '
-        '$left $leftBefore -> $targetName (canvas ${Maps.mapNames[mapAfterTap]} a frame after the tap); '
-        'patch queued ${patchAt == null ? 'never seen' : '${ms(patchAt!)} ms after the tap, under ${patchUnder == opened ? opened : patchUnder == left ? left : patchUnder}'}; '
-        'open began ${openAt == null ? 'never' : '${ms(openAt!)} ms'} after the tap; '
-        '$outcome ($left $leftAfter, $opened $openedAfter)');
+    _log(
+      'MAPRACE run $run (${byBackButton ? 'back button' : 'direct open'}): '
+      '$left $leftBefore -> $targetName (canvas ${Maps.mapNames[mapAfterTap]} a frame after the tap); '
+      'patch queued ${patchAt == null ? 'never seen' : '${ms(patchAt!)} ms after the tap, under ${patchUnder == opened ? opened : patchUnder == left ? left : patchUnder}'}; '
+      'open began ${openAt == null ? 'never' : '${ms(openAt!)} ms'} after the tap; '
+      '$outcome ($left $leftAfter, $opened $openedAfter)',
+    );
   }
   patchWaits.sort();
   openStarts.sort();
   String spread(List<int> values) => values.isEmpty
       ? '-'
       : 'median ${ms(values[values.length ~/ 2])} ms, worst ${ms(values.last)} ms';
-  _log('MAPRACE summary (${byBackButton ? 'back button' : 'direct open'}): '
-      '$runs runs; ${[
-    for (final MapEntry(:key, :value) in outcomes.entries) '$key $value',
-  ].join(', ')}; tap to patch queued ${spread(patchWaits)}; '
-      'tap to open began ${spread(openStarts)}');
+  _log(
+    'MAPRACE summary (${byBackButton ? 'back button' : 'direct open'}): '
+    '$runs runs; ${[
+      for (final MapEntry(:key, :value) in outcomes.entries) '$key $value'
+    ].join(', ')}; tap to patch queued ${spread(patchWaits)}; '
+    'tap to open began ${spread(openStarts)}',
+  );
   if (step['expectTaken'] case final int expected
       when (outcomes['the opened strategy took the change'] ?? 0) != expected) {
     _failedSteps++;
-    _log('FAIL mapThenOpen: the opened strategy took the change '
-        '${outcomes['the opened strategy took the change'] ?? 0} times, '
-        'expected $expected');
+    _log(
+      'FAIL mapThenOpen: the opened strategy took the change '
+      '${outcomes['the opened strategy took the change'] ?? 0} times, '
+      'expected $expected',
+    );
   }
 }
 
@@ -748,8 +779,10 @@ Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
   final left = idOf(leftName)!;
   listing.close();
   Future<void> openAndSettle(String id) async {
-    switch (await strategies.openCloud(id,
-        asked: strategies.askedByTheUserNow())) {
+    switch (await strategies.openCloud(
+      id,
+      asked: strategies.askedByTheUserNow(),
+    )) {
       case Changed():
         break;
       case GaveWay():
@@ -784,12 +817,9 @@ Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
     int? swapped;
     int? shownAt;
     final subscriptions = [
-      c.listen(
-        strategyProvider.select((state) => state.strategyId),
-        (_, id) {
-          if (id == opened) swapped ??= clock.elapsedMicroseconds;
-        },
-      ),
+      c.listen(strategyProvider.select((state) => state.strategyId), (_, id) {
+        if (id == opened) swapped ??= clock.elapsedMicroseconds;
+      }),
       c.listen(canvasShowsProvider, (_, now) {
         if (now case ShowsPage(:final strategyId) when strategyId == opened) {
           shownAt ??= clock.elapsedMicroseconds;
@@ -805,8 +835,10 @@ Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
     }
     shownAfter.add(shown);
     reads.add(swapped!);
-    _log('CLOUDOPEN run $run: $openedName read ${ms(swapped!)} ms after the '
-        'back button, its page shown after ${ms(shown)} ms');
+    _log(
+      'CLOUDOPEN run $run: $openedName read ${ms(swapped!)} ms after the '
+      'back button, its page shown after ${ms(shown)} ms',
+    );
     await _frames();
     await Future<void>.delayed(const Duration(seconds: 1));
   }
@@ -822,10 +854,12 @@ Future<void> _cloudOpenTime(Map<String, dynamic> step) async {
       c.read(textProvider).length +
       c.read(placedImageProvider).images.length +
       c.read(utilityProvider).length;
-  _log('CLOUDOPEN summary $openedName ($measuredPages pages, $onShownPage '
-      'items on the page shown): '
-      '$runs runs; back button to the read done ${spread(reads)}; to its '
-      'page shown ${spread(shownAfter)}');
+  _log(
+    'CLOUDOPEN summary $openedName ($measuredPages pages, $onShownPage '
+    'items on the page shown): '
+    '$runs runs; back button to the read done ${spread(reads)}; to its '
+    'page shown ${spread(shownAfter)}',
+  );
 }
 
 int _markersOn(StrategyPage page) =>
@@ -875,8 +909,9 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
   ]..sort((a, b) => _itemsIn(a).compareTo(_itemsIn(b)));
   final ahead = switch (step['ahead']) {
     null => null,
-    _ when others.isEmpty =>
-      throw StateError('no other strategy to open ahead of ${target.name}'),
+    _ when others.isEmpty => throw StateError(
+        'no other strategy to open ahead of ${target.name}',
+      ),
     'median' => others[others.length ~/ 2],
     final String name => others.firstWhere((strategy) => strategy.name == name),
     _ => throw StateError('ahead names a strategy or median'),
@@ -966,8 +1001,9 @@ Future<void> _openFirstFrame(Map<String, dynamic> step) async {
     );
     if (ahead != null) {
       final strategies = c.read(strategyProvider.notifier);
-      unawaited(strategies.openLocal(ahead.id,
-          asked: strategies.askedByTheUserNow()));
+      unawaited(
+        strategies.openLocal(ahead.id, asked: strategies.askedByTheUserNow()),
+      );
     }
     await Future<void>.delayed(const Duration(milliseconds: 60));
     frameNumber = null;
@@ -1037,8 +1073,10 @@ void _typeInto(String text) {
 EditableTextState _focusedField() {
   EditableTextState? focused;
   void visit(Element element) {
-    if (element case StatefulElement(:final EditableTextState state)
-        when state.widget.focusNode.hasFocus) {
+    if (element
+        case StatefulElement(
+          :final EditableTextState state,
+        ) when state.widget.focusNode.hasFocus) {
       focused = state;
     }
     element.visitChildElements(visit);
@@ -1170,12 +1208,15 @@ Offset _wordsPoint(String words, {int nth = 0, bool clickable = false}) {
   RendererBinding.instance.renderViews.forEach(visit);
   if (found.length <= nth) {
     if (covered.isNotEmpty) {
-      throw StateError('"$words" drawn ${found.length + covered.length} times, '
-          '${found.length} inside the window, asked for the ${ordinal(nth + 1)}; '
-          'the first outside it: ${whyNotTapped(covered.first)}');
+      throw StateError(
+        '"$words" drawn ${found.length + covered.length} times, '
+        '${found.length} inside the window, asked for the ${ordinal(nth + 1)}; '
+        'the first outside it: ${whyNotTapped(covered.first)}',
+      );
     }
     throw StateError(
-        '"$words" drawn ${found.length} times, asked for the ${ordinal(nth + 1)}');
+      '"$words" drawn ${found.length} times, asked for the ${ordinal(nth + 1)}',
+    );
   }
   return found[nth];
 }
@@ -1360,22 +1401,28 @@ void _click(Offset at) {
   final pointer = _pointer++;
   final binding = GestureBinding.instance;
   _addMouse(pointer, at);
-  binding.handlePointerEvent(PointerHoverEvent(
-    pointer: pointer,
-    kind: PointerDeviceKind.mouse,
-    position: at,
-  ));
-  binding.handlePointerEvent(PointerDownEvent(
-    pointer: pointer,
-    kind: PointerDeviceKind.mouse,
-    buttons: kPrimaryMouseButton,
-    position: at,
-  ));
-  binding.handlePointerEvent(PointerUpEvent(
-    pointer: pointer,
-    kind: PointerDeviceKind.mouse,
-    position: at,
-  ));
+  binding.handlePointerEvent(
+    PointerHoverEvent(
+      pointer: pointer,
+      kind: PointerDeviceKind.mouse,
+      position: at,
+    ),
+  );
+  binding.handlePointerEvent(
+    PointerDownEvent(
+      pointer: pointer,
+      kind: PointerDeviceKind.mouse,
+      buttons: kPrimaryMouseButton,
+      position: at,
+    ),
+  );
+  binding.handlePointerEvent(
+    PointerUpEvent(
+      pointer: pointer,
+      kind: PointerDeviceKind.mouse,
+      position: at,
+    ),
+  );
 }
 
 Future<void> _raceLeave(Map<String, dynamic> step) async {
@@ -1391,8 +1438,9 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       .firstWhere((strategy) => strategy.name == name);
   final left = named(leftName);
   final opened = named(openedName);
-  final firstPageId = ([...left.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)))
+  final firstPageId = ([
+    ...left.pages,
+  ]..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)))
       .first
       .id;
   List<String> agentsOnFirstPage() => [
@@ -1422,11 +1470,14 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     }
   });
   for (var run = 1; run <= runs; run++) {
-    final original =
-        cloneStrategy(const LocalLibrary().storedStrategy(left.id)!);
+    final original = cloneStrategy(
+      const LocalLibrary().storedStrategy(left.id)!,
+    );
     final strategies = c.read(strategyProvider.notifier);
-    switch (await strategies.openLocal(left.id,
-        asked: strategies.askedByTheUserNow())) {
+    switch (await strategies.openLocal(
+      left.id,
+      asked: strategies.askedByTheUserNow(),
+    )) {
       case Changed():
         break;
       case GaveWay() || Missing():
@@ -1450,8 +1501,9 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
       path.join(strategyFolderPath(root.path, opened.id), 'images'),
     )..createSync(recursive: true);
     for (var i = 0; i < pictures; i++) {
-      File(path.join(images.path, 'race-unused-$run-$i.png'))
-          .writeAsBytesSync(List.filled(16384, run % 251));
+      File(
+        path.join(images.path, 'race-unused-$run-$i.png'),
+      ).writeAsBytesSync(List.filled(16384, run % 251));
     }
     final page = clickableCenterOf(
       note: _log,
@@ -1525,36 +1577,45 @@ Future<void> _raceLeave(Map<String, dynamic> step) async {
     };
     if (window != null) windows.add(window);
     _log(
-        'RACE run $run: ${lost ? 'the left page was saved empty' : 'the left page kept its ${before.length} agents'}; '
-        'canvas cleared ${cleared == null ? 'never' : '${ms(cleared!)} ms'} after the first click, '
-        'second click ${ms(secondClick)} ms after it, '
-        '$openedName published ${openedAt == null ? 'never' : '${ms(openedAt!)} ms'} after it; '
-        'window ${window == null ? 'not measured' : '${ms(window)} ms'}; '
-        'ended on $endedOn page ${session.activePageId}'
-        '${session.isApplyingPage ? ' still applying' : ''}'
-        '${undoes ? '; the undo, pressed ${during ? 'before' : 'after'} $openedName opened, was ${taken ? 'taken' : 'not taken'}, $endedOn ${unsaved ? 'marked unsaved' : 'saved'}' : ''}');
+      'RACE run $run: ${lost ? 'the left page was saved empty' : 'the left page kept its ${before.length} agents'}; '
+      'canvas cleared ${cleared == null ? 'never' : '${ms(cleared!)} ms'} after the first click, '
+      'second click ${ms(secondClick)} ms after it, '
+      '$openedName published ${openedAt == null ? 'never' : '${ms(openedAt!)} ms'} after it; '
+      'window ${window == null ? 'not measured' : '${ms(window)} ms'}; '
+      'ended on $endedOn page ${session.activePageId}'
+      '${session.isApplyingPage ? ' still applying' : ''}'
+      '${undoes ? '; the undo, pressed ${during ? 'before' : 'after'} $openedName opened, was ${taken ? 'taken' : 'not taken'}, $endedOn ${unsaved ? 'marked unsaved' : 'saved'}' : ''}',
+    );
   }
   windows.sort();
-  _log('RACE summary: $runs runs, the left page saved empty $emptied times; '
-      'window median ${windows.isEmpty ? '-' : ms(windows[windows.length ~/ 2])} ms, '
-      'worst ${windows.isEmpty ? '-' : ms(windows.last)} ms; '
-      '$mixedFrames of $framesWatched frames drawn showed the left '
-      'strategy\'s agents with the other strategy open'
-      '${undoes ? '; the undo pressed during the open $pressedDuring of $runs runs, taken during the open $editsTaken times, the strategy opened marked unsaved $openedUnsaved times' : ''}');
+  _log(
+    'RACE summary: $runs runs, the left page saved empty $emptied times; '
+    'window median ${windows.isEmpty ? '-' : ms(windows[windows.length ~/ 2])} ms, '
+    'worst ${windows.isEmpty ? '-' : ms(windows.last)} ms; '
+    '$mixedFrames of $framesWatched frames drawn showed the left '
+    'strategy\'s agents with the other strategy open'
+    '${undoes ? '; the undo pressed during the open $pressedDuring of $runs runs, taken during the open $editsTaken times, the strategy opened marked unsaved $openedUnsaved times' : ''}',
+  );
   if (undoes && step.containsKey('expectTaken') && pressedDuring == 0) {
     _failedSteps++;
-    _log('FAIL raceLeave: no run pressed Ctrl+Z while the open ran, so '
-        'nothing was tested');
+    _log(
+      'FAIL raceLeave: no run pressed Ctrl+Z while the open ran, so '
+      'nothing was tested',
+    );
   }
   if (step['expectTaken'] case final int expected when expected != editsTaken) {
     _failedSteps++;
-    _log('FAIL raceLeave: the undo was taken during the open $editsTaken '
-        'times, expected $expected');
+    _log(
+      'FAIL raceLeave: the undo was taken during the open $editsTaken '
+      'times, expected $expected',
+    );
   }
   if (step['expectEmptied'] case final int expected when expected != emptied) {
     _failedSteps++;
-    _log('FAIL raceLeave: the left page was saved empty $emptied times, '
-        'expected $expected');
+    _log(
+      'FAIL raceLeave: the left page was saved empty $emptied times, '
+      'expected $expected',
+    );
   }
 }
 
@@ -1646,11 +1707,7 @@ const _keys = {
     PhysicalKeyboardKey.shiftLeft,
     null,
   ),
-  'altLeft': (
-    LogicalKeyboardKey.altLeft,
-    PhysicalKeyboardKey.altLeft,
-    null,
-  ),
+  'altLeft': (LogicalKeyboardKey.altLeft, PhysicalKeyboardKey.altLeft, null),
   'space': (LogicalKeyboardKey.space, PhysicalKeyboardKey.space, ' '),
   'escape': (LogicalKeyboardKey.escape, PhysicalKeyboardKey.escape, null),
   'delete': (LogicalKeyboardKey.delete, PhysicalKeyboardKey.delete, null),
@@ -1979,7 +2036,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
       lines.forEach(_log);
       _logListSource('$value');
-      (await _storeLines(waitForGridFromStore(c, label: '$value')))
+      (await _storeLines(
+        waitForGridFromStore(c, label: '$value'),
+      ))
           .forEach(_log);
     case 'gridRowFromStore':
       final mark = step['since'] as String?;
@@ -1990,11 +2049,13 @@ Future<void> _run(Map<String, dynamic> step) async {
           patience: Duration(seconds: (step['seconds'] ?? 10) as int),
         ).then((row) => [row.kind]),
       );
-      _log('GRID "$value" ${row.single} drawn from a store row'
-          '${switch (_marks[mark]) {
-        final since? => ' ${since.elapsedMilliseconds} ms after $mark',
-        null => '',
-      }}');
+      _log(
+        'GRID "$value" ${row.single} drawn from a store row'
+        '${switch (_marks[mark]) {
+          final since? => ' ${since.elapsedMilliseconds} ms after $mark',
+          null => '',
+        }}',
+      );
     case 'holdListOnHive':
       _log(holdListOnHive(c));
     case 'letListGo':
@@ -2024,7 +2085,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       }
 
       final until = DateTime.now().add(
-        Duration(milliseconds: (((step['seconds'] ?? 0) as num) * 1000).round()),
+        Duration(
+          milliseconds: (((step['seconds'] ?? 0) as num) * 1000).round(),
+        ),
       );
       while (!matches() && DateTime.now().isBefore(until)) {
         await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -2038,16 +2101,15 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'slowStoreCommits':
       SlowedEngine.commitDelay = Duration(milliseconds: (value as num).round());
       _log(
-          'STORE commits now wait ${SlowedEngine.commitDelay.inMilliseconds} ms');
+        'STORE commits now wait ${SlowedEngine.commitDelay.inMilliseconds} ms',
+      );
     case 'actionOps':
       (await _storeLines(
         actionOpsStep(
           c,
           label: '$value',
           expected: {...?(step['expect'] as Map<String, dynamic>?)},
-          expectedKinds: {
-            ...?(step['expectKinds'] as Map<String, dynamic>?),
-          },
+          expectedKinds: {...?(step['expectKinds'] as Map<String, dynamic>?)},
         ),
       ))
           .forEach(_log);
@@ -2115,13 +2177,15 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'tapIcon':
       final icon = _icons[value as String]!;
-      await _tap(clickableCenterOf(
-        note: _log,
-        (w) => w is Icon && w.icon == icon,
-        what: 'tapIcon "$value"',
-        disabled: step['disabled'] == true,
-        nth: nth,
-      ));
+      await _tap(
+        clickableCenterOf(
+          note: _log,
+          (w) => w is Icon && w.icon == icon,
+          what: 'tapIcon "$value"',
+          disabled: step['disabled'] == true,
+          nth: nth,
+        ),
+      );
     case 'tapAt':
       await _tap(
         _point(step, name),
@@ -2138,9 +2202,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       await _frames();
     case 'openTwice':
       for (final name in (value as List).cast<String>()) {
-        final strategy = const LocalLibrary()
-            .storedStrategies
-            .firstWhere((stored) => stored.name == name);
+        final strategy = const LocalLibrary().storedStrategies.firstWhere(
+              (stored) => stored.name == name,
+            );
         switch (StrategyView.open(
           appNavigatorKey.currentState!,
           asked: c.read(strategyProvider.notifier).askedByTheUserNow(),
@@ -2178,30 +2242,32 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'hoverDoor':
       await _hover(_doorPoint(value as String));
     case 'dragAt':
-      await _drag(
-        [_point(step, name), _point(step, name, 2)],
-        markAtRelease: step['mark'] as String?,
-      );
+      await _drag([
+        _point(step, name),
+        _point(step, name, 2),
+      ], markAtRelease: step['mark'] as String?);
     case 'path':
       final expectOpPending = step['opStillPending'] == true;
       String? firstFrame;
-      await _drag([
-        for (final p in (value as List).cast<List>())
-          Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-      ],
-          stepsPerLeg: 6,
-          shotWhileHeld: step['held'] as String?,
-          firstFrameAfterRelease: switch (step['firstFrame']) {
-            final String label => () {
-                _log(
-                  'FIRST FRAME after releasing $label: drawings on screen '
-                  '${c.read(drawingProvider).elements.length}; '
-                  '${actionOpsInFlight(c)}',
-                );
-                firstFrame = opStillPendingProblem(c) ?? '';
-              },
-            _ => null,
-          });
+      await _drag(
+        [
+          for (final p in (value as List).cast<List>())
+            Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
+        ],
+        stepsPerLeg: 6,
+        shotWhileHeld: step['held'] as String?,
+        firstFrameAfterRelease: switch (step['firstFrame']) {
+          final String label => () {
+              _log(
+                'FIRST FRAME after releasing $label: drawings on screen '
+                '${c.read(drawingProvider).elements.length}; '
+                '${actionOpsInFlight(c)}',
+              );
+              firstFrame = opStillPendingProblem(c) ?? '';
+            },
+          _ => null,
+        },
+      );
       if (expectOpPending) {
         switch (firstFrame) {
           case null:
@@ -2293,6 +2359,37 @@ Future<void> _run(Map<String, dynamic> step) async {
               ),
       );
       await _place(id, _point(step, 'at'), (p) => agents.updatePosition(p, id));
+    case 'liveHandOffCost':
+      final shown =
+          c.read(remoteEditorSnapshotProvider).valueOrNull?.activePage;
+      if (shown == null) {
+        throw StateError('liveHandOffCost needs a cloud page open');
+      }
+      final runs = (value as num).toInt();
+      const stamp = ResultStamp(client: 1, connection: 1, snapshot: 1);
+      final micros = <int>[];
+      for (var run = 0; run <= runs; run++) {
+        final watch = Stopwatch()..start();
+        final outcome = pageOutcomeOf(
+          StampedValue(shown, stamp),
+          pagePublicId: shown.page.publicId,
+          canRead: appCanRead,
+        );
+        watch.stop();
+        if (outcome is! StoreReadAnswered) {
+          throw StateError(
+            'liveHandOffCost: the page did not convert: $outcome',
+          );
+        }
+        if (run > 0) micros.add(watch.elapsedMicroseconds);
+      }
+      micros.sort();
+      String ms(num micros) => (micros / 1000).toStringAsFixed(2);
+      _log(
+        'HANDOFF ${shown.elements.length} items, $runs runs: median '
+        '${ms((micros[(runs - 1) ~/ 2] + micros[runs ~/ 2]) / 2)} ms, fastest '
+        '${ms(micros.first)} ms, slowest ${ms(micros.last)} ms',
+      );
     case 'fillPage':
       int onPage() =>
           c.read(agentProvider).length +
@@ -2317,17 +2414,21 @@ Future<void> _run(Map<String, dynamic> step) async {
           for (var n = from; n < target; n++) {
             final at = Offset(60.0 + (n % 40) * 22, 60.0 + (n ~/ 40) * 22);
             if (n.isEven) {
-              agents.addAgent(PlacedAgent(
-                id: 'fill-$n-${const Uuid().v4()}',
-                type: types[(n ~/ 2) % types.length],
-                position: at,
-              ));
+              agents.addAgent(
+                PlacedAgent(
+                  id: 'fill-$n-${const Uuid().v4()}',
+                  type: types[(n ~/ 2) % types.length],
+                  position: at,
+                ),
+              );
             } else {
-              texts.addText(PlacedText(
-                id: 'fill-$n-${const Uuid().v4()}',
-                position: at,
-                sizeVersion: worldSizedMediaVersion,
-              )..text = 'Fill $n');
+              texts.addText(
+                PlacedText(
+                  id: 'fill-$n-${const Uuid().v4()}',
+                  position: at,
+                  sizeVersion: worldSizedMediaVersion,
+                )..text = 'Fill $n',
+              );
             }
           }
         },
@@ -2505,8 +2606,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'hoverAgent' || 'tapAgent':
       final id = value as String;
-      final at =
-          _centerOf((w) => w is AgentWidget && (w.id == id || w.lineUpId == id));
+      final at = _centerOf(
+        (w) => w is AgentWidget && (w.id == id || w.lineUpId == id),
+      );
       await (name == 'hoverAgent' ? _hover(at) : _tap(at));
     case 'signOut':
       final signingOut = c.read(guardedSignOutRequestProvider)(
@@ -2515,7 +2617,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       bool confirm(Widget w) => _hasKey(w, 'sign-out-confirm');
       await _waitFor(() => _countOf(confirm) > 0, 30);
       await _tap(
-          clickableCenterOf(note: _log, confirm, what: 'sign-out confirm'));
+        clickableCenterOf(note: _log, confirm, what: 'sign-out confirm'),
+      );
       if (!await signingOut) throw StateError('the sign-out was not done');
       await _waitFor(() => c.read(authProvider).user == null, 60);
     case 'signIn':
@@ -2591,40 +2694,49 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'openFirstFrame':
       await _openFirstFrame(step);
     case 'loadCopyCost':
-      (await loadCopyCost(value as String, (step['runs'] ?? 51) as int))
+      (await loadCopyCost(
+        value as String,
+        (step['runs'] ?? 51) as int,
+      ))
           .forEach(_log);
     case 'readBackCost':
       final budget = step['budget'] as Map<String, dynamic>?;
-      (await _storeLines(readBackCost(
-        value as String,
-        (step['runs'] ?? 21) as int,
-        budget: budget == null
-            ? null
-            : ReadBackBudget(
-                longestStepMs: budget['longestStepMs'] as num,
-                addedPerSaveMs: budget['addedPerSaveMs'] as num,
-              ),
-      )))
+      (await _storeLines(
+        readBackCost(
+          value as String,
+          (step['runs'] ?? 21) as int,
+          budget: budget == null
+              ? null
+              : ReadBackBudget(
+                  longestStepMs: budget['longestStepMs'] as num,
+                  addedPerSaveMs: budget['addedPerSaveMs'] as num,
+                ),
+        ),
+      ))
           .forEach(_log);
     case 'readBackFrames':
-      (await _storeLines(readBackFrames(
-        value as String,
-        longestStepMs: step['longestStepMs'] as num?,
-      )))
+      (await _storeLines(
+        readBackFrames(
+          value as String,
+          longestStepMs: step['longestStepMs'] as num?,
+        ),
+      ))
           .forEach(_log);
     case 'pageTakeCost':
       final budget = step['budget'] as Map<String, dynamic>?;
-      (await _storeLines(pageTakeCost(
-        items: value as int,
-        changed: (step['changed'] ?? 1) as int,
-        runs: (step['runs'] ?? 51) as int,
-        budget: budget == null
-            ? null
-            : PageTakeBudget(
-                longestStepMs: budget['longestStepMs'] as num,
-                recordMs: budget['recordMs'] as num,
-              ),
-      )))
+      (await _storeLines(
+        pageTakeCost(
+          items: value as int,
+          changed: (step['changed'] ?? 1) as int,
+          runs: (step['runs'] ?? 51) as int,
+          budget: budget == null
+              ? null
+              : PageTakeBudget(
+                  longestStepMs: budget['longestStepMs'] as num,
+                  recordMs: budget['recordMs'] as num,
+                ),
+        ),
+      ))
           .forEach(_log);
     case 'openStoredCloudStrategy':
       switch (StrategyView.open(
@@ -2745,9 +2857,7 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'storeQueueRecord':
       (await storeQueueRecords(c)).forEach(_log);
     case 'waitStoreHeld':
-      _log(
-        await waitStoreHeld(c, Duration(seconds: (value as num).toInt())),
-      );
+      _log(await waitStoreHeld(c, Duration(seconds: (value as num).toInt())));
     case 'waitStoreReading':
       _log(
         await waitStoreReading(c, Duration(seconds: (value as num).toInt())),
@@ -2777,27 +2887,38 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'openLink':
       final uri = Uri.parse(switch (step['post']) {
-        final String title => buildCommunityPostLink(c
-            .read(communityFeedProvider)
-            .posts
-            .firstWhere((post) => post.title == title)
-            .publicId),
+        final String title => buildCommunityPostLink(
+            c
+                .read(communityFeedProvider)
+                .posts
+                .firstWhere((post) => post.title == title)
+                .publicId,
+          ),
         _ => value as String,
       });
       Future<void> deliver() async {
-        final postPublicId =
-            communityPostIdFromUri(uri, currentOrigin: currentShareOrigin());
+        final postPublicId = communityPostIdFromUri(
+          uri,
+          currentOrigin: currentShareOrigin(),
+        );
         if (postPublicId != null) {
           final opened = Completer<bool>();
-          _linksOpening.add(opened.future
-              .timeout(const Duration(seconds: 60))
-              .then<void>((_) {}, onError: (Object error) {
-            _failedSteps++;
-            _log('FAIL the link to $postPublicId had not opened or been '
-                'refused 60 s after it arrived: $error');
-          }));
-          c.read(communityPostToOpenProvider.notifier).state =
-              PostLinkArrived(postPublicId, opened: opened);
+          _linksOpening.add(
+            opened.future.timeout(const Duration(seconds: 60)).then<void>(
+              (_) {},
+              onError: (Object error) {
+                _failedSteps++;
+                _log(
+                  'FAIL the link to $postPublicId had not opened or been '
+                  'refused 60 s after it arrived: $error',
+                );
+              },
+            ),
+          );
+          c.read(communityPostToOpenProvider.notifier).state = PostLinkArrived(
+            postPublicId,
+            opened: opened,
+          );
         } else {
           await c
               .read(shareLinkControllerProvider.notifier)
@@ -2807,14 +2928,18 @@ Future<void> _run(Map<String, dynamic> step) async {
 
       switch (step['afterMs']) {
         case final num after:
-          _delayedLinks.add(Future<void>.delayed(
-            Duration(milliseconds: after.toInt()),
-            deliver,
-          ).catchError((Object error) {
-            _failedSteps++;
-            _log('FAIL the link opened ${after.toInt()} ms after its step: '
-                '$error');
-          }));
+          _delayedLinks.add(
+            Future<void>.delayed(
+              Duration(milliseconds: after.toInt()),
+              deliver,
+            ).catchError((Object error) {
+              _failedSteps++;
+              _log(
+                'FAIL the link opened ${after.toInt()} ms after its step: '
+                '$error',
+              );
+            }),
+          );
         case _:
           await deliver();
       }
@@ -2844,8 +2969,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       final at = _point(step, 'at');
       void send(String method, Object? arguments) => ui.channelBuffers.push(
             'desktop_drop',
-            const StandardMethodCodec()
-                .encodeMethodCall(MethodCall(method, arguments)),
+            const StandardMethodCodec().encodeMethodCall(
+              MethodCall(method, arguments),
+            ),
             (_) {},
           );
       send('entered', [at.dx, at.dy]);
@@ -2858,8 +2984,9 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'exportIca':
       final id = c.read(strategyProvider).strategyId!;
       await c.read(strategyProvider.notifier).forceSaveNow(id);
-      await StrategyImportExportService(c)
-          .zipStrategy(id: id, outputFilePath: value as String);
+      await StrategyImportExportService(
+        c,
+      ).zipStrategy(id: id, outputFilePath: value as String);
     case 'importIca':
       await StrategyImportExportService(c).loadFromFilePath(value as String);
     case 'clipboard':
@@ -2886,11 +3013,15 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'raceLeave':
       await _raceLeave(step);
     case 'logPageReads':
-      (await _storeLines(Future.sync(() => pageReadLines(
-                c,
-                tag: '$value',
-                expected: {...?(step['expect'] as Map<String, dynamic>?)},
-              ))))
+      (await _storeLines(
+        Future.sync(
+          () => pageReadLines(
+            c,
+            tag: '$value',
+            expected: {...?(step['expect'] as Map<String, dynamic>?)},
+          ),
+        ),
+      ))
           .forEach(_log);
     case 'watchPicture':
       _pictureWatches.add(
@@ -2943,25 +3074,31 @@ Future<void> _run(Map<String, dynamic> step) async {
             ms[((ms.length - 1) * share).round()].toStringAsFixed(2);
         return 'p50 ${at(.5)} p90 ${at(.9)} p99 ${at(.99)} worst ${at(1)}';
       }
-      _log('FRAMES $value n=${timings.length} '
-          'build ${times(timings.map((t) => t.buildDuration))} '
-          'raster ${times(timings.map((t) => t.rasterDuration))}');
       _log(
-          'FRAMES $value after a list notice ${switch (noticeFramesLine(_frameTimings)) {
-        '' => 'none',
-        final line => line,
-      }}');
+        'FRAMES $value n=${timings.length} '
+        'build ${times(timings.map((t) => t.buildDuration))} '
+        'raster ${times(timings.map((t) => t.rasterDuration))}',
+      );
+      _log(
+        'FRAMES $value after a list notice ${switch (noticeFramesLine(_frameTimings)) {
+          '' => 'none',
+          final line => line,
+        }}',
+      );
     case 'burst':
       // Its failure is held until the shots are in, then fails this step.
       final during = step['during'] == null
           ? null
-          : _run((step['during'] as Map).cast<String, dynamic>())
-              .then<Object?>((_) => null, onError: (Object error) => error);
+          : _run(
+              (step['during'] as Map).cast<String, dynamic>(),
+            ).then<Object?>((_) => null, onError: (Object error) => error);
       for (var i = 0; i < ((step['count'] ?? 10) as int); i++) {
         final file = '$value-${i.toString().padLeft(3, '0')}.png';
         final transition = await _shot(file);
-        _log('BURST $file ${transition.phase.name} '
-            '${transition.progress.toStringAsFixed(3)}');
+        _log(
+          'BURST $file ${transition.phase.name} '
+          '${transition.progress.toStringAsFixed(3)}',
+        );
         await Future<void>.delayed(
           Duration(milliseconds: (step['every'] ?? 100) as int),
         );
@@ -2999,12 +3136,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       String at(Offset? p) => p == null
           ? 'gone'
           : '(${p.dx.toStringAsFixed(1)}, ${p.dy.toStringAsFixed(1)})';
-      _log('LINEUPS $value ${[
-        for (final link in lineUps.links)
-          '${link.id} '
-              'origin@${at(lineUps.originById(link.originId)?.agent.position)} '
-              'landing@${at(lineUps.landingById(link.landingId)?.ability.position)}',
-      ]}');
+      _log(
+        'LINEUPS $value ${[
+          for (final link in lineUps.links)
+            '${link.id} '
+                'origin@${at(lineUps.originById(link.originId)?.agent.position)} '
+                'landing@${at(lineUps.landingById(link.landingId)?.ability.position)}'
+        ]}',
+      );
     case 'logCoords':
       final canvas = _canvasSize();
       _log(
@@ -3032,48 +3171,54 @@ Future<void> _run(Map<String, dynamic> step) async {
           ),
       ]);
     case 'logWeapons':
-      _log('WEAPONS $value ${jsonEncode({
-            for (final agent in c.read(agentProvider))
-              agent.id: agent.weapon.name,
-          })}');
+      _log(
+        'WEAPONS $value ${jsonEncode({
+              for (final agent in c.read(agentProvider))
+                agent.id: agent.weapon.name
+            })}',
+      );
     case 'logCard':
       final root = RendererBinding.instance.renderViews.first.child;
-      _log('CARD $value ${c.read(captionCardProvider)} '
-          'zoom=${c.read(screenZoomProvider)} links=$_openedLinks chrome=${[
-        if (root is RenderBox)
-          for (final rect in c.read(canvasItemRegistryProvider).chromeIn(root))
-            '${rect.left.round()},${rect.top.round()},'
-                '${rect.right.round()},${rect.bottom.round()}',
-      ]}');
+      _log(
+        'CARD $value ${c.read(captionCardProvider)} '
+        'zoom=${c.read(screenZoomProvider)} links=$_openedLinks chrome=${[
+          if (root is RenderBox)
+            for (final rect
+                in c.read(canvasItemRegistryProvider).chromeIn(root))
+              '${rect.left.round()},${rect.top.round()},'
+                  '${rect.right.round()},${rect.bottom.round()}'
+        ]}',
+      );
     case 'logCaptions':
-      _log('CAPTIONS $value ${jsonEncode({
-            for (final item in _placedItems()) item.id: item.caption,
-          })}');
+      _log(
+        'CAPTIONS $value ${jsonEncode({
+              for (final item in _placedItems()) item.id: item.caption
+            })}',
+      );
     case 'logWalls':
-      _log('WALLS $value ${[
-        for (final ability in c.read(abilityProvider))
-          '${ability.id}@(${ability.position.dx.toStringAsFixed(1)}, '
-              '${ability.position.dy.toStringAsFixed(1)}) '
-              'wall=${ability.wallPath?.map(
-                    (p) => '(${p.dx.toStringAsFixed(1)}, '
-                        '${p.dy.toStringAsFixed(1)})',
-                  ).toList()}',
-      ]}');
+      _log(
+        'WALLS $value ${[
+          for (final ability in c.read(abilityProvider))
+            '${ability.id}@(${ability.position.dx.toStringAsFixed(1)}, '
+                '${ability.position.dy.toStringAsFixed(1)}) '
+                'wall=${ability.wallPath?.map((p) => '(${p.dx.toStringAsFixed(1)}, '
+                    '${p.dy.toStringAsFixed(1)})').toList()}'
+        ]}',
+      );
     case 'logDoors':
-      _log('DOORS $value ${changedMapDoors(
-        c.read(utilityProvider),
-        c.read(mapProvider).currentMap,
-      ).toList()..sort()} rows=${c.read(utilityProvider).where(
-            (utility) => utility.mapDoor != null,
-          ).length}');
+      _log(
+        'DOORS $value ${changedMapDoors(c.read(utilityProvider), c.read(mapProvider).currentMap).toList()..sort()} rows=${c.read(utilityProvider).where((utility) => utility.mapDoor != null).length}',
+      );
     case 'logUtilities':
-      _log('UTILITIES $value ${[
-        for (final utility in c.read(utilityProvider))
-          '${utility.id} ${utility.type.name}@'
-              '(${utility.position.dx.toStringAsFixed(1)}, '
-              '${utility.position.dy.toStringAsFixed(1)}) '
-              'door=${utility.mapDoor}',
-      ]}');
+      _log(
+        'UTILITIES $value ${[
+          for (final utility in c.read(utilityProvider))
+            '${utility.id} ${utility.type.name}@'
+                '(${utility.position.dx.toStringAsFixed(1)}, '
+                '${utility.position.dy.toStringAsFixed(1)}) '
+                'door=${utility.mapDoor}'
+        ]}',
+      );
     case 'logLibrary':
       _logLibrary('$value', libraryOnScreen());
     case 'logPagesBar':
@@ -3082,10 +3227,13 @@ Future<void> _run(Map<String, dynamic> step) async {
       _rememberedPages[value as String] = _pageItems(c);
     case 'expectPage':
       final remembered = _rememberedPages[value as String];
-      if (remembered == null) throw StateError('no page remembered as "$value"');
+      if (remembered == null)
+        throw StateError('no page remembered as "$value"');
       final same = _pageItems(c) == remembered;
       if (step['changed'] == true && same) {
-        throw StateError('the page\'s items are still as they were at "$value"');
+        throw StateError(
+          'the page\'s items are still as they were at "$value"',
+        );
       }
       if (step['changed'] != true && !same) {
         throw StateError('the page\'s items are not as they were at "$value"');
@@ -3104,7 +3252,7 @@ Future<void> _run(Map<String, dynamic> step) async {
                 '${u.position.dx.toStringAsFixed(1)},'
                 '${u.position.dy.toStringAsFixed(1)}'
                 '${u.customLength == null ? '' : ' ${u.customLength!.toStringAsFixed(1)}x${u.customWidth!.toStringAsFixed(1)}'}'
-                '${u.isZone ? ' zone' : ''}',
+                '${u.isZone ? ' zone' : ''}'
         ]} '
         'lineups=${c.read(lineUpProvider).graph.links.length} '
         'selected=${c.read(canvasSelectionProvider).length} '
@@ -3124,19 +3272,22 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'expectEditing':
       if (_editing() != value) {
         throw StateError(
-            '${_editing() ? 'a' : 'no'} text field has the keyboard');
+          '${_editing() ? 'a' : 'no'} text field has the keyboard',
+        );
       }
     case 'logTexts':
-      _log('TEXTBOXES $value ${jsonEncode([
-            for (final text in c.read(textProvider))
-              {
-                'id': text.id,
-                'x': text.position.dx,
-                'y': text.position.dy,
-                'width': text.size,
-                'text': text.text,
-              },
-          ])}');
+      _log(
+        'TEXTBOXES $value ${jsonEncode([
+              for (final text in c.read(textProvider))
+                {
+                  'id': text.id,
+                  'x': text.position.dx,
+                  'y': text.position.dy,
+                  'width': text.size,
+                  'text': text.text
+                },
+            ])}',
+      );
     case 'expectSelected':
       final selected = c.read(canvasSelectionProvider).length;
       if (selected != value) {
@@ -3171,8 +3322,10 @@ Future<void> _run(Map<String, dynamic> step) async {
               );
       final lines = await c.read(mapLinesProvider(map).future);
       final away = (lines.nearest(dot, double.infinity)! - dot).distance;
-      _log('ON-LINE $id dot=${dot.dx.toStringAsFixed(2)},'
-          '${dot.dy.toStringAsFixed(2)} away=${away.toStringAsFixed(3)}');
+      _log(
+        'ON-LINE $id dot=${dot.dx.toStringAsFixed(2)},'
+        '${dot.dy.toStringAsFixed(2)} away=${away.toStringAsFixed(3)}',
+      );
       if (away > 0.5) throw StateError('$id is $away off the nearest line');
     case 'expectAgents':
       final agents = c.read(agentProvider).length;
@@ -3192,13 +3345,14 @@ Future<void> _run(Map<String, dynamic> step) async {
         outlines[item.id] = outlines[item.id]?.expandToInclude(drawn) ?? drawn;
       }
       _log(
-          'IN-VIEW view=${view.left},${view.top},${view.right},${view.bottom} ${{
-        for (final MapEntry(key: id, value: drawn) in outlines.entries)
-          id: '${drawn.left.toStringAsFixed(1)},'
-              '${drawn.top.toStringAsFixed(1)},'
-              '${drawn.right.toStringAsFixed(1)},'
-              '${drawn.bottom.toStringAsFixed(1)}',
-      }}');
+        'IN-VIEW view=${view.left},${view.top},${view.right},${view.bottom} ${{
+          for (final MapEntry(key: id, value: drawn) in outlines.entries)
+            id: '${drawn.left.toStringAsFixed(1)},'
+                '${drawn.top.toStringAsFixed(1)},'
+                '${drawn.right.toStringAsFixed(1)},'
+                '${drawn.bottom.toStringAsFixed(1)}'
+        }}',
+      );
       if (outlines.length != value) {
         throw StateError('${outlines.length} items, expected $value');
       }
@@ -3219,11 +3373,14 @@ Future<void> _run(Map<String, dynamic> step) async {
       final kind = step['kind'] as String;
       final pageId = c.read(strategyPageSessionProvider).activePageId!;
       final payload = {
-        ...cloudElementPayload(kind: kind, data: {
-          ...(step['data'] as Map).cast<String, dynamic>(),
-          'id': id,
-          'elementType': kind,
-        }),
+        ...cloudElementPayload(
+          kind: kind,
+          data: {
+            ...(step['data'] as Map).cast<String, dynamic>(),
+            'id': id,
+            'elementType': kind,
+          },
+        ),
         if (step['version'] case final num version) 'payloadVersion': version,
       };
       final existing = c
@@ -3288,9 +3445,11 @@ Future<void> _run(Map<String, dynamic> step) async {
               : 'the server does not hold $value as asked: ${row()?.payload}',
         );
       }
-      _log('ROW $value ${copy ? 'copy ' : ''}${row()?.publicId} '
-          'version=${row()?.payload['payloadVersion']} '
-          '${held() ? 'held' : 'gone'}');
+      _log(
+        'ROW $value ${copy ? 'copy ' : ''}${row()?.publicId} '
+        'version=${row()?.payload['payloadVersion']} '
+        '${held() ? 'held' : 'gone'}',
+      );
     case 'expectItem':
       final id = _itemId(value as String);
       final items = _placedItems().where((item) => item.id == id);
@@ -3369,8 +3528,9 @@ Future<void> _run(Map<String, dynamic> step) async {
         await Hive.box<dynamic>(HiveBoxNames.strategyOutboxBox).close();
       }
     case 'dropOpenPage':
-      final strategy = const LocalLibrary()
-          .storedStrategy(c.read(strategyProvider).strategyId!)!;
+      final strategy = const LocalLibrary().storedStrategy(
+        c.read(strategyProvider).strategyId!,
+      )!;
       final pageId = c.read(strategyPageSessionProvider).activePageId;
       (await const LocalLibrary().changePages(
         strategy.copyWith(
@@ -3414,8 +3574,10 @@ Future<void> _watchLibraryText(
   }
 
   if (settled()) {
-    fail('was already ${gone ? 'gone from' : 'on'} the library screen '
-        'before $mark');
+    fail(
+      'was already ${gone ? 'gone from' : 'on'} the library screen '
+      'before $mark',
+    );
     return;
   }
   final before = _marks[mark];
@@ -3433,12 +3595,16 @@ Future<void> _watchLibraryText(
     await Future<void>.delayed(const Duration(milliseconds: 2));
   }
   if (!settled()) {
-    fail('never ${gone ? 'left' : 'reached'} the library on screen within '
-        '$seconds s of $mark');
+    fail(
+      'never ${gone ? 'left' : 'reached'} the library on screen within '
+      '$seconds s of $mark',
+    );
     return;
   }
-  _log('TIMED $mark "$text" ${gone ? 'gone from' : 'on'} the library screen '
-      '${since.elapsedMilliseconds} ms after the action');
+  _log(
+    'TIMED $mark "$text" ${gone ? 'gone from' : 'on'} the library screen '
+    '${since.elapsedMilliseconds} ms after the action',
+  );
 }
 
 /// Waits for a pasted picture to be drawn: the only image this large on
@@ -3516,8 +3682,9 @@ Future<void> _logImages(String tag) async {
   }
 
   for (final image in c.read(placedImageProvider).images) {
-    final box = _elementOrNull((w) => w.key == ValueKey('entity-${image.id}'))
-        ?.findRenderObject();
+    final box = _elementOrNull(
+      (w) => w.key == ValueKey('entity-${image.id}'),
+    )?.findRenderObject();
     _log(
       'IMAGE $tag id=${image.id} picture=${image.pictureId} '
       'ext=${image.fileExtension} aspect=${image.aspectRatio} '
@@ -3537,9 +3704,7 @@ Future<void> _logImages(String tag) async {
     }
   }
   for (final job in c.read(cloudMediaUploadQueueProvider).jobs) {
-    _log(
-      'JOB $tag ${job.assetPublicId} ${_jobPhase(job)} ${job.mimeType}',
-    );
+    _log('JOB $tag ${job.assetPublicId} ${_jobPhase(job)} ${job.mimeType}');
   }
 }
 
@@ -3570,8 +3735,9 @@ String _itemId(String id) => id == 'lastImage'
     : id;
 
 /// Where the point [world] of the canvas, as drawn, is in the window.
-Offset _canvasPointOnScreen(Offset world) => _canvasLayer()
-    .localToGlobal(CoordinateSystem.instance.coordinateToScreen(world));
+Offset _canvasPointOnScreen(Offset world) => _canvasLayer().localToGlobal(
+      CoordinateSystem.instance.coordinateToScreen(world),
+    );
 
 RenderBox _canvasLayer() => _renderOf<CanvasSelectionLayer>();
 
