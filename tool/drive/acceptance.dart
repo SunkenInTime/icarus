@@ -374,40 +374,32 @@ Future<int> _accept(Map<String, String> options) async {
 String _list(List<String> names) =>
     names.isEmpty ? '' : ' (${names.join(', ')})';
 
+const _pictureWidth = 640;
+const _pictureHeight = 360;
+
 final _bitmap = [
   ...'BM'.codeUnits,
-  ..._le32(54 + 16),
+  ..._le32(54 + _pictureWidth * _pictureHeight * 3),
   ..._le32(0),
   ..._le32(54),
   ..._le32(40),
-  ..._le32(2),
-  ..._le32(2),
+  ..._le32(_pictureWidth),
+  ..._le32(_pictureHeight),
   1,
   0,
   24,
   0,
   ..._le32(0),
-  ..._le32(16),
+  ..._le32(_pictureWidth * _pictureHeight * 3),
   ..._le32(2835),
   ..._le32(2835),
   ..._le32(0),
   ..._le32(0),
-  0,
-  0,
-  255,
-  0,
-  255,
-  0,
-  0,
-  0,
-  255,
-  0,
-  0,
-  255,
-  255,
-  255,
-  0,
-  0,
+  for (var row = 0; row < _pictureHeight; row++)
+    for (var column = 0; column < _pictureWidth; column++)
+      ...(column < _pictureWidth ~/ 2
+          ? const [200, 120, 40]
+          : const [40, 120, 200]),
 ];
 
 List<int> _le32(int value) => [
