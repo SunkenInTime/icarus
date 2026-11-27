@@ -3,7 +3,6 @@ import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/store_library.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/local_library.dart';
@@ -62,7 +61,8 @@ Future<Future<LibraryStoreOpened>?> openLibraryOnStore(
       );
   var tries = 1;
   late final Future<void> Function() tryAgain;
-  tryAgain = () async {
+  Future<void>? trying;
+  Future<void> tryOnce() async {
     tries++;
     await container.read(libraryStoreProvider.notifier).close();
     await move();
@@ -70,7 +70,9 @@ Future<Future<LibraryStoreOpened>?> openLibraryOnStore(
       await bringUpToDate();
       servedAgain();
     }
-  };
+  }
+
+  tryAgain = () => trying ??= tryOnce().whenComplete(() => trying = null);
   final opening = await move();
   if (opening != null) await _serve(container, tryAgain, tries);
   return opening;

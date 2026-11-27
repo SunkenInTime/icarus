@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
-import 'package:icarus/library_store/shadow_store.dart';
+import 'package:icarus_library/icarus_library.dart' show LibraryStore;
 
 typedef StoreStartup = ({
   Future<LibraryStoreOpened>? opening,
@@ -50,9 +50,21 @@ void beginCloudSender(
         localShadow: _,
       )) {
     unawaited(
-      container
-          .read(cloudSenderProvider.notifier)
-          .beginOn(opening, build: build),
+      container.read(cloudSenderProvider.notifier).noteOpening(opening),
+    );
+    void sendOn(LibraryStore store) {
+      final running = container.read(cloudSenderProvider);
+      if (running != null && identical(running.store.store, store)) return;
+      if (running != null) container.invalidate(cloudSenderProvider);
+      container.read(cloudSenderProvider.notifier).begin(store, build: build);
+    }
+
+    container.listen(
+      libraryStoreProvider,
+      (_, next) {
+        if (next case LibraryStoreReady(:final store)) sendOn(store);
+      },
+      fireImmediately: true,
     );
   }
 }

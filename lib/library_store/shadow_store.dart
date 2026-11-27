@@ -13,51 +13,12 @@ import 'package:icarus/library_store/mirror_gate.dart';
 import 'package:icarus/library_store/ui_watch.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
-import 'package:icarus/library_store/library_store_sqlite.dart';
 import 'package:icarus/library_store/shadow_copy.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
 import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus_library/icarus_library.dart';
-
-final libraryStoreProvider =
-    NotifierProvider<LibraryStoreNotifier, LibraryStoreState>(
-  LibraryStoreNotifier.new,
-);
-
-class LibraryStoreNotifier extends Notifier<LibraryStoreState> {
-  Future<void>? _closing;
-
-  @override
-  LibraryStoreState build() => const LibraryStoreOff();
-
-  Future<LibraryStoreOpened> open(File file, {String build = ''}) async {
-    _closing = null;
-    state = LibraryStoreOpening(file);
-    final opened = await openLibraryStore(file, build: build);
-    state = opened;
-    return opened;
-  }
-
-  Future<void> close() => _closing ??= _close();
-
-  Future<void> _close() async {
-    switch (state) {
-      case LibraryStoreReady(:final store, :final closeEngine):
-        final released = await store.close();
-        await closeEngine();
-        state = LibraryStoreClosed(released);
-      case LibraryStoreOff() ||
-            LibraryStoreOpening() ||
-            LibraryStoreClosed() ||
-            LibraryStoreHeldElsewhere() ||
-            LibraryStoreRefused() ||
-            LibraryStoreTooSmall():
-        break;
-    }
-  }
-}
 
 final class ShadowRun {
   ShadowRun({

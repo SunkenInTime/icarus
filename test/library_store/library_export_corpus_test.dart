@@ -15,7 +15,6 @@ import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/store_library.dart';
 import 'package:icarus/migrations/hidden_folder_repair.dart';
 import 'package:icarus/providers/auth_provider.dart';

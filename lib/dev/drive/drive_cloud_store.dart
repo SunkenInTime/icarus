@@ -17,7 +17,6 @@ import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_sqlite.dart';
 import 'package:icarus/library_store/server_rows.dart';
 import 'package:icarus/library_store/sender_store.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';

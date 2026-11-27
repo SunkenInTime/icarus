@@ -9,6 +9,7 @@ import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/hive_naming.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/stored_strategy.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/library_records.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -301,6 +302,14 @@ final class StoreLibrary {
         case _Committed():
           written.complete(const LibraryWritten());
         case _NotCommitted(:final words, :final mayHaveLanded):
+          if (mayHaveLanded) {
+            AppErrorReporter.reportError(
+              'The library store lost the answer to a save, which may have '
+              'landed: $words',
+              source: 'libraryStore.lostAnswer',
+              promptUser: false,
+            );
+          }
           await _readAgain();
           written.complete(_failed(words, mayHaveLanded: mayHaveLanded));
       }

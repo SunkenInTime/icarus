@@ -2,6 +2,7 @@ import 'package:icarus/collab/collab_models.dart'
     show maxCloudBatchBytes, serializedConvexValueUtf8Bytes;
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/store_sessions.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus_library/icarus_library.dart';
 
 final class ClaimedBatch {
@@ -402,11 +403,19 @@ base class SenderStore {
       case NotSaved(:final failure):
         return _troubled(strategyId, _failed(failure, StoreStep.refusedSave));
       case SaveInDoubt(:final failure):
-        return _troubled(
-          strategyId,
-          StoreShut(storageFailureWords(failure, StoreStep.saveInDoubt)),
-        );
+        return _lostAnswer(strategyId, failure);
     }
+  }
+
+  WriteTroubled _lostAnswer(String strategyId, StorageFailure failure) {
+    final words = storageFailureWords(failure, StoreStep.saveInDoubt);
+    AppErrorReporter.reportError(
+      'The library store lost the answer to a cloud write for $strategyId, '
+      'which may have landed: $words',
+      source: 'libraryStore.lostAnswer',
+      promptUser: false,
+    );
+    return _troubled(strategyId, StoreShut(words));
   }
 
   WriteTroubled _troubled(String strategyId, StoreTrouble trouble) {
@@ -474,10 +483,7 @@ base class SenderStore {
       case NotSaved(:final failure):
         return _troubled(strategyId, _failed(failure, StoreStep.refusedSave));
       case SaveInDoubt(:final failure):
-        return _troubled(
-          strategyId,
-          StoreShut(storageFailureWords(failure, StoreStep.saveInDoubt)),
-        );
+        return _lostAnswer(strategyId, failure);
     }
   }
 
