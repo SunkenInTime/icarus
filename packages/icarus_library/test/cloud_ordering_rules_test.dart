@@ -137,7 +137,11 @@ void main() {
       expect(client.queue.session.number, greaterThan(before));
       expect(
         client.queue.shown.pagesTaken['page-a'],
-        client.queue.session.orderOf(pointAt(30, later: 1)),
+        ResultOrder(
+          session: 3,
+          client: testClient,
+          snapshot: pointAt(30, later: 1).snapshot,
+        ),
       );
     });
 
@@ -290,7 +294,7 @@ void main() {
     expect(
       client.queue.shown.pagesTaken['page-a'],
       ResultOrder(
-        session: client.queue.session.number,
+        session: 2,
         client: testClient,
         snapshot: pointAt(20).snapshot,
       ),
@@ -322,7 +326,7 @@ void main() {
           'since',
           ResultAtOrAfter(
             ResultOrder(
-              session: client.queue.session.number,
+              session: 2,
               client: testClient,
               snapshot: pointAt(40).snapshot,
             ),
@@ -558,7 +562,11 @@ void main() {
       expect(client.queue.shown.pagesTaken['page-a'], content);
       expect(
         client.queue.shown.pagesRefusedAt['page-a'],
-        client.queue.session.orderOf(pointAt(22)),
+        ResultOrder(
+          session: 2,
+          client: testClient,
+          snapshot: pointAt(22).snapshot,
+        ),
       );
       expect(
         notApplicable(client.step(refusalAt(client, 'page-a', pointAt(15)))),
@@ -658,7 +666,13 @@ void main() {
       client.must(refusalAt(client, 'page-a', pointAt(12)));
       expect(
         (client.queue.shown.pageRead('page-a') as ReadRefused).since,
-        ResultAtOrAfter(client.queue.session.orderOf(pointAt(12))),
+        ResultAtOrAfter(
+          ResultOrder(
+            session: 2,
+            client: testClient,
+            snapshot: pointAt(12).snapshot,
+          ),
+        ),
       );
     });
   });
