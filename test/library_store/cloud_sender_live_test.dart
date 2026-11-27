@@ -241,6 +241,12 @@ int revisionOnServer(World world, String element) =>
 
 int revisionInStore(World world) => world.firstElement().revision;
 
+List<String> pageReads(World world, Duration from) => [
+      for (final call in world.server.readCalls)
+        if (call.page == pageId && call.at!.difference(start) >= from)
+          '${(call.at!.difference(start) - from).inSeconds} s',
+    ];
+
 void main() {
   group('with the store switch on, the editor\'s page watch', () {
     test(
@@ -260,9 +266,6 @@ void main() {
         world.commitMove(1);
         world.settle();
         expect(world.server.log, contains('send move-1'));
-        world.settle(timing.quietBeforeRetiring * 2);
-        expect(world.cloud().queue.landed, isNotEmpty);
-        expect(world.server.readsOf(strategyId).skip(readsBefore), isEmpty);
         live.publish(pageId);
         world.settle(const Duration(minutes: 5));
 
@@ -472,12 +475,6 @@ void main() {
   });
 
   group('one-shot reads of a watched page step back', () {
-    List<String> pageReads(World world, Duration from) => [
-          for (final call in world.server.readCalls)
-            if (call.page == pageId && call.at!.difference(start) >= from)
-              '${(call.at!.difference(start) - from).inSeconds} s',
-        ];
-
     test(
         'a watch with no first result holds the read for the bound, then the '
         'page is read as before', () {
@@ -499,8 +496,9 @@ void main() {
     });
 
     test(
-        'a watch that has given a result on this connection holds every read '
-        'of its page until it closes; a reconnect starts the bound again', () {
+        'a watch that has given a result on this connection holds a read of '
+        'its page for the grace only, then reads it once: a debt no change on '
+        'the server pays is not left to wait for the next edit', () {
       inWorld((world) {
         final from = world.async.elapsed;
         world.sender
@@ -508,26 +506,24 @@ void main() {
           ..liveArrived(strategyId, openPage, servedAccount, livePage(world));
         world.settle();
         world.sender.owesFreshRead(strategyId, openPage);
-        world.settle(const Duration(minutes: 1));
+        world.settle(timing.liveGrace - const Duration(milliseconds: 500));
         expect(pageReads(world, from), isEmpty);
+        world.settle(const Duration(seconds: 1));
+        expect(pageReads(world, from), hasLength(1));
+        world.settle(const Duration(minutes: 1));
+        expect(pageReads(world, from), hasLength(1));
 
         world.connection = 2;
         world.sender.owesFreshRead(strategyId, openPage);
         world.settle(const Duration(seconds: 5));
-        expect(pageReads(world, from), isEmpty);
+        expect(pageReads(world, from), hasLength(1));
         world.settle(const Duration(seconds: 10));
-        expect(pageReads(world, from), hasLength(1));
-
-        world.sender
-            .liveArrived(strategyId, openPage, servedAccount, livePage(world));
-        world.settle();
-        world.sender.owesFreshRead(strategyId, openPage);
-        world.settle(const Duration(minutes: 1));
-        expect(pageReads(world, from), hasLength(1));
+        expect(pageReads(world, from), hasLength(2));
 
         world.sender.liveClosed(strategyId, openPage);
+        world.sender.owesFreshRead(strategyId, openPage);
         world.settle();
-        expect(pageReads(world, from), hasLength(2));
+        expect(pageReads(world, from), hasLength(3));
       });
     });
   });

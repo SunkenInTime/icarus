@@ -25,6 +25,7 @@ final class SenderTiming {
     this.retireAgainAfter = const Duration(minutes: 5),
     this.lookupGiveUpAfter = const Duration(seconds: 10),
     this.firstLiveResult = const Duration(seconds: 10),
+    this.liveGrace = const Duration(seconds: 2),
   });
 
   final Duration wait;
@@ -38,6 +39,7 @@ final class SenderTiming {
   final Duration retireAgainAfter;
   final Duration lookupGiveUpAfter;
   final Duration firstLiveResult;
+  final Duration liveGrace;
 
   RetiringTiming get retiring => (
         quiet: quietBeforeRetiring,
@@ -329,6 +331,7 @@ final class CloudSender implements LiveResults {
   final _waits = <String, StallExit>{};
   final _live = <(String, ReadOf), _Live>{};
   final _clockHeldByLive = <String, Set<ReadOf>>{};
+  final _heldByLiveSince = <(String, ReadOf), DateTime>{};
   var liveTaken = 0;
   var liveReplaced = 0;
   var clockWaitsOnLive = 0;
@@ -1062,12 +1065,25 @@ final class CloudSender implements LiveResults {
     Snapshot snap,
   ) {
     final memory = _governor.memory(id, readsUnder(snap));
+    final reads = _readsWanted(id, cloud, now, memory).toList();
+    _heldByLiveSince.removeWhere(
+      (key, _) =>
+          key.$1 == id && !reads.any((each) => each.planned.read == key.$2),
+    );
     DateTime? due;
     StallExit? why;
-    for (final (:planned, :wantedAt) in _readsWanted(id, cloud, now, memory)) {
+    for (final (:planned, :wantedAt) in reads) {
       final (wanted, wantedRow) =
           switch (_liveGate(id, planned.read, now, snap)) {
-        _LiveCurrent() => (null, planned.why.row),
+        _LiveCurrent() when planned.why == _Why.clock => (
+            null,
+            planned.why.row
+          ),
+        _LiveCurrent() => switch (_heldByLiveSince.putIfAbsent(
+              (id, planned.read), () => now).add(_timing.liveGrace)) {
+            final until when until.isAfter(now) => (until, planned.why.row),
+            _ => (wantedAt, planned.why.row),
+          },
         _LiveAwaitingFirst(:final until) when until.isAfter(wantedAt) => (
             until,
             StallExit.liveNoFirstResult
