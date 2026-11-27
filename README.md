@@ -80,7 +80,9 @@ Or pass it directly to a built executable:
 ./icarus --hive-store-dir "/absolute/path/to/icarus-demo-hive"
 ```
 
-Strategy media, debug logs, and WebView data still use the normal application support directory. A driver build with `ICARUS_DRIVE=true` keeps strategy media in the store too. Use a different absolute Hive directory for each instance.
+An instance started this way is separate from the installed app, in any build. In that folder it keeps every Hive box, its strategy pictures, its replays, its debug log, its WebView data, its sightline reports, and its own sign-in, so you sign it in by itself and signing it out signs out only that instance. It never registers itself as the `icarus:` link handler, never runs the desktop updater, and never sets Discord presence. Use a different absolute directory for each instance.
+
+An instance made before this kept its pictures and replays in the installed app's application support folder, and shared the installed app's sign-in. It no longer reads that folder, so it starts signed out and without those pictures. To bring one across, copy from the support folder into the instance folder each folder named after one of that instance's strategy ids, and `replays` and `replay_cache` if it uses replays. Then sign the instance in. The support folder is `%APPDATA%\xyz.icarus-strats\icarus` on Windows, `~/Library/Containers/xyz.icarus-strats/Data/Library/Application Support/xyz.icarus-strats` on macOS, and `~/.local/share/com.example.icarus` on Linux. Copy, do not move: the installed app still uses its own.
 
 ## Build
 

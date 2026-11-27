@@ -32,6 +32,14 @@ void main() {
   });
 
   test(
+      'before an instance is decided the app is the installed one, so a '
+      'launch refused over its store folder logs to the support folder',
+      () async {
+    expect(appInstance, isA<InstalledApp>());
+    expect(await debugLogPath(), path.join(support.path, 'icarus_debug.log'));
+  });
+
+  test(
       'no store folder is the installed app; a store folder is a separate '
       'instance at that folder', () {
     expect(appInstanceAt(null), isA<InstalledApp>());
