@@ -510,6 +510,7 @@ void main() {
           }
           editor.expectReadOrder('seed $seed: ${steps.join(', ')}');
         }
+        editor.container.dispose();
         await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
       }
     });

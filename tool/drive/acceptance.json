@@ -104,6 +104,7 @@
     "wall-old-build-3-new": "it follows wall-old-build-2-old",
     "captions-write-in-place": "it waits for a helper to type into the app"
   },
+  "closingExitNotJudgedOnWindows": "every Windows build crashes in coremessaging.dll as the app exits, after the save, on the driver's exit (#581) and on the app's own close path alike; until that is fixed a closing script is judged on Windows by the asked-to-close line, no failed step, no timeout, the Hive check and the script that reopens it",
   "closesTheApp": [
     "close-with-unsaved-local"
   ]

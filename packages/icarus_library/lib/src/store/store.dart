@@ -219,12 +219,46 @@ final class _WatchedLease {
 
   final StorageLease _inner;
   final void Function() _ended;
+  final _readAhead = <String, List<StoredEntry>>{};
 
   int get maxKeyLength => _inner.maxKeyLength;
 
   LeaseStatus get status => _inner.status;
 
+  Future<void> readAhead(List<String> areas) async {
+    final asking = [
+      for (final area in areas)
+        if (!_readAhead.containsKey(area)) area,
+    ];
+    final read = await Future.wait([
+      for (final area in asking) entries(area, ''),
+    ]);
+    for (final (index, area) in asking.indexed) {
+      if (read[index] case Done(:final value)) _readAhead[area] = value;
+    }
+  }
+
+  void forget(String area) => _readAhead.remove(area);
+
+  void forgetAll() => _readAhead.clear();
+
+  List<StoredEntry>? _heldAhead(String area) {
+    if (_inner.status is! Holding) _readAhead.clear();
+    return _readAhead[area];
+  }
+
+  List<StoredEntry> _under(List<StoredEntry> held, String prefix) => [
+    for (final entry in held)
+      if (entry.key.startsWith(prefix)) entry,
+  ];
+
   Future<KeyRead> read(String area, String key) async {
+    if (_heldAhead(area) case final held?) {
+      for (final (key: name, :value) in held) {
+        if (name == key) return KeyHeld(value);
+      }
+      return const KeyMissing();
+    }
     final result = await _inner.read(area, key);
     if (result case KeyNotRead(failure: LeaseEnded())) _ended();
     return result;
@@ -236,16 +270,27 @@ final class _WatchedLease {
     return result;
   }
 
-  Future<Stored<List<String>>> keys(String area, String prefix) =>
-      _watch(_inner.keys(area, prefix));
+  Future<Stored<List<String>>> keys(String area, String prefix) async =>
+      switch (_heldAhead(area)) {
+        final held? => Done([
+          for (final (:key, value: _) in _under(held, prefix)) key,
+        ]),
+        null => await _watch(_inner.keys(area, prefix)),
+      };
 
   Future<Stored<List<String>>> areas(String prefix) =>
       _watch(_inner.areas(prefix));
 
-  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
-      _watch(_inner.entries(area, prefix));
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) async =>
+      switch (_heldAhead(area)) {
+        final held? => Done(_under(held, prefix)),
+        null => await _watch(_inner.entries(area, prefix)),
+      };
 
-  Future<Committing> commit(List<Change> changes) => _inner.commit(changes);
+  Future<Committing> commit(List<Change> changes) {
+    forgetAll();
+    return _inner.commit(changes);
+  }
 
   Future<Releasing> release() => _inner.release();
 }
@@ -1253,10 +1298,29 @@ final class LibraryStore {
     );
   });
 
+  Future<T> readingAhead<T>(
+    Iterable<String> strategyPublicIds,
+    Future<T> Function() read,
+  ) async {
+    await _inTurn(() async {
+      if (_settle() case StorageFailed()) return;
+      await _lease.readAhead([
+        for (final id in strategyPublicIds)
+          if (!_strategies.containsKey(digestOf(id))) strategyArea(id),
+      ]);
+    });
+    try {
+      return await read();
+    } finally {
+      _lease.forgetAll();
+    }
+  }
+
   Future<Unloading> unload(String strategyPublicId) => _inTurn(() async {
     if (_settle() case StorageFailed(:final failure)) {
       return NotUnloaded(failure);
     }
+    _lease.forget(strategyArea(strategyPublicId));
     _strategies.remove(digestOf(strategyPublicId));
     _queues.remove(digestOf(strategyPublicId));
     return const Unloaded();

@@ -1,0 +1,10 @@
+[
+  {
+    "seed": 3160,
+    "cause": "#847 cause 6: a put-back whose tombstone the server purged, with the device clock two days back, waits until its resend window ends by that clock; the model's stall check and drain do not wait that long"
+  },
+  {
+    "seed": 4234,
+    "cause": "#847 cause 6: a put-back whose tombstone the server purged, with the device clock two days back, waits until its resend window ends by that clock; the model's stall check and drain do not wait that long"
+  }
+]
