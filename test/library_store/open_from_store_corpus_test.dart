@@ -9,7 +9,6 @@ import 'package:hive_ce/src/binary/binary_writer_impl.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_store/hive_reads.dart';
 import 'package:icarus/library_store/library_box_writes.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -145,10 +144,7 @@ Future<void> _startAsTheAppDoes(Directory scratch) async {
   await Hive.openBox<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
   await MapThemeProfilesProvider.bootstrap();
   await StrategyMigrator.migrateAllStrategies();
-  await moveOrphansToTopLevel(
-    Hive.box<Folder>(HiveBoxNames.foldersBox),
-    Hive.box<StrategyData>(HiveBoxNames.strategiesBox),
-  );
+  await moveOrphansToTopLevel();
 }
 
 final class CorpusOpens {

@@ -85,10 +85,7 @@ Future<void> _startAsTheAppDoes(Directory scratch) async {
       .setMockMethodCallHandler(_pathProvider, (_) async => scratch.path);
   await openScratchHive(scratch);
   await StrategyMigrator.migrateAllStrategies();
-  await moveOrphansToTopLevel(
-    Hive.box<Folder>(HiveBoxNames.foldersBox),
-    Hive.box<StrategyData>(HiveBoxNames.strategiesBox),
-  );
+  await moveOrphansToTopLevel();
 }
 
 Future<LibraryStore> _openSqlite(SqliteEngine engine) => openStoreOn(engine);

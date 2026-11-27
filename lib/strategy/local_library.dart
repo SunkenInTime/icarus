@@ -6,6 +6,8 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
+import 'package:icarus/library_store/store_library.dart';
+import 'package:icarus/strategy/library_records.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
 sealed class LibraryWrite {
@@ -26,10 +28,15 @@ final class LibraryWritten extends LibraryWrite {
 }
 
 final class LibraryWriteFailed extends LibraryWrite {
-  const LibraryWriteFailed(this.error, this.stackTrace);
+  const LibraryWriteFailed(
+    this.error,
+    this.stackTrace, {
+    this.mayHaveLanded = false,
+  });
 
   final Object error;
   final StackTrace stackTrace;
+  final bool mayHaveLanded;
 }
 
 final class LibraryTouch {
@@ -90,62 +97,118 @@ abstract base class LocalLibraryFollower {
   }
 }
 
+sealed class LocalLibrarySource {
+  const LocalLibrarySource();
+}
+
+final class LibraryInHive extends LocalLibrarySource {
+  const LibraryInHive();
+}
+
+final class LibraryInStore extends LocalLibrarySource {
+  const LibraryInStore(this.library);
+
+  final StoreLibrary library;
+}
+
+final class LibraryNotOpened extends LocalLibrarySource {
+  const LibraryNotOpened();
+}
+
+final class LibraryNotOpenedWrite implements Exception {
+  const LibraryNotOpenedWrite();
+
+  @override
+  String toString() => 'the library could not be opened, so nothing was saved';
+}
+
+final class LibraryNotOpenedExport implements Exception {
+  const LibraryNotOpenedExport();
+
+  @override
+  String toString() =>
+      'the library could not be opened, so nothing was exported';
+}
+
+final _nothingHeld = StoreRecords<Never>();
+
 final class LocalLibrary {
   const LocalLibrary();
 
   static LocalLibraryFollower? follower;
 
+  static LocalLibrarySource source = const LibraryInHive();
+
   static LocalLibraryFollower? get _following =>
       shadowReachable ? follower : null;
 
-  Box<StrategyData> get _strategies =>
+  Box<StrategyData> get _strategyBox =>
       Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
-  Box<Folder> get _folders => Hive.box<Folder>(HiveBoxNames.foldersBox);
+  Box<Folder> get _folderBox => Hive.box<Folder>(HiveBoxNames.foldersBox);
 
-  static bool get isOpen => Hive.isBoxOpen(HiveBoxNames.strategiesBox);
+  LibraryRecords<StrategyData> get strategyRecords => switch (source) {
+        LibraryInHive() => HiveRecords(_strategyBox),
+        LibraryInStore(:final library) => library.strategies,
+        LibraryNotOpened() => _nothingHeld,
+      };
 
-  StrategyData? storedStrategy(String id) => _strategies.get(id);
+  LibraryRecords<Folder> get folderRecords => switch (source) {
+        LibraryInHive() => HiveRecords(_folderBox),
+        LibraryInStore(:final library) => library.folders,
+        LibraryNotOpened() => _nothingHeld,
+      };
+
+  static bool get isOpen => switch (source) {
+        LibraryInHive() => Hive.isBoxOpen(HiveBoxNames.strategiesBox),
+        LibraryInStore() => true,
+        LibraryNotOpened() => false,
+      };
+
+  StrategyData? storedStrategy(String id) => strategyRecords.get(id);
 
   StrategyData? firstStoredWithId(String id) =>
-      _strategies.values.where((strategy) => strategy.id == id).firstOrNull;
+      strategyRecords.values.where((strategy) => strategy.id == id).firstOrNull;
 
-  bool holdsStrategy(String id) => _strategies.containsKey(id);
+  bool holdsStrategy(String id) => strategyRecords.containsKey(id);
 
-  Iterable<StrategyData> get storedStrategies => _strategies.values;
+  Iterable<StrategyData> get storedStrategies => strategyRecords.values;
 
-  Folder? storedFolder(String id) => _folders.get(id);
+  Folder? storedFolder(String id) => folderRecords.get(id);
 
-  Iterable<Folder> get storedFolders => _folders.values;
+  bool holdsFolder(String id) => folderRecords.containsKey(id);
 
-  Iterable<({Object key, StrategyData strategy})> get storedStrategyRecords => [
-        for (final key in _strategies.keys)
-          if (_strategies.get(key) case final strategy?)
+  Iterable<Folder> get storedFolders => folderRecords.values;
+
+  Iterable<({Object key, StrategyData strategy})> get hiveStrategyRecords => [
+        for (final key in _strategyBox.keys)
+          if (_strategyBox.get(key) case final strategy?)
             (key: key as Object, strategy: strategy),
       ];
 
-  Iterable<({Object key, Folder folder})> get storedFolderRecords => [
-        for (final key in _folders.keys)
-          if (_folders.get(key) case final folder?)
+  Iterable<({Object key, Folder folder})> get hiveFolderRecords => [
+        for (final key in _folderBox.keys)
+          if (_folderBox.get(key) case final folder?)
             (key: key as Object, folder: folder),
       ];
 
   Iterable<({Object key, String id})> get storedStrategyNames => [
-        for (final key in _strategies.keys)
-          if (_strategies.get(key) case final strategy?)
+        for (final key in _strategyBox.keys)
+          if (_strategyBox.get(key) case final strategy?)
             (key: key as Object, id: strategy.id),
       ];
 
   Iterable<({Object key, String id})> get storedFolderNames => [
-        for (final key in _folders.keys)
-          if (_folders.get(key) case final folder?)
+        for (final key in _folderBox.keys)
+          if (_folderBox.get(key) case final folder?)
             (key: key as Object, id: folder.id),
       ];
 
-  List<Stream<Object?>> boxEvents() => [_strategies.watch(), _folders.watch()];
+  List<Stream<String>> boxEvents() =>
+      [strategyRecords.changes(), folderRecords.changes()];
 
   Set<String> boxFileNames() =>
-      {'${_strategies.name}.hive', '${_folders.name}.hive'};
+      {'${_strategyBox.name}.hive', '${_folderBox.name}.hive'};
 
   Future<LibraryWrite> savePageOnScreen(StrategyData strategy) =>
       _put(strategy);
@@ -160,22 +223,50 @@ final class LocalLibrary {
 
   Future<LibraryWrite> addStrategy(StrategyData strategy) => _put(strategy);
 
-  Future<LibraryWrite> _put(StrategyData strategy) => switch (_following) {
-        null => _write(() => _strategies.put(strategy.id, strategy)),
-        final following => _write(
-            () => following._tracked(
-              LibraryTouch(
-                strategies: [strategy.id],
-                folders: const [],
-                wrote: strategy,
+  Future<LibraryWrite> _put(StrategyData strategy) => switch (source) {
+        LibraryInStore(:final library) => library.putStrategy(strategy),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => switch (_following) {
+            null => _write(() => _strategyBox.put(strategy.id, strategy)),
+            final following => _write(
+                () => following._tracked(
+                  LibraryTouch(
+                    strategies: [strategy.id],
+                    folders: const [],
+                    wrote: strategy,
+                  ),
+                  () => _strategyBox.put(strategy.id, strategy),
+                ),
               ),
-              () => _strategies.put(strategy.id, strategy),
-            ),
+          },
+      };
+
+  Future<LibraryWrite> renameStrategy(StrategyData stored, String name) =>
+      switch (source) {
+        LibraryInStore(:final library) => library.renameStrategy(stored, name),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => _saveInHive(
+            stored,
+            () => stored.name = name,
           ),
       };
 
-  Future<LibraryWrite> renameStrategy(StrategyData stored, String name) {
-    stored.name = name;
+  Future<LibraryWrite> moveStrategy(StrategyData stored, String? folderId) =>
+      switch (source) {
+        LibraryInStore(:final library) =>
+          library.moveStrategy(stored, folderId),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => _saveInHive(
+            stored,
+            () => stored.folderID = folderId,
+          ),
+      };
+
+  Future<LibraryWrite> _saveInHive(
+    StrategyData stored,
+    void Function() change,
+  ) {
+    change();
     return switch (_following) {
       null => _write(stored.save),
       final following => _write(
@@ -191,42 +282,32 @@ final class LocalLibrary {
     };
   }
 
-  Future<LibraryWrite> moveStrategy(StrategyData stored, String? folderId) {
-    stored.folderID = folderId;
-    return switch (_following) {
-      null => _write(stored.save),
-      final following => _write(
-          () => following._tracked(
-            LibraryTouch(
-              strategies: [stored.id],
-              folders: const [],
-              wrote: stored,
-            ),
-            stored.save,
-          ),
-        ),
-    };
-  }
-
-  Future<LibraryWrite> deleteStrategy(String strategyId) =>
-      switch (_following) {
-        null => _write(() => _strategies.delete(strategyId)),
-        final following => _write(
-            () => following._tracked(
-              LibraryTouch(strategies: [strategyId], folders: const []),
-              () => _strategies.delete(strategyId),
-            ),
-          ),
+  Future<LibraryWrite> deleteStrategy(String strategyId) => switch (source) {
+        LibraryInStore(:final library) => library.deleteStrategy(strategyId),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => switch (_following) {
+            null => _write(() => _strategyBox.delete(strategyId)),
+            final following => _write(
+                () => following._tracked(
+                  LibraryTouch(strategies: [strategyId], folders: const []),
+                  () => _strategyBox.delete(strategyId),
+                ),
+              ),
+          },
       };
 
-  Future<LibraryWrite> addFolder(Folder folder) => switch (_following) {
-        null => _write(() => _folders.put(folder.id, folder)),
-        final following => _write(
-            () => following._tracked(
-              LibraryTouch(strategies: const [], folders: [folder.id]),
-              () => _folders.put(folder.id, folder),
-            ),
-          ),
+  Future<LibraryWrite> addFolder(Folder folder) => switch (source) {
+        LibraryInStore(:final library) => library.putFolder(folder),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => switch (_following) {
+            null => _write(() => _folderBox.put(folder.id, folder)),
+            final following => _write(
+                () => following._tracked(
+                  LibraryTouch(strategies: const [], folders: [folder.id]),
+                  () => _folderBox.put(folder.id, folder),
+                ),
+              ),
+          },
       };
 
   Future<LibraryWrite> restyleFolder(
@@ -236,11 +317,31 @@ final class LocalLibrary {
     required Color? customColor,
     required FolderColor color,
   }) {
-    stored
+    void change() => stored
       ..name = name
       ..iconId = iconId
       ..customColor = customColor
       ..color = color;
+    return switch (source) {
+      LibraryInStore(:final library) => library.restyleFolder(stored, change),
+      LibraryNotOpened() => _notOpened(),
+      LibraryInHive() => _saveFolderInHive(stored, change),
+    };
+  }
+
+  Future<LibraryWrite> moveFolder(Folder stored, String? parentId) =>
+      switch (source) {
+        LibraryInStore(:final library) => library.moveFolder(stored, parentId),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() =>
+          _saveFolderInHive(stored, () => stored.parentID = parentId),
+      };
+
+  Future<LibraryWrite> _saveFolderInHive(
+    Folder stored,
+    void Function() change,
+  ) {
+    change();
     return switch (_following) {
       null => _write(stored.save),
       final following => _write(
@@ -252,53 +353,57 @@ final class LocalLibrary {
     };
   }
 
-  Future<LibraryWrite> moveFolder(Folder stored, String? parentId) {
-    stored.parentID = parentId;
-    return switch (_following) {
-      null => _write(stored.save),
-      final following => _write(
-          () => following._tracked(
-            LibraryTouch(strategies: const [], folders: [stored.id]),
-            stored.save,
+  Future<LibraryWrite> deleteFolder(String folderId) => switch (source) {
+        LibraryInStore(:final library) => library.deleteFoldersWithStrategies(
+            folderIds: [folderId],
+            strategyIds: const [],
           ),
-        ),
-    };
-  }
-
-  Future<LibraryWrite> deleteFolder(String folderId) => switch (_following) {
-        null => _write(() => _folders.delete(folderId)),
-        final following => _write(
-            () => following._tracked(
-              LibraryTouch(strategies: const [], folders: [folderId]),
-              () => _folders.delete(folderId),
-            ),
-          ),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => switch (_following) {
+            null => _write(() => _folderBox.delete(folderId)),
+            final following => _write(
+                () => following._tracked(
+                  LibraryTouch(strategies: const [], folders: [folderId]),
+                  () => _folderBox.delete(folderId),
+                ),
+              ),
+          },
       };
 
   Future<LibraryWrite> deleteFoldersWithStrategies({
     required List<String> folderIds,
     required List<String> strategyIds,
   }) =>
-      switch (_following) {
-        null => _write(
-            () => Future.wait([
-              _strategies.deleteAll(strategyIds),
-              _folders.deleteAll(folderIds),
-            ]),
+      switch (source) {
+        LibraryInStore(:final library) => library.deleteFoldersWithStrategies(
+            folderIds: folderIds,
+            strategyIds: strategyIds,
           ),
-        final following => _write(
-            () => Future.wait([
-              following._tracked(
-                LibraryTouch(strategies: strategyIds, folders: const []),
-                () => _strategies.deleteAll(strategyIds),
+        LibraryNotOpened() => _notOpened(),
+        LibraryInHive() => switch (_following) {
+            null => _write(
+                () => Future.wait([
+                  _strategyBox.deleteAll(strategyIds),
+                  _folderBox.deleteAll(folderIds),
+                ]),
               ),
-              following._tracked(
-                LibraryTouch(strategies: const [], folders: folderIds),
-                () => _folders.deleteAll(folderIds),
+            final following => _write(
+                () => Future.wait([
+                  following._tracked(
+                    LibraryTouch(strategies: strategyIds, folders: const []),
+                    () => _strategyBox.deleteAll(strategyIds),
+                  ),
+                  following._tracked(
+                    LibraryTouch(strategies: const [], folders: folderIds),
+                    () => _folderBox.deleteAll(folderIds),
+                  ),
+                ]),
               ),
-            ]),
-          ),
+          },
       };
+
+  Future<LibraryWrite> _notOpened() async =>
+      LibraryWriteFailed(const LibraryNotOpenedWrite(), StackTrace.current);
 
   Future<LibraryWrite> _write(Future<void> Function() write) async {
     try {

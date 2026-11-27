@@ -293,39 +293,49 @@ Future<void> main(List<String> args) async {
           null;
       await MapThemeProfilesProvider.bootstrap();
 
-      final movedIntoStore = await moveLibraryIntoStore(
+      Future<void> bringLibraryUpToDate() async {
+        await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
+        if (PlatformPolicy.current.allowsLocalLibrary) {
+          try {
+            final moved = await moveOrphansToTopLevel();
+            if (moved.folders > 0 || moved.strategies > 0) {
+              AppErrorReporter.reportInfo(
+                'Moved ${moved.folders} folders and ${moved.strategies} '
+                'strategies whose folder was gone to the top level',
+                source: 'main.hiddenFolders',
+              );
+            }
+          } catch (error, stackTrace) {
+            // The library opens either way; tried again next launch.
+            AppErrorReporter.reportError(
+              "Couldn't move the items whose folder was gone to the top level",
+              source: 'main.hiddenFolders',
+              error: error,
+              stackTrace: stackTrace,
+              promptUser: false,
+            );
+          }
+        }
+      }
+
+      void tellWhatWasLeftBehind(Future<void> firstFrame) =>
+          showWhatWasLeftBehind(
+            appProviderContainer.read(libraryMigrationProvider),
+            firstFrame: firstFrame,
+            closed: (record) =>
+                recordLeftBehindClosed(appProviderContainer, record),
+          );
+
+      final movedIntoStore = await openLibraryOnStore(
         appProviderContainer,
         storeLaunch,
         hiveDirectory: hiveDirectoryPath,
         allowsLocalLibrary: PlatformPolicy.current.allowsLocalLibrary,
         build: Settings.versionName,
+        bringUpToDate: bringLibraryUpToDate,
+        servedAgain: () => tellWhatWasLeftBehind(Future.value()),
       );
-
-      await StrategyMigrator.migrateLocalLibrary(PlatformPolicy.current);
-      if (PlatformPolicy.current.allowsLocalLibrary) {
-        try {
-          final moved = await moveOrphansToTopLevel(
-            Hive.box<Folder>(HiveBoxNames.foldersBox),
-            Hive.box<StrategyData>(HiveBoxNames.strategiesBox),
-          );
-          if (moved.folders > 0 || moved.strategies > 0) {
-            AppErrorReporter.reportInfo(
-              'Moved ${moved.folders} folders and ${moved.strategies} '
-              'strategies whose folder was gone to the top level',
-              source: 'main.hiddenFolders',
-            );
-          }
-        } catch (error, stackTrace) {
-          // The library opens either way; tried again next launch.
-          AppErrorReporter.reportError(
-            "Couldn't move the items whose folder was gone to the top level",
-            source: 'main.hiddenFolders',
-            error: error,
-            stackTrace: stackTrace,
-            promptUser: false,
-          );
-        }
-      }
+      await bringLibraryUpToDate();
 
       final stores = openStores(
         appProviderContainer,
@@ -368,10 +378,10 @@ Future<void> main(List<String> args) async {
 
       await AnalyticsService.instance.initialize();
       unawaited(CloudUsageMeter.instance.reportLeftover());
-      if (PlatformPolicy.current.allowsLocalLibrary) {
+      if (PlatformPolicy.current.allowsLocalLibrary && LocalLibrary.isOpen) {
         ProductMetrics.instance.localLibrary(
-          strategies: Hive.box<StrategyData>(HiveBoxNames.strategiesBox).length,
-          folders: Hive.box<Folder>(HiveBoxNames.foldersBox).length,
+          strategies: const LocalLibrary().strategyRecords.length,
+          folders: const LocalLibrary().folderRecords.length,
         );
       }
 
@@ -437,7 +447,9 @@ Future<void> main(List<String> args) async {
               mode: mode,
             );
       }
-      showWhatWasLeftBehind(appProviderContainer.read(libraryMigrationProvider));
+      tellWhatWasLeftBehind(
+        WidgetsBinding.instance.waitUntilFirstFrameRasterized,
+      );
       if (driveBuild) startDrive();
     },
     (error, stackTrace) {

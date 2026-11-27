@@ -83,6 +83,29 @@ void main() {
     );
   });
 
+  test('a finished record is first not closed, and once closed is read back '
+      'closed with the rest unchanged', () async {
+    final storage = MemoryStorage();
+    final store = await openStore(MemoryEngine(storage));
+    final finished = MigrationFinished(
+      startedAt: startedAt,
+      finishedAt: finishedAt,
+      strategies: const [LeftBehind('s-1', 'Split', 'an unknown map')],
+      folders: const [],
+    );
+    savedValue(await store.recordMigration(finished));
+    expect((store.migration as MigrationFinished).leftBehindClosed, isFalse);
+
+    savedValue(await store.recordMigration(finished.closedLeftBehind()));
+    await store.close();
+
+    final read = await afterReopen(storage) as MigrationFinished;
+    expect(read.leftBehindClosed, isTrue);
+    expect(read.startedAt, startedAt);
+    expect(read.finishedAt, finishedAt);
+    expect([for (final left in read.strategies) left.publicId], ['s-1']);
+  });
+
   for (final (what, text) in [
     ('an unknown state', '{"state": "half done"}'),
     ('text that is not JSON', '{"state": '),
@@ -98,12 +121,13 @@ void main() {
       'a finish time outside the dates this build can hold',
       '{"state": "finished", "startedAt": 0, '
           '"finishedAt": -8640000000000001000, "strategies": [], '
-          '"folders": []}',
+          '"folders": [], "leftBehindClosed": false}',
     ),
     (
       'a left-behind entry of the wrong shape',
       '{"state": "finished", "startedAt": 0, "finishedAt": 0, '
-          '"strategies": [{"id": "s-1", "name": 7}], "folders": []}',
+          '"strategies": [{"id": "s-1", "name": 7}], "folders": [], '
+          '"leftBehindClosed": false}',
     ),
   ]) {
     test('a record with $what is unreadable, not missing', () async {

@@ -1420,5 +1420,8 @@
   "onboardingSunStart": "选择地图",
   "libraryLeftBehindTitle": "部分战术留在了旧资料库中",
   "libraryLeftBehindBody": "这些内容无法移到新资料库，因此现在不会出现在你的资料库中。它们仍保存在这台电脑上的旧资料库里：{folder}。",
-  "libraryLeftBehindFolder": "文件夹：{name}"
+  "libraryLeftBehindFolder": "文件夹：{name}",
+  "libraryNotOpenedTitle": "无法打开资料库",
+  "libraryNotOpenedBody": "其中的内容没有任何更改。你的战术仍保存在这台电脑上的 {folder} 中。",
+  "libraryNotOpenedBanner": "无法打开这台电脑上的资料库。其中的内容没有任何更改。"
 }

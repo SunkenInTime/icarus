@@ -2237,8 +2237,12 @@ class StrategyImportExportService {
 
       newStrategy = await StrategyMigrator.migrateLegacyData(newStrategy);
 
-      (await const LocalLibrary().addStrategy(newStrategy)).orThrow();
-      saved = true;
+      final written = await const LocalLibrary().addStrategy(newStrategy);
+      saved = switch (written) {
+        LibraryWritten() => true,
+        LibraryWriteFailed(:final mayHaveLanded) => mayHaveLanded,
+      };
+      written.orThrow();
       if (targetFolderId == null) {
         _savedAtTopLevel.add((id: newStrategy.id, isFolder: false));
       }
@@ -2468,7 +2472,14 @@ class StrategyImportExportService {
   }
 
   /// The local library as it is on disk, whichever store the screen shows.
-  _ExportLibrary _localLibraryForExport() => _ExportLibrary(
+  _ExportLibrary _localLibraryForExport() {
+    if (LocalLibrary.source is LibraryNotOpened) {
+      throw const LibraryNotOpenedExport();
+    }
+    return _localLibraryOnDisk();
+  }
+
+  _ExportLibrary _localLibraryOnDisk() => _ExportLibrary(
         folders: ref.read(localLibraryViewProvider).onDisk.folders.value,
         strategies: [
           for (final strategy
@@ -2852,6 +2863,9 @@ class StrategyImportExportService {
     Directory? saveDir,
     String? outputFilePath,
   }) async {
+    if (LocalLibrary.source is LibraryNotOpened) {
+      throw const LibraryNotOpenedExport();
+    }
     final StrategyData? strategy =
         await ref.read(exportStrategyReadsProvider).read(id);
     if (strategy == null) {

@@ -61,18 +61,29 @@ class LeftBehindDialog extends StatelessWidget {
   }
 }
 
-void showWhatWasLeftBehind(MigrationAtStart? atStart) {
-  if (atStart
-      case (
-        migration: MigrationFinishedNow(:final record),
-        :final oldLibraryFolder,
-      ) when LeftBehindDialog.leftAnything(record)) {
-    unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
-      final navigator = appNavigatorKey.currentState;
-      if (navigator == null || !navigator.mounted) return;
-      unawaited(
-        LeftBehindDialog.show(navigator.context, record, oldLibraryFolder),
-      );
-    }));
+void showWhatWasLeftBehind(
+  MigrationAtStart? atStart, {
+  required Future<void> firstFrame,
+  required Future<void> Function(MigrationFinished record) closed,
+}) {
+  final record = switch (atStart?.migration) {
+    MigrationFinishedNow(:final record) ||
+    MigrationWasFinished(:final record) =>
+      record,
+    _ => null,
+  };
+  if (record == null ||
+      record.leftBehindClosed ||
+      !LeftBehindDialog.leftAnything(record)) {
+    return;
   }
+  unawaited(firstFrame.then((_) {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null || !navigator.mounted) return;
+    unawaited(
+      LeftBehindDialog.show(
+              navigator.context, record, atStart!.oldLibraryFolder)
+          .then((_) => closed(record)),
+    );
+  }));
 }

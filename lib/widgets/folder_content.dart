@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/config/drive_build.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/strategy/local_library_view.dart';
@@ -151,6 +152,10 @@ class FolderContent extends ConsumerWidget {
         final store = ref.watch(libraryWorkspaceProvider);
         if (store == LibraryWorkspace.cloud) {
           return _crossFade(_buildCloudBody(context, ref));
+        }
+        if (ref.watch(libraryOnStoreProvider)
+            case final LibraryNotServed notServed) {
+          return _crossFade(_LibraryNotOpened(notServed));
         }
         return _buildLocalFolder(context, ref);
     }
@@ -329,6 +334,25 @@ class FolderContent extends ConsumerWidget {
               cloud: cloudStrategies,
             ),
           );
+          final cloudBanner = cloudFailed
+              ? _CloudErrorBanner(onRetry: () => _retryCloud(ref))
+              : offlineCopyMatchedAt != null
+                  ? _CloudOfflineBanner(matchedAt: offlineCopyMatchedAt)
+                  : cloudUnreachable
+                      ? const _CloudUnreachableBanner()
+                      : cloudLoading || connectingOverCopy
+                          ? const _CloudLoadingBanner()
+                          : null;
+          final notServed = switch (ref.watch(libraryOnStoreProvider)) {
+            final LibraryNotServed notServed => notServed,
+            _ => null,
+          };
+          if (notServed != null &&
+              cloudBanner == null &&
+              cloudFolders.isEmpty &&
+              cloudStrategies.isEmpty) {
+            return _crossFade(_LibraryNotOpened(notServed));
+          }
           // What's on this computer shows while the cloud loads. With
           // nothing to show yet, the page waits for the cloud rather than
           // call the library empty.
@@ -346,21 +370,26 @@ class FolderContent extends ConsumerWidget {
                 folders: folders,
                 strategies: strategies,
                 acceptsIcaDrops: _acceptsIcaDrops(ref),
-                banner: cloudFailed
-                    ? _CloudErrorBanner(onRetry: () => _retryCloud(ref))
-                    : offlineCopyMatchedAt != null
-                        ? _CloudOfflineBanner(matchedAt: offlineCopyMatchedAt)
-                        : cloudUnreachable
-                            ? const _CloudUnreachableBanner()
-                            : cloudLoading || connectingOverCopy
-                                ? const _CloudLoadingBanner()
-                                : null,
+                banner: switch ((notServed, cloudBanner)) {
+                  (null, final cloud) => cloud,
+                  (final local?, null) => _LocalNotOpenedBanner(local),
+                  (final local?, final cloud?) => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [_LocalNotOpenedBanner(local), cloud],
+                    ),
+                },
                 emptyStateKey: const ValueKey('library-empty-state'),
                 emptyStateIcon: LucideIcons.folder,
-                emptyStateTitle: context.l10n.folderLibraryEmptyTitle,
-                emptyStateSubtitle: cloudAvailable
-                    ? context.l10n.folderLibraryEmptyCloudSubtitle
-                    : context.l10n.folderLibraryEmptyLocalSubtitle,
+                emptyStateTitle: notServed != null
+                    ? context.l10n.libraryNotOpenedTitle
+                    : context.l10n.folderLibraryEmptyTitle,
+                emptyStateSubtitle: switch (notServed) {
+                  final notServed? => context.l10n
+                      .libraryNotOpenedBody(notServed.oldLibraryFolder),
+                  null => cloudAvailable
+                      ? context.l10n.folderLibraryEmptyCloudSubtitle
+                      : context.l10n.folderLibraryEmptyLocalSubtitle,
+                },
                 emptyStateAction: ShadButton(
                   key: const ValueKey('library-empty-create-strategy'),
                   onPressed: onCreateStrategy,
@@ -1108,11 +1137,97 @@ class _CloudBanner extends StatelessWidget {
   }
 }
 
+class _LocalNotOpenedBanner extends StatefulWidget {
+  const _LocalNotOpenedBanner(this.notServed);
+
+  final LibraryNotServed notServed;
+
+  @override
+  State<_LocalNotOpenedBanner> createState() => _LocalNotOpenedBannerState();
+}
+
+class _LocalNotOpenedBannerState extends State<_LocalNotOpenedBanner> {
+  var _trying = false;
+
+  Future<void> _tryAgain() async {
+    setState(() => _trying = true);
+    try {
+      await widget.notServed.tryAgain();
+    } finally {
+      if (mounted) setState(() => _trying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _CloudBanner(
+      key: const ValueKey('library-not-opened-banner'),
+      leading: Icon(
+        LucideIcons.hardDrive,
+        size: 16,
+        color: Settings.tacticalVioletTheme.destructive,
+      ),
+      message: context.l10n.libraryNotOpenedBanner,
+      action: ShadButton.ghost(
+        key: const ValueKey('library-not-opened-banner-try-again'),
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        leading: const Icon(LucideIcons.refreshCw, size: 14),
+        onPressed: _trying ? null : _tryAgain,
+        child: Text(context.l10n.commonTryAgain),
+      ),
+    );
+  }
+}
+
+class _LibraryNotOpened extends StatefulWidget {
+  const _LibraryNotOpened(this.notServed);
+
+  final LibraryNotServed notServed;
+
+  @override
+  State<_LibraryNotOpened> createState() => _LibraryNotOpenedState();
+}
+
+class _LibraryNotOpenedState extends State<_LibraryNotOpened> {
+  var _trying = false;
+
+  Future<void> _tryAgain() async {
+    setState(() => _trying = true);
+    try {
+      await widget.notServed.tryAgain();
+    } finally {
+      if (mounted) setState(() => _trying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return _LibraryMessageState(
+      key: const ValueKey('library-not-opened'),
+      icon: LucideIcons.hardDrive,
+      iconColor: Settings.tacticalVioletTheme.destructive,
+      title: l10n.libraryNotOpenedTitle,
+      subtitle: l10n.libraryNotOpenedBody(widget.notServed.oldLibraryFolder),
+      actions: [
+        ShadButton(
+          key: const ValueKey('library-not-opened-try-again'),
+          leading: const Icon(LucideIcons.refreshCw, size: 14),
+          onPressed: _trying ? null : _tryAgain,
+          child: Text(l10n.commonTryAgain),
+        ),
+      ],
+    );
+  }
+}
+
 /// Shared full-pane message layout (dot-grid backdrop, icon, title, subtitle,
 /// action row) used by the cloud unavailable/error states so they carry the
 /// same visual weight.
 class _LibraryMessageState extends StatelessWidget {
   const _LibraryMessageState({
+    super.key,
     required this.icon,
     required this.iconColor,
     required this.title,

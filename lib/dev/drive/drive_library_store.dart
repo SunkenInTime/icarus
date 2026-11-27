@@ -1208,16 +1208,28 @@ List<String> migrationLines(
     _ => null,
   };
   final inStore = list == null ? null : localStrategyIds(list).length;
+  final onStore = c.read(libraryOnStoreProvider);
   final actual = <String, Object?>{
     'state': state,
     'inStore': inStore,
     'foldersInStore': list?.folders.length,
     'leftBehind': left.length,
+    'served': onStore is LibraryServedFromStore,
+    'tries': switch (onStore) {
+      LibraryNotServed(:final tries) => tries,
+      _ => null,
+    },
   };
   final lines = [
     'STORE move at start: $state, $inStore strategies and '
         '${list?.folders.length} folders in the store, '
         '${left.length} left behind',
+    switch (onStore) {
+      null => 'STORE library: not on the store',
+      LibraryServedFromStore() => 'STORE library: served from the store',
+      LibraryNotServed(:final why, :final tries) =>
+        'STORE library: not served after $tries tries, $why',
+    },
     for (final entry in left)
       'STORE left behind ${entry.publicId} "${entry.name}": ${entry.reason}',
   ];

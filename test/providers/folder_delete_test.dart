@@ -175,7 +175,7 @@ void main() {
     await folder('left', parent: 'right');
     await folder('right', parent: 'left');
 
-    final moved = await moveOrphansToTopLevel(folders(), strategies());
+    final moved = await moveOrphansToTopLevel();
 
     expect(moved, (folders: 2, strategies: 1));
     expect(
@@ -210,7 +210,7 @@ void main() {
       expect(hasImages(id as String), isTrue, reason: id);
     }
     expect(
-      await moveOrphansToTopLevel(folders(), strategies()),
+      await moveOrphansToTopLevel(),
       (folders: 0, strategies: 0),
     );
   });

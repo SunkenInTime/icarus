@@ -487,10 +487,9 @@ var _buildsLogged = '';
 
 void _countLibraryBoxEvents() {
   final [strategies, folders] = const LocalLibrary().boxEvents();
-  strategies.listen((event) {
+  strategies.listen((id) {
     countLibraryBoxEvent('strategies-box');
-    if (event case BoxEvent(:final key)
-        when key == appProviderContainer.read(strategyProvider).strategyId) {
+    if (id == appProviderContainer.read(strategyProvider).strategyId) {
       countLibraryBoxEvent('open-strategy-box');
     }
   });
@@ -1995,10 +1994,25 @@ Future<void> _run(Map<String, dynamic> step) async {
     case 'holdLibraryStore':
       _log(holdStore(c));
     case 'expectMigration':
-      (await _storeLines(Future.sync(() => migrationLines(
-                c,
-                expected: {...?(value as Map<String, dynamic>?)},
-              ))))
+      final expected = {...?(value as Map<String, dynamic>?)};
+      bool matches() {
+        try {
+          migrationLines(c, expected: expected);
+          return true;
+        } on StoreStepFailed {
+          return false;
+        }
+      }
+
+      final until = DateTime.now().add(
+        Duration(milliseconds: (((step['seconds'] ?? 0) as num) * 1000).round()),
+      );
+      while (!matches() && DateTime.now().isBefore(until)) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      (await _storeLines(
+        Future.sync(() => migrationLines(c, expected: expected)),
+      ))
           .forEach(_log);
     case 'checkLibraryStore':
       (await _storeLines(checkStoreAgain(c))).forEach(_log);

@@ -35,10 +35,17 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/services/cloud_work_sent.dart';
+import 'package:icarus/library_store/library_migration.dart';
+import 'package:icarus/library_store/library_store_open.dart';
+import 'package:icarus/library_store/store_library.dart';
+import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus_library/icarus_library.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as path;
+
+import 'library_store/gated_engine.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 const _pathProvider = MethodChannel('plugins.flutter.io/path_provider');
@@ -232,6 +239,94 @@ void main() {
       _strategyByName('Local In Folder').folderID,
       _folderByName('Local Plays').id,
     );
+  });
+
+  group('with the library on this computer not opened', () {
+    setUp(() => LocalLibrary.source = const LibraryNotOpened());
+    tearDown(() => LocalLibrary.source = const LibraryInHive());
+
+    test(
+        'the backup, a local folder export and a strategy export are '
+        'refused, and nothing is written', () async {
+      LocalLibrary.source = const LibraryInHive();
+      await _storeLocalLibrary();
+      final localFolder = _folderByName('Local Plays');
+      final strategy = _strategyByName('Local Root');
+      LocalLibrary.source = const LibraryNotOpened();
+      final container = signedIn();
+      final service = StrategyImportExportService(container);
+      final out = path.join(tempDir.path, 'refused.ica');
+
+      await expectLater(
+        service.buildLibraryExportDirectoryForTest(),
+        throwsA(isA<LibraryNotOpenedExport>()),
+      );
+      await expectLater(
+        service.buildFolderExportDirectoryForTest(localFolder.id),
+        throwsA(isA<LibraryNotOpenedExport>()),
+      );
+      Object? strategyRefused;
+      try {
+        await service.zipStrategy(id: strategy.id, outputFilePath: out);
+      } on LibraryNotOpenedExport catch (error) {
+        strategyRefused = error;
+      }
+      expect(strategyRefused, isNotNull);
+      expect(File(out).existsSync(), isFalse);
+      expect(repository.scopes, isEmpty);
+    });
+  });
+
+  test(
+      'an import whose write ends in doubt keeps its pictures, and the '
+      'strategy the store kept has them after a reopen', () async {
+    final container = signedIn();
+    final staging = await StrategyImportExportService(container)
+        .buildLibraryExportDirectoryForTest();
+    final ica = staging
+        .listSync(recursive: true)
+        .whereType<File>()
+        .singleWhere((file) => path.basename(file.path) == 'Cloud Root.ica');
+    final storage = MemoryStorage();
+    final gate = CommitGate();
+    final store = switch (await LibraryStore.open(
+      GatedEngine(MemoryEngine(storage), gate),
+      canRead: appCanRead,
+    )) {
+      StoreOpened(:final store) => store,
+      StoreNotOpened(:final problem) => fail('$problem'),
+    };
+    expect(
+      await migrateLibraryIntoStore(store, strategies: [], folders: []),
+      isA<MigrationFinishedNow>(),
+    );
+    LocalLibrary.source =
+        switch (await StoreLibrary.load(store, lost: (_) {})) {
+      StoreLibraryLoaded(:final library) => LibraryInStore(library),
+      StoreLibraryNotLoaded(:final why) => fail(why),
+    };
+    addTearDown(() => LocalLibrary.source = const LibraryInHive());
+    gate.doubtNext = true;
+
+    final result = await StrategyImportExportService(container)
+        .loadFromFileDrop([XFile(ica.path)]);
+
+    expect(result.strategiesImported, 0);
+    await store.close();
+    final reopened = switch (await LibraryStore.open(
+      MemoryEngine(storage),
+      canRead: appCanRead,
+    )) {
+      StoreOpened(:final store) => store,
+      StoreNotOpened(:final problem) => fail('$problem'),
+    };
+    addTearDown(reopened.close);
+    final kept = switch (await StoreLibrary.load(reopened, lost: (_) {})) {
+      StoreLibraryLoaded(:final library) =>
+        library.strategies.values.singleWhere((s) => s.name == 'Cloud Root'),
+      StoreLibraryNotLoaded(:final why) => fail(why),
+    };
+    await _expectCloudRootRestored(kept);
   });
 
   test('a cloud strategy that cannot be read stops the backup', () async {

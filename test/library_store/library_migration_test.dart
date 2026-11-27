@@ -451,10 +451,7 @@ void main() {
     addTearDown(store.close);
 
     final migration = await _migrate(store) as MigrationFinishedNow;
-    await moveOrphansToTopLevel(
-      folders,
-      Hive.box<StrategyData>(HiveBoxNames.strategiesBox),
-    );
+    await moveOrphansToTopLevel();
 
     expect(migration.record.strategies, isEmpty);
     expect(migration.record.folders, isEmpty);

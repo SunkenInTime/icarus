@@ -94,7 +94,7 @@ Future<
     await StrategyMigrator.migrateAllStrategies();
     final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final folders = Hive.box<Folder>(HiveBoxNames.foldersBox);
-    await moveOrphansToTopLevel(folders, strategies);
+    await moveOrphansToTopLevel();
     final shown = (
       strategies: {
         for (final strategy in strategies.values)

@@ -32,6 +32,7 @@ final class MigrationFinished extends RecordedMigration {
     required this.finishedAt,
     required List<LeftBehind> strategies,
     required List<LeftBehind> folders,
+    this.leftBehindClosed = false,
   }) : strategies = List.unmodifiable(strategies),
        folders = List.unmodifiable(folders);
 
@@ -39,6 +40,15 @@ final class MigrationFinished extends RecordedMigration {
   final DateTime finishedAt;
   final List<LeftBehind> strategies;
   final List<LeftBehind> folders;
+  final bool leftBehindClosed;
+
+  MigrationFinished closedLeftBehind() => MigrationFinished(
+    startedAt: startedAt,
+    finishedAt: finishedAt,
+    strategies: strategies,
+    folders: folders,
+    leftBehindClosed: true,
+  );
 }
 
 final class LeftBehind {
@@ -62,6 +72,7 @@ String migrationToJson(RecordedMigration migration) =>
         :final finishedAt,
         :final strategies,
         :final folders,
+        :final leftBehindClosed,
       ) =>
         {
           'state': 'finished',
@@ -69,6 +80,7 @@ String migrationToJson(RecordedMigration migration) =>
           'finishedAt': finishedAt.toUtc().microsecondsSinceEpoch,
           'strategies': [for (final left in strategies) _leftToJson(left)],
           'folders': [for (final left in folders) _leftToJson(left)],
+          'leftBehindClosed': leftBehindClosed,
         },
     });
 
@@ -89,12 +101,14 @@ Migration migrationFromText(String text) {
         'finishedAt': final int finishedAt,
         'strategies': final List<Object?> strategies,
         'folders': final List<Object?> folders,
+        'leftBehindClosed': final bool leftBehindClosed,
       } =>
         MigrationFinished(
           startedAt: _time(startedAt),
           finishedAt: _time(finishedAt),
           strategies: [for (final left in strategies) _leftFromJson(left)],
           folders: [for (final left in folders) _leftFromJson(left)],
+          leftBehindClosed: leftBehindClosed,
         ),
       _ => const MigrationUnreadable('not a migration record'),
     };

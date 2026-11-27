@@ -279,7 +279,7 @@ void main() {
       'orphan-strategy',
       _legacy('orphan-strategy', folderId: 'gone-folder'),
     );
-    await moveOrphansToTopLevel(folders, strategies);
+    await moveOrphansToTopLevel();
     recording.step('move orphans to the top level');
 
     await strategies.put('opened-legacy', _legacy('opened-legacy'));
