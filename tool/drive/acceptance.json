@@ -6,15 +6,7 @@
       "library-store-shadow-hidden",
       "library-store-mirror-hold",
       "read-back-cost",
-      "read-back-budget",
-      "ops-cost-24-local",
-      "ops-cost-240-local",
-      "ops-cost-960-local",
-      "ops-every-kind-local",
-      "ops-lineups-local",
-      "ops-settings-order-weapon-local",
-      "ops-strokes-with-slow-commits",
-      "ops-text-draft-autosave-local"
+      "read-back-budget"
     ]
   },
   "notOnLinux": {

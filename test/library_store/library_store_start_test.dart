@@ -43,12 +43,11 @@ void main() {
 
   test(
       'through start-up, each mode the switch still has gets its own shadow '
-      'mode and follower, and the library lists Hive with its own dates', () {
+      'mode, and the library lists Hive with its own dates', () {
     for (final choice in [
       const StoreSwitchOff(),
       const StoreSwitchShadow(),
       const StoreSwitchMirror(),
-      const StoreSwitchOps(),
       const StoreSwitchStore(),
     ]) {
       final start = LibraryStoreStart.of(choice);
@@ -63,14 +62,9 @@ void main() {
           expect(start.mode, isNull, reason: '$choice');
         case StoreSwitchShadow():
           expect(start.mode, isA<ShadowOnly>());
-        case StoreSwitchMirror() || StoreSwitchOps():
-          expect(start.mode, isA<Mirroring>(), reason: '$choice');
+        case StoreSwitchMirror():
+          expect(start.mode, isA<Mirroring>());
       }
-      expect(
-        start.editFollower != null,
-        choice is StoreSwitchOps,
-        reason: '$choice',
-      );
       final view = container.read(localLibraryViewProvider);
       expect(
         view.strategies.value.map((s) => s.id),

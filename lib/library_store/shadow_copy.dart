@@ -299,7 +299,6 @@ Future<ShadowCopy> mirrorImage(
   };
 }
 
-bool _keptHere(String strategyId) => false;
 
 Future<void> _noBreath() async {}
 
@@ -310,7 +309,6 @@ Future<ShadowCopy> mirrorIds(
   required StrategyImages images,
   required Set<String> strategies,
   required Set<String> folders,
-  bool Function(String strategyId) handedOff = _keptHere,
   Future<void> Function() breathe = _noBreath,
 }) async {
   final strategyResults = <StrategyCopy>[];
@@ -348,7 +346,6 @@ Future<ShadowCopy> mirrorIds(
   }
 
   for (final id in strategies) {
-    if (handedOff(id)) continue;
     switch (reads.strategy(id)) {
       case InHive(value: final strategy):
         if (await _putImage(

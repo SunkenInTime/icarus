@@ -9,7 +9,6 @@
   {"tapIcon": "x", "optional": true},
   {"addText": "note-{run}", "at": [640, 300], "text": "Go A"},
   {"wait": 1},
-  {"actionOps": "placed"},
 
   {"tapWords": "Go A"},
   {"expectEditing": true},
@@ -25,6 +24,5 @@
   {"expectEditing": false},
   {"wait": 1},
   {"logTexts": "left the box"},
-  {"actionOps": "after leaving the box"},
   {"exit": 1}
 ]

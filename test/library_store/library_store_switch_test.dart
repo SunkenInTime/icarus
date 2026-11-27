@@ -25,17 +25,20 @@ void main() {
     expect(launch.otherArgs, ['--hive-store-dir=/tmp/s', 'a.ica']);
   });
 
-  for (final mayShadow in [true, false]) {
-    test(
-        'the removed read mode is still taken and stays off '
-        '(mayShadow: $mayShadow), so its flag is never opened as a file', () {
-      final launch = LibraryStoreLaunch.parse(
-        const ['--library-store=store', '--library-store=read', 'a.ica'],
-        mayShadow: mayShadow,
-      );
-      expect(launch.choice, isA<StoreSwitchOff>());
-      expect(launch.otherArgs, ['a.ica']);
-    });
+  for (final removed in ['read', 'ops']) {
+    for (final mayShadow in [true, false]) {
+      test(
+          'the removed $removed mode is still taken and stays off '
+          '(mayShadow: $mayShadow), so its flag is never opened as a file',
+          () {
+        final launch = LibraryStoreLaunch.parse(
+          ['--library-store=store', '--library-store=$removed', 'a.ica'],
+          mayShadow: mayShadow,
+        );
+        expect(launch.choice, isA<StoreSwitchOff>());
+        expect(launch.otherArgs, ['a.ica']);
+      });
+    }
   }
 
   test(

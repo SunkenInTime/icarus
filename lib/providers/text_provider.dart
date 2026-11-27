@@ -8,7 +8,6 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
-import 'package:icarus/library_store/canvas_changes.dart';
 
 final textProvider =
     NotifierProvider<TextProvider, List<PlacedText>>(TextProvider.new);
@@ -95,10 +94,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
-    ActionProvider.editFollower?.onEdit(
-      (pageId) => [ObjectRaised(pageId, ActionObjectKind.text, id)],
-      'raise text',
-    );
   }
 
   void commitText(String id, String nextText) {
@@ -155,20 +150,8 @@ class TextProvider extends Notifier<List<PlacedText>> {
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
 
-    final before = ActionProvider.editFollower == null
-        ? null
-        : ActionObjectState.text(newState[index]);
     newState[index].tagColorValue = colorValue;
     state = newState;
-    if (before != null) {
-      ActionProvider.editFollower?.onEdit(
-        (pageId) => [
-          ObjectChanged(
-              pageId, before, ActionObjectState.text(newState[index])),
-        ],
-        'tag colour text',
-      );
-    }
   }
 
   void undoAction(UserAction action) {
@@ -262,22 +245,10 @@ class TextProvider extends Notifier<List<PlacedText>> {
     if (index < 0) return;
 
     final newState = [...state];
-    final before = ActionProvider.editFollower == null
-        ? null
-        : ActionObjectState.text(newState[index]);
     newState[index]
       ..size = size
       ..position = position;
     state = newState;
-    if (before != null) {
-      ActionProvider.editFollower?.onEdit(
-        (pageId) => [
-          ObjectChanged(
-              pageId, before, ActionObjectState.text(newState[index])),
-        ],
-        'resize text',
-      );
-    }
   }
 
   void removeText(String id) {

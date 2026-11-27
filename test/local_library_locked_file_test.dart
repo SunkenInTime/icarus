@@ -55,4 +55,23 @@ void main() {
       expect(written.orThrow, throwsA(isA<FileSystemException>()));
     },
   );
+
+  test('a page save after the library box has closed fails as a value',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('icarus-closed-');
+    addTearDown(() => dir.delete(recursive: true));
+    Hive.init(dir.path);
+    if (!Hive.isAdapterRegistered(20)) registerIcarusAdapters(Hive);
+    final strategies =
+        await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+    await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+    addTearDown(Hive.close);
+    await strategies.put('open', _strategy('open'));
+    final stored = const LocalLibrary().storedStrategy('open')!.copyWith();
+    await strategies.close();
+
+    final written = await const LocalLibrary().savePageOnScreen(stored);
+
+    expect(written, isA<LibraryWriteFailed>());
+  });
 }
