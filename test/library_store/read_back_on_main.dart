@@ -147,28 +147,30 @@ StrategyToRows mainStrategyToRows(
       ),
     );
 
-    for (final (sortIndex, item) in pageItemsOf(page).indexed) {
-      switch (item.payload) {
-        case CouldNotRead(:final problem):
-          problems.add(ItemNotJson(page.id, item.kind, item.id, problem));
-        case Read(value: final payload):
-          final rowId = takenElementIds.contains(item.id)
-              ? _derivedId(
-                  {...takenElementIds, ...everyItemId},
-                  [strategy.id, page.id, item.id, sortIndex],
-                )
-              : item.id;
-          takenElementIds.add(rowId);
-          itemCounts[item.kind] = itemCounts[item.kind]! + 1;
-          elements.add(
-            LiveElement(
-              publicId: rowId,
-              pagePublicId: page.id,
-              payload: payload,
-              sortIndex: sortIndex,
-              revision: _rowRevision,
-            ),
-          );
+    for (final items in pageItemsByKind(page)) {
+      for (final (sortIndex, item) in items.indexed) {
+        switch (item.payload) {
+          case CouldNotRead(:final problem):
+            problems.add(ItemNotJson(page.id, item.kind, item.id, problem));
+          case Read(value: final payload):
+            final rowId = takenElementIds.contains(item.id)
+                ? _derivedId(
+                    {...takenElementIds, ...everyItemId},
+                    [strategy.id, page.id, item.id, sortIndex],
+                  )
+                : item.id;
+            takenElementIds.add(rowId);
+            itemCounts[item.kind] = itemCounts[item.kind]! + 1;
+            elements.add(
+              LiveElement(
+                publicId: rowId,
+                pagePublicId: page.id,
+                payload: payload,
+                sortIndex: sortIndex,
+                revision: _rowRevision,
+              ),
+            );
+        }
       }
     }
 

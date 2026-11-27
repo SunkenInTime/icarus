@@ -147,14 +147,17 @@ String _derivedId(Set<String> taken, List<Object> seed) {
   }
 }
 
-List<PageItem> pageItemsOf(StrategyPage page) => [
-      for (final agent in page.agentData) AgentItem(agent),
-      for (final ability in page.abilityData) AbilityItem(ability),
-      for (final drawing in page.drawingData) DrawingItem(drawing),
-      for (final text in page.textData) TextItem(text),
-      for (final image in page.imageData) ImageItem(image),
-      for (final utility in page.utilityData) UtilityItem(utility),
+List<List<PageItem>> pageItemsByKind(StrategyPage page) => [
+      [for (final agent in page.agentData) AgentItem(agent)],
+      [for (final ability in page.abilityData) AbilityItem(ability)],
+      [for (final drawing in page.drawingData) DrawingItem(drawing)],
+      [for (final text in page.textData) TextItem(text)],
+      [for (final image in page.imageData) ImageItem(image)],
+      [for (final utility in page.utilityData) UtilityItem(utility)],
     ];
+
+List<PageItem> pageItemsOf(StrategyPage page) =>
+    [for (final kind in pageItemsByKind(page)) ...kind];
 
 ThemePalette themePaletteOf(MapThemePalette palette) {
   final json = palette.toJson();
@@ -372,29 +375,31 @@ Iterable<RowsStep> strategyToRowsInSteps(
     pages.add(pageRow);
     settings.add(settingsRow);
 
-    for (final (sortIndex, item) in pageItemsOf(page).indexed) {
-      switch (item.payload) {
-        case CouldNotRead(:final problem):
-          problems.add(ItemNotJson(page.id, item.kind, item.id, problem));
-          yield ItemConverted(page, item, null);
-        case Read(value: final payload):
-          final rowId = takenElementIds.contains(item.id)
-              ? _derivedId(
-                  {...takenElementIds, ...everyItemId},
-                  [strategy.id, page.id, item.id, sortIndex],
-                )
-              : item.id;
-          takenElementIds.add(rowId);
-          itemCounts[item.kind] = itemCounts[item.kind]! + 1;
-          final row = LiveElement(
-            publicId: rowId,
-            pagePublicId: page.id,
-            payload: payload,
-            sortIndex: sortIndex,
-            revision: _rowRevision,
-          );
-          elements.add(row);
-          yield ItemConverted(page, item, row);
+    for (final items in pageItemsByKind(page)) {
+      for (final (sortIndex, item) in items.indexed) {
+        switch (item.payload) {
+          case CouldNotRead(:final problem):
+            problems.add(ItemNotJson(page.id, item.kind, item.id, problem));
+            yield ItemConverted(page, item, null);
+          case Read(value: final payload):
+            final rowId = takenElementIds.contains(item.id)
+                ? _derivedId(
+                    {...takenElementIds, ...everyItemId},
+                    [strategy.id, page.id, item.id, sortIndex],
+                  )
+                : item.id;
+            takenElementIds.add(rowId);
+            itemCounts[item.kind] = itemCounts[item.kind]! + 1;
+            final row = LiveElement(
+              publicId: rowId,
+              pagePublicId: page.id,
+              payload: payload,
+              sortIndex: sortIndex,
+              revision: _rowRevision,
+            );
+            elements.add(row);
+            yield ItemConverted(page, item, row);
+        }
       }
     }
 
