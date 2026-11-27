@@ -175,8 +175,7 @@ Future<_Read> _readLibrary(LibraryStore store) async {
         return _ReadNot(
           'the strategy "${summary.name}" ($id) has no record of the version '
           'of Icarus that wrote it: the store was written by a build from '
-          'before that record was kept; delete library_store/library.sqlite '
-          'beside the old library to copy it again',
+          'before that record was kept',
         );
       case StoredRowsRead(written: WrittenUnreadable(:final stored)):
         return _ReadNot(

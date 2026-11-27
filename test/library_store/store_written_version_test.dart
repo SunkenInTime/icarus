@@ -169,8 +169,7 @@ void main() {
         'why',
         allOf(
           contains('"Alpha" (a)'),
-          contains('before that record was kept'),
-          contains('delete library_store/library.sqlite'),
+          endsWith('before that record was kept'),
         ),
       ),
     );
