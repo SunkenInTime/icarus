@@ -13,6 +13,8 @@ import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart' show appCanRead;
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/live_results.dart';
+import 'package:icarus/providers/in_app_debug_provider.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -415,7 +417,42 @@ int clockHeldOnWatch(World world) {
   return readsBefore;
 }
 
+final class _RecordingStore implements LiveResults {
+  _RecordingStore(this.order);
+
+  final List<String> order;
+  final points = <int>[];
+
+  @override
+  void liveOpened(String strategyId, ReadOf subject) {}
+
+  @override
+  void liveArrived(
+    String strategyId,
+    ReadOf subject,
+    Account account,
+    StoreReadOutcome outcome,
+  ) {
+    order.add('store');
+    if (outcome case StoreReadAnswered(:final point)) {
+      points.add(point.snapshot);
+    }
+  }
+
+  @override
+  void liveClosed(String strategyId, ReadOf subject) {}
+}
+
+List<DebugLogEntry> liveResultReports() => [
+      for (final entry in appProviderContainer.read(inAppDebugProvider))
+        if (entry.source == 'editor_subscriptions:live_results') entry,
+    ];
+
 void main() {
+  setUpAll(() => appProviderContainer = ProviderContainer());
+  setUp(
+      () => appProviderContainer.read(inAppDebugProvider.notifier).clearLogs());
+
   group('with the store switch on, the editor\'s page watch', () {
     test(
         'an edit sent and answered, then seen through the live watch, is '
@@ -1015,6 +1052,20 @@ void main() {
         unawaited(watch.cancel());
       }
       world.settle();
+      expect(liveResultReports(), hasLength(10));
+      expect(
+        liveResultReports().map((entry) => entry.errorText).toSet(),
+        {
+          'Bad state: the store broke on open',
+          'Bad state: the store broke',
+          'Bad state: the store broke on close',
+        },
+      );
+      expect(
+        liveResultReports()
+            .every((entry) => entry.level == DebugLogLevel.error),
+        isTrue,
+      );
     });
   });
 
@@ -1216,6 +1267,71 @@ void main() {
         world.settle();
         expect(world.reconnects, 2);
       }, addStrategy: false);
+    });
+  });
+
+  test(
+      'the editor\'s listener has each answer before the store is told, and '
+      'the store gets the answers in the order they came', () {
+    inWorld((world) {
+      final live = LivePageServer(world);
+      final order = <String>[];
+      final store = _RecordingStore(order);
+      final subscriptions = StampedSubscriptions(
+        ConvexStrategyRepository.stamped(live),
+        accountSubject: () => servedAccount.subject,
+        live: store,
+        canRead: appCanRead,
+      );
+      final seen = <int>[];
+      final watch = subscriptions
+          .page(strategyPublicId: strategyId, pagePublicId: pageId)
+          .listen((_) => order.add('editor'));
+      world.settle();
+      for (var n = 1; n <= 3; n++) {
+        world.teammateMoves(n);
+        live.publish(pageId);
+      }
+      world.settle();
+      expect(order, [
+        for (var n = 0; n < 4; n++) ...['editor', 'store'],
+      ]);
+      seen.addAll(store.points);
+      expect(seen, [...seen]..sort());
+      expect(seen.toSet(), hasLength(4));
+      unawaited(watch.cancel());
+      world.settle();
+    });
+  });
+
+  test(
+      'a paused editor watch gets every answer when it resumes, and the store '
+      'gets them all', () {
+    inWorld((world) {
+      final live = LivePageServer(world);
+      final store = _RecordingStore(<String>[]);
+      final subscriptions = StampedSubscriptions(
+        ConvexStrategyRepository.stamped(live),
+        accountSubject: () => servedAccount.subject,
+        live: store,
+        canRead: appCanRead,
+      );
+      final pages = <Object>[];
+      final watch = subscriptions
+          .page(strategyPublicId: strategyId, pagePublicId: pageId)
+          .listen(pages.add);
+      world.settle();
+      watch.pause();
+      world.teammateMoves(1);
+      live.publish(pageId);
+      world.settle();
+      expect(pages, hasLength(1));
+      watch.resume();
+      world.settle();
+      expect(pages, hasLength(2));
+      expect(store.points, hasLength(2));
+      unawaited(watch.cancel());
+      world.settle();
     });
   });
 }

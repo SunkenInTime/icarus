@@ -226,6 +226,7 @@ final class StampedSubscriptions extends EditorSubscriptions {
     StreamSubscription<Stamped<T>>? inner;
     late final StreamController<Stamped<T>> told;
     told = StreamController<Stamped<T>>(
+      sync: true,
       onListen: () {
         tellStore(() => live.liveOpened(strategyPublicId, subject));
         inner = watched.listen(
