@@ -203,8 +203,12 @@ final class FakeServer {
 
   ResultPoint failed() => varies == null ? stamp() : stamps.answered;
 
-  Future<({int client, int connection})> generation() async =>
-      (client: client, connection: connection);
+  Future<({int client, int connection})> Function()? lookup;
+
+  Future<({int client, int connection})> generation() async {
+    if (lookup case final looking?) return looking();
+    return (client: client, connection: connection);
+  }
 
   int get applied => appliedTimes.length;
 
@@ -307,6 +311,12 @@ final class FakeServer {
   var skew = 0;
 
   StoreBatchOutcome applyAll(ServerCall call) {
+    if (!rows.containsKey(call.strategyId)) {
+      return StoreBatchRefusedWhole(
+        BatchRefusal.strategyDeleted,
+        point: failed(),
+      );
+    }
     if (rows[call.strategyId] case final held?
         when call.strategyLife != null &&
             (createdAtOf(held.strategy) ?? firstLife) != call.strategyLife) {
@@ -650,6 +660,7 @@ final class SlowSenderStore extends SenderStore {
   void Function()? duringSessionWrite;
   var readsThrow = false;
   var claimWaits = Duration.zero;
+  Future<void> Function()? afterClaim;
   var refusesRefusedResult = 0;
   var refusesBaseWrites = 0;
   var rejectsBasesOutOfPlace = 0;
@@ -667,7 +678,7 @@ final class SlowSenderStore extends SenderStore {
     final wait = claimWaits;
     claimWaits = Duration.zero;
     if (wait > Duration.zero) await Future<void>.delayed(wait);
-    return super.claim(
+    final claimed = await super.claim(
       owner,
       strategyId,
       picked,
@@ -675,6 +686,10 @@ final class SlowSenderStore extends SenderStore {
       elapsed: elapsed,
       session: session,
     );
+    final after = afterClaim;
+    afterClaim = null;
+    await after?.call();
+    return claimed;
   }
 
   @override
@@ -690,6 +705,7 @@ final class SlowSenderStore extends SenderStore {
     List<QueueEvent> events, {
     ClaimedBatch? batch,
     bool readSession = false,
+    Generation? onConnection,
   }) async {
     if (throwsOnBase && events.any((event) => event is BaseArrived)) {
       throwsOnBase = false;
@@ -726,6 +742,7 @@ final class SlowSenderStore extends SenderStore {
       events,
       batch: batch,
       readSession: readSession,
+      onConnection: onConnection,
     );
     if (readSession && dropSessionReadBack > 0 && written is WrittenWith) {
       dropSessionReadBack--;

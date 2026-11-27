@@ -319,10 +319,15 @@ base class SenderStore {
   Future<Written> write(
     Account owner,
     String strategyId,
-    List<QueueEvent> events, {
+    List<QueueEvent> given, {
     ClaimedBatch? batch,
     bool readSession = false,
+    Generation? onConnection,
   }) async {
+    final events = [
+      if (onConnection != null) ConnectionReturned(onConnection),
+      ...given,
+    ];
     final RecordResult result;
     try {
       result = await store.record(owner, strategyId, events);
@@ -333,10 +338,13 @@ base class SenderStore {
       case Saved(:final value):
         final effects = <QueueEffect>[];
         final notApplied = <String>[];
-        for (final outcome in value.outcomes) {
+        for (final (at, outcome) in value.outcomes.indexed) {
           switch (outcome) {
             case ReportApplied(effects: final applied):
               effects.addAll(applied);
+            case ReportNotApplicable(effects: final opened)
+                when onConnection != null && at == 0:
+              effects.addAll(opened);
             case ReportNotApplicable(:final why, effects: final opened):
               effects.addAll(opened);
               notApplied.add('$why');

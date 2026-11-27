@@ -22,6 +22,7 @@ final class SenderTiming {
     this.readAgainAfter = const Duration(minutes: 10),
     this.quietBeforeRetiring = const Duration(seconds: 30),
     this.retireAgainAfter = const Duration(minutes: 5),
+    this.lookupGiveUpAfter = const Duration(seconds: 10),
   });
 
   final Duration wait;
@@ -33,6 +34,7 @@ final class SenderTiming {
   final Duration readAgainAfter;
   final Duration quietBeforeRetiring;
   final Duration retireAgainAfter;
+  final Duration lookupGiveUpAfter;
 
   RetiringTiming get retiring => (
         quiet: quietBeforeRetiring,
@@ -251,6 +253,9 @@ final class CloudSender {
 
   final Future<({int client, int connection})> Function() _generation;
 
+  Future<({int client, int connection})> _lookUpGeneration() =>
+      _generation().timeout(_timing.lookupGiveUpAfter);
+
   final SenderStore _store;
   final CallGovernor _governor;
   final SenderTiming _timing;
@@ -273,7 +278,8 @@ final class CloudSender {
   String? ended;
   var disposed = false;
   final bound = <String, Bound>{};
-  final _unanswered = <String, int?>{};
+  final _unanswered = <String>{};
+  Generation? _unansweredOn;
   final restarted = <String>{};
   final notBefore = <String, DateTime>{};
   final _failures = <String, int>{};
@@ -344,6 +350,9 @@ final class CloudSender {
   }
 
   StallExit? waitingOn(String strategyId) => switch (runHold) {
+        _ when held != null => StallExit.heldByHand,
+        _ when _inputs.account == null => StallExit.signedOut,
+        _ when _inputs.connection == null => StallExit.offline,
         UpgradeHold() => StallExit.upgrade,
         SignInHold() => StallExit.signIn,
         null => _waits[strategyId],
@@ -698,6 +707,10 @@ final class CloudSender {
           :final role
         ):
         if (role == null || !role.edits) {
+          if (await _endedTakeUp(id, account, read, snap, point)
+              case final step?) {
+            return step;
+          }
           _wanted.remove(id);
           _note(id, 'not adopted: this account can only view it');
           return const _Skipped(StallExit.viewerOnTakeUp);
@@ -735,13 +748,39 @@ final class CloudSender {
             _note(id, 'adopted from the page list');
             return const _Acted();
         }
-      case StoreReadAnswered():
+      case StoreReadAnswered(:final point):
+        if (await _endedTakeUp(id, account, read, snap, point)
+            case final step?) {
+          return step;
+        }
         _wanted.remove(id);
         _note(id, 'not adopted: the server no longer has it');
         return const _Skipped(StallExit.goneOnTakeUp);
       case final other:
         return _readRefused(id, account, read, other, snap);
     }
+  }
+
+  Future<_Step?> _endedTakeUp(
+    String id,
+    Account account,
+    ReadOf read,
+    Snapshot snap,
+    ResultPoint point,
+  ) async {
+    if (await _onCurrentConnection(point)) {
+      return disposed ? const _Ended() : null;
+    }
+    if (disposed) return const _Ended();
+    return _unsettled(
+      id,
+      account,
+      read,
+      snap,
+      'the read to adopt it came back on a connection that has ended, so it '
+      'is read again',
+      row: StallExit.lostRead,
+    );
   }
 
   Future<_Step> _step(
@@ -1079,11 +1118,14 @@ final class CloudSender {
             when at.isAfter(_clock())) {
           return _Skipped(row ?? why.row, at);
         }
-        final key = '$id $read';
-        requestedAt =
-            _unanswered.containsKey(key) && _unanswered[key] == snap.connection
-                ? null
-                : cloud.queue.session.sequence;
+        if (_unanswered.isNotEmpty) {
+          final on = await _currentGeneration();
+          if (disposed) return const _Ended();
+          _unansweredMovesTo(on);
+        }
+        requestedAt = _unanswered.contains('$id $read')
+            ? null
+            : cloud.queue.session.sequence;
         switch (await _issue(id, owner, read, snap, why)) {
           case NotYet(:final at, why: final row):
             return _Skipped(row ?? why.row, at);
@@ -1094,7 +1136,10 @@ final class CloudSender {
     }
     if (disposed) return const _Ended();
     if (outcome case StoreReadLost(failure: TransportFailure.timeout)) {
-      _unanswered['$id $read'] = snap.connection;
+      final on = await _currentGeneration();
+      if (disposed) return const _Ended();
+      _unansweredMovesTo(on);
+      _unanswered.add('$id $read');
     }
     if (_inputs != snap) {
       _note(
@@ -1111,7 +1156,16 @@ final class CloudSender {
           point: point,
           requestedAt: requestedAt,
         );
-        final written = await _store.write(owner, id, [
+        final now = await _currentGeneration();
+        if (disposed) return const _Ended();
+        if (now == null) {
+          _note(
+              id,
+              'read $read came back while the client could not say which '
+              'connection it is on, so it is read again');
+          return const _Restart();
+        }
+        final written = await _store.write(owner, id, onConnection: now, [
           BaseArrived(
             base,
             session: session,
@@ -1220,11 +1274,7 @@ final class CloudSender {
     switch (why) {
       case _Why.access when !(role?.edits ?? false):
         _governor.climbAccess(id, snap, null);
-      case _Why.access ||
-            _Why.need ||
-            _Why.clock ||
-            _Why.adopt ||
-            _Why.retire:
+      case _Why.access || _Why.need || _Why.clock || _Why.adopt || _Why.retire:
         _governor.accessConfirmed(id);
     }
     final memory = _boundMemory(id, snap);
@@ -1379,10 +1429,6 @@ final class CloudSender {
           :final why,
           :final point,
         ):
-        final row = switch (refusal) {
-          StoreReadRefusal.upgradeRequired => StallExit.upgrade,
-          _ => StallExit.signIn,
-        };
         final session = request?.session;
         if (session == null) {
           if (await _onCurrentConnection(point)) {
@@ -1406,7 +1452,7 @@ final class CloudSender {
             snap,
             'the read to adopt it was refused ($why) on a connection that has '
             'ended, so it is read again',
-            row: row,
+            row: StallExit.lostRead,
             planned: planned,
           );
         }
@@ -1464,7 +1510,25 @@ final class CloudSender {
               planned: planned,
             );
         }
-      case StoreReadRefused(refusal: StoreReadRefusal.forbidden, :final why):
+      case StoreReadRefused(
+          refusal: StoreReadRefusal.forbidden,
+          :final why,
+          :final point,
+        ):
+        if (!await _onCurrentConnection(point)) {
+          if (disposed) return const _Ended();
+          return _unsettled(
+            id,
+            owner,
+            read,
+            snap,
+            'the read was refused ($why) on a connection that has ended, so '
+            'it is read again',
+            row: StallExit.lostRead,
+            planned: planned,
+          );
+        }
+        if (disposed) return const _Ended();
         final cannot = CannotRead(why);
         _governor.climbAccess(id, snap, cannot);
         final at = _readAgainAt(id, read, snap);
@@ -1549,7 +1613,7 @@ final class CloudSender {
         return _troubled(id, trouble);
     }
     if (disposed) return const _Ended();
-    if (_whyNotSend(snap) case final why?) {
+    if (_whyNotSend(id, snap) case final why?) {
       final written = await _store.write(
         owner,
         id,
@@ -1683,11 +1747,27 @@ final class CloudSender {
 
   Future<bool> _onCurrentConnection(ResultPoint point) async {
     try {
-      final now = await _generation();
+      final now = await _lookUpGeneration();
       return point.client == now.client && point.connection == now.connection;
     } catch (_) {
       return false;
     }
+  }
+
+  Future<Generation?> _currentGeneration() async {
+    if (_inputs.connection == null) return null;
+    try {
+      final now = await _lookUpGeneration();
+      return Generation(client: now.client, connection: now.connection);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _unansweredMovesTo(Generation? on) {
+    if (on == null) return;
+    if (_unansweredOn case final held? when held != on) _unanswered.clear();
+    _unansweredOn = on;
   }
 
   Future<List<QueueEvent>?> _onTheCurrentConnection(
@@ -1695,7 +1775,7 @@ final class CloudSender {
   ) async {
     if (_inputs.connection == null) return null;
     try {
-      final now = await _generation();
+      final now = await _lookUpGeneration();
       return [
         ConnectionReturned(
           Generation(client: now.client, connection: now.connection),
@@ -1729,7 +1809,7 @@ final class CloudSender {
     }
     final ({int client, int connection}) on;
     try {
-      on = await _generation();
+      on = await _lookUpGeneration();
     } catch (error) {
       return _Troubled(
         NotWrittenNow('the client did not say which connection it is on: '
@@ -1786,10 +1866,14 @@ final class CloudSender {
     return quiet.isBefore(longest) ? quiet : longest;
   }
 
-  String? _whyNotSend(Snapshot snap) {
+  String? _whyNotSend(String id, Snapshot snap) {
     final now = _inputs;
     if (held case final reason?) return 'sending is held: $reason';
     if (_store.shut case final shut?) return shut.why;
+    if (_store.store.refusedStrategies[id] case final refusal?) {
+      _store.refused(id, refusal);
+      return 'the store refused the strategy: $refusal';
+    }
     if (upgradeAsked) return 'the server asks for a newer build';
     if (signInWaitFrom == now.signIns) return 'waiting for the sign-in';
     if (now != snap) {

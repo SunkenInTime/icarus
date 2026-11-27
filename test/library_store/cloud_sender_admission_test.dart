@@ -3,6 +3,7 @@ import 'package:icarus/collab/store_batch.dart';
 import 'package:icarus/collab/store_reads.dart';
 import 'package:icarus/library_store/call_governor.dart';
 import 'package:icarus/library_store/cloud_sender.dart';
+import 'package:icarus/library_store/stall_exits.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus_library/icarus_library.dart';
 
@@ -165,6 +166,28 @@ void main() {
         ),
       );
       expect(world.queueLength(), 0);
+    });
+  });
+
+  test(
+      'a page list read answered strategy-gone on connection 1, delivered '
+      'after the client moved to connection 2 and before any stamp of '
+      'connection 2 reached the queue, does not mark the strategy deleted: '
+      'the queue is told the current connection first', () {
+    inWorld((world) {
+      world.settle();
+      world.server.answerReadNext(strategyId, (call) {
+        final stale = onConnection(world, 1);
+        world.server.connection = 2;
+        return Future.value(
+          StoreReadAnswered(const StrategyGone(), point: stale),
+        );
+      });
+      world.sender.owesFreshRead(strategyId, const ReadOfList());
+      world.settle(const Duration(seconds: 1));
+      expect(world.connection, 1);
+      expect(standingOf(world.cloud().queue), isNot(Standing.deletedOnServer));
+      expect(world.cloud().queue.session.generation?.connection, 2);
     });
   });
 
@@ -384,6 +407,87 @@ void main() {
       },
       addStrategy: false,
     );
+  });
+
+  test(
+      'a read to adopt a strategy refused for the sign-in on a connection '
+      'that has ended waits as a lost read, which is read again on its '
+      'ladder', () {
+    inWorld(
+      (world) {
+        world.server.answerReadNext(strategyId, (call) async {
+          world.server.connection = 2;
+          return StoreReadRefused(
+            StoreReadRefusal.unauthenticated,
+            'refused',
+            point: onConnection(world, 1),
+          );
+        });
+        world.sender.adopt(strategyId);
+        world.settle(const Duration(milliseconds: 500));
+        expect(world.sender.signInWaitFrom, isNull);
+        expect(world.sender.waitingOn(strategyId), StallExit.lostRead);
+      },
+      addStrategy: false,
+    );
+  });
+
+  test(
+      'a no-access refusal stamped on a connection that has ended climbs no '
+      'access rung, and the page list is read again on the lost-read ladder',
+      () {
+    inWorld((world) {
+      world.server.answerWith(
+        strategyId,
+        const StoreBatchRefusedWhole(BatchRefusal.editAccessRemoved,
+            point: stampedWhenAnswered),
+      );
+      world.server.answerReadNext(strategyId, (call) async {
+        world.server.connection = 2;
+        return StoreReadRefused(
+          StoreReadRefusal.forbidden,
+          'forbidden',
+          point: onConnection(world, 1),
+        );
+      });
+      world.commitMove(1);
+      world.settle(const Duration(seconds: 1));
+      final lists = world.server.readCalls.where((call) => call.page == null);
+      final refused = lists.length;
+      expect(world.sender.accessRung(strategyId), isNull);
+      world.settle(const Duration(seconds: 10));
+      expect(lists.length, greaterThan(refused));
+    });
+  });
+
+  test(
+      'a read to take up a strategy that says viewer or gone, stamped on a '
+      'connection that has ended, is read again and the strategy is taken up',
+      () {
+    for (final ended in <StoreReadOutcome Function(World)>[
+      (world) => StoreReadAnswered(
+            world.server.headerOf(strategyId),
+            role: StoreReadRole.viewer,
+            point: onConnection(world, 1),
+          ),
+      (world) => StoreReadAnswered(
+            const StrategyGone(),
+            point: onConnection(world, 1),
+          ),
+    ]) {
+      inWorld(
+        (world) {
+          world.server.answerReadNext(strategyId, (call) async {
+            world.server.connection = 2;
+            return ended(world);
+          });
+          world.sender.adopt(strategyId);
+          world.settle(const Duration(minutes: 1));
+          expect(world.holds(strategyId), isTrue);
+        },
+        addStrategy: false,
+      );
+    }
   });
 
   test(

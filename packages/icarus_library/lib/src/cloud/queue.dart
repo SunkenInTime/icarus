@@ -1519,6 +1519,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         }
       }
       edit.openSession(connected: false, build: build);
+      edit.shown = edit.shown.withoutMarks();
       return edit.done();
     case ConnectionLost():
       edit.session = edit.session.withConnection(connected: false, basis: null);
@@ -1826,8 +1827,11 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   if (shown.owedBy(base) case final owed? when !owed.paidBy(arrival, base)) {
     return ResultFit.older;
   }
-  if (taken == arrival.order) return ResultFit.same;
-  if (_pageFitAgainstList(shown, base, arrival) case final fit?) return fit;
+  final againstList = _pageFitAgainstList(shown, base, arrival);
+  if (taken == arrival.order) {
+    return againstList == ResultFit.older ? ResultFit.older : ResultFit.same;
+  }
+  if (againstList case final fit?) return fit;
   return switch (base) {
     HeaderRead(:final strategy) => switch ((held, createdAtOf(strategy))) {
       (_, final listed?) when listed == _refusedLife(shown.list) =>
@@ -1893,7 +1897,8 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
       return NotApplicable(edit.original, const OlderResult());
     case ResultFit.same:
       final again = edit.shown.taken(base, arrival: arrival).shown;
-      if (!again.sameContentAs(edit.shown)) {
+      if (!again.sameContentAs(edit.shown) ||
+          (base is StrategyGone && edit.strategy.presence != Presence.gone)) {
         edit.effects.add(ReportSameOrderDiffers(_subjectOf(base)));
         return edit.done();
       }
@@ -1909,9 +1914,7 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
       edit.effects.add(ReportSameOrderDiffers(_subjectOf(base)));
       return edit.done();
     case ResultFit.listFirst:
-      if (!isDebt(edit.shown.list)) {
-        edit.shown = edit.shown.owingList(ResultAtOrAfter(arrival.order));
-      }
+      edit.shown = edit.shown.owingListAlso(ResultAtOrAfter(arrival.order));
       if (base case PageRead(:final page)) {
         edit.effects.add(PageResultDeferred(page.publicId));
       }
@@ -2005,10 +2008,16 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
     case HeaderRead():
       edit.change.everything = true;
     case PageRead(:final page, :final elements, :final lineupGroups):
-      edit.change.pages.add(page.publicId);
-      edit.change.targets.addAll([
-        for (final row in elements) ElementTarget(row.publicId),
+      final carried = [
+        for (final row in elements) ElementTarget(row.publicId) as Target,
         for (final row in lineupGroups) LineupTarget(row.publicId),
+      ];
+      edit.change.pages.addAll({
+        page.publicId,
+        for (final target in carried) ?before.rows[target]?.page,
+      });
+      edit.change.targets.addAll([
+        ...carried,
         ..._shownOn(before, page.publicId),
       ]);
     case PageGone(:final pagePublicId):

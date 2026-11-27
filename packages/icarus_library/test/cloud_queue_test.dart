@@ -1811,6 +1811,41 @@ void main() {
       },
     );
 
+    test('a page delete is derived again when a read of another page shows a '
+        'row that left its page, so its view matches one derived afresh', () {
+      final server = Server();
+      final client = online();
+      client.edit(pageDelete('del', 'page-a'));
+      final before = client.view('del');
+      expect(before.sendable, isTrue);
+      final row = server.rows.element('e1')! as LiveElement;
+      server.rows = withOp(
+        server.rows,
+        ElementPatchOp(
+          opId: 'away',
+          elementPublicId: 'e1',
+          expectedElementRevision: revisionOfRowForTest(row)!,
+          pagePublicId: 'page-b',
+          payload: row.payload,
+          sortIndex: 1,
+        ),
+      );
+      client.arrive(pageReadOf(server.rows, 'page-b'));
+      final queue = client.queue;
+      final afresh = CloudQueue(
+        entries: queue.entries,
+        attempts: queue.attempts,
+        landed: queue.landed,
+        nextAttempt: queue.nextAttempt,
+        nextSession: queue.nextSession,
+        shown: queue.shown,
+        strategy: queue.strategy,
+        session: queue.session,
+      );
+      expect(entryViews(afresh, now)['del']!.sendable, isFalse);
+      expect(entryViews(queue, now), entryViews(afresh, now));
+    });
+
     test('a whole write waiting on a row that a result of its page no longer '
         'holds needs the user', () {
       final server = Server()

@@ -137,7 +137,11 @@ void main() {
       expect(client.queue.session.number, greaterThan(before));
       expect(
         client.queue.shown.pagesTaken['page-a'],
-        client.queue.session.orderOf(pointAt(30, later: 1)),
+        ResultOrder(
+          session: 3,
+          client: testClient,
+          snapshot: pointAt(30, later: 1).snapshot,
+        ),
       );
     });
 
@@ -278,6 +282,102 @@ void main() {
     });
   });
 
+  test('a newer list that removes the page still keeps the page\'s taken '
+      'order', () {
+    final client = connectedOn();
+    client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(10)));
+    client.must(arrivalAt(client, pageA(), pointAt(20)));
+    client.must(
+      arrivalAt(client, listWithout(initialRows(), 'page-a'), pointAt(30)),
+    );
+    expect(client.queue.shown.pages, isNot(contains('page-a')));
+    expect(
+      client.queue.shown.pagesTaken['page-a'],
+      ResultOrder(
+        session: 2,
+        client: testClient,
+        snapshot: pointAt(20).snapshot,
+      ),
+    );
+  });
+
+  group('a page read the list has not shown yet', () {
+    test('a page read deferred to a refused page list keeps the list '
+        'refused, with the read\'s order added to what it owes', () {
+      final client = connectedOn();
+      final rows = initialRows();
+      client.must(
+        arrivalAt(
+          client,
+          HeaderRead(
+            strategy: rows.strategy,
+            pages: const [],
+            settings: const [],
+          ),
+          pointAt(10),
+        ),
+      );
+      client.must(refusalAt(client, null, pointAt(15)));
+      client.must(arrivalAt(client, pageA(), pointAt(20)));
+      final list = client.queue.shown.list;
+      expect(list, isA<ReadRefused>());
+      expect(
+        (list as ReadRefused).since.paidBy(
+          Arrival(
+            order: client.queue.session.orderOf(pointAt(19)),
+            point: pointAt(19),
+          ),
+          null,
+        ),
+        isFalse,
+      );
+    });
+
+    test('owes a list at its own order, so a list between two deferred page '
+        'reads, missing the later page, is not current', () {
+      final client = connectedOn();
+      final rows = initialRows();
+      client.must(
+        arrivalAt(
+          client,
+          HeaderRead(
+            strategy: rows.strategy,
+            pages: const [],
+            settings: const [],
+          ),
+          pointAt(10),
+        ),
+      );
+      client.must(arrivalAt(client, pageA(), pointAt(20)));
+      client.must(arrivalAt(client, pageReadOf(rows, 'page-b'), pointAt(40)));
+      expect(
+        client.queue.shown.list,
+        isA<ReadOwed>().having(
+          (state) => state.since,
+          'since',
+          ResultAtOrAfter(
+            ResultOrder(
+              session: 2,
+              client: testClient,
+              snapshot: pointAt(40).snapshot,
+            ),
+          ),
+        ),
+      );
+      expect(
+        notApplicable(
+          client.step(
+            arrivalAt(client, listWithout(rows, 'page-b'), pointAt(30)),
+          ),
+        ),
+        isA<OlderResult>(),
+      );
+      expect(client.queue.shown.listCurrent, isFalse);
+      client.must(arrivalAt(client, headerReadOf(rows), pointAt(41)));
+      expect(client.queue.shown.list, const ReadThisSession());
+    });
+  });
+
   group('equal order is the same answer', () {
     test('a repeat of the same stamped payload takes nothing and decides no '
         'row, for a page and for the list', () {
@@ -385,6 +485,35 @@ void main() {
       }
     });
 
+    test('a strategy-gone at the order of a live list taken is reported and '
+        'changes nothing', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(22)));
+      final before = client.queue;
+      client.effects.clear();
+      client.must(arrivalAt(client, const StrategyGone(), pointAt(22)));
+      expect(client.effects, contains(const ReportSameOrderDiffers(null)));
+      expect(client.queue.strategy, before.strategy);
+      expect(client.queue.shown, before.shown);
+    });
+
+    test('a page-gone repeated at its own order after a newer list restored '
+        'the page is an older result', () {
+      final client = connectedOn();
+      client.must(arrivalAt(client, const PageGone('page-a'), pointAt(10)));
+      client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(20)));
+      expect(client.queue.shown.pages, contains('page-a'));
+      client.effects.clear();
+      expect(
+        notApplicable(
+          client.step(arrivalAt(client, const PageGone('page-a'), pointAt(10))),
+        ),
+        isA<OlderResult>(),
+      );
+      expect(client.effects, isEmpty);
+      expect(client.queue.shown.pages, contains('page-a'));
+    });
+
     test('a causal repeat at the taken order pays the refusal debt it would '
         'have paid', () {
       final client = connectedOn();
@@ -464,7 +593,11 @@ void main() {
       expect(client.queue.shown.pagesTaken['page-a'], content);
       expect(
         client.queue.shown.pagesRefusedAt['page-a'],
-        client.queue.session.orderOf(pointAt(22)),
+        ResultOrder(
+          session: 2,
+          client: testClient,
+          snapshot: pointAt(22).snapshot,
+        ),
       );
       expect(
         notApplicable(client.step(refusalAt(client, 'page-a', pointAt(15)))),
@@ -564,7 +697,13 @@ void main() {
       client.must(refusalAt(client, 'page-a', pointAt(12)));
       expect(
         (client.queue.shown.pageRead('page-a') as ReadRefused).since,
-        ResultAtOrAfter(client.queue.session.orderOf(pointAt(12))),
+        ResultAtOrAfter(
+          ResultOrder(
+            session: 2,
+            client: testClient,
+            snapshot: pointAt(12).snapshot,
+          ),
+        ),
       );
     });
   });

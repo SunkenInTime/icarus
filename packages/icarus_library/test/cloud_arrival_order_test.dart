@@ -128,7 +128,7 @@ final class AnswerFact extends Fact {
 final class Scenario {
   Scenario(this.seed) : random = Random(seed) {
     final client = Client();
-    work = switch (seed % families) {
+    work = switch (familyOf(seed)) {
       6 || 8 => () {
         final op = movePatch('own', elementId: 'e1', x: 77);
         client.edit(op);
@@ -226,6 +226,27 @@ final class Scenario {
 
   void deletePage(String page) => write(withoutPage(now.rows, page));
 
+  void teammateMovesItem(String from, String to) {
+    final live = [
+      for (final row in now.rows.elementsOn(from))
+        if (row is LiveElement) row,
+    ];
+    if (live.isEmpty) return teammateWrites(to);
+    final target = live[random.nextInt(live.length)];
+    write(
+      withOp(
+        now.rows,
+        movePatch(
+          't${states.length}',
+          elementId: target.publicId,
+          expected: target.revision,
+          pageId: to,
+          x: 1.0 + random.nextInt(500),
+        ),
+      ),
+    );
+  }
+
   void restorePage(StrategyRowSet before) => write(before);
 
   void deleteStrategy() => write(now.rows, exists: false);
@@ -274,7 +295,7 @@ final class Scenario {
 
   void buildOwn() {
     final page = work!.page;
-    switch (seed % families) {
+    switch (familyOf(seed)) {
       case 6:
         read(page);
         ownLands();
@@ -304,7 +325,7 @@ final class Scenario {
   void build() {
     if (work != null) return buildOwn();
     final page = pickPage();
-    switch (seed % families) {
+    switch (familyOf(seed)) {
       case 0:
         teammateWrites(page);
         read(page);
@@ -349,6 +370,16 @@ final class Scenario {
         deleteStrategy();
         read(null);
         read(page);
+      case 9:
+        final other = livePages.firstWhere((other) => other != page);
+        read(page);
+        read(other);
+        teammateMovesItem(page, other);
+        read(other);
+        if (random.nextBool()) read(page);
+        if (random.nextBool()) teammateMovesItem(other, page);
+        read(page);
+        if (random.nextBool()) read(other);
       case 5:
         if (random.nextBool()) teammateWrites(page);
         read(null);
@@ -365,14 +396,20 @@ final class Scenario {
   }
 }
 
-const families = 9;
+const families = 10;
+
+const seedsPerFamily = 80;
+
+int familyOf(int seed) => seed > seedsPerFamily * (families - 1)
+    ? families - 1
+    : seed % (families - 1);
 
 final class Mark {
   const Mark(this.tick, this.time, this.wrote);
 
   final int tick;
   final int? time;
-  final (String, int)? wrote;
+  final Map<String, int>? wrote;
 
   bool reachedBy(ReadFact? read) =>
       read != null &&
@@ -392,10 +429,11 @@ final class Mark {
         (final a, final b) => a ?? b,
       },
       switch ((wrote, other.wrote)) {
-        ((final a, final mine)?, (final b, final theirs)?) when a == b => (
-          a,
-          max(mine, theirs),
-        ),
+        (final mine?, final theirs?) => {
+          ...mine,
+          for (final MapEntry(:key, :value) in theirs.entries)
+            key: max(value, mine[key] ?? value),
+        },
         _ => null,
       },
     ),
@@ -414,6 +452,7 @@ final class Reference {
 
   Set<String> listed;
   final Map<String, Items> content;
+  final removedAt = <String, (int, int?)>{};
   bool gone = false;
   int? listTakenAt = 0;
   final Map<String, int> pageTakenAt;
@@ -438,34 +477,38 @@ final class Reference {
       if (value.containsKey(id)) key,
   ].firstOrNull;
 
-  bool listHolds((String, int)? wrote) => switch (wrote) {
-    (strategyRow, final revision) => (heldStrategy ?? -1) >= revision,
-    _ => false,
-  };
+  bool allHeld(Map<String, int>? wrote, bool Function(String, int) holds) =>
+      wrote?.entries.every((entry) => holds(entry.key, entry.value)) ?? false;
+
+  bool listHolds(Map<String, int>? wrote) => allHeld(
+    wrote,
+    (id, revision) => id == strategyRow && (heldStrategy ?? -1) >= revision,
+  );
 
   bool listReaches(Mark? mark) =>
       mark == null || mark.reachedBy(listRead) || listHolds(mark.wrote);
 
-  bool pageHolds(String page, (String, int)? wrote) => switch (wrote) {
-    (final id, final revision) when id != strategyRow =>
-      (content[page]?[id] ?? -1) >= revision,
-    _ => false,
-  };
+  bool pageHolds(String page, Map<String, int>? wrote) => allHeld(
+    wrote,
+    (id, revision) =>
+        id != strategyRow && (content[page]?[id] ?? -1) >= revision,
+  );
 
   bool pageReaches(String page, Mark? mark) =>
       mark == null ||
       mark.reachedBy(pageSeen[page]) ||
       pageHolds(page, mark.wrote);
 
-  bool rowHolds((String, int)? wrote) => switch (wrote) {
-    (final id, final revision) when id != strategyRow =>
-      switch (rowPage(id)) {
-            final page? => (content[page]![id] ?? -1) >= revision,
-            null => false,
-          } ||
-          (highest[id] ?? -1) >= revision,
-    _ => false,
-  };
+  bool rowHolds(Map<String, int>? wrote) => allHeld(
+    wrote,
+    (id, revision) =>
+        id != strategyRow &&
+        (switch (rowPage(id)) {
+              final page? => (content[page]![id] ?? -1) >= revision,
+              null => false,
+            } ||
+            (highest[id] ?? -1) >= revision),
+  );
 
   bool rowSettled(String id, Mark mark) =>
       rowHolds(mark.wrote) ||
@@ -494,10 +537,9 @@ final class Reference {
   void _answer(AnswerFact fact) {
     if (!admits(fact.point.generation)) return;
     final work = fact.work;
-    final mark = Mark(fact.tick, fact.point.serverTime, (
-      work.wrote,
-      fact.revision,
-    ));
+    final mark = Mark(fact.tick, fact.point.serverTime, {
+      work.wrote: fact.revision,
+    });
     final pages = {
       work.page,
       if (work.wrote != strategyRow) ?rowPage(work.wrote),
@@ -569,6 +611,7 @@ final class Reference {
     goneByResult.clear();
     listRead = null;
     pageSeen.clear();
+    removedAt.clear();
   }
 
   bool admits(Generation generation) {
@@ -625,7 +668,7 @@ final class Reference {
       if (agrees || own == null || own < read.tick) {
         if (!claimed.contains(page)) {
           listed = {...listed}..remove(page);
-          content.remove(page);
+          _removeContent(page, read.tick);
         } else {
           listed = {...listed, page};
         }
@@ -656,7 +699,7 @@ final class Reference {
       return;
     }
     pageTakenAt[page] = read.tick;
-    content[page] = itemsOf(read.state.rows, page);
+    _takeContent(page, itemsOf(read.state.rows, page), read.tick);
     pagesFreshSinceSession.add(page);
     goneByResult.remove(page);
     _pageSettles(read, page);
@@ -668,10 +711,44 @@ final class Reference {
     if (listTakenAt == read.tick && listed.contains(page)) return;
     pageTakenAt[page] = read.tick;
     listed = {...listed}..remove(page);
-    content.remove(page);
+    _removeContent(page, read.tick);
     pagesFreshSinceSession.add(page);
     goneByResult.add(page);
     _pageSettles(read, page);
+  }
+
+  void _removeContent(String page, int tick) {
+    for (final MapEntry(:key, :value) in (content.remove(page) ?? {}).entries) {
+      removedAt[key] = (tick, value);
+    }
+  }
+
+  void _takeContent(String page, Items read, int tick) {
+    final held = content[page] ?? const <String, int?>{};
+    final next = <String, int?>{};
+    for (final MapEntry(key: id, value: revision) in read.entries) {
+      if (removedAt[id] case (
+        final at,
+        final last,
+      ) when tick < at && (revision ?? -1) <= (last ?? -1)) {
+        continue;
+      }
+      final elsewhere = rowPage(id);
+      if (elsewhere != null &&
+          elsewhere != page &&
+          (content[elsewhere]![id] ?? -1) > (revision ?? -1)) {
+        continue;
+      }
+      if (elsewhere != null && elsewhere != page) {
+        content[elsewhere] = {...content[elsewhere]!}..remove(id);
+      }
+      next[id] = revision;
+      removedAt.remove(id);
+    }
+    for (final MapEntry(:key, :value) in held.entries) {
+      if (!read.containsKey(key)) removedAt[key] = (tick, value);
+    }
+    content[page] = next;
   }
 
   bool pageCurrent(String page) =>
@@ -813,6 +890,17 @@ void countCases(List<Fact> order) {
   if (reads.any((read) => read.base is PageGone)) {
     count('orders with a page gone');
   }
+  final itemPages = <String, Set<String>>{};
+  for (final read in reads) {
+    if (read.base case PageRead(:final page, :final elements)) {
+      for (final row in elements) {
+        (itemPages[row.publicId] ??= {}).add(page.publicId);
+      }
+    }
+  }
+  if (itemPages.values.any((pages) => pages.length > 1)) {
+    count('orders with an item read on two pages');
+  }
   if (reads.any((read) => read.base is StrategyGone)) {
     count('orders with the strategy gone');
   }
@@ -911,7 +999,7 @@ String? disagreement(CloudQueue queue, Reference want) {
 void main() {
   final seeds =
       int.tryParse(Platform.environment['ARRIVAL_ORDER_SEEDS'] ?? '') ??
-      80 * families;
+      seedsPerFamily * families;
   final one = int.tryParse(Platform.environment['ARRIVAL_ORDER_SEED'] ?? '');
   final family = int.tryParse(
     Platform.environment['ARRIVAL_ORDER_FAMILY'] ?? '',
@@ -930,7 +1018,7 @@ void main() {
         in one == null
             ? [
                 for (var s = 1; s <= seeds; s++)
-                  if (family == null || s % families == family) s,
+                  if (family == null || familyOf(s) == family) s,
               ]
             : [one]) {
       final scenario = Scenario(seed)..build();
@@ -985,4 +1073,5 @@ const floors = {
   'a read older than our answer delivered after it': 6000,
   'a read on a later connection with a server time below our answer': 3400,
   'an answer at the point of a read delivered before it': 4500,
+  'orders with an item read on two pages': 15000,
 };

@@ -57,7 +57,14 @@ void main() {
           opened.session.generation,
           const Generation(client: 1, connection: 2),
         );
-        expect(world.written().whereType<ConnectionReturned>(), isEmpty);
+        expect(
+          [
+            for (final returned
+                in world.written().whereType<ConnectionReturned>())
+              returned.generation,
+          ],
+          everyElement(const Generation(client: 1, connection: 2)),
+        );
         expect(opened.shown.list, const NotReadThisSession());
         final pageReads =
             world.server.readCalls.where((call) => call.page != null).toList();
@@ -3580,6 +3587,140 @@ void main() {
         );
         world.settle(const Duration(minutes: 1));
         expect(world.views().single.state, isA<Sending>());
+      });
+    });
+  });
+
+  group('the follow-up review', () {
+    test(
+        'a connection lookup that never answers after a batch returns is '
+        'given up as cannot say: the batch is sent again and lands', () {
+      inWorld((world) {
+        world.commitMove(1);
+        world.settle();
+        expect(world.queueLength(), 0);
+        world.server.onCall = (call) {
+          world.server.onCall = null;
+          world.server.lookup = () {
+            world.server.lookup = null;
+            return Completer<({int client, int connection})>().future;
+          };
+        };
+        world.commitMove(2);
+        world.settle(const Duration(minutes: 2));
+        expect(world.server.log.where((line) => line == 'send move-2'),
+            hasLength(2));
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
+        'a strategy the store refuses while its batch is being claimed is '
+        'not sent', () {
+      final storage = MemoryStorage();
+      final server = FakeServer();
+      inWorld(
+        (world) {
+          world.secondPageOnServer();
+          world.sender.adopt(strategyId);
+          world.settle();
+        },
+        storage: storage,
+        server: server,
+        addStrategy: false,
+      );
+      final area = strategyArea(strategyId);
+      final contents = {
+        for (final MapEntry(:key, :value) in storage.contents.entries)
+          key: {...value},
+      };
+      final damaged = contents[area]!.keys.firstWhere(
+            (key) => key.contains('/e/'),
+          );
+      contents[area]![damaged] = '{"broken":true}';
+      inWorld(
+        (world) {
+          world.settle(const Duration(minutes: 1));
+          expect(world.store.refusedStrategies, isEmpty);
+          final sends = server.calls.length;
+          world.slowStore.afterClaim = () async {
+            for (final page in server.rows[strategyId]!.pages) {
+              await world.store.readPage(strategyId, page.publicId);
+            }
+          };
+          world.commitRename(strategyId, 'rename');
+          world.settle(const Duration(minutes: 1));
+          expect(world.store.refusedStrategies.keys, [strategyId]);
+          expect(server.calls.skip(sends), isEmpty);
+        },
+        storage: MemoryStorage(contents),
+        server: server,
+        addStrategy: false,
+      );
+    });
+
+    test(
+        'an answer that comes back while the connection lookup throws is not '
+        'taken: the batch is sent again and lands', () {
+      inWorld((world) {
+        world.commitMove(1);
+        world.settle();
+        world.server.onCall = (call) {
+          world.server.onCall = null;
+          world.server.lookup = () {
+            world.server.lookup = null;
+            throw StateError('the client cannot say');
+          };
+        };
+        world.commitMove(2);
+        world.settle(const Duration(minutes: 1));
+        expect(
+          world.server.log.where((line) => line == 'send move-2'),
+          hasLength(2),
+        );
+        expect(world.queueLength(), 0);
+      });
+    });
+
+    test(
+        'a rejected edit whose answer the queue does not admit, stamped on a '
+        'connection that has ended, does not read the stalled page list again '
+        'early', () {
+      inWorld((world) {
+        world.connection = 2;
+        world.settle();
+        world.server.overrideRead = (call) => call.page == null
+            ? const StoreReadLost(TransportFailure.network, 'lost')
+            : null;
+        world.sender.owesFreshRead(strategyId, const ReadOfList());
+        world.settle(const Duration(seconds: 40));
+        bool onList(ReadCall call) => call.page == null;
+        final stalled = world.server.readCalls.where(onList).length;
+        expect(stalled, greaterThanOrEqualTo(3));
+        world.server.answerNext(
+          strategyId,
+          (call) async => StoreBatchAnswered(
+            [
+              for (final op in call.opIds)
+                RejectedAnswer(
+                  op,
+                  RejectionReason.rowReplaced,
+                  const NoServerCopy(),
+                ),
+            ],
+            complete: true,
+            point: ResultPoint(
+              client: 1,
+              connection: 1,
+              snapshot: world.server.stamp().snapshot,
+              serverTime: world.server.serverNow,
+            ),
+          ),
+        );
+        world.commitMove(1);
+        world.settle(const Duration(seconds: 5));
+        expect(world.server.log, contains('send move-1'));
+        expect(world.server.readCalls.where(onList).length, stalled);
       });
     });
   });

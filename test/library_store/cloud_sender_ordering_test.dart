@@ -186,6 +186,47 @@ void main() {
   });
 
   test(
+      'a page read that timed out after the client moved to connection 2, '
+      'with the app hearing of the move only later, keeps later reads on '
+      'connection 2 from paying a refusal; a read on connection 3 pays it', () {
+    inWorld((world) {
+      world.settle();
+      world.server.answerReadNext(strategyId, (call) {
+        world.server.connection = 2;
+        return Completer<StoreReadOutcome>().future;
+      });
+      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
+      world.settle(const Duration(seconds: 1));
+      expect(world.server.readCalls.last.answered, isFalse);
+      world.settle(timing.giveUpAfter);
+      expect(world.connection, 1);
+      world.connection = 2;
+      world.settle();
+      final reads = world.server.readCalls.length;
+      world.server.answerNext(strategyId, rowReplaced);
+      world.commitMove(1);
+      while (world.server.readCalls.length == reads) {
+        world.settle(const Duration(milliseconds: 50));
+      }
+      world.settle(const Duration(seconds: 10));
+      expect(isDebt(world.cloud().queue.shown.pageRead(pageId)), isTrue);
+      expect(
+        world.written().whereType<BaseArrived>().last.requestedAt,
+        isNull,
+      );
+      world
+        ..connection = null
+        ..connection = 3;
+      world.sender.owesFreshRead(strategyId, const ReadOfPage(pageId));
+      world.settle(const Duration(seconds: 10));
+      expect(
+        world.cloud().queue.shown.pageRead(pageId),
+        const ReadThisSession(),
+      );
+    });
+  });
+
+  test(
       'an upgrade refusal stamped on a connection that has ended holds '
       'nothing, and the edit is sent again', () {
     inWorld((world) {

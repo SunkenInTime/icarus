@@ -4,8 +4,10 @@ import 'package:icarus_library/icarus_library.dart';
 const newEvidence = 'news about that subject: an edit on it rejected or '
     'failed (its page, or the page list for an edit of the strategy, a page '
     'or settings), a batch refused whole (the page list), the user pressing '
-    'retry, or a new connection or sign-in; each no sooner than the floor '
-    'after the last read of the same subject';
+    'retry, a new connection, or a sign-in after a sign-out or to another '
+    'account (a sign-in that only refreshes the same account on the same '
+    'connection does not); each no sooner than the floor after the last read '
+    'of the same subject';
 
 const _accessAgain = 'the user pressing retry or opening the strategy in the '
     'editor (six more refusals), a sign-in, or the app starting again. Being '
@@ -39,8 +41,8 @@ enum StallExit {
         'add or delete, on every page it renumbers; an edit of an item, for '
         'the page list\'s view of its page (a list shows no items); an answer '
         'with no revision (nothing to do, failed, rejected without the '
-        'server\'s row); two answers on one page or list that wrote different '
-        'rows; the page an item moved off',
+        'server\'s row), or answers on one subject of which one had none; the '
+        'page an item moved off',
     calls: 'that read',
     onScreen: Face.awaitingResult,
     goesAgain: 'a read whose server time reaches the answer\'s, which the '
@@ -63,7 +65,9 @@ enum StallExit {
     goesAgain: 'a list that shows the page, $newEvidence',
   ),
   lostRead(
-    title: 'A read is lost or times out',
+    title: 'A read is lost or times out, or the read to take up a strategy '
+        'is refused for the sign-in or the build on a connection that has '
+        'ended',
     waitsFor: 'an answer',
     calls: 'that read',
     onScreen: Face.awaitingResult,
@@ -133,6 +137,40 @@ enum StallExit {
     calls: 'nothing',
     onScreen: Face.upgradeRequired,
     goesAgain: 'the app starting again on a newer build',
+  ),
+  lookupGivenUp(
+    title: 'The client does not say in time which connection it is on (the '
+        'lookup throws or never answers)',
+    waitsFor: 'a lookup that answers',
+    calls: 'a batch whose answer came back then is sent again; a read whose '
+        'result came back then is read again; a session is not opened until '
+        'a lookup answers',
+    onScreen: Face.needsYou,
+    shownAs: 'sending while the batch is sent again; needsYou once the '
+        'lost-send ladder asks the user',
+    goesAgain: 'a lookup that answers, then the user asking to retry',
+  ),
+  offline(
+    title: 'The app has no connection',
+    waitsFor: 'a connection',
+    calls: 'nothing',
+    onScreen: Face.sending,
+    goesAgain: 'the connection coming back',
+  ),
+  signedOut(
+    title: 'No one is signed in',
+    waitsFor: 'a sign-in',
+    calls: 'nothing',
+    onScreen: Face.sending,
+    goesAgain: 'a sign-in',
+  ),
+  heldByHand(
+    title: 'Sending is held by hand (the drive tool around a check, or at the '
+        'end of its run)',
+    waitsFor: 'the hold to be released',
+    calls: 'nothing',
+    onScreen: Face.sending,
+    goesAgain: 'the release',
   ),
   lostSend(
     title: 'A batch gets no answer, or keeps being refused in a way the queue '
@@ -251,6 +289,10 @@ enum StallExit {
         'at once, then every ${span(timing.readAgainAfter)}',
       lostSend => 'the queue\'s backoff, doubling from 0.6 s; never twice '
           'within ${span(timing.sendFloor)}',
+      lookupGivenUp => 'each lookup given up after '
+          '${span(timing.lookupGiveUpAfter)}; the batch again on the lost-send '
+          'ladder, the read on the lost-read ladder, the session on the '
+          'local-trouble ladder',
       uncheckedTooLate => 'at once',
       sendSpacing => 'one batch per ${span(timing.sendFloor)} per strategy',
       localTrouble => 'the write again after ${span(timing.firstWriteRetry)}, '
@@ -262,6 +304,9 @@ enum StallExit {
       goneOnTakeUp ||
       signIn ||
       upgrade ||
+      offline ||
+      signedOut ||
+      heldByHand ||
       replaced ||
       deletedOnServer ||
       refusedEdit ||
@@ -289,8 +334,10 @@ enum StallExit {
         forbidden =>
           '${timing.accessReads} refusals while the strategy is not open in '
               'the editor, then none',
-        lostSend => '$retriesBeforePause failures or refusals in a row, then '
-            'the user is asked',
+        lostSend ||
+        lookupGivenUp =>
+          '$retriesBeforePause failures or refusals in a row, then the user is '
+              'asked',
         uncheckedTooLate => 'one send again in checked form; a refusal after '
             'that climbs the lost-send ladder',
         sendSpacing => 'the floor. It only spaces batches that are ready at '
@@ -302,6 +349,9 @@ enum StallExit {
         viewerOnTakeUp || goneOnTakeUp => 'one read',
         signIn ||
         upgrade ||
+        offline ||
+        signedOut ||
+        heldByHand ||
         replaced ||
         deletedOnServer ||
         refusedEdit ||
