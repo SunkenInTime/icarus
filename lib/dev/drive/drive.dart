@@ -2416,11 +2416,13 @@ Future<void> _run(Map<String, dynamic> step) async {
           isZone: step['zone'] == true,
         ),
       );
-      await _place(
-        id,
-        _point(step, 'at'),
-        (p) => utilities.updatePosition(p, id),
-      );
+      if (step['door'] == null) {
+        await _place(
+          id,
+          _point(step, 'at'),
+          (p) => utilities.updatePosition(p, id),
+        );
+      }
     case 'addText':
       final id = value as String;
       final texts = c.read(textProvider.notifier);
