@@ -239,7 +239,7 @@ void main() {
       for (final page in const ['page-a', 'page-b']) {
         expect(
           shown.content[page],
-          liveContentOn(initialRows().elementsOn(page), page),
+          liveContentOn(initialRows().elementsOn(page)),
           reason: page,
         );
       }

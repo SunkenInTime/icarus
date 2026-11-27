@@ -1520,13 +1520,21 @@ final class LibraryStore {
     String strategyPublicId,
     List<StrategyOp> ops, {
     required StrategyRead seen,
-  }) => _commitAll(account, strategyPublicId, ops, madeOn: seen.strategyLife);
+    Map<String, SeenPage> pagesAsSeen = const {},
+  }) => _commitAll(
+    account,
+    strategyPublicId,
+    ops,
+    madeOn: seen.strategyLife,
+    pagesAsSeen: pagesAsSeen,
+  );
 
   Future<BatchResult> _commitAll(
     Account? account,
     String strategyPublicId,
     List<StrategyOp> ops, {
     int? madeOn,
+    Map<String, SeenPage> pagesAsSeen = const {},
   }) {
     final asked = List<StrategyOp>.of(ops);
     return _inTurn(() async {
@@ -1566,6 +1574,7 @@ final class LibraryStore {
             cloud,
             asked,
             madeOn: madeOn,
+            pagesAsSeen: pagesAsSeen,
           ),
           _CloudHeld(:final rows) => Refused(QueueHeld(rows)),
           _CloudUnread(:final failure) => NotSaved(failure),
