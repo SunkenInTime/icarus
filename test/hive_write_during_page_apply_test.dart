@@ -12,7 +12,6 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/local_library.dart';
-import 'package:icarus/strategy/local_page_reads.dart';
 
 import 'library_rows/generated_strategies.dart';
 import 'library_store/unit_harness.dart';
@@ -45,7 +44,6 @@ void main() {
     'with the store switch off, a Hive save that lands as an open applies its '
     'page is the caption the canvas shows and the Save keeps',
     () async {
-      expect(container.read(localPageReadsProvider), isNull);
       final strategy = generatedStrategy(Optionals.set).copyWith(
         id: 'landing',
         pages: [

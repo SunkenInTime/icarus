@@ -22,7 +22,6 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/cloud_element_decoding.dart';
 import 'package:icarus/strategy/local_library.dart';
-import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -121,36 +120,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
     if (!identical(current, migrated)) {
       (await const LocalLibrary().replaceAfterMigration(migrated)).orThrow();
     }
-    if (ref.read(localPageReadsProvider) case final reads?) {
-      final fromStore = await reads.page(
-        strategyId,
-        pageId,
-        migrated: !identical(current, migrated),
-      );
-      if (fromStore != null) return fromStore;
-      final now = const LocalLibrary().storedStrategy(strategyId) ??
-          (throw StateError('Strategy $strategyId not found.'));
-      return reads.drawnFromHive(
-        strategyId,
-        pageId,
-        _pageOf(StrategyMigrator.migrateToCurrentVersion(now), pageId),
-      );
-    }
     return _pageOf(migrated, pageId);
-  }
-
-  static ({StrategyEditorPageData page, List<String> pageIds}) hiveNow(
-    String strategyId,
-    String pageId,
-  ) {
-    final stored = const LocalLibrary().storedStrategy(strategyId) ??
-        (throw StateError('Strategy $strategyId not found.'));
-    final migrated = StrategyMigrator.migrateToCurrentVersion(stored);
-    final pages = [...migrated.pages]..sortBySortIndex((item) => item.sortIndex);
-    return (
-      page: _pageOf(migrated, pageId),
-      pageIds: [for (final page in pages) page.id],
-    );
   }
 
   static StrategyEditorPageData _pageOf(StrategyData migrated, String pageId) {

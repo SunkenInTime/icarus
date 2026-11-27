@@ -1,9 +1,0 @@
-[
-  {"waitText": "Your library is still here", "seconds": 10, "optional": true},
-  {"tapIcon": "x", "optional": true},
-  {"resize": [1600, 900]},
-  {"openFirstFrame": "largest", "runs": 1, "soon": true},
-  {"tapIcon": "house300"},
-  {"libraryFromStore": "after the copy", "seconds": 600},
-  {"exit": 1}
-]

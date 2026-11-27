@@ -233,10 +233,7 @@ void main() {
   });
 
   test('with the store switched off, exports read strategies from Hive', () {
-    final start = LibraryStoreStart.of(
-      const StoreSwitchOff(),
-      clock: () => Duration.zero,
-    );
+    final start = LibraryStoreStart.of(const StoreSwitchOff());
     final off = ProviderContainer(overrides: start.overrides);
     addTearDown(off.dispose);
 

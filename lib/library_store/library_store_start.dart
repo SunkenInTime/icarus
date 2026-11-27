@@ -3,46 +3,25 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/library_store/action_journal.dart';
 import 'package:icarus/library_store/canvas_changes.dart';
 import 'package:icarus/library_store/hive_reads.dart';
-import 'package:icarus/library_store/library_listing.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/ops_follower.dart';
 import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/store_mirror.dart';
-import 'package:icarus/library_store/store_page_reads.dart';
-import 'package:icarus/strategy/local_library_view.dart';
-import 'package:icarus/strategy/local_page_reads.dart';
 
 final class LibraryStoreStart {
-  const LibraryStoreStart._(
-    this.choice,
-    this.mode,
-    this.listing, {
-    this.editFollower,
-    this.pageReads,
-  });
+  const LibraryStoreStart._(this.choice, this.mode, {this.editFollower});
 
   factory LibraryStoreStart.of(
     LibraryStoreSwitch choice, {
-    required Duration Function() clock,
     StoreMirror Function() mirror = storeMirror,
   }) {
     switch (choice) {
       case StoreSwitchOff() || StoreSwitchStore():
-        return LibraryStoreStart._(choice, null, null);
+        return LibraryStoreStart._(choice, null);
       case StoreSwitchShadow():
-        return LibraryStoreStart._(choice, const ShadowOnly(), null);
+        return LibraryStoreStart._(choice, const ShadowOnly());
       case StoreSwitchMirror():
-        return LibraryStoreStart._(choice, Mirroring(mirror()), null);
-      case StoreSwitchRead():
-        final mirroring = Mirroring(mirror());
-        final listing = StoreLibraryListing(HiveLibraryListing(), clock: clock)
-          ..follow(mirroring.mirror);
-        return LibraryStoreStart._(
-          choice,
-          mirroring,
-          listing,
-          pageReads: StorePageReads(mirroring.mirror),
-        );
+        return LibraryStoreStart._(choice, Mirroring(mirror()));
       case StoreSwitchOps():
         final journal = ActionJournal();
         final journaling = StoreMirror(
@@ -54,7 +33,6 @@ final class LibraryStoreStart {
         return LibraryStoreStart._(
           choice,
           Mirroring(journaling),
-          null,
           editFollower: follower,
         );
     }
@@ -62,16 +40,10 @@ final class LibraryStoreStart {
 
   final LibraryStoreSwitch choice;
   final ShadowMode? mode;
-  final StoreLibraryListing? listing;
   final EditFollower? editFollower;
-  final StorePageReads? pageReads;
 
   List<Override> get overrides => [
         if (choice is! StoreSwitchOff)
           libraryStoreSwitchProvider.overrideWithValue(choice),
-        if (listing case final listing?)
-          localLibraryListingProvider.overrideWithValue(listing),
-        if (pageReads case final reads?)
-          localPageReadsProvider.overrideWithValue(reads),
       ];
 }

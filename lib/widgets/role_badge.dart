@@ -91,19 +91,6 @@ class DeviceOnlyBadge extends StatelessWidget {
   }
 }
 
-class NotInStoreBadge extends StatelessWidget {
-  const NotInStoreBadge({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return StrategyBadge(
-      icon: LucideIcons.hardDrive,
-      label: context.l10n.strategyBadgeNotInStore,
-      tooltip: context.l10n.strategyBadgeNotInStoreTooltip,
-    );
-  }
-}
-
 /// A cloud strategy that can't be opened while offline: this computer keeps
 /// no copy of it yet.
 class NeedsConnectionBadge extends StatelessWidget {
