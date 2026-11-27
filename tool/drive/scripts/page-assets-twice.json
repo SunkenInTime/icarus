@@ -1,0 +1,17 @@
+[
+  {"wait": 10},
+  {"tapIcon": "x", "optional": true},
+  {"signIn": true},
+  {"wait": 6},
+  {"logPageAssets": "first"},
+  {"wait": 240},
+  {"logPageAssets": "minutes-later"},
+  {"signal": "ready"},
+  {"waitSignal": "cut", "seconds": 60},
+  {"wait": 20},
+  {"signal": "restore"},
+  {"waitSignal": "restored", "seconds": 60},
+  {"wait": 20},
+  {"logPageAssets": "after-reconnect"},
+  {"exit": 1}
+]

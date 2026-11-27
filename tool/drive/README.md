@@ -143,6 +143,8 @@ Steps that check the server's refusals and open what the store holds:
 
 `linux-cloud-store-late.sh <exe dir> <new out dir> <account> <script> [<companion script> <companion account>]` cuts the main instance off both ways, so a call it sends is held by the network instead of answered, and arrives late once the network is back (the case the server's window refuses, issue #714). It is `linux-cut-network.sh` with `--cloud-store send`.
 
+`{"logPageAssets": tag}` reads every page of every strategy the account owns or is shared, once each with `page:getSnapshot`, and logs each picture the server lists for it as an `ASSET` line holding the entry as the app parsed it, then a count by provider. `scripts/page-assets-twice.json` logs them, again four minutes later, and again after a cut: run it through `linux-cut-network.sh` and compare the three sets of lines to see whether any field, the url included, changes between answers.
+
 `getPageList` has to be on the deployment the build talks to.
 
 ### Sending from the store

@@ -184,6 +184,7 @@ import 'package:icarus/dev/drive/drive_action_ops.dart';
 import 'package:icarus/dev/drive/drive_library_store.dart';
 import 'package:icarus/dev/drive/drive_library_timings.dart';
 import 'package:icarus/dev/drive/drive_load_copy_cost.dart';
+import 'package:icarus/dev/drive/drive_page_assets.dart';
 import 'package:icarus/dev/drive/drive_page_take.dart';
 import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/clickable.dart';
@@ -2853,6 +2854,8 @@ Future<void> _run(Map<String, dynamic> step) async {
       _log('KILLED by the script');
       await _flush();
       exit(9);
+    case 'logPageAssets':
+      (await pageAssetLines(c, value as String)).forEach(_log);
     case 'expectPageListRefusedNaming':
       _log(await pageListRefusal(c, value as String));
     case 'expectBatchRefusedNaming':

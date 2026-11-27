@@ -9,6 +9,7 @@ import 'account.dart';
 import 'events.dart';
 import 'op_facts.dart';
 import 'pending.dart';
+import 'pictures.dart';
 import 'shown.dart';
 import 'version.dart';
 
@@ -640,22 +641,31 @@ CloudRowReading<AttemptFact> attemptFromText(int number, String text) =>
     );
 
 final class CloudFacts {
-  const CloudFacts(this.owner, this.facts);
+  const CloudFacts(this.owner, this.facts, {this.role = const RoleUnknown()});
 
   final Account owner;
   final StrategyFacts facts;
+  final StrategyRole role;
 
   @override
   bool operator ==(Object other) =>
-      other is CloudFacts && other.owner == owner && other.facts == facts;
+      other is CloudFacts &&
+      other.owner == owner &&
+      other.facts == facts &&
+      other.role == role;
 
   @override
-  int get hashCode => Object.hash(owner, facts);
+  int get hashCode => Object.hash(owner, facts, role);
 }
 
-Map<String, Object?> factsToJson(Account owner, StrategyFacts facts) => {
+Map<String, Object?> factsToJson(
+  Account owner,
+  StrategyFacts facts, {
+  StrategyRole role = const RoleUnknown(),
+}) => {
   'version': cloudRowVersion,
   'account': owner.subject,
+  if (role case RoleKnown(:final role)) 'role': role.name,
   'presence': facts.presence.name,
   'accessLostAt': facts.accessLostAt,
   'accessConfirmedAt': facts.accessConfirmedAt,
@@ -715,6 +725,7 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
       final Object raw => _setAside(raw),
     };
     if (setAside == null) fields.reject('an unreadable set-aside record');
+    final role = StrategyRole.ofWire(fields.json['role']);
     return () => CloudFacts(
       Account(account),
       StrategyFacts(
@@ -724,6 +735,7 @@ CloudRowReading<CloudFacts> factsFromText(String text) => _fromText(
         upgradeTold: upgrade,
         setAside: setAside!,
       ),
+      role: role,
     );
   }),
 );
@@ -769,6 +781,90 @@ SetAsideGeneration? _generation(Object raw) {
     );
   }
   return null;
+}
+
+final class StoredPictures {
+  StoredPictures(this.page, Map<String, PictureAsset> pictures)
+    : pictures = Map.unmodifiable(pictures);
+
+  final String page;
+  final Map<String, PictureAsset> pictures;
+
+  @override
+  bool operator ==(Object other) =>
+      other is StoredPictures &&
+      other.page == page &&
+      samePictures(other.pictures, pictures);
+
+  @override
+  int get hashCode => Object.hash(page, pictures.length);
+}
+
+Map<String, Object?> picturesToJson(StoredPictures stored) => {
+  'version': cloudRowVersion,
+  'page': stored.page,
+  'pictures': {
+    for (final MapEntry(key: id, value: picture) in stored.pictures.entries)
+      id: {
+        'provider': picture.provider,
+        'uploadStatus': picture.uploadStatus,
+        'fileExtension': picture.fileExtension,
+        'mimeType': ?picture.mimeType,
+        'width': ?picture.width,
+        'height': ?picture.height,
+        'byteSize': ?picture.byteSize,
+        'uploadedAt': ?picture.uploadedAt?.millisecondsSinceEpoch,
+        'url': ?picture.url,
+        'legacyStoragePath': ?picture.legacyStoragePath,
+      },
+  },
+};
+
+CloudRowReading<StoredPictures> picturesFromText(String text) => _fromText(
+  text,
+  (json) => JsonFields.read(json, 'pictures', (fields) {
+    _versioned(fields, 'pictures');
+    final page = fields.string('page');
+    final pictures = <String, PictureAsset>{};
+    if (fields.json['pictures'] case final Map<String, Object?> stored) {
+      for (final MapEntry(key: id, value: raw) in stored.entries) {
+        switch (JsonFields.read(raw, 'picture $id', _picture)) {
+          case Read(:final value):
+            pictures[id] = value;
+          case CouldNotRead(:final problem):
+            fields.reject(problem);
+        }
+      }
+    } else {
+      fields.reject('expected the pictures of the page');
+    }
+    return () => StoredPictures(page, pictures);
+  }),
+);
+
+PictureAsset Function() _picture(JsonFields fields) {
+  final provider = fields.string('provider');
+  final uploadStatus = fields.string('uploadStatus');
+  final fileExtension = fields.string('fileExtension');
+  final mimeType = fields.optionalString('mimeType');
+  final width = fields.optionalWhole('width');
+  final height = fields.optionalWhole('height');
+  final byteSize = fields.optionalWhole('byteSize');
+  final uploadedAt = fields.optionalTime('uploadedAt');
+  final url = fields.optionalString('url');
+  final legacyStoragePath = fields.optionalString('legacyStoragePath');
+  return () => PictureAsset(
+    provider: provider,
+    uploadStatus: uploadStatus,
+    fileExtension: fileExtension,
+    mimeType: mimeType,
+    width: width,
+    height: height,
+    byteSize: byteSize,
+    uploadedAt: uploadedAt,
+    url: url,
+    legacyStoragePath: legacyStoragePath,
+  );
 }
 
 final class Counters {

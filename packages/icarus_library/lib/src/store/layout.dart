@@ -257,6 +257,17 @@ final class ForeignName extends StoreName {
   String toString() => 'ForeignName($area, $name)';
 }
 
+const assetsPrefix = 'assets/';
+
+final class AssetsName extends StoreName {
+  const AssetsName(this.digest);
+
+  final String digest;
+
+  @override
+  String get name => '$assetsPrefix$digest';
+}
+
 String pageContentPrefix(String pageDigest) => 'content/$pageDigest/';
 
 StoreName readName(StoreArea area, String name) =>
@@ -281,6 +292,8 @@ StoreName readName(StoreArea area, String name) =>
       (StrategyArea(), ['read', 'header']) => const HeaderReadName(),
       (StrategyArea(), ['read', 'page', final digest]) when _isDigest(digest) =>
         PageReadName(digest),
+      (StrategyArea(), ['assets', final digest]) when _isDigest(digest) =>
+        AssetsName(digest),
       (StrategyArea(), ['page', final digest]) when _isDigest(digest) =>
         PageName(digest),
       (StrategyArea(), ['settings', final digest]) when _isDigest(digest) =>
@@ -319,7 +332,8 @@ bool isCloudName(StoreName name) => switch (name) {
   AttemptName() ||
   LandedName() ||
   HeaderReadName() ||
-  PageReadName() => true,
+  PageReadName() ||
+  AssetsName() => true,
   ForeignName(:final name) => isCloudKey(name),
   _ => false,
 };
@@ -329,4 +343,5 @@ bool isCloudKey(String key) =>
     key.startsWith(pendingPrefix) ||
     key.startsWith(attemptPrefix) ||
     key.startsWith(landedPrefix) ||
-    key.startsWith(readPrefix);
+    key.startsWith(readPrefix) ||
+    key.startsWith(assetsPrefix);
