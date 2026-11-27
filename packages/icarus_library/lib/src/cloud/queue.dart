@@ -1809,7 +1809,15 @@ Step _closeAttempt(_Edit edit, int attempt, AttemptOutcome outcome) {
   return edit.done();
 }
 
-enum ResultFit { applies, adopts, listFirst, same, older, startedInAnotherLife }
+enum ResultFit {
+  applies,
+  adopts,
+  listFirst,
+  same,
+  older,
+  differsFromList,
+  startedInAnotherLife,
+}
 
 ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   final held = shown.strategy?.life;
@@ -1824,6 +1832,7 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
     return ResultFit.older;
   }
   if (taken == arrival.order) return ResultFit.same;
+  if (_pageFitAgainstList(shown, base, arrival) case final fit?) return fit;
   return switch (base) {
     HeaderRead(:final strategy) => switch ((held, createdAtOf(strategy))) {
       (_, final listed?) when listed == _refusedLife(shown.list) =>
@@ -1851,6 +1860,25 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
     },
     PageGone() || StrategyGone() => ResultFit.applies,
   };
+}
+
+ResultFit? _pageFitAgainstList(Shown shown, ArrivedBase base, Arrival arrival) {
+  final (page, claim) = switch (base) {
+    PageRead(:final page) => (page.publicId, PageExistence.of(page)),
+    PageGone(:final pagePublicId) => (pagePublicId, PageExistence.absent),
+    HeaderRead() || StrategyGone() => (null, null),
+  };
+  if (page == null || shown.listTaken == null) return null;
+  final held = shown.existenceOf(page);
+  if (shown.listTaken == arrival.order) {
+    return held == claim ? null : ResultFit.differsFromList;
+  }
+  if (!shown.listIsNewerThan(arrival)) return null;
+  if (base is PageGone || held == PageExistence.absent) return ResultFit.older;
+  final heldLife = (shown.pages[page] ?? shown.trashed[page])!.life;
+  return heldLife == createdAtOf((base as PageRead).page)
+      ? ResultFit.applies
+      : ResultFit.older;
 }
 
 String? _subjectOf(ArrivedBase base) => switch (base) {
@@ -1882,6 +1910,9 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
       return edit.done();
     case ResultFit.startedInAnotherLife:
       return NotApplicable(edit.original, const StartedInAnotherLife());
+    case ResultFit.differsFromList:
+      edit.effects.add(ReportSameOrderDiffers(_subjectOf(base)));
+      return edit.done();
     case ResultFit.listFirst:
       if (!isDebt(edit.shown.list)) {
         edit.shown = edit.shown.owingList(ResultAtOrAfter(arrival.order));
@@ -1901,7 +1932,7 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
         for (final page in taken.knownPages) PageLeft(page),
         ...adopted.decisions,
       ]);
-      edit.shown = adopted.shown.fencedAt(arrival.order, after: taken);
+      edit.shown = adopted.shown.fencedAt(arrival.order);
       return edit.done();
     case ResultFit.applies:
       edit.tookResult = true;
@@ -1914,6 +1945,7 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
   final before = edit.shown;
   final taken = edit.shown.taken(base, arrival: arrival);
   edit.decisions.addAll(taken.decisions);
+  edit.effects.addAll(taken.differing.map(ReportSameOrderDiffers.new));
   edit.shown = taken.shown;
   if (base case HeaderRead(:final strategy)) {
     for (final work in edit.landed) {

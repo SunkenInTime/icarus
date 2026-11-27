@@ -738,6 +738,32 @@ String renderTable() {
       'session drops it.',
     )
     ..writeln(
+      '- Which pages exist is decided by the newest claim about that page, '
+      'whatever kind of result made it. A list claims, for every page, that it '
+      'is live, trashed or absent; a page\'s own result claims live or trashed '
+      '(`PageRead`) or gone (`PageGone`). The newer claim by order wins, and a '
+      'claim older than the other kind\'s claim for that page changes nothing '
+      'about existence. So a list removes a page it does not list only when '
+      'that page\'s own result is older than the list or there is none, does '
+      'not bring back a page whose own newer result says it is gone, and sets '
+      'a listed page live or trashed only over an older own result. A '
+      '`PageGone` older than the list taken is dropped as `OlderResult`, and '
+      'so is a `PageRead` older than a list that does not list the page; a '
+      '`PageRead` older than a list that lists the page gives its items and '
+      'nothing else. A list and a page result at the same order that disagree '
+      'about whether the page exists are reported '
+      '(`ReportSameOrderDiffers`) and leave that page as held; the rest of '
+      'the list still applies.',
+    )
+    ..writeln(
+      '- Each kind of row keeps one owner. The list owns the strategy row, '
+      'every page row\'s place in the list and the settings rows: a list '
+      'writes the settings of every page it lists. A page\'s own result owns '
+      'that page\'s items, ordered by that page\'s taken order. A list that '
+      'adopts a later strategy life starts from nothing: no taken or refused '
+      'order of the old life is kept.',
+    )
+    ..writeln(
       '- A mark advances only with the content applied for its subject; a '
       'refusal, a dropped result, or a result about another subject moves '
       'none. A read refusal keeps its own order for its subject: it is '

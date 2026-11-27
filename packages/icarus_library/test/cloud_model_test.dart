@@ -1241,6 +1241,8 @@ final class Model {
         );
       }
       mirrorFence = order;
+      mirrorTaken.removeWhere((subject, _) => subject != null);
+      mirrorRefused.clear();
       count('the model adopted another strategy life');
     }
     final kind = subject == null ? 'list' : 'page';

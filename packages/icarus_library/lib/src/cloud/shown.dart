@@ -524,6 +524,18 @@ bool isDebt(ReadState state) => state is ReadOwed || state is ReadRefused;
 
 bool _isTrashed(PageRow page) => lifeOfRow(page) == Life.gone;
 
+enum PageExistence {
+  live,
+  trashed,
+  absent;
+
+  static PageExistence of(PageRow? row) => switch (row) {
+    null => absent,
+    final row when _isTrashed(row) => trashed,
+    _ => live,
+  };
+}
+
 bool replaces(ShownRow? held, Row incoming) =>
     held == null || !_outranks(held.version, versionOfRow(incoming));
 
@@ -679,17 +691,23 @@ final class UnreadableLeft extends RowDecision {
 }
 
 final class Taken {
-  Taken(this.shown, Iterable<RowDecision> decisions)
-    : decisions = List.unmodifiable(decisions);
+  Taken(
+    this.shown,
+    Iterable<RowDecision> decisions, {
+    Set<String> differing = const {},
+  }) : decisions = List.unmodifiable(decisions),
+       differing = Set.unmodifiable(differing);
 
   final Shown shown;
   final List<RowDecision> decisions;
+  final Set<String> differing;
 
   @override
   bool operator ==(Object other) =>
       other is Taken &&
       other.shown == shown &&
-      const ListEquality<RowDecision>().equals(other.decisions, decisions);
+      const ListEquality<RowDecision>().equals(other.decisions, decisions) &&
+      const SetEquality<String>().equals(other.differing, differing);
 
   @override
   int get hashCode => Object.hash(shown, decisions.length);
@@ -814,7 +832,7 @@ final class Shown {
     NotReadThisSession() || ReadThisSession() => null,
   };
 
-  Shown fencedAt(ResultOrder fence, {required Shown after}) => Shown(
+  Shown fencedAt(ResultOrder fence) => Shown(
     strategy: strategy,
     pages: pages,
     trashed: trashed,
@@ -827,10 +845,10 @@ final class Shown {
     goneThisSession: goneThisSession,
     highest: highest,
     fresh: fresh,
-    listTaken: listTaken ?? after.listTaken,
-    pagesTaken: {...after.pagesTaken, ...pagesTaken},
-    listRefusedAt: listRefusedAt ?? after.listRefusedAt,
-    pagesRefusedAt: {...after.pagesRefusedAt, ...pagesRefusedAt},
+    listTaken: listTaken,
+    pagesTaken: pagesTaken,
+    listRefusedAt: listRefusedAt,
+    pagesRefusedAt: pagesRefusedAt,
     fence: fence,
   );
 
@@ -939,6 +957,17 @@ final class Shown {
 
   Set<String> get knownPages => {...pages.keys, ...trashed.keys};
 
+  PageExistence existenceOf(String page) => pages.containsKey(page)
+      ? PageExistence.live
+      : trashed.containsKey(page)
+      ? PageExistence.trashed
+      : PageExistence.absent;
+
+  bool listIsNewerThan(Arrival? arrival) => switch ((listTaken, arrival)) {
+    (final list?, final arrival?) => arrival.order.isBefore(list),
+    _ => false,
+  };
+
   Map<Target, Removed> _removedOn(
     bool Function(String page) gone,
     ResultOrder? started,
@@ -997,18 +1026,46 @@ final class Shown {
 
   Taken _withList(HeaderRead result, Arrival? arrival) {
     final HeaderRead(strategy: strategyRow, pages: listed, :settings) = result;
-    final listedIds = {for (final page in listed) page.publicId};
-    final decisions = <RowDecision>[
+    final listedRows = {for (final page in listed) page.publicId: page};
+    final differing = <String>{};
+    bool listDecides(String page) {
+      final own = pagesTaken[page];
+      if (arrival == null || own == null || own.isBefore(arrival.order)) {
+        return true;
+      }
+      if (PageExistence.of(listedRows[page]) == existenceOf(page)) return true;
+      if (own == arrival.order) differing.add(page);
+      return false;
+    }
+
+    final decides = {
+      for (final page in {...knownPages, ...listedRows.keys})
+        page: listDecides(page),
+    };
+    final removed = {
       for (final page in knownPages)
-        if (!listedIds.contains(page)) PageLeft(page),
+        if (!listedRows.containsKey(page) && decides[page]!) page,
+    };
+    final decisions = <RowDecision>[
+      for (final page in removed) PageLeft(page),
       RowTaken(strategyRow),
     ];
-    final nextPages = <String, ShownRow>{};
-    final nextTrashed = <String, ShownRow>{};
+    final nextPages = <String, ShownRow>{
+      for (final MapEntry(:key, :value) in pages.entries)
+        if (!decides[key]!) key: value,
+    };
+    final nextTrashed = <String, ShownRow>{
+      for (final MapEntry(:key, :value) in trashed.entries)
+        if (!decides[key]!) key: value,
+    };
     for (final page in listed) {
       final id = page.publicId;
       final heldLive = pages[id];
       final held = heldLive ?? trashed[id];
+      if (!decides[id]!) {
+        if (held != null) decisions.add(RowKept(page, KeptBecause.heldIsNewer));
+        continue;
+      }
       if (replaces(held, page)) {
         decisions.add(RowTaken(page));
         (_isTrashed(page) ? nextTrashed : nextPages)[id] = _rowOf(page, page);
@@ -1017,11 +1074,14 @@ final class Shown {
         (heldLive != null ? nextPages : nextTrashed)[id] = held!;
       }
     }
+    final remaining = {...nextPages.keys, ...nextTrashed.keys};
     final withSettings = {for (final row in settings) row.pagePublicId};
     decisions.addAll([
-      for (final page in listedIds)
-        if (!withSettings.contains(page)) SettingsLeft(page),
-      for (final row in settings) RowTaken(row),
+      for (final page in listedRows.keys)
+        if (remaining.contains(page) && !withSettings.contains(page))
+          SettingsLeft(page),
+      for (final row in settings)
+        if (remaining.contains(row.pagePublicId)) RowTaken(row),
     ]);
     final live = nextPages.keys.toSet();
     return Taken(
@@ -1058,21 +1118,23 @@ final class Shown {
         highest: _raised(highest, {
           const StrategyTarget(): ?versionOfRow(strategyRow),
           for (final page in listed)
-            if (!_isTrashed(page))
+            if (!_isTrashed(page) && decides[page.publicId]!)
               PageTarget(page.publicId): ?versionOfRow(page),
           for (final row in settings)
-            SettingsTarget(row.pagePublicId): ?versionOfRow(row),
+            if (remaining.contains(row.pagePublicId))
+              SettingsTarget(row.pagePublicId): ?versionOfRow(row),
         }),
         strategy: _strategyRow(strategyRow, listed),
         pages: nextPages,
         trashed: nextTrashed,
-        tombstones: _removedOn(
-          (page) => !listedIds.contains(page),
-          arrival?.order,
-        ),
+        tombstones: _removedOn(removed.contains, arrival?.order),
         settings: {
+          for (final MapEntry(:key, :value) in this.settings.entries)
+            if (remaining.contains(key) && !listedRows.containsKey(key))
+              key: value,
           for (final row in settings)
-            row.pagePublicId: _rowOf(row, row.pagePublicId),
+            if (remaining.contains(row.pagePublicId))
+              row.pagePublicId: _rowOf(row, row.pagePublicId),
         },
         content: {
           for (final MapEntry(:key, :value) in content.entries)
@@ -1080,10 +1142,11 @@ final class Shown {
         },
         rows: {
           for (final MapEntry(:key, :value) in rows.entries)
-            if (listedIds.contains(value.page)) key: value,
+            if (remaining.contains(value.page)) key: value,
         },
       ),
       decisions,
+      differing: differing,
     );
   }
 
@@ -1185,7 +1248,7 @@ final class Shown {
     final page = pageRow.publicId;
     final heldLive = pages[page];
     final heldPage = heldLive ?? trashed[page];
-    final pageTaken = replaces(heldPage, pageRow);
+    final pageTaken = !listIsNewerThan(arrival) && replaces(heldPage, pageRow);
     final decisions = <RowDecision>[
       pageTaken ? RowTaken(pageRow) : RowKept(pageRow, KeptBecause.heldIsNewer),
     ];
