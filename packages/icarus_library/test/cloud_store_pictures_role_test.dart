@@ -335,6 +335,38 @@ void main() {
       expect((await syncOf(store)).editsAs(testAccount), isFalse);
     });
 
+    for (final (what, spoil) in <(String, void Function(Map<String, String>))>[
+      ('cannot be read', (rows) => rows[assetsName('page-a')] = 'not json'),
+      (
+        'names another page',
+        (rows) => rows[assetsName('page-a')] = rows[assetsName('page-b')]!,
+      ),
+    ]) {
+      test('a stored pictures entry that $what reads as content not read, and '
+          'the next page result the queue takes replaces it', () async {
+        final storage = MemoryStorage();
+        var store = await adopted(storage);
+        await store.close();
+        final spoiled = editable(storage.contents);
+        spoil(spoiled[area]!);
+        final rewritten = MemoryStorage(spoiled);
+        store = await openCloudStore(MemoryEngine(rewritten));
+        expect((await pageIn(store, 'page-a')).content, isA<ContentNotRead>());
+
+        await recordAll(store, [reconnected()]);
+        await recordAll(store, [
+          await arrivalIn(
+            store,
+            pageWith(withImage(), 'page-a', {'p1': picture('jpg')}),
+          ),
+        ]);
+        store = await reopened(store, rewritten);
+        expect(picturesOn(await pageIn(store, 'page-a')), {
+          'p1': picture('jpg'),
+        });
+      });
+    }
+
     test('a newer page result replaces them whole', () async {
       final storage = MemoryStorage();
       var store = await adopted(
