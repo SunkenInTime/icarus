@@ -6,6 +6,7 @@ import 'package:icarus_library/icarus_library.dart';
 Future<LibraryStoreOpened> openLibraryStore(
   File file, {
   String build = '',
+  StorageEngine Function(StorageEngine engine)? wrapEngine,
 }) async =>
     LibraryStoreRefused(
       file,

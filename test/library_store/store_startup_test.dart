@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/dev/drive/drive_cloud_store.dart';
+import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/store_startup.dart';
 
 void main() {

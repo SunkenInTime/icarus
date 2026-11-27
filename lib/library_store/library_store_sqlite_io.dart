@@ -9,6 +9,7 @@ import 'package:icarus_library/sqlite_storage.dart';
 Future<LibraryStoreOpened> openLibraryStore(
   File file, {
   String build = '',
+  StorageEngine Function(StorageEngine engine)? wrapEngine,
 }) async {
   try {
     await file.parent.create(recursive: true);
@@ -16,7 +17,8 @@ Future<LibraryStoreOpened> openLibraryStore(
     return LibraryStoreRefused(file, DeviceFailure('$error'));
   }
   final engine = SqliteEngine(file.path);
-  final StorageEngine opened = driveBuild ? SlowedEngine(engine) : engine;
+  final StorageEngine slowed = driveBuild ? SlowedEngine(engine) : engine;
+  final opened = wrapEngine?.call(slowed) ?? slowed;
   switch (await LibraryStore.open(opened, canRead: appCanRead, build: build)) {
     case StoreOpened(:final store, :final origin, :final foreignNames):
       return LibraryStoreReady(file, store, origin, foreignNames, engine.close);

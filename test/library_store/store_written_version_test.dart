@@ -10,7 +10,6 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus_library/icarus_library.dart';

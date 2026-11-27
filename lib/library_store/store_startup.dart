@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
-import 'package:icarus/library_store/shadow_store.dart';
 
 typedef StoreStartup = ({
   Future<LibraryStoreOpened>? opening,
@@ -54,5 +53,19 @@ void beginCloudSender(
           .read(cloudSenderProvider.notifier)
           .beginOn(opening, build: build),
     );
+    var closedSinceBegun = false;
+    container.listen(libraryStoreProvider, (_, next) {
+      switch (next) {
+        case LibraryStoreClosed():
+          closedSinceBegun = true;
+        case LibraryStoreReady(:final store) when closedSinceBegun:
+          closedSinceBegun = false;
+          container.invalidate(cloudSenderProvider);
+          container
+              .read(cloudSenderProvider.notifier)
+              .begin(store, build: build);
+        case _:
+      }
+    });
   }
 }
