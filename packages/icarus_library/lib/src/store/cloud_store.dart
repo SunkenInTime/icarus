@@ -1556,24 +1556,27 @@ extension _CloudStore on LibraryStore {
     final applied = <(StrategyOp, OpApplied)>[];
     final edited = <String>{...pages};
     for (final op in asked) {
-      if (op case PageAddOp(copyContentFromPagePublicId: final source?)) {
-        if (!queue.shown.content.containsKey(source)) {
-          return Refused(CopyNeedsContent(source));
-        }
-        if (_copyStop(rows, source) case final stop?) return Refused(stop);
-      }
       final OpApplied result;
       switch (applyOp(rows, op)) {
         case OpUnchanged():
           continue;
         case OpRefused(:final refusal):
-          return Refused(OpRefusal(refusal));
+          final stop = switch (op) {
+            PageAddOp(copyContentFromPagePublicId: final source?) =>
+              _copyStop(rows, source),
+            _ => null,
+          };
+          return Refused(stop ?? OpRefusal(refusal));
         case final OpApplied done:
           result = done;
       }
       final List<StrategyOp> ops;
       switch (op) {
-        case PageAddOp(copyContentFromPagePublicId: _?):
+        case PageAddOp(copyContentFromPagePublicId: final source?)
+            when !queue.shown.content.containsKey(source):
+          return Refused(CopyNeedsContent(source));
+        case PageAddOp(copyContentFromPagePublicId: final source?):
+          if (_copyStop(rows, source) case final stop?) return Refused(stop);
           switch (expandCopy(rows, op)) {
             case CopyExpanded(ops: final expanded):
               ops = expanded;
