@@ -7,6 +7,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
+import 'package:icarus/startup/app_instance.dart';
 
 /// The updater's words. The package fills each `{}` in order (app name,
 /// version, download size).
@@ -41,8 +42,10 @@ final desktopUpdateControllerProvider =
   final status = ref.watch(appUpdateStatusProvider).valueOrNull;
   if (status == null) return null;
 
-  final bool isDirectWindowsInstall =
-      !kIsWeb && Platform.isWindows && !status.isSupported;
+  final bool isDirectWindowsInstall = !kIsWeb &&
+      Platform.isWindows &&
+      !status.isSupported &&
+      appInstance is InstalledApp;
   if (!isDirectWindowsInstall) return null;
 
   debugPrint(

@@ -16,7 +16,7 @@ import 'package:icarus/view_cone/sightline_report_image.dart';
 import 'package:icarus/view_cone/svg_height_visibility.dart';
 import 'package:icarus/view_cone/vision_occluders.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/svg_height_view_cone.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:icarus/startup/app_instance.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// One click turns "this cone looks wrong" into everything we need to fix it:
@@ -143,10 +143,7 @@ Future<void> _saveSightlineReport({
   required String saveFailedMessage,
 }) async {
   try {
-    final directory = Directory(
-      '${(await getApplicationSupportDirectory()).path}'
-      '${Platform.pathSeparator}sightline-reports',
-    );
+    final directory = await sightlineReportsFolder();
     await directory.create(recursive: true);
     final path = '${directory.path}${Platform.pathSeparator}$stem';
     await File('$path.json').writeAsString(encoded);

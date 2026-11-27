@@ -2,12 +2,13 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:icarus/config/drive_build.dart';
+import 'package:icarus/startup/app_instance.dart';
 import 'package:win32_registry/win32_registry.dart';
 
 Future<void> registerDeepLinkProtocol(String scheme) async {
   // A driver build is a copy run from a scratch folder; icarus: links stay
   // with the installed app.
-  if (!Platform.isWindows || driveBuild) {
+  if (!Platform.isWindows || driveBuild || appInstance is! InstalledApp) {
     return;
   }
 

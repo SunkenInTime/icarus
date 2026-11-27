@@ -861,6 +861,44 @@ jobs:
       - name: Build Windows Client
         run: fvm flutter build windows --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 
+      - name: Start A Separate Instance Of The Release Build
+        run: |
+          $support = Join-Path $env:APPDATA 'xyz.icarus-strats'
+          $handler = 'HKCU:\Software\Classes\icarus'
+          if ((Test-Path $support) -or (Test-Path $handler)) {
+            throw "The runner already has $support or $handler; this check needs a machine where neither exists."
+          }
+          $scratch = Join-Path $env:RUNNER_TEMP 'separate-instance'
+          New-Item -ItemType Directory -Force -Path $scratch | Out-Null
+          $app = Start-Process -FilePath build\windows\x64\runner\Release\icarus.exe -PassThru `
+            -ArgumentList @("`"--hive-store-dir=$scratch`"")
+          $null = $app.Handle
+          Start-Sleep -Seconds 20
+          $app.Refresh()
+          "window: '$($app.MainWindowTitle)', handle $($app.MainWindowHandle)"
+          if ($app.HasExited) {
+            "it had already exited with $($app.ExitCode)"
+          } elseif ($app.MainWindowHandle -ne 0) {
+            $null = $app.CloseMainWindow()
+            if (-not $app.WaitForExit(120000)) { Stop-Process -Id $app.Id; $app.WaitForExit() }
+            "closed the way its X does; exited with $($app.ExitCode) (0x$('{0:X8}' -f $app.ExitCode))"
+          } else {
+            Stop-Process -Id $app.Id
+            $app.WaitForExit()
+            'no window to close; stopped it'
+          }
+          'in its own folder:'
+          Get-ChildItem -LiteralPath $scratch -Force | ForEach-Object { "  $($_.Name)" }
+          $leaks = @(
+            if (Test-Path $support) { "the support folder $support" }
+            if (Test-Path $handler) { "the icarus: link handler $handler" }
+          )
+          if ($leaks.Count -gt 0) {
+            if (Test-Path $support) { Get-ChildItem -LiteralPath $support -Recurse -Force | ForEach-Object { "  $($_.FullName)" } }
+            throw "A separate instance wrote outside its folder: $($leaks -join '; ')"
+          }
+          'nothing outside its folder'
+
       - name: Check The Library Engine Ships
         run: |
           if (-not (Test-Path build/windows/x64/runner/Release/sqlite3.dll)) {

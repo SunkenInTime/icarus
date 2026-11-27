@@ -10,6 +10,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/l10n/l10n.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/startup/app_instance.dart';
 
 /// Override to exercise either answer in tests, whatever they run on.
 final discordPresenceSupportedProvider = Provider<bool>(
@@ -138,7 +139,10 @@ class DiscordPresenceService {
   static bool get isSupported => !kIsWeb && Platform.isWindows;
 
   Future<void> update(DiscordPresenceData presence) {
-    if (!isSupported || _disposed || presence == _lastPublished) {
+    if (!isSupported ||
+        appInstance is! InstalledApp ||
+        _disposed ||
+        presence == _lastPublished) {
       return Future<void>.value();
     }
 
