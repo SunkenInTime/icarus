@@ -278,7 +278,8 @@ final class CloudSender {
   String? ended;
   var disposed = false;
   final bound = <String, Bound>{};
-  final _unanswered = <String, int?>{};
+  final _unanswered = <String>{};
+  Generation? _unansweredOn;
   final restarted = <String>{};
   final notBefore = <String, DateTime>{};
   final _failures = <String, int>{};
@@ -1084,11 +1085,14 @@ final class CloudSender {
             when at.isAfter(_clock())) {
           return _Skipped(row ?? why.row, at);
         }
-        final key = '$id $read';
-        requestedAt =
-            _unanswered.containsKey(key) && _unanswered[key] == snap.connection
-                ? null
-                : cloud.queue.session.sequence;
+        if (_unanswered.isNotEmpty) {
+          final on = await _currentGeneration();
+          if (disposed) return const _Ended();
+          _unansweredMovesTo(on);
+        }
+        requestedAt = _unanswered.contains('$id $read')
+            ? null
+            : cloud.queue.session.sequence;
         switch (await _issue(id, owner, read, snap, why)) {
           case NotYet(:final at, why: final row):
             return _Skipped(row ?? why.row, at);
@@ -1099,7 +1103,10 @@ final class CloudSender {
     }
     if (disposed) return const _Ended();
     if (outcome case StoreReadLost(failure: TransportFailure.timeout)) {
-      _unanswered['$id $read'] = snap.connection;
+      final on = await _currentGeneration();
+      if (disposed) return const _Ended();
+      _unansweredMovesTo(on);
+      _unanswered.add('$id $read');
     }
     if (_inputs != snap) {
       _note(
@@ -1708,6 +1715,12 @@ final class CloudSender {
     } catch (_) {
       return null;
     }
+  }
+
+  void _unansweredMovesTo(Generation? on) {
+    if (on == null) return;
+    if (_unansweredOn case final held? when held != on) _unanswered.clear();
+    _unansweredOn = on;
   }
 
   Future<List<QueueEvent>?> _onTheCurrentConnection(
