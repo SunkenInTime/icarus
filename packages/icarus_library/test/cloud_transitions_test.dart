@@ -707,8 +707,17 @@ String renderTable() {
       '- Answered work that the latest results do not show yet is drawn as '
       'landed, in the order the server applied it, off its source page and '
       'on its destination, until a result shows that row at the answered '
-      'revision or later. A delete this device made stays known as its own '
-      'until a result shows a later revision of the row.',
+      'revision or later, or until a result about the page its op names, at '
+      'or after its answer by order and server time, shows that page gone: '
+      'that page\'s own page-gone, or a list newer than the page\'s own '
+      'result that no longer has it. An item edit that names no page is not '
+      'retired this way, as an answer names a revision and not where the row '
+      'is. A result about another page never retires work, and while the '
+      'strategy itself is gone nothing retires. A delete this device made '
+      'stays known as its own until a result shows a later revision of the '
+      'row or its page is gone that way. '
+      'An undo onto a page that is gone asks the user, with that reason, '
+      'whether or not this device\'s delete is still drawn.',
     )
     ..writeln()
     ..writeln('## Which copy of a row a result leaves held')

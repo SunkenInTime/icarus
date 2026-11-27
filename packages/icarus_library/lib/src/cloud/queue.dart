@@ -1989,7 +1989,11 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
     }
   }
   for (final work in [...edit.landed]) {
-    if (!_alreadyShown(edit.shown, work)) continue;
+    if (!_alreadyShown(edit.shown, work) &&
+        (edit.strategy.presence == Presence.gone ||
+            !_goneSince(edit.shown, work))) {
+      continue;
+    }
     edit.landed.remove(work);
     edit.change.lives.addAll([
       ...pagesNeeded(work.op),
@@ -2139,6 +2143,41 @@ bool _alreadyShown(Shown shown, LandedWork work) {
   if (shownAt == null) return false;
   return _ownDelete(work) ? shownAt > work.version : shownAt >= work.version;
 }
+
+bool _goneSince(Shown shown, LandedWork work) {
+  final page = _namedPage(work.op);
+  if (page == null || shown.knownPages.contains(page)) return false;
+  final answered = work.answeredAt;
+  final own = shown.pagesSeen[page];
+  final ownSaysGone = switch (own) {
+    Seen(gone: true, at: final at?) => answered.reachedBy(at),
+    _ => false,
+  };
+  final listSaysGone = switch ((shown.listSeen?.at, own?.at)) {
+    (final list?, final read?) =>
+      read.order.isBefore(list.order) && answered.reachedBy(list),
+    (final list?, null) => answered.reachedBy(list),
+    (null, _) => false,
+  };
+  return ownSaysGone || listSaysGone;
+}
+
+String? _namedPage(StrategyOp op) => switch (op) {
+  StrategyPatchOp() => null,
+  ElementPatchOp(:final pagePublicId) ||
+  LineupGroupPatchOp(:final pagePublicId) => pagePublicId,
+  PageAddOp(:final pagePublicId) ||
+  PagePatchOp(:final pagePublicId) ||
+  PageDeleteOp(:final pagePublicId) ||
+  PageReorderOp(:final pagePublicId) ||
+  PageSettingsPatchOp(:final pagePublicId) ||
+  ElementAddOp(:final pagePublicId) ||
+  ElementDeleteOp(:final pagePublicId) ||
+  ElementReorderOp(:final pagePublicId) ||
+  LineupGroupAddOp(:final pagePublicId) ||
+  LineupGroupDeleteOp(:final pagePublicId) ||
+  LineupGroupReorderOp(:final pagePublicId) => pagePublicId,
+};
 
 bool _ownDelete(LandedWork work) =>
     work.own && (work.op is ElementDeleteOp || work.op is LineupGroupDeleteOp);
@@ -2478,6 +2517,11 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
       if (!entry.behindOwn) return _NameAt(authored);
       return _wholeBehindOwn(queue, entry, row, authored);
     case _Writes.putBack:
+      if (entry.scope case OnPage(
+        :final pagePublicId,
+      ) when _pageGone(queue.shown, pagePublicId)) {
+        return const _AskUser(RowPageGone());
+      }
       final seen = entry.authored;
       final delete = queue.landed
           .where(
@@ -2491,11 +2535,6 @@ _Verdict _judge(CloudQueue queue, PendingOp entry, DateTime now) {
       if (delete == null || seen is! AuthoredRow) return const _AskUser();
       final until = delete.firstSentAt.add(resendWindow);
       if (!now.isBefore(until)) return const _AskUser();
-      if (entry.scope case OnPage(
-        :final pagePublicId,
-      ) when _pageGone(queue.shown, pagePublicId)) {
-        return const _AskUser(RowPageGone());
-      }
       return switch (_knownRow(queue, row)) {
         _KnownRow(:final revision, :final digest, current: true)
             when revision == authored && digest == seen.digest =>
@@ -2990,7 +3029,9 @@ void _landed(
     },
     answeredAt: answeredAt,
   );
-  if (!_alreadyShown(edit.shown, work)) {
+  if (!_alreadyShown(edit.shown, work) &&
+      (edit.strategy.presence == Presence.gone ||
+          !_goneSince(edit.shown, work))) {
     edit.landed
       ..add(work)
       ..sort((a, b) => a.compareTo(b));
