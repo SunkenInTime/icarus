@@ -1909,9 +1909,7 @@ Step _arrived(_Edit edit, ArrivedBase base, Arrival arrival) {
       edit.effects.add(ReportSameOrderDiffers(_subjectOf(base)));
       return edit.done();
     case ResultFit.listFirst:
-      if (!isDebt(edit.shown.list)) {
-        edit.shown = edit.shown.owingList(ResultAtOrAfter(arrival.order));
-      }
+      edit.shown = edit.shown.owingList(ResultAtOrAfter(arrival.order));
       if (base case PageRead(:final page)) {
         edit.effects.add(PageResultDeferred(page.publicId));
       }

@@ -190,7 +190,7 @@ Starts as: gone; page list owed.
 | result: page-b gone | page-b not read this session |
 | result: strategy gone | standing deletedOnServer; page list read this session |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a) |
-| result: page-a of another life | defers page-a for the page list |
+| result: page-a of another life | page list owed; defers page-a for the page list |
 | result: page list of a later strategy life | page list read this session; page-a not read this session; page-b not read this session |
 
 Does not apply: claimed; claimed under another client id; attempt 1 released; attempt 1 transport failed; applied at 2; noop at 2, applied when first received; noop at 2, not applied; noop without a revision; answered at 2 with no life; rejected: already_exists; rejected: deleted; rejected: element_strategy_mismatch; rejected: lineup_strategy_mismatch; rejected: missing_expected_revision; rejected: not_found; rejected: page_strategy_mismatch; rejected: revision_mismatch; rejected: field_conflict; rejected: merge_invalid; rejected: row_replaced; failed: INTERNAL_ERROR; answer from an attempt that did not hold it; attempt 1 refused whole: upgradeRequired; attempt 1 refused whole: unauthenticated; attempt 1 refused whole: editAccessRemoved; attempt 1 refused whole: strategyDeleted; attempt 1 refused whole: uncheckedTooLate; attempt 1 refused whole: strategyReplaced; edit access confirmed after attempt 5; user: retry; user: keep mine, same item; user: use cloud; user: delete anyway; user: discard; result: page-a from a session that ended; user: discard what was set aside; result: page list of an earlier strategy life.
@@ -233,7 +233,7 @@ Starts as: waiting, awaiting a result for the page list; page list owed by a lis
 | result: page-b gone | page-b not read this session |
 | result: strategy gone | x: waiting; standing deletedOnServer; page list read this session |
 | result: page list the store would not keep | page list refused: ResultWithoutLife(page-a), owed by a list of another life than 1767322800000, read after the refusal |
-| result: page-a of another life | defers page-a for the page list |
+| result: page-a of another life | page list owed by a list of another life than 1767322800000, read after the refusal; defers page-a for the page list |
 | result: page list of an earlier strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
 | result: page list of a later strategy life | x: set aside; page list read this session; page-a not read this session; page-b not read this session; sets 1 aside |
 

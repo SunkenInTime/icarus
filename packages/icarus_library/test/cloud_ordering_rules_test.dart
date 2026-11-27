@@ -278,6 +278,52 @@ void main() {
     });
   });
 
+  group('a page read the list has not shown yet', () {
+    test('owes a list at its own order, so a list between two deferred page '
+        'reads, missing the later page, is not current', () {
+      final client = connectedOn();
+      final rows = initialRows();
+      client.must(
+        arrivalAt(
+          client,
+          HeaderRead(
+            strategy: rows.strategy,
+            pages: const [],
+            settings: const [],
+          ),
+          pointAt(10),
+        ),
+      );
+      client.must(arrivalAt(client, pageA(), pointAt(20)));
+      client.must(arrivalAt(client, pageReadOf(rows, 'page-b'), pointAt(40)));
+      expect(
+        client.queue.shown.list,
+        isA<ReadOwed>().having(
+          (state) => state.since,
+          'since',
+          ResultAtOrAfter(
+            ResultOrder(
+              session: client.queue.session.number,
+              client: testClient,
+              snapshot: pointAt(40).snapshot,
+            ),
+          ),
+        ),
+      );
+      expect(
+        notApplicable(
+          client.step(
+            arrivalAt(client, listWithout(rows, 'page-b'), pointAt(30)),
+          ),
+        ),
+        isA<OlderResult>(),
+      );
+      expect(client.queue.shown.listCurrent, isFalse);
+      client.must(arrivalAt(client, headerReadOf(rows), pointAt(41)));
+      expect(client.queue.shown.list, const ReadThisSession());
+    });
+  });
+
   group('equal order is the same answer', () {
     test('a repeat of the same stamped payload takes nothing and decides no '
         'row, for a page and for the list', () {
