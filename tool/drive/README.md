@@ -250,6 +250,12 @@ dart tool/drive/linux.dart run --script tool/drive/scripts/move-into-store-close
 
 `ICARUS_STORE_HOLDS_LIBRARY_FIXTURE=<new folder>` writes that library beside a store that already holds a folder and has no record of a copy, so the move is not run. `store-not-opened-local.json` starts on it and checks the library screen says the library could not be opened, and that trying again leaves it so.
 
+## The acceptance set and the library timings
+
+`dart tool/drive/acceptance.dart --out <new folder> [--library <Hive store>] [--workers N] [--exe <build>]` runs every script that never signs in, once on Hive (`--library-store off`) and once on the store (`--library-store store`). Each script starts on what `tool/drive/acceptance.json` gives it: a fixture `drive_fixtures_test.dart` writes, the library given with `--library`, or what the script before it left. The same file leaves scripts out by name, each with its reason: the ones that test a mode the store replaces, the ones waiting on a decision, and the ones that cannot run on this system. The runner reports how many are clean in both modes, fail in both, and fail only on one. On Linux it runs through `linux.dart`. On Windows it runs through `run.ps1` with `--exe` set to a build from `build.ps1`, one script at a time, started from the logged-in desktop through a scheduled task.
+
+`{"logMemory": label}` logs the app's resident memory. `{"editToSaved": n}` adds an agent to the open page and times the save, `n` times. `{"backupTime": n}` times Export Library into a temporary folder, `n` times. `scripts/library-timings-local.json` uses them with `openFirstFrame` and the library scroll, and on the store `expectMigration` logs how long the copy took and where the time went. `tool\drive\library-timings.ps1 -Exe <build> -Library <store>,<store> -Out <new folder>` runs it on each library: on Hive, on the store with the copy, and on the store after the copy, `-Rounds` times. It prints the lines that matter.
+
 ## Editor actions as ops
 
 With `--library-store ops` (`-LibraryStore ops`) the app mirrors as above, and also turns every editor action on a local strategy into the ops that would change its rows, committing each action's ops to the store in one `commitAll`, in the mirror's queue. Hive stays the truth and nothing on screen reads these rows. Only this flag creates the follower that does this; without it the editor's hooks are null and do nothing.
