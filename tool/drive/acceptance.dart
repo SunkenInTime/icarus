@@ -63,6 +63,9 @@ final class _Plan {
   Set<String> get closesTheApp =>
       (json['closesTheApp']! as List).cast<String>().toSet();
 
+  String? get closingExitNotJudgedOnWindows =>
+      json['closingExitNotJudgedOnWindows'] as String?;
+
   Map<String, String> get notOnWindows =>
       (json['notOnWindows']! as Map<String, Object?>).cast<String, String>();
 
@@ -304,6 +307,11 @@ Future<int> _accept(Map<String, String> options) async {
                   runOut,
                   if (hiveStore != null) ...['-HiveStore', hiveStore],
                   if (closes) ...['-EndsBy', 'close'],
+                  if (closes)
+                    if (plan.closingExitNotJudgedOnWindows case final why?) ...[
+                      '-ExitNotJudged',
+                      why
+                    ],
                 ],
                 workingDirectory: repo.path,
               )
