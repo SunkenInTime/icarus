@@ -12,7 +12,7 @@ import 'package:icarus/library_store/library_store_switch.dart';
 import 'package:icarus/library_store/live_results.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus_library/icarus_library.dart'
-    show Account, CanRead, PageGone;
+    show Account, CanRead, PageGone, StrategyGone;
 
 final editorSubscriptionsProvider = Provider<EditorSubscriptions>(
   (ref) => switch (ref.watch(cloudStoreSwitchProvider)) {
@@ -83,10 +83,34 @@ final class StampedSubscriptions extends EditorSubscriptions {
   Stream<RemoteStrategyShell> shell(
     String strategyPublicId, {
     String? shareToken,
-  }) =>
-      asPlainWatch(
-        repository.watchShellStamped(strategyPublicId, shareToken: shareToken),
-      );
+  }) {
+    final subject = accountSubject();
+    final watched = repository.watchPageListStamped(
+      strategyPublicId,
+      shareToken: shareToken,
+      accountSubject: subject,
+    );
+    final told = subject == null || shareToken != null
+        ? watched
+        : _toldToTheStore(
+            watched,
+            strategyPublicId: strategyPublicId,
+            subject: const ReadOfList(),
+            account: Account(subject),
+            outcomeOf: (answer) => pageListOutcomeOf(switch (answer) {
+              StampedValue(:final value, :final stamp) =>
+                StampedValue(value.list, stamp),
+              StampedError(:final error, :final stamp) =>
+                StampedError(error, stamp),
+            }),
+            lostOf: (error) => storeReadOutcomeOfError(
+              error,
+              gone: const StrategyGone(),
+              point: null,
+            ),
+          );
+    return asPlainWatch(told).map((both) => both.shell);
+  }
 
   @override
   Stream<RemotePageSnapshot> page({

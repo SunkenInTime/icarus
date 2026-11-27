@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/collab_models.dart' show RemoteStrategyShell;
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/store_reads.dart';
@@ -78,6 +79,54 @@ ConvexValue wirePage(World world, String page) {
   });
 }
 
+const theList = 'the page list';
+
+Map<String, Object?> wirePageFields(PageRow page) {
+  final fields = jsonOf(page);
+  return {
+    'publicId': page.publicId,
+    'strategyPublicId': strategyId,
+    'name': fields['name'],
+    if (fields['isAutoNamed'] case final named?) 'isAutoNamed': named,
+    'sortIndex': fields['sortIndex'],
+    'isAttack': fields['isAttack'],
+    'revision': fields['revision'],
+    'createdAt': lifeOf(page),
+    'updatedAt': lifeOf(page),
+  };
+}
+
+ConvexValue wireList(World world) {
+  final header = world.server.headerOf(strategyId);
+  final strategy = jsonOf(header.strategy);
+  final settings = {
+    for (final row in header.settings) row.pagePublicId: row,
+  };
+  return ConvexValue.fromDart({
+    'header': {
+      'publicId': strategyId,
+      'name': strategy['name'],
+      'mapData': strategy['mapData'],
+      'revision': strategy['revision'],
+      'createdAt': lifeOf(header.strategy),
+      'updatedAt': lifeOf(header.strategy),
+      'themeProfileId': null,
+      'themeOverridePalette': null,
+      'role': (world.server.roles[strategyId] ?? StoreReadRole.owner).name,
+    },
+    'pages': [
+      for (final page in header.pages)
+        {
+          ...wirePageFields(page),
+          'settings': jsonOf(settings[page.publicId]!)['settings'],
+          'contentRevision': jsonOf(settings[page.publicId]!)['revision'],
+          'contentCreatedAt': lifeOf(settings[page.publicId]!),
+          'contentUpdatedAt': lifeOf(settings[page.publicId]!),
+        },
+    ],
+  });
+}
+
 final class LivePageServer implements StampedConvexTransport {
   LivePageServer(this.world);
 
@@ -87,23 +136,28 @@ final class LivePageServer implements StampedConvexTransport {
   final _watching = <(String, StreamController<Stamped<ConvexValue>>)>[];
   final _plain = <(String, StreamController<ConvexValue>)>[];
 
-  String _pageOf(ConvexObject args) =>
-      args.value['pagePublicId']!.toDart()! as String;
+  String _subjectOf(String name, ConvexObject args) =>
+      name == 'strategy:getPageList'
+          ? theList
+          : args.value['pagePublicId']!.toDart()! as String;
+
+  ConvexValue _wire(String subject) =>
+      subject == theList ? wireList(world) : wirePage(world, subject);
 
   void _record(String call, String name, ConvexObject args) {
     calls.add('$call $name');
     (arguments[name] ??= []).add(args.toDart());
   }
 
-  Stamped<ConvexValue> _answer(String page) =>
-      StampedValue(wirePage(world, page), stampOf(world.server.stamp()));
+  Stamped<ConvexValue> _answer(String subject) =>
+      StampedValue(_wire(subject), stampOf(world.server.stamp()));
 
   void publish(String page) {
     for (final (watched, controller) in _watching) {
       if (watched == page) controller.add(_answer(page));
     }
     for (final (watched, controller) in _plain) {
-      if (watched == page) controller.add(wirePage(world, page));
+      if (watched == page) controller.add(_wire(page));
     }
   }
 
@@ -124,7 +178,7 @@ final class LivePageServer implements StampedConvexTransport {
     ConvexObject args,
   ) {
     _record('subscribeStamped', name, args);
-    final page = _pageOf(args);
+    final page = _subjectOf(name, args);
     late final StreamController<Stamped<ConvexValue>> controller;
     controller = StreamController<Stamped<ConvexValue>>(
       onListen: () {
@@ -139,12 +193,12 @@ final class LivePageServer implements StampedConvexTransport {
   @override
   Stream<ConvexValue> subscribe(String name, ConvexObject args) {
     _record('subscribe', name, args);
-    final page = _pageOf(args);
+    final page = _subjectOf(name, args);
     late final StreamController<ConvexValue> controller;
     controller = StreamController<ConvexValue>(
       onListen: () {
         _plain.add((page, controller));
-        controller.add(wirePage(world, page));
+        controller.add(_wire(page));
       },
       onCancel: () => _plain.removeWhere((each) => each.$2 == controller),
     );
@@ -245,6 +299,43 @@ List<String> pageReads(World world, Duration from) => [
       for (final call in world.server.readCalls)
         if (call.page == pageId && call.at!.difference(start) >= from)
           '${(call.at!.difference(start) - from).inSeconds} s',
+    ];
+
+const theListRead = ReadOfList();
+
+StoreReadAnswered liveList(World world) =>
+    world.server.answerNow(ReadCall(strategyId, null, servedAccount))
+        as StoreReadAnswered;
+
+List<String> listReads(World world, Duration from) => [
+      for (final call in world.server.readCalls)
+        if (call.page == null && call.at!.difference(start) >= from)
+          '${(call.at!.difference(start) - from).inSeconds} s',
+    ];
+
+void teammateRenamesPage(World world, String name) {
+  final page = world.server.rows[strategyId]!.page(pageId)!;
+  world.server.teammate(
+    strategyId,
+    PagePatchOp(
+      opId: 'teammate-renames-$name',
+      pagePublicId: pageId,
+      expectedPageRevision: revisionOf(page)!,
+      name: name,
+    ),
+  );
+}
+
+String storedPageName(World world) => jsonOf(
+      world.rowOf(
+        (content) =>
+            content.pages.firstWhere((page) => page.publicId == pageId),
+      ),
+    )['name']! as String;
+
+List<BaseArrived> listResultsWritten(World world) => [
+      for (final event in world.written())
+        if (event case BaseArrived(base: HeaderRead())) event,
     ];
 
 void main() {
@@ -577,5 +668,154 @@ void main() {
       expect(world.server.log, contains('send delete-p2'));
       expect(world.sender.clockWaitsOnLive, 1);
     }, addStrategy: false);
+  });
+
+  group('with the store switch on, the editor\'s list watch', () {
+    test(
+        'a teammate\'s page rename seen through the live list is taken by the '
+        'store, and no one-shot page list is read while the watch is current',
+        () {
+      inWorld((world) {
+        final live = LivePageServer(world);
+        final container = editorOver(world, live, const CloudStoreSend());
+        final shells = <RemoteStrategyShell>[];
+        final watch = container
+            .read(editorSubscriptionsProvider)
+            .shell(strategyId)
+            .listen(shells.add);
+        world.settle();
+        final from = world.async.elapsed;
+
+        teammateRenamesPage(world, 'Retake');
+        world.sender.owesFreshRead(strategyId, theListRead);
+        live.publish(theList);
+        world.settle(const Duration(minutes: 2));
+
+        expect(storedPageName(world), 'Retake');
+        expect(shells.last.pages.single.name, 'Retake');
+        expect(listReads(world, from), isEmpty);
+        expect(live.calls, ['subscribeStamped strategy:getPageList']);
+        expect(
+          live.arguments['strategy:getPageList']!.single['accountSubject'],
+          servedAccount.subject,
+        );
+
+        unawaited(watch.cancel());
+        container.dispose();
+        world.settle();
+      });
+    });
+
+    test('a share-link list watch never reaches the store', () {
+      inWorld((world) {
+        final live = LivePageServer(world);
+        final container = editorOver(world, live, const CloudStoreSend());
+        final watch = container
+            .read(editorSubscriptionsProvider)
+            .shell(strategyId, shareToken: 'shared')
+            .listen((_) {});
+        world.settle();
+        final before = listResultsWritten(world).length;
+        teammateRenamesPage(world, 'Retake');
+        live.publish(theList);
+        world.settle();
+        expect(listResultsWritten(world), hasLength(before));
+        expect(world.sender.liveTaken, 0);
+        unawaited(watch.cancel());
+        container.dispose();
+        world.settle();
+      });
+    });
+  });
+
+  group('the page list as a live subject', () {
+    test(
+        'the bound, the grace and a reconnect hold one-shot list reads as '
+        'they do a page\'s', () {
+      inWorld((world) {
+        final from = world.async.elapsed;
+        world.sender.liveOpened(strategyId, theListRead);
+        world.sender.owesFreshRead(strategyId, theListRead);
+        world.settle(const Duration(seconds: 5));
+        expect(listReads(world, from), isEmpty);
+        expect(
+          world.sender.waitingOn(strategyId),
+          StallExit.liveNoFirstResult,
+        );
+        world.settle(const Duration(seconds: 6));
+        expect(
+            listReads(world, from), ['${timing.firstLiveResult.inSeconds} s']);
+
+        world.sender.liveArrived(
+            strategyId, theListRead, servedAccount, liveList(world));
+        world.settle();
+        world.sender.owesFreshRead(strategyId, theListRead);
+        world.settle(timing.liveGrace - const Duration(milliseconds: 500));
+        expect(listReads(world, from), hasLength(1));
+        world.settle(const Duration(seconds: 1));
+        expect(listReads(world, from), hasLength(2));
+
+        world.connection = 2;
+        world.sender.owesFreshRead(strategyId, theListRead);
+        world.settle(const Duration(seconds: 5));
+        expect(listReads(world, from), hasLength(2));
+        world.settle(const Duration(seconds: 10));
+        expect(listReads(world, from), hasLength(3));
+      });
+    });
+
+    test(
+        'newest only: a burst of lists while one is being taken leaves only '
+        'the newest', () {
+      inWorld((world) {
+        world.sender.liveOpened(strategyId, theListRead);
+        world.slowStore.baseWritesWait = const Duration(seconds: 1);
+        final delivered = <ResultPoint>[];
+        for (var n = 0; n < 4; n++) {
+          teammateRenamesPage(world, 'Name $n');
+          final result = liveList(world);
+          delivered.add(result.point);
+          world.sender
+              .liveArrived(strategyId, theListRead, servedAccount, result);
+          if (n == 0) world.async.elapse(const Duration(milliseconds: 100));
+        }
+        world.settle(const Duration(seconds: 10));
+        final taken = [
+          for (final result in listResultsWritten(world)) result.point,
+        ];
+        expect(taken.skip(taken.length - 2), [delivered.first, delivered.last]);
+        expect(taken,
+            isNot(anyOf(contains(delivered[1]), contains(delivered[2]))));
+        expect(storedPageName(world), 'Name 3');
+        expect(world.sender.liveReplaced, 2);
+      });
+    });
+
+    test('a live list from a connection that has ended is not taken', () {
+      inWorld((world) {
+        world.sender.liveOpened(strategyId, theListRead);
+        world.settle();
+        final before = storedPageName(world);
+        teammateRenamesPage(world, 'Retake');
+        final stale = liveList(world);
+        world.server.connection = 2;
+        world.sender.liveArrived(strategyId, theListRead, servedAccount, stale);
+        world.settle();
+        expect(storedPageName(world), before);
+        final written = world.written();
+        final arrived = written.lastIndexWhere(
+          (event) => event is BaseArrived && event.point == stale.point,
+        );
+        expect(arrived, greaterThan(0));
+        expect(
+          written[arrived - 1],
+          isA<ConnectionReturned>().having(
+            (event) => event.generation,
+            'generation',
+            const Generation(client: 1, connection: 2),
+          ),
+        );
+      });
+    });
   });
 }

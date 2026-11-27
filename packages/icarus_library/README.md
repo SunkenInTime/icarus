@@ -1980,16 +1980,18 @@ simulated hour of each, and the test fails when the two disagree
 | The server refused an edit | the user | nothing | never | no calls | needsYou | 1 | 0 | the user retrying, using the cloud version or discarding |
 | This device cannot write the queue (the store, the session or the claim) | a write that succeeds | nothing: a result already read is kept and written again, not read again | the write again after 2 s, doubling to 1 min; 1 min while the store holds the strategy | none while the app runs | what the waiting work showed (in the test, needsYou: an edit the server refused, waiting for its page result) | 2 | 0 | a write that succeeds |
 | The user is still editing | a pause in the edits | nothing | 0.18 s after the last edit, at most 1 s after the first | 1 s | sending | 2 | 0 | the pause |
-| Nothing is queued and nothing is subscribed (send mode) | nothing: the store does not learn of teammates' edits. Saved here means your changes are on the server; whether you are seeing teammates' latest has no face in the store yet | nothing | never | no calls | saved | 0 | 0 | an edit, or a live result of the page the editor has open (the page list is not watched live) |
+| Nothing is queued and nothing is subscribed (send mode) | nothing: the store does not learn of teammates' edits. Saved here means your changes are on the server; whether you are seeing teammates' latest has no face in the store yet | nothing | never | no calls | saved | 0 | 0 | an edit, or a live result of the page list or the page the editor has open |
 
 <!-- end of stall exits -->
 
 **Which results a record takes.** A record takes results from one source,
 fixed by the mode the app started in. In send mode that is this device's own
 reads (`CloudResults.thisDevicesReads`, chosen when the sender starts), and
-the editor's live watch of the open page, whose answers the sender takes
-exactly as it takes a read's: newest only per page, and no one-shot read of
-that page while the watch has given a result on the current connection; in
+the editor's live watches of the open strategy's page list and open page,
+whose answers the sender takes exactly as it takes a read's: newest only per
+subject, and a one-shot read of a watched subject held while its watch has
+given a result on the current connection (for a clock wait, until it ends;
+otherwise for a short grace); in
 shadow mode it is the editor's live queries (`CloudResults.liveQueries`, chosen
 when the shadow starts). A result from the other source is not taken
 (`NotThisModesResults`), so the two never mix in one record. Inside its mode a

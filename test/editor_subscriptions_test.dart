@@ -35,7 +35,7 @@ const todaysCalls = [
 const stampedCalls = [
   'query strategy:getShell',
   'query page:getSnapshot',
-  'subscribeStamped strategy:getShell',
+  'subscribeStamped strategy:getPageList',
   'subscribeStamped page:getSnapshot',
   'subscribeTogetherStamped page:getFrame,page:getElementSlice,'
       'page:getElementSlice',
@@ -189,7 +189,9 @@ void main() {
             '$name ${args['accountSubject'] ?? 'without the account'}',
         },
         {
-          'strategy:getShell without the account',
+          cloud is CloudStoreSend
+              ? 'strategy:getPageList account-a'
+              : 'strategy:getShell without the account',
           for (final name in [
             'page:getSnapshot',
             'page:getFrame',
@@ -334,15 +336,13 @@ final class _TwoPageServer
     _shellPages = pages;
     _shellRevision++;
     for (final (name, args, controller) in _live) {
-      if (name == 'strategy:getShell') controller.add(_answer(name, args));
+      if (_watchesShell(name)) controller.add(_answer(name, args));
     }
   }
 
   void refuse(ConvexTransportError error, {required String watch}) {
     for (final (name, _, controller) in _live) {
-      if (watch == 'shell'
-          ? name == 'strategy:getShell'
-          : name != 'strategy:getShell') {
+      if (watch == 'shell' ? _watchesShell(name) : !_watchesShell(name)) {
         controller.addError(error);
       }
     }
@@ -351,6 +351,9 @@ final class _TwoPageServer
   ConvexValue _answer(String name, ConvexObject args) {
     if (name == 'strategy:getShell') {
       return shellAnswer(_shellPages, revision: _shellRevision);
+    }
+    if (name == 'strategy:getPageList') {
+      return pageListAnswer(_shellPages, revision: _shellRevision);
     }
     final page = args.value['pagePublicId']!.toDart() as String;
     final whole = pageAnswer(page, elements: _elements[page]!).toDart();
@@ -399,6 +402,9 @@ final class _TwoPageServer
   Future<ConvexValue> action(String name, ConvexObject args) =>
       throw UnimplementedError(name);
 }
+
+bool _watchesShell(String name) =>
+    name == 'strategy:getShell' || name == 'strategy:getPageList';
 
 bool _inRange(String id, String from, String? to) =>
     id.compareTo(from) >= 0 && (to == null || id.compareTo(to) < 0);

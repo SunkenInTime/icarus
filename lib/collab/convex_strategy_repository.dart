@@ -260,14 +260,26 @@ class ConvexStrategyRepository {
   }) =>
       _shellQuery(strategyPublicId, shareToken).watch().map(_strategyShell);
 
-  Stream<Stamped<RemoteStrategyShell>> watchShellStamped(
+  Stream<Stamped<ShellAndPageList>> watchPageListStamped(
     String strategyPublicId, {
     String? shareToken,
+    String? accountSubject,
   }) =>
-      _shellQuery(strategyPublicId, shareToken)
+      _api.strategy
+          .getPageList(
+            clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+            strategyPublicId: strategyPublicId,
+            shareToken: _optional(shareToken),
+            accountSubject: _optional(accountSubject),
+          )
           .stampedOn(_stampedTransport)
           .watch()
-          .map((stamped) => _mapStamped(stamped, _strategyShell));
+          .map((stamped) => _mapStamped(stamped, _shellAndPageList));
+
+  ShellAndPageList _shellAndPageList(StrategyGetPageListResult result) => (
+        shell: _strategyShell(shellResultOfPageList(result)),
+        list: _pageList(result),
+      );
 
   ConvexQuery<StrategyGetShellResult> _shellQuery(
     String strategyPublicId,
@@ -1676,6 +1688,30 @@ RemotePageSnapshot pageSnapshotFromCopy(
       PageGetSnapshotResult.decode(answer, 'copy.page:getSnapshot'),
       fromCopy: true,
       copiedAt: copiedAt,
+    );
+
+typedef ShellAndPageList = ({
+  RemoteStrategyShell shell,
+  RemotePageList list,
+});
+
+StrategyGetShellResult shellResultOfPageList(StrategyGetPageListResult list) =>
+    StrategyGetShellResult(
+      header: list.header,
+      pages: [
+        for (final page in list.pages)
+          PageGetFrameResultPage(
+            createdAt: page.createdAt,
+            isAttack: page.isAttack,
+            name: page.name,
+            publicId: page.publicId,
+            revision: page.revision,
+            sortIndex: page.sortIndex,
+            strategyPublicId: page.strategyPublicId,
+            updatedAt: page.updatedAt,
+            isAutoNamed: page.isAutoNamed,
+          ),
+      ],
     );
 
 RemoteStrategyShell _strategyShell(

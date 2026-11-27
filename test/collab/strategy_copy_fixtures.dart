@@ -138,6 +138,21 @@ ConvexObject shellAnswer(List<String> pageIds, {int revision = 1}) =>
       ],
     }) as ConvexObject;
 
+ConvexObject pageListAnswer(List<String> pageIds, {int revision = 1}) =>
+    ConvexValue.fromDart({
+      'header': headerRow(revision: revision),
+      'pages': [
+        for (final (index, id) in pageIds.indexed)
+          {
+            ...pageRow(id, sortIndex: index),
+            'settings': null,
+            'contentRevision': 1,
+            'contentCreatedAt': 1.0,
+            'contentUpdatedAt': 1.0,
+          },
+      ],
+    }) as ConvexObject;
+
 ConvexObject pageAnswer(
   String pageId, {
   int revision = 1,

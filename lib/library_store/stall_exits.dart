@@ -255,8 +255,8 @@ enum StallExit {
         'teammates\' latest has no face in the store yet',
     calls: 'nothing',
     onScreen: null,
-    goesAgain: 'an edit, or a live result of the page the editor has '
-        'open (the page list is not watched live)',
+    goesAgain: 'an edit, or a live result of the page list or the page '
+        'the editor has open',
   );
 
   const StallExit({
