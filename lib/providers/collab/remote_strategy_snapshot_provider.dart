@@ -411,7 +411,6 @@ class RemoteEditorSnapshotNotifier
     var shellRead = false;
     try {
       final subscriptions = ref.read(editorSubscriptionsProvider);
-      final repository = subscriptions.repository;
       final scope = _copyScope;
       final shellAskedAt = DateTime.now();
       final shell = await subscriptions.readShell(
