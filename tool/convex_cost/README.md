@@ -100,6 +100,7 @@ in here.
 | `soloSession` | 50 single moves with the editor's and library's live queries held. | the everyday set, library list re-runs |
 | `drawingMove` | Moving a 2,000-point freehand drawing. | the everyday set |
 | `twoPeople` | 20 moves by the owner, counting what the teammate's live queries re-run. | the everyday set |
+| `liveListEdit` | Item edits (own, a teammate's on the open page and on another page, then ten own) with `strategy:getPageList` watched with its account, as the store's editor watches it. | the everyday set, and page list re-runs, which must stay 0: an item edit writes no row a list query reads |
 | `editorIdleHour` | An open editor for an hour: 60 room-pass renewals. | calls, bytes read, written and sent an hour, re-runs |
 | `idleHour` | Every scheduled job for an hour with nothing to do. | calls, bytes read and written an hour |
 
