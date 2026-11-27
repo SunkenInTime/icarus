@@ -57,7 +57,8 @@ final class _Totals {
             'same as Hive backups imported into Hive and backed up again: '
             '$sameAfterImport',
         'libraries whose backup, imported and backed up again, is not the '
-            'backup it came from, on Hive as on the store: $changedByImport',
+            'backup it came from, on Hive as on the store (#844): '
+            '$changedByImport',
         'Hive records under a key that is not their id: $keyedOtherwise',
         'strategies whose first stored page is not their first page, so '
             'their tile could show another side: $sideFromAnotherPage',
