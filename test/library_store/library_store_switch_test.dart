@@ -141,11 +141,12 @@ void main() {
   });
 
   test(
-      'a build that may not shadow keeps the cloud store off, and still drops the flag',
+      'a build that may not shadow keeps the cloud store off and drops the '
+      'two flags main dropped; any other value is passed on as main passed it',
       () {
     for (final flag in [
       LibraryStoreLaunch.cloudSendFlag,
-      '${LibraryStoreLaunch.cloudStoreFlag}mirror',
+      LibraryStoreLaunch.cloudShadowFlag,
     ]) {
       final launch = LibraryStoreLaunch.parse(
         [flag, 'a.ica'],
@@ -154,5 +155,9 @@ void main() {
       expect(launch.cloud, isA<CloudStoreOff>(), reason: flag);
       expect(launch.otherArgs, ['a.ica'], reason: flag);
     }
+    final other = '${LibraryStoreLaunch.cloudStoreFlag}mirror';
+    final launch = LibraryStoreLaunch.parse([other, 'a.ica'], mayShadow: false);
+    expect(launch.cloud, isA<CloudStoreOff>());
+    expect(launch.otherArgs, [other, 'a.ica']);
   });
 }

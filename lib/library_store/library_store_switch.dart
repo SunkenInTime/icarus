@@ -55,6 +55,7 @@ final class LibraryStoreLaunch {
   static const offFlag = '--library-store=off';
   static const cloudStoreFlag = '--cloud-store=';
   static const cloudSendFlag = '${cloudStoreFlag}send';
+  static const cloudShadowFlag = '${cloudStoreFlag}shadow';
 
   final LibraryStoreSwitch choice;
   final CloudStoreSwitch cloud;
@@ -93,7 +94,7 @@ final class LibraryStoreLaunch {
             '--cloud-store has no value '
                 '"${unknown.substring(cloudStoreFlag.length)}"; it takes send',
           );
-        case final unknown when unknown.startsWith(cloudStoreFlag):
+        case cloudShadowFlag:
           cloud = const CloudStoreOff();
         case _:
           others.add(argument);
