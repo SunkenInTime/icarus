@@ -137,13 +137,17 @@ final class FileAuthFlowStorage extends GotrueAsyncStorage {
   Future<Map<String, String>> _items() async {
     final text = await _file.readNow();
     if (text == null) return {};
+    final Object? stored;
     try {
-      return (jsonDecode(text) as Map).cast<String, String>();
+      stored = jsonDecode(text);
     } on FormatException {
       return {};
-    } on TypeError {
-      return {};
     }
+    if (stored is! Map) return {};
+    return {
+      for (final MapEntry(:key, :value) in stored.entries)
+        if (key is String && value is String) key: value,
+    };
   }
 
   @override

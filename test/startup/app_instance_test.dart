@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -176,6 +177,34 @@ void main() {
         'takes the next sign-in', () async {
       File(path.join(scratch.path, 'auth_flow.json'))
           .writeAsStringSync('{not json');
+      final storage = authFlowStorageOf(appInstance)!;
+
+      expect(await storage.getItem(key: pkceVerifierStorageKey), isNull);
+      await storage.setItem(key: pkceVerifierStorageKey, value: 'next');
+      expect(await storage.getItem(key: pkceVerifierStorageKey), 'next');
+    });
+
+    test(
+        'a sign-in flow file holding a value that is not text keeps its text '
+        'values and still takes the next sign-in', () async {
+      final file = File(path.join(scratch.path, 'auth_flow.json'))
+        ..writeAsStringSync('{"other": 1, "kept": "as it was"}');
+      final storage = authFlowStorageOf(appInstance)!;
+
+      expect(await storage.getItem(key: 'kept'), 'as it was');
+      expect(await storage.getItem(key: 'other'), isNull);
+      await storage.setItem(key: pkceVerifierStorageKey, value: 'next');
+      expect(await storage.getItem(key: pkceVerifierStorageKey), 'next');
+      expect(jsonDecode(file.readAsStringSync()), {
+        'kept': 'as it was',
+        pkceVerifierStorageKey: 'next',
+      });
+    });
+
+    test(
+        'a sign-in flow file that is JSON but not an object reads as empty',
+        () async {
+      File(path.join(scratch.path, 'auth_flow.json')).writeAsStringSync('[1]');
       final storage = authFlowStorageOf(appInstance)!;
 
       expect(await storage.getItem(key: pkceVerifierStorageKey), isNull);
