@@ -8,7 +8,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/strategy/canvas_shows.dart';
 import 'package:icarus/strategy/local_library_view.dart';
-import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/open_attempt.dart';
 import 'package:icarus/collab/cloud_lineup_rows.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -1248,36 +1247,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       await remote.setActivePage(pageId, fetched: target);
     }
 
-    final reads = source == StrategySource.local
-        ? ref.read(localPageReadsProvider)
-        : null;
-    final readsPages = reads != null;
-    bool givesWay() => readsPages && superseded();
-    final attempt = reads?.switching(strategyId, pageId);
-    final String? shownPageId;
-    try {
-      final pageData = await pageSource.loadPage(pageId);
-      if (givesWay()) return _PageSwitch.superseded;
-      onTargetRead?.call(pageData);
-      shownPageId = await _applyLoadedPageData(
-        pageData,
-        strategyId: strategyId,
-        source: source,
-        loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
-        canApply: readsPages ? () => !givesWay() : null,
-        attempt: readsPages
-            ? OpenAttempt(
-                () => ref.read(strategyProvider).strategyId == strategyId,
-              )
-            : null,
-      );
-    } on Object catch (error) {
-      if (givesWay()) return _PageSwitch.superseded;
-      if (attempt != null) reads?.switchFailed(attempt, error);
-      rethrow;
-    } finally {
-      if (attempt != null) reads?.switchEnded(attempt);
-    }
+    final pageData = await pageSource.loadPage(pageId);
+    onTargetRead?.call(pageData);
+    final shownPageId = await _applyLoadedPageData(
+      pageData,
+      strategyId: strategyId,
+      source: source,
+      loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+    );
     if (shownPageId == null) return _PageSwitch.superseded;
 
     if (animated && direction != null) {
@@ -1361,12 +1338,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     // The open this page is read for, if it is one: a page read for an open
     // that gave way must not replace the canvas of what took its place.
     final opening = attempt ?? OpenAttempt.unchallenged;
-    final served = ref.read(localPageReadsProvider)?.servedWith(pageData);
-    final availablePageIds = served != null
-        ? served.pageIds
-        : await opening.wait(
-            _resolvePageSource(strategyId, source).listPageIds(),
-          );
+    final availablePageIds = await opening.wait(
+      _resolvePageSource(strategyId, source).listPageIds(),
+    );
     if (canApply != null && !canApply()) return null;
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
@@ -1374,17 +1348,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final preservedTheme = preservedMetadata?.theme;
     final themeProfileId = preservedTheme != null
         ? preservedTheme.profileId
-        : served != null
-            ? served.themeProfileId
-            : _resolveThemeProfileId(source, strategyId);
+        : _resolveThemeProfileId(source, strategyId);
     final themeOverridePalette = preservedTheme != null
         ? preservedTheme.overridePalette
-        : served != null
-            ? served.themeOverridePalette
-            : _resolveThemeOverridePalette(source, strategyId);
+        : _resolveThemeOverridePalette(source, strategyId);
 
-    final reads = ref.read(localPageReadsProvider);
-    var shownPageId = pageData.pageId;
+    final shownPageId = pageData.pageId;
     try {
       state = state.copyWith(
         isApplyingPage: true,
@@ -1395,37 +1364,17 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final retainedTextDrafts = preserveTextDrafts
           ? Map<String, String>.from(ref.read(textDraftProvider))
           : const <String, String>{};
-      var page = pageData;
-      var pageThemeProfileId = themeProfileId;
-      var pageThemeOverridePalette = themeOverridePalette;
-      List<String>? hivePageIds;
-      if (reads != null && reads.hiveWrittenSinceRead(page)) {
-        final hive = LocalStrategyPageSource.hiveNow(strategyId, page.pageId);
-        page = reads.redrawnFromHive(page, hive.page);
-        pageThemeProfileId = _resolveThemeProfileId(source, strategyId);
-        pageThemeOverridePalette =
-            _resolveThemeOverridePalette(source, strategyId);
-        hivePageIds = hive.pageIds;
-      }
-      shownPageId = page.pageId;
       await opening.wait(
         applyStrategyEditorPageData(
           ref,
-          page,
+          pageData,
           strategyId: strategyId,
-          themeProfileId: pageThemeProfileId,
-          themeOverridePalette: pageThemeOverridePalette,
+          themeProfileId: themeProfileId,
+          themeOverridePalette: themeOverridePalette,
           preserveHistory: preserveHistory,
           mapOverride: preservedMetadata?.map,
         ),
       );
-      reads?.applied(page);
-      if (hivePageIds != null) {
-        state = state.copyWith(
-          activePageId: shownPageId,
-          availablePageIds: hivePageIds,
-        );
-      }
       for (final entry in retainedTextDrafts.entries) {
         ref.read(textDraftProvider.notifier).setDraft(entry.key, entry.value);
       }

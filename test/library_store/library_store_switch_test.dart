@@ -25,21 +25,18 @@ void main() {
     expect(launch.otherArgs, ['--hive-store-dir=/tmp/s', 'a.ica']);
   });
 
-  test(
-      'a driver or debug build can ask for the list to be read from the store; a build that may not stays off',
-      () {
-    expect(
-      LibraryStoreLaunch.parse(const ['--library-store=read'], mayShadow: true)
-          .choice,
-      isA<StoreSwitchRead>(),
-    );
-    final refused = LibraryStoreLaunch.parse(
-      const ['--library-store=read', 'a.ica'],
-      mayShadow: false,
-    );
-    expect(refused.choice, isA<StoreSwitchOff>());
-    expect(refused.otherArgs, ['a.ica']);
-  });
+  for (final mayShadow in [true, false]) {
+    test(
+        'the removed read mode is still taken and stays off '
+        '(mayShadow: $mayShadow), so its flag is never opened as a file', () {
+      final launch = LibraryStoreLaunch.parse(
+        const ['--library-store=store', '--library-store=read', 'a.ica'],
+        mayShadow: mayShadow,
+      );
+      expect(launch.choice, isA<StoreSwitchOff>());
+      expect(launch.otherArgs, ['a.ica']);
+    });
+  }
 
   test(
       'a driver or debug build can ask for the library to run on the store; '

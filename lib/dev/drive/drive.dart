@@ -42,7 +42,7 @@
 //   {"hoverWords": t}                  {"dragWords": t, "by": [dx, dy]}
 //   {"dragAt": [x1, y1, x2, y2]}       {"path": [[x, y], ...], "held": png?}
 //                                      held: a shot before letting go
-//   {"scrollAt": [x, y, dy]}           {"key": name}  {"keyCombo": [names]}
+//   {"scrollAt": [x, y, dy]}  {"scrollTo": t, "at": [x, y]} wheels until t taps  {"key": name}  {"keyCombo": [names]}
 //   {"panScroll": [x, y, dy, ms]}      a trackpad swipe of dy over ms, then
 //                                      lets go so the list flings, as on a Mac
 //   {"holdKey": name}  {"letGoKey": name}  a key held across other steps
@@ -277,19 +277,7 @@ void startDrive() {
     previous?.call(details);
   };
   _runFrames.start();
-  if (_startsByHoldingTheList(script)) holdListAtLaunch(appProviderContainer);
   unawaited(_play(script));
-}
-
-bool _startsByHoldingTheList(String script) {
-  try {
-    return switch (jsonDecode(File(script).readAsStringSync())) {
-      [{'holdListOnHive': true}, ...] => true,
-      _ => false,
-    };
-  } on Object {
-    return false;
-  }
 }
 
 final _runFrames = RunFrames();
@@ -425,12 +413,6 @@ Future<void> _play(String script) async {
     _failedSteps++;
     failed.problems.forEach(_log);
   }
-  try {
-    listEndLines(appProviderContainer).forEach(_log);
-  } on StoreStepFailed catch (failed) {
-    _failedSteps++;
-    failed.problems.forEach(_log);
-  }
   final refusals =
       appProviderContainer.read(canvasShowsProvider.notifier).refusals;
   int counted(String what) => refusals.where((r) => r.what == what).length;
@@ -441,7 +423,6 @@ Future<void> _play(String script) async {
   for (final refusal in refusals) {
     _log('CANVAS $refusal');
   }
-  pageReadEndLines(appProviderContainer).forEach(_log);
   try {
     if (await closeStoreLine(appProviderContainer) case final line?) {
       if (line.startsWith('FAIL')) _failedSteps++;
@@ -465,34 +446,12 @@ Future<void> _play(String script) async {
 
 var _libraryLogged = <String>[];
 var _pagesBarLogged = <String>[];
-String? _listSourceLogged;
-
-void _logListSource(String label) {
-  final source = listSourceName(appProviderContainer);
-  if (source == null || source == _listSourceLogged) return;
-  _listSourceLogged = source;
-  _log('LISTING $label drawn from $source');
-}
-
 void _logLibrary(String label, List<String> library) {
-  _logListSource(label);
   _libraryLogged = library;
   _log('LIBRARY $label ${library.length} on screen');
   for (final line in library) {
     _log('LIBRARY $label $line');
   }
-  _logGrid(label, always: true);
-}
-
-var _gridLogged = <String>[];
-
-void _logGrid(String label, {bool always = false}) {
-  final grid = gridSources(appProviderContainer);
-  if (grid == null) return;
-  final lines = gridLines('', grid);
-  if (!always && listEquals(lines, _gridLogged)) return;
-  _gridLogged = lines;
-  gridLines(label, grid).forEach(_log);
 }
 
 void _logPagesBar(String label, List<String> bar) {
@@ -514,13 +473,8 @@ void _countLibraryBoxEvents() {
 }
 
 void _logScreensIfChanged(String label) {
-  _logListSource(label);
   final library = libraryOnScreen();
-  if (!listEquals(library, _libraryLogged)) {
-    _logLibrary(label, library);
-  } else {
-    _logGrid(label);
-  }
+  if (!listEquals(library, _libraryLogged)) _logLibrary(label, library);
   final bar = pagesBarOnScreen();
   if (!listEquals(bar, _pagesBarLogged)) _logPagesBar(label, bar);
   final builds = buildCounts();
@@ -1251,6 +1205,19 @@ Offset _doorPoint(String id) {
 
 var _pointer = 900;
 final _pointerClock = Stopwatch()..start();
+
+Future<void> _wheel(Offset at, double dy) async {
+  GestureBinding.instance.handlePointerEvent(
+    PointerScrollEvent(
+      kind: PointerDeviceKind.mouse,
+      position: at,
+      scrollDelta: Offset(0, dy),
+    ),
+  );
+  await Future<void>.delayed(const Duration(milliseconds: 300));
+  await _frames();
+}
+
 Offset? _mouseAt;
 
 /// Puts the mouse at [at]. MouseTracker asserts in debug builds when the
@@ -1986,36 +1953,6 @@ Future<void> _run(Map<String, dynamic> step) async {
         ),
       );
       lines.forEach(_log);
-    case 'libraryFromStore':
-      final lines = await _storeLines(
-        waitForStoreList(
-          c,
-          patience: Duration(seconds: (step['seconds'] ?? 600) as int),
-          expected: {...?(step['expect'] as Map<String, dynamic>?)},
-        ),
-      );
-      lines.forEach(_log);
-      _logListSource('$value');
-      (await _storeLines(waitForGridFromStore(c, label: '$value')))
-          .forEach(_log);
-    case 'gridRowFromStore':
-      final mark = step['since'] as String?;
-      final row = await _storeLines(
-        waitForGridRowFromStore(
-          c,
-          name: value as String,
-          patience: Duration(seconds: (step['seconds'] ?? 10) as int),
-        ).then((row) => [row.kind]),
-      );
-      _log('GRID "$value" ${row.single} drawn from a store row'
-          '${switch (_marks[mark]) {
-        final since? => ' ${since.elapsedMilliseconds} ms after $mark',
-        null => '',
-      }}');
-    case 'holdListOnHive':
-      _log(holdListOnHive(c));
-    case 'letListGo':
-      _log(letListGo(c));
     case 'expectStoreRefuses':
       storeRefusalsExpected = {...(value as List).cast<String>()};
     case 'watchLibraryText':
@@ -2229,15 +2166,31 @@ Future<void> _run(Map<String, dynamic> step) async {
       }
     case 'scrollAt':
       final xy = (value as List).cast<num>();
-      GestureBinding.instance.handlePointerEvent(
-        PointerScrollEvent(
-          kind: PointerDeviceKind.mouse,
-          position: Offset(xy[0].toDouble(), xy[1].toDouble()),
-          scrollDelta: Offset(0, xy[2].toDouble()),
-        ),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      await _frames();
+      await _wheel(
+          Offset(xy[0].toDouble(), xy[1].toDouble()), xy[2].toDouble());
+    case 'scrollTo':
+      final at = _point(step, 'at');
+      final where = '(${at.dx.round()}, ${at.dy.round()})';
+      bool tappable() {
+        try {
+          clickableCenterOf((w) => _isText(w, value as String),
+              what: 'scrollTo "$value"');
+          return true;
+        } on StateError {
+          return false;
+        }
+      }
+
+      var scrolls = 0;
+      while (!tappable()) {
+        if (scrolls == 60) {
+          throw StateError('"$value" could not be tapped after $scrolls '
+              'wheel turns at $where');
+        }
+        await _wheel(at, 200);
+        scrolls++;
+      }
+      _log('SCROLLED $scrolls wheel turns at $where to "$value"');
     case 'panScroll':
       final v = (value as List).cast<num>();
       await _panScroll(
@@ -3028,13 +2981,6 @@ Future<void> _run(Map<String, dynamic> step) async {
       _marks[value as String] = Stopwatch()..start();
     case 'raceLeave':
       await _raceLeave(step);
-    case 'logPageReads':
-      (await _storeLines(Future.sync(() => pageReadLines(
-                c,
-                tag: '$value',
-                expected: {...?(step['expect'] as Map<String, dynamic>?)},
-              ))))
-          .forEach(_log);
     case 'watchPicture':
       _pictureWatches.add(
         _watchPicture(value as String, step['gone'] as String?),

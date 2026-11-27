@@ -13,9 +13,10 @@ Windows with tool/drive/build.ps1 and run.ps1. tool/drive/README.md says more.
   dart tool/drive/linux.dart run --script FILE [--account EMAIL]
       [--companion FILE] [--companion-account EMAIL] [--exe DIR] [--out DIR]
       [--accounts-file FILE] [--accounts-host HOST] [--timeout-seconds N]
-      [--hive-store DIR] [--library-store off|shadow|mirror|read|ops|store]
+      [--hive-store DIR] [--library-store off|shadow|mirror|ops|store]
       [--cloud-store send] [--second-account EMAIL]
-      [--kill-after-seconds S] [--main-scope UNIT] [--ends-by close]
+      [--kill-after-seconds S] [--main-scope UNIT] [--companion-scope UNIT]
+      [--ends-by close]
 
 build   Builds this checkout into --out (default build/drive-linux). Without
         --convex it talks to the dev deployment; production is refused.
@@ -32,8 +33,7 @@ run     Runs --script, and --companion beside it when given, against the
         --hive-store starts the main instance on a copy of DIR, which is
         never opened itself. --library-store passes --library-store=VALUE to
         every instance; shadow copies the library into the store as it
-        starts, mirror also writes the store after every save, read
-        also draws the library list and folders from the store, and ops
+        starts, mirror also writes the store after every save, and ops
         also commits each editor action's ops to the store as it happens
         and checks the store against the canvas after every turn. store
         moves the library into the store once, as the app will when it
@@ -53,7 +53,8 @@ run     Runs --script, and --companion beside it when given, against the
         left.
         --main-scope starts the main instance in a systemd user scope of
         that name, apart from the companion, so a harness can cut its
-        network alone (tool/drive/linux-cloud-store-late.sh).
+        network alone (tool/drive/linux-cut-network.sh). --companion-scope
+        does the same for the companion.
         --ends-by close is for a script whose last step closes the window,
         so the app quits before it can write SUMMARY: the main instance
         passes when its log shows the window was asked to close, it wrote
@@ -208,6 +209,7 @@ Future<void> main(List<String> args) async {
           'second-account',
           'kill-after-seconds',
           'main-scope',
+          'companion-scope',
           'ends-by',
         })));
       default:
@@ -289,10 +291,10 @@ class _Instance {
 List<String> storeArgs(Map<String, String> options) {
   final libraryStore = options['library-store'];
   if (libraryStore != null &&
-      !const {'off', 'shadow', 'mirror', 'read', 'ops', 'store'}
+      !const {'off', 'shadow', 'mirror', 'ops', 'store'}
           .contains(libraryStore)) {
     throw UsageError(
-      '--library-store is off, shadow, mirror, read or ops, not "$libraryStore"',
+      '--library-store is off, shadow, mirror, ops or store, not "$libraryStore"',
     );
   }
   final cloudStore = options['cloud-store'];
@@ -465,7 +467,7 @@ Future<int> runScripts(Map<String, String> options) async {
         display,
         passwords,
         appArgs,
-        scope: instance.name == 'main' ? options['main-scope'] : null,
+        scope: options['${instance.name}-scope'],
       );
     }
     if (killAfter != null) {
