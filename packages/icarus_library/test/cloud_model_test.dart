@@ -559,11 +559,29 @@ final class Model {
         awaited = awaitedIn(entryViews(read, clock)[id]);
       }
       if (awaited.isNotEmpty) {
-        throw StateError(
-          '$id waits for ${[for (final hold in first) hold.subject]}, and '
-          'three rounds of reading what it asks for leave it waiting for '
-          '${[for (final hold in awaited) hold.subject]}',
-        );
+        final purgedPutBack = switch (queue.entry(id)) {
+          PendingOp(
+            op: ElementAddOp(
+              :final elementPublicId,
+              expectedElementRevision: _?,
+            ),
+          ) =>
+            server.rows.element(elementPublicId) == null,
+          _ => false,
+        };
+        final windowLater = entryViews(read, clock.add(resendWindow))[id];
+        if (!purgedPutBack ||
+            (windowLater?.state is Waiting &&
+                awaitedIn(windowLater).isNotEmpty)) {
+          throw StateError(
+            '$id waits for ${[for (final hold in first) hold.subject]}, and '
+            'neither three rounds of reading what it asks for nor the resend '
+            'window ending leave it free of '
+            '${[for (final hold in awaited) hold.subject]}',
+          );
+        }
+        count('put-backs of a purged row that wait out their resend window');
+        continue;
       }
       count('waits for a result that a read would settle', first.length);
     }
@@ -1995,12 +2013,22 @@ final class Model {
     while (readsInFlight.isNotEmpty) {
       deliverLateRead();
     }
+    var idle = 0;
+    String? before;
     for (
       var round = 0;
       round < 300 && client.queue.entries.isNotEmpty;
       round++
     ) {
-      pass(const Duration(minutes: 1));
+      final views = entryViews(client.queue, clock);
+      final now = [
+        for (final entry in client.queue.entries)
+          '${entry.id} ${views[entry.id]?.state} ${views[entry.id]?.holds}',
+      ].join('; ');
+      idle = now == before ? idle + 1 : 0;
+      before = now;
+      if (idle > 0) count('drain rounds that waited out a deadline');
+      pass(Duration(minutes: min(1 << min(idle, 11), 1440)));
       lane();
       userActs(draining: true);
       claim();
