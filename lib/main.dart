@@ -209,10 +209,7 @@ Future<void> main(List<String> args) async {
         await AppErrorReporter.flushPersistedLog();
         await refuseLaunch('Icarus did not start: ${refused.message}');
       }
-      final storeStart = LibraryStoreStart.of(
-        storeLaunch.choice,
-        clock: () => launchClock.elapsed,
-      );
+      final storeStart = LibraryStoreStart.of(storeLaunch.choice);
       appProviderContainer = ProviderContainer(overrides: [
         guardedSignOutRequestProvider.overrideWith(
           (ref) => ref.watch(cloudSignOutRequestProvider),

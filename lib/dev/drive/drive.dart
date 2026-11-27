@@ -277,19 +277,7 @@ void startDrive() {
     previous?.call(details);
   };
   _runFrames.start();
-  if (_startsByHoldingTheList(script)) holdListAtLaunch(appProviderContainer);
   unawaited(_play(script));
-}
-
-bool _startsByHoldingTheList(String script) {
-  try {
-    return switch (jsonDecode(File(script).readAsStringSync())) {
-      [{'holdListOnHive': true}, ...] => true,
-      _ => false,
-    };
-  } on Object {
-    return false;
-  }
 }
 
 final _runFrames = RunFrames();
@@ -425,12 +413,6 @@ Future<void> _play(String script) async {
     _failedSteps++;
     failed.problems.forEach(_log);
   }
-  try {
-    listEndLines(appProviderContainer).forEach(_log);
-  } on StoreStepFailed catch (failed) {
-    _failedSteps++;
-    failed.problems.forEach(_log);
-  }
   final refusals =
       appProviderContainer.read(canvasShowsProvider.notifier).refusals;
   int counted(String what) => refusals.where((r) => r.what == what).length;
@@ -441,7 +423,6 @@ Future<void> _play(String script) async {
   for (final refusal in refusals) {
     _log('CANVAS $refusal');
   }
-  pageReadEndLines(appProviderContainer).forEach(_log);
   try {
     if (await closeStoreLine(appProviderContainer) case final line?) {
       if (line.startsWith('FAIL')) _failedSteps++;
@@ -465,34 +446,12 @@ Future<void> _play(String script) async {
 
 var _libraryLogged = <String>[];
 var _pagesBarLogged = <String>[];
-String? _listSourceLogged;
-
-void _logListSource(String label) {
-  final source = listSourceName(appProviderContainer);
-  if (source == null || source == _listSourceLogged) return;
-  _listSourceLogged = source;
-  _log('LISTING $label drawn from $source');
-}
-
 void _logLibrary(String label, List<String> library) {
-  _logListSource(label);
   _libraryLogged = library;
   _log('LIBRARY $label ${library.length} on screen');
   for (final line in library) {
     _log('LIBRARY $label $line');
   }
-  _logGrid(label, always: true);
-}
-
-var _gridLogged = <String>[];
-
-void _logGrid(String label, {bool always = false}) {
-  final grid = gridSources(appProviderContainer);
-  if (grid == null) return;
-  final lines = gridLines('', grid);
-  if (!always && listEquals(lines, _gridLogged)) return;
-  _gridLogged = lines;
-  gridLines(label, grid).forEach(_log);
 }
 
 void _logPagesBar(String label, List<String> bar) {
@@ -514,13 +473,8 @@ void _countLibraryBoxEvents() {
 }
 
 void _logScreensIfChanged(String label) {
-  _logListSource(label);
   final library = libraryOnScreen();
-  if (!listEquals(library, _libraryLogged)) {
-    _logLibrary(label, library);
-  } else {
-    _logGrid(label);
-  }
+  if (!listEquals(library, _libraryLogged)) _logLibrary(label, library);
   final bar = pagesBarOnScreen();
   if (!listEquals(bar, _pagesBarLogged)) _logPagesBar(label, bar);
   final builds = buildCounts();
@@ -1986,36 +1940,6 @@ Future<void> _run(Map<String, dynamic> step) async {
         ),
       );
       lines.forEach(_log);
-    case 'libraryFromStore':
-      final lines = await _storeLines(
-        waitForStoreList(
-          c,
-          patience: Duration(seconds: (step['seconds'] ?? 600) as int),
-          expected: {...?(step['expect'] as Map<String, dynamic>?)},
-        ),
-      );
-      lines.forEach(_log);
-      _logListSource('$value');
-      (await _storeLines(waitForGridFromStore(c, label: '$value')))
-          .forEach(_log);
-    case 'gridRowFromStore':
-      final mark = step['since'] as String?;
-      final row = await _storeLines(
-        waitForGridRowFromStore(
-          c,
-          name: value as String,
-          patience: Duration(seconds: (step['seconds'] ?? 10) as int),
-        ).then((row) => [row.kind]),
-      );
-      _log('GRID "$value" ${row.single} drawn from a store row'
-          '${switch (_marks[mark]) {
-        final since? => ' ${since.elapsedMilliseconds} ms after $mark',
-        null => '',
-      }}');
-    case 'holdListOnHive':
-      _log(holdListOnHive(c));
-    case 'letListGo':
-      _log(letListGo(c));
     case 'expectStoreRefuses':
       storeRefusalsExpected = {...(value as List).cast<String>()};
     case 'watchLibraryText':
@@ -3028,13 +2952,6 @@ Future<void> _run(Map<String, dynamic> step) async {
       _marks[value as String] = Stopwatch()..start();
     case 'raceLeave':
       await _raceLeave(step);
-    case 'logPageReads':
-      (await _storeLines(Future.sync(() => pageReadLines(
-                c,
-                tag: '$value',
-                expected: {...?(step['expect'] as Map<String, dynamic>?)},
-              ))))
-          .forEach(_log);
     case 'watchPicture':
       _pictureWatches.add(
         _watchPicture(value as String, step['gone'] as String?),

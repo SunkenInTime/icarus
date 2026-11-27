@@ -685,8 +685,6 @@
   "pagesBarRestoreUnconfirmedIn": "「{strategy}」で「{name}」を復元できたか確認できませんでした。接続したら、ページ一覧かその作戦の「最近削除した項目」を確認してください。",
   "strategyBadgeDeviceOnly": "このデバイスのみ",
   "strategyBadgeDeviceOnlyTooltip": "このPCにのみ保存されています",
-  "strategyBadgeNotInStore": "ストアにありません",
-  "strategyBadgeNotInStoreTooltip": "このPCのファイルから表示しています。ライブラリストアにはありません",
   "strategyBadgeNeedsConnection": "接続が必要",
   "strategyBadgeNeedsConnectionTooltip": "初めて開くときは接続が必要です",
   "strategyBadgeMovingToCloud": "クラウドに移動中",

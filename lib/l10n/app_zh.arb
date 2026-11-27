@@ -685,8 +685,6 @@
   "pagesBarRestoreUnconfirmedIn": "无法确认“{name}”是否已在“{strategy}”中恢复。联网后请查看页面列表或该战术的“最近删除”。",
   "strategyBadgeDeviceOnly": "仅此设备",
   "strategyBadgeDeviceOnlyTooltip": "仅保存在这台电脑上",
-  "strategyBadgeNotInStore": "不在存储中",
-  "strategyBadgeNotInStoreTooltip": "从这台电脑上的文件显示：库存储中没有它",
   "strategyBadgeNeedsConnection": "需要联网",
   "strategyBadgeNeedsConnectionTooltip": "首次打开时需要联网",
   "strategyBadgeMovingToCloud": "正在移至云端",

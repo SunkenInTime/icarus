@@ -7,15 +7,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/dev/drive/drive_action_ops.dart';
-import 'package:icarus/dev/drive/drive_screens.dart';
 import 'package:icarus/dev/drive/store_differences.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
 import 'package:icarus/library_store/canvas_units.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/library_store/hive_library.dart';
-import 'package:icarus/library_store/hive_naming.dart';
-import 'package:icarus/library_store/library_listing.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_migration_start.dart';
 import 'package:icarus/library_store/library_store_open.dart';
@@ -25,13 +22,10 @@ import 'package:icarus/library_store/shadow_store.dart';
 import 'package:icarus/library_store/storage_failure_words.dart';
 import 'package:icarus/library_store/store_check.dart';
 import 'package:icarus/library_store/store_mirror.dart';
-import 'package:icarus/library_store/store_page_reads.dart';
 import 'package:icarus/library_store/strategy_image.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/startup/launch_clock.dart';
 import 'package:icarus/strategy/local_library.dart';
-import 'package:icarus/strategy/local_library_view.dart';
-import 'package:icarus/strategy/local_page_reads.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus_library/icarus_library.dart';
 import 'package:path/path.dart' as path;
@@ -49,7 +43,6 @@ String switchName(LibraryStoreSwitch choice) => switch (choice) {
       StoreSwitchOff() => 'off',
       StoreSwitchShadow() => 'shadow',
       StoreSwitchMirror() => 'mirror',
-      StoreSwitchRead() => 'read',
       StoreSwitchOps() => 'ops',
       StoreSwitchStore() => 'store',
     };
@@ -865,216 +858,6 @@ bool _exactBut(StoreChecked check, Set<String> refused) =>
         {for (final c in check.strategyProblems) c.strategyId}, refused) &&
     check.sameStrategies == check.hiveStrategies - refused.length;
 
-StoreLibraryListing? _storeListing(ProviderContainer c) =>
-    switch (c.read(localLibraryListingProvider)) {
-      final StoreLibraryListing listing => listing,
-      _ => null,
-    };
-
-String? listSourceName(ProviderContainer c) =>
-    switch (_storeListing(c)?.source) {
-      ListFromStore() => 'the store',
-      ListFromHive() => 'Hive',
-      null => null,
-    };
-
-String? _keptBecause(BoxNames names, String id) => [
-      for (final record in names.kept)
-        if (record.id == id) 'kept on Hive: ${record.reason}',
-    ].firstOrNull;
-
-String _refusalOf(LibraryStore store, StoreMirror mirror, String strategyId) =>
-    switch (mirror.refusedStrategies[strategyId]) {
-      final reason? => '$reason',
-      null => _keptBecause(mirror.reads.names.strategies, strategyId) ??
-          switch (store.summaryOf(strategyId)?.sync) {
-            null || KeptHere() => 'this build cannot show its stored summary',
-            _ => 'kept in the cloud, so not mirrored',
-          },
-    };
-
-String _folderRefusalOf(StoreMirror mirror, String folderId) =>
-    switch (mirror.refusedFolders[folderId]) {
-      final reason? => '$reason',
-      null => _keptBecause(mirror.reads.names.folders, folderId) ??
-          'this build cannot show its stored row',
-    };
-
-Future<List<String>> waitForStoreList(
-  ProviderContainer c, {
-  required Duration patience,
-  required Map<String, Object?> expected,
-}) async {
-  final listing = _storeListing(c) ??
-      (throw StoreStepFailed(
-          ['this run does not read the list from the store']));
-  final deadline = DateTime.now().add(patience);
-  while (listing.source is! ListFromStore) {
-    if (DateTime.now().isAfter(deadline)) {
-      final phase = switch (c.read(shadowProvider.notifier).mode) {
-        Mirroring(:final mirror) => _describePhase(mirror.phase),
-        ShadowOnly() => 'not mirroring',
-      };
-      throw StoreStepFailed([
-        'the list was still drawn from Hive after ${patience.inSeconds} s; '
-            'the mirror is $phase; '
-            '${_describeState(c.read(shadowProvider))}',
-      ]);
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-  }
-  final (:store, :mirror) = switch (listing.source) {
-    ListFromStore(:final store, :final mirror) => (
-        store: store,
-        mirror: mirror
-      ),
-    ListFromHive() => throw StateError('the list went back to Hive'),
-  };
-  final strategies = listing.strategiesNotInStore;
-  final folders = listing.foldersNotInStore;
-  final counts = <String, Object>{
-    'rebuiltAtOpen': store.summariesRebuiltAtOpen,
-    'fromHive': strategies.length,
-    'foldersFromHive': folders.length,
-  };
-  final lines = [
-    'STORE list drawn from the store ${listing.firstFromStore!.inMilliseconds} '
-        'ms after launch; summaries rebuilt at open '
-        '${store.summariesRebuiltAtOpen}; not in the store '
-        '${strategies.length} strategies, ${folders.length} folders',
-    for (final id in strategies.toList()..sort())
-      'STORE listed from Hive $id: ${_refusalOf(store, mirror, id)}',
-    for (final id in folders.toList()..sort())
-      'STORE folder listed from Hive $id: ${_folderRefusalOf(mirror, id)}',
-  ];
-  final problems = [
-    for (final MapEntry(:key, :value) in expected.entries)
-      if (counts[key] != value) '$key is ${counts[key]}, expected $value',
-  ];
-  if (problems.isNotEmpty) throw StoreStepFailed([...lines, ...problems]);
-  return lines;
-}
-
-typedef GridSources = ({
-  bool readMode,
-  List<GridRow> fromStore,
-  List<GridRow> fromHive,
-});
-
-GridSources? gridSources(ProviderContainer c) {
-  final listing = _storeListing(c);
-  if (listing == null) return null;
-  final rows = gridRowsOnScreen();
-  return (
-    readMode: listing.source is ListFromStore,
-    fromStore: [
-      for (final row in rows)
-        if (listing.drewFromStore(row.row)) row,
-    ],
-    fromHive: [
-      for (final row in rows)
-        if (!listing.drewFromStore(row.row)) row,
-    ],
-  );
-}
-
-List<String> gridLines(String label, GridSources grid) {
-  int count(List<GridRow> rows, String kind) =>
-      rows.where((row) => row.kind == kind).length;
-  return [
-    'GRID $label from the store ${count(grid.fromStore, 'strategy')} '
-        'strategies, ${count(grid.fromStore, 'folder')} folders; from Hive '
-        '${count(grid.fromHive, 'strategy')} strategies, '
-        '${count(grid.fromHive, 'folder')} folders',
-    if (grid.readMode)
-      for (final row in grid.fromHive)
-        'GRID $label from Hive ${row.kind} "${row.name}"',
-  ];
-}
-
-Future<void> _nextFrame() {
-  SchedulerBinding.instance.scheduleFrame();
-  return SchedulerBinding.instance.endOfFrame;
-}
-
-Future<List<String>> waitForGridFromStore(
-  ProviderContainer c, {
-  required String label,
-  Duration patience = const Duration(seconds: 2),
-}) async {
-  final listing = _storeListing(c) ??
-      (throw StoreStepFailed(
-          ['this run does not read the list from the store']));
-  bool onlyMarkedFromHive(GridSources grid) => grid.fromHive.every(
-        (row) => switch (row.kind) {
-          'strategy' => listing.strategiesNotInStore.contains(row.id),
-          _ => listing.foldersNotInStore.contains(row.id),
-        },
-      );
-  final deadline = DateTime.now().add(patience);
-  while (true) {
-    await _nextFrame();
-    final grid = gridSources(c)!;
-    if (grid.fromStore.isNotEmpty && onlyMarkedFromHive(grid)) {
-      return gridLines(label, grid);
-    }
-    if (DateTime.now().isAfter(deadline)) {
-      throw StoreStepFailed([
-        ...gridLines(label, grid),
-        'the grid on screen was not built from store rows '
-            '${patience.inMilliseconds} ms after the list was drawn from the '
-            'store',
-      ]);
-    }
-  }
-}
-
-Future<GridRow> waitForGridRowFromStore(
-  ProviderContainer c, {
-  required String name,
-  required Duration patience,
-}) async {
-  final listing = _storeListing(c) ??
-      (throw StoreStepFailed(
-          ['this run does not read the list from the store']));
-  final deadline = DateTime.now().add(patience);
-  while (true) {
-    await _nextFrame();
-    final named = [
-      for (final row in gridRowsOnScreen())
-        if (row.name == name) row,
-    ];
-    if (named case [final row] when listing.drewFromStore(row.row)) return row;
-    if (DateTime.now().isAfter(deadline)) {
-      throw StoreStepFailed([
-        switch (named) {
-          [] => '"$name" is not on the grid on screen',
-          [_] => '"$name" is on the grid on screen from a Hive row',
-          _ => '"$name" is on the grid on screen ${named.length} times',
-        },
-      ]);
-    }
-  }
-}
-
-void holdListAtLaunch(ProviderContainer c) => _storeListing(c)?.holdOnHive();
-
-String holdListOnHive(ProviderContainer c) {
-  final listing = _storeListing(c) ??
-      (throw StoreStepFailed(
-          ['this run does not read the list from the store']));
-  listing.holdOnHive();
-  return 'STORE list held on Hive; it is drawn from ${listSourceName(c)}';
-}
-
-String letListGo(ProviderContainer c) {
-  final listing = _storeListing(c) ??
-      (throw StoreStepFailed(
-          ['this run does not read the list from the store']));
-  listing.letGo();
-  return 'STORE list let go';
-}
-
 enum MirrorWait { notMirroring, drained, stillBusy }
 
 Future<MirrorWait> mirrorDrained(ProviderContainer c) async {
@@ -1089,99 +872,6 @@ Future<MirrorWait> mirrorDrained(ProviderContainer c) async {
     return MirrorWait.drained;
   }
   return MirrorWait.notMirroring;
-}
-
-List<String> listEndLines(ProviderContainer c) {
-  final listing = _storeListing(c);
-  if (listing == null) return const [];
-  final line = 'STORE list drawn from ${listSourceName(c)} at the end; it '
-      'moved ${listing.switches} times';
-  return switch ((listing.source, c.read(shadowProvider.notifier).mode)) {
-    (ListFromStore(), _) => [line],
-    (ListFromHive(), Mirroring(mirror: StoreMirror(phase: MirrorHeld()))) => [
-        line,
-      ],
-    (ListFromHive(), _) => throw StoreStepFailed([
-        line,
-        'the run reads the list from the store, yet it ended drawn from Hive',
-      ]),
-  };
-}
-
-StorePageReads? _pageReads(ProviderContainer c) =>
-    switch (c.read(localPageReadsProvider)) {
-      final StorePageReads reads => reads,
-      _ => null,
-    };
-
-var _pageLoadsLogged = 0;
-
-Map<String, int> pageLoadCounts(List<PageLoad> loads) {
-  final counts = <String, int>{};
-  void count(String key) => counts[key] = (counts[key] ?? 0) + 1;
-  for (final load in loads) {
-    final kind = switch (load.kind) {
-      PageLoadKind.open => 'open',
-      PageLoadKind.pageSwitch => 'switch',
-    };
-    switch (load.outcome) {
-      case ServedFromStore():
-        count('${kind}FromStore');
-      case ServedFromHive(:final reason):
-        count('${kind}FromHive');
-        count(reason.name);
-      case GaveWay():
-        count('${kind}GaveWay');
-      case NoPageToShow():
-        count('${kind}NoPage');
-      case LoadFailed():
-        count('${kind}Failed');
-    }
-  }
-  return counts;
-}
-
-String _countsLine(Map<String, int> counts) => counts.isEmpty
-    ? 'none'
-    : [
-        for (final key in counts.keys.toList()..sort()) '$key ${counts[key]}',
-      ].join(', ');
-
-List<String> pageReadLines(
-  ProviderContainer c, {
-  required String tag,
-  required Map<String, Object?> expected,
-}) {
-  final reads = _pageReads(c);
-  if (reads == null) {
-    const line = 'STORE page loads: this run reads pages from Hive only';
-    if (expected.isEmpty) return const [line];
-    throw StoreStepFailed(const [line]);
-  }
-  final loads = reads.loads;
-  final counts = pageLoadCounts(loads);
-  final lines = [
-    for (final load in loads.skip(_pageLoadsLogged)) 'STORE page $load',
-    'STORE page loads at $tag: ${_countsLine(counts)}',
-  ];
-  _pageLoadsLogged = loads.length;
-  final problems = [
-    for (final MapEntry(:key, :value) in expected.entries)
-      if ((counts[key] ?? 0) != value)
-        '$key is ${counts[key] ?? 0}, expected $value',
-  ];
-  if (problems.isNotEmpty) throw StoreStepFailed([...lines, ...problems]);
-  return lines;
-}
-
-List<String> pageReadEndLines(ProviderContainer c) {
-  final reads = _pageReads(c);
-  if (reads == null) return const [];
-  final loads = reads.loads;
-  return [
-    for (final load in loads.skip(_pageLoadsLogged)) 'STORE page $load',
-    'STORE page loads in the run: ${_countsLine(pageLoadCounts(loads))}',
-  ];
 }
 
 List<String> migrationLines(
