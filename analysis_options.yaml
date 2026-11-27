@@ -19,6 +19,7 @@ analyzer:
     - linux/**
     - third_party/**
     - packages/shadcn_ui/**
+    - packages/flutter_inappwebview_windows/**
     - packages/icarus_library/**
     - tool/convex_client_gauntlet/**
     - tool/icarus_convex_codegen/**
