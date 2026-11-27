@@ -48,6 +48,7 @@ class ColorLibrary extends ConsumerWidget {
           _SwatchPadding(
             child: entry.isCustom
                 ? ContextMenuRegion(
+                    key: ValueKey('color-library-custom-${entry.customIndex}'),
                     items: [
                       ShadContextMenuItem(
                         leading: const Icon(LucideIcons.pencil, size: 14),
@@ -90,6 +91,7 @@ class ColorLibrary extends ConsumerWidget {
         if (canAdd)
           _SwatchPadding(
             child: ColorPickerButton(
+              key: const ValueKey('color-library-add'),
               onTap: () => _addColor(context, ref),
             ),
           ),

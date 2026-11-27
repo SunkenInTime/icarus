@@ -1085,6 +1085,25 @@ bool _isText(Widget widget, String text) =>
 
 bool _hasKey(Widget widget, String key) => widget.key == ValueKey<String>(key);
 
+Offset _leftEdgeOfKey(String key) {
+  RenderBox? found;
+  void visit(Element element) {
+    if (found == null && _hasKey(element.widget, key)) {
+      if (element.findRenderObject() case final RenderBox box
+          when box.attached && box.hasSize) {
+        found = box;
+        return;
+      }
+    }
+    element.visitChildElements(visit);
+  }
+
+  WidgetsBinding.instance.rootElement?.visitChildElements(visit);
+  final box = found;
+  if (box == null) throw StateError('no widget keyed "$key"');
+  return box.localToGlobal(Offset(12, box.size.height / 2));
+}
+
 int _countOf(bool Function(Widget) test) {
   var count = 0;
   void visit(Element element) {
@@ -2148,6 +2167,9 @@ Future<void> _run(Map<String, dynamic> step) async {
       );
     case 'hoverWords':
       await _hover(_wordsPoint(value as String, nth: nth));
+    case 'dragKey':
+      final from = _leftEdgeOfKey(value as String);
+      await _drag([from, from + _point(step, 'by')]);
     case 'dragWords':
       final from = _wordsPoint(value as String, nth: nth, clickable: true);
       await _drag([from, from + _point(step, 'by')]);
