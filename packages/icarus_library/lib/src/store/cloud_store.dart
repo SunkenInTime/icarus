@@ -191,6 +191,31 @@ List<Row> _rowsOf(ArrivedBase base) => switch (base) {
   PageGone() || StrategyGone() => const [],
 };
 
+CopyStopped? _copyStop(StrategyRows rows, String source) {
+  if (rows.page(source) is UnreadablePage) return CopySourceUnreadable(source);
+  for (final element in rows.elementsOn(source)) {
+    if (element case UnreadableElement(
+      :final publicId,
+      :final stored,
+      :final reason,
+      deleted: != true,
+    )) {
+      if (stored is! JsonObject) {
+        return CopyHasNonObjectElement(source, publicId);
+      }
+      if (addableAsStored(element) == null) {
+        return CopyHasUnsendableElement(source, publicId, reason);
+      }
+    }
+  }
+  for (final group in rows.lineupGroupsOn(source)) {
+    if (group case UnreadableLineupGroup(:final publicId)) {
+      return CopyHasUnreadableLineupGroup(source, publicId);
+    }
+  }
+  return null;
+}
+
 CommitRefusal? _unfitResult(String strategyPublicId, List<QueueEvent> events) {
   for (final event in events) {
     if (event case BaseArrived(:final base)) {
@@ -1503,6 +1528,7 @@ extension _CloudStore on LibraryStore {
     _CloudReady cloud,
     List<StrategyOp> asked, {
     required int? madeOn,
+    required Map<String, SeenPage> pagesAsSeen,
   }) async {
     final strategy = cloud.strategy;
     final now = _cloudNow();
@@ -1530,6 +1556,12 @@ extension _CloudStore on LibraryStore {
     final applied = <(StrategyOp, OpApplied)>[];
     final edited = <String>{...pages};
     for (final op in asked) {
+      if (op case PageAddOp(copyContentFromPagePublicId: final source?)) {
+        if (!queue.shown.content.containsKey(source)) {
+          return Refused(CopyNeedsContent(source));
+        }
+        if (_copyStop(rows, source) case final stop?) return Refused(stop);
+      }
       final OpApplied result;
       switch (applyOp(rows, op)) {
         case OpUnchanged():
@@ -1541,9 +1573,6 @@ extension _CloudStore on LibraryStore {
       }
       final List<StrategyOp> ops;
       switch (op) {
-        case PageAddOp(copyContentFromPagePublicId: final source?)
-            when !queue.shown.content.containsKey(source):
-          return Refused(CopyNeedsContent(source));
         case PageAddOp(copyContentFromPagePublicId: _?):
           switch (expandCopy(rows, op)) {
             case CopyExpanded(ops: final expanded):
@@ -1573,7 +1602,8 @@ extension _CloudStore on LibraryStore {
           case (final PageDeleteOp delete, _):
             edit = PageDeleteEdit(
               delete,
-              seenPageIn(at, delete.pagePublicId),
+              pagesAsSeen[delete.pagePublicId] ??
+                  seenPageIn(at, delete.pagePublicId),
               authored,
             );
           case (_, EditMade(edit: final found)):
@@ -1699,9 +1729,15 @@ extension _CloudStore on LibraryStore {
     _CloudReady cloud,
     List<StrategyOp> asked, {
     required int? madeOn,
+    required Map<String, SeenPage> pagesAsSeen,
   }) async {
     try {
-      return await _commitCloud(cloud, asked, madeOn: madeOn);
+      return await _commitCloud(
+        cloud,
+        asked,
+        madeOn: madeOn,
+        pagesAsSeen: pagesAsSeen,
+      );
     } on _RowsDisagree catch (disagreement) {
       return Refused(disagreement.refusal);
     }

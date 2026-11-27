@@ -9,8 +9,10 @@ import '../field_rules.dart';
 import '../json.dart';
 import '../outcome.dart';
 import '../ops.dart';
+import '../payloads.dart';
 import '../rows.dart';
 import '../strategy_rows.dart';
+import '../wire.dart';
 import 'pending.dart';
 import 'version.dart';
 
@@ -579,34 +581,39 @@ Row? _rowAt(StrategyRows rows, Target target) => switch (target) {
   LineupTarget(:final lineupPublicId) => rows.lineupGroup(lineupPublicId),
 };
 
-Map<SeenPart, String> liveContentOn(Iterable<Row> rows, String pagePublicId) =>
-    {
-      for (final row in rows)
-        if (lifeOfRow(row) == Life.live)
-          switch (row) {
-            PageSettingsRow() => const SeenSettings(),
-            ElementRow(:final publicId) => SeenElement(publicId),
-            LineupGroupRow(:final publicId) => SeenLineupGroup(publicId),
-            _ => const SeenSettings(),
-          }: rowDigest(
-            row,
-          ),
-    };
+Map<SeenPart, String> liveContentOn(Iterable<Row> rows) => {
+  for (final row in rows)
+    if (lifeOfRow(row) == Life.live)
+      switch (row) {
+        PageSettingsRow() => const SeenSettings(),
+        ElementRow(:final publicId) => SeenElement(publicId),
+        LineupGroupRow(:final publicId) => SeenLineupGroup(publicId),
+        _ => const SeenSettings(),
+      }: rowDigest(
+        row,
+      ),
+};
 
 SeenPage seenPageIn(StrategyRows rows, String pagePublicId) {
   final page = rows.page(pagePublicId);
-  return SeenPage(
-    pageDigest: page == null ? '' : rowDigest(page),
-    pageRevision: page == null ? 0 : (revisionOfRow(page) ?? 0),
-    content: ContentSeen(
-      liveContentOn([
-        ?rows.settingsOf(pagePublicId),
-        ...rows.elementsOn(pagePublicId),
-        ...rows.lineupGroupsOn(pagePublicId),
-      ], pagePublicId),
-    ),
-  );
+  final content = contentSeenOf([
+    ?rows.settingsOf(pagePublicId),
+    ...rows.elementsOn(pagePublicId),
+    ...rows.lineupGroupsOn(pagePublicId),
+  ]);
+  return page == null
+      ? SeenPage(pageDigest: '', pageRevision: 0, content: content)
+      : seenPageOf(page, content);
 }
+
+SeenPage seenPageOf(PageRow page, SeenContent content) => SeenPage(
+  pageDigest: rowDigest(page),
+  pageRevision: revisionOfRow(page) ?? 0,
+  content: content,
+);
+
+ContentSeen contentSeenOf(Iterable<Row> rows) =>
+    ContentSeen(liveContentOn(rows));
 
 StrategyOp withFieldBase(StrategyRows rows, StrategyOp op) => switch (op) {
   ElementPatchOp(merge: FieldMerge(base: null, :final fields)) => switch (rows
@@ -661,6 +668,21 @@ final class CopyNotExpanded extends CopyExpansion {
   final ApplyResult result;
 }
 
+({ElementPayload payload, int sortIndex})? addableAsStored(
+  UnreadableElement row,
+) => switch ((row.stored, row.deleted)) {
+  (final JsonObject stored, false) => switch ((
+    ElementPayload.decode(stored['payload']),
+    stored['sortIndex'],
+  )) {
+    (Read(value: final payload), final num sortIndex)
+        when isSafeWhole(sortIndex) =>
+      (payload: payload, sortIndex: sortIndex.toInt()),
+    _ => null,
+  },
+  _ => null,
+};
+
 CopyExpansion expandCopy(StrategyRows rows, PageAddOp copy) {
   final OpApplied applied;
   switch (applyOp(rows, copy)) {
@@ -705,6 +727,20 @@ CopyExpansion expandCopy(StrategyRows rows, PageAddOp copy) {
             sortIndex: row.sortIndex,
           ),
         );
+      case RowAdded(after: final UnreadableElement row):
+        if (addableAsStored(row) case (:final payload, :final sortIndex)) {
+          ops.add(
+            ElementAddOp(
+              opId: opId(),
+              elementPublicId: row.publicId,
+              pagePublicId: row.pagePublicId,
+              payload: payload,
+              sortIndex: sortIndex,
+            ),
+          );
+        } else {
+          return CopyNotExpanded(OpRefused(UnreadableTarget(write.key)));
+        }
       case RowAdded(after: ElementRow() || LineupGroupRow()):
         return CopyNotExpanded(OpRefused(UnreadableTarget(write.key)));
       case RowAdded() || RowChanged():
