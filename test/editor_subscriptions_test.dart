@@ -33,7 +33,7 @@ const todaysCalls = [
 ];
 
 const stampedCalls = [
-  'query strategy:getShell',
+  'query strategy:getPageList',
   'query page:getSnapshot',
   'subscribeStamped strategy:getPageList',
   'subscribeStamped page:getSnapshot',
@@ -203,6 +203,42 @@ void main() {
     });
   }
 
+  for (final cloud in [const CloudStoreOff(), const CloudStoreSend()]) {
+    test(
+        'with the switch ${cloud is CloudStoreSend ? 'on' : 'off'}, an open '
+        'and a refresh read the shell from the query the editor watches',
+        () async {
+      final container = start(cloud: cloud);
+      await openThenTeammateEditsPageA(container);
+      await container.read(remoteEditorSnapshotProvider.notifier).refresh();
+      await pumpEventQueue();
+      final transport =
+          cloud is CloudStoreSend ? storeTransport : editorTransport;
+      final shellQuery = cloud is CloudStoreSend
+          ? 'strategy:getPageList'
+          : 'strategy:getShell';
+      expect(
+        [
+          for (final call in transport.calls)
+            if (call.contains('strategy:')) call,
+        ],
+        [
+          'query $shellQuery',
+          '${cloud is CloudStoreSend ? 'subscribeStamped' : 'subscribe'} '
+              '$shellQuery',
+          'query $shellQuery',
+        ],
+      );
+      expect(
+        {
+          for (final (name, args) in transport.queriedWith)
+            if (name == shellQuery) args['accountSubject'],
+        },
+        {if (cloud is CloudStoreSend) 'account-a' else null},
+      );
+    });
+  }
+
   group('a refused watch reaches the editor the same with either kind', () {
     Future<Outcome> refused(
       CloudStoreSwitch cloud,
@@ -227,14 +263,14 @@ void main() {
                 .recoveries,
         rereads: [
           for (final call in transport.calls.skip(before))
-            if (call.startsWith('query ')) call,
+            if (call.startsWith('query ')) _reread(call),
         ].join(', '),
         upgradeAsked: container.read(clientUpgradeRequiredProvider),
       );
     }
 
-    const shell = 'query strategy:getShell';
-    const both = 'query strategy:getShell, query page:getSnapshot';
+    const shell = 'the shell';
+    const both = 'the shell, the page';
     for (final (code, watch, expected) in <(String, String, Outcome)>[
       (
         'UNAUTHENTICATED',
@@ -402,6 +438,12 @@ final class _TwoPageServer
   Future<ConvexValue> action(String name, ConvexObject args) =>
       throw UnimplementedError(name);
 }
+
+String _reread(String call) => switch (call) {
+      'query strategy:getShell' || 'query strategy:getPageList' => 'the shell',
+      'query page:getSnapshot' => 'the page',
+      _ => call,
+    };
 
 bool _watchesShell(String name) =>
     name == 'strategy:getShell' || name == 'strategy:getPageList';

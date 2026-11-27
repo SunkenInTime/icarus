@@ -33,6 +33,11 @@ sealed class EditorSubscriptions {
 
   final ConvexStrategyRepository repository;
 
+  Future<RemoteStrategyShell> readShell(
+    String strategyPublicId, {
+    String? shareToken,
+  });
+
   Stream<RemoteStrategyShell> shell(
     String strategyPublicId, {
     String? shareToken,
@@ -47,6 +52,13 @@ sealed class EditorSubscriptions {
 
 final class TodaysSubscriptions extends EditorSubscriptions {
   const TodaysSubscriptions(super.repository);
+
+  @override
+  Future<RemoteStrategyShell> readShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) =>
+      repository.fetchShell(strategyPublicId, shareToken: shareToken);
 
   @override
   Stream<RemoteStrategyShell> shell(
@@ -79,6 +91,17 @@ final class StampedSubscriptions extends EditorSubscriptions {
   final String? Function() accountSubject;
   final LiveResults live;
   final CanRead canRead;
+
+  @override
+  Future<RemoteStrategyShell> readShell(
+    String strategyPublicId, {
+    String? shareToken,
+  }) =>
+      repository.fetchShellOfPageList(
+        strategyPublicId,
+        shareToken: shareToken,
+        accountSubject: accountSubject(),
+      );
 
   @override
   Stream<RemoteStrategyShell> shell(

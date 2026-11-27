@@ -8,6 +8,7 @@ final class StampedOver implements StampedConvexTransport {
   final ConvexTransport inner;
   final calls = <String>[];
   final watchedWith = <(String, Map<String, Object?>)>[];
+  final queriedWith = <(String, Map<String, Object?>)>[];
   var _snapshot = 0;
 
   ResultStamp _next() => ResultStamp(
@@ -31,6 +32,7 @@ final class StampedOver implements StampedConvexTransport {
   @override
   Future<ConvexValue> query(String name, ConvexObject args) {
     calls.add('query $name');
+    queriedWith.add((name, args.toDart()));
     return inner.query(name, args);
   }
 

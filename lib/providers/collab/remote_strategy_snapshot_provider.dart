@@ -410,10 +410,11 @@ class RemoteEditorSnapshotNotifier
     final epoch = ++_readEpoch;
     var shellRead = false;
     try {
-      final repository = ref.read(editorSubscriptionsProvider).repository;
+      final subscriptions = ref.read(editorSubscriptionsProvider);
+      final repository = subscriptions.repository;
       final scope = _copyScope;
       final shellAskedAt = DateTime.now();
-      final shell = await repository.fetchShell(
+      final shell = await subscriptions.readShell(
         strategyPublicId,
         shareToken: _shareToken,
       );

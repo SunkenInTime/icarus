@@ -260,6 +260,24 @@ class ConvexStrategyRepository {
   }) =>
       _shellQuery(strategyPublicId, shareToken).watch().map(_strategyShell);
 
+  Future<RemoteStrategyShell> fetchShellOfPageList(
+    String strategyPublicId, {
+    String? shareToken,
+    String? accountSubject,
+  }) async =>
+      _strategyShell(
+        shellResultOfPageList(
+          await _api.strategy
+              .getPageList(
+                clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+                strategyPublicId: strategyPublicId,
+                shareToken: _optional(shareToken),
+                accountSubject: _optional(accountSubject),
+              )
+              .fetch(),
+        ),
+      );
+
   Stream<Stamped<ShellAndPageList>> watchPageListStamped(
     String strategyPublicId, {
     String? shareToken,
