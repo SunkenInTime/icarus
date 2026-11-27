@@ -4,12 +4,14 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
 import 'package:icarus/library_store/library_migration.dart';
 import 'package:icarus/library_store/library_store_open.dart';
 import 'package:icarus/library_store/store_library.dart';
+import 'package:icarus/library_store/stored_strategy.dart';
 import 'package:icarus/strategy/local_library.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -252,6 +254,43 @@ void main() {
     _expectSame(await reopened(storage), inHive.last, 'after a reopen');
     LocalLibrary.source = const LibraryInHive();
     expect(_hiveOnDisk(), hiveBefore);
+  });
+
+  test(
+      'a load that stops part way holds nothing it read ahead: every '
+      'strategy read after it is read from the engine', () async {
+    await _library();
+    await StrategyMigrator.migrateAllStrategies();
+    final storage = MemoryStorage();
+    final writer = await moved(MemoryEngine(storage));
+    for (final id in ['a', 'b', 'c']) {
+      final rows = switch (await readStoredRows(writer, id)) {
+        StoredRowsRead(:final rows) => rows,
+        final other => fail('$id: $other'),
+      };
+      expect(
+        await writer.putStrategy(
+          rows,
+          writtenAt: Settings.versionNumber + 1,
+        ),
+        isA<Saved<LibraryEdited, LibraryRefusal>>(),
+      );
+    }
+    await writer.close();
+    final gate = CommitGate();
+    final store = await _open(GatedEngine(MemoryEngine(storage), gate));
+    addTearDown(store.close);
+
+    expect(
+      await StoreLibrary.load(store, lost: (_) {}),
+      isA<StoreLibraryNotLoaded>(),
+    );
+
+    for (final id in ['a', 'b', 'c']) {
+      gate.reads = 0;
+      expect(await store.readStrategy(id), isA<Found<StrategyContent>>());
+      expect(gate.reads, greaterThan(0), reason: id);
+    }
   });
 
   group('a write the store would refuse is refused before it shows', () {

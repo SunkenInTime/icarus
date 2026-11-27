@@ -7,6 +7,7 @@ final class CommitGate {
   var failNext = false;
   var doubtNext = false;
   var commits = 0;
+  var reads = 0;
   var ended = false;
   int? endAfter;
 
@@ -57,20 +58,28 @@ final class _GatedLease implements StorageLease {
   LeaseStatus get status => gate.ended ? const Ended() : inner.status;
 
   @override
-  Future<KeyRead> read(String area, String key) => gate.ended
-      ? Future.value(const KeyNotRead(LeaseEnded()))
-      : inner.read(area, key);
+  Future<KeyRead> read(String area, String key) {
+    gate.reads++;
+    return gate.ended
+        ? Future.value(const KeyNotRead(LeaseEnded()))
+        : inner.read(area, key);
+  }
 
   @override
-  Future<Stored<List<String>>> keys(String area, String prefix) => gate.ended
-      ? Future.value(const StorageFailed(LeaseEnded()))
-      : inner.keys(area, prefix);
+  Future<Stored<List<String>>> keys(String area, String prefix) {
+    gate.reads++;
+    return gate.ended
+        ? Future.value(const StorageFailed(LeaseEnded()))
+        : inner.keys(area, prefix);
+  }
 
   @override
-  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) =>
-      gate.ended
-          ? Future.value(const StorageFailed(LeaseEnded()))
-          : inner.entries(area, prefix);
+  Future<Stored<List<StoredEntry>>> entries(String area, String prefix) {
+    gate.reads++;
+    return gate.ended
+        ? Future.value(const StorageFailed(LeaseEnded()))
+        : inner.entries(area, prefix);
+  }
 
   @override
   Future<Stored<List<String>>> areas(String prefix) => gate.ended
