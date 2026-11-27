@@ -300,10 +300,9 @@ void main() {
       expect(move.list, isNull);
       expect(move.allPages, isNull);
       expect(move.rows.keys, [const ElementTarget('e1')]);
-      expect(move.rows[const ElementTarget('e1')]!.wrote, (
-        target: const ElementTarget('e1'),
-        version: const Version(2, life: fixtureLife),
-      ));
+      expect(move.rows[const ElementTarget('e1')]!.wrote, {
+        const ElementTarget('e1'): const Version(2, life: fixtureLife),
+      });
       final other = connectedOn();
       answerReorder(other, pointAt(10));
       final renumbered = other.queue.shown.marks;
@@ -551,7 +550,7 @@ void main() {
   });
 
   test('two marks on one subject keep the later order and the later time, '
-      'and keep what was written only when both wrote the same row', () {
+      'and the newest version written of each row', () {
     const e1At2 = (
       target: ElementTarget('e1'),
       version: Version(2, life: fixtureLife),
@@ -570,13 +569,56 @@ void main() {
       first.and(second),
       AnswerMark(order: orderAt(9), serverTime: 300, wrote: e1At3),
     );
-    expect(
-      first.and(AnswerMark(order: orderAt(5), wrote: e2At5)),
-      AnswerMark(order: orderAt(9), serverTime: 100),
-    );
+    final both = first.and(AnswerMark(order: orderAt(5), wrote: e2At5));
+    expect(both.order, orderAt(9));
+    expect(both.serverTime, 100);
+    expect(both.wrote, {
+      e1At3.target: e1At3.version,
+      e2At5.target: e2At5.version,
+    });
+    expect(first.and(AnswerMark(order: orderAt(5))).wrote, isNull);
   });
 
   group('a timed answer whose clock never catches up', () {
+    test('two answers that wrote different items on one page release the '
+        'page by content once a read shows both, with a clock behind or no '
+        'clock at all', () {
+      for (final time in [answerTime, null]) {
+        final client = connectedOn();
+        client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(2)));
+        client.must(arrivalAt(client, pageA(), pointAt(3)));
+        answerMove(client, pointAt(10));
+        answer(
+          client,
+          movePatch('move2', elementId: 'e2', x: 50),
+          pointAt(11),
+          revision: 2,
+        );
+        client.must(reconnected());
+        ResultPoint behind(int snapshot) => ResultPoint(
+          client: testClient,
+          connection: currentGeneration.connection,
+          snapshot: snapshot,
+          serverTime: time,
+        );
+        final first = withOp(initialRows(), movePatch('move', x: 40));
+        client.must(arrivalAt(client, pageA(first), behind(1)));
+        expect(
+          client.queue.shown.pageCurrent('page-a'),
+          isFalse,
+          reason: '$time',
+        );
+        final both = withOp(first, movePatch('move2', elementId: 'e2', x: 50));
+        client.must(arrivalAt(client, pageA(both), behind(2)));
+        expect(
+          client.queue.shown.pageCurrent('page-a'),
+          isTrue,
+          reason: '$time',
+        );
+        expect(client.queue.shown.marks.pages, isEmpty, reason: '$time');
+      }
+    });
+
     test('after a reconnect, results with server times below the answer\'s '
         'do not reach its mark; one showing the written row releases it', () {
       final client = connectedOn();

@@ -85,11 +85,18 @@ final class ShownRow {
 typedef Wrote = ({Target target, Version version});
 
 final class AnswerMark {
-  const AnswerMark({required this.order, this.serverTime, this.wrote});
+  AnswerMark({required this.order, this.serverTime, Wrote? wrote})
+    : wrote = switch (wrote) {
+        (:final target, :final version) => Map.unmodifiable({target: version}),
+        null => null,
+      };
+
+  AnswerMark._(this.order, this.serverTime, Map<Target, Version>? wrote)
+    : wrote = wrote == null ? null : Map.unmodifiable(wrote);
 
   final ResultOrder order;
   final int? serverTime;
-  final Wrote? wrote;
+  final Map<Target, Version>? wrote;
 
   bool reachedBy(Arrival? arrival) =>
       arrival != null &&
@@ -103,14 +110,20 @@ final class AnswerMark {
   bool onlyItsTimeAhead(Arrival? arrival) =>
       arrival != null && !arrival.order.isBefore(order) && !reachedBy(arrival);
 
+  bool shownWhere(bool Function(Target target, Version version) holds) =>
+      wrote?.entries.every((entry) => holds(entry.key, entry.value)) ?? false;
+
   AnswerMark and(AnswerMark? other) => switch (other) {
     null => this,
-    final other => AnswerMark(
-      order: order.isBefore(other.order) ? other.order : order,
-      serverTime: _later(serverTime, other.serverTime),
-      wrote: switch ((wrote, other.wrote)) {
-        (final mine?, final theirs?) when mine.target == theirs.target =>
-          mine.version >= theirs.version ? mine : theirs,
+    final other => AnswerMark._(
+      order.isBefore(other.order) ? other.order : order,
+      _later(serverTime, other.serverTime),
+      switch ((wrote, other.wrote)) {
+        (final mine?, final theirs?) => {
+          ...mine,
+          for (final MapEntry(:key, :value) in theirs.entries)
+            if (mine[key] == null || value > mine[key]!) key: value,
+        },
         _ => null,
       },
     ),
@@ -121,15 +134,24 @@ final class AnswerMark {
       other is AnswerMark &&
       other.order == order &&
       other.serverTime == serverTime &&
-      other.wrote == wrote;
+      switch ((other.wrote, wrote)) {
+        (final a?, final b?) => const MapEquality<Target, Version>().equals(
+          a,
+          b,
+        ),
+        (final a, final b) => a == b,
+      };
 
   @override
-  int get hashCode => Object.hash(order, serverTime, wrote);
+  int get hashCode => Object.hash(order, serverTime, wrote?.length);
 
   @override
   String toString() =>
       'our answer at $order and time $serverTime'
-      '${wrote == null ? '' : ', which wrote ${wrote!.target} at ${wrote!.version}'}';
+      '${switch (wrote) {
+        final wrote? => ', which wrote ${[for (final MapEntry(:key, :value) in wrote.entries) '$key at $value'].join(', ')}',
+        null => '',
+      }}';
 }
 
 final class Marks {
@@ -1443,23 +1465,20 @@ final class Shown {
   bool _listReaches(AnswerMark? mark, {required bool counted}) {
     if (mark == null) return true;
     if (counted) shownWork.marksLooked++;
-    return mark.reachedBy(listSeen?.at) || _listHolds(mark.wrote);
+    return mark.reachedBy(listSeen?.at) || mark.shownWhere(_listHolds);
   }
 
-  bool _listHolds(Wrote? wrote) => switch (wrote) {
-    (target: StrategyTarget(), :final version) => _atLeast(
-      strategy?.version,
-      version,
-    ),
-    (target: PageTarget(:final pagePublicId), :final version) => _atLeast(
+  bool _listHolds(Target target, Version version) => switch (target) {
+    StrategyTarget() => _atLeast(strategy?.version, version),
+    PageTarget(:final pagePublicId) => _atLeast(
       (pages[pagePublicId] ?? trashed[pagePublicId])?.version,
       version,
     ),
-    (target: SettingsTarget(:final pagePublicId), :final version) => _atLeast(
+    SettingsTarget(:final pagePublicId) => _atLeast(
       settings[pagePublicId]?.version,
       version,
     ),
-    _ => false,
+    ElementTarget() || LineupTarget() => false,
   };
 
   bool _pageReaches(
@@ -1470,26 +1489,21 @@ final class Shown {
   }) {
     if (mark == null) return true;
     if (counted) shownWork.marksLooked++;
-    return mark.reachedBy(seen.at) || _heldOn(page, mark.wrote);
+    return mark.reachedBy(seen.at) ||
+        mark.shownWhere(
+          (target, version) => switch (rows[target]) {
+            final row? when row.page == page => _atLeast(row.version, version),
+            _ => false,
+          },
+        );
   }
 
-  bool _heldOn(String page, Wrote? wrote) =>
-      wrote != null &&
-      switch (rows[wrote.target]) {
-        final row? when row.page == page => _atLeast(
-          row.version,
-          wrote.version,
-        ),
-        _ => false,
-      };
-
   bool _rowReached(AnswerMark mark, Seen seen) =>
-      mark.reachedBy(seen.at) || _holds(mark.wrote);
+      mark.reachedBy(seen.at) || mark.shownWhere(_holds);
 
-  bool _holds(Wrote? wrote) =>
-      wrote != null &&
-      (_atLeast(rows[wrote.target]?.version, wrote.version) ||
-          _atLeast(highest[wrote.target], wrote.version));
+  bool _holds(Target target, Version version) =>
+      _atLeast(rows[target]?.version, version) ||
+      _atLeast(highest[target], version);
 
   static bool _atLeast(Version? held, Version wanted) =>
       held != null && held >= wanted;
@@ -1500,7 +1514,7 @@ final class Shown {
   };
 
   bool _rowSettled(Target row, AnswerMark mark) =>
-      _holds(mark.wrote) ||
+      mark.shownWhere(_holds) ||
       switch (rows[row]) {
         ShownRow(:final page) => switch (pagesSeen[page]) {
           final seen? => mark.reachedBy(seen.at),

@@ -372,7 +372,7 @@ final class Mark {
 
   final int tick;
   final int? time;
-  final (String, int)? wrote;
+  final Map<String, int>? wrote;
 
   bool reachedBy(ReadFact? read) =>
       read != null &&
@@ -392,10 +392,11 @@ final class Mark {
         (final a, final b) => a ?? b,
       },
       switch ((wrote, other.wrote)) {
-        ((final a, final mine)?, (final b, final theirs)?) when a == b => (
-          a,
-          max(mine, theirs),
-        ),
+        (final mine?, final theirs?) => {
+          ...mine,
+          for (final MapEntry(:key, :value) in theirs.entries)
+            key: max(value, mine[key] ?? value),
+        },
         _ => null,
       },
     ),
@@ -438,34 +439,38 @@ final class Reference {
       if (value.containsKey(id)) key,
   ].firstOrNull;
 
-  bool listHolds((String, int)? wrote) => switch (wrote) {
-    (strategyRow, final revision) => (heldStrategy ?? -1) >= revision,
-    _ => false,
-  };
+  bool allHeld(Map<String, int>? wrote, bool Function(String, int) holds) =>
+      wrote?.entries.every((entry) => holds(entry.key, entry.value)) ?? false;
+
+  bool listHolds(Map<String, int>? wrote) => allHeld(
+    wrote,
+    (id, revision) => id == strategyRow && (heldStrategy ?? -1) >= revision,
+  );
 
   bool listReaches(Mark? mark) =>
       mark == null || mark.reachedBy(listRead) || listHolds(mark.wrote);
 
-  bool pageHolds(String page, (String, int)? wrote) => switch (wrote) {
-    (final id, final revision) when id != strategyRow =>
-      (content[page]?[id] ?? -1) >= revision,
-    _ => false,
-  };
+  bool pageHolds(String page, Map<String, int>? wrote) => allHeld(
+    wrote,
+    (id, revision) =>
+        id != strategyRow && (content[page]?[id] ?? -1) >= revision,
+  );
 
   bool pageReaches(String page, Mark? mark) =>
       mark == null ||
       mark.reachedBy(pageSeen[page]) ||
       pageHolds(page, mark.wrote);
 
-  bool rowHolds((String, int)? wrote) => switch (wrote) {
-    (final id, final revision) when id != strategyRow =>
-      switch (rowPage(id)) {
-            final page? => (content[page]![id] ?? -1) >= revision,
-            null => false,
-          } ||
-          (highest[id] ?? -1) >= revision,
-    _ => false,
-  };
+  bool rowHolds(Map<String, int>? wrote) => allHeld(
+    wrote,
+    (id, revision) =>
+        id != strategyRow &&
+        (switch (rowPage(id)) {
+              final page? => (content[page]![id] ?? -1) >= revision,
+              null => false,
+            } ||
+            (highest[id] ?? -1) >= revision),
+  );
 
   bool rowSettled(String id, Mark mark) =>
       rowHolds(mark.wrote) ||
@@ -494,10 +499,9 @@ final class Reference {
   void _answer(AnswerFact fact) {
     if (!admits(fact.point.generation)) return;
     final work = fact.work;
-    final mark = Mark(fact.tick, fact.point.serverTime, (
-      work.wrote,
-      fact.revision,
-    ));
+    final mark = Mark(fact.tick, fact.point.serverTime, {
+      work.wrote: fact.revision,
+    });
     final pages = {
       work.page,
       if (work.wrote != strategyRow) ?rowPage(work.wrote),
