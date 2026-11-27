@@ -430,7 +430,7 @@ class RemoteEditorSnapshotNotifier
       final read = pageId == null
           ? null
           : _pageMadeHere(strategyPublicId, shell, pageId) ??
-              _received(await repository.fetchPageSnapshot(
+              _received(await subscriptions.readPage(
                 strategyPublicId: strategyPublicId,
                 pagePublicId: pageId,
                 shareToken: _shareToken,
@@ -631,10 +631,7 @@ class RemoteEditorSnapshotNotifier
     try {
       final scope = _copyScope;
       final askedAt = DateTime.now();
-      final page = await ref
-          .read(editorSubscriptionsProvider)
-          .repository
-          .fetchPageSnapshot(
+      final page = await ref.read(editorSubscriptionsProvider).readPage(
             strategyPublicId: strategyPublicId,
             pagePublicId: pagePublicId,
             shareToken: _shareToken,

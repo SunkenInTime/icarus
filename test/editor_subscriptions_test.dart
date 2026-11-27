@@ -206,8 +206,8 @@ void main() {
   for (final cloud in [const CloudStoreOff(), const CloudStoreSend()]) {
     test(
         'with the switch ${cloud is CloudStoreSend ? 'on' : 'off'}, an open '
-        'and a refresh read the shell from the query the editor watches',
-        () async {
+        'and a refresh read the shell from the query the editor watches, '
+        'and the page with the account its watch names', () async {
       final container = start(cloud: cloud);
       await openThenTeammateEditsPageA(container);
       await container.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -233,6 +233,13 @@ void main() {
         {
           for (final (name, args) in transport.queriedWith)
             if (name == shellQuery) args['accountSubject'],
+        },
+        {if (cloud is CloudStoreSend) 'account-a' else null},
+      );
+      expect(
+        {
+          for (final (name, args) in transport.queriedWith)
+            if (name == 'page:getSnapshot') args['accountSubject'],
         },
         {if (cloud is CloudStoreSend) 'account-a' else null},
       );

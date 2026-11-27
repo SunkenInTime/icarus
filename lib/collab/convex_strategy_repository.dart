@@ -418,14 +418,19 @@ class ConvexStrategyRepository {
     required String strategyPublicId,
     required String pagePublicId,
     String? shareToken,
+    String? accountSubject,
   }) async {
     final (live, _) =
         _slicedPages[_pageKey(strategyPublicId, pagePublicId, shareToken)] ??
             (null, 0);
     if (live != null) return live;
     final page = _pageSnapshot(
-      await _wholePage(strategyPublicId, pagePublicId, shareToken, null)
-          .fetch(),
+      await _wholePage(
+        strategyPublicId,
+        pagePublicId,
+        shareToken,
+        accountSubject,
+      ).fetch(),
     );
     _tell(strategyPublicId, page, shareToken);
     return page;

@@ -43,6 +43,12 @@ sealed class EditorSubscriptions {
     String? shareToken,
   });
 
+  Future<RemotePageSnapshot> readPage({
+    required String strategyPublicId,
+    required String pagePublicId,
+    String? shareToken,
+  });
+
   Stream<RemotePageSnapshot> page({
     required String strategyPublicId,
     required String pagePublicId,
@@ -59,6 +65,18 @@ final class TodaysSubscriptions extends EditorSubscriptions {
     String? shareToken,
   }) =>
       repository.fetchShell(strategyPublicId, shareToken: shareToken);
+
+  @override
+  Future<RemotePageSnapshot> readPage({
+    required String strategyPublicId,
+    required String pagePublicId,
+    String? shareToken,
+  }) =>
+      repository.fetchPageSnapshot(
+        strategyPublicId: strategyPublicId,
+        pagePublicId: pagePublicId,
+        shareToken: shareToken,
+      );
 
   @override
   Stream<RemoteStrategyShell> shell(
@@ -99,6 +117,19 @@ final class StampedSubscriptions extends EditorSubscriptions {
   }) =>
       repository.fetchShellOfPageList(
         strategyPublicId,
+        shareToken: shareToken,
+        accountSubject: accountSubject(),
+      );
+
+  @override
+  Future<RemotePageSnapshot> readPage({
+    required String strategyPublicId,
+    required String pagePublicId,
+    String? shareToken,
+  }) =>
+      repository.fetchPageSnapshot(
+        strategyPublicId: strategyPublicId,
+        pagePublicId: pagePublicId,
         shareToken: shareToken,
         accountSubject: accountSubject(),
       );
