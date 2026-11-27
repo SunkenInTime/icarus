@@ -579,6 +579,29 @@ void main() {
     expect(first.and(AnswerMark(order: orderAt(5))).wrote, isNull);
   });
 
+  test('a restart drops the marks and what was seen, leaving the record a '
+      'reload reads back', () {
+    final client = connectedOn();
+    client.must(arrivalAt(client, headerReadOf(initialRows()), pointAt(2)));
+    client.must(arrivalAt(client, pageA(), pointAt(3)));
+    answerMove(client, pointAt(10));
+    answerReorder(client, pointAt(11));
+    expect(client.queue.shown.marks.isEmpty, isFalse);
+    client.must(const AppRestarted(build: build));
+    final shown = client.queue.shown;
+    final reloaded = switch (shownFromGroups({
+      for (final MapEntry(:key, :value) in shownToGroups(shown).entries)
+        key: jsonEncode(value),
+    })) {
+      ShownRead(:final shown) => shown,
+      final other => fail('expected results, got $other'),
+    };
+    expect(shown.marks.isEmpty, isTrue);
+    expect(shown.listSeen, isNull);
+    expect(shown.pagesSeen, isEmpty);
+    expect(shown, reloaded);
+  });
+
   group('a timed answer whose clock never catches up', () {
     test('two answers that wrote different items on one page release the '
         'page by content once a read shows both, with a clock behind or no '

@@ -1519,6 +1519,7 @@ Step _step(_Edit edit, CloudQueue queue, QueueEvent event, DateTime now) {
         }
       }
       edit.openSession(connected: false, build: build);
+      edit.shown = edit.shown.withoutMarks();
       return edit.done();
     case ConnectionLost():
       edit.session = edit.session.withConnection(connected: false, basis: null);
