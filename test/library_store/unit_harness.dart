@@ -83,6 +83,7 @@ final class UnitHarness {
   }
 
   Future<void> dispose() async {
+    container.read(strategyProvider.notifier).cancelPendingSave();
     follower.detach();
     ActionProvider.editFollower = null;
     LocalLibrary.follower = null;
