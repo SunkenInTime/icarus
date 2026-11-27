@@ -6,7 +6,7 @@ import 'package:icarus/library_store/cloud_sender.dart';
 import 'package:icarus/library_store/sender_store.dart';
 import 'package:icarus_library/icarus_library.dart';
 
-import 'cloud_shadow_test.dart' show pageId, strategyId;
+import 'server_fixtures.dart' show pageId, strategyId;
 import 'sender_world.dart';
 
 ResultPoint onConnection(World world, int connection) => ResultPoint(
