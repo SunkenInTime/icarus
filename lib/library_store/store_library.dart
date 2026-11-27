@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
@@ -160,10 +161,31 @@ Future<_Read> _readLibrary(LibraryStore store) async {
   for (final summary in list.strategies) {
     if (summary.sync is! KeptHere) continue;
     final id = summary.publicId;
-    final read = switch (await readStoredRows(store, id)) {
-      StoredRowsRead(:final rows) => strategyOfRows(rows),
-      StoredRowsNot(:final stored) => stored,
-    };
+    final StoredStrategy read;
+    switch (await readStoredRows(store, id)) {
+      case StoredRowsRead(:final rows, written: WrittenAt(:final version))
+          when version <= Settings.versionNumber:
+        read = strategyOfRows(rows, versionNumber: version);
+      case StoredRowsRead(written: WrittenAt(:final version)):
+        return _ReadNot(
+          'the strategy "${summary.name}" ($id) was written by a newer '
+          'version of Icarus ($version)',
+        );
+      case StoredRowsRead(written: WrittenNotRecorded()):
+        return _ReadNot(
+          'the strategy "${summary.name}" ($id) has no record of the version '
+          'of Icarus that wrote it: the store was written by a build from '
+          'before that record was kept; delete library_store/library.sqlite '
+          'beside the old library to copy it again',
+        );
+      case StoredRowsRead(written: WrittenUnreadable(:final stored)):
+        return _ReadNot(
+          'the strategy "${summary.name}" ($id) has a version record this '
+          'build cannot read: $stored',
+        );
+      case StoredRowsNot(:final stored):
+        read = stored;
+    }
     switch (read) {
       case StoredAsData(:final strategy):
         strategies[id] = strategy;
@@ -324,7 +346,9 @@ final class StoreLibrary {
     return _write(
       show: show,
       replay: show,
-      commit: () async => _commitOf(await _store.putStrategy(rows)),
+      commit: () async => _commitOf(
+        await _store.putStrategy(rows, writtenAt: strategy.versionNumber),
+      ),
     );
   }
 
@@ -361,7 +385,9 @@ final class StoreLibrary {
         return _write(
           show: () => strategies._put(stored.id, stored),
           replay: () => strategies._put(stored.id, asWritten),
-          commit: () async => _commitOf(await _store.putStrategy(rows)),
+          commit: () async => _commitOf(
+            await _store.putStrategy(rows, writtenAt: stored.versionNumber),
+          ),
         );
     }
   }

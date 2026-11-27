@@ -139,6 +139,12 @@ final class _ClearArea extends _Write {
   const _ClearArea(super.area);
 }
 
+final class _PutWritten extends _Write {
+  const _PutWritten(super.area, this.version);
+
+  final int version;
+}
+
 final class _PutMigration extends _Write {
   const _PutMigration(this.migration) : super(libraryArea);
 
@@ -485,6 +491,7 @@ final class LibraryStore {
       FormatName() ||
       SummaryName() ||
       CloudName() ||
+      WrittenName() ||
       NumbersName() ||
       MigrationName() ||
       PendingName() ||
@@ -570,6 +577,8 @@ final class LibraryStore {
         return back is RecordedMigration && migrationToJson(back) == text
             ? Done(Put(libraryArea, name, text))
             : wouldNot(name, 'does not read back as written');
+      case _PutWritten(:final area, :final version):
+        return Done(Put(area, const WrittenName().name, '$version'));
       case _DeleteName(:final area, :final name):
         return Done(Delete(area, name));
       case _ClearArea(:final area):
@@ -949,15 +958,29 @@ final class LibraryStore {
       settings.remove(page);
       keepUnplaced(SettingsName(page).name, row.toJsonView(), _noPageRow);
     }
-    final loaded = LoadedStrategy(
-      digest: digest,
-      header: header,
-      strategyId: strategyId,
-      pages: pages,
-      settings: settings,
-      unplaced: unplaced,
-      names: names,
-    )..entering = (page) => pageEnteringMemory?.call(digest, page);
+    StrategyWritten written = const WrittenNotRecorded();
+    if (names.any((name) => name is WrittenName)) {
+      switch (await _lease.read(area.name, const WrittenName().name)) {
+        case KeyNotRead(:final failure):
+          return NotRead(failure);
+        case KeyMissing():
+          break;
+        case KeyHeld(:final value):
+          written = writtenFrom(value);
+      }
+    }
+    final loaded =
+        LoadedStrategy(
+            digest: digest,
+            header: header,
+            strategyId: strategyId,
+            pages: pages,
+            settings: settings,
+            unplaced: unplaced,
+            names: names,
+          )
+          ..entering = ((page) => pageEnteringMemory?.call(digest, page))
+          ..written = written;
     if (loaded.keeping == Keeping.here) {
       if (await _loadPages(loaded, loaded.pagesWithoutRow.toList())
           case StorageFailed(:final failure)) {
@@ -1106,6 +1129,7 @@ final class LibraryStore {
               settings: strategy.settingsByPage,
               unplaced: strategy.allUnplaced,
               foreignNames: strategy.foreignNames,
+              written: strategy.written,
             ),
           ),
           NotFound() => const NotFound(),
@@ -1578,8 +1602,9 @@ final class LibraryStore {
   }
 
   Future<LibraryEditResult> putStrategy(
-    StrategyRowSet rows,
-  ) => _inTurn(() async {
+    StrategyRowSet rows, {
+    int? writtenAt,
+  }) => _inTurn(() async {
     if (_settle() case StorageFailed(:final failure)) {
       return NotSaved(failure);
     }
@@ -1656,6 +1681,13 @@ final class LibraryStore {
       changes.add(_DeleteName(area, name));
       gone.add(row);
     }
+    final writing = switch ((writtenAt, loaded?.written)) {
+      (final version?, WrittenAt(version: final held)) when held == version =>
+        null,
+      (final version?, _) => version,
+      (null, _) => null,
+    };
+    if (writing != null) changes.add(_PutWritten(area, writing));
     final summary = _summaryOfRows(rows);
     if (changes.isEmpty &&
         summary == _summaries[digest] &&
@@ -1665,8 +1697,13 @@ final class LibraryStore {
     changes.add(_PutSummary(digest, summary));
     final result = await _commit<LibraryEdited, LibraryRefusal>(changes, () {
       if (loaded == null) {
-        _strategies[digest] = LoadedStrategy.image(digest, rows);
+        _strategies[digest] = LoadedStrategy.image(digest, rows)
+          ..written = switch (writing) {
+            final version? => WrittenAt(version),
+            null => const WrittenNotRecorded(),
+          };
       } else {
+        if (writing != null) loaded.written = WrittenAt(writing);
         for (final write in written) {
           if (write case RowAdded(after: PageRow(:final publicId))) {
             loaded.addLoadedPage(digestOf(publicId), LoadedPage());

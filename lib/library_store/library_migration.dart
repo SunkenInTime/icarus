@@ -1,4 +1,5 @@
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_as_rows.dart';
@@ -159,7 +160,10 @@ Future<LibraryMigration> migrateLibraryIntoStore(
         strategiesLeft.add(LeftBehind(strategy.id, strategy.name, problem));
         continue;
     }
-    switch (_put(await store.putStrategy(rows))) {
+    switch (_put(await store.putStrategy(
+      rows,
+      writtenAt: Settings.versionNumber,
+    ))) {
       case _Kept():
         break;
       case _LeftBehind(:final reason):

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/domain/folder.dart';
 import 'package:icarus/library_rows/folder_as_row.dart';
 import 'package:icarus/library_rows/strategy_comparison.dart';
@@ -42,6 +43,7 @@ final class _Totals {
   int finishedOnSecondStart = 0;
   int untouchedOnSecondStart = 0;
   int duplicateIds = 0;
+  int writtenNow = 0;
   final leftBehind = <String, int>{};
   final differences = <String, int>{};
   final problems = <String>[];
@@ -60,6 +62,7 @@ final class _Totals {
         'left behind: ${leftBehind.isEmpty ? 'none' : leftBehind}',
         'differences by kind: ${differences.isEmpty ? 'none' : differences}',
         'Hive records sharing an id with another: $duplicateIds',
+        'recorded as written by this version: $writtenNow',
         'finished on a second start: $finishedOnSecondStart, the store '
             'untouched by it: $untouchedOnSecondStart',
         'problems: ${problems.isEmpty ? 'none' : problems.length}',
@@ -225,7 +228,12 @@ Future<void> _moveOne(Directory store, Directory root, _Totals totals) async {
         if (left.contains(id)) continue;
         final StrategyData back;
         switch (await readStoredRows(store, id)) {
-          case StoredRowsRead(:final rows):
+          case StoredRowsRead(:final rows, :final written):
+            if (written case WrittenAt(version: Settings.versionNumber)) {
+              totals.writtenNow += 1;
+            } else {
+              problem('$id records being written at $written');
+            }
             switch (strategyOfRows(rows)) {
               case StoredAsData(:final strategy):
                 back = strategy;
@@ -351,6 +359,7 @@ void main() {
       expect(totals.differences, isEmpty);
       expect(totals.leftBehind, isEmpty);
       expect(totals.duplicateIds, 0);
+      expect(totals.writtenNow, totals.same + totals.sameAsideFromLineupOrder);
       expect(totals.finishedOnSecondStart, totals.stores);
       expect(totals.untouchedOnSecondStart, totals.stores);
     },
