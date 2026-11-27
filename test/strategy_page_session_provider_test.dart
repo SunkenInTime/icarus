@@ -2723,6 +2723,296 @@ void main() {
     );
   });
 
+  group('the rows a page syncs take ids and places from all it knows', () {
+    for (final highest in ['base', 'overlay', 'drawn work']) {
+      test('the highest place known only to the $highest', () async {
+        final page = _page('page-1', 0);
+        int elementPlace(String source) => source == highest
+            ? 12
+            : source == 'base'
+                ? 8
+                : 9;
+        int lineupPlace(String source) => source == highest
+            ? 30
+            : source == 'base'
+                ? 20
+                : 21;
+        RemoteElement text(String id, int sortIndex,
+                {int revision = 1, bool deleted = false}) =>
+            _textElement(page.publicId, id, id,
+                sortIndex: sortIndex,
+                revision: revision,
+                worldSized: true,
+                deleted: deleted);
+        PlacedText placed(String id) =>
+            PlacedText(id: id, position: const Offset(10, 20))
+              ..text = id
+              ..markSizeAsWorld();
+        RemoteLineup group(String id,
+                {int sortIndex = 0, bool deleted = false}) =>
+            _groupRow(
+              page.publicId,
+              id,
+              origins: [_originJson('origin-$id')],
+              landings: [_landingJson('landing-$id')],
+              links: [
+                _linkJson(id, originId: 'origin-$id', landingId: 'landing-$id'),
+              ],
+              sortIndex: sortIndex,
+              deleted: deleted,
+            );
+        RemoteEditorSnapshot snapshot({required bool heldDeleted}) =>
+            _editorSnapshot(
+              pages: [page],
+              activePage: _pageSnapshot(
+                page,
+                settings: const {
+                  'agentSize': 35.0,
+                  'abilitySize': 25.0,
+                  'useNeutralTeamColors': false,
+                },
+                elements: [
+                  text('a', 3),
+                  text('b', 3),
+                  text('c', 3),
+                  text('h', 1,
+                      revision: heldDeleted ? 2 : 1, deleted: heldDeleted),
+                  text('m', elementPlace('base'), deleted: true),
+                ],
+                lineups: [
+                  group('r', sortIndex: 5),
+                  group('g1', sortIndex: lineupPlace('base'), deleted: true),
+                ],
+              ),
+            );
+        final kept = CloudLineupRow.remote(group('r', sortIndex: 5));
+
+        final remote = _FakeRemoteEditorNotifier(snapshot(heldDeleted: false));
+        final queue = _FakeStrategyOpQueueNotifier();
+        final container = await _syncContainer(remote: remote, queue: queue);
+        final sync = container.read(activePageLiveSyncProvider.notifier);
+        container.read(textProvider.notifier).fromHive([
+          for (final id in ['a', 'b', 'c', 'h']) placed(id)
+        ]);
+        final keptLineups = lineUpGraphFromCloudRows([kept]);
+        container.read(lineUpProvider.notifier).fromHive(keptLineups.graph);
+        sync.noteLineupGroups(page.publicId, keptLineups.groupOf);
+        sync.markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
+        );
+
+        remote.setSnapshot(snapshot(heldDeleted: true));
+        QueuedEntityIntent paused(EntitySyncKey key, StrategyOp op) =>
+            QueuedEntityIntent(
+              entityKey: key,
+              pending: PendingOp(op: op, clientId: 'test-client'),
+            );
+        queue.state = queue.state.copyWith(pausedByEntityKey: {
+          EntitySyncKey.element(page.publicId, 'd'): paused(
+            EntitySyncKey.element(page.publicId, 'd'),
+            ElementAddOp(
+              opId: 'recovered-d',
+              elementPublicId: 'd',
+              pagePublicId: page.publicId,
+              payload: text('d', 0).payload,
+              sortIndex: elementPlace('drawn work'),
+            ),
+          ),
+          EntitySyncKey.lineup(page.publicId, 'g3'): paused(
+            EntitySyncKey.lineup(page.publicId, 'g3'),
+            LineupAddOp(
+              opId: 'recovered-g3',
+              lineupPublicId: 'g3',
+              pagePublicId: page.publicId,
+              payload: group('g3').payload,
+              sortIndex: lineupPlace('drawn work'),
+            ),
+          ),
+        });
+        expect(
+          sync.projectPageState(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+          ),
+          isNotNull,
+        );
+        sync.markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
+          keepBaseFor: {EntitySyncKey.element(page.publicId, 'h')},
+        );
+        expect(sync.drewFromOutbox(EntitySyncKey.element(page.publicId, 'd')),
+            isTrue);
+        expect(sync.drewFromOutbox(EntitySyncKey.lineup(page.publicId, 'g3')),
+            isTrue);
+
+        final now = DateTime.utc(2026);
+        final live = container.read(activePageLiveSyncProvider);
+        sync.setStateForTest(live.copyWith(overlayByEntityKey: {
+          ...live.overlayByEntityKey,
+          EntitySyncKey.element(page.publicId, 'o'): ActivePageOverlayEntry(
+            entityKey: EntitySyncKey.element(page.publicId, 'o'),
+            entityType: ActivePageOverlayEntityType.element,
+            desiredPayload: text('o', 0).payload,
+            desiredSortIndex: elementPlace('overlay'),
+            deletion: false,
+            baseRevision: null,
+            baseDeleted: false,
+            dirtyAt: now,
+          ),
+          EntitySyncKey.lineup(page.publicId, 'g2'): ActivePageOverlayEntry(
+            entityKey: EntitySyncKey.lineup(page.publicId, 'g2'),
+            entityType: ActivePageOverlayEntityType.lineup,
+            desiredPayload: group('g2').payload,
+            desiredSortIndex: lineupPlace('overlay'),
+            deletion: false,
+            baseRevision: null,
+            baseDeleted: false,
+            dirtyAt: now,
+          ),
+        }));
+
+        container.read(textProvider.notifier).fromHive([
+          for (final id in ['a', 'c', 'o', 'b', 'h', 'n']) placed(id)
+        ]);
+        container.read(lineUpProvider.notifier).fromHive(
+              lineUpGraphFromCloudRows([
+                kept,
+                CloudLineupRow.remote(_groupRow(
+                  page.publicId,
+                  'canvas',
+                  origins: [_originJson('origin-new')],
+                  landings: [
+                    for (final id in ['g1', 'g2', 'g3', 'g4'])
+                      _landingJson('landing-new-$id'),
+                  ],
+                  links: [
+                    for (final id in ['g4', 'g3', 'g2', 'g1'])
+                      _linkJson(id,
+                          originId: 'origin-new', landingId: 'landing-new-$id'),
+                  ],
+                )),
+              ]).graph,
+            );
+
+        final learnedBefore = container.read(lineupGroupMemoryRevisionProvider);
+        final desired = sync.syncLocalPage(
+          strategyPublicId: 'cloud-strategy',
+          pageId: page.publicId,
+          canvas: _drawn(container, 'cloud-strategy', page.publicId),
+        )!;
+        expect(
+          container.read(lineupGroupMemoryRevisionProvider) - learnedBefore,
+          1,
+        );
+        final restacked =
+            desired[EntitySyncKey.element(page.publicId, 'b')]! as ElementPatchOp;
+        expect(restacked.merge?.fields, [placeMergeField]);
+        expect(restacked.merge?.base, {placeMergeField: 3});
+        final ranked = [
+          ('r', 5),
+          ('g1', lineupPlace('base')),
+          ('g3', lineupPlace('drawn work')),
+          ('g4', 31),
+        ]..sort((a, b) => a.$2.compareTo(b.$2));
+        expect(sync.lineupGroupMemory(page.publicId).places, {
+          for (final (rank, (id, _)) in ranked.indexed) id: rank,
+        });
+
+        expect(
+          {
+            for (final MapEntry(:key, value: op) in desired.entries)
+              key: (op.runtimeType, op.sortIndex, op.expectedRevision),
+          },
+          {
+            EntitySyncKey.element(page.publicId, 'o'):
+                (ElementAddOp, elementPlace('overlay'), null),
+            EntitySyncKey.element(page.publicId, 'b'): (ElementPatchOp, 13, 1),
+            EntitySyncKey.element(page.publicId, 'n'): (ElementAddOp, 14, null),
+            EntitySyncKey.lineup(page.publicId, 'g4'): (LineupAddOp, 31, null),
+          },
+        );
+        expect(
+          [
+            for (final link in cloudPayloadData(
+                desired[EntitySyncKey.lineup(page.publicId, 'g4')]!
+                    .payload)['links'] as List)
+              (link as Map)['id'],
+          ],
+          ['g4', 'g3', 'g2', 'g1'],
+        );
+        expect(sync.lineupGroupOf(page.publicId, 'g1'), 'g4');
+        expect(sync.lineupGroupOf(page.publicId, 'landing-new-g1'), 'g4');
+      });
+    }
+
+    test('a rehydrate gives a new lineup no id an overlay holds', () async {
+      final page = _page('page-1', 0);
+      final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, settings: const {
+          'agentSize': 35.0,
+          'abilitySize': 25.0,
+          'useNeutralTeamColors': false,
+        }),
+      ));
+      final container = await _syncContainer(
+        remote: remote,
+        queue: _FakeStrategyOpQueueNotifier(),
+      );
+      final sync = container.read(activePageLiveSyncProvider.notifier);
+      void hydrate() => sync.markPageHydrated(
+            strategyPublicId: 'cloud-strategy',
+            pageId: page.publicId,
+            snapshot:
+                container.read(remoteEditorSnapshotProvider).requireValue!,
+          );
+      hydrate();
+      final live = container.read(activePageLiveSyncProvider);
+      sync.setStateForTest(live.copyWith(overlayByEntityKey: {
+        EntitySyncKey.lineup(page.publicId, 'g2'): ActivePageOverlayEntry(
+          entityKey: EntitySyncKey.lineup(page.publicId, 'g2'),
+          entityType: ActivePageOverlayEntityType.lineup,
+          desiredPayload: _groupRow(
+            page.publicId,
+            'g2',
+            origins: [_originJson('origin-g2')],
+            landings: [_landingJson('landing-g2')],
+            links: [
+              _linkJson('g2', originId: 'origin-g2', landingId: 'landing-g2'),
+            ],
+          ).payload,
+          desiredSortIndex: 0,
+          deletion: false,
+          baseRevision: null,
+          baseDeleted: false,
+          dirtyAt: DateTime.utc(2026),
+        ),
+      }));
+      container.read(lineUpProvider.notifier).fromHive(
+            lineUpGraphFromCloudRows([
+              CloudLineupRow.remote(_groupRow(
+                page.publicId,
+                'canvas',
+                origins: [_originJson('origin-new')],
+                landings: [_landingJson('landing-new')],
+                links: [
+                  _linkJson('g2', originId: 'origin-new', landingId: 'landing-new'),
+                ],
+              )),
+            ]).graph,
+          );
+
+      hydrate();
+
+      expect(sync.lineupGroupOf(page.publicId, 'g2'), isNotNull);
+      expect(sync.lineupGroupOf(page.publicId, 'g2'), isNot('g2'));
+    });
+  });
+
   test('active page update rehydrates without a strategy revision change',
       () async {
     final page = _page('page-1', 0);
