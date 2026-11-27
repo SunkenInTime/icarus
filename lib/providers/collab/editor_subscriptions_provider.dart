@@ -1,8 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/collab/generated/convex_error_codes.dart';
-import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/library_store/cloud_sender_provider.dart';
 import 'package:icarus/library_store/library_store_switch.dart';
 
@@ -63,9 +61,9 @@ final class StampedSubscriptions extends EditorSubscriptions {
     String strategyPublicId, {
     String? shareToken,
   }) =>
-      repository
-          .watchShellStamped(strategyPublicId, shareToken: shareToken)
-          .map(_valueOf);
+      asPlainWatch(
+        repository.watchShellStamped(strategyPublicId, shareToken: shareToken),
+      );
 
   @override
   Stream<RemotePageSnapshot> page({
@@ -73,17 +71,11 @@ final class StampedSubscriptions extends EditorSubscriptions {
     required String pagePublicId,
     String? shareToken,
   }) =>
-      repository
-          .watchPageSnapshotStamped(
-            strategyPublicId: strategyPublicId,
-            pagePublicId: pagePublicId,
-            shareToken: shareToken,
-          )
-          .map(_valueOf);
+      asPlainWatch(
+        repository.watchPageSnapshotStamped(
+          strategyPublicId: strategyPublicId,
+          pagePublicId: pagePublicId,
+          shareToken: shareToken,
+        ),
+      );
 }
-
-T _valueOf<T>(Stamped<T> stamped) => switch (stamped) {
-      StampedValue(:final value) => value,
-      StampedError(:final error) =>
-        throw ConvexFunctionException.fromTransport(error),
-    };

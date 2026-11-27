@@ -2029,6 +2029,14 @@ InvitesCreateArgsRole _shareRole(String value) => switch (value) {
       _ => throw ArgumentError.value(value, 'role', 'Unsupported share role'),
     };
 
+Stream<T> asPlainWatch<T>(Stream<Stamped<T>> stamped) => stamped.map(
+      (each) => switch (each) {
+        StampedValue(:final value) => value,
+        StampedError(:final error) =>
+          throw ConvexFunctionException.fromTransport(error),
+      },
+    );
+
 typedef _Seen<T, S> = ({T value, S stamp});
 
 _Seen<T, Null> _unstamped<T>(T value) => (value: value, stamp: null);
