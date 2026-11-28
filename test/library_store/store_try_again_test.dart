@@ -122,8 +122,7 @@ void main() {
     await container.read(libraryStoreProvider.notifier).close();
     container.dispose();
     LocalLibrary.source = const LibraryInHive();
-    await Hive.close();
-    await directory.delete(recursive: true);
+    await closeUnitHive();
   });
 
   LibraryStoreNotifier notifier() =>
