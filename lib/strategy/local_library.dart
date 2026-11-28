@@ -76,9 +76,7 @@ final _nothingHeld = StoreRecords<Never>();
 final class LocalLibrary {
   const LocalLibrary();
 
-
   static LocalLibrarySource source = const LibraryInHive();
-
 
   Box<StrategyData> get _strategyBox =>
       Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -271,11 +269,11 @@ final class LocalLibrary {
           ),
         LibraryNotOpened() => _notOpened(),
         LibraryInHive() => _write(
-                () => Future.wait([
-                  _strategyBox.deleteAll(strategyIds),
-                  _folderBox.deleteAll(folderIds),
-                ]),
-              ),
+            () => Future.wait([
+              _strategyBox.deleteAll(strategyIds),
+              _folderBox.deleteAll(folderIds),
+            ]),
+          ),
       };
 
   Future<LibraryWrite> _notOpened() async =>
