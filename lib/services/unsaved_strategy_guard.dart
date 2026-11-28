@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:icarus/strategy/autosave_before_exit.dart';
+import 'package:icarus/strategy/store_save_facts.dart';
 import 'package:icarus/strategy/open_seen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
@@ -159,12 +160,42 @@ Future<bool> _waitForCloudSync(
   return false;
 }
 
+Future<bool> _waitForCloudMedia(
+  WidgetRef ref, {
+  Duration timeout = const Duration(seconds: 8),
+  Duration pollInterval = const Duration(milliseconds: 120),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final strategyId = ref.read(strategyProvider).strategyId;
+    final saveState = ref.read(strategySaveStateProvider);
+    final mediaQueueState = ref.read(cloudMediaUploadQueueProvider);
+    final mediaJobs = mediaQueueState.jobsForStrategy(strategyId);
+    if (!saveState.hasPendingMediaSync &&
+        mediaJobs.isEmpty &&
+        !mediaQueueState.isProcessing &&
+        saveState.mediaSyncErrorCount == 0) {
+      return true;
+    }
+    await Future<void>.delayed(pollInterval);
+  }
+  return false;
+}
+
 Future<LeaveAnswer> _guardCloudStrategyExit({
   required BuildContext context,
   required WidgetRef ref,
   required OpenSeen asked,
   required _ExitQuestion question,
 }) async {
+  if (ref.read(strategySaveStateProvider).storeOwned != null) {
+    return _guardStoreOwnedExit(
+      context: context,
+      ref: ref,
+      asked: asked,
+      question: question,
+    );
+  }
   final l10n = context.l10n;
   final openingStrategy = ref.read(strategyProvider);
   final openingSaveState = ref.read(strategySaveStateProvider);
@@ -346,6 +377,107 @@ Future<LeaveAnswer> _guardCloudStrategyExit({
         }
         await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
         break;
+    }
+  }
+}
+
+Future<LeaveAnswer> _guardStoreOwnedExit({
+  required BuildContext context,
+  required WidgetRef ref,
+  required OpenSeen asked,
+  required _ExitQuestion question,
+}) async {
+  final l10n = context.l10n;
+  final strategyId = ref.read(strategyProvider).strategyId;
+  final opening = ref.read(strategySaveStateProvider).storeOwned;
+  if ((ref.read(textDraftProvider).isNotEmpty ||
+          (opening?.canvasAheadOfStore ?? false)) &&
+      strategyId != null) {
+    ref.read(textDraftProvider.notifier).commitAllDrafts();
+    try {
+      await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        l10n.unsavedGuardTextEditSyncFailed,
+        error: error,
+        stackTrace: stackTrace,
+        source: 'cloud_store.exit_guard',
+      );
+      return const Stay();
+    }
+  }
+  var leaveIfKept = false;
+  while (true) {
+    final saveState = ref.read(strategySaveStateProvider);
+    final owned = saveState.storeOwned;
+    if (owned == null) return const Stay();
+    final mediaQueueState = ref.read(cloudMediaUploadQueueProvider);
+    final mediaJobs =
+        mediaQueueState.jobsForStrategy(ref.read(strategyProvider).strategyId);
+    final hasPendingMediaJobs = mediaJobs.isNotEmpty;
+    final ahead = owned.storeAheadOfServer;
+    final storeHoldsUnsent = ahead is! StoreMatchesServer;
+    final outboxError = !mediaQueueState.outboxIsReliable
+        ? (mediaQueueState.durabilityError ??
+            'Icarus could not confirm that media work is saved on this device.')
+        : null;
+    final hasPendingSync = storeHoldsUnsent ||
+        saveState.hasPendingMediaSync ||
+        hasPendingMediaJobs;
+    final hasDurablePendingWork = storeHoldsUnsent || hasPendingMediaJobs;
+    final unstaged = ref.read(textDraftProvider).isNotEmpty ||
+        owned.canvasAheadOfStore ||
+        mediaJobs.any((job) => !job.referenceDurable);
+    final hasUnreadableSavedWork = mediaQueueState.loadIssues.isNotEmpty;
+    final canLeaveWithDurableWork = !unstaged &&
+        mediaQueueState.durableLoaded &&
+        mediaQueueState.durabilityError == null &&
+        ((hasDurablePendingWork && mediaQueueState.outboxIsReliable) ||
+            hasUnreadableSavedWork);
+    if (leaveIfKept) {
+      leaveIfKept = false;
+      if (canLeaveWithDurableWork) {
+        if (!context.mounted) return const Stay();
+        return Leave(asked);
+      }
+    }
+    if (!hasPendingSync && outboxError == null && !unstaged) {
+      if (!context.mounted) return const Stay();
+      return Leave(asked);
+    }
+    if (mediaQueueState.isProcessing && outboxError == null) {
+      if (await _waitForCloudMedia(ref)) continue;
+    }
+    if (!context.mounted) return const Stay();
+    final decision = await _showCloudSyncBlockedDialog(
+      context,
+      question,
+      message: _cloudSyncBlockedMessage(
+        l10n: context.l10n,
+        isConnected: ref.read(convexConnectionSnapshotProvider),
+        cloudError: outboxError,
+        mediaErrorCount: saveState.mediaSyncErrorCount,
+        canLeaveWithDurableWork: canLeaveWithDurableWork,
+        hasUnreadableSavedWork: hasUnreadableSavedWork,
+        hasRefusedWork: ahead is StoreNeedsUser,
+        hasPausedWork: false,
+      ),
+      allowLeaveAnyway: canLeaveWithDurableWork,
+      showRetryAuth: ref.read(authProvider).hasActiveAuthIncident,
+    );
+    switch (decision) {
+      case CloudExitDecision.stay:
+        return const Stay();
+      case CloudExitDecision.retryAuth:
+        await ref
+            .read(authProvider.notifier)
+            .reinitializeConvexAuth(source: 'cloud_store_exit_guard');
+      case CloudExitDecision.leaveAnyway:
+        leaveIfKept = true;
+      case CloudExitDecision.retrySync:
+        final strategyId = ref.read(strategyProvider).strategyId;
+        if (strategyId == null) return const Stay();
+        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
     }
   }
 }

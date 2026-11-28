@@ -806,10 +806,7 @@ final class Model {
         ![
           client.queue.shown.list,
           ...client.queue.shown.pageReads.values,
-        ].any((read) => read is ReadRefused || read is ReadOwed) &&
-        client.queue.shown.pages.keys.every(
-          client.queue.shown.content.containsKey,
-        );
+        ].any((read) => read is ReadRefused || read is ReadOwed);
     if ((sync is AllSaved) != quiet) {
       throw StateError('sync $sync with ${client.queue.entries}');
     }

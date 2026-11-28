@@ -739,8 +739,8 @@ void main() {
     });
 
     test('each page the list shows that has not had its first read is '
-        'counted, so the strategy is not shown as saved, and its read '
-        'clears it', () {
+        'counted, is no reason to show the strategy unsaved, and its read '
+        'clears the count', () {
       final client = Client()
         ..queue = CloudQueue.start(build: build)
         ..read(initialRows(), pages: const []);
@@ -761,11 +761,7 @@ void main() {
           network: Network.online,
           signedIn: SignedInAs(testAccount),
         ),
-        isA<Outstanding>().having(
-          (state) => state.face,
-          'face',
-          Face.awaitingResult,
-        ),
+        const AllSaved(),
       );
       client.arrive(pageReadOf(initialRows(), pages.first));
       expect(Tally.of(client.queue, now).notYetRead, pages.length - 1);
