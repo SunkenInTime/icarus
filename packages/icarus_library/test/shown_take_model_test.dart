@@ -47,6 +47,7 @@ Shown fromScratch(Shown shown) => Shown(
   listSeen: shown.listSeen,
   pagesSeen: shown.pagesSeen,
   listTaken: shown.listTaken,
+  leftAt: shown.leftAt,
   pagesTaken: shown.pagesTaken,
   fence: shown.fence,
 );

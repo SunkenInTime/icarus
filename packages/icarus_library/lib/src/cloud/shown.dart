@@ -892,8 +892,10 @@ final class Shown {
     Map<String, ResultOrder> pagesTaken = const {},
     this.listRefusedAt,
     Map<String, ResultOrder> pagesRefusedAt = const {},
+    Map<String, ResultOrder> leftAt = const {},
     this.fence,
   }) : marks = marks ?? Marks.none,
+       leftAt = Map.unmodifiable(leftAt),
        pagesSeen = Map.unmodifiable(pagesSeen),
        pagesTaken = Map.unmodifiable(pagesTaken),
        pagesRefusedAt = Map.unmodifiable(pagesRefusedAt),
@@ -1001,6 +1003,7 @@ final class Shown {
   final Map<String, ResultOrder> pagesTaken;
   final ResultOrder? listRefusedAt;
   final Map<String, ResultOrder> pagesRefusedAt;
+  final Map<String, ResultOrder> leftAt;
   final ResultOrder? fence;
 
   PaidBy? owedBy(ArrivedBase result) => switch (switch (result) {
@@ -1031,6 +1034,7 @@ final class Shown {
     pagesTaken: pagesTaken,
     listRefusedAt: listRefusedAt,
     pagesRefusedAt: pagesRefusedAt,
+    leftAt: leftAt,
     fence: fence,
   );
 
@@ -1118,12 +1122,14 @@ final class Shown {
     Map<String, ResultOrder>? pagesTaken,
     ResultOrder? listRefusedAt,
     Map<String, ResultOrder>? pagesRefusedAt,
+    Map<String, ResultOrder>? leftAt,
     ShownRow? strategy,
   }) => Shown(
     listTaken: listTaken ?? this.listTaken,
     pagesTaken: pagesTaken ?? this.pagesTaken,
     listRefusedAt: listRefusedAt ?? this.listRefusedAt,
     pagesRefusedAt: pagesRefusedAt ?? this.pagesRefusedAt,
+    leftAt: leftAt ?? this.leftAt,
     fence: fence,
     marks: marks ?? this.marks,
     listSeen: listSeen ?? this.listSeen,
@@ -1213,6 +1219,10 @@ final class Shown {
     ),
     PageGone(:final pagePublicId) => Taken(
       _with(
+        leftAt: {
+          ...leftAt,
+          if (pages.containsKey(pagePublicId)) pagePublicId: ?arrival?.order,
+        },
         pagesTaken: {...pagesTaken, pagePublicId: ?arrival?.order},
         pagesSeen: {...pagesSeen, pagePublicId: Seen(arrival, gone: true)},
         pageReads: {...pageReads}..remove(pagePublicId),
@@ -1322,6 +1332,13 @@ final class Shown {
         pagesTaken: pagesTaken,
         listRefusedAt: listRefusedAt,
         pagesRefusedAt: pagesRefusedAt,
+        leftAt: {
+          ...leftAt,
+          if (arrival != null)
+            for (final page in pages.keys)
+              if (!live.contains(page) && !nextTrashed.containsKey(page))
+                page: arrival.order,
+        },
         marks: marks,
         listSeen: Seen(arrival),
         pagesSeen: pagesSeen,
@@ -1858,6 +1875,7 @@ final class Shown {
         other.pagesRefusedAt,
         pagesRefusedAt,
       ) &&
+      const MapEquality<String, ResultOrder>().equals(other.leftAt, leftAt) &&
       const MapEquality<String, ReadState>().equals(
         other.pageReads,
         pageReads,

@@ -1820,6 +1820,12 @@ ResultFit resultFit(Shown shown, ArrivedBase base, Arrival arrival) {
   if (shown.owedBy(base) case final owed? when !owed.paidBy(arrival, base)) {
     return ResultFit.older;
   }
+  if (base case PageRead(:final page)) {
+    if (shown.leftAt[page.publicId] case final left?
+        when arrival.order.isBefore(left)) {
+      return ResultFit.older;
+    }
+  }
   final againstList = _pageFitAgainstList(shown, base, arrival);
   if (taken == arrival.order) {
     return againstList == ResultFit.older ? ResultFit.older : ResultFit.same;
